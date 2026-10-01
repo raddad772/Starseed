@@ -1,4 +1,4 @@
-# Starseed
+# Starseed Infinite
 
 A procedural, browser-playable star-system game in the spirit of No Man's Sky: Three.js r186
 (vendored), plain ES modules, no build step. Dave play-tests it and gives feedback in short bursts.

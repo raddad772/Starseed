@@ -88,7 +88,7 @@ export class MapView {
       const el = document.createElement('div');
       el.className = 'ml' + (b.data.kind === 'moon' ? ' moon' : '');
       el.textContent = b.data.name;
-      el.addEventListener('click', () => { this.focus = b; g.target = b; this.dist = Math.max(b.R * 12, (b.data.kind === 'moon' ? b.data.orbit.a : b.soi) * 1.5); g.requestSurvey(b, 80); });
+      el.addEventListener('click', () => this.select(b));
       this.labelsEl.appendChild(el);
       item.label = el;
     }
@@ -107,7 +107,6 @@ export class MapView {
     this.legend = document.createElement('div');
     this.legend.className = 'ml';
     this.legend.style.cssText = 'left:16px; bottom:72px; top:auto; transform:none; color: var(--ink-dim); pointer-events:none';
-    this.legend.innerHTML = 'Drag to rotate · wheel to zoom · click a body to focus and target · <span style="color:var(--engaged)">green: habitable zone</span> · <span style="color:var(--target)">dashed: snow line</span> · <span style="color:var(--nav)">magenta: your trajectory</span>';
     this.labelsEl.appendChild(this.legend);
     // the map renders straight to the canvas without colour conversion, so
     // store display (sRGB) values in the materials
@@ -119,10 +118,37 @@ export class MapView {
     this.camera.updateProjectionMatrix();
   }
 
+  // focus the view on a body and make it the target
+  select(b) {
+    const g = this.game;
+    this.focus = b; g.target = b;
+    this.dist = Math.max(b.R * 12, (b.data.kind === 'moon' ? b.data.orbit.a : b.soi) * 1.5);
+    g.requestSurvey(b, 80);
+  }
+
+  // controller: right stick turns the view, RT / LT zoom in / out, the D-pad
+  // (or LB / RB) steps through the bodies, B or View closes
+  padUpdate(ps, dt) {
+    this.yaw -= ps.rx * 2.2 * dt;
+    this.pitch = THREE.MathUtils.clamp(this.pitch + ps.ry * 1.6 * dt, -1.5, 1.5);
+    this.dist *= Math.pow(6, (ps.lt - ps.rt) * dt);
+    const step = (ps.hits.has('RIGHT') || ps.hits.has('DOWN') || ps.hits.has('RB')) ? 1 : ((ps.hits.has('LEFT') || ps.hits.has('UP') || ps.hits.has('LB')) ? -1 : 0);
+    if (step) {
+      const list = this.items.filter((it) => !it.body.isStar).map((it) => it.body);
+      const i = list.indexOf(this.focus);
+      this.select(list[(i + step + list.length) % list.length]);
+    }
+    if (ps.hits.has('B') || ps.hits.has('VIEW')) this.toggle();
+  }
+
   toggle() {
     this.open = !this.open;
     const g = this.game;
     this.labelsEl.hidden = !this.open;
+    this.legend.innerHTML = (g.input.usingPad
+      ? 'Right stick: rotate · RT / LT: zoom · D-pad: next body (targets it) · B: close'
+      : 'Drag to rotate · wheel to zoom · click a body to focus and target')
+      + ' · <span style="color:var(--engaged)">green: habitable zone</span> · <span style="color:var(--target)">dashed: snow line</span> · <span style="color:var(--nav)">magenta: your trajectory</span>';
     if (this.open) {
       g.input.releaseLock();
       const cur = g.player.currentBody();

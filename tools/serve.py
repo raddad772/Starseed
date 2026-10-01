@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Static dev server for Starseed with caching disabled (ES modules and
+"""Static dev server for Starseed Infinite with caching disabled (ES modules and
 worker imports otherwise go stale between edits)."""
 import http.server, sys, os
 

@@ -34,7 +34,13 @@ export class Input {
     this.padDt = 0;
     this.padMode = 'foot';
     this.lb = { down: false, t: 0, used: false };
+    // this frame's raw pad: buttons newly pressed / held (BTN names), sticks, triggers
+    this.padState = { hits: new Set(), held: new Set(), lx: 0, ly: 0, rx: 0, ry: 0, lt: 0, rt: 0 };
+    // takes the pad first each frame (menus, the map); returns true to keep it from the game
+    this.padRouter = null;
     this.onPadPause = null;
+    // what the player last touched: 'pad' or 'kbm' (prompts show that device's buttons)
+    this.device = 'kbm';
     this.padLookRate = 2.8;   // rad/s at full deflection, on foot
     this.stats = { m: 0, p: 0, mPx: 0, pPx: 0, t0: performance.now(), rate: null, src: 'mousemove' };
     window.addEventListener('keydown', (e) => {
@@ -42,6 +48,7 @@ export class Input {
       if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
       if (!e.repeat) this.hits.add(e.code);
       this.keys.add(e.code);
+      this.setDevice('kbm');
       if (['Space', 'Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyF'].includes(e.code)) e.preventDefault();
     });
     window.addEventListener('keyup', (e) => { this.keys.delete(e.code); });
@@ -49,6 +56,7 @@ export class Input {
     window.addEventListener('mousemove', (e) => {
       if (!this.enabled) return;
       this.cx = e.clientX; this.cy = e.clientY; this.cursorIn = true;
+      if (Math.abs(e.movementX) + Math.abs(e.movementY) > 6) this.setDevice('kbm');
       if (this.locked || this.buttons & 2) {
         this.mSum[0] += e.movementX; this.mSum[1] += e.movementY;
         this.stats.m++; this.stats.mPx += Math.abs(e.movementX) + Math.abs(e.movementY);
@@ -67,6 +75,7 @@ export class Input {
     });
     document.addEventListener('mouseleave', () => { this.cursorIn = false; });
     window.addEventListener('blur', () => { this.cursorIn = false; });
+    window.addEventListener('mousedown', () => this.setDevice('kbm'));
     canvas.addEventListener('mousedown', (e) => {
       this.buttons |= (1 << e.button);
       if (e.button === 0) this.clicks++;
@@ -86,6 +95,13 @@ export class Input {
     } catch (e) { /* pointer lock is optional: right-drag still looks around */ }
   }
   releaseLock() { if (document.pointerLockElement) document.exitPointerLock(); }
+
+  setDevice(d) {
+    if (d === this.device) return;
+    this.device = d;
+    document.body.classList.toggle('using-pad', d === 'pad');
+  }
+  get usingPad() { return this.device === 'pad' && !!this.pad; }
 
   down(code) { return this.keys.has(code) || this.padKeys.has(code); }
   hit(code) { return this.hits.has(code); }
@@ -114,6 +130,25 @@ export class Input {
     this.pad = gp;
     if (!this.enabled) return;
     const pressed = (i) => { const b = gp.buttons[i]; return !!b && (b.pressed || b.value > 0.4); };
+    // sticks: radial dead zone, rescaled to full range
+    const dz = (x, y, d) => { const r = Math.hypot(x, y); if (r < d) return [0, 0]; const k = Math.min(1, (r - d) / (1 - d)) / r; return [x * k, y * k]; };
+    const [lx, ly] = dz(gp.axes[0] || 0, gp.axes[1] || 0, 0.14);
+    const [rx, ry] = dz(gp.axes[2] || 0, gp.axes[3] || 0, 0.12);
+    const ps = this.padState;
+    ps.hits.clear(); ps.held.clear();
+    for (const [name, i] of Object.entries(BTN)) {
+      const now = pressed(i);
+      if (now) ps.held.add(name);
+      if (now && !this.padPrev[i]) ps.hits.add(name);
+    }
+    Object.assign(ps, { lx, ly, rx, ry, lt: gp.buttons[BTN.LT] ? gp.buttons[BTN.LT].value : 0, rt: gp.buttons[BTN.RT] ? gp.buttons[BTN.RT].value : 0 });
+    if (ps.hits.size || Math.hypot(lx, ly) > 0.5 || Math.hypot(rx, ry) > 0.5) this.setDevice('pad');
+    // a menu or the map takes the pad: the game sees none of it this frame
+    if (this.padRouter && this.padRouter(ps, dt)) {
+      for (const i of Object.values(BTN)) this.padPrev[i] = pressed(i);
+      this.lb.down = pressed(BTN.LB); this.lb.used = true;
+      return;
+    }
     const L = PAD_LAYOUT[mode];
     for (const [name, i] of Object.entries(BTN)) {
       const now = pressed(i), was = !!this.padPrev[i];
@@ -125,10 +160,6 @@ export class Input {
       this.padKeys.add(m[0]);
       if (!was) this.hits.add(m[0]);
     }
-    // sticks: radial dead zone, rescaled to full range
-    const dz = (x, y, d) => { const r = Math.hypot(x, y); if (r < d) return [0, 0]; const k = Math.min(1, (r - d) / (1 - d)) / r; return [x * k, y * k]; };
-    const [lx, ly] = dz(gp.axes[0] || 0, gp.axes[1] || 0, 0.14);
-    const [rx, ry] = dz(gp.axes[2] || 0, gp.axes[3] || 0, 0.12);
     // LB: held, it shifts the left stick; tapped (no stick use), next target
     const lbNow = pressed(BTN.LB);
     if (lbNow && !this.lb.down) { this.lb.t = performance.now(); this.lb.used = false; }

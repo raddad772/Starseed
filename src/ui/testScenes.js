@@ -27,12 +27,8 @@ function leaveVessel(g) {
 
 // hold the world while the terrain under the new spot streams in
 function loadAt(g, b, dirF) {
-  g.state = 'loading';
-  g.loadTimer = 0;
-  g.settleTime = 0;
   g.respawnInfo = { body: b, dir: dirF.clone() };
-  g.hud.setLoading(`Moving to the test spot on ${b.data.name}…`);
-  g.engine.adaptReset = true;
+  g.beginLoading('surface', `Moving to the test spot on ${b.data.name}`);
 }
 
 function standFacingSun(g, elevDeg, azOffDeg, pitch) {
@@ -108,9 +104,7 @@ export const TEST_SCENES = [
       if (!t || t.dead) return;
       leaveVessel(g);
       g.player.placeAboard(t, new THREE.Vector3(0, 6, -28), new THREE.Vector3(0, 0, -1));
-      g.state = 'playing';
-      g.hud.setLoading(null);
-      g.engine.adaptReset = true;
+      g.beginLoading('space', 'Moving to the test spot');
     },
   },
   {
@@ -138,9 +132,7 @@ export const TEST_SCENES = [
       p.sitDown(0, s);
       p.body = b;
       g.target = b;
-      g.state = 'playing';
-      g.hud.setLoading(null);
-      g.engine.adaptReset = true;
+      g.beginLoading('space', 'Moving to the test spot');
     },
   },
 ];

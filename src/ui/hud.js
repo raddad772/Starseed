@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import * as U from '../core/units.js';
 import { ASSIST_NAMES } from '../sim/ship.js';
 import { lockRadius } from '../sim/ftl.js';
-import { PAD_LAYOUT, padDiagram } from '../padLayout.js';
+import { PAD_LAYOUT, padDiagram, padButtonFor, padButtonText, padGlyph } from '../padLayout.js';
 
 const $ = (id) => document.getElementById(id);
 const _v = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3();
@@ -72,27 +72,62 @@ export class Hud {
       document.body.appendChild(el);
     }
     const esc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;');
-    el.innerHTML = `<div class="t1">STARSEED</div><div class="t2">${esc(lines[0])}</div><div class="t3">${esc(lines[1])}</div><div class="t4">${esc(lines[2])}</div>`;
+    el.innerHTML = `<div class="t1">STARSEED<span>INFINITE</span></div><div class="t2">${esc(lines[0])}</div><div class="t3">${esc(lines[1])}</div><div class="t4">${esc(lines[2])}</div>`;
     el.classList.remove('out');
     el.hidden = false;
     clearTimeout(this._titleT);
     this._titleT = setTimeout(() => el.classList.add('out'), ms);
   }
 
-  setLoading(text) {
-    if (!text) { this.loadingEl.hidden = true; return; }
-    this.loadingEl.hidden = false;
-    this.loadingEl.textContent = text;
+  // the loading cover: text plus progress 0..1; null fades it out
+  // the button for a key on whatever the player last used: the controller's
+  // (in the current mode's layout) or the keyboard's
+  padButton(code) {
+    const inp = this.game.input;
+    return inp.usingPad ? padButtonFor(code, inp.padMode) : null;
+  }
+  keyGlyph(code, keyLabel) {
+    const b = this.padButton(code);
+    return b ? padGlyph(b) : `<kbd>${keyLabel}</kbd>`;
+  }
+  keyName(code, keyLabel) {
+    const b = this.padButton(code);
+    return b ? padButtonText(b).toUpperCase() : keyLabel;
   }
 
-  toggleHelp() {
+  setLoading(text, frac = 0) {
+    const el = this.loadingEl;
+    if (!text) {
+      if (el.hidden || el.classList.contains('out')) return;
+      el.querySelector('.bar i').style.transform = 'scaleX(1)';
+      el.querySelector('.pct').textContent = '100%';
+      this._loadPct = 100;
+      el.classList.add('out');
+      clearTimeout(this._loadT);
+      this._loadT = setTimeout(() => { el.hidden = true; }, 800);
+      return;
+    }
+    clearTimeout(this._loadT);
+    el.hidden = false;
+    el.classList.remove('out');
+    if (text !== this._loadText) { this._loadText = text; el.querySelector('#loadText').textContent = text + '…'; }
+    const pct = Math.round(frac * 100);
+    if (pct !== this._loadPct) {
+      this._loadPct = pct;
+      el.querySelector('.bar i').style.transform = `scaleX(${frac.toFixed(3)})`;
+      el.querySelector('.pct').textContent = pct + '%';
+      el.querySelector('.loadbox').setAttribute('aria-valuenow', String(pct));
+    }
+  }
+
+  toggleHelp(tab) {
     this.helpOn = !this.helpOn;
     if (!this.helpOn) {
       this.overlay.hidden = true; this.overlay.innerHTML = '';
       if (this.game.paused && this.onHelpClosed) this.onHelpClosed(); // back to the pause menu
       return;
     }
-    if (!this.helpTab) this.helpTab = this.game.input.pad ? 'pad' : 'keys';
+    this.helpTab = tab || (this.game.input.usingPad ? 'pad' : 'keys');
     const pm = this.game.player.mode;
     this.padTab = pm === 'seat' ? 'flight' : (pm === 'eva' ? 'eva' : 'foot');
     this.refreshHelp();
@@ -123,7 +158,7 @@ export class Hud {
       <kbd>Right mouse / Alt</kbd><span>Free look from the pilot seat</span><kbd>Esc</kbd><span>Pause</span></div>`;
     this.overlay.hidden = false;
     this.overlay.innerHTML = `<div class="card help"><div class="tabs">${btn('data-tab', 'keys', tab === 'keys', 'Keyboard &amp; mouse')}${btn('data-tab', 'pad', tab === 'pad', 'Controller')}</div>
-      ${body}<button id="closeHelp" type="button">Close</button></div>`;
+      ${body}<button id="closeHelp" type="button" data-pad-back data-pad-default>Close</button></div>`;
     for (const el of this.overlay.querySelectorAll('[data-tab]')) el.onclick = () => { this.helpTab = el.dataset.tab; this.refreshHelp(); };
     for (const el of this.overlay.querySelectorAll('[data-pm]')) el.onclick = () => { this.padTab = el.dataset.pm; this.refreshHelp(); };
     $('closeHelp').onclick = () => this.toggleHelp();
@@ -131,7 +166,7 @@ export class Hud {
 
   showDeath(cause, onRespawn) {
     this.overlay.hidden = false;
-    this.overlay.innerHTML = `<div class="card"><h2 class="c-warn">Ship lost</h2><p>${cause}</p><button id="respawnBtn" class="primary" type="button">Restart at the landing site</button></div>`;
+    this.overlay.innerHTML = `<div class="card"><h2 class="c-warn">Ship lost</h2><p>${cause}</p><button id="respawnBtn" class="primary" type="button" data-pad-default>Restart at the landing site</button></div>`;
     const btn = $('respawnBtn');
     btn.onclick = () => { this.overlay.hidden = true; this.overlay.innerHTML = ''; onRespawn(); this.game.input.requestLock(); };
     this.game.input.releaseLock();
@@ -151,7 +186,11 @@ export class Hud {
     this.textTimer -= dt;
     if (this.textTimer <= 0) { this.textTimer = 0.1; this.updateText(); this.updateStrip(); }
     const p = g.player.prompt;
-    if (p) { this.promptEl.hidden = false; this.promptEl.innerHTML = `<kbd>${p.key}</kbd>${p.text}`; } else this.promptEl.hidden = true;
+    if (p) {
+      const html = `${this.keyGlyph(p.code || 'Key' + p.key, p.key)}${p.text}`;
+      if (html !== this._promptHtml) { this._promptHtml = html; this.promptEl.innerHTML = html; }
+      this.promptEl.hidden = false;
+    } else this.promptEl.hidden = true;
     this.draw();
     this.updateScreens();
   }
@@ -313,11 +352,12 @@ export class Hud {
     } else {
       chip(p.mode === 'eva' ? 'EVA' : (p.mode === 'ship' ? `ABOARD ${s.name.toUpperCase()}` : (p.swimming ? 'SWIMMING' : 'ON FOOT')), 'on');
       chip(`JET ${Math.round(p.jetFuel * 100)}%`, p.jetFuel < 0.2 ? 'caution' : '');
-      if (p.mode === 'ship' && p.vessel.big) chip(g.route ? `ROUTE · ${g.route.label.toUpperCase()} · TAB NEXT` : 'TAB · FIND YOUR WAY', g.route ? 'nav' : '');
+      const tab = this.keyName('Tab', 'TAB');
+      if (p.mode === 'ship' && p.vessel.big) chip(g.route ? `ROUTE · ${g.route.label.toUpperCase()} · ${tab} NEXT` : `${tab} · FIND YOUR WAY`, g.route ? 'nav' : '');
     }
     if (g.warp > 1) chip(`WARP ×${g.warp.toLocaleString()}`, 'nav');
-    if (p.mode !== 'seat' && p.lastSeat && !p.lastSeat.vessel.dead) chip(`P · ${p.lastSeat.vessel.name.toUpperCase()} SEAT`);
-    chip('H HELP');
+    if (p.mode !== 'seat' && p.lastSeat && !p.lastSeat.vessel.dead) chip(`${this.keyName('KeyP', 'P')} · ${p.lastSeat.vessel.name.toUpperCase()} SEAT`);
+    chip(`${this.keyName('KeyH', 'H')} HELP`);
     this.strip.innerHTML = chips.join('');
   }
 

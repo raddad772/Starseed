@@ -1,4 +1,4 @@
-# Starseed handoff (2026-10-01, session 68fc2903, written for a fresh session in ~/dev/starseed)
+# Starseed Infinite handoff (2026-10-01, session 68fc2903, updated by session 0f13fab4)
 
 Dave is play-testing and giving feedback in short bursts. He rebooted after this was written.
 
@@ -22,9 +22,13 @@ Dave is play-testing and giving feedback in short bursts. He rebooted after this
 
 ## State of the repo and builds
 
-- Repo: `~/dev/starseed`, git branch `main`, one commit `73679ca` ("Starseed: procedural star-system
-  exploration in Three.js"). **Everything since (big ships, coordinate spaces, mouse/T/landing view) is
-  uncommitted.** Commit only when Dave asks. Global git identity is already raddad772 noreply; end commit
+- Repo: `~/dev/starseed`, git branch `main`, pushed to `git@github.com:raddad772/Starseed.git` (public,
+  remote `origin`) on 2026-10-01 at Dave's request. Commit / push only when Dave asks.
+- Renamed **Starseed Infinite** (Dave: avoid clashing with existing games called Starseed): page title,
+  briefing h1 and title card ("STARSEED" + an "INFINITE" line), README. localStorage keys unchanged.
+- Hosting: GitHub Pages from `main` / root (`.nojekyll` present) would serve
+  https://raddad772.github.io/Starseed/ ; Dave has to switch it on in the repo's Settings > Pages
+  (`gh` is installed but not logged in). Global git identity is already raddad772 noreply; end commit
   messages with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
 - Published artifact (private): https://claude.ai/artifact/ENURBtsu2EgGZQyqmibhGS. Version 2 has the
   fleet; it does NOT yet have the mouse fix, T targeting or the landing view. Republish: `node
@@ -185,13 +189,53 @@ Dave plays in **Safari** now (localhost:8765). Test in my own in-app-browser tab
   `name|dataURL` to http://127.0.0.1:8799/ (the in-app pane cannot screenshot while hidden).
 - `notes/` (untracked): older scratch test scripts and reference screenshots saved from /tmp before
   Dave's reboot (orbit_*.jpg are the opening shots).
-- Not yet seen on screen: the Nahasia start (volcanic moon, Eldnedunt ~18 deg in its sky).
+- The Nahasia start has now been seen on screen (lava glow below, Eldnedunt in the sky); not yet by Dave.
+
+## Start preview and loading cover (session 0f13fab4, uncommitted, verified in a test tab)
+
+Dave: "Orbit of Moadeal is selected, but the scene still loads on the surface at browser load ... it
+should default to orbit, so we see stars" and "I want a loading bar on scene select, I don't want to
+watch the landscape load in".
+- main.js `boot` calls `game.requestStart(startChoice)` at once; clicking a start in the briefing
+  previews it live (before the first launch only); Launch calls `game.launch()`.
+- game.js: `placeStart` -> `applyStart(startPending || 'surface')`; new `startOnSurface()` (re-lands the
+  ship if needed); every start goes through `beginLoading(mode 'surface'|'space', text, arrive)`;
+  `arrive()` (title card / arrival messages) runs only when playing AND launched. `updateLoading` sets
+  `loadProgress` (survey creep to 10%, surface: (deepest/(maxLevel-1))^3 then the pending-tile drain,
+  space: the drain only, plus settle). Carrier start now loads too; test scenes use `beginLoading`.
+- index.html: `#loading` is an opaque cover (label, %, cyan bar) under the briefing and pause overlay,
+  centred beside the briefing panel at >= 900 px; it snaps on and fades out (0.8 s). Errors go to
+  `#errorLine` instead. Timings with ?workers=2: orbit ~2 s, carrier ~2 s, Nahasia ~3 s, surface ~28 s.
+
+## Controller everywhere (session 0f13fab4, verified with a stubbed pad)
+
+Dave: "a way to dismiss the overlay", "show controller prompts for buttons like take pilot seat ... if
+the person is using controller", "launching to a new scene to work"; also mused that Elite: Dangerous
+shows controller configs can be complex (an open design question: see the queue).
+- `Input.device` ('pad' | 'kbm', last thing touched; body class `using-pad`), `input.usingPad`,
+  `Input.padState` (hits/held BTN names, sticks, triggers), `input.padRouter(ps, dt)` runs first and
+  returning true keeps the pad from the game that frame.
+- `src/ui/padMenu.js`: any open HTML menu (briefing, pause, help, test scenes, ship lost): D-pad / left
+  stick moves a highlight spatially (auto-repeat), A presses, B clicks `[data-pad-back]`, LB/RB top tabs,
+  LT/RT sub-tabs, left/right adjust sliders/selects; default highlight `[data-pad-default]` or
+  `.primary`. Start launches from the briefing; R3 opens/closes the controller layout from pause.
+- Map (`MapView.padUpdate`): right stick rotates, RT/LT zoom, D-pad / LB-RB step bodies (targets them),
+  B or View closes.
+- Prompts and chips: `hud.keyGlyph(code, label)` / `keyName` look the key up in the current mode's
+  `PAD_LAYOUT` (`padButtonFor`, `padGlyph` in padLayout.js); face buttons draw as coloured rounds.
+  Prompts may carry `code` (default `'Key' + key`).
+- Relaunch: the pause menu's Change system returns to the briefing (`game.launched = false`); picking any
+  start moves you there (`resetFleet()` first: FTL idle, big ships back on their home orbits); Launch
+  without picking carries on where you were.
 
 After a reboot: restart the dev server (`preview_start` with launch config `starseed`, or
 `python3 tools/serve.py 8765` in ~/dev/starseed).
 
 ## Still queued
 
+0. Controller design (Dave is weighing it): rebinding screen (PAD_LAYOUT is already the single source,
+   so a per-mode remap stored in settings would flow into the help diagram and the prompts), a held
+   modifier layer, hold-vs-tap, maybe a radial quick menu for rare actions.
 1. Nav computer on N (see the plan in git history of this file / below).
 2. Keyboard control rework (W/S throttle, landing mode tied to gear, ramp B, stand Y).
 3. Target registry list + 2D tactical page in the map.

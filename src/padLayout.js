@@ -61,6 +61,24 @@ export function leftStickAxes(mode, lb) {
   return { 'KeyS|KeyW': ['y', -1], 'KeyA|KeyD': ['x', 1] };
 }
 
+// The pad button that stands in for a key in a mode (null if none does);
+// Tab is also LB's tap
+export function padButtonFor(code, mode) {
+  const L = PAD_LAYOUT[mode];
+  if (L) for (const [name, m] of Object.entries(L.buttons)) if (m && m[0] === code) return name;
+  if (code === 'Tab') return 'LB';
+  return null;
+}
+
+const GLYPH_TEXT = { UP: 'D-pad ↑', DOWN: 'D-pad ↓', LEFT: 'D-pad ←', RIGHT: 'D-pad →', VIEW: 'View', START: 'Menu' };
+export const padButtonText = (name) => GLYPH_TEXT[name] || name;
+
+// a button as an inline glyph: face buttons as coloured rounds, the rest as text
+export function padGlyph(name) {
+  const face = { A: 'a', B: 'b', X: 'x', Y: 'y' }[name];
+  return `<kbd class="pb${face ? ' pb-' + face : ''}">${padButtonText(name)}</kbd>`;
+}
+
 // ------------------------------------------------------------------ diagram
 
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');

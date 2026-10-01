@@ -71,6 +71,8 @@ export class Game {
     this.surveyJobs = new Map();
     this.showSites = false;
     this.state = 'loading';
+    this.loadText = 'Surveying for a landing site';
+    this.loadProgress = 0;
     this.lastFrame = performance.now();
     this.fps = 60;
     this.paused = false;
@@ -120,7 +122,8 @@ export class Game {
 
   begin() {
     const b = this.startBody;
-    this.hud.setLoading(`Surveying ${b.data.name} for a landing site…`);
+    this.loadText = `Surveying ${b.data.name} for a landing site`;
+    this.hud.setLoading(this.loadText, 0);
     this.requestSurvey(b, -50).then((res) => {
       const site = res && res.sites && res.sites[0];
       this.placeStart(b, site ? new THREE.Vector3(...site.dir) : this.fallbackSite(b), site);
@@ -178,23 +181,73 @@ export class Game {
     this.universe.update(this.t);
     this.landShipAt(b, this.startDir, null);
     this.spawnFleet(b);
-    // player stands off the ship's port bow, looking back at it
-    const sp = this.ship.landedPosF.clone();
-    const sq = this.ship.landedQuatF.clone();
+    this.respawnInfo = { body: b, dir: this.startDir.clone() };
+    this.placed = true;
+    this.applyStart(this.startPending || 'surface');
+  }
+
+  // The landing site: standing off the parked ship's port bow, looking back at it
+  startOnSurface() {
+    const b = this.respawnInfo.body, s = this.ship, p = this.player;
+    if (!s.landed || s.parent || s.body !== b) this.landShipAt(b, this.startDir, null);
+    const sp = s.landedPosF.clone();
+    const sq = s.landedQuatF.clone();
     const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(sq);
     const left = new THREE.Vector3(-1, 0, 0).applyQuaternion(sq);
     const pp = sp.clone().addScaledVector(fwd, 9).addScaledVector(left, 19);
     const toShip = sp.clone().sub(pp);
-    this.player.placeOnSurface(b, pp.normalize(), toShip);
-    this.player.pitch = 0.04;
-    this.player.lastSeat = { vessel: this.ship, seat: 0 };
-    this.ship.rampTarget = 1; this.ship.ramp = 1;
+    if (p.vessel) p.vessel.pilotPresent = false;
+    p.vessel = null;
+    p.placeOnSurface(b, pp.normalize(), toShip);
+    p.pitch = 0.04;
+    p.lastSeat = { vessel: s, seat: 0 };
+    s.rampTarget = 1; s.ramp = 1;
+    this.target = null;
+    this.route = null;
+    this.setWarp(0);
+    const name = b.data.name, site = this.site;
+    this.beginLoading('surface', `Descending to ${name}`, () => {
+      this.message(`${name}: ${b.data.label}`, 'nav');
+      if (site) this.message(`Landing site: ${site.biome}, ${site.reasons.slice(0, 2).join(', ')}`);
+    });
+  }
+
+  // Hold the world while the view streams in behind the loading cover.
+  // mode: 'surface' waits for the finest terrain under you, 'space' only for
+  // what is in view; arrive() runs once the view is ready and the game launched
+  beginLoading(mode, text, arrive) {
     this.state = 'loading';
+    this.loadMode = mode;
+    this.loadText = text;
     this.loadTimer = 0;
-    this.hud.setLoading(`Descending to ${b.data.name}…`);
-    this.respawnInfo = { body: b, dir: this.startDir.clone() };
-    this.placed = true;
-    if (this.startPending) this.applyStart(this.startPending);
+    this.settleTime = 0;
+    this.loadProgress = 0;
+    this.loadPeak = 0;
+    this.arrival = arrive || null;
+    this.engine.adaptReset = true;
+    this.hud.setLoading(text, 0);
+  }
+
+  // every vessel as at the start: drives idle, the big ships on their home orbits
+  resetFleet() {
+    const b = this.startBody;
+    for (const v of this.vessels) { v.ftl.state = 'idle'; v.ftl.speed = 0; }
+    if (this.tender) this.placeInOrbit(this.tender, b, lockRadius(b) - b.R + 90000, 0.35);
+    if (this.carrier) this.placeInOrbit(this.carrier, b, lockRadius(b) - b.R + 280000, -0.45);
+  }
+
+  // the player is in the game (the briefing closed): say where they are
+  launch() {
+    this.launched = true;
+    this.everLaunched = true;
+    this.arrive();
+  }
+
+  arrive() {
+    if (this.state !== 'playing' || !this.launched || !this.arrival) return;
+    const f = this.arrival;
+    this.arrival = null;
+    f();
   }
 
   // ------------------------------------------------------------------ where to begin
@@ -209,11 +262,11 @@ export class Game {
 
   applyStart(key) {
     this.startPending = null;
-    if (key === 'carrier') this.startAboard();
-    else if (key && key.startsWith('orbit:')) {
-      const b = this.universe.bodies[+key.slice(6)];
-      if (b) this.startInOrbit(b);
-    }
+    this.openingBody = null;
+    if (this.everLaunched) this.resetFleet(); // a fresh start after playing: nothing left mid-flight
+    if (key === 'carrier' && this.carrier && !this.carrier.dead) this.startAboard();
+    else if (key && key.startsWith('orbit:') && this.universe.bodies[+key.slice(6)]) this.startInOrbit(this.universe.bodies[+key.slice(6)]);
+    else this.startOnSurface();
   }
 
   // The opening shot: a spot in orbit composed like a film still. The body
@@ -342,14 +395,9 @@ export class Game {
     this.route = null;
     this.setWarp(0);
     // let the view stream in, then roll the title
-    this.state = 'loading';
-    this.loadMode = 'orbit';
-    this.loadTimer = 0;
-    this.settleTime = 0;
-    this.hud.setLoading(`Arriving in orbit of ${b.data.name}…`);
-    this.engine.adaptReset = true;
     this.openingBody = b;
     this.openingAlt = r - b.R;
+    this.beginLoading('space', `Arriving in orbit of ${b.data.name}`, () => this.rollTitle());
   }
 
   rollTitle() {
@@ -357,7 +405,7 @@ export class Game {
     if (!b) return;
     this.openingBody = null;
     const alt = this.openingAlt;
-    const pad = !!this.input.pad;
+    const pad = this.input.usingPad;
     this.hud.showTitle([
       `${this.system.star.name} system`,
       `In orbit of ${b.data.name} · ${b.data.label} · ${alt >= 1e6 ? (alt / 1e6).toFixed(1) + ' thousand km' : Math.round(alt / 1000).toLocaleString() + ' km'} up`,
@@ -425,11 +473,12 @@ export class Game {
     this.player.placeAboard(c, new THREE.Vector3(-52, 0, -44), new THREE.Vector3(-0.6, 0, -0.8));
     this.player.lastSeat = { vessel: s, seat: 0 };
     this.target = this.tender ? this.tender.target : null;
-    this.state = 'playing';
-    this.hud.setLoading(null);
-    this.engine.adaptReset = true;
-    this.message(`Aboard ${c.name} · ${c.type.className} · hangar deck`, 'nav');
-    this.message(`Your shuttle ${s.name} is on pad 2 · its ramp is down`);
+    this.route = null;
+    this.setWarp(0);
+    this.beginLoading('space', `Boarding ${c.name}`, () => {
+      this.message(`Aboard ${c.name} · ${c.type.className} · hangar deck`, 'nav');
+      this.message(`Your shuttle ${s.name} is on pad 2 · its ramp is down`);
+    });
   }
 
   // Lands the ship (settled pose) at a body-fixed direction
@@ -674,22 +723,31 @@ export class Game {
   updateLoading(dt) {
     this.loadTimer += dt;
     this.universe.update(this.t);
-    if (!this.respawnInfo) return;
+    if (!this.respawnInfo) { // surveying the landing site: no measure yet, creep toward 10%
+      this.loadProgress = 0.1 * (1 - Math.exp(-this.loadTimer / 2));
+      this.hud.setLoading(this.loadText, this.loadProgress);
+      return;
+    }
     const pending = this.world.pendingNear();
-    const orbit = this.loadMode === 'orbit';
+    const space = this.loadMode === 'space';
     const terr = this.world.terrainOf(this.player.currentBody().id);
-    const deepEnough = orbit || !terr || terr.deepest >= terr.maxLevel - 1;
-    const name = this.player.currentBody().data.name;
-    this.hud.setLoading(`${orbit ? `Arriving in orbit of ${name}` : `Descending to ${name}`}… ${pending ? pending + ' terrain tiles' : ''}`);
+    const deepEnough = space || !terr || terr.deepest >= terr.maxLevel - 1;
     if (pending === 0 && deepEnough) this.settleTime += dt; else this.settleTime = 0;
-    if ((this.settleTime > 0.4 && this.loadTimer > 1) || this.loadTimer > (orbit ? 10 : 25)) {
+    // progress: on the surface the terrain refines level by level under you
+    // (later levels take longer: cubed to keep pace with the clock), then the
+    // last tiles drain; in space only the tiles in view drain; then a settle
+    const levels = space || !terr ? 1 : Math.min(1, terr.deepest / (terr.maxLevel - 1)) ** 3;
+    if (deepEnough) this.loadPeak = Math.max(this.loadPeak, pending);
+    const drain = !deepEnough ? 0 : (this.loadPeak ? 1 - pending / this.loadPeak : (this.loadTimer > 0.5 ? 1 : 0));
+    const f = space || !terr ? 0.1 + 0.8 * drain : 0.1 + 0.5 * levels + 0.3 * drain;
+    this.loadProgress = Math.max(this.loadProgress, Math.min(0.99, f + 0.1 * Math.min(1, this.settleTime / 0.4)));
+    this.hud.setLoading(this.loadText, this.loadProgress);
+    if ((this.settleTime > 0.4 && this.loadTimer > 1) || this.loadTimer > (space ? 10 : 25)) {
       this.state = 'playing';
       this.hud.setLoading(null);
       this.engine.adaptReset = true;
       this.loadMode = null;
-      if (orbit) { this.rollTitle(); return; }
-      this.message(`${name}: ${this.player.currentBody().data.label}`, 'nav');
-      if (this.site) this.message(`Landing site: ${this.site.biome}, ${this.site.reasons.slice(0, 2).join(', ')}`);
+      this.arrive();
     }
   }
 
@@ -1166,9 +1224,7 @@ export class Game {
     p.pitch = 0;
     p.body = b;
     p.sitDown(0, this.ship);
-    this.state = 'loading';
-    this.loadTimer = 0;
-    this.settleTime = 0;
+    this.beginLoading('surface', `Descending to ${b.data.name}`, () => this.message(`${b.data.name}: ${b.data.label}`, 'nav'));
     // started in orbit: begin again there
     if (this.startChoice && this.startChoice.startsWith('orbit:')) this.applyStart(this.startChoice);
   }

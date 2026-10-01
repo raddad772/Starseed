@@ -6,6 +6,7 @@ import { generateSystem } from './gen/system.js';
 import { renderBriefing, startOptions } from './ui/briefing.js';
 import { randomSeedString, normalizeSeed } from './core/rng.js';
 import { TEST_SCENES } from './ui/testScenes.js';
+import { PadMenu } from './ui/padMenu.js';
 
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -26,7 +27,7 @@ function fatal(msg) {
 // Surface unexpected errors instead of failing silently
 function reportError(msg) {
   console.error(msg);
-  const el = $('loading');
+  const el = $('errorLine');
   if (el) { el.hidden = false; el.textContent = 'Error: ' + String(msg).slice(0, 160); }
 }
 window.addEventListener('error', (e) => reportError(e.message || e.error));
@@ -65,13 +66,18 @@ function showBriefing(s) {
     el.onclick = () => {
       startChoice = el.dataset.start;
       for (const b of box.querySelectorAll('[data-start]')) b.setAttribute('aria-checked', String(b === el));
+      // the view behind the briefing moves to the chosen start
+      if (game && previewed !== startChoice) { game.requestStart(startChoice); previewed = startChoice; }
     };
     el.ondblclick = () => { startChoice = el.dataset.start; launchGame(); };
   }
 }
 
+// The start shown behind the briefing (null once you have played on from it:
+// Launch then carries on where you were, and picking any start moves you there)
+let previewed = null;
+
 function boot(s) {
-  launchedOnce = false; // a new game takes the chosen start on its first launch
   if (game) { game.dispose(); game = null; }
   try {
     game = new Game(canvas, input, s, {
@@ -81,11 +87,12 @@ function boot(s) {
     });
   } catch (err) {
     console.error(err);
-    fatal('Could not start the renderer (' + err.message + '). Starseed needs a browser with WebGL 2.');
+    fatal('Could not start the renderer (' + err.message + '). Starseed Infinite needs a browser with WebGL 2.');
     return;
   }
   window.game = game;
   game.hud.onHelpClosed = showPause;
+  if (startChoice) { game.requestStart(startChoice); previewed = startChoice; } // the briefing shows the chosen start live
   applySettings();
   try {
     const q = new URLSearchParams(location.search);
@@ -108,11 +115,20 @@ function enterGame() {
   canvas.focus();
 }
 function launchGame() {
-  if (game && startChoice && !launchedOnce) game.requestStart(startChoice);
-  launchedOnce = true;
   enterGame();
+  previewed = null;
+  if (game) game.launch();
 }
-let launchedOnce = false;
+// back to the briefing from the game (the pause menu's Change system)
+function toBriefing() {
+  const ov = $('overlay');
+  ov.hidden = true; ov.innerHTML = '';
+  launched = false;
+  if (game) { game.setPaused(false); game.launched = false; }
+  input.releaseLock();
+  $('hud').hidden = true;
+  $('briefing').hidden = false;
+}
 $('launch').addEventListener('click', launchGame);
 canvas.addEventListener('click', () => {
   if (launched && !input.locked && game && !game.map.open && $('overlay').hidden) input.requestLock();
@@ -146,7 +162,7 @@ function showPause() {
  ${mouseDiag()}
     <div class="label">System seed</div>
     <div class="seedrow"><input id="shareUrl" readonly value="${url}" aria-label="Share link"><button id="copyUrl" type="button">Copy link</button></div>
-    <div class="seedrow"><button id="resume" class="primary" type="button">Resume</button><button id="padHelp" type="button">Controls</button><button id="tests" type="button">Test scenes</button><button id="toBriefing" type="button">Change system</button></div>
+    <div class="seedrow"><button id="resume" class="primary" type="button" data-pad-back>Resume</button><button id="padHelp" type="button">Controls</button><button id="tests" type="button">Test scenes</button><button id="toBriefing" type="button">Change system</button></div>
   </div>`;
   $('setSens').oninput = (e) => { settings.sensitivity = +e.target.value; applySettings(); saveSettings(); };
   $('setFov').oninput = (e) => { settings.fov = +e.target.value; applySettings(); saveSettings(); };
@@ -159,8 +175,8 @@ function showPause() {
   };
   $('resume').onclick = resume;
   $('tests').onclick = showTests;
-  $('padHelp').onclick = () => { ov.hidden = true; ov.innerHTML = ''; if (game) { game.hud.helpTab = 'pad'; game.hud.toggleHelp(); } };
-  $('toBriefing').onclick = () => { ov.hidden = true; ov.innerHTML = ''; if (game) game.setPaused(false); launched = false; $('hud').hidden = true; $('briefing').hidden = false; };
+  $('padHelp').onclick = () => { ov.hidden = true; ov.innerHTML = ''; if (game) game.hud.toggleHelp('pad'); };
+  $('toBriefing').onclick = toBriefing;
 }
 
 // jump to the spots the lighting / exposure / carrier tests use
@@ -170,7 +186,7 @@ function showTests() {
   ov.innerHTML = `<div class="card help"><h2>Test scenes</h2>
     <div class="scenes">${TEST_SCENES.map((t, i) => `<button type="button" data-scene="${i}"><b>${t.label}</b><span>${t.note}</span></button>`).join('')}</div>
     <label class="check"><input id="meterOn" type="checkbox" ${game && game.showMeter ? 'checked' : ''}> Show the exposure readout (top of the screen)</label>
-    <div class="seedrow"><button id="testsBack" type="button">Back</button></div></div>`;
+    <div class="seedrow"><button id="testsBack" type="button" data-pad-back>Back</button></div></div>`;
   for (const el of ov.querySelectorAll('[data-scene]')) el.onclick = () => { if (game) { TEST_SCENES[+el.dataset.scene].run(game); resume(); } };
   $('meterOn').onchange = (e) => { if (game) game.showMeter = e.target.checked; };
   $('testsBack').onclick = showPause;
@@ -183,13 +199,44 @@ function resume() {
   input.requestLock();
 }
 
-// Start on a gamepad: pause, or resume from the pause menu (or close help)
+// Start on a gamepad: launch from the briefing, pause, or resume from the
+// pause menu (or close help)
 input.onPadPause = () => {
-  if (!launched || !game) return;
+  if (!game) return;
+  if (!launched) { if (!$('briefing').hidden && $('overlay').hidden) launchGame(); return; }
   const ov = $('overlay');
+  if (game.map.open) game.map.toggle();
   if (ov.hidden) { input.releaseLock(); showPause(); }
   else if (game.hud.helpOn) game.hud.toggleHelp();
   else if (ov.querySelector('#resume')) resume();
+};
+
+// The controller drives whatever menu is open (see padMenu.js) and the map;
+// otherwise it flies and walks (padLayout.js)
+const padMenu = new PadMenu();
+function openMenu() {
+  const ov = $('overlay');
+  if (!ov.hidden && ov.firstElementChild) return ov.firstElementChild;
+  if (!$('briefing').hidden) return $('briefing').querySelector('.panel');
+  return null;
+}
+input.padRouter = (ps, dt) => {
+  if (!game) return false;
+  const menu = openMenu();
+  if (!menu && !game.map.open) { padMenu.setCur(null); return false; }
+  if (ps.hits.has('START')) { input.onPadPause(); return true; }
+  if (menu) {
+    // R3: the controller layout (from the pause menu), or close it
+    if (ps.hits.has('R3') && (game.hud.helpOn || menu.querySelector('#resume'))) {
+      if (!game.hud.helpOn) { $('overlay').hidden = true; $('overlay').innerHTML = ''; }
+      game.hud.toggleHelp('pad');
+      return true;
+    }
+    padMenu.update(menu, ps, dt, input.usingPad);
+    return true;
+  }
+  game.map.padUpdate(ps, dt);
+  return true;
 };
 window.addEventListener('gamepadconnected', (e) => {
   if (game) game.message(`Controller connected · R3 or H shows its layout`, 'nav');

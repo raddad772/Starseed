@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Starseed</title>
+<title>Starseed Infinite</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=B612:ital,wght@0,400;0,700;1,400&family=B612+Mono:wght@400;700&display=swap">
@@ -64,12 +64,25 @@ canvas#view { position: fixed; inset: 0; width: 100%; height: 100%; display: blo
 #messages div.caution { border-left-color: var(--caution); color: var(--caution); }
 #prompt { position: absolute; left: 50%; top: 60%; transform: translateX(-50%); font: var(--step-0) var(--font-ui); letter-spacing: 0.1em; color: var(--ink); padding: 6px 12px; background: var(--glass); border: 1px solid var(--hair); }
 #prompt kbd { font: 700 var(--step--1) var(--font-num); color: var(--target); border: 1px solid var(--target); padding: 1px 5px; margin-right: 6px; border-radius: 2px; }
+/* controller buttons in prompts: face buttons as coloured rounds, the rest as labels */
+kbd.pb { display: inline-grid; place-items: center; min-width: 1.6em; height: 1.6em; box-sizing: border-box; padding: 0 0.45em; border-radius: 0.8em;
+  font: 700 var(--step--1)/1 var(--font-num); color: var(--ink); border: 1px solid var(--ink-dim); vertical-align: middle; }
+#prompt kbd.pb { color: var(--ink); border-color: var(--ink-dim); padding: 0 0.45em; margin-right: 8px; border-radius: 0.8em; }
+#prompt kbd.pb-a, kbd.pb-a { color: #0a1a10; background: #6ade8f; border-color: #6ade8f; padding: 0; }
+#prompt kbd.pb-b, kbd.pb-b { color: #250806; background: #ff6a5a; border-color: #ff6a5a; padding: 0; }
+#prompt kbd.pb-x, kbd.pb-x { color: #06142a; background: #5aa8ff; border-color: #5aa8ff; padding: 0; }
+#prompt kbd.pb-y, kbd.pb-y { color: #261d04; background: #f1c33a; border-color: #f1c33a; padding: 0; }
+/* the control a controller has highlighted in a menu, and the menus' back buttons' B badge */
+.using-pad .padfocus { outline: 2px solid var(--target); outline-offset: 2px; }
+.using-pad [data-pad-back]::after { content: 'B'; display: inline-grid; place-items: center; width: 1.5em; height: 1.5em; margin-left: 8px; border-radius: 50%;
+  background: #ff6a5a; color: #250806; font: 700 10px/1 var(--font-num); letter-spacing: 0; vertical-align: middle; }
 
 /* start / briefing */
 #briefing { position: fixed; inset: 0; display: flex; align-items: stretch; pointer-events: none; }
 #briefing .panel { pointer-events: auto; width: min(560px, 100%); box-sizing: border-box; padding-block: calc(28px + env(safe-area-inset-top, 0px)) 24px; padding-inline: 28px; overflow-y: auto;
   background: linear-gradient(90deg, var(--glass-strong) 0%, var(--glass-strong) 82%, rgba(5, 11, 17, 0) 100%); display: flex; flex-direction: column; gap: 18px; }
 #briefing h1 { margin: 0; font: 700 var(--step-4)/0.95 var(--font-ui); letter-spacing: 0.32em; text-wrap: balance; }
+#briefing h1 .h1sub { display: block; margin-top: 10px; font-size: 0.36em; letter-spacing: 0.9em; color: var(--target); }
 #briefing .tag { margin: 6px 0 0; color: var(--ink-dim); max-width: 46ch; }
 .startPick { display: grid; gap: 8px; }
 .startPick .label { font: 700 var(--step--1) var(--font-ui); letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-dim); }
@@ -105,10 +118,19 @@ details summary { cursor: pointer; letter-spacing: 0.12em; text-transform: upper
   pointer-events: none; display: grid; gap: 10px; transition: opacity 3s ease; text-shadow: 0 1px 12px rgba(0,0,0,0.6); }
 #titleCard.out { opacity: 0; }
 #titleCard .t1 { font: 700 var(--step-4)/1 var(--font-ui); letter-spacing: 0.42em; margin-right: -0.42em; }
+#titleCard .t1 span { display: block; margin-top: 8px; font-size: 0.34em; letter-spacing: 0.9em; margin-right: -0.9em; color: var(--ink-dim); }
 #titleCard .t2 { font: 700 var(--step-1) var(--font-ui); letter-spacing: 0.28em; text-transform: uppercase; color: var(--target); }
 #titleCard .t3 { font: var(--step-0) var(--font-ui); letter-spacing: 0.08em; color: var(--ink); }
 #titleCard .t4 { font: var(--step--1) var(--font-ui); letter-spacing: 0.06em; color: var(--ink-dim); margin-top: 18px; }
-#loading { position: fixed; right: calc(20px + env(safe-area-inset-right, 0px)); bottom: calc(20px + env(safe-area-inset-bottom, 0px)); font: var(--step--1) var(--font-num); color: var(--ink-dim); letter-spacing: 0.08em; }
+/* loading cover: hides the view while a start streams in (shows at once, fades out) */
+#loading { position: fixed; inset: 0; box-sizing: border-box; display: grid; place-items: center; padding: 16px; background: var(--void); }
+#loading.out { opacity: 0; pointer-events: none; transition: opacity 0.8s ease; }
+@media (min-width: 900px) { body:has(#briefing:not([hidden])) #loading { padding-left: 560px; } } /* centred in the view beside the briefing */
+#loading .loadbox { width: min(420px, 100%); display: grid; grid-template-columns: 1fr auto; gap: 10px 12px; align-items: baseline; }
+#loading .bar { grid-column: 1 / -1; height: 3px; background: var(--hair); overflow: hidden; }
+#loading .bar i { display: block; height: 100%; background: var(--target); transform-origin: left; transform: scaleX(0); transition: transform 0.25s linear; }
+#loading .pct { font: var(--step--1) var(--font-num); color: var(--ink-dim); }
+#errorLine { position: fixed; right: calc(20px + env(safe-area-inset-right, 0px)); bottom: calc(20px + env(safe-area-inset-bottom, 0px)); max-width: calc(100% - 40px); font: var(--step--1) var(--font-num); color: var(--warning); letter-spacing: 0.04em; }
 #fatal { position: fixed; inset: 0; display: grid; place-items: center; background: var(--void); color: var(--warning); padding: 24px; text-align: center; }
 #overlay { position: fixed; inset: 0; display: grid; place-items: center; pointer-events: none; }
 #overlay .card { pointer-events: auto; background: var(--glass-strong); border: 1px solid var(--hair); padding: 22px 26px; max-width: min(520px, calc(100% - 32px)); display: grid; gap: 12px; }
@@ -137,7 +159,7 @@ select { font: 400 var(--step--1) var(--font-ui); color: var(--ink); background:
 <script type="importmap">{ "imports": { "three": "./vendor/three.module.js" } }</script>
 </head>
 <body>
-<canvas id="view" tabindex="0" aria-label="Starseed view"></canvas>
+<canvas id="view" tabindex="0" aria-label="Starseed Infinite view"></canvas>
 <div id="hud" hidden>
   <canvas id="hudCanvas"></canvas>
   <div id="flightData" class="cluster"></div>
@@ -146,11 +168,17 @@ select { font: 400 var(--step--1) var(--font-ui); color: var(--ink); background:
   <div id="messages" aria-live="polite"></div>
   <div id="prompt" hidden></div>
 </div>
+<div id="loading" hidden>
+  <div class="loadbox" role="progressbar" aria-labelledby="loadText" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+    <div id="loadText" class="label"></div><div class="pct num"></div>
+    <div class="bar"><i></i></div>
+  </div>
+</div>
 <div id="mapLabels" hidden></div>
 <div id="briefing">
   <div class="panel">
     <div>
-      <h1>STARSEED</h1>
+      <h1>STARSEED<span class="h1sub">INFINITE</span></h1>
       <p class="tag">One star system, grown from a seed: planets formed from a disk, worlds you can walk on, fly across and fall into.</p>
     </div>
     <div class="seedrow">
@@ -189,8 +217,8 @@ select { font: 400 var(--step--1) var(--font-ui); color: var(--ink); background:
   </div>
 </div>
 <div id="overlay" hidden></div>
-<div id="loading" hidden></div>
-<noscript><div id="fatal">Starseed needs JavaScript and WebGL 2.</div></noscript>
+<div id="errorLine" hidden></div>
+<noscript><div id="fatal">Starseed Infinite needs JavaScript and WebGL 2.</div></noscript>
 <script type="module" src="./src/main.js"></script>
 </body>
 </html>
