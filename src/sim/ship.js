@@ -45,6 +45,7 @@ const _sa1 = new THREE.Vector3(), _sa2 = new THREE.Vector3(), _vs = new THREE.Ve
 const _f1 = new THREE.Vector3(), _f2 = new THREE.Vector3(), _fq = new THREE.Quaternion(), _fq2 = new THREE.Quaternion();
 const _c1 = new THREE.Vector3(), _c2 = new THREE.Vector3(), _c3 = new THREE.Vector3(), _c4 = new THREE.Vector3(), _cn = new THREE.Vector3();
 const _grav = new THREE.Vector3();
+const _m4 = new THREE.Matrix4();
 const AHEAD_N = 12; // terrain samples along the ground track
 
 export class Ship {
@@ -108,6 +109,12 @@ export class Ship {
     this.legAttach = null;
     this.legLength = type.legLength || 0;
     this.ftl = null; // set by the game
+    // Autopilot command (nav computer), refreshed every frame while engaged:
+    //   vel   commanded velocity, body-centred inertial (free flight)
+    //   nose / up   wanted attitude, inertial axes
+    //   lvel / lnose / lup   the same in a host's deck frame (pads, hangars)
+    //   move  lift off the legs / undock;  land  touch down when legs meet ground
+    this.auto = null;
     this.hullRating = type.hullRating;
   }
 
@@ -295,6 +302,10 @@ export class Ship {
 
   enterRails() {
     this.rails = true;
+    // coasting: the velocity FULL assist was holding is history; it holds
+    // whatever the ship is doing when it comes off the rails (it used to burn
+    // back to the pre-warp velocity, km/s away after an orbit's worth of warp)
+    this.targetFrame = 'none';
     this.railR0 = this.pos.toArray();
     this.railV0 = this.vel.toArray();
     this.railT0 = this.game.t;
@@ -337,7 +348,72 @@ export class Ship {
   // pilot input that should lift a parked / docked ship off its legs
   wantsMove() {
     const c = this.ctrl;
-    return c.lift > 0 || c.fwd !== 0 || c.strafe !== 0;
+    return c.lift > 0 || c.fwd !== 0 || c.strafe !== 0 || !!(this.auto && this.auto.move);
+  }
+
+  // Body rates (ship axes) that turn the ship toward an attitude: nose and up
+  // in the frame q is measured in (inertial with this.quat, a host's with lquat)
+  attitudeRates(q, nose, up, out) {
+    const back = _f1.copy(nose).negate().normalize();
+    const right = _f2.copy(up).cross(back);
+    if (right.lengthSq() < 1e-8) right.set(1, 0, 0).cross(back);
+    right.normalize();
+    const upO = _c1.copy(back).cross(right);
+    const qd = _fq2.setFromRotationMatrix(_m4.makeBasis(right, upO, back));
+    const qe = _fq.copy(q).invert().multiply(qd); // error rotation, ship axes
+    if (qe.w < 0) { qe.x = -qe.x; qe.y = -qe.y; qe.z = -qe.z; qe.w = -qe.w; }
+    const sinH = Math.sqrt(qe.x * qe.x + qe.y * qe.y + qe.z * qe.z);
+    const ang = 2 * Math.atan2(sinH, qe.w);
+    const k = this.big ? 0.12 : 1.1; // 1/s
+    if (sinH < 1e-9) return out.set(0, 0, 0);
+    out.set(qe.x, qe.y, qe.z).multiplyScalar(ang * k / sinH);
+    const L = this.limits.rate;
+    out.set(THREE.MathUtils.clamp(out.x, -L.x, L.x), THREE.MathUtils.clamp(out.y, -L.y, L.y), THREE.MathUtils.clamp(out.z, -L.z, L.z));
+    return out;
+  }
+
+  // The body rates (ship axes, rad/s) the rate-damped assists hold: the
+  // pilot's stick, plus under FULL assist near a surface the turn of the
+  // local horizon, wing levelling and the landing flare. feedback: false
+  // leaves out the terms that steer by the present attitude (unstable over
+  // the long rotation steps of time warp)
+  rateCommand(out, feedback = true) {
+    const c = this.ctrl, L = this.limits;
+    const A = this.auto;
+    if (A && A.nose && !this.parent) return feedback ? this.attitudeRates(this.quat, A.nose, A.up, out) : out.set(0, 0, 0);
+    const prec = c.precision ? 0.2 : 1;
+    const tr = out.set(c.pitch * L.rate.x, c.yaw * L.rate.y, c.roll * L.rate.z).multiplyScalar(prec);
+    // FULL assist near a surface holds attitude relative to the local
+    // horizon, not the stars: add the rate at which the local-level frame
+    // turns (planet spin plus the transport rate over the curved surface)
+    if (this.assist === 2 && this.targetFrame === 'surface' && !this.landed) {
+      const wLL = _sa2.copy(this.pos).cross(this.surfaceVel(_sa1)).divideScalar(this.pos.lengthSq()).add(this.body.omega);
+      tr.add(wLL.applyQuaternion(_q2.copy(this.quat).invert()));
+    }
+    // FULL assist coasting through time warp with a pilot aboard: hold the
+    // attitude relative to the flight path as gravity turns it, as the
+    // velocity hold does at 1x (point at a planet, warp, still pointing at it)
+    if (this.assist === 2 && this.rails && this.pilotPresent) {
+      const v2 = this.vel.lengthSq();
+      if (v2 > 1) {
+        const r = this.pos.length();
+        const a = _sa1.copy(this.pos).multiplyScalar(-this.body.GM / (r * r * r));
+        tr.add(_sa2.copy(this.vel).cross(a).divideScalar(v2).applyQuaternion(_q2.copy(this.quat).invert()));
+      }
+    }
+    // FULL assist near a surface: auto-level the wings when not rolling
+    if (feedback && this.assist === 2 && c.roll === 0 && this.targetFrame === 'surface' && !this.landed) {
+      const up = _v2.copy(this.pos).normalize().applyQuaternion(_q1.copy(this.quat).invert());
+      const fwd = _v3.set(0, 0, -1);
+      if (Math.abs(up.dot(fwd)) < 0.9) tr.z += THREE.MathUtils.clamp(-up.x * 1.4, -0.8, 0.8);
+      // auto-flare: while the ground guard is holding the ship off the
+      // terrain, level the nose so the strong belly thrusters face down
+      if (this._guardActive && c.pitch === 0) {
+        const pitch = Math.asin(THREE.MathUtils.clamp(-up.z, -1, 1));
+        tr.x += THREE.MathUtils.clamp(-pitch * 1.6, -0.9, 0.9);
+      }
+    }
+    return tr;
   }
 
   // Computes this frame's commanded thrust (ship-local, N) and torque (ship-local, N m)
@@ -353,26 +429,7 @@ export class Ship {
     if (this.assist === 0) {
       outTorque.set(c.pitch * L.alpha.x * I.x * prec, c.yaw * L.alpha.y * I.y * prec, c.roll * L.alpha.z * I.z * prec);
     } else {
-      const tr = _v1.set(c.pitch * L.rate.x, c.yaw * L.rate.y, c.roll * L.rate.z).multiplyScalar(prec);
-      // FULL assist near a surface holds attitude relative to the local
-      // horizon, not the stars: add the rate at which the local-level frame
-      // turns (planet spin plus the transport rate over the curved surface)
-      if (this.assist === 2 && this.targetFrame === 'surface' && !this.landed) {
-        const wLL = _sa2.copy(this.pos).cross(this.surfaceVel(_sa1)).divideScalar(this.pos.lengthSq()).add(this.body.omega);
-        tr.add(wLL.applyQuaternion(_q2.copy(this.quat).invert()));
-      }
-      // FULL assist near a surface: auto-level the wings when not rolling
-      if (this.assist === 2 && c.roll === 0 && this.targetFrame === 'surface' && !this.landed) {
-        const up = _v2.copy(this.pos).normalize().applyQuaternion(_q1.copy(this.quat).invert());
-        const fwd = _v3.set(0, 0, -1);
-        if (Math.abs(up.dot(fwd)) < 0.9) tr.z += THREE.MathUtils.clamp(-up.x * 1.4, -0.8, 0.8);
-        // auto-flare: while the ground guard is holding the ship off the
-        // terrain, level the nose so the strong belly thrusters face down
-        if (this._guardActive && c.pitch === 0) {
-          const pitch = Math.asin(THREE.MathUtils.clamp(-up.z, -1, 1));
-          tr.x += THREE.MathUtils.clamp(-pitch * 1.6, -0.9, 0.9);
-        }
-      }
+      const tr = this.rateCommand(_v1);
       const tc = this.big ? 2.5 : 0.18;
       outTorque.set(
         THREE.MathUtils.clamp((tr.x - this.angVel.x) / tc, -L.alpha.x, L.alpha.x) * I.x,
@@ -391,7 +448,8 @@ export class Ship {
     }
     // FULL: velocity hold in the reference frame. A parked ship has nothing
     // to hold: it stays on its legs until the pilot commands a move.
-    if (this.landed && c.lift <= 0 && !c.fwd && !c.strafe) {
+    const A = this.auto;
+    if (this.landed && c.lift <= 0 && !c.fwd && !c.strafe && !(A && A.move)) {
       this.cruise = this.slip = this.climb = 0;
       this.heatLimited = false;
       this.targetFrame = 'surface';
@@ -408,7 +466,21 @@ export class Ship {
     else vRel.copy(this.vel);
     const qinv = _q1.copy(this.quat).invert();
     const approach = (x, target, rate) => x + THREE.MathUtils.clamp(target - x, -rate * dt, rate * dt);
-    if (frame === 'surface') {
+    if (A) {
+      // the nav computer: its velocity, carried into this frame
+      if (frame === 'surface') this.targetVel.copy(A.vel).sub(this.frameVel(_v3));
+      else if (ref) this.targetVel.copy(A.vel).sub(ref.getWorldVel(_v3).sub(b.vel));
+      else this.targetVel.copy(A.vel);
+      this.targetFrame = frame;
+      const legsDown = this.legState[0] + this.legState[1] + this.legState[2] + this.legState[3];
+      this.touchdown = false;
+      if (A.land && legsDown > 0 && vRel.length() < 4) {
+        outForce.set(0, 0, 0);
+        outTorque.set(-this.angVel.x * this.I.x * 1.5, -this.angVel.y * this.I.y * 1.5, -this.angVel.z * this.I.z * 1.5);
+        this.touchdown = true;
+        return;
+      }
+    } else if (frame === 'surface') {
       // helicopter-style: climb rate and slip spring back to zero, horizontal
       // cruise speed persists and follows the nose as the ship turns
       const up = _v3.copy(this.pos).normalize();
@@ -826,8 +898,9 @@ export class Ship {
     if (this.assist === 0) {
       outTorque.set(c.pitch * L.alpha.x * I.x * prec, c.yaw * L.alpha.y * I.y * prec, c.roll * L.alpha.z * I.z * prec);
     } else {
-      const tr = _v1.set(c.pitch * L.rate.x, c.yaw * L.rate.y, c.roll * L.rate.z).multiplyScalar(prec);
-      if (this.assist === 2 && !this.attached) {
+      const A = this.auto;
+      const tr = A && A.lnose ? this.attitudeRates(this.lquat, A.lnose, A.lup, _v1) : _v1.set(c.pitch * L.rate.x, c.yaw * L.rate.y, c.roll * L.rate.z).multiplyScalar(prec);
+      if (this.assist === 2 && !this.attached && !(A && A.lnose)) {
         // hover mode over a deck: level wings and nose whenever not commanded
         if (c.roll === 0 && Math.abs(upL.z) < 0.9) tr.z += THREE.MathUtils.clamp(-upL.x * 1.4, -0.8, 0.8);
         if (c.pitch === 0) tr.x += THREE.MathUtils.clamp(-Math.asin(THREE.MathUtils.clamp(-upL.z, -1, 1)) * 1.2, -0.7, 0.7);
@@ -859,6 +932,23 @@ export class Ship {
     fwdH.normalize();
     const rightH = _nose.copy(fwdH).cross(up).normalize();
     const vRel = this.lvel;
+    const A = this.auto;
+    if (A && A.lvel) {
+      // the nav computer, in the deck frame
+      const legsDown = this.legState[0] + this.legState[1] + this.legState[2] + this.legState[3];
+      this.targetFrame = 'deck';
+      if (A.land && legsDown > 0 && vRel.length() < 3) {
+        outTorque.set(-this.lang.x * I.x * 1.5, -this.lang.y * I.y * 1.5, -this.lang.z * I.z * 1.5);
+        this.touchdown = true;
+        return;
+      }
+      this.touchdown = false;
+      const reqA = _v2.copy(A.lvel).sub(vRel).divideScalar(0.6);
+      reqA.y += g;
+      const flA = reqA.multiplyScalar(m).applyQuaternion(qi);
+      outForce.set(THREE.MathUtils.clamp(flA.x, -L.lateral, L.lateral), THREE.MathUtils.clamp(flA.y, -L.down, L.belly), THREE.MathUtils.clamp(flA.z, -L.main, L.retro));
+      return;
+    }
     if (this.targetFrame !== 'deck') {
       this.cruise = vRel.dot(fwdH); this.slip = vRel.dot(rightH); this.climb = vRel.y;
       this.targetFrame = 'deck';

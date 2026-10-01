@@ -21,6 +21,7 @@ import { VESSEL_TYPES, insideBox } from './sim/vesselTypes.js';
 import { makeInterior } from './sim/interiors.js';
 import { Player, lookQuat } from './sim/player.js';
 import { FTL, lockRadius } from './sim/ftl.js';
+import { NavComputer } from './sim/navComputer.js';
 import { ShipVisual } from './render/shipVisual.js';
 import { BigShipVisual } from './render/bigShipVisual.js';
 import { LightRig } from './render/lightRig.js';
@@ -61,6 +62,7 @@ export class Game {
     this.vessels = [];
     this.ship = this.addVessel('shuttle', 'Wayfarer', 'SV-27');
     this.player = new Player(this);
+    this.nav = new NavComputer(this, this.ship);
     this.player.vessel = this.ship;
     this.hud = new Hud(this);
     this.quick = new QuickMenu(this);
@@ -294,6 +296,7 @@ export class Game {
 
   applyStart(key) {
     this.startPending = null;
+    if (this.nav) this.nav.disengage(null);
     this.openingBody = null;
     this.loadHold = false;
     this.startToken = (this.startToken || 0) + 1;
@@ -742,6 +745,7 @@ export class Game {
     if (input.hit('KeyK')) { this.showSites = !this.showSites; this.message(this.showSites ? 'Settlement survey overlay on' : 'Settlement survey overlay off'); }
     if (input.hit('KeyH')) this.hud.toggleHelp();
     if (input.hit('KeyP')) this.player.recallSeat();
+    if (input.hit('KeyN')) this.nav.toggle();
     const v = this.piloted;
     if (v) {
       if (input.hit('KeyZ')) this.cycleAssist();
@@ -796,6 +800,12 @@ export class Game {
     for (const v of this.vessels) { const c = v.ctrl; c.fwd = c.strafe = c.lift = c.pitch = c.yaw = c.roll = 0; c.boost = c.brake = false; }
     const pv = this.piloted;
     if (pv) this.pilotControls(pv, dtReal, mouse);
+    // the nav computer flies (and any flight input from the pilot ends that)
+    if (this.nav.active && pv === this.nav.ship) {
+      const c = pv.ctrl;
+      if (c.fwd || c.strafe || c.lift || c.roll || c.brake || pv.stick.length() > 0.35) this.nav.disengage('Nav computer off: manual control');
+    }
+    this.nav.update(dtReal);
     // warp guard: thrust input or atmosphere drops rails warp
     if (warp > 4) {
       const why = this.warpBlocker();
@@ -860,15 +870,21 @@ export class Game {
     if (s.ftl.state === 'cruise') { c.pitch *= 0.35; c.yaw *= 0.35; c.roll *= 0.5; }
   }
 
-  // rotation integration while coasting on rails or carried by the FTL bubble
+  // Rotation while coasting on rails or carried by the FTL bubble. Time warp
+  // takes steps of seconds, far longer than the rate damper's 0.18 s, so the
+  // body rates move toward the commanded rates by at most what the thrusters
+  // can do in the step and never past them (an explicit step overshot, and
+  // any residual rate grew into a spin)
   rotateOnly(s, dt) {
-    const F = _v1, T = _v2;
-    const save = s.assist;
-    s.assist = 1;
-    s.computeControl(dt, F, T);
-    s.assist = save;
-    const I = s.I, w = s.angVel;
-    w.x += T.x / I.x * dt; w.y += T.y / I.y * dt; w.z += T.z / I.z * dt;
+    const w = s.angVel, L = s.limits;
+    if (s.assist === 0) {
+      const c = s.ctrl;
+      w.x += c.pitch * L.alpha.x * dt; w.y += c.yaw * L.alpha.y * dt; w.z += c.roll * L.alpha.z * dt;
+    } else {
+      const tr = s.rateCommand(_v1, dt < 0.1);
+      const step = (cur, want, a) => cur + THREE.MathUtils.clamp(want - cur, -a * dt, a * dt);
+      w.set(step(w.x, tr.x, L.alpha.x), step(w.y, tr.y, L.alpha.y), step(w.z, tr.z, L.alpha.z));
+    }
     const wl = w.length();
     if (wl > 1e-9) { _q1.setFromAxisAngle(_v3.copy(w).divideScalar(wl), wl * dt); s.quat.multiply(_q1).normalize(); }
     s.thrustLocal.set(0, 0, 0);
@@ -887,7 +903,7 @@ export class Game {
 
   // a vessel inside a host's space: docked (ride along) or flying in its frame
   stepChild(v, h) {
-    if (v.attached && !(v === this.piloted && v.wantsMove())) { v.holdAttached(); return; }
+    if (v.attached && !((v === this.piloted || v.auto) && v.wantsMove())) { v.holdAttached(); return; }
     const F = this._cf || (this._cf = new THREE.Vector3());
     const T = this._ct || (this._ct = new THREE.Vector3());
     v.computeControlLocal(h, F, T);
@@ -915,7 +931,7 @@ export class Game {
     const inSpace = v.altitude > (v.body.atm ? v.body.atmHeight * 1.02 : 0) && v.altitude > v.safeAltitude();
     if (!inSpace) return 'physics';
     if (highWarp) return 'rails';
-    if (v === this.piloted) return (!v.wantsForce() && v.assist !== 2) ? 'rails' : 'physics';
+    if (v === this.piloted || v.auto) return (!v.wantsForce() && v.assist !== 2) ? 'rails' : 'physics';
     // nobody at the controls: it just keeps its course
     return 'rails';
   }
@@ -938,10 +954,10 @@ export class Game {
       else if (v._mode !== 'ftl') v.rails = false;
       if (v._mode === 'physics') physics = true;
     }
-    for (const v of kids) if (!v.attached || (v === this.piloted && v.wantsMove())) physics = true;
+    for (const v of kids) if (!v.attached || ((v === this.piloted || v.auto) && v.wantsMove())) physics = true;
     // a piloted ship can leave its legs or its rails at any moment: its
     // contacts need fine steps from the first one (they are stiff springs)
-    if (physics || (this.piloted && !highWarp)) n = Math.max(n, Math.min(64, Math.ceil(dt / PHYS_DT)));
+    if (physics || ((this.piloted || this.ship.auto) && !highWarp)) n = Math.max(n, Math.min(64, Math.ceil(dt / PHYS_DT)));
     n = Math.min(400, n);
     const h = dt / n;
     for (let i = 0; i < n; i++) {
@@ -950,7 +966,7 @@ export class Game {
       let abort = false;
       for (const v of roots) {
         if (v.dead) continue;
-        if (v._mode === 'landed') { if (v === this.piloted) this.stepVessel(v, h); else v.syncLanded(); }
+        if (v._mode === 'landed') { if (v === this.piloted || v.auto) this.stepVessel(v, h); else v.syncLanded(); }
         else if (v._mode === 'rails') abort = this.railStep(v, h) || abort;
         else if (v._mode === 'physics') {
           this.stepVessel(v, h);
@@ -1243,6 +1259,7 @@ export class Game {
 
   respawn() {
     this.deathShown = false;
+    this.nav.disengage(null);
     const ri = this.respawnInfo;
     const b = ri.body;
     for (const v of this.vessels) { v.ftl.state = 'idle'; v.ftl.speed = 0; }

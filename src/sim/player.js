@@ -22,6 +22,10 @@ const JET_ACCEL_SURF = 1.55; // multiples of local g available to the jetpack, m
 const JET_TIME = 4.5;        // seconds of full burn
 const EVA_ACCEL = 1.6;
 const PLATING_G = 9.81;
+const EVA_AGL = 4000;        // m above the ground: spacewalk physics above, on-foot falling below
+// keys that move you: held across stepping out of a flying ship they count
+// only once released (W down the ramp must not become a jetpack burn)
+const MOVE_KEYS = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'KeyC', 'KeyQ', 'KeyE', 'ShiftLeft'];
 
 const _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3(), _v4 = new THREE.Vector3();
 const _q1 = new THREE.Quaternion(), _q2 = new THREE.Quaternion();
@@ -153,6 +157,11 @@ export class Player {
 
   update(dt, input, mouse) {
     this.prompt = null;
+    if (this.moveLatch) {
+      const held = MOVE_KEYS.some((k) => input.down(k)) || Object.values(input.padAxes || {}).some((a) => Math.abs(a) > 0.2);
+      if (held) input = this.latchedInput(input);
+      else this.moveLatch = false;
+    }
     this.fade = Math.max(0, this.fade - dt * 1.6);
     // the walking / EVA updates light it while thrusting; a seat never does
     // (it used to stay lit after boarding or a P recall mid-burn: a
@@ -163,6 +172,21 @@ export class Player {
     else if (this.mode === 'surface') this.updateSurface(dt, input, mouse);
     else this.updateEva(dt, input, mouse);
     if (this.grounded && this.mode !== 'seat') this.jetFuel = Math.min(1, this.jetFuel + dt / 2.5);
+  }
+
+  // input with the movement keys and stick released (see moveLatch)
+  latchedInput(input) {
+    return {
+      axis: () => 0,
+      down: (c) => !MOVE_KEYS.includes(c) && input.down(c),
+      hit: (c) => c !== 'Space' && input.hit(c),
+      get buttons() { return input.buttons; },
+    };
+  }
+
+  // height of a body-centred point over the ground under it
+  heightOverGround(b, p) {
+    return p.length() - b.R - Math.max(0, b.groundHeight(_v4.copy(p).applyQuaternion(b.qInv).normalize()));
   }
 
   updateSeat(dt, input, mouse) {
@@ -302,10 +326,11 @@ export class Player {
     const vLocal = _v2.copy(v.angVel).cross(this.sPos).add(this.sVel);
     const vW = _v3.copy(vLocal).applyQuaternion(v.quat).add(v.vel);
     const headW = this.heading.clone().applyQuaternion(v.quat);
-    const alt = pW.length() - b.R;
     this.body = b;
     this.vessel = null;
-    if (b.solid && alt < 4000) {
+    // out of a ship in flight: what you were holding to walk out moves nothing yet
+    if (!v.landed) this.moveLatch = true;
+    if (b.solid && this.heightOverGround(b, pW) < EVA_AGL) {
       this.mode = 'surface';
       this.fPos.copy(pW).applyQuaternion(b.qInv);
       // inertial -> rotating-frame velocity
@@ -371,9 +396,14 @@ export class Player {
         this.grounded = false;
       }
     } else {
-      // air control + gravity + jetpack
-      const ac = mv.clone().sub(vt).multiplyScalar(0.6 * dt);
-      this.fVel.add(ac);
+      // air control (steering a jump against the air: only with input, and
+      // none in a vacuum, where the jetpack is all you have) + gravity + jetpack
+      const grip = Math.min(1, atm.density / 0.5);
+      if (mv.lengthSq() > 0 && grip > 0) {
+        const ac = mv.clone().sub(vt).multiplyScalar(0.6 * grip);
+        if (ac.length() > 3) ac.setLength(3);
+        this.fVel.addScaledVector(ac, dt);
+      }
       this.fVel.addScaledVector(up, -g * dt);
       // atmospheric drag (human body CdA ~ 0.6 m^2, 85 kg)
       const rho = atm.density;
@@ -425,7 +455,7 @@ export class Player {
       if (dist > 250 && ship.landed) this.prompt = { key: 'B', text: 'Summon ship' };
     } else if (ship && !ship.dead && input.hit('KeyB')) this.game.summonShip();
     // leave the surface regime when high up (switch to inertial EVA physics)
-    if (this.fPos.length() - b.R > 6000) this.toEva();
+    if (this.fPos.length() - b.R - Math.max(0, gh2) > EVA_AGL + 2000) this.toEva(); // (hysteresis against the switch back)
   }
 
   // The lowered ramp is walkable ground: stand on it when inside its footprint
@@ -568,7 +598,8 @@ export class Player {
     for (const c of b.children) if (this.ePos.clone().sub(c.relPos).length() < c.soi) { this.changeBody(c); break; }
     // drop back to surface physics near the ground
     const bb = this.body;
-    if (bb.solid && this.ePos.length() - bb.R < 4000) {
+    const relief = bb.data.terrain ? bb.data.terrain.relief * 1.6 : 0;
+    if (bb.solid && this.ePos.length() - bb.R < relief + EVA_AGL && this.heightOverGround(bb, this.ePos) < EVA_AGL) {
       this.fPos.copy(this.ePos).applyQuaternion(bb.qInv);
       this.fVel.copy(this.eVel).sub(_v1.copy(bb.omega).cross(this.ePos)).applyQuaternion(bb.qInv);
       const up = this.fPos.clone().normalize();

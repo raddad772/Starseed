@@ -1,8 +1,8 @@
 # Starseed Infinite
 
-A procedural star system you can play in the browser: planets formed from a disk, worlds you can walk
-on, fly across and fall into, and big ships you can dock with and explore in flight. Every system grows
-from a seed.
+Procedural star systems you can play in the browser: planets formed from a disk, worlds you can walk on,
+fly across and fall into, and big ships you can dock with and explore in flight. Every system grows from
+a seed.
 
 **Play:** https://raddad772.github.io/Starseed/ (try `?seed=FSPB-8DTW`)
 

@@ -27,6 +27,14 @@ function fmtP(p) {
   return p.toFixed(p < 10 ? 2 : 0) + ' bar';
 }
 
+// a rough time to go: "~40 s", "~3 min", "~1 h 20 min"
+function fmtEta(sec) {
+  if (!isFinite(sec)) return '—';
+  if (sec < 60) return `~${Math.max(5, Math.round(sec / 5) * 5)} s`;
+  if (sec < 3600) return `~${Math.round(sec / 60)} min`;
+  return `~${Math.floor(sec / 3600)} h ${Math.round((sec % 3600) / 60)} min`;
+}
+
 export class Hud {
   constructor(game) {
     this.game = game;
@@ -154,6 +162,7 @@ export class Hud {
       <kbd>T</kbd><span>Target what's under the reticle</span><kbd>V</kbd><span>Cockpit · chase · landing view</span>
       <kbd>G / R / L</kbd><span>Gear · ramp · floodlights</span><kbd>J</kbd><span>FTL drive</span>
       <kbd>, / .</kbd><span>Time warp</span><kbd>M</kbd><span>System map</span>
+      <kbd>N</kbd><span>Nav computer: fly to the target, door to door (any flight input takes over)</span>
       <kbd>\`</kbd><span>Quick menu: ship systems, targets, routes, time (1-9 pick, Backspace back)</span>
       <kbd>K</kbd><span>Settlement survey markers</span><kbd>B</kbd><span>Summon ship</span>
       <kbd>Right mouse / Alt</kbd><span>Free look from the pilot seat</span><kbd>Esc</kbd><span>Pause</span></div>`;
@@ -319,6 +328,8 @@ export class Hud {
     if (piloting && lock && g.ftl.state !== 'cruise') nrow('Mass lock', `${lock.body.data.name} +${((lock.lock - lock.dist) / 1000).toFixed(0)} km`, 'c-caution');
     nrow('Time warp', `×${g.warp.toLocaleString()}`, g.warp > 1 ? 'c-nav' : '');
     nrow('Mission day', (g.t / 86400).toFixed(2));
+    const ns = g.nav.status();
+    if (ns) { nrow('Nav computer', ns.phase, 'c-nav'); nrow('Going to', ns.dest, 'c-nav'); nrow('Time to go', fmtEta(ns.eta), 'c-nav'); }
     if (g.showSites) {
       const res = g.settlements.get(body.id);
       nrow('Survey', res ? `${res.sites.length} ${res.habitable ? 'city' : 'outpost'} sites` : 'surveying…', 'c-ok');
@@ -357,6 +368,8 @@ export class Hud {
       if (p.mode === 'ship' && p.vessel.big) chip(g.route ? `ROUTE · ${g.route.label.toUpperCase()} · ${tab} NEXT` : `${tab} · FIND YOUR WAY`, g.route ? 'nav' : '');
     }
     if (g.warp > 1) chip(`WARP ×${g.warp.toLocaleString()}`, 'nav');
+    const ns = g.nav.status();
+    if (ns) chip(`NAV · ${ns.phase.toUpperCase()} · ${fmtEta(ns.eta)}`, 'nav');
     if (p.mode !== 'seat' && p.lastSeat && !p.lastSeat.vessel.dead) chip(`${this.keyName('KeyP', 'P')} · ${p.lastSeat.vessel.name.toUpperCase()} SEAT`);
     chip(`${this.keyName('KeyH', 'H')} HELP`);
     this.strip.innerHTML = chips.join('');
@@ -407,6 +420,7 @@ export class Hud {
       if (!s.big) this.drawDockingGuides();
     }
     if (g.target) this.drawTarget(g.target);
+    this.drawNav();
     if (p.mode === 'ship') this.drawRoute();
     if (g.showMeter) this.drawMeter();
   }
@@ -729,6 +743,34 @@ export class Hud {
         ctx.fillText(`${h.name.toUpperCase()} ${z.name.toUpperCase()} · ${U.fmtDist(dist)}${state === 2 ? ' · OCCUPIED' : ''}`, pt.x + r * 1.7 + 4, pt.y);
       }
     }
+  }
+
+  // the nav computer's next point: a magenta diamond (an edge arrow off screen)
+  drawNav() {
+    const st = this.game.nav.status();
+    if (!st || !st.aim) return;
+    const ctx = this.ctx;
+    const pt = this.project(st.aim, {});
+    const cx = this.w / 2, cy = this.h / 2;
+    let x = pt.x, y = pt.y;
+    ctx.strokeStyle = COL.nav; ctx.fillStyle = COL.nav;
+    if (pt.behind || x < 30 || x > this.w - 30 || y < 30 || y > this.h - 30) {
+      let dx = x - cx, dy = y - cy;
+      if (pt.behind) { dx = -dx; dy = -dy; }
+      const a = Math.atan2(dy, dx);
+      const rx = this.w / 2 - 70, ry = this.h / 2 - 70;
+      const k = Math.min(rx / Math.abs(Math.cos(a) || 1e-6), ry / Math.abs(Math.sin(a) || 1e-6));
+      x = cx + Math.cos(a) * k; y = cy + Math.sin(a) * k;
+      ctx.save(); ctx.translate(x, y); ctx.rotate(a);
+      ctx.beginPath(); ctx.moveTo(12, 0); ctx.lineTo(-7, -8); ctx.lineTo(-7, 8); ctx.closePath(); ctx.fill();
+      ctx.restore();
+    } else {
+      ctx.beginPath(); ctx.moveTo(x, y - 9); ctx.lineTo(x + 9, y); ctx.lineTo(x, y + 9); ctx.lineTo(x - 9, y); ctx.closePath(); ctx.stroke();
+      ctx.beginPath(); ctx.arc(x, y, 2, 0, Math.PI * 2); ctx.fill();
+    }
+    const d = st.aim.distanceTo(this.game.camPos);
+    const tx = Math.min(Math.max(x + 14, 8), this.w - 280);
+    ctx.fillText(`NAV · ${st.aimLabel} · ${U.fmtDist(d)}`, tx, y - 4);
   }
 
   drawTarget(tgt) {

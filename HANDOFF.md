@@ -247,6 +247,46 @@ shows controller configs can be complex (an open design question: see the queue)
   `Game.startAtSpot` (cover held with `loadHold` until the survey resolves; `startToken` drops stale
   results) -> `startOnSurface(b, dir, spot)` (morning if the sun is under 10 deg; respawn there).
 
+## Falling-shuttle fix (uncommitted, verified in a test tab on seed Q9W6-WDJZ, moon Tearess)
+
+Dave (playing on GitHub Pages): stepping off the falling shuttle, "the shuttle zooms away way too fast".
+Causes: (1) keys held to walk down the ramp (W, Space) became EVA jetpack thrust the moment you left;
+(2) on-foot free fall braked your horizontal speed relative to the ground even with no input and no
+air; (3) EVA <-> on-foot switched at 4 km above the mean radius, not the ground (high terrain: you
+could sink into it). Fixes in player.js: `moveLatch` (set by `exitVessel` when the ship isn't landed;
+movement keys/stick count only after release), air control only with input and scaled by air density
+(capped 3 m/s^2), `EVA_AGL` = 4000 m over the ground both ways (+2 km hysteresis to go back to EVA).
+
+## Time-warp attitude fix (uncommitted, verified in a test tab)
+
+Dave: pointing at a planet with FULL assist, "if I warp time, it starts pointing away from my current
+vector; if I warp it severely I spin all around". Causes: (1) `Game.rotateOnly` (rails / FTL rotation)
+integrated the 0.18 s rate damper explicitly with multi-second warp steps -> residual rates grew into a
+spin; (2) rails coast ballistically while FULL assist held an inertial attitude, and on leaving rails the
+stale `targetVel` made the ship burn (7.5 g, km/s) back to its pre-warp velocity. Fixes: `Ship.rateCommand
+(out, feedback)` (pilot rates + FULL terms; attitude-feedback terms only when the step < 0.1 s);
+rotateOnly moves rates toward it by at most alpha*dt (no overshoot); `enterRails` sets targetFrame 'none'
+(re-based on exit); on rails with a pilot aboard FULL adds the flight-path turn rate (v x g)/|v|^2.
+
+## Nav computer v1 (uncommitted; verified in a test tab, seed FSPB-8DTW)
+
+`src/sim/navComputer.js` (one instance, `game.nav`, for the Wayfarer only; N / D-pad Right / quick menu
+"Nav computer"). Phases depart -> climb -> align/spool/cruise (FTL legs; `plan()` routes around every
+lock sphere incl. the star's 5R; `ftl.nav = { aim, legLimit }` overrides the drive's target) ->
+descend/hop -> land, or approach -> dock (pad or hangar). Ship hooks: `ship.auto` {vel (abs inertial),
+nose/up, lvel/lnose/lup (deck frame), move, land} consumed by computeControl / computeControlLocal /
+rateCommand (`attitudeRates`). `avoidHazards` strips velocity toward any body / big ship within the
+stopping horizon. Verified: orbit start -> Halyard pad (2 FTL legs, around Moadeal); Halyard pad ->
+Bastion hangar; Bastion hangar -> Nahasia lava shore (140 km powered descent, landed); Moadeal
+surface -> Halyard (heat-limited climb, hull peak 693 K); Halyard -> Eldnedunt orbit was mid-FTL when
+Dave stopped the test. Not tested: same-world hop, player walking in the cabin while it flies.
+
+Dave's next asks (2026-10-01): per-ship agents (each ship its own nav computer and state: parked in
+orbit / in space / on a planet / navigating; several ships on different trips at once), commanded from
+the in-suit interface (virtual screen); speed limit, warp limit, no-FTL time-compressed journeys,
+automatic time compression; waypoints on planets with defaults at the start screen's sites; orbit is a
+valid destination; later space stations and starships as destinations.
+
 After a reboot: restart the dev server (`preview_start` with launch config `starseed`, or
 `python3 tools/serve.py 8765` in ~/dev/starseed).
 

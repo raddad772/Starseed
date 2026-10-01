@@ -39,7 +39,13 @@ export class FTL {
     this.effect = 0; // 0..1 visual intensity
     this.spoolTime = ship.big ? 15 : 5;
     this.coolTime = ship.big ? 40 : 12;
+    // the nav computer steers the drive at its own aim instead of the
+    // selected target: a body, a ship, or null for a waypoint in open space
+    // (then legLimit: how far along the nose the leg goes)
+    this.nav = null; // { aim, legLimit }
   }
+
+  get aim() { return this.nav ? this.nav.aim : this.game.target; }
 
   // the nearest lock: a body's sphere, or a big ship's
   massLock() {
@@ -80,7 +86,9 @@ export class FTL {
     const D = _w.set(0, 0, -1).applyQuaternion(this.ship.quat);
     let first = null, firstT = Infinity;
     let targetT = Infinity;
-    if (g.target && g.target.isVessel) targetT = Math.max(0, _t.copy(g.target.pos).sub(P).dot(D) - VESSEL_DROP);
+    const aim = this.aim;
+    if (aim && aim.isVessel) targetT = Math.max(0, _t.copy(aim.pos).sub(P).dot(D) - VESSEL_DROP);
+    if (this.nav && this.nav.legLimit) targetT = Math.min(targetT, this.nav.legLimit);
     for (const b of g.universe.bodies) {
       const L = lockRadius(b);
       const cx = b.pos.x - P.x, cy = b.pos.y - P.y, cz = b.pos.z - P.z;
@@ -91,7 +99,8 @@ export class FTL {
       const tEnter = tc - Math.sqrt(L * L - d2);
       if (tEnter < firstT) { firstT = tEnter; first = b; }
     }
-    if (!first || !g.target || first === g.target || firstT > targetT) return null;
+    if (!first || first === aim || firstT > targetT) return null;
+    if (!aim && !(this.nav && this.nav.legLimit)) return null;
     return first;
   }
 
@@ -148,7 +157,8 @@ export class FTL {
     // speed limit from the nearest gravity well, and from a target ship
     const ns = this.nearestSurface();
     let vmax = Math.min(V_CAP, Math.max(1000, K_SPEED * ns.dist));
-    const tgt = g.target && g.target.isVessel && g.target.v !== ship && !g.target.v.dead ? g.target : null;
+    const aim = this.aim;
+    const tgt = aim && aim.isVessel && aim.v !== ship && !aim.v.dead ? aim : null;
     if (tgt) vmax = Math.min(vmax, Math.max(400, K_SPEED * (_t.copy(tgt.pos).distanceTo(ship.getWorldPos(_v)) - VESSEL_DROP)));
     const target = vmax * this.throttle;
     this.speed += (target - this.speed) * (1 - Math.exp(-dt * (target > this.speed ? 0.7 : 3.0)));
@@ -187,7 +197,7 @@ export class FTL {
         const out = wp.sub(lock.body.pos).setLength(lock.lock * 1.0005).add(lock.body.pos);
         ship.pos.copy(out).sub(ship.body.pos);
         // only a body other than the selected target interdicts violently
-        const t = g.target;
+        const t = this.aim;
         this.drop(!!t && t !== lock.body, lock.body);
         return;
       }

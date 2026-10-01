@@ -10,6 +10,7 @@
 // presses, so it does exactly what that does) or runs a function. Most close
 // the menu; repeatable ones (time warp, assist, camera) keep it open.
 
+import * as THREE from 'three';
 import { ASSIST_NAMES } from '../sim/ship.js';
 import { padGlyph } from '../padLayout.js';
 
@@ -68,6 +69,7 @@ export class QuickMenu {
         run: () => { g.target = t; g.message(`Target: ${t.data.name}`, 'target'); if (!t.isVessel) g.requestSurvey(t, 80); },
       })),
     });
+    rows.push(this.navMenu());
     rows.push({
       id: 'nav', label: 'Navigation', items: [
         { label: 'Target under the reticle', key: 'KeyT' },
@@ -84,6 +86,23 @@ export class QuickMenu {
     });
     rows.push({ label: 'Controls', key: 'KeyH' });
     return rows;
+  }
+
+  // the nav computer: go / stop, and where on the target world to land
+  navMenu() {
+    const g = this.game, nav = g.nav, t = g.target;
+    const items = [{ label: nav.active ? 'Stop the nav computer' : 'Fly there', value: nav.active ? nav.destText() : (t ? t.data.name : 'no target'), key: 'KeyN' }];
+    if (t && !t.isVessel && t.solid) {
+      const chosen = nav.sites.get(t.id);
+      const res = g.settlements.get(t.id);
+      if (!res) g.requestSurvey(t, 85);
+      const choose = (site, label) => ({ label, value: '', run: () => { nav.chooseSite(t, site); g.message(`Nav computer: ${t.data.name}, ${site === 'orbit' ? 'stay in orbit' : (site ? site.label : 'the best site')}`, 'nav'); } });
+      const sites = [choose(null, t === g.startBody ? 'The landing site' : 'The best site'), choose('orbit', 'Stay in orbit')];
+      if (res) for (const sp of res.spots || []) sites.push({ ...choose({ dirF: new THREE.Vector3(...sp.dir), label: sp.label.toLowerCase() }, sp.label), value: `${sp.biome} · ${sp.temperatureC} °C` });
+      else sites.push({ label: 'Surveying…', value: '' });
+      items.push({ id: 'landat', label: 'Land at', value: chosen === 'orbit' ? 'orbit' : (chosen ? chosen.label : 'best site'), items: sites });
+    }
+    return { id: 'navc', label: 'Nav computer', value: nav.active ? nav.status().phase.toLowerCase() : (t ? t.data.name : ''), items };
   }
 
   ftlText(v) {
