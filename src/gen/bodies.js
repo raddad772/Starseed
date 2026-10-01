@@ -1,0 +1,625 @@
+// Physical properties of planets and moons: radius from mass and composition,
+// atmosphere retention, greenhouse climate, hydrosphere, life, render
+// parameters for the atmosphere shader, gas-giant cloud chemistry, and the
+// terrain-style parameters consumed by the terrain generator.
+//
+// Everything is computed in real SI units first, then the game-scale values
+// (R, GM, orbital elements) are derived with the factors in units.js.
+
+import * as dm from '../core/dmath.js';
+import * as U from '../core/units.js';
+import { hzSeff } from './star.js';
+import { hsv, mixRGB, scaleRGB, hexToLinear, jitterColor } from './color.js';
+
+const LOG10 = (x) => dm.log10(x);
+
+// ---------------------------------------------------------------- radius
+
+// Mass-radius relations: rocky worlds R ~ M^0.27 tuned by iron/water content
+// (Zeng-style trends); envelopes inflate cores (sub-Neptunes 2-3.5 R_earth);
+// giants are ~1 R_jup almost independent of mass, inflated when strongly irradiated.
+export function radiusFromMass(massE, comp, insolation) {
+  if (massE < 2e-4) {
+    // small bodies are not self-compressed: radius from bulk density
+    const rho = 3300 - 1900 * Math.min(comp.water * 2, 1);
+    const r = dm.cbrt(3 * massE * U.M_EARTH / (4 * dm.PI * rho));
+    return r / U.R_EARTH;
+  }
+  if (comp.envelope > 0.5) { // gas giant
+    const mJ = massE / 317.8;
+    let rJ = dm.pow(mJ, -0.04) * (mJ < 0.3 ? 0.75 + 0.833 * mJ : 1.0);
+    rJ *= 1 + 0.35 * dm.smoothstep(150, 1500, insolation); // hot-Jupiter inflation
+    return rJ * 11.21;
+  }
+  const rockR = dm.pow(massE, 0.27) * (1 + 0.55 * comp.water - 0.32 * (comp.iron - 0.32));
+  if (comp.envelope > 0.001) {
+    // H/He envelope: radius grows ~ sqrt of envelope fraction
+    const inflate = 1 + 2.2 * dm.sqrt(comp.envelope) * dm.pow(massE / 5, -0.15);
+    return rockR * inflate;
+  }
+  return rockR;
+}
+
+// ---------------------------------------------------------------- climate
+
+export function equilibriumTemp(S, albedo) { return 278.6 * dm.pow(S, 0.25) * dm.pow(1 - albedo, 0.25); }
+
+function boilingPoint(pBar) { // water, Clausius-Clapeyron
+  if (pBar <= 0.006) return 273;
+  return 1 / (1 / 373.15 - dm.log(pBar / 1.01325) / 4890);
+}
+
+// Tidal locking timescale (Gladman et al. 1996), seconds
+function tidalLockTime(aM, massPrimaryKg, massKg, radiusM, Q, k2) {
+  const omega = dm.TWO_PI / (12 * 3600);
+  const I = 0.33 * massKg * radiusM * radiusM;
+  return omega * dm.pow(aM, 6) * I * Q / (3 * U.G * massPrimaryKg * massPrimaryKg * k2 * dm.pow(radiusM, 5));
+}
+
+// Rayleigh cross-section relative to air ((n-1)^2 ratio)
+const RAYLEIGH_REL = { N2: 1.02, O2: 0.86, Ar: 0.9, CO2: 2.36, H2: 0.21, He: 0.014, CH4: 2.25, H2O: 0.75, SO2: 4.0 };
+const MOLAR = { N2: 28.01, O2: 32.0, Ar: 39.95, CO2: 44.01, H2: 2.016, He: 4.003, CH4: 16.04, H2O: 18.02, SO2: 64.07 };
+const EARTH_RAYLEIGH = [5.802e-6, 13.558e-6, 33.1e-6];
+const N0 = 2.547e25; // Earth sea-level number density (m^-3)
+
+function meanMolar(comp) {
+  let m = 0, t = 0;
+  for (const k in comp) { m += comp[k] * MOLAR[k]; t += comp[k]; }
+  return m / t;
+}
+function rayleighRel(comp) {
+  let r = 0, t = 0;
+  for (const k in comp) { r += comp[k] * (RAYLEIGH_REL[k] || 1); t += comp[k]; }
+  return r / t;
+}
+
+// ---------------------------------------------------------------- vegetation pigment
+
+// Photosynthetic pigment colour follows the host star's spectrum
+// (Kiang et al. 2007): F stars -> blue-green/teal, G -> greens (with
+// occasional "purple Earth" retinal pigments), K -> yellow-orange, M -> dark red/black.
+function vegetationColor(rng, teff) {
+  let h, s, v;
+  if (teff > 6100) { h = rng.range(0.42, 0.55); s = rng.range(0.45, 0.7); v = rng.range(0.22, 0.38); }
+  else if (teff > 5200) {
+    if (rng.chance(0.15)) { h = rng.range(0.78, 0.9); s = rng.range(0.4, 0.6); v = rng.range(0.18, 0.3); }
+    else { h = rng.range(0.2, 0.36); s = rng.range(0.5, 0.75); v = rng.range(0.18, 0.34); }
+  } else if (teff > 3900) { h = rng.range(0.07, 0.17); s = rng.range(0.55, 0.8); v = rng.range(0.2, 0.36); }
+  else { h = rng.range(0.94, 1.03); s = rng.range(0.35, 0.7); v = rng.range(0.06, 0.16); }
+  const c = hsv(h, s, v);
+  return c.map((x) => x * x); // treat HSV output as sRGB-ish: square for rough linearisation
+}
+
+// ---------------------------------------------------------------- mineral palettes
+
+const MINERALS = {
+  basalt: { rock: '#3b3836', rock2: '#55504a', regolith: '#5d5650', sand: '#2e2c2b' },
+  granite: { rock: '#8a7f78', rock2: '#a39289', regolith: '#7d6e60', sand: '#c9b48e' },
+  ferric: { rock: '#7a3f22', rock2: '#9a5a33', regolith: '#b06b3e', sand: '#c4824d' },
+  sulfur: { rock: '#b8a23a', rock2: '#d7c35a', regolith: '#c28a33', sand: '#e0d07a' },
+  carbon: { rock: '#2a2522', rock2: '#3b332c', regolith: '#3e352e', sand: '#4a4038' },
+  anorth: { rock: '#8f8d88', rock2: '#a8a5a0', regolith: '#9a9792', sand: '#b4b1aa' },
+  ochre: { rock: '#8c6a3e', rock2: '#a9834f', regolith: '#b8915a', sand: '#d6b77c' },
+  olivine: { rock: '#4f5a3a', rock2: '#69714a', regolith: '#76704d', sand: '#8d8455' },
+  ice: { rock: '#b9c2c8', rock2: '#d6dde0', regolith: '#c9cdcc', sand: '#e4e6e3' },
+  tholin: { rock: '#8a6a52', rock2: '#a9846a', regolith: '#b38b6a', sand: '#c89f7f' },
+  organic: { rock: '#6e6152', rock2: '#8c7a63', regolith: '#5e4c3b', sand: '#2f261e' },
+  slate: { rock: '#4b5058', rock2: '#646a72', regolith: '#6d6a66', sand: '#8f877c' },
+};
+
+function pickMinerals(rng, kind) {
+  let key;
+  if (kind === 'organic') key = 'organic';
+  else if (kind === 'icy') key = rng.weighted([[5, 'ice'], [2, 'tholin'], [1, 'slate']]);
+  else if (kind === 'volcanic') key = rng.weighted([[5, 'sulfur'], [2, 'basalt'], [1, 'ochre']]);
+  else if (kind === 'ferric') key = rng.weighted([[5, 'ferric'], [2, 'ochre'], [1, 'basalt']]);
+  else if (kind === 'airless') key = rng.weighted([[4, 'anorth'], [3, 'basalt'], [2, 'carbon'], [1, 'slate'], [1, 'ochre']]);
+  else key = rng.weighted([[3, 'granite'], [3, 'basalt'], [2, 'ochre'], [2, 'slate'], [1, 'olivine'], [1, 'ferric']]);
+  const m = MINERALS[key];
+  const out = { family: key };
+  for (const k in m) out[k] = jitterColor(rng, hexToLinear(m[k]), 0.12);
+  return out;
+}
+
+// ---------------------------------------------------------------- atmospheres
+
+function buildAtmosphere(rng, b, star, S, proto) {
+  const vesc = b.vEscReal / 1000;
+  const Scrit = 0.0008 * vesc * vesc * vesc * vesc; // cosmic shoreline, I ~ v_esc^4
+  const x = LOG10(Scrit / S) + rng.normal(0, 0.25);
+  const massE = b.massEarth;
+  if (x < 0) return null;
+
+  const teff = star.teff;
+  const sRunaway = hzSeff('runaway', teff) * rng.range(0.96, 1.08);
+  const sMaxGh = hzSeff('maxGreenhouse', teff);
+  const sOptIn = hzSeff('recentVenus', teff);
+  const sOptOut = hzSeff('earlyMars', teff);
+  const teqBare = equilibriumTemp(S, 0.3);
+  let a;
+
+  // Land planets and massive planets resist the runaway greenhouse beyond the
+  // conservative edge (Abe et al. 2011; Kopparapu et al. 2014)
+  const sRunawayPlanet = sRunaway + (sOptIn - sRunaway) * rng.range(0, 0.55);
+  if (S > sRunawayPlanet && massE > 0.25) {
+    const p = dm.clamp(rng.lognormal(55, 0.6) * dm.sqrt(massE), 4, 220);
+    a = { type: 'venus', pressure: p, comp: { CO2: 0.965, N2: 0.035 }, albedo: 0.72, tauK: 2.4 };
+  } else if (S >= sMaxGh * 0.92 && b.waterFrac > 2e-6) {
+    // Carbonate-silicate thermostat (Walker et al. 1981): weathering draws CO2
+    // down when warm and lets volcanic CO2 build up when cold, so HZ planets
+    // settle near temperate conditions -- that feedback is what defines the HZ.
+    const pBase = dm.clamp(rng.lognormal(1.0, 0.4) * dm.pow(massE, 0.55), 0.4, 6);
+    const insideOpt = S <= sOptIn && S >= sOptOut;
+    const lifeRoll = insideOpt && rng.chance(0.68);
+    const snowballEpisode = rng.chance(0.1);
+    const tTarget = rng.range(277, 301);
+    const tauBase = 0.9 * dm.pow(pBase, 0.9);
+    let pCO2 = 0.0004 * pBase, albedo = 0.3;
+    if (!snowballEpisode) {
+      const tauNeed = (dm.pow(tTarget / equilibriumTemp(S, albedo), 4) - 1) / 0.75;
+      if (tauNeed > tauBase) {
+        pCO2 = Math.min(dm.pow((tauNeed - tauBase) / 2.4, 1 / 0.9), 10);
+        albedo = 0.3 + 0.025 * pCO2; // thick CO2 adds Rayleigh albedo
+      }
+    }
+    const p = pBase + pCO2;
+    const co2 = pCO2 / p;
+    let comp;
+    if (lifeRoll) {
+      const o2 = rng.range(0.15, 0.3) * (1 - co2);
+      comp = { N2: 1 - o2 - 0.01 - co2, O2: o2, Ar: 0.01, CO2: co2 };
+    } else comp = { N2: 0.99 - co2, Ar: 0.01, CO2: co2 };
+    a = { type: 'temperate', pressure: p, comp, albedo, tau: tauBase + 2.4 * dm.pow(pCO2, 0.9), life: lifeRoll, snowball: snowballEpisode };
+  } else if (teqBare < 125 && b.comp.water > 0.08 && massE > 0.008 && (proto.kind === 'planet' ? rng.chance(0.6) : rng.chance(0.28))) {
+    const p = dm.clamp(rng.lognormal(1.4, 0.55), 0.2, 6);
+    a = { type: 'titan', pressure: p, comp: { N2: 0.95, CH4: 0.05 }, albedo: 0.22, tauK: 0.7 };
+  } else if (teqBare < 125 && b.comp.water > 0.08) {
+    return null; // volatiles frozen out or stripped (Ganymede / Callisto)
+  } else if (massE < 0.35 || x < 0.4) {
+    if (massE < 0.03 && !rng.chance(0.3)) return null;
+    const p = rng.logUniform(0.002, 0.06) * dm.pow(Math.max(x, 0.05) * 3, 0.5);
+    a = { type: 'mars', pressure: p, comp: { CO2: 0.95, N2: 0.03, Ar: 0.02 }, albedo: 0.25, tauK: 2.4 };
+  } else {
+    const p = dm.clamp(rng.lognormal(2.5, 0.7) * dm.sqrt(massE), 0.3, 40);
+    a = { type: 'coldco2', pressure: p, comp: { CO2: 0.85, N2: 0.15 }, albedo: 0.35, tauK: 2.4 };
+  }
+  if (a.tau === undefined) a.tau = a.tauK * dm.pow(a.pressure, 0.9);
+  a.mu = meanMolar(a.comp);
+  return a;
+}
+
+// Optical parameters for the scattering shader (game units = metres)
+function atmosphereRender(rng, b, atm, Tsurf, dustColor) {
+  const g = b.gravity;
+  const Tcol = Math.max(60, Tsurf * 0.88);
+  const H = U.K_B * Tcol / (atm.mu * U.AMU * g);
+  const n = atm.pressure * 1e5 / (U.K_B * Tsurf);
+  const rel = rayleighRel(atm.comp) * (n / N0);
+  const rayleigh = EARTH_RAYLEIGH.map((x) => x * rel);
+  let mie = [0, 0, 0], mieAbs = [0, 0, 0], mieH = 1200, mieG = 0.78;
+  let ozone = [0, 0, 0];
+  const t = atm.type;
+  if (t === 'temperate') {
+    const k = dm.clamp(atm.pressure, 0.3, 3) * rng.range(0.6, 1.6);
+    mie = [3.996e-6 * k, 3.996e-6 * k, 3.996e-6 * k];
+    mieAbs = [0.444e-6 * k, 0.444e-6 * k, 0.444e-6 * k];
+    mieH = 1200 * (9.81 / g);
+    if (atm.comp.O2) ozone = [0.650e-6, 1.881e-6, 0.085e-6].map((x) => x * atm.comp.O2 / 0.21);
+  } else if (t === 'mars') {
+    // Suspended iron-oxide dust absorbs blue: butterscotch skies
+    const k = rng.range(0.6, 1.6) * dm.sqrt(atm.pressure / 0.006);
+    const d = dustColor;
+    mie = [1.8e-5 * k * (0.6 + d[0]), 1.4e-5 * k * (0.6 + d[1]), 1.0e-5 * k * (0.6 + d[2])];
+    mieAbs = [2e-6 * k, 5e-6 * k, 1.1e-5 * k];
+    mieH = 11000 * (3.71 / g);
+    mieG = 0.65;
+  } else if (t === 'titan') {
+    // Tholin haze: thick, orange, strongly blue-absorbing
+    const k = dm.pow(atm.pressure / 1.5, 0.8);
+    mie = [3.2e-5 * k, 2.2e-5 * k, 1.0e-5 * k];
+    mieAbs = [0.6e-5 * k, 1.6e-5 * k, 3.5e-5 * k];
+    mieH = 40000 * (1.35 / g);
+    mieG = 0.7;
+  } else if (t === 'venus') {
+    // Sulphuric-acid haze above the cloud deck
+    const k = dm.pow(atm.pressure / 90, 0.5);
+    mie = [2.0e-5 * k, 1.9e-5 * k, 1.6e-5 * k];
+    mieAbs = [0.1e-6, 0.4e-6, 1.6e-6].map((x) => x * k);
+    mieH = 6000 * (8.87 / g);
+    mieG = 0.72;
+  } else if (t === 'coldco2') {
+    const k = rng.range(0.4, 1.2) * dm.pow(atm.pressure, 0.4);
+    mie = [4e-6 * k, 4e-6 * k, 4e-6 * k];
+    mieAbs = [0.3e-6 * k, 0.3e-6 * k, 0.3e-6 * k];
+    mieH = 3000 * (9.81 / g);
+  }
+  // Atmosphere extends until density ~ e^-12 of the surface value
+  const scaleMax = Math.max(H, mieH * 0.6);
+  return {
+    rayleigh, rayleighH: H, mie, mieAbs, mieH, mieG,
+    ozone, ozoneCenter: 25000 * (H / 8500), ozoneWidth: 15000 * (H / 8500), absorptionExp: false,
+    height: Math.min(12.5 * scaleMax, 0.35 * b.R + 5 * H),
+  };
+}
+
+function cloudLayer(rng, atm, hydro, Tsurf, H) {
+  const t = atm.type;
+  if (t === 'venus') return { type: 'sulfuric', cover: 1.0, altitude: 52000 * (H / 15000), thickness: 18000, color: hexToLinear('#e9dcae'), opacity: 1.0, scale: rng.range(0.8, 1.4) };
+  if (t === 'titan') return null; // haze only
+  if (t === 'temperate' && hydro.water !== 'none') {
+    const cover = dm.clamp(rng.range(0.38, 0.7) + (hydro.oceanFraction - 0.6) * 0.3, 0.15, 0.9);
+    return { type: 'water', cover, altitude: rng.range(1900, 3400), thickness: rng.range(1000, 2600), color: [0.95, 0.96, 0.98], opacity: 1.0, scale: rng.range(0.7, 1.5) };
+  }
+  if (t === 'mars') return rng.chance(0.5) ? { type: 'waterice', cover: rng.range(0.03, 0.12), altitude: rng.range(15000, 30000), thickness: 2000, color: [0.92, 0.93, 0.95], opacity: 0.5, scale: 1.0 } : null;
+  if (t === 'coldco2') return { type: 'co2ice', cover: rng.range(0.15, 0.45), altitude: rng.range(8000, 25000), thickness: 5000, color: [0.95, 0.95, 0.96], opacity: 0.8, scale: rng.range(0.8, 1.3) };
+  return null;
+}
+
+// ---------------------------------------------------------------- gas giants
+
+const GIANT_CHEM = {
+  ice: { name: 'Methane (ice giant)', base: ['#8fd3e0', '#5ab6cf', '#3b8fc2', '#a7e2ea'], storm: '#e8f6fa', deep: '#1c3f6e' },
+  cold: { name: 'Ammonia / NH4SH / water', base: ['#e8dcc0', '#c99e6e', '#b07a50', '#f2ead6', '#d7b98c', '#8f5c3a'], storm: '#c0603f', deep: '#3d2a1f' },
+  saturn: { name: 'Ammonia (pale)', base: ['#e9d9a6', '#d8c08a', '#c9ac72', '#f0e4bb', '#bfa06a'], storm: '#f4ecd0', deep: '#4a3c24' },
+  warm: { name: 'Water clouds', base: ['#d9dfe6', '#aab8c8', '#8b9db3', '#eef1f4', '#7d8fa6'], storm: '#ffffff', deep: '#22303f' },
+  alkali: { name: 'Alkali salts (KCl, Na2S)', base: ['#6f6a7c', '#55506a', '#8a8094', '#3f3b52', '#9c8f9e'], storm: '#c4b8c8', deep: '#1a1624' },
+  hot: { name: 'Silicate / iron clouds', base: ['#3b2e2a', '#5a3b2c', '#2a2324', '#704532', '#4a3530'], storm: '#c46a3a', deep: '#120c0b' },
+};
+
+function giantParams(rng, b, T1bar, S, rotPeriodRealH) {
+  let chem;
+  if (b.class === 'iceGiant' || b.class === 'miniNeptune') chem = T1bar < 160 ? 'ice' : (T1bar < 450 ? 'warm' : 'alkali');
+  else if (T1bar < 135) chem = rng.chance(0.4) ? 'saturn' : 'cold';
+  else if (T1bar < 260) chem = rng.chance(0.25) ? 'saturn' : 'cold';
+  else if (T1bar < 600) chem = 'warm';
+  else if (T1bar < 1300) chem = 'alkali';
+  else chem = 'hot';
+  const C = GIANT_CHEM[chem];
+  const palette = rng.shuffle(C.base.map((h) => jitterColor(rng, hexToLinear(h), 0.1)));
+  // Faster rotation -> narrower Rhines scale -> more bands/jets
+  const rot = dm.clamp(10 / rotPeriodRealH, 0.3, 3);
+  const bands = Math.round(dm.clamp(rng.range(4, 8) * dm.sqrt(rot) * (b.class === 'gasGiant' ? 1 : 0.6), 2, 12));
+  const storms = [];
+  const nStorms = rng.weighted([[3, 0], [4, 1], [2, 2], [1, 3]]);
+  for (let i = 0; i < nStorms; i++) {
+    storms.push({
+      lat: rng.range(-0.6, 0.6), lon: rng.range(0, dm.TWO_PI),
+      size: rng.range(0.03, 0.12), stretch: rng.range(1.4, 2.4),
+      color: jitterColor(rng, hexToLinear(C.storm), 0.1), spin: rng.sign(),
+    });
+  }
+  // Cloud decks for the volumetric interior: altitude relative to the 1-bar level.
+  const H = U.K_B * T1bar / (2.3 * U.AMU * b.gravity);
+  const decks = [];
+  const deck = (name, pBar, color, density, thick) => decks.push({
+    name, pressure: pBar, altitude: -H * dm.log(pBar), thickness: thick * H, color, density,
+  });
+  if (chem === 'ice') {
+    deck('Methane ice', 1.4, hexToLinear('#f2fbff'), 0.6, 0.6);
+    deck('Hydrogen sulfide', 6, hexToLinear('#8fb6c8'), 1.0, 0.9);
+    deck('Water ice', 40, hexToLinear('#5a7f9a'), 1.4, 1.2);
+  } else if (chem === 'cold' || chem === 'saturn') {
+    deck('Ammonia ice', 0.7, mixRGB(palette[0], [1, 1, 1], 0.4), 0.8, 0.6);
+    deck('Ammonium hydrosulfide', 2.2, mixRGB(palette[1], hexToLinear('#8a5a3a'), 0.5), 1.0, 0.7);
+    deck('Water ice / droplets', 6, hexToLinear('#b8c4cc'), 1.5, 1.0);
+  } else if (chem === 'warm') {
+    deck('Water droplets', 0.9, hexToLinear('#f3f5f7'), 1.0, 0.8);
+    deck('Ammonium chloride', 5, hexToLinear('#9fa8b2'), 1.2, 1.0);
+  } else if (chem === 'alkali') {
+    deck('Potassium chloride', 0.5, hexToLinear('#9b93a8'), 0.8, 0.8);
+    deck('Sodium sulfide', 3, hexToLinear('#5e5470'), 1.2, 1.0);
+  } else {
+    deck('Silicate (MgSiO3) cloud', 0.3, hexToLinear('#6a4a3a'), 1.0, 0.8);
+    deck('Iron rain', 4, hexToLinear('#7a3a20'), 1.3, 1.0);
+  }
+  return {
+    chemistry: chem, chemistryName: C.name,
+    palette, bands, storms,
+    deep: hexToLinear(C.deep),
+    turbulence: rng.range(0.5, 1.2),
+    windMax: rng.range(80, 180) * (chem === 'ice' ? 2.2 : 1) * U.SPEED_SCALE,
+    jetPhase: rng.range(0, 1), equatorialJet: rng.sign() * rng.range(0.6, 1.4),
+    polarHaze: jitterColor(rng, chem === 'ice' ? hexToLinear('#5f9fd0') : hexToLinear('#7e8a95'), 0.1),
+    lightning: chem === 'cold' || chem === 'saturn' || chem === 'warm' || chem === 'ice',
+    decks,
+    scaleHeight: H,
+    T1bar,
+    // Dry adiabat below the tropopause: T = T1 - Gamma z, p = (T/T1)^(cp/R)
+    cp: 12000, lapse: b.gravity / 12000, polytrope: 12000 / (U.R_GAS * 1000 / 2.3),
+    methaneTint: chem === 'ice' ? rng.range(0.6, 1.0) : 0,
+  };
+}
+
+// ---------------------------------------------------------------- planet / moon builder
+
+// proto: { massEarth, comp:{iron,rock,water,envelope}, aAU (planet's or host planet's), formedBeyondSnow, kind:'planet'|'moon', class? }
+export function buildBody(rng, proto, star, host) {
+  const b = {
+    kind: proto.kind,
+    massEarth: proto.massEarth,
+    comp: proto.comp,
+    waterFrac: proto.comp.water,
+  };
+  const S = star.luminosity / (proto.aStarAU * proto.aStarAU);
+  b.insolation = S;
+  // class
+  if (proto.comp.envelope > 0.5) b.class = 'gasGiant';
+  else if (proto.comp.envelope > 0.04 && proto.massEarth > 8) b.class = 'iceGiant';
+  else if (proto.comp.envelope > 0.001) b.class = 'miniNeptune';
+  else b.class = proto.massEarth < 0.08 ? 'dwarf' : 'terrestrial';
+  b.solid = b.class === 'terrestrial' || b.class === 'dwarf';
+
+  const rE = radiusFromMass(proto.massEarth, proto.comp, S);
+  b.radiusEarth = rE;
+  b.massKg = proto.massEarth * U.M_EARTH;
+  b.radiusM = rE * U.R_EARTH;
+  b.gravity = U.G * b.massKg / (b.radiusM * b.radiusM);
+  b.density = b.massKg / (4 / 3 * dm.PI * b.radiusM * b.radiusM * b.radiusM);
+  b.vEscReal = dm.sqrt(2 * U.G * b.massKg / b.radiusM);
+  b.R = b.radiusM * U.LEN_SCALE;
+  b.GM = b.gravity * b.R * b.R;
+  b.vEsc = dm.sqrt(2 * b.GM / b.R);
+
+  // ---- rotation
+  const rot = rng.fork('rotation');
+  let locked = false;
+  if (proto.kind === 'moon') locked = !proto.captured || rng.chance(0.7);
+  else {
+    const Q = b.solid ? 100 : 1e5, k2 = b.solid ? 0.3 : 0.5;
+    const tl = tidalLockTime(proto.aStarAU * U.AU, star.massKg, b.massKg, b.radiusM, Q, k2);
+    locked = tl < star.age * 1e9 * U.YEAR;
+  }
+  let periodRealH, obliquity = 0, retrograde = false;
+  if (locked) {
+    periodRealH = NaN; // set to orbital period by the system builder
+    obliquity = rot.range(0, 0.02);
+  } else {
+    if (b.solid) {
+      periodRealH = dm.clamp(rot.lognormal(23, 0.55), 7, 240);
+      if (rot.chance(0.08)) { periodRealH = rot.range(800, 5800); retrograde = rot.chance(0.6); } // Venus-like slow spin
+    } else periodRealH = dm.clamp(rot.lognormal(11, 0.25), 6, 24);
+    const r = rot.next();
+    obliquity = r < 0.72 ? Math.abs(rot.normal(0, 0.28)) : (r < 0.95 ? rot.range(0.5, 1.1) : rot.range(1.2, 1.7));
+    obliquity = Math.min(obliquity, 1.65);
+  }
+  b.rotation = { locked, periodRealH, obliquity, retrograde, phase0: rot.range(0, dm.TWO_PI), tiltAzimuth: rot.range(0, dm.TWO_PI) };
+
+  // ---- gas & ice giants, mini-Neptunes: no surface
+  if (!b.solid) {
+    const teq = equilibriumTemp(S, b.class === 'gasGiant' ? 0.34 : 0.29);
+    const T1 = teq * (b.class === 'gasGiant' ? 1.5 : 1.45) + 20;
+    b.albedo = b.class === 'gasGiant' ? 0.34 : 0.29;
+    b.Teq = teq; b.Tsurf = T1; b.Tmin = T1 * 0.92; b.Tmax = T1 * 1.05;
+    const comp = b.class === 'gasGiant' ? { H2: 0.86, He: 0.136, CH4: 0.004 } : { H2: 0.8, He: 0.18, CH4: 0.02 };
+    const atm = { type: 'giant', pressure: 1, comp, mu: 2.3, albedo: b.albedo, tau: 0 };
+    b.giant = giantParams(rng.fork('giant'), b, T1, S, isNaN(periodRealH) ? 24 : periodRealH);
+    const H = b.giant.scaleHeight;
+    const n = 1e5 / (U.K_B * T1);
+    const rel = rayleighRel(comp) * (n / N0);
+    const methane = b.giant.methaneTint;
+    atm.render = {
+      rayleigh: EARTH_RAYLEIGH.map((x) => x * rel),
+      rayleighH: H,
+      mie: [1.5e-6, 1.5e-6, 1.5e-6], mieAbs: [0.2e-6, 0.2e-6, 0.25e-6], mieH: H * 0.7, mieG: 0.75,
+      // methane absorbs red light: the blue of Uranus and Neptune
+      ozone: [2.5e-6 * methane + 0.05e-6, 0.6e-6 * methane, 0.0], ozoneCenter: 0, ozoneWidth: 0, absorptionExp: true,
+      height: 14 * H,
+      depth: 40 * H, // the shader's atmosphere goes well below the 1-bar level
+    };
+    b.atmosphere = atm;
+    b.hydrosphere = { water: 'none', oceanFraction: 0, iceCover: 0 };
+    b.life = null;
+    b.terrain = null;
+    b.label = giantLabel(b, S);
+    b.esi = 0; b.habitability = 0;
+    return b;
+  }
+
+  // ---- terrestrial bodies
+  const volcanicMoon = (proto.tidalHeating || 0) > 0.6 && b.comp.water < 0.15;
+  let atm = volcanicMoon ? null : buildAtmosphere(rng.fork('atmosphere'), b, star, S, proto);
+  const tidalHeating = proto.tidalHeating || 0;
+  let albedo;
+  if (atm) albedo = atm.albedo;
+  else albedo = b.comp.water > 0.2 ? rng.range(0.45, 0.7) : rng.range(0.08, 0.16);
+  if (tidalHeating > 0.6 && b.comp.water < 0.15) albedo = rng.range(0.5, 0.65); // sulfur frosts
+  let Teq = equilibriumTemp(S, albedo);
+  let Tsurf = atm ? Teq * dm.pow(1 + 0.75 * atm.tau, 0.25) : Teq;
+
+  // ---- hydrosphere
+  const hydroRng = rng.fork('hydro');
+  let hydro = { water: 'none', oceanFraction: 0, iceCover: 0, liquid: null };
+  const logW = LOG10(Math.max(b.comp.water, 1e-9));
+  const coverage = dm.smoothstep(0, 1, dm.clamp((logW + 5.5) / 3.2, 0, 1));
+  const pBar = atm ? atm.pressure : 0;
+  if (atm && atm.type === 'temperate') {
+    if (Tsurf < 252 && b.comp.water > 1e-6) {
+      // ice-albedo runaway: snowball world
+      albedo = 0.55; Teq = equilibriumTemp(S, albedo); Tsurf = Teq * dm.pow(1 + 0.75 * atm.tau, 0.25);
+    }
+    if (Tsurf > 273 && Tsurf < boilingPoint(pBar) && pBar > 0.006) {
+      hydro = { water: 'liquid', liquid: 'water', oceanFraction: dm.clamp(coverage * hydroRng.range(0.85, 1.1), 0.02, 1.0), iceCover: 0 };
+      if (b.comp.water > 0.02) hydro.oceanFraction = 1.0; // global ocean world
+    } else if (Tsurf <= 273) {
+      hydro = { water: 'frozen', liquid: null, oceanFraction: dm.clamp(coverage, 0.05, 1), iceCover: dm.clamp(0.6 + (273 - Tsurf) / 60, 0.6, 1) };
+    }
+  } else if (atm && atm.type === 'titan') {
+    hydro = { water: 'frozen', liquid: 'methane', oceanFraction: hydroRng.range(0.02, 0.12), iceCover: 0 };
+  } else if (!atm || atm.type === 'mars' || atm.type === 'coldco2') {
+    if (b.comp.water > 0.15) hydro = { water: 'frozen', liquid: null, oceanFraction: 0, iceCover: 1 };
+    else if (Tsurf < 240 && b.comp.water > 1e-5) hydro = { water: 'frozen', liquid: null, oceanFraction: 0, iceCover: dm.clamp(0.08 + coverage * 0.3, 0, 0.45) };
+  }
+  // Lava worlds: dayside hot enough to keep silicate seas molten
+  if (Teq > 900) {
+    hydro = { water: 'none', liquid: 'lava', oceanFraction: Teq > 1300 ? hydroRng.range(0.4, 0.8) : hydroRng.range(0.04, 0.2), iceCover: 0 };
+  } else if (volcanicMoon) {
+    // Io: sulfur plains and scattered active lava lakes
+    hydro = { water: 'none', liquid: 'lava', oceanFraction: hydroRng.range(0.006, 0.025), iceCover: 0 };
+  }
+  b.albedo = albedo; b.Teq = Teq; b.Tsurf = Tsurf;
+  // Day-night / latitude swings: damped by thick atmospheres and oceans
+  const damp = atm ? 1 / (1 + 1.2 * dm.pow(atm.pressure, 0.6)) : 1;
+  const swing = (locked ? 1.6 : 0.6) * damp * Tsurf * (hydro.water === 'liquid' ? 0.45 : 1) + 6;
+  b.Tmin = Math.max(Tsurf - swing * 1.3, 20);
+  b.Tmax = Tsurf + swing * 0.8;
+  b.hydrosphere = hydro;
+
+  // ---- life
+  let life = null;
+  if (atm && atm.life && hydro.water === 'liquid' && Tsurf > 262 && Tsurf < 325) {
+    const lr = rng.fork('life');
+    life = {
+      level: lr.weighted([[2, 'microbial mats'], [4, 'vascular flora'], [3, 'complex biosphere']]),
+      vegColor: vegetationColor(lr, star.teff),
+      dryColor: null,
+      density: lr.range(0.55, 1.0),
+    };
+    life.dryColor = mixRGB(life.vegColor, hexToLinear('#a08a5c'), lr.range(0.35, 0.6));
+    if (life.level === 'microbial mats') life.density *= 0.35;
+  } else if (atm) atm.life = false;
+  b.life = life;
+
+  // ---- atmosphere render params & clouds
+  const minerals = pickMinerals(rng.fork('minerals'),
+    atm && atm.type === 'titan' ? 'organic' :
+    b.comp.water > 0.2 && Tsurf < 200 ? 'icy' :
+      (tidalHeating > 0.6 && b.comp.water < 0.15 ? 'volcanic' :
+        (atm && atm.type === 'mars' ? 'ferric' : (!atm ? 'airless' : 'any'))));
+  if (atm) {
+    atm.render = atmosphereRender(rng.fork('optics'), b, atm, Tsurf, minerals.regolith);
+    atm.clouds = cloudLayer(rng.fork('clouds'), atm, hydro, Tsurf, atm.render.rayleighH);
+  }
+  b.atmosphere = atm;
+
+  // ---- terrain style for the generator
+  b.terrain = terrainParams(rng.fork('terrain'), b, star, minerals, tidalHeating, proto);
+  b.label = terrestrialLabel(b);
+  b.esi = esi(b);
+  b.habitability = habitabilityScore(b);
+  return b;
+}
+
+function terrainParams(rng, b, star, minerals, tidalHeating, proto) {
+  const atm = b.atmosphere;
+  const hydro = b.hydrosphere;
+  const P = atm ? atm.pressure : 0;
+  const icy = b.comp.water > 0.2 && b.Tsurf < 200;
+  const airless = !atm || P < 0.01;
+  const liquidWater = hydro.water === 'liquid';
+  const g = b.gravity;
+  const relief = dm.clamp(8500 * 9.81 / g, 2500, 21000) * rng.range(0.7, 1.25) * (icy ? 0.45 : 1);
+  const tectonics = (!icy && b.massEarth > 0.35 && (liquidWater || rng.chance(0.3))) ? rng.range(0.55, 1) : (b.massEarth > 0.15 ? rng.range(0, 0.25) : 0);
+  let craters;
+  if (airless) craters = rng.range(0.55, 1.0);
+  else if (P < 0.1) craters = rng.range(0.25, 0.55);
+  else craters = tectonics > 0.5 ? rng.range(0, 0.06) : rng.range(0.02, 0.2);
+  const volcanism = hydro.liquid === 'lava' ? 1 : dm.clamp(tidalHeating + (b.massEarth > 0.3 ? rng.range(0, 0.45) : rng.range(0, 0.15)), 0, 1);
+  if (volcanism > 0.7 || tidalHeating > 0.5) craters *= 0.15; // young resurfaced crust
+  const erosion = liquidWater ? rng.range(0.55, 0.95) : (atm && P > 0.05 ? rng.range(0.25, 0.55) : rng.range(0.0, 0.1));
+  const dunes = (atm && !liquidWater && P > 0.004 && atm.type !== 'titan' || (atm && atm.type === 'titan')) ? rng.range(0.25, 1.0) : 0;
+  const canyons = rng.chance(airless ? 0.15 : 0.35) ? rng.range(0.3, 1.0) : 0;
+  const maria = (airless && !icy && b.massEarth > 0.003) ? rng.range(0.05, 0.6) : 0;
+  const lineae = icy && airless ? rng.range(0.3, 1.0) : (icy ? rng.range(0, 0.4) : 0);
+  const dichotomy = (!liquidWater && !icy) ? rng.range(0, 0.7) : rng.range(0, 0.2);
+  const mesas = (!liquidWater && atm && !icy) ? rng.range(0, 0.8) : 0;
+
+  // climate field parameters (sampled by the terrain shading, per vertex)
+  const obl = b.rotation.obliquity;
+  const P2cos = (3 * dm.cos(obl) * dm.cos(obl) - 1) / 2;
+  const s2 = -0.625 * P2cos; // annual-mean insolation P2 coefficient (Ward 1974)
+  const transport = atm ? 1 / (1 + 0.9 * dm.pow(P, 0.7)) : 1; // heat transport flattens gradients
+  const cpEff = atm ? (atm.mu > 30 ? 850 : 1004) : 1004;
+  const lapse = atm ? (g / cpEff) * (liquidWater ? 0.62 : 0.9) : 0;
+  const rotH = b.rotation.locked ? 1e9 : Math.abs(b.rotation.periodRealH);
+  const hadley = dm.clamp(Math.round(3 * dm.sqrt(24 / rotH)), 1, 5);
+
+  const palette = {
+    rock: minerals.rock, rock2: minerals.rock2, regolith: minerals.regolith, sand: minerals.sand,
+    soil: b.life ? mixRGB(minerals.regolith, hexToLinear('#3b2a1c'), 0.5) : minerals.regolith,
+    veg: b.life ? b.life.vegColor : null,
+    vegDry: b.life ? b.life.dryColor : null,
+    snow: icy && rng.chance(0.35) ? mixRGB([0.9, 0.92, 0.95], minerals.rock, 0.3) : [0.92, 0.94, 0.97],
+    waterDeep: hydro.liquid === 'methane' ? hexToLinear('#1d1712') : jitterColor(rng, hexToLinear(rng.chance(0.8) ? '#0b2a4a' : '#0d3b36'), 0.15),
+    waterShallow: hydro.liquid === 'methane' ? hexToLinear('#3a2e22') : jitterColor(rng, hexToLinear(rng.chance(0.75) ? '#1f7f8f' : '#2f8a6a'), 0.15),
+    lava: [3.5, 0.9, 0.12],
+  };
+  return {
+    seed: [rng.u32(), rng.u32(), rng.u32(), rng.u32()],
+    R: b.R, g,
+    relief,
+    seaLevel: 0,
+    ocean: hydro.oceanFraction,
+    liquid: hydro.liquid, // 'water' | 'methane' | 'lava' | null
+    iceCover: hydro.iceCover,
+    frozenOcean: hydro.water === 'frozen' && hydro.oceanFraction > 0,
+    tectonics, craters, volcanism, erosion, dunes, canyons, maria, lineae, dichotomy, mesas,
+    icy: icy ? 1 : 0,
+    continentFreq: rng.range(1.1, 2.4),
+    plates: Math.round(rng.range(9, 22)),
+    roughness: rng.range(0.75, 1.25),
+    climate: {
+      Tmean: b.Tsurf, s2, transport, lapse, hadley,
+      locked: b.rotation.locked,
+      wet: liquidWater ? rng.range(0.45, 0.85) : (hydro.liquid === 'methane' ? 0.2 : 0),
+      dayNight: b.rotation.locked ? (atm ? dm.clamp(1 - 0.85 * dm.pow(P, 0.3), 0.05, 1) : 1) : 0,
+      substellar: [1, 0, 0], // body-fixed; fixed up by the system builder for locked bodies
+    },
+    palette,
+    life: b.life ? b.life.density : 0,
+    lifeLevel: b.life ? b.life.level : null,
+  };
+}
+
+// ---------------------------------------------------------------- labels & indices
+
+function giantLabel(b, S) {
+  const mJ = b.massEarth / 317.8;
+  if (b.class === 'miniNeptune') return S > 20 ? 'Warm sub-Neptune' : 'Sub-Neptune';
+  if (b.class === 'iceGiant') return S > 5 ? 'Warm Neptune' : 'Ice giant';
+  if (S > 300) return mJ > 2 ? 'Hot super-Jupiter' : 'Hot Jupiter';
+  if (S > 5) return 'Warm Jupiter';
+  if (mJ > 3) return 'Super-Jupiter';
+  if (mJ < 0.5) return 'Saturnian gas giant';
+  return 'Gas giant';
+}
+
+function terrestrialLabel(b) {
+  const atm = b.atmosphere, h = b.hydrosphere;
+  const moon = b.kind === 'moon';
+  const size = b.massEarth > 2 ? 'Super-Earth ' : (b.massEarth < 0.08 ? 'Dwarf ' : '');
+  if (h.liquid === 'lava') return h.oceanFraction < 0.03 ? 'Volcanic moon' : size + 'lava world';
+  if (b.life) return b.life.level === 'complex biosphere' ? 'Living world' : 'Temperate world with life';
+  if (atm && atm.type === 'venus') return size + 'greenhouse world';
+  if (h.water === 'liquid') return h.oceanFraction >= 0.99 ? 'Ocean world' : 'Temperate terrestrial';
+  if (atm && atm.type === 'titan') return moon ? 'Titan-like moon' : 'Methane-haze world';
+  if (h.water === 'frozen' && h.iceCover > 0.55) return (atm && atm.type === 'temperate') ? 'Snowball world' : (moon ? 'Icy moon' : 'Icy world');
+  if (b.terrain && b.terrain.volcanism > 0.75) return moon ? 'Volcanic moon' : 'Volcanic world';
+  if (atm && (atm.type === 'mars' || atm.type === 'coldco2')) return size + (b.Tsurf < 240 ? 'cold desert' : 'desert world');
+  if (b.comp.water > 0.2) return moon ? 'Icy moon' : 'Icy body';
+  if (moon) return b.radiusM < 200e3 ? 'Captured moonlet' : 'Cratered moon';
+  return size + 'barren rock';
+}
+
+// Earth Similarity Index (Schulze-Makuch et al. 2011)
+function esi(b) {
+  const terms = [
+    [b.radiusEarth, 1, 0.57], [b.density / 5514, 1, 1.07],
+    [b.vEscReal / 11186, 1, 0.70], [b.Tsurf, 288, 5.58],
+  ];
+  let e = 1;
+  for (const [x, x0, w] of terms) e *= dm.pow(1 - Math.abs((x - x0) / (x + x0)), w / 4);
+  return e;
+}
+
+function habitabilityScore(b) {
+  if (!b.solid) return 0;
+  let s = 0.25 * b.esi;
+  if (b.hydrosphere.water === 'liquid') s += 0.25;
+  if (b.atmosphere) s += 0.1 * dm.clamp(1 - Math.abs(dm.log(Math.max(b.atmosphere.pressure, 1e-3))) / 3, 0, 1);
+  if (b.life) s += 0.3;
+  const gEarth = b.gravity / 9.81;
+  s += 0.1 * dm.clamp(1 - Math.abs(gEarth - 1), 0, 1);
+  if (b.hydrosphere.oceanFraction >= 0.99) s -= 0.15; // nowhere to land
+  if (b.atmosphere && b.atmosphere.pressure > 60) s -= 0.3;
+  return s;
+}
