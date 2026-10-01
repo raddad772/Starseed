@@ -65,8 +65,9 @@ export class AudioEngine {
     const air = Math.min(1, (inShip ? s.env.pressure : p.env.pressure) * 1.2);
     const carry = inShip ? 1 : (nearShip ? air * 0.6 : 0); // vacuum carries no sound outside
     const L = s.limits;
-    const mainT = Math.max(0, -s.thrustLocal.z) / L.main;
-    const bellyT = Math.max(0, s.thrustLocal.y) / L.belly;
+    // (a ground vehicle has no thrusters: its engine note follows the throttle)
+    const mainT = s.type.ground ? Math.abs(s.drive.throttle) * 0.5 : (L.main > 0 ? Math.max(0, -s.thrustLocal.z) / L.main : 0);
+    const bellyT = L.belly > 0 ? Math.max(0, s.thrustLocal.y) / L.belly : 0;
     this.set(this.main.g, mainT * 0.9 * carry);
     this.main.f.frequency.setTargetAtTime(120 + mainT * 260, this.ctx.currentTime, 0.1);
     this.set(this.mainHumG, mainT * 0.25 * carry);

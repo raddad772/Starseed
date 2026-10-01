@@ -12,6 +12,7 @@ import { FACES, dirFromFaceUV, chunkArcSize } from '../gen/cubesphere.js';
 import { CHUNK_N, chunkIndices } from '../gen/chunkbuilder.js';
 import { makeTerrainMaterial, DETAIL_PERIOD } from './terrainMaterial.js';
 import { FloraSet } from './floraRender.js';
+import { floraOf } from '../sim/floraField.js';
 
 const FLORA_DIST = 1600;
 
@@ -160,18 +161,28 @@ export class PlanetTerrain {
     }
   }
 
+  // the flora set, its clearings the body's own (shared with the world's flora field)
+  ensureFloraSet() {
+    if (this.floraSet) return;
+    this.floraSet = new FloraSet(this.body, this.shared);
+    this.floraSet.clearings = this.body.floraClearings || (this.body.floraClearings = []);
+  }
+
   floraVisit(node, dist) {
     node.floraFrame = this.frame;
     node.floraDist = dist;
     if (node.flora) this.floraSet.updateNode(node.flora, dist);
     if (node.flora || node.floraJob) return;
-    if (!this.floraSet) this.floraSet = new FloraSet(this.body, this.shared);
+    this.ensureFloraSet();
     const gen = this.generation;
     node.floraJob = this.pool.submit({
       type: 'flora', body: this.body.id, face: node.face, level: node.level, ix: node.ix, iy: node.iy, maxLevel: this.maxLevel,
     }, this.priority(node, dist) + 4);
     node.floraJob.promise.then((data) => {
       if (gen !== this.generation || !node.floraJob) return;
+      // (the world's flora field gets the same scatter: solid trees where they're drawn)
+      const field = floraOf(this.body);
+      if (field) field.ingest(node.face, node.ix, node.iy, data);
       node.flora = this.floraSet.build(data);
       node.flora.visible = node.floraFrame === this.frame;
       this.floraSet.updateNode(node.flora, node.floraDist || 0);
@@ -275,9 +286,11 @@ export class PlanetTerrain {
 
   // Clear flora around a body-fixed point (landing sites); rebuilds affected nodes
   addClearing(posF, r) {
-    if (!this.floraSet) this.floraSet = new FloraSet(this.body, this.shared);
+    this.ensureFloraSet();
     this.floraSet.clearings.push({ pos: posF.clone().setLength(this.R), r });
     if (this.floraSet.clearings.length > 8) this.floraSet.clearings.shift();
+    const field = floraOf(this.body);
+    if (field) field.prune(posF.clone().setLength(this.R), r);
     const walk = (node) => {
       if (node.flora) {
         const c = node.dir.clone().multiplyScalar(this.R);

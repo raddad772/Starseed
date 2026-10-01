@@ -45,7 +45,13 @@ export class FTL {
     this.nav = null; // { aim, legLimit }
   }
 
-  get aim() { return this.nav ? this.nav.aim : this.game.target; }
+  // where the drive points: the nav computer's aim, else its pilot's target
+  get aim() { return this.nav ? this.nav.aim : (this.ship.pilot ? this.ship.pilot.target : this.game.target); }
+
+  // the drive's messages are for whoever is aboard
+  say(text, kind) {
+    for (const p of this.game.aboardOf(this.ship)) p.ui.hud.message(text, kind);
+  }
 
   // the nearest lock: a body's sphere, or a big ship's
   massLock() {
@@ -106,23 +112,24 @@ export class FTL {
 
   toggle() {
     const g = this.game;
+    if (this.ship.type.ftl === false) { this.say(`A ${this.ship.type.className.toLowerCase()} has no FTL drive`, 'caution'); return; }
     if (this.state === 'cruise') { this.drop(false); return; }
-    if (this.state === 'spool') { this.state = 'idle'; g.message('FTL spool aborted'); return; }
-    if (this.state === 'cooldown') { g.message(`FTL drive cooling (${this.timer.toFixed(0)} s)`, 'caution'); return; }
-    if (this.ship.landed) { g.message('FTL unavailable while landed', 'caution'); return; }
-    if (this.ship.parent) { g.message(`FTL unavailable aboard ${this.ship.parent.name}`, 'caution'); return; }
+    if (this.state === 'spool') { this.state = 'idle'; this.say('FTL spool aborted'); return; }
+    if (this.state === 'cooldown') { this.say(`FTL drive cooling (${this.timer.toFixed(0)} s)`, 'caution'); return; }
+    if (this.ship.landed) { this.say('FTL unavailable while landed', 'caution'); return; }
+    if (this.ship.parent) { this.say(`FTL unavailable aboard ${this.ship.parent.name}`, 'caution'); return; }
     const lock = this.massLock();
     if (lock) {
       const left = lock.lock - lock.dist;
-      g.message(`Mass locked by ${lock.body.data.name}: clear ${(left / 1000).toFixed(left < 10000 ? 1 : 0)} km`, 'caution');
+      this.say(`Mass locked by ${lock.body.data.name}: clear ${(left / 1000).toFixed(left < 10000 ? 1 : 0)} km`, 'caution');
       return;
     }
     const obs = this.pathObstruction();
-    if (obs) { g.message(`FTL path obstructed by ${obs.data.name}: steer clear of its mass lock`, 'caution'); return; }
+    if (obs) { this.say(`FTL path obstructed by ${obs.data.name}: steer clear of its mass lock`, 'caution'); return; }
     this.state = 'spool';
     this.timer = this.spoolTime;
     g.setWarp(0);
-    g.message('FTL drive spooling', 'nav');
+    this.say('FTL drive spooling', 'nav');
   }
 
   update(dt) {
@@ -138,14 +145,14 @@ export class FTL {
     if (this.state === 'spool') {
       this.timer -= dt;
       this.effect = Math.min(0.3, this.effect + dt * 0.06);
-      if (this.massLock()) { this.state = 'idle'; g.message('FTL spool interrupted: mass lock', 'caution'); return; }
+      if (this.massLock()) { this.state = 'idle'; this.say('FTL spool interrupted: mass lock', 'caution'); return; }
       if (this.timer <= 0) {
         const obs = this.pathObstruction();
-        if (obs) { this.state = 'idle'; g.message(`FTL aborted: path obstructed by ${obs.data.name}`, 'caution'); return; }
+        if (obs) { this.state = 'idle'; this.say(`FTL aborted: path obstructed by ${obs.data.name}`, 'caution'); return; }
         this.state = 'cruise';
         this.speed = Math.max(2000, ship.vel.length());
         ship.rails = false;
-        g.message('FTL engaged', 'nav');
+        this.say('FTL engaged', 'nav');
       }
       return;
     }
@@ -160,8 +167,17 @@ export class FTL {
     const aim = this.aim;
     const tgt = aim && aim.isVessel && aim.v !== ship && !aim.v.dead ? aim : null;
     if (tgt) vmax = Math.min(vmax, Math.max(400, K_SPEED * (_t.copy(tgt.pos).distanceTo(ship.getWorldPos(_v)) - VESSEL_DROP)));
+    // the nav computer: no faster than the rest of a waypoint leg allows, and
+    // held back while the nose comes round onto its aim (big ships turn slowly)
+    if (this.nav) {
+      if (this.nav.legLimit) vmax = Math.min(vmax, Math.max(1000, K_SPEED * this.nav.legLimit));
+      if (this.nav.align !== undefined) vmax = Math.max(1000, vmax * this.nav.align);
+    }
     const target = vmax * this.throttle;
-    this.speed += (target - this.speed) * (1 - Math.exp(-dt * (target > this.speed ? 0.7 : 3.0)));
+    // slowing takes effect at once (a lagging slow-down overshot the drop
+    // point on the way in); speeding up builds
+    if (target < this.speed) this.speed = target;
+    else this.speed += (target - this.speed) * (1 - Math.exp(-dt * 0.7));
     this.vmax = vmax;
     this.effect = Math.min(1, Math.log10(Math.max(1, this.speed / 1e5)) / 4.5);
     // with a ship as the target the bubble co-moves with it: the approach
@@ -228,9 +244,9 @@ export class FTL {
     this.speed = 0;
     if (emergency) {
       ship.hull = Math.max(0.05, ship.hull - 0.04);
-      g.message(`Emergency drop: gravity well of ${(nearBody || b).data.name}`, 'warn');
-      g.engine.flash.set(0.6, 0.7, 1.0);
-    } else g.message(`Dropped out near ${b.data.name}`, 'nav');
+      this.say(`Emergency drop: gravity well of ${(nearBody || b).data.name}`, 'warn');
+      g.flashFor(ship, 0.6, 0.7, 1.0);
+    } else this.say(`Dropped out near ${b.data.name}`, 'nav');
   }
 
   // Arrive alongside a ship: its velocity, a 6 km stand-off, assist matched to it
@@ -248,6 +264,6 @@ export class FTL {
     ship.targetFrame = 'vessel:' + tv.name;
     this.speed = 0;
     const km = tv.getWorldPos(_v).distanceTo(ship.getWorldPos(_w)) / 1000;
-    g.message(`Dropped out alongside ${tv.name} · ${km.toFixed(1)} km`, 'nav');
+    this.say(`Dropped out alongside ${tv.name} · ${km.toFixed(1)} km`, 'nav');
   }
 }

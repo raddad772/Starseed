@@ -38,7 +38,10 @@ html, body { height: 100%; margin: 0; background: var(--void); color: var(--ink)
 body { font: var(--step-0)/1.45 var(--font-ui); -webkit-font-smoothing: antialiased; }
 canvas#view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; outline: none; }
 #hud { position: fixed; inset: 0; pointer-events: none; }
-#hud canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+/* one HUD per player, over their view (the whole screen, or half of a split screen) */
+.hudView { position: absolute; inset: 0; container-type: size; }
+.hudView canvas.hudCanvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.playerTag { position: absolute; right: 16px; bottom: 16px; font: 700 var(--step--1)/1 var(--font-num); letter-spacing: 0.14em; color: var(--target); padding: 5px 7px; background: var(--glass); border: 1px solid var(--target); border-radius: 2px; }
 .num { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
 .label { font-size: var(--step--1); letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-dim); }
 
@@ -46,9 +49,9 @@ canvas#view { position: fixed; inset: 0; width: 100%; height: 100%; display: blo
 .cluster { position: absolute; padding: 10px 12px; background: var(--glass); border: 1px solid var(--hair);
   border-radius: 3px; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); min-width: 0; }
 .cluster h3 { margin: 0 0 6px; font-size: var(--step--1); font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-dim); }
-#flightData { left: calc(16px + env(safe-area-inset-left, 0px)); top: calc(16px + env(safe-area-inset-top, 0px)); width: 230px; }
-#navData { right: calc(16px + env(safe-area-inset-right, 0px)); top: calc(16px + env(safe-area-inset-top, 0px)); width: 250px; }
-#modeStrip { left: 50%; transform: translateX(-50%); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); display: flex; gap: 6px; padding: 6px; }
+.flightData { left: calc(16px + env(safe-area-inset-left, 0px)); top: calc(16px + env(safe-area-inset-top, 0px)); width: 230px; }
+.navData { right: calc(16px + env(safe-area-inset-right, 0px)); top: calc(16px + env(safe-area-inset-top, 0px)); width: 250px; }
+.modeStrip { left: 50%; transform: translateX(-50%); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; padding: 6px; max-width: calc(100% - 96px); box-sizing: border-box; }
 .rows { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; align-items: baseline; }
 .rows .v { text-align: right; font-family: var(--font-num); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .chip { font: 700 var(--step--1)/1 var(--font-num); letter-spacing: 0.06em; padding: 6px 8px; border: 1px solid var(--hair); border-radius: 2px; color: var(--ink-dim); white-space: nowrap; }
@@ -58,35 +61,39 @@ canvas#view { position: fixed; inset: 0; width: 100%; height: 100%; display: blo
 .chip.warn { color: var(--warning); border-color: var(--warning); }
 .c-nav { color: var(--nav); } .c-target { color: var(--target); } .c-ok { color: var(--engaged); } .c-caution { color: var(--caution); } .c-warn { color: var(--warning); }
 
-#messages { position: absolute; left: 50%; top: calc(18% + env(safe-area-inset-top, 0px)); transform: translateX(-50%); display: grid; gap: 4px; justify-items: center; }
-#messages div { font: var(--step-0)/1.3 var(--font-ui); letter-spacing: 0.08em; padding: 5px 12px; background: var(--glass); border-left: 2px solid var(--target); transition: opacity 0.6s; }
-#messages div.warn { border-left-color: var(--warning); color: var(--warning); }
-#messages div.caution { border-left-color: var(--caution); color: var(--caution); }
-#prompt { position: absolute; left: 50%; top: 60%; transform: translateX(-50%); font: var(--step-0) var(--font-ui); letter-spacing: 0.1em; color: var(--ink); padding: 6px 12px; background: var(--glass); border: 1px solid var(--hair); }
-#prompt kbd { font: 700 var(--step--1) var(--font-num); color: var(--target); border: 1px solid var(--target); padding: 1px 5px; margin-right: 6px; border-radius: 2px; }
+.messages { position: absolute; left: 50%; top: calc(18% + env(safe-area-inset-top, 0px)); transform: translateX(-50%); display: grid; gap: 4px; justify-items: center; }
+.messages div { font: var(--step-0)/1.3 var(--font-ui); letter-spacing: 0.08em; padding: 5px 12px; background: var(--glass); border-left: 2px solid var(--target); transition: opacity 0.6s; }
+.messages div.warn { border-left-color: var(--warning); color: var(--warning); }
+.messages div.caution { border-left-color: var(--caution); color: var(--caution); }
+.prompt { position: absolute; left: 50%; top: 60%; transform: translateX(-50%); font: var(--step-0) var(--font-ui); letter-spacing: 0.1em; color: var(--ink); padding: 6px 12px; background: var(--glass); border: 1px solid var(--hair); }
+.prompt kbd { font: 700 var(--step--1) var(--font-num); color: var(--target); border: 1px solid var(--target); padding: 1px 5px; margin-right: 6px; border-radius: 2px; }
+/* the suit's screen: a visor panel over the view */
+.suitScreen { position: fixed; inset: 0; display: grid; place-items: center; pointer-events: none; z-index: 5; container-type: size; } /* over the title card; it closes for the pause menu (per player: over their view) */
+.suitScreen canvas { pointer-events: auto; width: min(1100px, calc(100cqw - 32px), calc((100cqh - 32px) * 1.6667)); aspect-ratio: 1100 / 660; display: block;
+  border: 1px solid rgba(79, 214, 230, 0.45); border-radius: 6px; box-shadow: 0 0 0 1px rgba(0,0,0,0.6), 0 0 40px rgba(79, 214, 230, 0.12); cursor: none; }
 /* quick menu (lower left): categories, then actions; the highlighted row in cyan */
-#quickMenu { left: calc(16px + env(safe-area-inset-left, 0px)); bottom: calc(68px + env(safe-area-inset-bottom, 0px)); width: min(300px, calc(100% - 32px)); box-sizing: border-box; }
-#quickMenu h3 { margin-bottom: 2px; }
-#quickMenu ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
-#quickMenu li { display: grid; grid-template-columns: 1.3em 1fr auto; gap: 8px; align-items: baseline; padding: 5px 8px; border-left: 2px solid transparent; }
-#quickMenu li.sel { border-left-color: var(--target); background: rgba(79, 214, 230, 0.12); }
-#quickMenu li.sel .ql { color: var(--target); }
-#quickMenu li.empty { grid-template-columns: 1fr; color: var(--ink-dim); }
-#quickMenu .qn { font: var(--step--1) var(--font-num); color: var(--ink-dim); }
-#quickMenu .ql { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#quickMenu .qv { font: var(--step--1) var(--font-num); color: var(--ink-dim); white-space: nowrap; max-width: 11em; overflow: hidden; text-overflow: ellipsis; }
-#quickMenu .qv b { color: var(--ink); font-weight: 700; }
-#quickMenu .qmore { height: 10px; font-size: 9px; line-height: 10px; text-align: center; color: var(--ink-dim); }
-#quickMenu .qhint { margin-top: 4px; font-size: var(--step--1); color: var(--ink-dim); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-#quickMenu .qhint kbd { font: 700 var(--step--1) var(--font-num); color: var(--ink); }
+.quickMenu { left: calc(16px + env(safe-area-inset-left, 0px)); bottom: calc(68px + env(safe-area-inset-bottom, 0px)); width: min(300px, calc(100% - 32px)); box-sizing: border-box; }
+.quickMenu h3 { margin-bottom: 2px; }
+.quickMenu ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
+.quickMenu li { display: grid; grid-template-columns: 1.3em 1fr auto; gap: 8px; align-items: baseline; padding: 5px 8px; border-left: 2px solid transparent; }
+.quickMenu li.sel { border-left-color: var(--target); background: rgba(79, 214, 230, 0.12); }
+.quickMenu li.sel .ql { color: var(--target); }
+.quickMenu li.empty { grid-template-columns: 1fr; color: var(--ink-dim); }
+.quickMenu .qn { font: var(--step--1) var(--font-num); color: var(--ink-dim); }
+.quickMenu .ql { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.quickMenu .qv { font: var(--step--1) var(--font-num); color: var(--ink-dim); white-space: nowrap; max-width: 11em; overflow: hidden; text-overflow: ellipsis; }
+.quickMenu .qv b { color: var(--ink); font-weight: 700; }
+.quickMenu .qmore { height: 10px; font-size: 9px; line-height: 10px; text-align: center; color: var(--ink-dim); }
+.quickMenu .qhint { margin-top: 4px; font-size: var(--step--1); color: var(--ink-dim); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.quickMenu .qhint kbd { font: 700 var(--step--1) var(--font-num); color: var(--ink); }
 /* controller buttons in prompts: face buttons as coloured rounds, the rest as labels */
 kbd.pb { display: inline-grid; place-items: center; min-width: 1.6em; height: 1.6em; box-sizing: border-box; padding: 0 0.45em; border-radius: 0.8em;
   font: 700 var(--step--1)/1 var(--font-num); color: var(--ink); border: 1px solid var(--ink-dim); vertical-align: middle; }
-#prompt kbd.pb { color: var(--ink); border-color: var(--ink-dim); padding: 0 0.45em; margin-right: 8px; border-radius: 0.8em; }
-#prompt kbd.pb-a, kbd.pb-a { color: #0a1a10; background: #6ade8f; border-color: #6ade8f; padding: 0; }
-#prompt kbd.pb-b, kbd.pb-b { color: #250806; background: #ff6a5a; border-color: #ff6a5a; padding: 0; }
-#prompt kbd.pb-x, kbd.pb-x { color: #06142a; background: #5aa8ff; border-color: #5aa8ff; padding: 0; }
-#prompt kbd.pb-y, kbd.pb-y { color: #261d04; background: #f1c33a; border-color: #f1c33a; padding: 0; }
+.prompt kbd.pb { color: var(--ink); border-color: var(--ink-dim); padding: 0 0.45em; margin-right: 8px; border-radius: 0.8em; }
+.prompt kbd.pb-a, kbd.pb-a { color: #0a1a10; background: #6ade8f; border-color: #6ade8f; padding: 0; }
+.prompt kbd.pb-b, kbd.pb-b { color: #250806; background: #ff6a5a; border-color: #ff6a5a; padding: 0; }
+.prompt kbd.pb-x, kbd.pb-x { color: #06142a; background: #5aa8ff; border-color: #5aa8ff; padding: 0; }
+.prompt kbd.pb-y, kbd.pb-y { color: #261d04; background: #f1c33a; border-color: #f1c33a; padding: 0; }
 /* the control a controller has highlighted in a menu, and the menus' back buttons' B badge */
 .using-pad .padfocus { outline: 2px solid var(--target); outline-offset: 2px; }
 .using-pad [data-pad-back]::after { content: 'B'; display: inline-grid; place-items: center; width: 1.5em; height: 1.5em; margin-left: 8px; border-radius: 50%;
@@ -174,28 +181,69 @@ details summary { cursor: pointer; letter-spacing: 0.12em; text-transform: upper
 #overlay .scenes button b { color: var(--ink); }
 #overlay .scenes button span { font-weight: 400; color: var(--ink-dim); }
 #overlay .check { display: flex; gap: 8px; align-items: center; font-size: var(--step--1); color: var(--ink-dim); }
+/* the pause screen: tabs across the top; on the map tab the system map shows through */
+#overlay .pause { pointer-events: auto; position: fixed; inset: 0; display: grid; grid-template-rows: auto 1fr; background: rgba(3, 7, 11, 0.8); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+#overlay .pause.mapmode { background: none; -webkit-backdrop-filter: none; backdrop-filter: none; pointer-events: none; }
+#overlay .pause .bar { pointer-events: auto; display: flex; align-items: center; gap: 10px 16px; padding: 10px 16px; background: var(--glass-strong); border-bottom: 1px solid var(--hair); flex-wrap: wrap; }
+#overlay .pause .bar h2 { margin: 0; font: 700 var(--step-1) var(--font-ui); letter-spacing: 0.18em; text-transform: uppercase; }
+#overlay .pause .grow { flex: 1; }
+#overlay .pause .page { overflow-y: auto; padding: 20px 16px; display: grid; justify-items: center; align-content: start; min-height: 0; }
+#overlay .pause.mapmode .page { overflow: visible; display: block; position: relative; padding: 0; }
+#overlay .pause .mapPanel { pointer-events: auto; position: absolute; right: 16px; top: 16px; width: min(400px, calc(100% - 32px)); }
+#overlay .pause .card { max-width: min(560px, 100%); }
+#overlay .pause .card.help { width: min(1000px, 100%); max-height: none; }
+#overlay .cat { width: min(1240px, 100%); display: grid; gap: 14px; }
+#overlay .catHead { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: end; justify-content: space-between; }
+#overlay .catHead h3 { margin: 2px 0 0; font: 700 var(--step-1) var(--font-ui); letter-spacing: 0.08em; }
+#overlay .catHead h3 span { font: 400 var(--step--1) var(--font-ui); color: var(--ink-dim); letter-spacing: 0.04em; margin-left: 8px; }
+#overlay .catHead input { width: 9em; text-transform: uppercase; font: 700 var(--step-0) var(--font-num); letter-spacing: 0.08em; padding: 6px 10px; }
+#overlay .catHead input.bad { border-color: var(--warning); }
+#overlay .cat .schematic { width: 100%; height: 132px; display: block; }
+#overlay .worlds { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(340px, 100%), 1fr)); gap: 10px; }
+#overlay .world { display: grid; grid-template-columns: 96px 1fr; gap: 12px; padding: 12px; background: var(--glass); border: 1px solid var(--hair); border-radius: 3px; align-items: start; }
+#overlay .world.moon { grid-template-columns: 64px 1fr; padding: 8px 12px; border-style: dashed; }
+#overlay .world.hl { border-color: var(--target); }
+#overlay .world canvas { width: 96px; height: 96px; }
+#overlay .world.moon canvas { width: 64px; height: 64px; }
+#overlay .world h4 { margin: 0 0 6px; font: 700 var(--step-0) var(--font-ui); letter-spacing: 0.08em; }
+#overlay .world h4 span { font-weight: 400; color: var(--ink-dim); font-size: var(--step--1); margin-left: 6px; letter-spacing: 0.04em; }
+#overlay .world dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 0; font-size: var(--step--1); }
+#overlay .world dt { color: var(--ink-dim); text-transform: uppercase; letter-spacing: 0.1em; }
+#overlay .world dd { margin: 0; }
+#overlay .world .cover { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
+#overlay .world .cover .chip { padding: 4px 6px; font-size: 11px; }
+#overlay .world .cardBtns { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+#overlay .world .cardBtns button { font-size: var(--step--1); padding: 4px 10px; }
 select { font: 400 var(--step--1) var(--font-ui); color: var(--ink); background: rgba(0,0,0,0.3); border: 1px solid var(--hair); padding: 4px 8px; }
 #mapLabels { position: fixed; inset: 0; pointer-events: none; }
 #mapLabels .ml { position: absolute; transform: translate(8px, -50%); font: var(--step--1) var(--font-ui); letter-spacing: 0.08em; color: var(--ink); white-space: nowrap; pointer-events: auto; cursor: pointer; text-shadow: 0 0 4px #000; }
 #mapLabels .ml.target { color: var(--target); }
 #mapLabels .ml.moon { color: var(--ink-dim); }
-@media (max-width: 720px) {
-  #flightData, #navData { width: auto; max-width: calc(50% - 24px); font-size: var(--step--1); }
+@container (max-width: 720px) {
+  .flightData, .navData { width: auto; max-width: calc(50% - 24px); font-size: var(--step--1); }
 }
-@media (prefers-reduced-motion: reduce) { #messages div { transition: none; } }
+/* a half-height view (split screen): smaller clusters, messages nearer the top */
+@container (max-height: 560px) {
+  .flightData, .navData { font-size: var(--step--1); padding: 6px 9px; }
+  .messages { top: 12%; }
+}
+@media (prefers-reduced-motion: reduce) { .messages div { transition: none; } }
 </style>
 <script type="importmap">{ "imports": { "three": "./vendor/three.module.js" } }</script>
 </head>
 <body>
 <canvas id="view" tabindex="0" aria-label="Starseed Infinite view"></canvas>
 <div id="hud" hidden>
-  <canvas id="hudCanvas"></canvas>
-  <div id="flightData" class="cluster"></div>
-  <div id="navData" class="cluster"></div>
-  <div id="modeStrip" class="cluster"></div>
-  <div id="messages" aria-live="polite"></div>
-  <div id="prompt" hidden></div>
-  <div id="quickMenu" class="cluster" hidden></div>
+  <div class="hudView" data-player="0">
+    <canvas class="hudCanvas"></canvas>
+    <div class="cluster flightData"></div>
+    <div class="cluster navData"></div>
+    <div class="cluster modeStrip"></div>
+    <div class="messages" aria-live="polite"></div>
+    <div class="prompt" hidden></div>
+    <div class="cluster quickMenu" hidden></div>
+    <div class="playerTag" hidden></div>
+  </div>
 </div>
 <div id="loading" hidden>
   <div class="loadbox" role="progressbar" aria-labelledby="loadText" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
@@ -203,6 +251,7 @@ select { font: 400 var(--step--1) var(--font-ui); color: var(--ink); background:
     <div class="bar"><i></i></div>
   </div>
 </div>
+<div class="suitScreen" data-player="0" hidden><canvas aria-label="Suit computer"></canvas></div>
 <div id="mapLabels" hidden></div>
 <div id="briefing">
   <div class="panel">
@@ -236,14 +285,18 @@ select { font: 400 var(--step--1) var(--font-ui); color: var(--ink); background:
         <kbd>Space / C</kbd><span>Jump &amp; jetpack · ship: belly thrusters up / down</span>
         <kbd>Q / E</kbd><span>Roll (ship, spacewalk)</span>
         <kbd>Shift</kbd><span>Sprint · ship: boost</span>
-        <kbd>F</kbd><span>Interact: seats, ramps, lifts</span>
+        <kbd>F</kbd><span>Interact: seats, ramps, lifts, doors · get in / out of vehicles</span>
         <kbd>P</kbd><span>Back to your last pilot seat, from anywhere</span>
         <kbd>Z</kbd><span>Flight assist: OFF → ROTATION → FULL</span>
         <kbd>G</kbd><span>Landing gear</span>
+        <kbd>Y</kbd><span>Cargo clamp (lifter, dropship): take the cargo under you, or let it go</span>
+        <kbd>R</kbd><span>Ramp (shuttle, dropship)</span>
         <kbd>J</kbd><span>FTL drive (outside mass lock)</span>
         <kbd>, / .</kbd><span>Time warp down / up</span>
         <kbd>M</kbd><span>System map · Tab: cycle targets</span>
         <kbd>N</kbd><span>Nav computer: fly to the target, door to door</span>
+        <kbd>U</kbd><span>Suit computer: your ships and their orders</span>
+        <kbd>I</kbd><span>Inventory: put things down · F picks up what you look at</span>
         <kbd>`</kbd><span>Quick menu: ship systems, targets, routes, time</span>
         <kbd>T</kbd><span>Target what's under the cursor (or the reticle)</span>
         <kbd>V</kbd><span>Toggle chase camera</span>

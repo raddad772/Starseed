@@ -1,11 +1,11 @@
-// Big ships: the Halyard-class tender (330 m, two dorsal docking pads) and
-// the Bastion-class carrier (1.55 km, a hangar bay open on the port side).
+// Big ships: the Halyard-class tender (330 m, two dorsal docking pads).
+// (The Bastion-class carrier is modelled in Blender: render/glbShip.js.)
 // Built from the layouts in sim/vesselTypes.js, so hull, decks and rooms line
 // up with what the physics collides with and the player walks on. Hundreds
 // of parts are merged per material: each ship is a handful of draw calls.
 
 import * as THREE from 'three';
-import { TENDER, CARRIER } from '../sim/vesselTypes.js';
+import { TENDER } from '../sim/vesselTypes.js';
 import { interiorMaterial } from './lightRig.js';
 
 // ---------------------------------------------------------------- geometry kit
@@ -528,187 +528,6 @@ export function buildTender(name, reg) {
   return { root: group, parts, pads, glow: M.glow, navLights, materials: M };
 }
 
-// ---------------------------------------------------------------- Bastion-class carrier
-
-export function buildCarrier(name, reg) {
-  const C = CARRIER;
-  const seed = hashStr(name);
-  const r = rng(seed);
-  const k = new Kit();
-  const M = commonMaterials(seed, [128, 134, 142], 0x2f7fa6);
-  M.hdeck = inner({ map: deckTexture(seed + 5), metalness: 0.45, roughness: 0.65, emissive: 0x23272b, emissiveIntensity: 0.06 });
-  M.hdeck.map.repeat.set(1, 1);
-  M.iwall2 = inner({ map: hullTexture([96, 102, 110], seed + 9, 8), metalness: 0.4, roughness: 0.6, emissive: 0x23282d, emissiveIntensity: 0.05 });
-  M.itrim = inner({ color: 0x3c434b, metalness: 0.6, roughness: 0.45, emissive: 0x1a1e22, emissiveIntensity: 0.05 });
-  M.stripe = inner({ color: 0xd9a12c, metalness: 0.2, roughness: 0.6, emissive: 0x3a2a08, emissiveIntensity: 0.2 });
-  M.cont1 = inner({ color: 0x8a3b24, metalness: 0.35, roughness: 0.6, emissive: 0x1a0c08, emissiveIntensity: 0.05 });
-  M.cont2 = inner({ color: 0x2f5f7a, metalness: 0.35, roughness: 0.6, emissive: 0x0a141a, emissiveIntensity: 0.05 });
-  M.cont3 = inner({ color: 0x6f6a58, metalness: 0.35, roughness: 0.6, emissive: 0x14130f, emissiveIntensity: 0.05 });
-  M.green = basic(0x6ade8f, 2.4);
-
-  // hull: full octagonal sections fore and aft, three pieces around the hangar
-  const oct = chamfer(-130, -100, 130, 100, 24);
-  k.prism('hull', oct, -640, -260, 48, { capLo: false, capHi: false });
-  k.prism('hull', oct, 160, 640, 48, { capLo: false });
-  k.prism('hull', [[-10, -100], [106, -100], [130, -76], [130, 76], [106, 100], [-10, 100]], -260, 160, 48, { skip: [5], capLo: false, capHi: false });
-  k.prism('hull', [[-130, -76], [-106, -100], [-10, -100], [-10, 0], [-130, 0]], -260, 160, 48, { skip: [2, 3], capLo: false, capHi: false });
-  k.prism('hull', [[-130, 72], [-10, 72], [-10, 100], [-106, 100], [-130, 76]], -260, 160, 48, { skip: [0, 1], capLo: false, capHi: false });
-  // bow wedge and stern engine block
-  const bowTip = chamfer(-62, -46, 62, 34, 18);
-  k.loft('hull', bowTip, -780, oct, -640, 48, { capHi: false, capKey: 'hull2' });
-  k.prism('hull2', chamfer(-120, -90, 120, 90, 20), 640, 720, 32, { capLo: false });
-  for (const [x, y, z, rr] of C.engines) bell(k, x, y, z, rr, 50);
-  // dorsal ridge, keel, command tower
-  k.prism('hull2', chamfer(-40, 100, 40, 114, 4), -560, 600, 32);
-  k.prism('hull2', chamfer(-30, -114, 30, -100, 4), -500, 500, 32);
-  k.prism('hull', chamfer(20, 100, 90, 196, 6), 380, 520, 32);
-  k.box('hull', 20, 196, 416, 90, 210, 520, 16);
-  k.box('hull', 20, 204, 380, 90, 210, 416, 16);
-  k.box('hull', 20, 196, 380, 28, 204, 416, 16);
-  k.box('hull', 82, 196, 380, 90, 204, 416, 16);
-  k.box('hull', 28, 196, 380, 82, 197.5, 383, 8);
-  k.box('hull', 28, 203, 380, 82, 204, 383, 8);
-  for (let x = 34; x < 82; x += 6) k.box('trim', x - 0.25, 197.5, 380, x + 0.25, 203, 381, 4);
-  k.quadZ('glass', 380.5, 28, 82, 197.5, 203, -1, 4);
-  windowRows(k, r, 90, 1, [110, 118, 126, 134, 142, 150, 158, 166, 174, 182], 384, 518);
-  windowRows(k, r, 20, -1, [110, 118, 126, 134, 142, 150, 158, 166, 174, 182], 384, 518);
-  dish(k, 70, 222, 470, 9);
-  k.box('trim', 39.5, 210, 489.5, 40.5, 250, 490.5, 4);
-  k.box('trim', 59.5, 210, 499.5, 60.5, 236, 500.5, 4);
-  // hull surface detail
-  greebles(k, r, 420, { axis: 'y', at: 100, sign: 1, u0: -104, u1: -42, v0: -630, v1: 630 }, { sMin: 2, sMax: 14, hMax: 5 });
-  greebles(k, r, 420, { axis: 'y', at: 100, sign: 1, u0: 42, u1: 104, v0: -630, v1: 370 }, { sMin: 2, sMax: 14, hMax: 5 });
-  greebles(k, r, 160, { axis: 'y', at: 114, sign: 1, u0: -36, u1: 36, v0: -550, v1: 590 }, { sMin: 1.5, sMax: 8, hMax: 4 });
-  greebles(k, r, 300, { axis: 'y', at: -100, sign: -1, u0: -104, u1: 104, v0: -630, v1: 630 }, { sMin: 2, sMax: 16, hMax: 4 });
-  greebles(k, r, 260, { axis: 'x', at: 130, sign: 1, u0: -74, u1: 74, v0: -630, v1: 630 }, { sMin: 2, sMax: 12, hMax: 3 });
-  greebles(k, r, 120, { axis: 'x', at: -130, sign: -1, u0: -74, u1: 74, v0: -630, v1: -280 }, { sMin: 2, sMax: 12, hMax: 3 });
-  greebles(k, r, 120, { axis: 'x', at: -130, sign: -1, u0: -74, u1: 74, v0: 180, v1: 630 }, { sMin: 2, sMax: 12, hMax: 3 });
-  greebles(k, r, 40, { axis: 'x', at: -130, sign: -1, u0: -74, u1: -6, v0: -258, v1: 158 }, { sMin: 2, sMax: 12, hMax: 3 });
-  for (let i = 0; i < 14; i++) {
-    const z = -600 + r() * 1180, x = (r() < 0.5 ? -1 : 1) * (50 + r() * 50);
-    if (z > 370 && x > 15) continue;
-    const g = new THREE.SphereGeometry(4 + r() * 6, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2);
-    k.geo('radiator', g, new THREE.Matrix4().setPosition(x, 100, z));
-  }
-  for (let z = -540; z < 590; z += 70 + r() * 60) for (const x of [-30, 30]) k.box('trim', x - 0.4, 114, z - 0.4, x + 0.4, 114 + 10 + r() * 22, z + 0.4, 4);
-  const winYs = [];
-  for (let y = -76; y <= 76; y += 12) winYs.push(y);
-  windowRows(k, r, 130, 1, winYs, -630, 630, (y, z) => z < -340 && z > -580 && y > 10 && y < 70, 0.5);
-  windowRows(k, r, -130, -1, winYs, -630, 630, (y, z) => (z > -262 && z < 162 && y > -6) || (z < -340 && z > -580 && y > 10 && y < 70), 0.5);
-  // large raised plating breaks up the flanks and the roof; an accent stripe
-  for (const side of [-1, 1]) {
-    for (let i = 0; i < 80; i++) {
-      const w = 20 + r() * 80, h = 10 + r() * 34;
-      const z = -630 + r() * (1260 - w), y = -74 + r() * (148 - h);
-      if (side < 0 && z + w > -268 && z < 168 && y + h > -6) continue;
-      if (z < -336 && z + w > -584 && y + h > 10 && y < 72) continue;
-      const key = r() < 0.55 ? 'hull2' : 'hull';
-      if (side > 0) k.box(key, 130, y, z, 130.7, y + h, z + w, 24, '-x');
-      else k.box(key, -130.7, y, z, -130, y + h, z + w, 24, '+x');
-    }
-    k.box('accent', side > 0 ? 130 : -131, -30, -632, side > 0 ? 131 : -130, -24, 632, 8, side > 0 ? '-x' : '+x');
-  }
-  for (let i = 0; i < 110; i++) {
-    const w = 16 + r() * 50, d = 20 + r() * 90;
-    const x = (r() < 0.5 ? -1 : 1) * (44 + r() * (60 - w * 0.5));
-    const z = -630 + r() * (1260 - d);
-    if (z + d > 370 && x > 10) continue;
-    k.box(r() < 0.5 ? 'hull2' : 'hull', x - w / 2, 100, z, x + w / 2, 100.6, z + d, 24, '-y');
-  }
-  // hangar interior: deck, walls, ceiling with light panels, catwalks, cranes
-  k.quadY('hdeck', 0.01, -130, -10, -260, 160, 1, 16);
-  k.quadY('iwall2', 71.99, -128, -10, -260, 160, -1, 24);
-  for (const z of [-220, -140, -60, 20, 100]) for (const x of [-92, -42]) k.quadY('ipanel', 71.9, x - 14, x + 14, z - 3, z + 3, -1, 4);
-  k.quadX('iwall2', -10.01, 0, 72, -260, -2.5, -1, 24);
-  k.quadX('iwall2', -10.01, 0, 72, 2.5, 160, -1, 24);
-  k.quadX('iwall2', -10.01, 4, 72, -2.5, 2.5, -1, 24);
-  k.quadZ('iwall2', -259.99, -128, -10, 0, 72, 1, 24);
-  k.quadZ('iwall2', 159.99, -128, -10, 0, 72, -1, 24);
-  for (let z = -250; z < 160; z += 20) k.box('itrim', -11.2, 0, z - 0.6, -10, 72, z + 0.6, 4);
-  for (const y of [22, 44]) {
-    k.box('itrim', -16, y - 0.4, -258, -10, y, 158, 4);
-    k.box('itrim', -16.1, y, -258, -15.9, y + 1.1, 158, 4);
-    for (let z = -250; z < 158; z += 12) k.box('amber', -15.95, y + 1.1, z, -15.85, y + 1.2, z + 0.6, 1);
-  }
-  for (const z of [-100, 60]) {
-    k.box('itrim', -128, 58, z - 2, -12, 62, z + 2, 6);
-    k.box('itrim', -76, 52, z - 3, -64, 58, z + 3, 4);
-    k.box('itrim', -70.3, 20, z - 0.3, -69.7, 52, z + 0.3, 2);
-  }
-  // deck markings: approach stripes and pads
-  for (const x of [-124, -16]) k.quadY('stripe', 0.03, x - 0.6, x + 0.6, -256, 156, 1, 4);
-  for (let z = -236; z < 140; z += 12) k.face('stripe', [V(-129.5, 0.03, z), V(-126.5, 0.03, z + 3), V(-126.5, 0.03, z + 6), V(-129.5, 0.03, z + 3)], V(0, 1, 0), 4);
-  // containers
-  for (const [x0, y0, z0, x1, y1, z1] of [[-32, 0, -236, -12, 10, -196], [-30, 0, 96, -12, 14, 136]]) {
-    for (let y = y0; y < y1 - 0.5; y += 2.6) for (let z = z0; z < z1 - 0.5; z += 6.1) {
-      const key = ['cont1', 'cont2', 'cont3'][Math.floor(r() * 3)];
-      k.box(key, x0, y, z, x1, Math.min(y1, y + 2.55), Math.min(z1, z + 6), 4);
-    }
-  }
-  // door frame lights around the opening
-  k.box('amber', -130.4, 0, -240, -129.8, 0.4, 140, 2);
-  k.box('amber', -130.4, 63.6, -240, -129.8, 64, 140, 2);
-  for (const z of [-240, 140]) k.box('amber', -130.4, 0, z - 0.3, -129.8, 64, z + 0.3, 2);
-  for (const y of [8, 24, 40, 56]) for (const z of [-243, 143]) k.box('green', -130.6, y, z - 0.8, -130, y + 1.2, z + 0.8, 1);
-  k.box('hull2', -130, 0, -260, -124, 72, -240, 8);
-  k.box('hull2', -130, 0, 140, -124, 72, 160, 8);
-  k.box('hull2', -130, 64, -240, -124, 72, 140, 8);
-  // starboard door, corridor, lift lobby
-  k.box('ifloor', -10, -0.2, -2.5, -3, 0, 2.5, 4, '-y');
-  k.quadY('iwall', 4, -10, -3, -2.5, 2.5, -1, 6);
-  k.quadZ('iwall', -2.5, -10, -4, 0, 4, 1, 6);
-  k.quadZ('iwall', 2.5, -10, -4, 0, 4, -1, 6);
-  k.box('ifloor', -4, -0.2, -40, 2, 0, 42, 4, '-y');
-  k.quadY('iwall', 4, -4, 2, -40, 42, -1, 6);
-  k.quadX('iwall', -4, 0, 4, -40, -2.5, 1, 6);
-  k.quadX('iwall', -4, 0, 4, 2.5, 42, 1, 6);
-  k.quadX('iwall', 2, 0, 4, -40, 32, -1, 6);
-  k.quadZ('iwall', -40, -4, 2, 0, 4, 1, 6);
-  k.quadZ('iwall', 42, -4, 2, 0, 4, -1, 6);
-  for (let z = -36; z < 40; z += 6) k.quadY('ipanel', 3.98, -1.5, -0.5, z, z + 2, -1, 2);
-  k.box('ifloor', 2, -0.2, 32, 12, 0, 42, 4, '-y');
-  k.quadY('iwall', 4, 2, 12, 32, 42, -1, 6);
-  k.quadX('iwall', 12, 0, 4, 32, 42, -1, 6);
-  k.quadZ('iwall', 32, 2, 12, 0, 4, 1, 6);
-  k.quadZ('iwall', 42, 2, 12, 0, 4, -1, 6);
-  k.quadY('ipanel', 3.98, 5, 9, 35, 39, -1, 2);
-  k.quadX('amber', 11.95, 0, 2.6, 35.8, 35.95, -1, 2);
-  k.quadX('amber', 11.95, 0, 2.6, 38.05, 38.2, -1, 2);
-  k.quadX('amber', 11.95, 2.5, 2.6, 35.8, 38.2, -1, 2);
-  // bridge interior
-  k.box('ifloor', 28, 195.5, 383, 82, 196, 416, 4, '-y');
-  k.quadY('iwall', 204, 28, 82, 383, 416, -1, 6);
-  k.quadZ('iwall', 416, 28, 82, 196, 204, -1, 6);
-  k.quadX('iwall', 28, 196, 204, 383, 416, 1, 6);
-  k.quadX('iwall', 82, 196, 204, 383, 416, -1, 6);
-  k.quadZ('iwall', 383, 28, 82, 196, 197.5, 1, 6);
-  for (const z of [390, 402]) for (const x of [38, 55, 72]) k.quadY('ipanel', 203.95, x - 3, x + 3, z - 1, z + 1, -1, 2);
-  k.box('iconsole', 32, 196, 383.6, 78, 197.1, 386, 4);
-  for (let x = 34; x < 76; x += 6) k.face('screen', [V(x, 197.12, 385.2), V(x + 4.5, 197.12, 385.2), V(x + 4.5, 198, 384.4), V(x, 198, 384.4)], V(0, 0.6, 0.8), 1, (p) => [(p.x - x) / 4.5, p.y > 197.5 ? 1 : 0]);
-  k.box('iseat', 54.55, 196, 396.55, 55.45, 196.55, 397.45, 2);
-  k.box('iseat', 54.55, 196.55, 397.4, 55.45, 197.8, 397.65, 2);
-  k.quadZ('amber', 415.95, 53.8, 56.2, 198.6, 198.7, -1, 2);
-  for (const s of [-1, 1]) k.quadZ('amber', 415.95, 55 + s * 1.2 - 0.05, 55 + s * 1.2 + 0.05, 196, 198.7, -1, 2);
-  const { group, parts } = k.build(M);
-  // force field across the hangar door
-  const field = makeForceField(380, 64);
-  field.position.set(-130.3, 32, -50);
-  field.rotation.y = -Math.PI / 2;
-  // pad markings on the hangar deck
-  ['1', '2', '3'].forEach((t, i) => {
-    const mark = new THREE.Mesh(new THREE.PlaneGeometry(34, 34), (() => { const m = interiorMaterial({ map: padMarkTexture(t), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, emissive: 0x332a10, emissiveIntensity: 0.4 }); m.userData.cast = false; return m; })());
-    mark.rotation.x = -Math.PI / 2; mark.position.set(-70, 0.04, -180 + i * 120);
-    group.add(mark);
-  });
-  group.add(nameDecal(name, reg, 130, 1, 14, 70, -580, -340));
-  group.add(nameDecal(name, reg, -130, -1, 14, 70, -580, -340));
-  const navLights = [];
-  for (const [c, kk, x, y, z, s] of [[0xff2a1a, 3, -130.8, 0, -620, 1.6], [0x1aff4a, 3, 130.8, 0, -620, 1.6], [0xffffff, 4, 55, 250.8, 490, 1.2], [0xffffff, 4, 0, 80.8, -775, 1.4], [0xffffff, 4, 0, 90.8, 715, 1.4], [0xffffff, 4, 0, -114.8, 0, 1.4]]) {
-    const n = navLight(c, kk); n.scale.setScalar(s); n.position.set(x, y, z); group.add(n); navLights.push(n);
-  }
-  return { root: group, parts, field, glow: M.glow, navLights, materials: M };
-}
-
 const FIELD_VERT = /* glsl */`
 varying vec2 vUv;
 varying vec3 vN;
@@ -750,7 +569,8 @@ void main() {
 }
 `;
 
-function makeForceField(w, h) {
+// the hangar force field: a faint shimmer of hexagons across an opening
+export function makeForceField(w, h) {
   const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h, 1, 1), new THREE.ShaderMaterial({
     uniforms: { uTime: { value: 0 }, uSize: { value: new THREE.Vector2(w, h) } },
     vertexShader: FIELD_VERT, fragmentShader: FIELD_FRAG,

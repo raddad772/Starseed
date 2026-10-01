@@ -14,6 +14,8 @@
 
 import * as THREE from 'three';
 import { SHIP_INTERIOR, SHIP_HULL_BOXES } from '../render/shipModel.js';
+import { insideBox, pilotSeat } from './vesselTypes.js';
+import { floraOf } from './floraField.js';
 
 const EYE = 1.68;
 const RADIUS = 0.3;
@@ -30,6 +32,8 @@ const MOVE_KEYS = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'KeyC', 'KeyQ', 'Key
 const _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3(), _v4 = new THREE.Vector3();
 const _q1 = new THREE.Quaternion(), _q2 = new THREE.Quaternion();
 const _m4 = new THREE.Matrix4();
+const _x1 = new THREE.Vector3(), _x2 = new THREE.Vector3();
+const _fl1 = new THREE.Vector3(), _fl2 = new THREE.Vector3(), _fl3 = new THREE.Vector3(), _fl4 = new THREE.Vector3();
 
 export function lookQuat(up, heading, pitch, out) {
   const fwd = _v1.copy(heading).multiplyScalar(Math.cos(pitch)).addScaledVector(up, Math.sin(pitch)).normalize();
@@ -40,8 +44,23 @@ export function lookQuat(up, heading, pitch, out) {
 }
 
 export class Player {
-  constructor(game) {
+  constructor(game, index = 0) {
     this.game = game;
+    this.index = index;
+    this.label = `Player ${index + 1}`;
+    // what this player sees and handles (player state, not world state):
+    // their controls, view, camera mode, target, route, screens (set by the game)
+    this.input = null;
+    this.ui = null;
+    this.view = null;
+    this.camMode = 'first';
+    this.chaseQuat = new THREE.Quaternion();
+    this.target = null;
+    this.route = null;
+    this.deathShown = false;
+    this.respawnT = 0;
+    this.ownShip = null;   // their own shuttle (player 1: the Wayfarer)
+    this.travelIndex = 0;  // travel compression: their ship's own warp level while others hold the clock
     this.mode = 'surface'; // 'seat' | 'ship' | 'surface' | 'eva'
     this.body = null;
     this.vessel = null;    // the vessel whose space we are in (seat / ship modes)
@@ -70,16 +89,26 @@ export class Player {
   }
 
   // the player's own shuttle
-  get ship() { return this.game.ship; }
+  get ship() { return this.ownShip || this.game.ship; }
   get aboard() { return this.mode === 'seat' || this.mode === 'ship'; }
+  // flying a craft: in its pilot seat (any other seat only rides along)
+  get flying() { return this.mode === 'seat' && !!this.vessel && this.vessel.pilot === this; }
 
   // ------------------------------------------------------------------ frames
 
-  shipFixedPose(outPos, outQuat) {
-    // home ship pose in its body's fixed frame
-    const s = this.ship, b = s.body;
+  // a shuttle's pose in its body's fixed frame
+  shipFixedPose(outPos, outQuat, s = this.ship) {
+    const b = s.body;
     outPos.copy(s.pos).applyQuaternion(b.qInv);
     outQuat.copy(b.qInv).multiply(s.quat);
+  }
+
+  // shuttles standing free on body b (anyone's: you bump into them, walk up their ramps)
+  shuttlesOn(b) {
+    const out = this._shuttles || (this._shuttles = []);
+    out.length = 0;
+    for (const v of this.game.vessels) if (v.type.key === 'shuttle' && !v.dead && v.body === b && !v.parent) out.push(v);
+    return out;
   }
 
   // ------------------------------------------------------------------ placement
@@ -109,20 +138,54 @@ export class Player {
     this._room = null;
   }
 
-  sitDown(seat = 0, vessel = this.vessel) {
-    if (this.vessel && this.vessel !== vessel) this.vessel.pilotPresent = false;
+  // the other player sitting in seat i of v, if any
+  seatHolder(v, i) {
+    return this.game.players.find((q) => q !== this && q.mode === 'seat' && q.vessel === v && q.seat === i) || null;
+  }
+
+  // How seat i of v is offered: its pilot seat to fly it, any other to ride
+  // along, or not at all (taken). A seat holds one player; a craft has one
+  // pilot seat, and only whoever sits in it has the controls.
+  seatOffer(v, i, verb = 'Take the') {
+    const s = v.type.seats[i] || v.type.seats[0];
+    const label = s ? s.label.toLowerCase() : 'seat';
+    const holder = this.seatHolder(v, i);
+    if (holder) return { key: null, text: `${s ? s.label : 'Seat'} · ${holder.label}` };
+    if (i === pilotSeat(v.type)) return { key: 'F', text: `${verb} ${label} · fly ${v.name}` };
+    return { key: 'F', text: v.pilot && v.pilot !== this ? `${verb} ${label} · ride with ${v.pilot.label}` : `${verb} ${label} · ride along` };
+  }
+
+  // false (and a message) when the seat is taken
+  sitDown(seat = null, vessel = this.vessel) {
+    if (seat === null) seat = pilotSeat(vessel.type);
+    const holder = this.seatHolder(vessel, seat);
+    if (holder) {
+      const s = vessel.type.seats[seat] || vessel.type.seats[0];
+      this.game.message(`${vessel.name}: the ${s ? s.label.toLowerCase() : 'seat'} is taken · ${holder.label}`, 'caution');
+      return false;
+    }
+    if (this.vessel && this.vessel !== vessel) this.releaseControls(this.vessel);
     this.vessel = vessel;
     this.mode = 'seat';
     this.seat = seat;
     this.headYaw = 0; this.headPitch = 0;
-    vessel.pilotPresent = true;
-    this.lastSeat = { vessel, seat };
+    // the pilot seat has the controls (P brings you back to it)
+    if (seat === pilotSeat(vessel.type)) {
+      vessel.pilot = this;
+      this.lastSeat = { vessel, seat };
+    }
     this.game.onModeChange && this.game.onModeChange('seat');
+    return true;
+  }
+
+  // out of the pilot seat: nobody flies the craft until someone sits there
+  releaseControls(v) {
+    if (v && v.pilot === this) v.pilot = null;
   }
 
   standUp() {
     const v = this.vessel;
-    v.pilotPresent = false;
+    this.releaseControls(v);
     const s = v.type.seats[this.seat] || v.type.seats[0];
     this.mode = 'ship';
     this.sPos.set(s.stand[0], s.stand[1], s.stand[2]);
@@ -133,13 +196,34 @@ export class Player {
     this.game.onModeChange && this.game.onModeChange('ship');
   }
 
+  // out of a craft you only sit in: back through its hatch into the ship
+  // carrying it, or out beside it once it has launched
+  leaveCraft() {
+    const v = this.vessel;
+    this.releaseControls(v);
+    v.boardingT = 1.6; // (a canopy lifts)
+    if (v.parent && v.attached && v.home) {
+      const host = v.parent, h = v.home;
+      this.fade = 1;
+      this.placeAboard(host, new THREE.Vector3(h.hatch[0] - Math.sign(h.hatch[0]) * 1.2, h.hatch[1], h.hatch[2] + (h.hatch[0] ? 0 : 1.6)), new THREE.Vector3(Math.sign(h.hatch[0]) || 0, 0, h.hatch[0] ? 0 : -1));
+      this.game.onModeChange && this.game.onModeChange('ship');
+      return;
+    }
+    const s = v.type.seats[0];
+    this.mode = 'ship';
+    this.sPos.set(s.stand[0], s.stand[1], s.stand[2]);
+    this.sVel.set(0, 0, 0);
+    this.heading.set(s.heading[0], 0, s.heading[2]).normalize();
+    this.exitVessel();
+  }
+
   // back to the last pilot seat from anywhere
   recallSeat() {
     const ls = this.lastSeat;
     if (!ls || ls.vessel.dead) { this.game.message('No pilot seat to return to', 'caution'); return; }
     if (this.mode === 'seat' && this.vessel === ls.vessel) return;
+    if (!this.sitDown(ls.seat, ls.vessel)) return;
     this.fade = 1;
-    this.sitDown(ls.seat, ls.vessel);
     this.body = ls.vessel.body;
     this.game.message(`Back in the ${ls.vessel.type.seats[ls.seat].label.toLowerCase()} · ${ls.vessel.name}`, 'nav');
   }
@@ -167,10 +251,16 @@ export class Player {
     // (it used to stay lit after boarding or a P recall mid-burn: a
     // continuous jet hiss for the rest of the flight)
     this.jetOn = false;
+    const wasSeated = this.mode === 'seat';
     if (this.mode === 'seat') this.updateSeat(dt, input, mouse);
     else if (this.mode === 'ship') this.updateShip(dt, input, mouse);
     else if (this.mode === 'surface') this.updateSurface(dt, input, mouse);
     else this.updateEva(dt, input, mouse);
+    // on foot: an item you look at, else a vehicle or a door by you (not in
+    // the frame you got out of a seat: the same F would put you straight back)
+    if (!wasSeated && this.mode !== 'seat' && !this.prompt && this.game.items) {
+      if (!this.game.itemInteract(this, input)) this.game.craftInteract(this, input);
+    }
     if (this.grounded && this.mode !== 'seat') this.jetFuel = Math.min(1, this.jetFuel + dt / 2.5);
   }
 
@@ -190,7 +280,8 @@ export class Player {
   }
 
   updateSeat(dt, input, mouse) {
-    const freeLook = input.buttons & 2 || input.down('AltLeft');
+    // (a passenger looks around freely: the stick is the pilot seat's)
+    const freeLook = input.buttons & 2 || input.down('AltLeft') || this.vessel.pilot !== this;
     if (freeLook) {
       this.headYaw = THREE.MathUtils.clamp(this.headYaw - mouse.dx, -1.9, 1.9);
       this.headPitch = THREE.MathUtils.clamp(this.headPitch - mouse.dy, -1.0, 1.2);
@@ -199,7 +290,8 @@ export class Player {
       this.headYaw -= this.headYaw * k; this.headPitch -= this.headPitch * k;
     }
     this.body = this.vessel.body;
-    if (input.hit('KeyF')) this.standUp();
+    // (out of a seat into the cabin, or out of a craft with nothing to walk in)
+    if (input.hit('KeyF')) { if (this.vessel.type.seatOnly && !this.vessel.type.rooms) this.leaveCraft(); else this.standUp(); }
   }
 
   // Walking aboard a vessel (its local frame, plating gravity along -Y)
@@ -250,7 +342,8 @@ export class Player {
     // vessels resting in this one: bump into them, board them by the ramp
     for (const c of v.children) if (this.childAboard(c, input)) return;
     this.bobUpdate(dt, Math.hypot(this.sVel.x, this.sVel.z));
-    I.interact(this, input);
+    // an item you look at comes before the seat or lift you stand by
+    if (!(this.game.items && this.game.itemInteract(this, input))) I.interact(this, input);
   }
 
   // a vessel docked / flying inside the one we walk in
@@ -306,26 +399,32 @@ export class Player {
     this.game.onModeChange && this.game.onModeChange('ship');
   }
 
-  // Walked out of a vessel: into its host's space if there is floor there,
-  // otherwise onto the planet or into space
+  // Walked (or climbed) out of a vessel: into the first host up the chain
+  // with floor there (out of a cart in a bay: the bay), otherwise onto the
+  // planet or into space. Out of something inside a container, you climb
+  // out past it through its door.
   exitVessel() {
     const v = this.vessel;
-    const host = v.parent;
-    if (host && host.interior) {
-      const pl = _v1.copy(this.sPos).applyQuaternion(v.lquat).add(v.lpos);
-      if (host.interior.roomAt(pl, 1.0)) {
-        const vel = _v2.copy(this.sVel).applyQuaternion(v.lquat).add(v.lvel);
-        const hd = _v3.copy(this.heading).applyQuaternion(v.lquat);
-        this.enterVessel(host, pl.clone(), vel.clone(), hd.clone());
-        return;
-      }
-    }
-    // world (body-centred inertial) state of the player
+    // body-centred inertial state of the point stepped out to
     const b = v.body;
     const pW = _v1.copy(this.sPos).applyQuaternion(v.quat).add(v.pos);
     const vLocal = _v2.copy(v.angVel).cross(this.sPos).add(this.sVel);
     const vW = _v3.copy(vLocal).applyQuaternion(v.quat).add(v.vel);
     const headW = this.heading.clone().applyQuaternion(v.quat);
+    for (let h = v.parent; h; h = h.parent) {
+      const local = h.bodyToLocal(pW, _x1);
+      if (h.interior && h.interior.roomAt(local, 1.0)) {
+        const qi = _q2.copy(h.quat).invert();
+        const lv = vW.clone().sub(h.pointVelocity(local, _x2)).applyQuaternion(qi);
+        this.enterVessel(h, local.clone(), lv, headW.clone().applyQuaternion(qi));
+        return;
+      }
+      if (h.type.egress && (h.type.zones || []).some((z) => insideBox(z, local, 0.5))) {
+        h.localToBody(_x1.fromArray(h.type.egress), pW);
+        h.pointVelocity(_x1, vW);
+        continue;
+      }
+    }
     this.body = b;
     this.vessel = null;
     // out of a ship in flight: what you were holding to walk out moves nothing yet
@@ -433,40 +532,111 @@ export class Player {
     } else if (rr > floorR + 0.5) this.grounded = false;
     this.rampSupport();
     this.collideShipExterior();
+    this.collideFlora(b);
     this.bobUpdate(dt, this.grounded ? this.fVel.length() : 0);
-    // boarding: inside the ramp / bay volume
-    const ship = this.ship;
-    if (this.homeShipHere(b)) {
+    if (this.boardByRamp(b)) return;
+    // boarding a shuttle (yours or anyone's): inside its ramp / bay volume
+    let byRamp = false;
+    for (const sh of this.shuttlesOn(b)) {
       const sp = new THREE.Vector3(), sq = new THREE.Quaternion();
-      this.shipFixedPose(sp, sq);
+      this.shipFixedPose(sp, sq, sh);
       const local = this.fPos.clone().sub(sp).applyQuaternion(sq.clone().invert());
-      if (this.boardable(local)) {
+      if (sh.interior.boardable(local)) {
         // velocity relative to the ship (it may be flying), in its axes
-        const shipF = ship.vel.clone().sub(_v2.copy(b.omega).cross(ship.pos)).applyQuaternion(b.qInv);
+        const shipF = sh.vel.clone().sub(_v2.copy(b.omega).cross(sh.pos)).applyQuaternion(b.qInv);
         const vLocal = this.fVel.clone().sub(shipF).applyQuaternion(sq.clone().invert());
         const hLocal = this.heading.clone().applyQuaternion(sq.clone().invert());
-        this.enterVessel(ship, local, vLocal, hLocal);
+        this.enterVessel(sh, local, vLocal, hLocal);
         return;
       }
-      const dist = local.length();
-      if (dist < 16 && ship.ramp < 0.5) this.prompt = { key: 'F', text: 'Lower the ramp' };
-      if (dist < 16 && input.hit('KeyF')) this.game.toggleRamp(ship);
-      else if (dist > 250 && ship.landed && input.hit('KeyB')) this.game.summonShip();
-      if (dist > 250 && ship.landed) this.prompt = { key: 'B', text: 'Summon ship' };
-    } else if (ship && !ship.dead && input.hit('KeyB')) this.game.summonShip();
+      if (local.length() < 16 && !byRamp) {
+        byRamp = true;
+        if (sh.ramp < 0.5) this.prompt = { key: 'F', text: sh === this.ship ? 'Lower the ramp' : `Lower ${sh.name}'s ramp` };
+        if (input.hit('KeyF')) this.game.toggleRamp(sh);
+      }
+    }
+    // your own ship, far off: summon it
+    const ship = this.ship;
+    if (!byRamp && ship && !ship.dead) {
+      const far = !this.homeShipHere(b) || ship.pos.distanceTo(_v1.copy(this.fPos).applyQuaternion(b.q)) > 250;
+      if (this.homeShipHere(b) && far && ship.landed) this.prompt = this.prompt || { key: 'B', text: 'Summon ship' };
+      if (input.hit('KeyB') && (!this.homeShipHere(b) || (far && ship.landed))) this.game.summonShip();
+    }
     // leave the surface regime when high up (switch to inertial EVA physics)
     if (this.fPos.length() - b.R - Math.max(0, gh2) > EVA_AGL + 2000) this.toEva(); // (hysteresis against the switch back)
   }
 
-  // The lowered ramp is walkable ground: stand on it when inside its footprint
+  // Tree trunks and boulders (the world's flora field): walk round a trunk,
+  // climb onto a boulder. The body is a 0.3 m upright capsule, 1.7 m tall.
+  collideFlora(b) {
+    const field = floraOf(b);
+    if (!field || !field.active) return;
+    const p = this.fPos;
+    if (!this._fl || this._flBody !== b || this._flAt.distanceToSquared(p) > 4) {
+      this._fl = field.near(p, 4, this._fl || []);
+      this._flAt = (this._flAt || new THREE.Vector3()).copy(p);
+      this._flBody = b;
+    }
+    for (const it of this._fl) {
+      if (it.kind === 'tree') {
+        const up = _fl1.set(it.ux, it.uy, it.uz);
+        const d = _fl2.set(p.x - it.x, p.y - it.y, p.z - it.z);
+        const along = d.dot(up);
+        if (along < -1.7 || along > it.h) continue;
+        d.addScaledVector(up, -along); // off the trunk's axis
+        const dist = d.length(), min = it.r + RADIUS;
+        if (dist >= min || dist < 1e-6) continue;
+        d.divideScalar(dist);
+        p.addScaledVector(d, min - dist);
+        const vn = this.fVel.dot(d);
+        if (vn < 0) this.fVel.addScaledVector(d, -vn);
+      } else {
+        const pu = _fl1.copy(p).normalize();
+        const c = _fl2.set(it.x, it.y, it.z);
+        const t = THREE.MathUtils.clamp(_fl3.copy(c).sub(p).dot(pu), 0, 1.7);
+        const d = _fl4.copy(p).addScaledVector(pu, t).sub(c);
+        const dist = d.length(), min = it.r + RADIUS;
+        if (dist >= min || dist < 1e-6) continue;
+        d.divideScalar(dist);
+        p.addScaledVector(d, min - dist);
+        const vn = this.fVel.dot(d);
+        if (vn < 0) this.fVel.addScaledVector(d, -vn);
+        if (d.dot(pu) > 0.6) this.grounded = true; // (stood on it)
+      }
+    }
+  }
+
+  // Up the lowered ramp of any craft standing here (a dropship, a container):
+  // aboard it, in its own frame
+  boardByRamp(b) {
+    for (const v of this.game.vessels) {
+      if (v.dead || v.big || v.parent || v.body !== b || v.type.key === 'shuttle' || !v.interior || !(v.interior.ramps && v.interior.ramps.length)) continue;
+      const sp = _fl1.copy(v.pos).applyQuaternion(b.qInv);
+      if (sp.distanceToSquared(this.fPos) > Math.pow(v.type.radius + 10, 2)) continue;
+      const qi = _q1.copy(b.qInv).multiply(v.quat).invert();
+      const local = _fl2.copy(this.fPos).sub(sp).applyQuaternion(qi);
+      if (!v.interior.boardable(local)) continue;
+      // (velocities: the craft's over the turning ground, then ours relative to it)
+      const vF = _fl3.copy(v.vel).sub(_fl4.copy(b.omega).cross(v.pos)).applyQuaternion(b.qInv);
+      const vLocal = this.fVel.clone().sub(vF).applyQuaternion(qi);
+      this.enterVessel(v, local.clone(), vLocal, this.heading.clone().applyQuaternion(qi));
+      return true;
+    }
+    return false;
+  }
+
+  // A lowered shuttle ramp is walkable ground: stand on it when inside its footprint
   rampSupport() {
-    const ship = this.ship;
+    for (const ship of this.shuttlesOn(this.body)) this.rampSupportOf(ship);
+  }
+
+  rampSupportOf(ship) {
     // (a parked ship only: a flying one's ramp moves under you, and holding
     // you on it here would cancel your fall the moment you jump)
-    if (!this.homeShipHere(this.body) || !ship.landed || ship.ramp < 0.85) return;
+    if (!ship.landed || ship.ramp < 0.85) return;
     const I = SHIP_INTERIOR;
     const sp = _v2, sq = _q1;
-    this.shipFixedPose(sp, sq);
+    this.shipFixedPose(sp, sq, ship);
     const sqi = _q2.copy(sq).invert();
     const local = _v3.copy(this.fPos).sub(sp).applyQuaternion(sqi);
     const a = ship.interior.rampAngle();
@@ -483,10 +653,14 @@ export class Player {
     }
   }
 
+  // parked shuttles' hulls (anyone's) are solid
   collideShipExterior() {
-    if (!this.homeShipHere(this.body) || !this.ship.landed) return;
+    for (const ship of this.shuttlesOn(this.body)) if (ship.landed) this.collideShuttle(ship);
+  }
+
+  collideShuttle(ship) {
     const sp = _v2, sq = _q1;
-    this.shipFixedPose(sp, sq);
+    this.shipFixedPose(sp, sq, ship);
     const sqi = _q2.copy(sq).invert();
     const local = _v3.copy(this.fPos).sub(sp).applyQuaternion(sqi);
     if (local.lengthSq() > 30 * 30) return;

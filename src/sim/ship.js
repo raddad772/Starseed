@@ -28,10 +28,21 @@
 //         thrust the engines really have (heavy worlds can still win).
 // Coasting outside the atmosphere is propagated analytically ("on rails"),
 // so orbits never drift and high time warp is exact.
+//
+// Volumes nest: a craft inside a bay, a cart inside a container inside that
+// bay. Any vessel with zones can host. A zone with a number for gravity has
+// plating; one with gravity 'host' (a container) has whatever its host feels
+// (the bay's plating, the planet's pull on the ground, nothing in free fall,
+// a shove when the lifter carrying it accelerates). Craft in the same frame
+// collide with each other's colliders (siblings in a bay, free craft on the
+// same body). Ground vehicles stand on their legs too: wheels (tyre grip
+// across, drive and brakes along, front pair steered) or hover pads (soft
+// long springs, thrust to move); see groundControl and wheelForce.
 
 import * as THREE from 'three';
 import { propagate, orbitInfo } from '../core/kepler.js';
 import { SHUTTLE, boxPenetration, deckBelow, insideBox } from './vesselTypes.js';
+import { floraOf } from './floraField.js';
 
 const G0 = 9.81;
 export const ASSIST_NAMES = ['OFF', 'ROT', 'FULL'];
@@ -46,6 +57,9 @@ const _f1 = new THREE.Vector3(), _f2 = new THREE.Vector3(), _fq = new THREE.Quat
 const _c1 = new THREE.Vector3(), _c2 = new THREE.Vector3(), _c3 = new THREE.Vector3(), _c4 = new THREE.Vector3(), _cn = new THREE.Vector3();
 const _grav = new THREE.Vector3();
 const _m4 = new THREE.Matrix4();
+const _gl = new THREE.Vector3(), _fgq = new THREE.Quaternion(), _fq3 = new THREE.Quaternion();
+const _w1 = new THREE.Vector3(), _w2 = new THREE.Vector3(), _Y = new THREE.Vector3(0, 1, 0);
+const _t1 = new THREE.Vector3(), _t2 = new THREE.Vector3(), _t3 = new THREE.Vector3(), _t4 = new THREE.Vector3(), _t5 = new THREE.Vector3(), _tq = new THREE.Quaternion();
 const AHEAD_N = 12; // terrain samples along the ground track
 
 export class Ship {
@@ -105,7 +119,7 @@ export class Ship {
     this.env = { pressure: 0, density: 0, temperature: 3, airspeed: 0, mach: 0, dynPressure: 0, wind: new THREE.Vector3() };
     this.accel = new THREE.Vector3();      // proper acceleration felt aboard (body axes)
     this.lastImpact = 0;
-    this.pilotPresent = false;
+    this.pilot = null; // the player at the controls (world state: one at a time)
     this.legAttach = null;
     this.legLength = type.legLength || 0;
     this.ftl = null; // set by the game
@@ -116,7 +130,22 @@ export class Ship {
     //   move  lift off the legs / undock;  land  touch down when legs meet ground
     this.auto = null;
     this.hullRating = type.hullRating;
+    // contact springs (legs: landing legs, wheels or hover pads; probes: the hull)
+    this.legK = type.legK || 6.0e5; this.legC = type.legC || 1.3e5;
+    this.probeK = type.probeK || 5e6; this.probeC = type.probeC || 9e5;
+    this.effMass = this.mass; // with what it carries attached (summed by the game each frame)
+    // world state: its doors (0 shut .. 1 open), what its clamp holds
+    this.doors = {};
+    for (const d of type.doors || []) this.doors[d.id] = { open: 0, target: 0 };
+    for (const d of type.slideDoors || []) this.doors[d.id] = { open: 0, target: 0, hold: 0 };
+    this.cargo = null;
+    this.drive = { throttle: 0, steer: 0, brake: 0 }; // a ground vehicle's wheels
+    this._axQ = this.quat; // this vessel's axes in the frame of the contact pass running
   }
+
+  // someone is at the controls (setting false lets go of them)
+  get pilotPresent() { return !!this.pilot; }
+  set pilotPresent(on) { if (!on) this.pilot = null; }
 
   get worldPos() { return _v4.copy(this.pos).add(this.body.pos); }
   getWorldPos(out) { return out.copy(this.pos).add(this.body.pos); }
@@ -195,6 +224,69 @@ export class Ship {
   }
 
   insideZone(zone, margin = 0) { return insideBox(zone, this.lpos, margin); }
+
+  // its colliders as they stand, doors swung to their state: as seen from
+  // outside it, or (inner) by what is inside its volumes, where it has a set
+  // of its own (a container's hold: thick walls, see CRATE)
+  colliders(inner = false) {
+    const t = this.type;
+    const base = (inner && t.inner) || t.colliders || [];
+    if (!t.doors) return base;
+    const key = inner && t.inner ? '_colsIn' : '_cols';
+    const slabs = t.doors.filter((d) => d.min); // (a canopy is part of the hull)
+    const out = this[key] || (this[key] = [...base, ...slabs.map((d) => ({ min: d.min, max: d.max, hinge: d.hinge, angle: 0 }))]);
+    slabs.forEach((d, i) => { out[base.length + i].angle = this.doors[d.id].open * d.angle; });
+    return out;
+  }
+
+  // Sliding doors (a big ship's doorways): open for anyone walking up to one
+  // (within 4.5 m, either side), closing a moment after they've gone.
+  // walkers: positions in this ship's frame.
+  updateSlideDoors(dt, walkers) {
+    for (const d of this.type.slideDoors) {
+      const st = this.doors[d.id];
+      const uc = (d.u0 + d.u1) / 2, half = (d.u1 - d.u0) / 2;
+      let near = false;
+      for (const w of walkers) {
+        if (w.y < d.y0 - 1.5 || w.y > d.y1) continue;
+        const along = d.axis === 'x' ? w.x - d.plane : w.z - d.plane;
+        const across = (d.axis === 'x' ? w.z : w.x) - uc;
+        if (Math.abs(along) < 4.5 && Math.abs(across) < half + 1.5) { near = true; break; }
+      }
+      st.hold = near ? 1.5 : Math.max(0, st.hold - dt);
+      st.target = st.hold > 0 ? 1 : 0;
+      const r = (st.target > st.open ? 3.2 : 1.4) * dt; // (quick to open, unhurried to close)
+      st.open += THREE.MathUtils.clamp(st.target - st.open, -r, r);
+    }
+  }
+
+  updateDoors(dt) {
+    if (this.boardingT > 0) this.boardingT -= dt;
+    for (const d of this.type.doors || []) {
+      const st = this.doors[d.id], r = (d.speed || 0.5) * dt;
+      if (d.auto) st.target = this.boardingT > 0 ? 1 : 0; // (a canopy: up while someone climbs in or out)
+      st.open += THREE.MathUtils.clamp(st.target - st.open, -r, r);
+    }
+  }
+
+  // gravity where it is in its host (host axes): plating, or for a volume
+  // without any (a container's hold) whatever the host itself feels
+  zoneGravity(out) {
+    const z = this.zone;
+    if (!z) return out.set(0, 0, 0);
+    if (typeof z.gravity === 'number') return out.set(0, -z.gravity, 0);
+    return this.parent.feltGravity(out);
+  }
+
+  // the gravity felt aboard (own axes): what something loose aboard falls along
+  feltGravity(out) {
+    if (this.parent) this.zoneGravity(out).applyQuaternion(_fgq.copy(this.lquat).invert());
+    else if (this.landed) {
+      const r = this.pos.length();
+      out.copy(this.pos).multiplyScalar(-this.body.GM / (r * r * r)).applyQuaternion(_fgq.copy(this.quat).invert());
+    } else out.copy(this.accel).negate().applyQuaternion(_fgq.copy(this.quat).invert());
+    return out;
+  }
 
   // ------------------------------------------------------------------ helpers
 
@@ -348,6 +440,7 @@ export class Ship {
   // pilot input that should lift a parked / docked ship off its legs
   wantsMove() {
     const c = this.ctrl;
+    if (this.type.ground) return c.fwd !== 0 || (this.type.ground.kind === 'hover' && (c.roll !== 0 || c.strafe !== 0));
     return c.lift > 0 || c.fwd !== 0 || c.strafe !== 0 || !!(this.auto && this.auto.move);
   }
 
@@ -418,9 +511,10 @@ export class Ship {
 
   // Computes this frame's commanded thrust (ship-local, N) and torque (ship-local, N m)
   computeControl(dt, outForce, outTorque) {
+    if (this.type.ground) return this.groundControl(dt, outForce, outTorque, false);
     const c = this.ctrl;
     const L = this.limits;
-    const m = this.mass;
+    const m = this.effMass;
     const prec = c.precision ? 0.2 : 1;
     outForce.set(0, 0, 0);
     outTorque.set(0, 0, 0);
@@ -466,6 +560,7 @@ export class Ship {
     else vRel.copy(this.vel);
     const qinv = _q1.copy(this.quat).invert();
     const approach = (x, target, rate) => x + THREE.MathUtils.clamp(target - x, -rate * dt, rate * dt);
+    if (A && A.coast) { outForce.set(0, 0, 0); return; } // the nav computer lets it coast
     if (A) {
       // the nav computer: its velocity, carried into this frame
       if (frame === 'surface') this.targetVel.copy(A.vel).sub(this.frameVel(_v3));
@@ -604,18 +699,54 @@ export class Ship {
       THREE.MathUtils.clamp(fl.z, -L.main, L.retro));
   }
 
+  // Ground vehicles. Wheels: throttle, brakes and steering for the tyres (the
+  // contacts turn them into motion, see wheelForce). Hover pads: hold a
+  // commanded speed over the ground with thrust, turn at a commanded rate.
+  // local: driving in a host's frame (a bay deck, a container's floor).
+  groundControl(dt, outForce, outTorque, local) {
+    const c = this.ctrl, G = this.type.ground, d = this.drive;
+    outForce.set(0, 0, 0); outTorque.set(0, 0, 0);
+    // wheels steer with A/D or the mouse; a hover-tank turns with the mouse
+    // alone and strafes on A/D (or Q/E), Battlezone style
+    const steer = THREE.MathUtils.clamp((G.kind === 'hover' ? 0 : c.strafe) - c.yaw * 1.5, -1, 1);
+    const k = c.boost ? 1 : 0.6;
+    if (G.kind === 'wheels') {
+      d.steer += THREE.MathUtils.clamp(steer - d.steer, -2.5 * dt, 2.5 * dt);
+      d.throttle = c.fwd * k;
+      d.brake = c.brake || c.lift > 0 ? 1 : 0;
+      return;
+    }
+    d.throttle = 0; d.brake = 0; d.steer = 0;
+    const m = this.effMass;
+    const vRel = local ? _v1.copy(this.lvel) : this.surfaceVel(_v1);
+    vRel.applyQuaternion(_q1.copy(local ? this.lquat : this.quat).invert()); // vehicle axes
+    const vmax = G.vmax * k;
+    const pads = this.legState[0] + this.legState[1] + this.legState[2] + this.legState[3];
+    if (pads > 0) {
+      const aMax = G.drive * G0 * m, sMax = G.strafe * G0 * m;
+      outForce.z = THREE.MathUtils.clamp((-c.fwd * vmax - vRel.z) * m / 1.5, -aMax, aMax);
+      // sideways: Q / E strafe; otherwise the drift dies away slowly (it carries
+      // its momentum through a turn)
+      const side = THREE.MathUtils.clamp(c.strafe - c.roll, -1, 1);
+      outForce.x = THREE.MathUtils.clamp((side * vmax * 0.4 - vRel.x) * m / (side ? 1 : 1.2), -sMax, sMax);
+    }
+    // turns spin up and down over about a second
+    const wy = local ? this.lang.y : this.angVel.y; // (the planet's own spin: negligible)
+    outTorque.y = THREE.MathUtils.clamp((-steer * G.yawRate - wy) / 1.0, -G.yawAccel, G.yawAccel) * this.I.y;
+  }
+
   // ------------------------------------------------------------------ physics step
 
   step(dt, ctrlForce, ctrlTorque) {
     if (this.dead) return;
     const b = this.body;
     if (this.landed) {
-      const lifting = ctrlForce.y > this.mass * 0.4 * G0 || ctrlForce.z < -this.mass * 0.5 * G0 || ctrlForce.lengthSq() > Math.pow(this.mass * 1.2 * G0, 2);
+      const lifting = ctrlForce.y > this.mass * 0.4 * G0 || ctrlForce.z < -this.mass * 0.5 * G0 || ctrlForce.lengthSq() > Math.pow(this.mass * 1.2 * G0, 2) || (this.type.ground && this.wantsMove());
       if (!lifting) { this.syncLanded(); this.thrustLocal.set(0, 0, 0); this.accelW.copy(this.pos).multiplyScalar(-b.GM / Math.pow(this.pos.length(), 3)); return; }
       this.landed = false;
       this.syncLanded();
     }
-    const m = this.mass;
+    const m = this.effMass;
     const F = _v1.set(0, 0, 0);
     const T = _v2.set(0, 0, 0);
     const rn = this.pos.length();
@@ -631,7 +762,7 @@ export class Ship {
     this.aero(alt, F, T);
     // contacts: terrain, then big ships' hulls
     this.contacts(dt, F, T);
-    if (!this.big) this.contactsVessels(F, T);
+    if (!this.big) { this.contactsVessels(F, T, dt); this.floraContacts(F, T); }
     // integrate translation (semi-implicit Euler)
     this.accelW.copy(F).divideScalar(m);
     this.accel.copy(this.accelW).sub(grav);
@@ -746,6 +877,7 @@ export class Ship {
     }
     const omega = b.omega;
     const qShip = this.quat;
+    this._axQ = qShip;
     const gearLen = this.legLength * this.gear;
     const surfaceVel = (p, out) => out.copy(omega).cross(p);
     const pointVel = (local, out) => {
@@ -770,30 +902,32 @@ export class Ship {
       const pv = pointVel(localPt, _att);
       const sv = surfaceVel(pw, this._sv || (this._sv = new THREE.Vector3()));
       pv.sub(sv); // velocity relative to the ground
-      const vn = pv.dot(_gn);
-      let Fn = kSpring * depth - cDamp * vn;
-      if (Fn < 0) Fn = 0;
-      const ft = this._ft || (this._ft = new THREE.Vector3());
-      ft.copy(pv).addScaledVector(_gn, -vn);
-      const vt = ft.length();
-      const fMax = mu * Fn;
-      const fVisc = vt * this.mass * 6;
-      const fMag = Math.min(fMax, fVisc);
-      const force = this._pf || (this._pf = new THREE.Vector3());
-      force.copy(_gn).multiplyScalar(Fn);
-      if (vt > 1e-6) force.addScaledVector(ft, -fMag / vt);
+      const force = this.contactForce(pv, _gn, depth, kSpring, cDamp, mu, isLeg, idx);
       F.add(force);
       // torque in ship frame: r_local x (q^-1 force)
       const fl = force.applyQuaternion(_q2.copy(qShip).invert());
       T.add(_v3.copy(localPt).cross(fl));
-      if (!isLeg && -vn > 3.5) this.impact(-vn);
-      if (isLeg) { this.legComp[idx] = depth; }
-      this.groundContact = true;
       return depth;
     };
+    // hover pads: active, over the ground below
+    if (this.type.ground && this.type.ground.kind === 'hover') {
+      for (let i = 0; i < 4; i++) {
+        const pad = this.legAttach[i];
+        const pw = _v3.copy(pad).applyQuaternion(qShip).add(center);
+        const pf = _v4.copy(pw).applyQuaternion(qInvBody);
+        const r = pf.length(), gh = b.groundHeight(pf);
+        minAgl = Math.min(minAgl, r - b.R - gh);
+        b.groundNormal(pf, _gn, gh).applyQuaternion(b.q);
+        const pv = pointVel(pad, _att).sub(surfaceVel(pw, this._sv || (this._sv = new THREE.Vector3())));
+        const force = this.hoverPad(i, r - b.R - gh, _gn, pv, b.GM / (r * r));
+        if (!force) continue;
+        F.add(force);
+        T.add(_v3.copy(pad).cross(force.applyQuaternion(_q2.copy(qShip).invert())));
+      }
+    } else
     // landing legs
-    if (this.legAttach && gearLen > 0.3) {
-      const k = 6.0e5, c = 1.3e5;
+    if (this.legAttach && gearLen > Math.min(0.3, this.legLength * 0.5)) { // (short fixed feet count too: a container's)
+      const k = this.legK, c = this.legC;
       for (let i = 0; i < 4; i++) {
         const foot = this._foot || (this._foot = new THREE.Vector3());
         foot.copy(this.legAttach[i]); foot.y -= gearLen;
@@ -804,26 +938,117 @@ export class Ship {
     } else for (let i = 0; i < 4; i++) { this.legState[i] = 0; this.legComp[i] = 0; }
     // hull probes
     const pt = this._hp || (this._hp = new THREE.Vector3());
-    for (const p of this.type.probes) { if (this.dead) return; pt.set(p[0], p[1], p[2]); probe(pt, 5e6, 9e5, 0.5, false); }
+    for (const p of this.type.probes) { if (this.dead) return; pt.set(p[0], p[1], p[2]); probe(pt, this.probeK, this.probeC, 0.5, false); }
     this.agl = minAgl;
   }
 
-  // Contact forces from big ships' hull colliders (free flight near them)
-  contactsVessels(F, T) {
+  // Tree trunks and rocks (the body's flora field) against the hull's boxes
+  // (or its probes), and rocks under the legs / wheels. A trunk is an upright
+  // cylinder, a rock a sphere; both fixed to the turning ground.
+  floraContacts(F, T) {
+    const b = this.body;
+    if (!b.solid || !(this.agl < this.type.radius + 40)) return;
+    const field = floraOf(b);
+    if (!field || !field.active) return;
+    const pF = _t1.copy(this.pos).applyQuaternion(b.qInv);
+    if (!this._fl || this._flBody !== b || this._flAt.distanceToSquared(pF) > 9) {
+      this._fl = field.near(pF, this.type.radius + 6, this._fl || []);
+      this._flAt = (this._flAt || new THREE.Vector3()).copy(pF);
+      this._flBody = b;
+    }
+    if (!this._fl.length) return;
+    // the vessel's frame relative to the ground (body-fixed)
+    const qFi = _tq.copy(b.qInv).multiply(this.quat).invert();
+    const boxes = this.type.colliders || this.type.hullBoxes || null;
+    this._axQ = this.quat;
+    const hit = (local, nLocal, depth, isLeg, idx) => {
+      // velocity of that point of the hull over the ground, inertial axes
+      const pw = _t4.copy(local).applyQuaternion(this.quat).add(this.pos);
+      const pv = _t5.copy(this.angVel).cross(local).applyQuaternion(this.quat).add(this.vel).sub(_t3.copy(b.omega).cross(pw));
+      const n = _t3.copy(nLocal).applyQuaternion(this.quat);
+      const force = this.contactForce(pv, n, depth, isLeg ? this.legK : this.probeK, isLeg ? this.legC : this.probeC, isLeg ? 0.9 : 0.5, isLeg, idx);
+      F.add(force);
+      T.add(_t4.copy(local).cross(force.applyQuaternion(_fq.copy(this.quat).invert())));
+    };
+    const base = new THREE.Vector3(), up = new THREE.Vector3(), s = new THREE.Vector3(), q = new THREE.Vector3(), n = new THREE.Vector3();
+    for (const it of this._fl) {
+      base.set(it.x - pF.x, it.y - pF.y, it.z - pF.z).applyQuaternion(qFi);
+      up.set(it.ux, it.uy, it.uz).applyQuaternion(qFi);
+      // rocks under the feet / wheels
+      if (it.kind === 'rock' && this.legAttach && this.gear > 0.3) {
+        for (let i = 0; i < 4; i++) {
+          s.copy(this.legAttach[i]); s.y -= this.legLength * this.gear;
+          const d = q.copy(s).sub(base), dist = d.length();
+          if (dist < it.r && dist > 1e-6) { hit(s, d.divideScalar(dist), it.r - dist, true, i); this.legState[i] = 1; }
+        }
+      }
+      if (boxes) {
+        for (const bx of boxes) {
+          let best = 0, bestK = 0;
+          const steps = it.kind === 'tree' ? 6 : 1;
+          for (let k = 0; k < steps; k++) {
+            s.copy(base);
+            if (it.kind === 'tree') s.addScaledVector(up, it.h * k / (steps - 1));
+            q.set(THREE.MathUtils.clamp(s.x, bx.min[0], bx.max[0]), THREE.MathUtils.clamp(s.y, bx.min[1], bx.max[1]), THREE.MathUtils.clamp(s.z, bx.min[2], bx.max[2]));
+            const dist = q.distanceTo(s);
+            let depth, nx, ny, nz;
+            if (dist > 1e-6) {
+              depth = it.r - dist;
+              nx = (q.x - s.x) / dist; ny = (q.y - s.y) / dist; nz = (q.z - s.z) / dist; // from it toward the hull
+            } else {
+              // its axis inside the box: out through the nearest side
+              const dd = [s.x - bx.min[0], bx.max[0] - s.x, s.z - bx.min[2], bx.max[2] - s.z, s.y - bx.min[1], bx.max[1] - s.y];
+              let m = 0;
+              for (let j = 1; j < (it.kind === 'tree' ? 4 : 6); j++) if (dd[j] < dd[m]) m = j;
+              depth = dd[m] + it.r;
+              nx = m === 0 ? 1 : m === 1 ? -1 : 0; nz = m === 2 ? 1 : m === 3 ? -1 : 0; ny = m === 4 ? 1 : m === 5 ? -1 : 0;
+            }
+            if (depth > best) { best = depth; bestK = k; n.set(nx, ny, nz); this._flq = (this._flq || new THREE.Vector3()).copy(q); }
+          }
+          if (best > 0) hit(this._flq, n, Math.min(best, 1.5), false);
+        }
+      } else {
+        for (const pr of this.type.probes) {
+          s.set(pr[0], pr[1], pr[2]);
+          let d, dist;
+          if (it.kind === 'tree') {
+            d = q.copy(s).sub(base);
+            const along = d.dot(up);
+            if (along < 0 || along > it.h) continue;
+            d.addScaledVector(up, -along);
+          } else d = q.copy(s).sub(base);
+          dist = d.length();
+          if (dist < it.r && dist > 1e-6) hit(s, n.copy(d).divideScalar(dist), it.r - dist, false);
+        }
+      }
+    }
+  }
+
+  // Contact forces from other free craft's colliders on the same body: big
+  // ships' hulls, a container on the ground, a parked lifter
+  contactsVessels(F, T, dt = 0) {
     const qShip = this.quat;
     const qInvShip = _fq2.copy(qShip).invert();
     for (const h of this.game.vessels) {
-      if (!h.big || h === this || h.dead || h.body !== this.body) continue;
-      if (h.pos.distanceToSquared(this.pos) > Math.pow(h.type.radius + 40, 2)) continue;
+      if (h === this || h.dead || h.parent || h.body !== this.body || !h.type.colliders) continue;
+      if (h.pos.distanceToSquared(this.pos) > Math.pow(h.type.radius + this.type.radius + 30, 2)) continue;
       const qh = h.quat, qhInv = _fq.copy(qh).invert();
+      const cols = h.colliders();
+      // Where the host was when this step began: a host stepped before us in
+      // this step is already a step ahead (a carrier in orbit, 15 m along its
+      // track at 1/120 s), and our position isn't integrated yet
+      const hp = this._hostAt || (this._hostAt = new THREE.Vector3());
+      hp.copy(h.pos);
+      if (dt && h._stepT === this.game.t) hp.addScaledVector(h.vel, -dt);
+      this._axQ = (this._axq || (this._axq = new THREE.Quaternion())).copy(qhInv).multiply(qShip);
       const visit = (localPt, kSpring, cDamp, mu, isLeg, idx) => {
         const pb = _c1.copy(localPt).applyQuaternion(qShip).add(this.pos);   // body frame
-        const pl = _c2.copy(pb).sub(h.pos).applyQuaternion(qhInv);         // host local
-        const depth = boxPenetration(h.type.colliders, pl, _cn);
+        const pl = _c2.copy(pb).sub(hp).applyQuaternion(qhInv);            // host local
+        const depth = boxPenetration(cols, pl, _cn);
         if (depth <= 0) return 0;
         // relative velocity in host axes
         const vS = _c3.copy(this.angVel).cross(localPt).applyQuaternion(qShip).add(this.vel);
-        const vH = h.pointVelocity(_c4.copy(pb).sub(h.pos).applyQuaternion(qhInv), _gn);
+        const vH = h.pointVelocity(_c4.copy(pb).sub(hp).applyQuaternion(qhInv), _gn);
         const pv = vS.sub(vH).applyQuaternion(qhInv);
         const force = this.contactForce(pv, _cn, depth, kSpring, cDamp, mu, isLeg, idx);
         force.applyQuaternion(qh); // host axes -> body axes
@@ -836,11 +1061,11 @@ export class Ship {
         for (let i = 0; i < 4; i++) {
           const foot = this._foot2 || (this._foot2 = new THREE.Vector3());
           foot.copy(this.legAttach[i]); foot.y -= gearLen;
-          if (visit(foot, 6.0e5, 1.3e5, 0.9, true, i) > 0) this.legState[i] = 1;
+          if (visit(foot, this.legK, this.legC, 0.9, true, i) > 0) this.legState[i] = 1;
         }
       }
       const pt = this._hp2 || (this._hp2 = new THREE.Vector3());
-      for (const p of this.type.probes) { pt.set(p[0], p[1], p[2]); visit(pt, 5e6, 9e5, 0.5, false); }
+      for (const p of this.type.probes) { pt.set(p[0], p[1], p[2]); visit(pt, this.probeK, this.probeC, 0.5, false); }
     }
   }
 
@@ -850,17 +1075,68 @@ export class Ship {
     const vn = pv.dot(n);
     let Fn = kSpring * depth - cDamp * vn;
     if (Fn < 0) Fn = 0;
-    const ft = this._ft2 || (this._ft2 = new THREE.Vector3());
-    ft.copy(pv).addScaledVector(n, -vn);
-    const vt = ft.length();
-    const fMag = Math.min(mu * Fn, vt * this.mass * 6);
     const force = this._pf2 || (this._pf2 = new THREE.Vector3());
     force.copy(n).multiplyScalar(Fn);
-    if (vt > 1e-6) force.addScaledVector(ft, -fMag / vt);
+    if (isLeg && this.type.ground) this.wheelForce(force, pv, n, Fn, idx);
+    else {
+      const ft = this._ft2 || (this._ft2 = new THREE.Vector3());
+      ft.copy(pv).addScaledVector(n, -vn);
+      const vt = ft.length();
+      const fMag = Math.min(mu * Fn, vt * this.effMass * 6);
+      if (vt > 1e-6) force.addScaledVector(ft, -fMag / vt);
+    }
     if (!isLeg && -vn > 3.5) this.impact(-vn);
     if (isLeg) this.legComp[idx] = depth;
     this.groundContact = true;
     return force;
+  }
+
+  // A hover pad h metres over the ground (normal n, the pad's velocity over
+  // it pv, the local pull of gravity g): its share of the weight, plus a spring
+  // and damper toward the ride height; on a light world it pulls down too
+  // (reverse thrust), within reach. Returns the force (n's axes) or null out of reach.
+  hoverPad(i, h, n, pv, g) {
+    const G = this.type.ground, share = this.effMass / 4;
+    this.legComp[i] = 0;
+    // pads only work facing the ground
+    const upDot = _w1.set(0, 1, 0).applyQuaternion(this._axQ).dot(n);
+    if (h > G.ride + G.reach || h < -1 || upDot < 0.5) { this.legState[i] = 0; return null; }
+    const vn = pv.dot(n);
+    let f = share * g * upDot + this.legK * (G.ride - h) - this.legC * vn;
+    // (pulling down: only what a light world lacks of `feel` g)
+    f = THREE.MathUtils.clamp(f, -Math.max(0, G.feel * G0 - g) * share, G.push * G0 * share);
+    const force = this._pf2 || (this._pf2 = new THREE.Vector3());
+    force.copy(n).multiplyScalar(f);
+    if (f > 0) this.wheelForce(force, pv, n, f, i);
+    this.legState[i] = 1;
+    this.legComp[i] = Math.max(0, G.ride - h);
+    this.groundContact = true;
+    return force;
+  }
+
+  // A tyre (or hover pad) on the ground: grip across it, drive, brakes and
+  // rolling drag along it, all limited by the load on it. pv and n are in the
+  // contact pass's axes; this._axQ is the vehicle's orientation in them.
+  wheelForce(force, pv, n, Fn, idx) {
+    const G = this.type.ground, d = this.drive, share = this.effMass / 4;
+    const fwd = _w1.set(0, 0, -1);
+    if (G.kind === 'wheels' && idx < 2 && d.steer) fwd.applyAxisAngle(_Y, -d.steer * G.steer); // front pair steers
+    fwd.applyQuaternion(this._axQ);
+    fwd.addScaledVector(n, -fwd.dot(n));
+    if (fwd.lengthSq() < 1e-9) return;
+    fwd.normalize();
+    const lat = _w2.copy(n).cross(fwd);
+    const vL = pv.dot(fwd), vS = pv.dot(lat);
+    const lim = G.grip * Fn;
+    const fS = THREE.MathUtils.clamp(-vS * share * 8, -lim, lim);
+    let fL;
+    if (G.kind === 'wheels') {
+      const vmax = d.throttle >= 0 ? G.vmax : G.vmax * 0.4;
+      const fade = d.throttle * vL > 0 ? Math.max(0, 1 - Math.abs(vL) / vmax) : 1; // (the engine runs out of revs)
+      fL = d.throttle * G.drive * G0 * share * fade - vL * share * (d.brake ? 6 : d.throttle ? 0.05 : 0.6);
+      fL = THREE.MathUtils.clamp(fL, -lim, lim);
+    } else fL = THREE.MathUtils.clamp(-vL * share * 0.1, -lim, lim); // pads: a little drag
+    force.addScaledVector(fwd, fL).addScaledVector(lat, fS);
   }
 
   // ------------------------------------------------------------------ inside a host's space
@@ -870,7 +1146,7 @@ export class Ship {
     this.lvel.set(0, 0, 0); this.lang.set(0, 0, 0);
     this.syncFromParent();
     this.thrustLocal.set(0, 0, 0);
-    this.accel.set(0, this.zone ? this.zone.gravity : 0, 0).applyQuaternion(this.parent.quat);
+    this.accel.copy(this.zoneGravity(_gl)).negate().applyQuaternion(this.parent.quat);
     this.accelW.copy(this.parent.accelW);
     this.zoneEnv();
   }
@@ -885,11 +1161,12 @@ export class Ship {
   // Flight controls in the host's deck frame: up is the host's +Y, gravity is
   // its plating, and the host's own motion does not exist
   computeControlLocal(dt, outForce, outTorque) {
+    if (this.type.ground) return this.groundControl(dt, outForce, outTorque, true);
     const c = this.ctrl;
     const L = this.limits;
-    const m = this.mass;
+    const m = this.effMass;
     const prec = c.precision ? 0.2 : 1;
-    const g = this.zone ? this.zone.gravity : 0;
+    const gv = this.zoneGravity(_gl);
     outForce.set(0, 0, 0);
     outTorque.set(0, 0, 0);
     const qi = _q1.copy(this.lquat).invert();
@@ -944,7 +1221,7 @@ export class Ship {
       }
       this.touchdown = false;
       const reqA = _v2.copy(A.lvel).sub(vRel).divideScalar(0.6);
-      reqA.y += g;
+      reqA.sub(gv);
       const flA = reqA.multiplyScalar(m).applyQuaternion(qi);
       outForce.set(THREE.MathUtils.clamp(flA.x, -L.lateral, L.lateral), THREE.MathUtils.clamp(flA.y, -L.down, L.belly), THREE.MathUtils.clamp(flA.z, -L.main, L.retro));
       return;
@@ -971,7 +1248,7 @@ export class Ship {
     this.touchdown = false;
     this.targetVel.copy(fwdH).multiplyScalar(this.cruise).addScaledVector(rightH, this.slip).addScaledVector(up, this.climb);
     const req = _v2.copy(this.targetVel).sub(vRel).divideScalar(0.6);
-    req.y += g; // hold against the plating
+    req.sub(gv); // hold against the plating (or the host's pull)
     const fl = req.multiplyScalar(m).applyQuaternion(qi);
     outForce.set(
       THREE.MathUtils.clamp(fl.x, -L.lateral, L.lateral),
@@ -984,15 +1261,15 @@ export class Ship {
     if (this.dead) return;
     const p = this.parent;
     if (this.attached) {
-      const lifting = ctrlForce.y > this.mass * 0.4 * G0 || ctrlForce.lengthSq() > Math.pow(this.mass * 1.2 * G0, 2) || (this.assist < 2 && this.wantsMove());
+      const lifting = ctrlForce.y > this.mass * 0.4 * G0 || ctrlForce.lengthSq() > Math.pow(this.mass * 1.2 * G0, 2) || ((this.assist < 2 || this.type.ground) && this.wantsMove());
       if (!lifting) { this.holdAttached(); return; }
       this.attached = false;
       this.idleTime = 0;
       this.game.onUndock && this.game.onUndock(this);
     }
-    const m = this.mass;
-    const g = this.zone ? this.zone.gravity : 0;
-    const F = _v1.set(0, -g * m, 0);
+    const m = this.effMass;
+    const gv = this.zoneGravity(_gl);
+    const F = _v1.copy(gv).multiplyScalar(m);
     this.thrustLocal.copy(ctrlForce);
     F.add(_v3.copy(ctrlForce).applyQuaternion(this.lquat));
     const T = _v2.copy(ctrlTorque);
@@ -1001,7 +1278,7 @@ export class Ship {
     this.lvel.x += ax * dt; this.lvel.y += ay * dt; this.lvel.z += az * dt;
     this.lpos.addScaledVector(this.lvel, dt);
     // felt acceleration: everything but the plating... which is felt like weight
-    this.accel.set(ax, ay + g, az).applyQuaternion(p.quat);
+    this.accel.set(ax - gv.x, ay - gv.y, az - gv.z).applyQuaternion(p.quat);
     this.integrateRotation(this.lang, this.lquat, T, dt);
     this.syncFromParent();
     this.accelW.copy(p.accelW);
@@ -1011,10 +1288,11 @@ export class Ship {
   // Legs and hull probes against the host's colliders (host coordinates)
   contactsLocal(F, T) {
     const p = this.parent;
-    const boxes = p.type.colliders;
+    const boxes = p.colliders(true);
     const q = this.lquat, qi = _fq2.copy(q).invert();
     let minAgl = Infinity;
     this.groundContact = false;
+    this._axQ = q;
     const visit = (localPt, kSpring, cDamp, mu, isLeg, idx) => {
       const pp = _c1.copy(localPt).applyQuaternion(q).add(this.lpos);
       const top = deckBelow(boxes, pp);
@@ -1027,18 +1305,70 @@ export class Ship {
       T.add(_c4.copy(localPt).cross(force.applyQuaternion(qi)));
       return depth;
     };
-    if (this.legAttach && this.gear > 0.3) {
+    if (this.type.ground && this.type.ground.kind === 'hover') {
+      // hover pads over the deck below (host frame: up is +Y)
+      const gl = this.zoneGravity(_gl).length();
+      for (let i = 0; i < 4; i++) {
+        const pad = this.legAttach[i];
+        const pp = _c1.copy(pad).applyQuaternion(q).add(this.lpos);
+        const top = deckBelow(boxes, pp, 6);
+        if (top === -Infinity) { this.legState[i] = 0; continue; }
+        minAgl = Math.min(minAgl, pp.y - top);
+        const pv = _c3.copy(this.lang).cross(pad).applyQuaternion(q).add(this.lvel);
+        const force = this.hoverPad(i, pp.y - top, _cn.set(0, 1, 0), pv, gl);
+        if (!force) continue;
+        F.add(force);
+        T.add(_c4.copy(pad).cross(force.applyQuaternion(qi)));
+      }
+    } else if (this.legAttach && this.gear > 0.3) {
       const gearLen = this.legLength * this.gear;
       for (let i = 0; i < 4; i++) {
         const foot = this._foot3 || (this._foot3 = new THREE.Vector3());
         foot.copy(this.legAttach[i]); foot.y -= gearLen;
-        const d = visit(foot, 6.0e5, 1.3e5, 0.9, true, i);
+        const d = visit(foot, this.legK, this.legC, 0.9, true, i);
         this.legState[i] = d > 0 ? 1 : 0;
       }
     } else for (let i = 0; i < 4; i++) { this.legState[i] = 0; this.legComp[i] = 0; }
     const pt = this._hp3 || (this._hp3 = new THREE.Vector3());
-    for (const pr of this.type.probes) { pt.set(pr[0], pr[1], pr[2]); visit(pt, 5e6, 9e5, 0.5, false); }
+    for (const pr of this.type.probes) { pt.set(pr[0], pr[1], pr[2]); visit(pt, this.probeK, this.probeC, 0.5, false); }
     this.agl = minAgl;
+    this.contactsSiblings(F, T);
+  }
+
+  // Craft sharing this host's space: a container on the bay deck, the lifter
+  // parked beside it (their colliders in their own frames)
+  contactsSiblings(F, T) {
+    const p = this.parent;
+    const q = this.lquat, qi = _fq2.copy(q).invert();
+    for (const s of p.children) {
+      if (s === this || s.dead || !s.type.colliders) continue;
+      if (s.lpos.distanceToSquared(this.lpos) > Math.pow(s.type.radius + this.type.radius + 2, 2)) continue;
+      const cols = s.colliders();
+      const sq = s.lquat, sqi = _fq3.copy(sq).invert();
+      const visit = (localPt, kSpring, cDamp, mu, isLeg, idx) => {
+        const pp = _c1.copy(localPt).applyQuaternion(q).add(this.lpos);   // host frame
+        const ps = _c2.copy(pp).sub(s.lpos).applyQuaternion(sqi);       // the sibling's
+        const depth = boxPenetration(cols, ps, _cn);
+        if (depth <= 0) return 0;
+        _cn.applyQuaternion(sq);
+        const pv = _c3.copy(this.lang).cross(localPt).applyQuaternion(q).add(this.lvel);
+        pv.sub(_c4.copy(s.lang).cross(ps).applyQuaternion(sq).add(s.lvel));
+        const force = this.contactForce(pv, _cn, depth, kSpring, cDamp, mu, isLeg, idx);
+        F.add(force);
+        T.add(_c4.copy(localPt).cross(force.applyQuaternion(qi)));
+        return depth;
+      };
+      if (this.legAttach && this.gear > 0.3) {
+        const gearLen = this.legLength * this.gear;
+        for (let i = 0; i < 4; i++) {
+          const foot = this._foot4 || (this._foot4 = new THREE.Vector3());
+          foot.copy(this.legAttach[i]); foot.y -= gearLen;
+          if (visit(foot, this.legK, this.legC, 0.9, true, i) > 0) this.legState[i] = 1;
+        }
+      }
+      const pt = this._hp4 || (this._hp4 = new THREE.Vector3());
+      for (const pr of this.type.probes) { pt.set(pr[0], pr[1], pr[2]); visit(pt, this.probeK, this.probeC, 0.5, false); }
+    }
   }
 
   // Settled on the host's deck: dock
@@ -1046,7 +1376,7 @@ export class Ship {
     if (this.attached || this.dead || !this.type.legs) return;
     const legs = this.legState[0] + this.legState[1] + this.legState[2] + this.legState[3];
     const quiet = this.ctrl.fwd === 0 && this.ctrl.lift <= 0 && this.ctrl.strafe === 0 && Math.abs(this.thrustLocal.y) < this.mass * G0 * 0.35;
-    if (legs >= 3 && this.lvel.length() < 0.3 && this.lang.length() < 0.06 && quiet) this.idleTime += dt; else this.idleTime = 0;
+    if (this.restsOn(legs) && this.lvel.length() < 0.3 && this.lang.length() < 0.06 && quiet) this.idleTime += dt; else this.idleTime = 0;
     if (this.idleTime > 0.6) {
       this.attached = true;
       this.lvel.set(0, 0, 0); this.lang.set(0, 0, 0);
@@ -1100,6 +1430,14 @@ export class Ship {
     }
   }
 
+  // Resting on enough of itself to stay put: three legs; cargo and vehicles on
+  // rough ground on whatever touches (a container's corner on a hump, two
+  // wheels). (The contact friction never quite sticks: anything left
+  // unsettled creeps downhill.)
+  restsOn(legs) {
+    return legs >= 3 || ((this.type.cargo || this.type.ground) && (legs >= 1 || this.groundContact));
+  }
+
   // Whether the ship can rest landed (all legs planted, nearly stationary)
   tryLand(dt) {
     if (this.landed || this.dead || !this.body.solid || !this.type.legs) return;
@@ -1108,7 +1446,7 @@ export class Ship {
     // spin relative to the rotating surface
     const spin = _v2.copy(this.body.omega).applyQuaternion(_q1.copy(this.quat).invert()).sub(this.angVel).length();
     const quiet = this.ctrl.fwd === 0 && this.ctrl.lift <= 0 && this.ctrl.strafe === 0 && Math.abs(this.thrustLocal.y) < this.mass * G0 * 0.35;
-    if (legs >= 3 && sv < 0.3 && spin < 0.06 && quiet) this.idleTime += dt; else this.idleTime = 0;
+    if (this.restsOn(legs) && sv < 0.3 && spin < 0.06 && quiet) this.idleTime += dt; else this.idleTime = 0;
     if (this.idleTime > 0.8) {
       const b = this.body;
       this.landed = true;

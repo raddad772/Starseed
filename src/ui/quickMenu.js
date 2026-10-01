@@ -19,9 +19,9 @@ const REPEAT_FIRST = 0.38, REPEAT_NEXT = 0.11;  // s: held up / down on the pad
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
 
 export class QuickMenu {
-  constructor(game) {
+  constructor(game, el = document.querySelector('.quickMenu')) {
     this.game = game;
-    this.el = document.getElementById('quickMenu');
+    this.el = el; // (one per player, in their HUD)
     this.open = false;
     this.path = [];   // ids of the categories entered
     this.sel = 0;     // highlighted row
@@ -38,9 +38,24 @@ export class QuickMenu {
     const rows = [];
     if (v) {
       const items = [];
-      if (v.type.legs) items.push({ label: 'Landing gear', value: v.gearTarget > 0.5 ? 'down' : 'up', key: 'KeyG' });
+      if (v.type.legs && !v.type.ground) items.push({ label: 'Landing gear', value: v.gearTarget > 0.5 ? 'down' : 'up', key: 'KeyG' });
       if (v.type.ramp) items.push({ label: 'Ramp', value: v.rampTarget > 0.5 ? 'open' : 'closed', key: 'KeyR' });
-      if (v === g.ship) items.push({ label: 'Floodlights', value: g.shipVisual.floodOn ? 'on' : 'off', key: 'KeyL' });
+      const rd = (v.type.doors || []).find((d) => d.ramp);
+      if (rd) items.push({ label: 'Ramp', value: v.doors[rd.id].target > 0.5 ? 'open' : 'closed', key: 'KeyR' });
+      if (v.type.clamp) items.push({ label: v.type.clamp.name, value: v.cargo ? v.cargo.name : 'empty', key: 'KeyY' });
+      // the doors of what it carries (a container under a lifter), and
+      // craft in the same stack you can climb into (the cart in that container)
+      for (const c of g.craftStack(v)) {
+        for (const d of c.type.doors || []) {
+          if (d.ramp && c === v) continue;
+          const st = c.doors[d.id];
+          items.push({ label: `${c.name}: ${d.label}`, value: st.target > 0.5 ? 'open' : 'closed', stay: true, run: () => { st.target = st.target > 0.5 ? 0 : 1; g.audio.clunk(); } });
+        }
+        if (c !== v && c.type.seatOnly && c.type.seats.length && !c.home) {
+          items.push({ label: `Climb into ${c.name}`, value: c.type.className.toLowerCase(), run: () => { if (p.sitDown(0, c)) { p.fade = 1; g.message(`${c.name} · ${c.type.className}${c.type.help ? ' · ' + c.type.help : ''}`, 'nav'); } } });
+        }
+      }
+      if (v.type.key === 'shuttle') items.push({ label: 'Floodlights', value: v.visual.floodOn ? 'on' : 'off', key: 'KeyL' });
       items.push({ label: 'Flight assist', value: ASSIST_NAMES[v.assist], key: 'KeyZ', stay: true });
       items.push({ label: 'Camera', value: { first: 'cockpit', chase: 'chase', landing: 'landing' }[g.camMode] || 'cockpit', key: 'KeyV', stay: true });
       items.push({ label: 'FTL drive', value: this.ftlText(v), key: 'KeyJ' });
@@ -50,7 +65,7 @@ export class QuickMenu {
       const items = [];
       const ls = p.lastSeat;
       if (ls && !ls.vessel.dead) items.push({ label: 'Back to the pilot seat', value: ls.vessel.name, key: 'KeyP' });
-      if (p.mode === 'surface' && !g.ship.dead) items.push({ label: 'Summon your ship', value: g.ship.name, run: () => g.summonShip() });
+      if (p.mode === 'surface' && p.ship && !p.ship.dead) items.push({ label: 'Summon your ship', value: p.ship.name, run: () => g.summonShip() });
       if (items.length) rows.push({ id: 'yours', label: 'Your ship', items });
     }
     // aboard a big ship: places to walk to
@@ -75,6 +90,7 @@ export class QuickMenu {
         { label: 'Target under the reticle', key: 'KeyT' },
         { label: 'System map', key: 'KeyM' },
         { label: 'Settlement survey markers', value: g.showSites ? 'on' : 'off', key: 'KeyK' },
+        { label: 'Escape pods in lists', value: g.showUnlisted ? 'shown' : 'hidden', run: () => { g.showUnlisted = !g.showUnlisted; }, stay: true },
       ],
     });
     rows.push({
@@ -84,6 +100,11 @@ export class QuickMenu {
         { label: 'Normal speed', run: () => g.setWarp(0) },
       ],
     });
+    rows.push({ id: 'suit', label: 'Suit computer', items: [
+      { label: 'Inventory', value: `${g.items.heldBy(p).length} carried`, run: () => this.game.suit.show(this.game.inventoryApp) },
+      { label: 'Fleet', value: 'your ships and their orders', run: () => this.game.suit.show(this.game.fleetApp) },
+      { label: 'Paint', value: 'your ships\' liveries', run: () => this.game.suit.show(this.game.paintApp) },
+    ] });
     rows.push({ label: 'Controls', key: 'KeyH' });
     return rows;
   }

@@ -7,6 +7,7 @@ import { renderBriefing, startOptions } from './ui/briefing.js';
 import { randomSeedString, normalizeSeed } from './core/rng.js';
 import { TEST_SCENES } from './ui/testScenes.js';
 import { PadMenu } from './ui/padMenu.js';
+import { PauseScreen } from './ui/pauseScreen.js';
 
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -42,14 +43,61 @@ const settings = loadSettings();
 applySettings();
 
 function loadSettings() {
-  const def = { sensitivity: 1, invertY: false, fov: 72, scale: 1, tone: 'agx' };
+  const def = { sensitivity: 1, invertY: false, fov: 72, scale: 1, tone: 'agx', split: 'top-bottom' };
   try { return Object.assign(def, JSON.parse(localStorage.getItem('starseed.settings') || '{}')); } catch (e) { return def; }
 }
 function saveSettings() { try { localStorage.setItem('starseed.settings', JSON.stringify(settings)); } catch (e) { /* optional */ } }
 function applySettings() {
   input.sensitivity = settings.sensitivity;
   input.invertY = settings.invertY;
-  if (game) { game.engine.setFov(settings.fov); game.engine.toneCurve = settings.tone; }
+  if (game) {
+    game.engine.toneCurve = settings.tone;
+    game.engine.fovBase = settings.fov;
+    if (game.engine.layout !== settings.split) { game.engine.layout = settings.split; game.layout(); }
+    else game.engine.setFov(settings.fov);
+    for (const p of game.players.slice(1)) { p.input.sensitivity = settings.sensitivity; p.input.invertY = settings.invertY; }
+  }
+}
+
+// ---------------------------------------------------------------- player 2
+// A second player joins with a controller of their own: Start on a
+// controller nobody uses, or "Add player 2" in the pause menu then Start on
+// any controller (player 1's own: player 1 keeps the keyboard and mouse).
+// The screen splits; each player has their own HUD, screens and shuttle.
+let p2Pad = null;          // the gamepad index player 2 plays with (kept across a change of system)
+let joinWait = false;      // the pause menu asked for player 2's Start
+
+function makeP2Input(padIndex) {
+  const inp = new Input(canvas, { kbm: false, padIndex });
+  inp.sensitivity = settings.sensitivity;
+  inp.invertY = settings.invertY;
+  inp.pollPad('foot', 0); // (the Start press that joined is not a pause)
+  inp.endFrame();
+  inp.padRouter = padRouterFor(1);
+  inp.onPadPause = input.onPadPause;
+  return inp;
+}
+
+function joinP2(padIndex) {
+  if (!game || game.players.length > 1) return;
+  p2Pad = padIndex;
+  game.joinPlayer(makeP2Input(padIndex));
+}
+
+function leaveP2() {
+  p2Pad = null;
+  if (game && game.players[1]) game.leavePlayer(game.players[1]);
+}
+
+// each frame: a free controller's Start (in play), or any's (the pause menu asked)
+function watchJoin() {
+  if (!game || game.players.length > 1 || !launched) { joinWait = false; return; }
+  const pads = Input.padsPressing('START', !joinWait);
+  if (!pads.length) return;
+  const wasWaiting = joinWait;
+  joinWait = false;
+  joinP2(pads[0]);
+  if (wasWaiting) resume();
 }
 
 let startChoice = null;
@@ -148,9 +196,17 @@ function boot(s) {
     return;
   }
   window.game = game;
-  game.hud.onHelpClosed = showPause;
+  game.screenHud.onHelpClosed = () => showPause();
+  // player 1's M: the pause screen's map (anyone else's: the map in their own view)
+  game.onMapKey = (p) => {
+    if (p !== game.players[0]) { game.map.toggle(p); return; }
+    if (pause.open) { if (pause.tab === 'map') resume(); else pause.setTab('map'); }
+    else showPause('map');
+  };
+  game.onPausedHelp = () => pause.setTab('controls');
   if (startChoice) { game.requestStart(startChoice); previewed = startChoice; } // the briefing shows the chosen start live
   applySettings();
+  if (p2Pad !== null) game.joinPlayer(makeP2Input(p2Pad)); // (player 2 stays on in a new system)
   try {
     const q = new URLSearchParams(location.search);
     q.set('seed', s);
@@ -178,6 +234,7 @@ function launchGame() {
 }
 // back to the briefing from the game (the pause menu's Change system)
 function toBriefing() {
+  if (pause.open) pause.hide();
   const ov = $('overlay');
   ov.hidden = true; ov.innerHTML = '';
   launched = false;
@@ -194,62 +251,38 @@ document.addEventListener('pointerlockchange', () => {
   if (!launched || !game) return;
   if (!document.pointerLockElement && !game.map.open && $('overlay').hidden && !game.deathShown) showPause();
 });
+// Esc on the pause screen resumes (the pointer is already free there)
+window.addEventListener('keydown', (e) => {
+  if (e.code !== 'Escape' || !pause.open || (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT'))) return;
+  if (game && game.screenHud.helpOn) game.screenHud.toggleHelp(); else resume();
+});
 
-// what the last second of mouse look looked like, per input source
-function mouseDiag() {
-  const r = input.stats.rate;
-  if (!r) return '';
-  return `<div class="label" style="text-transform:none; letter-spacing:0; opacity:0.7">Mouse input: mousemove ${r.m.toFixed(0)}/s (${r.mPx.toFixed(0)} px/s) · pointer ${r.p.toFixed(0)}/s (${r.pPx.toFixed(0)} px/s) · using ${r.src}</div>`;
-}
+// The pause screen (Map / Planets / Settings / Controls tabs: see pauseScreen.js)
+const pause = new PauseScreen({
+  el: $('overlay'), game: () => game, settings, saveSettings, applySettings, input, tests: TEST_SCENES,
+  resume: () => resume(), toBriefing: () => toBriefing(),
+  // another system's seed from the catalog: its briefing, to pick where to begin
+  travel: (s) => { toBriefing(); seed = s; showBriefing(seed); boot(seed); },
+  players: {
+    info: () => ({ count: game ? game.players.length : 1, pad: p2Pad, waiting: joinWait }),
+    join: () => {
+      if (!Input.padIndices().length) return 'Connect a controller for player 2 first (and press any button on it)';
+      joinWait = true;
+      return 'Press Start on player 2\'s controller';
+    },
+    leave: () => leaveP2(),
+  },
+});
 
-function showPause() {
-  const ov = $('overlay');
-  ov.hidden = false;
-  if (game) game.setPaused(true);
-  const url = `${location.origin}${location.pathname}?seed=${encodeURIComponent(seed)}`;
-  ov.innerHTML = `<div class="card">
-    <h2>Paused</h2>
-    <div class="rows" style="grid-template-columns:auto 1fr; gap:8px 14px; align-items:center">
-      <label class="label" for="setSens">Mouse</label><input id="setSens" type="range" min="0.2" max="6" step="0.05" value="${settings.sensitivity}">
-      <label class="label" for="setFov">Field of view</label><input id="setFov" type="range" min="55" max="100" step="1" value="${settings.fov}">
-      <label class="label" for="setScale">Resolution</label><input id="setScale" type="range" min="0.5" max="1" step="0.05" value="${settings.scale}">
-      <label class="label" for="setInv">Invert Y</label><input id="setInv" type="checkbox" ${settings.invertY ? 'checked' : ''}>
-      <label class="label" for="setTone">Highlights</label><select id="setTone"><option value="agx" ${settings.tone !== 'aces' ? 'selected' : ''}>Wide range (AgX)</option><option value="aces" ${settings.tone === 'aces' ? 'selected' : ''}>Punchy (ACES)</option></select>
-    </div>
- ${mouseDiag()}
-    <div class="label">System seed</div>
-    <div class="seedrow"><input id="shareUrl" readonly value="${url}" aria-label="Share link"><button id="copyUrl" type="button">Copy link</button></div>
-    <div class="seedrow"><button id="resume" class="primary" type="button" data-pad-back>Resume</button><button id="padHelp" type="button">Controls</button><button id="tests" type="button">Test scenes</button><button id="toBriefing" type="button">Change system</button></div>
-  </div>`;
-  $('setSens').oninput = (e) => { settings.sensitivity = +e.target.value; applySettings(); saveSettings(); };
-  $('setFov').oninput = (e) => { settings.fov = +e.target.value; applySettings(); saveSettings(); };
-  $('setScale').onchange = (e) => { settings.scale = +e.target.value; saveSettings(); if (game) { game.engine.renderScale = settings.scale; game.engine.resize(); } };
-  $('setInv').onchange = (e) => { settings.invertY = e.target.checked; applySettings(); saveSettings(); };
-  $('setTone').onchange = (e) => { settings.tone = e.target.value; applySettings(); saveSettings(); };
-  $('copyUrl').onclick = () => {
-    const el = $('shareUrl');
-    navigator.clipboard.writeText(el.value).then(() => { $('copyUrl').textContent = 'Copied'; }, () => { el.select(); });
-  };
-  $('resume').onclick = resume;
-  $('tests').onclick = showTests;
-  $('padHelp').onclick = () => { ov.hidden = true; ov.innerHTML = ''; if (game) game.hud.toggleHelp('pad'); };
-  $('toBriefing').onclick = toBriefing;
-}
-
-// jump to the spots the lighting / exposure / carrier tests use
-function showTests() {
-  const ov = $('overlay');
-  ov.hidden = false;
-  ov.innerHTML = `<div class="card help"><h2>Test scenes</h2>
-    <div class="scenes">${TEST_SCENES.map((t, i) => `<button type="button" data-scene="${i}"><b>${t.label}</b><span>${t.note}</span></button>`).join('')}</div>
-    <label class="check"><input id="meterOn" type="checkbox" ${game && game.showMeter ? 'checked' : ''}> Show the exposure readout (top of the screen)</label>
-    <div class="seedrow"><button id="testsBack" type="button" data-pad-back>Back</button></div></div>`;
-  for (const el of ov.querySelectorAll('[data-scene]')) el.onclick = () => { if (game) { TEST_SCENES[+el.dataset.scene].run(game); resume(); } };
-  $('meterOn').onchange = (e) => { if (game) game.showMeter = e.target.checked; };
-  $('testsBack').onclick = showPause;
+function showPause(tab) {
+  if (!game) return;
+  if (game.map.open && !game.map.full) game.map.toggle(game.map.owner); // (a player's own map closes)
+  pause.show(tab || (pause.tab === 'map' ? 'settings' : pause.tab));
 }
 
 function resume() {
+  joinWait = false;
+  if (pause.open) pause.hide();
   const ov = $('overlay');
   ov.hidden = true; ov.innerHTML = '';
   if (game) game.setPaused(false);
@@ -262,10 +295,9 @@ input.onPadPause = () => {
   if (!game) return;
   if (!launched) { if (!$('briefing').hidden && $('overlay').hidden) launchGame(); return; }
   const ov = $('overlay');
-  if (game.map.open) game.map.toggle();
   if (ov.hidden) { input.releaseLock(); showPause(); }
-  else if (game.hud.helpOn) game.hud.toggleHelp();
-  else if (ov.querySelector('#resume')) resume();
+  else if (game.screenHud.helpOn) game.screenHud.toggleHelp();
+  else if (pause.open) resume();
 };
 
 // The controller drives whatever menu is open (see padMenu.js) and the map;
@@ -277,27 +309,47 @@ function openMenu() {
   if (!$('briefing').hidden) return $('briefing').querySelector('.panel');
   return null;
 }
-input.padRouter = (ps, dt) => {
-  if (!game) return false;
-  const menu = openMenu();
-  if (!menu && !game.map.open) { padMenu.setCur(null); return game.quick.open ? game.quick.pad(ps, dt) : false; }
-  if (ps.hits.has('START')) { input.onPadPause(); return true; }
-  if (menu) {
-    // R3: the controller layout (from the pause menu), or close it
-    if (ps.hits.has('R3') && (game.hud.helpOn || menu.querySelector('#resume'))) {
-      if (!game.hud.helpOn) { $('overlay').hidden = true; $('overlay').innerHTML = ''; }
-      game.hud.toggleHelp('pad');
-      return true;
+// Player i's controller: their suit's screen, their quick menu, the map when
+// it's theirs; menus (pause, help, the briefing) are player 1's to drive,
+// though anyone's Start pauses and resumes
+function padRouterFor(i) {
+  return (ps, dt) => {
+    if (!game) return false;
+    const p = game.players[i];
+    if (!p) return false;
+    const menu = openMenu();
+    if (!menu && p.ui.suit.open) { if (i === 0) padMenu.setCur(null); return p.ui.suit.pad(ps, dt); }
+    if (!menu && !(game.map.open && game.map.owner === p)) { if (i === 0) padMenu.setCur(null); return p.ui.quick.open ? p.ui.quick.pad(ps, dt) : false; }
+    if (ps.hits.has('START')) { input.onPadPause(); return true; }
+    if (menu && i > 0) return true;
+    if (!menu) { game.map.padUpdate(ps, dt); return true; }
+    return padRouterMenu(menu, ps, dt);
+  };
+}
+input.padRouter = padRouterFor(0);
+function padRouterMenu(menu, ps, dt) {
+  const hud = game.players[0].ui.hud;
+  if (pause.open) {
+    // R3: the controls tab; View: the map (or back from it)
+    if (ps.hits.has('R3')) { pause.setTab('controls'); return true; }
+    if (ps.hits.has('VIEW')) { if (pause.tab === 'map') resume(); else pause.setTab('map'); return true; }
+    if (pause.tab === 'map') {
+      // the map takes the sticks, the triggers and the D-pad's left / right
+      game.map.padUpdate(ps, dt, true);
+      ps = { ...ps, hits: new Set([...ps.hits].filter((h) => h !== 'LEFT' && h !== 'RIGHT')), held: new Set([...ps.held].filter((h) => h !== 'LEFT' && h !== 'RIGHT')), lx: 0, ly: 0, lt: 0, rt: 0 };
     }
-    padMenu.update(menu, ps, dt, input.usingPad);
+  }
+  // R3: the controller layout (from the help card), or close it
+  if (ps.hits.has('R3') && hud.helpOn) {
+    hud.toggleHelp('pad');
     return true;
   }
-  game.map.padUpdate(ps, dt);
+  padMenu.update(menu, ps, dt, input.usingPad);
   return true;
-};
+}
 window.addEventListener('gamepadconnected', (e) => {
   if (game) game.message(`Controller connected · R3 or H shows its layout`, 'nav');
-  if (game && game.hud.helpOn) game.hud.refreshHelp();
+  if (game && game.screenHud.helpOn) game.screenHud.refreshHelp();
 });
 
 showBriefing(seed);
@@ -305,7 +357,7 @@ boot(seed);
 
 let manual = false;
 function loop(now) {
-  if (game && !manual && !window.debugHold) game.frame(now); // debugHold: tests step frames themselves
+  if (game && !manual && !window.debugHold) { watchJoin(); game.frame(now); pause.tick(); } // debugHold: tests step frames themselves
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
@@ -323,7 +375,9 @@ window.debugRun = async (ms = 1000, frameMs = 16, onFrame = null) => {
   while (performance.now() < end) {
     const t0 = performance.now();
     if (onFrame && onFrame(n, game) === false) break;
+    watchJoin();
     game.frame(performance.now());
+    pause.tick();
     n++;
     while (performance.now() - t0 < frameMs) await tick();
   }
@@ -331,3 +385,5 @@ window.debugRun = async (ms = 1000, frameMs = 16, onFrame = null) => {
   return n;
 };
 window.launch = () => $('launch').click();
+window.joinP2 = joinP2; window.leaveP2 = leaveP2; // (tests: a stubbed controller's index)
+window.pauseScreen = pause;

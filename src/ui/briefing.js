@@ -35,7 +35,7 @@ export function renderBriefing(sys, el) {
   el.table.innerHTML = rows.join('');
 }
 
-function drawSchematic(sys, canvas) {
+export function drawSchematic(sys, canvas) {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const W = canvas.clientWidth || 480, H = canvas.clientHeight || 132;
   canvas.width = W * dpr; canvas.height = H * dpr;

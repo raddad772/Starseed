@@ -1,8 +1,87 @@
 # Starseed Infinite handoff (2026-10-01, session 68fc2903, updated by session 0f13fab4)
 
-Dave is play-testing and giving feedback in short bursts. He rebooted after this was written.
+Dave is play-testing and giving feedback in short bursts.
 
-## First steps for the new session
+## START HERE (end of session 0f13fab4, before a context compaction)
+
+Everything up to the polish work is committed ("Two local players, walkable craft, ..."; Dave asks for commits explicitly; not pushed). The dev server
+(launch config `starseed`, port 8765) and Blender (MCP) were running. "XBox Work on Mac" just said
+"XBox Work done" (machine free); message it before and after any browser / Blender run (it asks for
+~10-15 min exclusive pauses now and then: close the test tab, no Blender, reply "paused").
+
+### Immediate next steps (in this order)
+1. DONE after the compaction: two local players (split screen, two gamepads, pilot seats: see "Two
+   local players" below); every ship walkable built and tested (see "Every ship walkable").
+2. Next in Dave's queue (below, "Still queued"): B live viewscreen DONE; C tabbed pause screen with
+   the planet catalog DONE; D meadows DONE; next: per-biome flora (offered, Dave's call), E carrier
+   sliding doors (world-state doors), F polish.
+3. Rebuild commands (each MCP call is a fresh namespace: exec the file each time):
+   craft `exec(open('/Users/dave/dev/starseed/tools/blender/build_craft.py').read()); build_vehicles()`;
+   carrier craft (yacht, pods) `exec(open('.../build_carrier.py').read()); build('craft')` then (new
+   call) exec again + `export()`; then `check_zfight.py` `zfight([...])`. After layout edits:
+   `node tools/export-layout.mjs > tools/blender/out/bastion-layout.json`.
+4. Screenshots of the hidden test tab: `python3 tools/shot_server.py <scratchpad>/shots` (background),
+   then in the page `shot(name)` (draws the canvas right after `game.frame()` and POSTs it); the pane's
+   own screenshot is stale while it is hidden.
+
+### What Dave asked for this session, and where it stands
+- Z-fighting on the bay floors -> fixed and checked (0 overlapping pairs, 0 intrusions). Depth buffer
+  was already best (reversed-Z float32, camera-relative doubles on the CPU).
+- Escape pods hidden from vessel lists / markers unless "Navigation > Escape pods in lists" -> done.
+- Basic inventory and items; put them in a ship, fly to a planet, still there -> done and verified.
+- Vehicles: cart, container, lifter, dropship, fighter, hover-tank; the trip (cart into a box, sealed,
+  clamped to the lifter, carrier to a planet, lifter lands, box opened, cart drives out); "skip the
+  lifter"; the falling stunt -> all verified (screenshots sent).
+- Doors that open on approach (carrier) -> queued (0b); world vs player state rule saved to memory.
+- Trees physically real -> trunks / rocks solid for craft and walkers (verified). Destructible trees:
+  later ("a bit much rn"). Meadows on flat ground in the generator: Dave's idea, queued (0d).
+- Hover-tank: Battlezone II handling and look (Dave sent BZ screenshots), cockpit with a canopy that
+  lifts, 2 seats + a rear compartment with a viewscreen; pads pull down only on light worlds (Dave:
+  getting air over a hill is fun); it rides with the lifter, not the dropship -> written, not built.
+- "ALL ships must be walkable and have at least a basic interior" -> Cheyenne, lifter, container
+  verified; Kestrel, tank, fighter written, not built (see above). Pods stay seat-only.
+- Next feature after vehicles (Dave): Map/pause as a tabbed screen; a catalog page of the system's
+  planets (small picture, zone from the star, biomes...) and a field to enter another system's seed.
+
+### Test recipes that worked (paste into the test tab)
+```js
+window.TK = await import('/tools/testkit.js?' + Date.now()); await TK.ready();
+window.tap = async (code) => { dispatchEvent(new KeyboardEvent('keydown', { code, bubbles: true }));
+  await debugRun(100, 16); dispatchEvent(new KeyboardEvent('keyup', { code, bubbles: true })); await debugRun(100, 16); };
+game.startAboard(); await debugRun(4000, 16, (n, g) => g.state === 'playing' && n > 30 ? false : undefined);
+game.parkCraft();                       // the vehicles in the starboard bay
+TK.chain(game.cart)                     // "Mule [Container hold, parked] < Container 1 < Bastion < Moadeal"
+await TK.hold(ms, ['KeyW', 'ShiftLeft'], (n, g) => { ...; return false to stop });
+game.quick.tree().find(r => r.id === 'ship').items   // the quick menu's craft actions (run())
+```
+- Flying a child craft precisely in its host (test only): set `v.auto = { lvel, lnose, lup, move, land }`
+  each frame AND mute `v.nav.update` (an idle nav computer clears `auto` every frame). See `goTo` in
+  the session transcript; land with `land: true` until `v.attached`.
+- Placing things on a planet: body-fixed basis must be right-handed (`makeBasis(east, up, east x up)`);
+  a left-handed one flips the craft upside down. Use `b.R + b.groundHeight(dir)` (it is negative in
+  basins: never clamp it at 0).
+- The tab's rAF stops while the Browser pane is hidden: step frames with `debugRun` (a key press needs
+  frames to be read). Surveys (`game.requestSurvey`) resolve only while frames run.
+- Screenshots of a region at full res: draw the WebGL canvas into an overlay canvas right after
+  `game.frame()` (showCrop in the transcript) and screenshot; remove the overlay afterwards (Dave
+  watches the pane).
+
+### Lessons from this session (also in "Gotchas")
+- Coplanar faces z-fight however good the depth buffer; cut cavities a little bigger than the rooms
+  drawn in them; `check_zfight.py` finds them.
+- Thin colliders: a wheel sagging into a 15 cm floor is nearer its underside and gets pushed through:
+  give hosts thick `inner` colliders for what is inside them.
+- Point contacts on rough low-g ground creep forever (viscous friction never sticks): let cargo /
+  vehicles settle (`restsOn`) with fewer than 3 legs.
+- One key press can be handled twice in a frame (out of a seat, then the on-foot check sees F again):
+  skip on-foot interactions in the frame you left a seat.
+- Aim from the eye as of now (`player.computeCamera`), not last frame's camera: planets move ~500 m
+  per frame.
+- Divisions by thrust limits: ground vehicles have none (audio, camera shake, HUD guarded).
+- recalc_face_normals turns open shells (a hull with an open back) inward: wind those by hand.
+- Releasing cargo inside another collider explodes it (the dropship belly / tank): leave clearance.
+
+## First steps for the new session (older, from session 68fc2903)
 
 1. Start the dev server: `preview_start` with launch config `starseed` (now also in
    `~/dev/starseed/.claude/launch.json`), or `python3 tools/serve.py 8765`. Check
@@ -287,10 +366,395 @@ the in-suit interface (virtual screen); speed limit, warp limit, no-FTL time-com
 automatic time compression; waypoints on planets with defaults at the start screen's sites; orbit is a
 valid destination; later space stations and starships as destinations.
 
+## Per-ship agents + suit Fleet app (uncommitted, verified in a test tab)
+
+- Every vessel has `v.nav` (NavComputer, created in `addVessel`); `game.nav` = the focus ship's. Orders:
+  `order({kind: 'site'|'orbit'|'dock'|'meet'|'park'|'hold', ...})`, `comeToPlayer()`, `cancel()`;
+  `describe()` -> {state: Parked / In orbit / Docked / Holding / Navigating / Drifting / Falling / Lost,
+  line, tone}. Big ships: orbit / meet / park / hold only (`canLand` false); `aMax` and `tau` per hull.
+  New phases meet (stand-off: radii + 60 m small, + 1.5 km big), station (keep station by a ship / you /
+  over the ground), park (circular parking orbit; big ships above the lock). `keepVel(A)` coasts
+  (`ship.auto.coast`: engines off, attitude steered) while aligning / spooling / cooling down.
+- FTL under nav: `ftl.nav = { aim, legLimit, align }`; slow-down immediate (a lagging slow-down was
+  under-damped and overshot), speed gated by nose alignment (big ships turn slowly), leg limit caps speed.
+  Planner: a ship near a world's lock (as FTL arrivals leave them) gets an "ABOVE <SHIP>" waypoint only
+  when the straight jump would hit the lock; jumps to ships are checked only to the 6 km drop.
+  `avoidHazards` ignores ships in FTL (their Newtonian velocity is stale) and reacts only when the
+  projected path passes within the hazard radius.
+- Screen apps: `src/ui/screens/kit.js` (immediate-mode canvas UI: controls, lists, spatial D-pad nav),
+  `src/ui/screens/suit.js` (visor panel host: U, quick menu "Suit computer"; modal input; virtual cursor
+  from captured mouse), `src/ui/apps/fleet.js` (ships, states, orders, destination picker: worlds -> orbit
+  / sites; ships -> dock / alongside). Messages from ships you're not aboard are signed with their name.
+- Verified: Halyard (big) FTL to orbit of Nahasia; Wayfarer to Moadeal river site (descent started) at the
+  same time; Wayfarer dock on Halyard at Nahasia with the player on EVA at Moadeal; Bastion meet Halyard
+  at Nahasia (holds station 2.3 km, rel. speed 0.04 m/s). ETA estimates are rough.
+
+Next (Dave, 2026-10-01): a new carrier modelled in Blender, styled after a BC-304 Daedalus, laid out like
+a Starfleet ship (bridge, astrogation, engineering, quarters...), game-ready low poly, with an interior
+rendering system (only nearby rooms drawn). Dave wants: plan in text -> sketch -> model.
+
+## The new Bastion (Blender) (uncommitted; built in Blender, loaded and walked in test tabs)
+
+Dave: a Daedalus-style carrier laid out like a Starfleet ship, game-ready, with an interior rendering
+system; repaintable exterior; a captain's yacht blended into the hull and launchable escape pods.
+Flight bays moved aft at Dave's request; scale 900 m approved.
+- `src/sim/layouts/bastion.js`: the single source (decks 1 +42, 2 +37, 3 +12, 4 0, 5 -12; 124 rooms,
+  56 doors, windows, 3 multi-stop lifts, 2 bays with 7 pads each and forward mouths, yacht recess +
+  dock, 16 pods at 8 stations, hull shapes, colliders, 387 lights). `node tools/export-layout.mjs >
+  tools/blender/out/bastion-layout.json` feeds `tools/blender/build_carrier.py` (run in Blender via the
+  MCP: exec the file, then build('exterior'|'interior'|'craft'|'export'); each MCP call starts with a
+  fresh namespace, so exec it every call). Output: assets/models/bastion.glb (+ assets/blender/bastion.blend).
+  Exterior ~7.6k tris (paint mask in vertex colour 'paint': R main, G second, B stripe, A grime),
+  interiors 125 objects ~37k tris, yacht + pod templates. Blender lessons: touching coplanar shells
+  break EXACT booleans (sink parts 0.5 m, cut per piece, then join); the default scene's Cube got
+  exported until selection was set per view layer.
+- Game: vendor/addons (GLTFLoader + utils, three r186 unchanged). `CARRIER` built from the layout
+  (doors as rooms, zones = bays with `mouth`, `hatches`); `render/glbShip.js` (material swap by name,
+  `liveryMaterial` / `setLivery` with plate seams in object space, `visibleRooms`: room + 4 graph steps,
+  bays when near; `GlbCraftVisual` for yacht / pods); BigShipVisual.showRooms; old procedural carrier
+  removed from bigShips.js. Multi-stop lifts open `ui/apps/lift.js` in the suit host (aspect per app).
+  Yacht ('Kestrel') and 16 pods are vessels (`seatOnly`, `SeatInterior`), docked by `Game.dockCarried`
+  (berth pseudo-zones), boarded at hatches (F), launched by any thrust (`launchCraft`), F in the seat
+  leaves them (hatch if docked). Nav computer: bays via mouths and free pads. startAboard: starboard
+  bay pad 2.
+
 After a reboot: restart the dev server (`preview_start` with launch config `starseed`, or
 `python3 tools/serve.py 8765` in ~/dev/starseed).
 
+### Files new this session (0f13fab4), all uncommitted
+- sim: `src/sim/items.js` (items registry), `src/sim/floraField.js` (solid flora), additions across
+  `ship.js` (nesting, gravity, doors, colliders(inner), ground vehicles, hover pads, flora contacts,
+  restsOn), `interiors.js` (ramps, entries, exits, spotInside), `player.js` (exit up the chain,
+  boardByRamp, collideFlora, craft prompts), `navComputer.js` (levelSpot, no-FTL hops),
+  `vesselTypes.js` (CART, CRATE, TANK, LIFTER, DROPSHIP, FIGHTER, restHeight, rotated door boxes),
+  `game.js` (parkCraft, zoneAdmits, rehome, clampCargo, toggleClamp, craftInteract, craftStack,
+  itemInteract, putDownItem, listed, effMass).
+- render: `src/render/itemVisuals.js`, `glbShip.js` (parts swung from door state, liveries per type),
+  `lightRig.js` (extra lights), `planetTerrain.js` (shares clearings / flora with the field).
+- ui: `src/ui/apps/inventory.js`, quick menu (clamp, container doors, Climb into, escape pods toggle,
+  inventory), Fleet filter, test scenes "Cargo run: the cart / the lifter".
+- tools: `tools/blender/build_craft.py` (-> assets/models/craft.glb, assets/blender/craft.blend),
+  `tools/blender/check_zfight.py`, testkit `vantage`, `chain`, `hold`.
+
+### Z-fighting pass (verified: Blender checks 0/0, bay floor clean in a test tab)
+Dave saw z-fighting on the bay floors. Not the depth buffer: reversed-Z with a 32-bit float depth
+texture is already in use (log depth only as a fallback), and rendering is camera-relative in doubles
+on the CPU before anything reaches the GPU. The faces really were coplanar (the bay cut vs the bay
+room's floor). `tools/blender/check_zfight.py`: `zfight()` (coplanar, same-facing, overlapping faces
+that look different) and `intrusions()` (hull faces that cut through a room, facing into it). Fixes in
+build_carrier.py: cavities cut 0.5 m bigger than their rooms; window cuts stop at the wall plane;
+bay passages / galleries punched through the skin (`punch`: no cavity faces) with sleeves across the
+gap to the pods; pods' outer top edge reshaped (POD_RIDGE) so the bay's corner stays inside it; spine
+moved aft of the island lounge; stern engine block proud; catwalk sign fixed; frames 1 cm off planes.
+
+### Items and inventory (session 0f13fab4, verified in a test tab)
+Dave: a basic inventory and object system with a few items; put them down in a ship, fly it to a planet,
+check they're still there. `src/sim/items.js` (world state: one registry `game.items`; an item is held
+by a character, your inventory being what you hold, or rests in a frame: `vessel` (ship-local, rides
+along with any flight / FTL / docking), `surface` (body-fixed), `orbit` (analytic, dropped on EVA);
+a destroyed ship's items go onto the wreck's orbit). Types: toolbox, medkit, supply crate, fuel
+canister, field lamp (feeds the light rig's fixtures: `lightRig.update(..., extra)`), coffee mug;
+the starter kit is all six. `render/itemVisuals.js` (plain shapes, camera-relative), `ui/apps/inventory.js`
+(I, or quick menu > Suit computer; pick a row to put it down 0.75 m ahead, stacked, at your feet if
+facing a wall: `interior.spotInside`). F picks up what you look at within 2.6 m (before seats / doors).
+Aim from `player.computeCamera` at the moment, not last frame's camera: a planet moves ~500 m per frame.
+Verified: six items down in the Wayfarer in orbit, nav computer FTL hop + entry + landing on Moadeal:
+every item 0 m moved in the ship frame, world round trip < 1 micrometre; the canister carried down
+the ramp and put down on the ground stayed 26.387 m from the ship over 300 s of warp (2,507 km of
+travel). Not yet tried: items in the carrier's bay through an FTL jump (same mechanism).
+
+### Vehicles, landers, cargo, nested volumes (session 0f13fab4, trip verified in a test tab)
+Dave: a cart for the bays; a single-seat lander, an Aliens-style dropship, a lifter with a big cargo
+space; a hover-tank as cargo. The trip: cart into a container, seal it, clamp it to the lifter, fly
+the carrier to a planet, land, open it, drive out. Also: drive out of a container in a lifter straight
+onto the bay deck ("skipping the lifter"), and drive out of a bay / a hovering lifter and fall.
+Design (world vs player state, see memory): volumes nest only through declared zones (snug ones check
+fit, door-gated ones need the door open); clamps are attachments, not volumes, so leaving a container
+re-homes up the chain (`Game.rehome`: container -> bay -> planet). Zone gravity 'host' = what the host
+feels (`Ship.feltGravity`). Doors are world state (`v.doors[id]`), colliders swing with them
+(`boxPenetration` hinge/angle). Siblings in a host collide (`contactsSiblings`), free craft collide
+with any free host's colliders (`contactsVessels`). Ground vehicles: legs as wheels/pads
+(`groundControl`, `wheelForce`). Types CART/CRATE/TANK/LIFTER/DROPSHIP/FIGHTER in vesselTypes.js,
+models from `tools/blender/build_craft.py` -> assets/models/craft.glb; parked by `Game.parkCraft`;
+test scenes "Cargo run: the cart / the lifter". Keys: F get in / doors, Y clamp, R ramp; quick menu
+has container doors and "Climb into" for craft in the same stack.
+Verified (seed FSPB-8DTW): cart drives up the ramp into the container (re-homes into its hold), F out
+through the door, F at the panel shuts it; lifter (test autopilot via `v.auto` with its nav muted)
+lands straddling it, Y clamps (4-deep chain, effMass 48.4 t), flies it to another pad; door + "Climb
+into Mule" from the lifter seat, cart reverses out onto the bay deck skipping the lifter; Bastion FTL
+to Prelglopri with the stack aboard; lifter nav out of the bay and down (no FTL: hops); Y releases,
+F out, F opens, F into the cart, out onto the regolith; the stunt (lifter hovering at 700 m, cart off
+the ramp: "Hull breach on impact at 32 m/s"); dropship releases the hover-tank in the bay.
+Fixed on the way: container floor thinner than a sagging wheel (inner colliders: `type.inner`); audio /
+camera shake / HUD divided by zero thrust for ground vehicles; feet <= 0.3 m ignored on terrain; one F
+handled twice (out of a seat and straight back in); reach measured from the feet (now the eye);
+items put down in basins at R; nav computer: settles on level ground near a site (`levelSpot`, also
+avoiding flora), no-FTL craft hop instead of aligning for FTL; cargo / vehicles settle on rough ground
+(`restsOn`); dropship legs 3.9 m and clamp 5 cm clear (the tank used to be released into its belly).
+Hover-tank (Dave): pads are active (weight + spring to ride height 0.9 m, push 3 g, pull 0.6 g down
+within 2.5 m: hugs crests), turns spin up over ~1 s, sideways drift dies in ~1.2 s. Controls still A/D
+turn: Dave wants Battlezone II handling (mouse turns, A/D strafe).
+Polish noted: the cart's steering wheel fills the view; vehicles show flight HUD items (FA, gear, FTL);
+the dropship ramp can't reach the ground with the tall legs (kneeling gear); chase cam framing.
+
+### Every ship walkable (session 0f13fab4, built and verified after the compaction)
+Verified in a test tab: tank (F at the canopy side -> canopy lifts, cockpit; driver's seat flies, mouse
+turns 25 deg, W 9 m in 2 s, D strafes right; aft through the doorway into the compartment; with the ramp
+shut you stop at the back wall; the inside panel opens the ramp; down it onto the bay deck and back up);
+fighter (canopy lifts in ~0.5 s getting in and out); Kestrel (carrier hatch -> salon; cockpit seat;
+launch from the berth; landed on Moadeal at its rest height; out through the port airlock onto the
+ground and "Climb into Kestrel · airlock" back in; hatch up into the Bastion); Cheyenne regression (up
+and down the open ramp; shut ramp stops you). craft.glb / bastion.glb rebuilt, z-fight checks 0.
+Fixed on the way:
+- Rooms' open sides behind a door are open only while it is (`gate: { side: doorId }`, `openSides`):
+  the tank compartment, the Cheyenne troop bay, the container hold (you walked out through closed ramps).
+- Small craft's closed rooms meter exposure on their own lamps (`Game.inCabin`): the Kestrel was black.
+- A craft leaving its host mid-frame (launch, out of a bay) now flies free for the rest of the frame's
+  substeps (it sat out the frame: 15-30 m behind its carrier).
+- Free craft's contacts with a host that was already stepped this substep use the host's position at
+  the step's start (`v._stepT`, `contactsVessels(F, T, dt)`): in orbit the carrier was 15 m ahead along
+  its track, so the Kestrel's tail hit the keel on launch and the stiff contact blew up (33 m/s
+  "impact"). Kestrel launch drops 8.5 m (its roof was flush with the hull).
+- `landShipAt(b, dir, heading, s)` (any craft): rest height from `restHeight` and leg footprint for
+  non-shuttles (the yacht started 3.75 m underground and bounced onto a tree), clearing radius from the
+  craft's size, the world clock restored after settling.
+- Away from their berth, home craft (yacht, pods) are boarded from outside like any other craft.
+- Model fixes: tank canopy / pad faces, crate posts / screen (z-fight), the Kestrel's step under the
+  cockpit doorway (you saw space through it), port bench split around the airlock, airlock room 1 m
+  into the salon (rooms must overlap by more than a body width).
+- The lifter cradle clamp with the new tank and the low-g pull were not re-tried.
+
+### Polish (queue F) and items through FTL (queue G), done; verified in a test tab
+- Ground vehicles' HUD: no FA / HOLD / gear / FTL chips or attitude ladder / altitude tape / docking
+  guides; "DRIVE · HOVER|WHEELS", km/h, ramp, PARKED / zone; flight data Speed, Heading (from the
+  body's north), Ride (hover), Gravity, air, Hull; no orbit rows (`Hud.groundSpeed`). Ramp chips for
+  door ramps (dropship, tank) too.
+- Cart: driver's eye 1.22 m (was 1.05), the wheel lower / further and a rim with spokes (was a solid
+  disc): only its top shows at the bottom of the view.
+- Dropship console: two small displays, one per seat (one strip the console's width glowed too much).
+- Chase cam: higher and further (R x 0.62 up, x 2.1 back), aimed ahead of the craft; catches up fast
+  when it lags more than ~45 deg (it could swing out in front in a fast turn).
+- Cargo craft landing: a craft carrying cargo searches meadows to 900 m and rings to 680 m, slope
+  weighted x2.5 (`levelSpot`).
+- Paint app (`src/ui/apps/paint.js`, quick menu > Suit computer > Paint): ships with a paint mask
+  (`hullOf(v)`: the Blender-built ships; GlbCraftVisual keeps `this.hull`), part main / second /
+  stripe, 18 colours, Factory colours; `v.livery` is world state, `setLivery` live. Verified by pad.
+- Items through FTL: toolbox + medkit put down in the Bastion's bay, Bastion nav-computer FTL to
+  Prelglopri: max drift 2 micrometres relative to the carrier the whole way.
+- Not done: save / load (nothing persists across reloads: vessels, players, items, liveries, doors
+  would all need saving); Fleet / nav for ground vehicles; the Bastion hovering low over heavy worlds.
+
+### Travel compression (Dave's per-player time warp idea; done, verified in a test tab)
+Dave: "perhaps just have their PHYSICS go faster, except for the orbital bodies". The clock stays one
+(world state); when a player asks for more warp than it allows and only someone ELSE holds it
+(`warpBlockers()` lists reasons with `who` / `v`), that player's ship alone travels faster:
+`player.travelIndex` (a warp level), `Game.canCompress(p)` (aboard a root vessel coasting free in space,
+out of air and well up, drive idle, nobody else aboard, no other player within 50 km),
+`compressTravel(dtReal)` after the world's step moves the ship's rails anchor back (`railT0 -= extra`)
+in `railSteps`-sized steps, stopping at air / the ground, then `syncTree` (everything aboard rides
+along); `v._compress` keeps it coasting on rails (assist resting as in a warp) until the pilot thrusts
+(`rootMode`, `railStep`). When nobody holds the clock any more it becomes the world warp. Keys , / .
+step your own rate while compressing; HUD chip "TRAVEL ×50 · YOUR SHIP"; messages say why.
+Verified: P2 on EVA (holds x4), P1 in the Wayfarer 1,500 km up asks x50: the ship advanced 12.5x the
+world rate (50 / 4) along an unchanged orbit; W pauses it (off rails), coasting resumes it; P2 sitting
+down released the clock and the world went x50 for both.
+
+### Carrier sliding doors (queue E, done; verified in a test tab)
+Star Trek style, world state. `CARRIER.slideDoors` (vesselTypes.js `slideDoor(d, rooms)`): per layout
+doorway the passage axis, the plane between the two rooms' walls (the leaves close there and slide
+into the wall), the opening along the wall, its height (all 56 are 2 m wide). State `v.doors[id] =
+{open, target, hold}`; `Ship.updateSlideDoors(dt, walkers)` from `Game.simulate` with every player
+walking aboard (within 4.5 m either side: open in ~0.3 s; closes 1.5 s after the last one leaves, at
+walking-pace time). Passability: `RoomInterior.shut(r)` (a doorway room whose door is under 0.7 open
+neither fits nor takes the slide-along-walls fallback). Visual: `BigShipVisual.buildDoors` (two
+fixture-lit leaves + a cyan strip each, drawn with either room, hidden when fully open), `updateDoors`.
+Verified: corridor -> Astrogation (opens 0.41 / 0.82 / 1.0 as you walk up, closes behind you).
+Fixed on the way: corridor wall ribs every 4 m were built across doorways (a full-height post in the
+middle of Astrogation's door): `build_carrier.py` ribs now skip doorways and windows (interior rebuilt,
+z-fight 0, intrusions 0, 34.4k tris).
+
+### Meadows (queue D, done; verified in a test tab)
+Dave: "we could programmatically DESIGN the trees not to populate around optimal flat points".
+`src/gen/flora.js`: every 320 m cell (3D grid over the surface, `MEADOW_CELL`) tries 7 seeded points,
+keeps the flattest on the terrain smoothed to ~40 m features over 60 m both ways (`broadSlope`), and if
+under 0.07 it is a meadow 35-80 m across (`meadowCell`, cached on the species object; kept for a share
+of cells = `species.meadows`, from `meadowAmount`: 0.7-1.0 on living worlds, 0.5-0.8 barren).
+`meadowAt(gen, dir, h, species)` 0..1 (1 inside 70% of the radius); `scatterFlora` scales trees by (1 -
+m), shrubs (1 - 0.75 m), rocks (1 - 0.85 m), ground plants up (1 + 0.4 m). Deterministic: renderer and
+FloraField agree. `meadowsNear(gen, species, dir, radius)` lists them; `NavComputer.levelSpot` scores
+them alongside its ring search: from 5 test points near Moadeal's landing site every pick landed in a
+meadow 40-260 m away (60-90 ms per search). Moadeal: ~4% of land is open meadow, one every ~500 m.
+Seen from 45 m up: an open clearing ringed by forest. (A first try with a noise field gated by local
+slope came out salt-and-pepper on hilly ground.)
+Dave asked "Wait worlds are one big biome?": climate biomes exist (ground colour, density, desert,
+snow, ice; the catalog lists them) but each world has ONE tree / shrub / ground-plant species and the
+colour tint is random per plant, so walking around it reads as one biome. Offered: per-biome flora sets
+(conifers boreal, broadleaf temperate, canopy rainforest, flat-tops savanna, spires / cacti desert,
+tufts tundra) chosen in scatterFlora from temperature and moisture, colours by biome. Awaiting Dave.
+
+### Pause screen with tabs and a planet catalog (queue C, done; verified in a test tab)
+Dave: "when you hit Map/pause I want there to be a tabbed view like many games. And on another page, a
+catalog of planets in the current system, with the ability to put in the seed of another system. The
+catalog should have a small-sized picture, along with basic generation details like zone from the
+star, biomes present, etc."
+- `src/ui/pauseScreen.js` (`PauseScreen`, in main.js as `pause`, `window.pauseScreen`): tabs Map ·
+  Planets · Settings (the old pause menu: sliders, players, share link, Test scenes as a sub-page,
+  Change system) · Controls (keyboard + controller per mode, from `Hud.helpBody`). Esc / Start open it
+  (last tab), player 1's M / View open the Map tab (M again or Esc closes), H while paused -> Controls,
+  LB / RB switch tabs (padMenu), B / Resume close. While open the game is paused and #hud hidden; the
+  opening title card is dismissed.
+- Map tab: `MapView.openFull(p)` / `close()` / `full`; `Game.frame` draws only the map, full screen,
+  while it's open full; a card for the focused world on the right (Target, In the catalog); pad: right
+  stick turns, triggers zoom, D-pad left / right step worlds (`padUpdate(ps, dt, embedded)`).
+- Planets tab: star line, the briefing's schematic (`drawSchematic` exported), a card per planet with its
+  moons after it: a 96 px portrait, zone from the star (`zoneOf`: habitable zone and its edges, snow
+  line; moons: their planet's), orbit + sunlight, day, temperatures, gravity + size, air (pressure, top
+  two gases), seas, life, moons / rings, ESI; what covers it in chips (biomes, ocean, ice, plains...);
+  Show on map / Target. Seed field: Look up (another system's catalog, generated on the spot), Random,
+  Back to this system, Travel there (its briefing, then Launch).
+- Portraits: `src/gen/portrait.js`: `terrainPortrait(gen, {size, atmo, overcast})` samples the
+  generator's own surface (`sample` + `shade`), lights a disc, glints on seas, glows lava, tints the
+  limb, covers greenhouse / titan worlds with their deck (`portraitLook(body)`); `terrainCover(gen)` is
+  the cover from 1500 samples (`biomeName` exported from settlements.js); `giantPortrait(body)` bands +
+  storms on the main thread. Worker job 'portrait' (another system's body comes with its `terrain`
+  params, keyed 'seed:id'); ~20-30 ms per world. Cached per 'seed:id' on the pause screen.
+- Fixed on the way: resuming a closed AudioContext when a new system replaces the game.
+
+### Live viewscreen (queue B, done; verified in a test tab)
+`type.viewscreen` (tank: { at, size, cam, pitch, fov, room: 'bay', res: 320 }); `Game.addScreen(v)` makes
+an offscreen `EngineView` (`engine.makeOffscreenView(w, h, fov)`: its final tonemap pass writes linear
+into an sRGB texture, `uEncode` 0) and a MeshBasicMaterial panel (colour x2.4, like the other screens)
+on the craft's model, over the static glow face. `renderScreens(dt)` runs before the players' views,
+only while a player stands in that room, every other frame: borrows the watcher's camera for a full
+world pass (lighting, light rig, visuals dt 0, terrain LOD, sky, effects; `screenPass` keeps the meter
+outdoor and the near cut off), its own exposure adaptation. Cost in the test tab ~0.5 ms CPU per frame
+while watched. Shows the bay ahead of the tank's nose from the compartment.
+Dave: "ALL ships must be walkable and have at least a basic interior" (the Cheyenne could only be
+entered from outside); the hover-tank rides with the lifter (cradle / a box), not the dropship; pads
+pull down only on light worlds ("it's fun to get a bit of air over a hill"); tank: Battlezone handling,
+a cockpit with a canopy that lifts, two seats or a rear compartment with a viewscreen.
+- `RoomInterior` now serves small craft too (`makeInterior`: any type with `rooms`): `ramps` (a door
+  that, open, is a walkway: `rampAt`, `offRamp`, `boardable`), `entries` (F from outside at
+  `outside` climbs in to `inside`; F at `inside` climbs out; `canopy` lifts an auto door; `whenFree`
+  only when not docked), rooms with `exitTo` (walk out through an open side: put there), `homeHatch`
+  (a docked craft's hatch up into its host). Walking up any landed craft's ramp boards it
+  (`Player.boardByRamp`); seats in walk-in craft stand you up inside; open vehicles keep "Get in".
+- Cheyenne: troop bay + doorway + cockpit (2 seats), ramp 117 deg to the ground, normal legs, no belly
+  clamp (verified: up the ramp, to the seat, F, back out onto the Bastion's deck). Wing slab split (it
+  crossed the bay). Lifter: flight deck + port hatch (verified both ways). Container: walkable hold
+  (verified). Kestrel: cockpit / salon / cabin, hatch overhead to the carrier, port airlock when free
+  (written, not built yet). Tank: redesigned wedge (cockpit 2 seats under a canopy, rear compartment,
+  ramp, static viewscreen panel; mouse turns, A/D strafe) — written, not built yet. Fighter: canopy part
+  that lifts (auto door). Next: build + test those, the live viewscreen (render-to-texture through the
+  engine's pipeline), pods stay seat-only.
+- Blender: `face`, `room_shell` (rooms seen from inside, with doorway holes and low walls) now in
+  build_carrier.py; craft use `punch` for hatches; open hulls (dropship, tank) are wound by hand in the
+  skin (recalculated normals turn open shells inward).
+
+### Solid trees and boulders (session 0f13fab4, verified in a test tab)
+Dave saw the tank pass through trees: "we want the worlds to feel physically real". `src/sim/floraField.js`
+(per body, `floraOf(body)`): the same deterministic `scatterFlora` the renderer runs, computed on demand
+per node (~2 ms) or ingested from the renderer's results; trunks as upright cylinders (radius from the
+species' trunk proportions), rocks over 0.3 m as spheres, in a 16 m spatial hash; clearings shared via
+`body.floraClearings` (planetTerrain uses the same array; `prune` on a new clearing). Vessels:
+`Ship.floraContacts` (hull boxes vs trunks / rocks, rocks under feet and wheels); walker:
+`Player.collideFlora` (round trunks, onto boulders). Verified: tank into a 0.8 m trunk at 11 m/s, stopped,
+hull 71%; walking into a trunk stops at radius + 0.3 m.
+
+### Two local players, split screen on two gamepads (session 0f13fab4 after the compaction; verified in a test tab)
+Dave: "we need two player controllers. They must be able to be in separate planets, and only one can
+own or occupy a vehicle at once ... how do we handle time warp? ... For now they can just be controlled
+locally." (He linked it to the tank viewscreen: both are a second render of the world.)
+- World vs player state: characters, vessels, `v.pilot` (who has a craft's controls), doors, items,
+  the clock are world state; each `Player` also carries player state: `input`, `view` (an
+  `EngineView`), `camMode`, `chaseQuat`, `target`, `route`, `ui` {hud, quick, suit, fleetApp,
+  liftApp, inventoryApp, root, suitEl}, `ownShip`, `deathShown` / `respawnT`.
+- `Game.players`, `Game.cur` (whose turn: their controls or view) + `setCur(p)` (also sets
+  `engine.view`). `game.player / input / hud / quick / suit / camPos / camQuat / camMode / target /
+  route` are getters for `cur || players[0]`, so old code works inside a player's turn. `screenHud`
+  = player 1's HUD (loading cover, title card, help, restart card). `message()` goes to `cur`, or
+  everyone outside a turn; `tell(v, text, kind, other)` to the players watching v (`focusOf(p)`);
+  `aboardOf(v)`; `flashFor(v, ...)`.
+- Frame: each player's pad poll + suit + quick menu + global keys (in their turn); simulate (each
+  player's controls into the craft they fly, the world, each player's character); then
+  `renderView(p, first, dt)` per player (camera, lighting, light rig, meter, visuals, world /
+  terrain LOD, sky, effects, engine.render into their rect, their HUD). Animations advance in the
+  first view only (dt 0 for the second; `ShipVisual` leg decay guarded).
+- Engine: `EngineView` (camera, rect, its own HDR / depth / bloom / volume targets and eye
+  adaptation, meterRef, flash, exposureBias, radialBlur, maxExposure); `engine.views`, `engine.view`,
+  getters for the old fields (`engine.camera`, `flash`, ...; `adaptReset = true` resets all);
+  `setViewCount(n)`, `layout` 'top-bottom' (default) | 'side-by-side', `viewRect`, the FOV setting is
+  the full screen's vertical one and wide halves keep its horizontal field. The final tonemap draws
+  into the view's rect (`setViewport`). The tank viewscreen can use another EngineView into a texture.
+- Input: one `Input` per player (`kbm`, `padIndex`; player 1 keyboard + mouse + the first controller
+  nobody holds); `Input.padsPressing('START', free)`, `Input.padIndices()`, `dispose()`.
+- Joining (main.js): Start on a controller nobody uses, or pause menu "Add player 2" then Start on any
+  controller (player 1's own: player 1 keeps keyboard and mouse); `joinP2(i)` / `leaveP2()`; pause menu
+  shows the pad, Remove player 2, split top / bottom or side by side (setting `split`). Player 2 is
+  re-added after a change of system. Each pad's router (`padRouterFor(i)`): their suit, quick menu, the
+  map when it's theirs; menus are player 1's, anyone's Start pauses.
+- Player 2 gets their own shuttle "Kittiwake" SV-28 (`game.ship2`), parked by `placeShipBeside` (beside
+  player 1's on the ground / a free pad in the same bay / 60 m off in space / on the ground under a
+  low-flying one) and is put beside player 1 (`regroup`). New starts regroup everyone.
+- Vehicles: `v.pilot` replaces `pilotPresent` (kept as a getter / false-setter). Dave: "a specific
+  pilot seat per vehicle, not controls for anyone seated anywhere": every craft's pilot seat is marked
+  `pilot: true` in its seats (`pilotSeat(type)`; the carrier's command seat in layouts/bastion.js);
+  only whoever sits there flies it (`sitDown` sets `v.pilot`, `releaseControls` clears it). Any other
+  seat (co-pilot, gunner) rides along, even alone. A seat holds one player (`seatHolder`, `sitDown`
+  returns false when taken). Riders: `Player.flying` false, `game.piloted` null, free look, PASSENGER
+  chip, no ship keys, no nav computer. Prompts via `seatOffer` ("fly X", "ride along", "taken"). P
+  (lastSeat) remembers pilot seats only.
+- Shuttles are anyone's to bump into and board: `shuttlesOn(b)`, `rampSupportOf`, `collideShuttle`
+  (was the home ship only). Summon (B) / P recall use your own ship; L floodlights any shuttle.
+- Time warp: one clock (world state). Any player can change it; `warpBlocker` checks every player
+  (EVA, in the air) and every piloted craft, naming the player. Dave's idea of per-player physics
+  speed-up was considered: it works with body-centred frames for a lone ship but not for the sun / day
+  or rails (analytic in world time); queued as "travel compression" for a ship far from other players.
+- Loss: with someone still playing you're back beside them 3 s later (your shuttle parked by theirs);
+  alone, player 1 gets the restart card as before.
+- HUD: per-player root (`.hudView` clones, classes instead of ids), P1 / P2 tag, other players'
+  markers (`drawPlayers`); suit screens per player (`.suitScreen` clones over their half); the map
+  opens in its owner's view (`map.owner`, `render(dt, rect)`); audio follows player 1.
+- Test kit: `TK.pads(n)` stubs controllers, `TK.pad(i).press / release / tap / stick`.
+- Verified (stubbed pads, seed FSPB-8DTW): Start on pad 2 joins (split top / bottom, both HUDs, P1 / P2
+  tags, P2 prompts in pad glyphs); Kittiwake parked 60 m off the Wayfarer in orbit / on a free pad of
+  the starboard bay after startAboard; Cheyenne: co-pilot seat alone flies nothing, the pilot seat
+  flies, P2's stick in the co-pilot seat moves nothing, P2's right stick looks around, X stands; P1's
+  pad walks P1 only; P2 flew the Kittiwake by nav computer (FTL) to orbit of Nahasia while P1 walked
+  the Bastion's bay at Moadeal, both views drawn (62 fps in the small pane); P1 asked x1000 with P2
+  in orbit (allowed), P2 stepping out on EVA dropped it to x4 ("EVA in progress (Player 2)").
+  Found and fixed on the way: an old `message()` later in the class overrode the new one.
+- Also verified: P2's pad opens their quick menu (D-pad left), the map in their half (View; B closes),
+  their suit's Fleet app over their half (D-pad moves); side by side; leave + rejoin (one view again,
+  clones removed; on rejoin P2 and the Kittiwake come back to P1's bay, P2's inventory kept for them:
+  `awayPlayers`); P2 on Nahasia's surface while P1 orbits Moadeal (terrain to level 15 in ~10 s);
+  Kittiwake destroyed under P2: no restart card, P2 back beside P1 3 s later, Kittiwake rebuilt 60 m
+  off the Wayfarer. The mode strip now wraps inside its view.
+
 ## Still queued
+
+In order (session 0f13fab4):
+A. Finish "every ship walkable": build craft.glb + bastion.glb, test the Kestrel, the redesigned tank
+   (canopy, 2 seats, compartment, ramp, Battlezone controls), the fighter canopy (START HERE above).
+B. Tank viewscreen showing outside: a hull camera rendered into a texture through the engine's own
+   passes (sky, atmosphere, tone mapping), shown on a separate 'tank:viewscreen' part, only while
+   someone is in the compartment (it costs a second scene render).
+C. Map / pause becomes a tabbed screen like many games; one tab a catalog of the system's planets
+   (small picture, generation details: zone from the star, biomes present, etc.), with a field to
+   enter another system's seed. (Dave: next feature after vehicles.)
+D. Meadows in the generator (Dave): flora leaves natural clearings on flat ground (in `scatterFlora`,
+   shared by renderer and physics: deterministic, e.g. no trees where slope is tiny and a coarse
+   patch hash says meadow), so landers find open flat spots. Destructible trees later (a lander
+   flattening them): Dave "a bit much right now".
+E. Carrier sliding doors (Star Trek style, open on approach): open state as world state on the vessel
+   (`v.doors`, driven by any actor near), leaves as nodes in bastion.glb, animated by the visual.
+F. Polish noted: the cart's steering wheel fills the view; vehicles still show flight HUD items (FA,
+   gear, FTL); the dropship console Screen glow is too big / bright; chase-cam framing (it often shows
+   the craft from the front); a stricter level-landing for cargo craft (hover and search wider);
+   Fleet/nav for ground vehicles (none now); live liveries "Paint" app; the Bastion can't hover low
+   over heavy worlds (belly 0.03 g), so "drive out of the bay and fall" only works from a lifter.
+G. Items: save/load (nothing persists across reloads yet); items in the carrier through an FTL jump
+   (same mechanism, untested).
 
 0. Controller design (Dave is weighing it): rebinding screen (PAD_LAYOUT is already the single source,
    so a per-mode remap stored in settings would flow into the help diagram and the prompts), a held
@@ -314,6 +778,18 @@ x=-95, descend). Planet target: FTL to its lock boundary, deorbit, heat-limited 
 reticle point (T) or the best surveyed site.
 
 ## Gotchas learned
+
+- (0f13fab4) Coplanar faces z-fight whatever the depth format: cut cavities bigger than their rooms,
+  stop window cuts at the wall plane, punch holes through skins (`punch`), check with check_zfight.py.
+- (0f13fab4) Thin colliders push sagging wheels through: hosts get thick `inner` colliders for what
+  is inside them. Point-contact friction never sticks: settle cargo / vehicles with `restsOn`.
+- (0f13fab4) One key press can be read twice in a frame across modes; skip on-foot interaction in the
+  frame you leave a seat. Aim from `player.computeCamera()` now, not last frame's camera.
+- (0f13fab4) Ground vehicles have zero thrust limits: never divide by them (audio, shake, HUD).
+- (0f13fab4) Blender: recalculated normals turn open shells inward (wind those by hand); a slab that
+  spans a hull crosses its interior; EXACT booleans on multi-shell solids are risky (cut per piece).
+- (0f13fab4) Releasing cargo overlapping another collider launches / destroys it: leave clearance.
+- (0f13fab4) `groundHeight` is negative in basins; never clamp it at 0 for placing things.
 
 - GLSL ES 3.0 reserved words (`patch`) silently kill a shader; `renderer.debug.onShaderError` now
   surfaces compile failures on screen.

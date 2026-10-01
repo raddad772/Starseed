@@ -35,16 +35,22 @@ function fmtEta(sec) {
   return `~${Math.floor(sec / 3600)} h ${Math.round((sec % 3600) / 60)} min`;
 }
 
+// One per player, over their view (root: its .hudView element). The loading
+// cover, help, pause and the title card are the whole screen's.
 export class Hud {
-  constructor(game) {
+  constructor(game, player = null, root = document.querySelector('.hudView')) {
     this.game = game;
-    this.canvas = $('hudCanvas');
+    this.player = player;
+    this.root = root;
+    const q = (c) => root.querySelector(c);
+    this.canvas = q('.hudCanvas');
     this.ctx = this.canvas.getContext('2d');
-    this.flight = $('flightData');
-    this.nav = $('navData');
-    this.strip = $('modeStrip');
-    this.msgBox = $('messages');
-    this.promptEl = $('prompt');
+    this.flight = q('.flightData');
+    this.nav = q('.navData');
+    this.strip = q('.modeStrip');
+    this.msgBox = q('.messages');
+    this.promptEl = q('.prompt');
+    this.tagEl = q('.playerTag');
     this.loadingEl = $('loading');
     this.overlay = $('overlay');
     this.msgs = [];
@@ -53,11 +59,17 @@ export class Hud {
     this.resize();
   }
 
+  // over the player's view: the whole screen, or their half of it
   resize() {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     this.dpr = dpr;
-    this.w = window.innerWidth; this.h = window.innerHeight;
+    const rc = this.player && this.player.view ? this.player.view.rect : null;
+    this.w = rc ? rc.w : window.innerWidth; this.h = rc ? rc.h : window.innerHeight;
+    const st = this.root.style;
+    if (rc) { st.left = rc.x + 'px'; st.top = rc.y + 'px'; st.width = rc.w + 'px'; st.height = rc.h + 'px'; st.right = st.bottom = 'auto'; }
     this.canvas.width = this.w * dpr; this.canvas.height = this.h * dpr;
+    const n = this.game.players ? this.game.players.length : 1;
+    if (this.tagEl) { this.tagEl.hidden = n < 2; if (this.player) this.tagEl.textContent = `P${this.player.index + 1}`; }
   }
 
   message(text, kind = '') {
@@ -91,7 +103,7 @@ export class Hud {
   // the button for a key on whatever the player last used: the controller's
   // (in the current mode's layout) or the keyboard's
   padButton(code) {
-    const inp = this.game.input;
+    const inp = this.player ? this.player.input : this.game.input;
     return inp.usingPad ? padButtonFor(code, inp.padMode) : null;
   }
   keyGlyph(code, keyLabel) {
@@ -143,12 +155,26 @@ export class Hud {
 
   // Controls: keyboard and mouse, or the controller diagram for one mode
   refreshHelp() {
-    const g = this.game, tab = this.helpTab;
+    const tab = this.helpTab;
+    const btn = (attr, val, on, text) => `<button type="button" ${attr}="${val}" class="${on ? 'on' : ''}">${text}</button>`;
+    const body = this.helpBody(tab, this.padTab, true);
+    this.overlay.hidden = false;
+    this.overlay.innerHTML = `<div class="card help"><div class="tabs">${btn('data-tab', 'keys', tab === 'keys', 'Keyboard &amp; mouse')}${btn('data-tab', 'pad', tab === 'pad', 'Controller')}</div>
+      ${body}<button id="closeHelp" type="button" data-pad-back data-pad-default>Close</button></div>`;
+    for (const el of this.overlay.querySelectorAll('[data-tab]')) el.onclick = () => { this.helpTab = el.dataset.tab; this.refreshHelp(); };
+    for (const el of this.overlay.querySelectorAll('[data-pm]')) el.onclick = () => { this.padTab = el.dataset.pm; this.refreshHelp(); };
+    $('closeHelp').onclick = () => this.toggleHelp();
+  }
+
+  // the help's content: 'keys' (keyboard and mouse) or 'pad' (the controller
+  // diagram for padTab: flight / foot / eva; subTabs: its own mode buttons)
+  helpBody(tab, padTab = 'flight', subTabs = false) {
+    const g = this.game;
     const btn = (attr, val, on, text) => `<button type="button" ${attr}="${val}" class="${on ? 'on' : ''}">${text}</button>`;
     const pad = g.input.pad;
-    const body = tab === 'pad'
-      ? `<div class="tabs sub">${['flight', 'foot', 'eva'].map((m) => btn('data-pm', m, m === this.padTab, PAD_LAYOUT[m].title)).join('')}</div>
-        ${padDiagram(this.padTab)}
+    return tab === 'pad'
+      ? `${subTabs ? `<div class="tabs sub">${['flight', 'foot', 'eva'].map((m) => btn('data-pm', m, m === padTab, PAD_LAYOUT[m].title)).join('')}</div>` : ''}
+        ${padDiagram(padTab)}
         <p class="note">${pad ? `Connected: ${pad.id.replace(/</g, '&lt;')}` : 'No controller detected: connect one and press any button.'}</p>`
       : `<div class="keys">
       <kbd>Mouse</kbd><span>Look · seated: pitch and yaw</span>
@@ -161,17 +187,12 @@ export class Hud {
       <kbd>Tab</kbd><span>Next target, nearest first · aboard a big ship: route to the bridge, your ship, the hangar</span>
       <kbd>T</kbd><span>Target what's under the reticle</span><kbd>V</kbd><span>Cockpit · chase · landing view</span>
       <kbd>G / R / L</kbd><span>Gear · ramp · floodlights</span><kbd>J</kbd><span>FTL drive</span>
-      <kbd>, / .</kbd><span>Time warp</span><kbd>M</kbd><span>System map</span>
+      <kbd>, / .</kbd><span>Time warp</span><kbd>M</kbd><span>System map (pause screen) · Esc: pause screen</span>
       <kbd>N</kbd><span>Nav computer: fly to the target, door to door (any flight input takes over)</span>
+      <kbd>U</kbd><span>Suit computer: Fleet, your ships and their orders</span>
       <kbd>\`</kbd><span>Quick menu: ship systems, targets, routes, time (1-9 pick, Backspace back)</span>
       <kbd>K</kbd><span>Settlement survey markers</span><kbd>B</kbd><span>Summon ship</span>
       <kbd>Right mouse / Alt</kbd><span>Free look from the pilot seat</span><kbd>Esc</kbd><span>Pause</span></div>`;
-    this.overlay.hidden = false;
-    this.overlay.innerHTML = `<div class="card help"><div class="tabs">${btn('data-tab', 'keys', tab === 'keys', 'Keyboard &amp; mouse')}${btn('data-tab', 'pad', tab === 'pad', 'Controller')}</div>
-      ${body}<button id="closeHelp" type="button" data-pad-back data-pad-default>Close</button></div>`;
-    for (const el of this.overlay.querySelectorAll('[data-tab]')) el.onclick = () => { this.helpTab = el.dataset.tab; this.refreshHelp(); };
-    for (const el of this.overlay.querySelectorAll('[data-pm]')) el.onclick = () => { this.padTab = el.dataset.pm; this.refreshHelp(); };
-    $('closeHelp').onclick = () => this.toggleHelp();
   }
 
   showDeath(cause, onRespawn) {
@@ -186,10 +207,11 @@ export class Hud {
     const g = this.game;
     for (const m of this.msgs) { m.t += dt; if (m.t > 6) m.el.style.opacity = '0'; }
     while (this.msgs.length && this.msgs[0].t > 7) this.msgs.shift().el.remove();
-    if (g.state !== 'playing' || g.map.open) {
+    const onMap = g.map.open && g.map.owner === g.player;
+    if (g.state !== 'playing' || onMap) {
       this.ctx.setTransform(1, 0, 0, 1, 0, 0);
       this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-      if (g.map.open) { this.flight.hidden = this.nav.hidden = true; this.strip.hidden = false; this.updateStrip(); }
+      if (onMap) { this.flight.hidden = this.nav.hidden = true; this.strip.hidden = false; this.updateStrip(); }
       return;
     }
     this.flight.hidden = this.nav.hidden = this.strip.hidden = false;
@@ -197,7 +219,7 @@ export class Hud {
     if (this.textTimer <= 0) { this.textTimer = 0.1; this.updateText(); this.updateStrip(); }
     const p = g.player.prompt;
     if (p) {
-      const html = `${this.keyGlyph(p.code || 'Key' + p.key, p.key)}${p.text}`;
+      const html = p.key ? `${this.keyGlyph(p.code || 'Key' + p.key, p.key)}${p.text}` : p.text;
       if (html !== this._promptHtml) { this._promptHtml = html; this.promptEl.innerHTML = html; }
       this.promptEl.hidden = false;
     } else this.promptEl.hidden = true;
@@ -245,6 +267,23 @@ export class Hud {
       row('Rel spd', U.fmtSpeed(lv.length()));
       row('Gravity', `${(s.zone.gravity / 9.81).toFixed(2)} g · plating`);
       row('Hull', Math.round(s.hull * 100) + ' %', s.hull < 0.35 ? 'c-warn' : (s.hull < 0.75 ? 'c-caution' : 'c-ok'));
+    } else if (piloting && s.type.ground) {
+      // driving: speed, heading, the ground, the vehicle
+      const up = _v.copy(s.pos).normalize();
+      row('Speed', `${Math.round(this.groundSpeed(s) * 3.6)} km/h`);
+      const fwd = _v2.set(0, 0, -1).applyQuaternion(s.quat);
+      const northW = _v3.set(0, 1, 0).applyQuaternion(body.qTilt || body.q);
+      northW.addScaledVector(up, -northW.dot(up));
+      if (northW.lengthSq() > 1e-8) {
+        northW.normalize();
+        const eastW = northW.clone().cross(up);
+        let hd = Math.atan2(fwd.dot(eastW), fwd.dot(northW)) * 57.2958;
+        row('Heading', `${String(Math.round((hd + 360) % 360)).padStart(3, '0')}°`);
+      }
+      if (s.type.ground.kind === 'hover' && isFinite(s.agl)) row('Ride', `${Math.max(0, s.agl).toFixed(1)} m`);
+      row('Gravity', (gLocal / 9.81).toFixed(2) + ' g');
+      if (atm.pressure > 0) { row('Pressure', fmtP(atm.pressure)); row('Air temp', Math.round(atm.temperature) + ' K'); }
+      row('Hull', Math.round(s.hull * 100) + ' %', s.hull < 0.35 ? 'c-warn' : (s.hull < 0.75 ? 'c-caution' : 'c-ok'));
     } else if (piloting || p.mode === 'ship') {
       const sv = s.surfaceVel(_v3);
       const up = _v.copy(s.pos).normalize();
@@ -256,9 +295,9 @@ export class Hud {
       row('Gnd spd', U.fmtSpeed(gs));
       row('Orb spd', U.fmtSpeed(s.vel.length()));
       row('G-load', (s.landed ? 1 : s.accel.length() / 9.81).toFixed(2) + ' g');
-      const lift = s.limits.belly / s.mass;
+      const lift = s.type.ground ? Infinity : s.limits.belly / s.mass; // (vehicles don't fly)
       row('Gravity', (gLocal / 9.81).toFixed(2) + ' g', gLocal > lift ? 'c-warn' : (gLocal > lift * 0.75 ? 'c-caution' : ''));
-      if (s.big) row('Lift', gLocal > s.limits.main / s.mass ? 'cannot land · too heavy' : 'cannot land', 'c-caution');
+      if (s.type.ground) { /* no lift to warn about */ } else if (s.big) row('Lift', gLocal > s.limits.main / s.mass ? 'cannot land · too heavy' : 'cannot land', 'c-caution');
       else if (gLocal > lift && !s.landed) row('Lift', gLocal > s.limits.main / s.mass ? 'NO ESCAPE THRUST' : 'NOSE UP: main drive', 'c-warn');
       if (atm.pressure > 0) {
         const crush = atm.pressure > s.hullRating * 0.8;
@@ -310,7 +349,7 @@ export class Hud {
       nrow('Ref', s.refVessel.name, 'c-target');
       nrow('Rel speed', U.fmtSpeed(rv.length()));
     }
-    if (p.aboard && !s.landed && g.ftl.state !== 'cruise') {
+    if (p.aboard && !s.landed && !s.type.ground && g.ftl.state !== 'cruise') {
       const o = s.orbit();
       nrow('Apoapsis', o.bound ? fmtAlt(o.ra - body.R) : 'escape', o.bound ? '' : 'c-caution');
       nrow('Periapsis', fmtAlt(o.rp - body.R), o.rp < body.R + (body.atmHeight || 0) ? 'c-caution' : '');
@@ -341,13 +380,24 @@ export class Hud {
     const g = this.game, s = g.focus, p = g.player;
     const chips = [];
     const chip = (t, cls = '') => chips.push(`<span class="chip ${cls}">${t}</span>`);
-    if (p.mode === 'seat') {
+    const rampDoor = (s.type.doors || []).find((d) => d.ramp);
+    if (p.mode === 'seat' && s.type.ground) {
+      // a ground vehicle: how it moves, how fast, its ramp, where it is (no flight items)
+      if (s.pilot !== p) chip(s.pilot ? `PASSENGER · ${s.pilot.label.toUpperCase()} DRIVING` : 'PASSENGER', 'nav');
+      chip(s.type.ground.kind === 'hover' ? 'DRIVE · HOVER' : 'DRIVE · WHEELS', 'on');
+      chip(`${Math.round(this.groundSpeed(s) * 3.6)} KM/H`);
+      if (rampDoor) { const o = s.doors[rampDoor.id].open; if (o > 0.01) chip(o > 0.99 ? 'RAMP OPEN' : 'RAMP ···', 'caution'); }
+      if (s.parent) chip(s.attached ? `PARKED · ${s.parent.name.toUpperCase()}` : `${s.zone.name.toUpperCase()} · ${s.parent.name.toUpperCase()}`, s.attached ? 'on' : 'nav');
+      if (g.camMode === 'chase') chip('CHASE CAM');
+    } else if (p.mode === 'seat') {
+      if (s.pilot !== p) chip(s.pilot ? `PASSENGER · ${s.pilot.label.toUpperCase()} FLYING` : 'PASSENGER', 'nav');
       chip(`FA ${ASSIST_NAMES[s.assist]}`, s.assist === 0 ? 'caution' : 'on');
       if (s.assist === 2 && s.targetFrame === 'surface') { if (Math.abs(s.cruise) > 0.5) chip(`CRUISE ${U.fmtSpeed(s.cruise)}`, 'nav'); if (Math.abs(s.climb) > 0.3) chip(`CLIMB ${s.climb > 0 ? '+' : ''}${s.climb.toFixed(1)}`, 'nav'); if (s.heatLimited) chip('HEAT LIMIT', 'caution'); }
       else if (s.assist === 2 && !s.attached && !s.landed && s.targetVel.length() > 0.5) chip(`HOLD ${U.fmtSpeed(s.targetVel.length())}`, 'nav');
       if (s.type.legs) chip(s.gear > 0.99 ? 'GEAR DN' : (s.gear < 0.01 ? 'GEAR UP' : 'GEAR ···'), s.gear > 0.99 ? 'on' : (s.gear < 0.01 ? '' : 'caution'));
       if (s.ramp > 0.01) chip(s.ramp > 0.99 ? 'RAMP OPEN' : 'RAMP ···', 'caution');
-      if (s === g.ship && g.shipVisual.floodOn) chip('LIGHTS', 'on');
+      if (rampDoor) { const o = s.doors[rampDoor.id].open; if (o > 0.01) chip(o > 0.99 ? 'RAMP OPEN' : 'RAMP ···', 'caution'); }
+      if (s.type.key === 'shuttle' && s.visual.floodOn) chip('LIGHTS', 'on');
       if (s.parent) chip(s.attached ? `DOCKED · ${s.parent.name.toUpperCase()}` : `${s.zone.name.toUpperCase()} · ${s.parent.name.toUpperCase()}`, s.attached ? 'on' : 'nav');
       else if (s.refVessel && s.assist === 2) chip(`REF ${s.refVessel.name.toUpperCase()}`, 'nav');
       const f = g.ftl;
@@ -368,11 +418,17 @@ export class Hud {
       if (p.mode === 'ship' && p.vessel.big) chip(g.route ? `ROUTE · ${g.route.label.toUpperCase()} · ${tab} NEXT` : `${tab} · FIND YOUR WAY`, g.route ? 'nav' : '');
     }
     if (g.warp > 1) chip(`WARP ×${g.warp.toLocaleString()}`, 'nav');
+    if (p.travelIndex > 0) chip(`TRAVEL ×${g.travelRate(p).toLocaleString()} · YOUR SHIP`, 'nav');
     const ns = g.nav.status();
     if (ns) chip(`NAV · ${ns.phase.toUpperCase()} · ${fmtEta(ns.eta)}`, 'nav');
     if (p.mode !== 'seat' && p.lastSeat && !p.lastSeat.vessel.dead) chip(`${this.keyName('KeyP', 'P')} · ${p.lastSeat.vessel.name.toUpperCase()} SEAT`);
     chip(`${this.keyName('KeyH', 'H')} HELP`);
     this.strip.innerHTML = chips.join('');
+  }
+
+  // a vehicle's speed over what it drives on (the ground, or the deck it's on)
+  groundSpeed(s) {
+    return s.parent ? s.lvel.length() : s.surfaceVel(this._gsv || (this._gsv = new THREE.Vector3())).length();
   }
 
   // -------------------------------------------------------------------- canvas
@@ -414,12 +470,15 @@ export class Hud {
     if (!cinematic) this.drawBodyLabels();
     if (g.showSites) this.drawSites();
     if (piloting) {
-      if (!s.parent) this.drawAttitude();
+      if (!s.type.ground) {
+        if (!s.parent) this.drawAttitude();
+        this.drawAltTape();
+        if (!s.big) this.drawDockingGuides();
+      }
       this.drawStick();
-      this.drawAltTape();
-      if (!s.big) this.drawDockingGuides();
     }
     if (g.target) this.drawTarget(g.target);
+    this.drawPlayers();
     this.drawNav();
     if (p.mode === 'ship') this.drawRoute();
     if (g.showMeter) this.drawMeter();
@@ -688,7 +747,7 @@ export class Hud {
     // ships: labelled when they are more than a dot but not filling the view
     const own = g.player.aboard ? g.focus.root : null;
     for (const v of g.vessels) {
-      if (v.dead || v.root === own) continue;
+      if (v.dead || v.root === own || (v.parent && v.attached) || !g.listed(v)) continue;
       const wp = v.getWorldPos(_v2);
       const d = wp.distanceTo(g.camPos);
       if (d < v.type.radius * 2.5 || d > 4e7) continue;
@@ -724,7 +783,13 @@ export class Hud {
       const d0 = h.getWorldPos(_v).distanceTo(g.camPos);
       if (d0 > h.type.radius + 9000 && !(g.target && g.target.v === h)) continue;
       for (const z of h.type.zones) {
-        const local = z.kind === 'pad' ? _v2.set(z.pad[0], z.pad[1] + 14, z.pad[2]) : _v2.set(z.door.x - 30, (z.door.y0 + z.door.y1) * 0.4, (z.door.z0 + z.door.z1) / 2);
+        let local;
+        if (z.kind === 'pad') local = _v2.set(z.pad[0], z.pad[1] + 14, z.pad[2]);
+        else if (z.mouth) { // in front of a bay's mouth, at mid height
+          const M = z.mouth, n = M.normal;
+          local = _v2.set((z.min[0] + z.max[0]) / 2, (z.min[1] + z.max[1]) / 2, (z.min[2] + z.max[2]) / 2);
+          if (n[0]) local.x = M.at + n[0] * 30; else local.z = M.at + n[2] * 30;
+        } else local = _v2.set(z.door.x - 30, (z.door.y0 + z.door.y1) * 0.4, (z.door.z0 + z.door.z1) / 2);
         const w = h.localToWorld(local, _v3);
         this.project(w, pt);
         if (pt.behind || pt.x < -40 || pt.x > this.w + 40 || pt.y < -40 || pt.y > this.h + 40) continue;
@@ -796,6 +861,45 @@ export class Hud {
     }
   }
 
+  // the other players: a marker over each (at the screen's edge when out of
+  // view) with how far away they are
+  drawPlayers() {
+    const g = this.game, me = g.player, ctx = this.ctx;
+    if (!g.players || g.players.length < 2) return;
+    const pt = {};
+    const wp = this._pw || (this._pw = new THREE.Vector3());
+    for (const q of g.players) {
+      if (q === me || !q.body && !q.aboard) continue;
+      q.worldPos(wp);
+      const d = wp.distanceTo(g.camPos);
+      // (over their head: their local up, or their craft's)
+      const up = q.aboard ? _v2.set(0, 1, 0).applyQuaternion(q.vessel.quat) : _v2.copy(wp).sub(q.body.pos).normalize();
+      wp.addScaledVector(up, 2.2);
+      this.project(wp, pt);
+      const cx = this.w / 2, cy = this.h / 2;
+      let x = pt.x, y = pt.y;
+      const off = pt.behind || x < 24 || x > this.w - 24 || y < 24 || y > this.h - 24;
+      ctx.strokeStyle = ctx.fillStyle = COL.ok;
+      if (off) {
+        let dx = x - cx, dy = y - cy;
+        if (pt.behind) { dx = -dx; dy = -dy; }
+        const a = Math.atan2(dy, dx);
+        const rx = this.w / 2 - 52, ry = this.h / 2 - 52;
+        const k = Math.min(rx / Math.abs(Math.cos(a) || 1e-6), ry / Math.abs(Math.sin(a) || 1e-6));
+        x = cx + Math.cos(a) * k; y = cy + Math.sin(a) * k;
+        ctx.save(); ctx.translate(x, y); ctx.rotate(a);
+        ctx.beginPath(); ctx.moveTo(9, 0); ctx.lineTo(-5, -6); ctx.lineTo(-5, 6); ctx.closePath(); ctx.fill();
+        ctx.restore();
+      } else {
+        ctx.beginPath(); ctx.moveTo(x, y - 7); ctx.lineTo(x + 7, y); ctx.lineTo(x, y + 7); ctx.lineTo(x - 7, y); ctx.closePath(); ctx.stroke();
+      }
+      const where = q.aboard ? ` · ${q.vessel.name}` : '';
+      ctx.textAlign = x > this.w - 160 ? 'right' : 'left';
+      ctx.fillText(`P${q.index + 1}${where} · ${U.fmtDist(d)}`, x + (ctx.textAlign === 'right' ? -12 : 12), y);
+      ctx.textAlign = 'left';
+    }
+  }
+
   drawSites() {
     const g = this.game, ctx = this.ctx;
     const body = g.player.currentBody();
@@ -828,14 +932,15 @@ export class Hud {
     }
   }
 
+  // the cockpit displays of the shuttle you're in (anyone's)
   updateScreens() {
-    const g = this.game, s = g.ship;
-    if (!(g.player.aboard && g.player.vessel === s)) return;
+    const g = this.game, s = g.player.vessel;
+    if (!(g.player.aboard && s && s.type.key === 'shuttle' && s.visual.drawScreens)) return;
     const body = s.body;
     const o = s.landed ? null : s.orbit();
     const C = { ok: '#6ade8f', cau: '#f1b43a', warn: '#ff5248', nav: '#e65bd9' };
     const P = s.env.pressure;
-    g.shipVisual.drawScreens({
+    s.visual.drawScreens({
       left: [
         ['ALT', fmtAlt(s.altitude)],
         ['RADAR', isFinite(s.agl) && s.agl < 20000 ? fmtAlt(Math.max(0, s.agl)) : '---'],

@@ -27,6 +27,23 @@ export function basisQuat(x, y, z) { // rotation-matrix columns -> quaternion
 
 export function body(name) { return g().universe.bodies.find((b) => b.data.name === name); }
 
+// Float on EVA at a point in a ship's own frame (x starboard, y up, z aft),
+// moving with it, looking at another point in that frame. For screenshots
+// of a ship from outside, or of its rooms from inside.
+export function vantage(v, local, lookLocal) {
+  const gm = g(), p = gm.player, V = v.pos.constructor;
+  if (p.vessel) p.vessel.pilotPresent = false;
+  p.vessel = null; p.mode = 'eva'; p.body = v.body;
+  p.ePos.copy(v.localToBody(new V(...local), new V()));
+  p.eVel.copy(v.pointVelocity(new V(...local), new V()));
+  const fwd = new V(...lookLocal).sub(new V(...local)).normalize().applyQuaternion(v.quat);
+  const up = new V(0, 1, 0).applyQuaternion(v.quat);
+  const right = fwd.clone().cross(up).normalize();
+  const up2 = right.clone().cross(fwd).normalize();
+  p.evaQuat.copy(basisQuat(right, up2, fwd.clone().negate()));
+  gm.camMode = 'first';
+}
+
 // Seat the pilot in a circular, level, prograde orbit altM above a body.
 export function orbit(name, altM, dir = [0.3, 0.8, 0.52]) {
   const gm = g(), s = gm.ship, p = gm.player, V = s.pos.constructor;
@@ -58,6 +75,23 @@ export function holdPitch(targetDeg) {
   const s = g().ship;
   const err = (targetDeg - pitchDeg()) / 57.2958;
   s.stick.set(0, -Math.max(-1, Math.min(1, err * 2.5)) / 0.93);
+}
+
+// a vessel's place in the nesting: its frames from itself up to the body,
+// e.g. "Mule [Container hold, parked] < Container 1 [Cargo cradle, parked] < Atlas < Moadeal"
+export function chain(v) {
+  const out = [];
+  for (let h = v; h; h = h.parent) out.push(h.name + (h.zone ? ` [${h.zone.name}${h.attached ? ', parked' : ''}]` : (h.landed ? ' [landed]' : '')));
+  out.push(v.body.data.name);
+  return out.join(' < ');
+}
+
+// run frames with keys held (and an optional per-frame callback that may
+// return false to stop): drive a cart, fly a lifter
+export async function hold(ms, codes, onFrame = null) {
+  keys(...codes);
+  await window.debugRun(ms, 16, (n, gm) => (onFrame ? onFrame(n, gm) : undefined));
+  keys();
 }
 
 export function keys(...codes) {
@@ -94,3 +128,26 @@ export async function fly(ms, controller, every = 60) {
   log.push(telemetry());
   return log;
 }
+
+// ---------------------------------------------------------------- stubbed controllers
+// Fake standard gamepads for tests (navigator.getGamepads replaced). pads(n)
+// connects n of them; pad(i) returns one to drive: press('START'), release,
+// tap (press for a few frames), stick(lx, ly, rx, ry). Indices are the
+// gamepad indices the game sees (player 2 joins with window.joinP2(i)).
+const BTN_I = { A: 0, B: 1, X: 2, Y: 3, LB: 4, RB: 5, LT: 6, RT: 7, VIEW: 8, START: 9, L3: 10, R3: 11, UP: 12, DOWN: 13, LEFT: 14, RIGHT: 15 };
+export function pads(n) {
+  const list = [];
+  for (let i = 0; i < n; i++) {
+    const gp = { index: i, id: `Test pad ${i + 1}`, connected: true, mapping: 'standard', timestamp: 0,
+      buttons: Array.from({ length: 17 }, () => ({ pressed: false, value: 0 })), axes: [0, 0, 0, 0] };
+    gp.press = (b) => { gp.buttons[BTN_I[b]].pressed = true; gp.buttons[BTN_I[b]].value = 1; };
+    gp.release = (b) => { gp.buttons[BTN_I[b]].pressed = false; gp.buttons[BTN_I[b]].value = 0; };
+    gp.tap = async (b, frames = 3) => { gp.press(b); await window.debugRun(frames * 16, 16); gp.release(b); await window.debugRun(48, 16); };
+    gp.stick = (lx = 0, ly = 0, rx = 0, ry = 0) => { gp.axes[0] = lx; gp.axes[1] = ly; gp.axes[2] = rx; gp.axes[3] = ry; };
+    list.push(gp);
+  }
+  window._testPads = list;
+  navigator.getGamepads = () => window._testPads;
+  return list;
+}
+export function pad(i) { return window._testPads[i]; }

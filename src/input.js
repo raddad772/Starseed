@@ -1,12 +1,23 @@
 // Keyboard / mouse / gamepad state with per-frame edge detection and pointer
 // lock. A gamepad's buttons stand in for keyboard keys (see padLayout.js), so
 // the game reads one set of controls whatever is in your hands.
+//
+// One Input per player: player 1 has the keyboard and mouse and the first
+// controller nobody else holds; player 2 a controller of their own
+// (opts.kbm false, opts.padIndex: the gamepad's index).
 
 import { BTN, PAD_LAYOUT, leftStickAxes } from './padLayout.js';
 
+const INPUTS = []; // every player's input: a controller held by one is skipped by the others
+
+function standardPad(p) { return p && p.connected && (p.mapping === 'standard' || (p.buttons.length >= 16 && p.axes.length >= 4)); }
+
 export class Input {
-  constructor(canvas) {
+  constructor(canvas, opts = {}) {
     this.canvas = canvas;
+    this.kbm = opts.kbm !== false;
+    this.padIndex = opts.padIndex ?? null; // null: the first controller no other player holds
+    INPUTS.push(this);
     this.keys = new Set();
     this.hits = new Set();
     this.wheel = 0;
@@ -43,6 +54,7 @@ export class Input {
     this.device = 'kbm';
     this.padLookRate = 2.8;   // rad/s at full deflection, on foot
     this.stats = { m: 0, p: 0, mPx: 0, pPx: 0, t0: performance.now(), rate: null, src: 'mousemove' };
+    if (!this.kbm) { this.device = 'pad'; return; }
     window.addEventListener('keydown', (e) => {
       if (!this.enabled) return;
       if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
@@ -89,19 +101,46 @@ export class Input {
   // OS-adjusted movement: the pointer speed and acceleration you are used to
   // (raw counts skip macOS acceleration and make looking around sluggish)
   requestLock() {
+    if (!this.kbm) return;
     try {
       const p = this.canvas.requestPointerLock();
       if (p && p.catch) p.catch(() => {});
     } catch (e) { /* pointer lock is optional: right-drag still looks around */ }
   }
-  releaseLock() { if (document.pointerLockElement) document.exitPointerLock(); }
+  releaseLock() { if (this.kbm && document.pointerLockElement) document.exitPointerLock(); }
 
   setDevice(d) {
-    if (d === this.device) return;
+    if (d === this.device || !this.kbm) return;
     this.device = d;
     document.body.classList.toggle('using-pad', d === 'pad');
   }
   get usingPad() { return this.device === 'pad' && !!this.pad; }
+
+  // stop reading anything (a player leaving): frees their controller
+  dispose() {
+    const i = INPUTS.indexOf(this);
+    if (i >= 0) INPUTS.splice(i, 1);
+  }
+
+  // Controllers whose button `btn` (a BTN name) is down now: their gamepad
+  // indices (a second player joins by pressing Start). free: only ones no
+  // player is using; otherwise any not given to a player outright (player
+  // 1's controller can go to player 2, player 1 keeping keyboard and mouse)
+  static padsPressing(btn, free = true) {
+    const out = [];
+    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    for (const p of pads) {
+      if (!standardPad(p) || INPUTS.some((inp) => inp.padIndex === p.index || (free && inp.pad && inp.pad.index === p.index))) continue;
+      const b = p.buttons[BTN[btn]];
+      if (b && (b.pressed || b.value > 0.4)) out.push(p.index);
+    }
+    return out;
+  }
+  // every connected controller's index
+  static padIndices() {
+    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    return [...pads].filter(standardPad).map((p) => p.index);
+  }
 
   down(code) { return this.keys.has(code) || this.padKeys.has(code); }
   hit(code) { return this.hits.has(code); }
@@ -123,8 +162,13 @@ export class Input {
     this.padDt = dt;
     let gp = null;
     const pads = navigator.getGamepads ? navigator.getGamepads() : [];
-    for (const p of pads) if (p && p.connected && p.mapping === 'standard') { gp = p; break; }
-    if (!gp) for (const p of pads) if (p && p.connected && p.buttons.length >= 16 && p.axes.length >= 4) { gp = p; break; }
+    if (this.padIndex !== null) gp = standardPad(pads[this.padIndex]) ? pads[this.padIndex] : null;
+    else {
+      // the first controller no other player has (standard mapping first)
+      const held = (p) => INPUTS.some((inp) => inp !== this && inp.padIndex === p.index);
+      for (const p of pads) if (p && p.connected && p.mapping === 'standard' && !held(p)) { gp = p; break; }
+      if (!gp) for (const p of pads) if (standardPad(p) && !held(p)) { gp = p; break; }
+    }
     if (!gp) { this.pad = null; this.padPrev.length = 0; return; }
     if (!this.pad) this.padPrev.length = 0;
     this.pad = gp;

@@ -1,10 +1,13 @@
 // Big-ship rendering: places the model, fires the drive plumes, raises the
 // docking-pad pylons and turns the pad lights green when a craft is clamped,
-// shimmers the hangar force field, blinks the strobes.
+// shimmers the hangar force field, blinks the strobes. Ships modelled in
+// Blender (a type with a .model) also draw only the rooms near you.
 
 import * as THREE from 'three';
-import { buildTender, buildCarrier } from './bigShips.js';
+import { buildTender } from './bigShips.js';
+import { buildGlbShip, visibleRooms } from './glbShip.js';
 import { plumeMaterial } from './shipVisual.js';
+import { fixtureLit } from './lightRig.js';
 
 const _v = new THREE.Vector3();
 const AMBER = new THREE.Color(0xf1b43a).multiplyScalar(2.4);
@@ -16,16 +19,18 @@ export class BigShipVisual {
     this.engine = engine;
     this.v = vessel;
     const reg = vessel.registry || '';
-    const m = vessel.type.key === 'tender' ? buildTender(vessel.name, reg) : buildCarrier(vessel.name, reg);
+    const m = vessel.type.model ? buildGlbShip(engine, vessel) : buildTender(vessel.name, reg);
     this.model = m;
     engine.scene.add(m.root);
     this.fx = new THREE.Group();
     engine.transparentScene.add(this.fx);
     if (m.field) this.fx.add(m.field);
+    m.onLoaded = () => { for (const f of m.fields) this.fx.add(f); };
     // unit plume cone: wide end at the nozzle (y = 0), tip at y = -1, aimed aft (+z)
     const cone = new THREE.ConeGeometry(1, 1, 32, 1, true);
     cone.rotateX(Math.PI);
     cone.translate(0, -0.5, 0);
+    this.doorLeaves = vessel.type.slideDoors ? this.buildDoors(vessel.type.slideDoors, m.root) : [];
     this.plumes = vessel.type.engines.map(([x, y, z, r]) => {
       const p = new THREE.Mesh(cone, plumeMaterial([0.45, 0.55, 1.0], 1));
       p.position.set(x, y, z);
@@ -72,9 +77,72 @@ export class BigShipVisual {
       p.pylons.scale.y = 0.15 + 0.85 * p.lift;
     }
     if (m.field) m.field.material.uniforms.uTime.value = this.time;
+    if (m.fields) for (const f of m.fields) f.material.uniforms.uTime.value = this.time;
+    if (m.rooms && m.loaded) this.showRooms();
+    if (this.doorLeaves.length) this.updateDoors();
     // strobes
     this.blink = (this.blink + dt) % 2.0;
     const on = this.blink < 0.1 || (this.blink > 0.3 && this.blink < 0.4);
     for (const n of m.navLights) n.visible = on;
+  }
+
+  // Sliding doors: two leaves per doorway, closing in the plane between the
+  // two rooms' walls and sliding apart into the wall; a lit strip along each
+  // leaf's middle. Drawn with the rooms either side, moved from the door's
+  // state (world state on the vessel: the visual only reads it).
+  buildDoors(list, root) {
+    const panel = fixtureLit(new THREE.MeshStandardMaterial({ color: 0x7d8890, metalness: 0.6, roughness: 0.4 }));
+    const strip = new THREE.MeshBasicMaterial({ color: new THREE.Color(0x4fd6e6).multiplyScalar(1.6) });
+    const out = [];
+    for (const d of list) {
+      const half = (d.u1 - d.u0) / 2, h = d.y1 - d.y0, T = 0.08;
+      const g = new THREE.Group();
+      const leaves = [];
+      for (const side of [-1, 1]) {
+        const geo = d.axis === 'x' ? new THREE.BoxGeometry(T, h, half) : new THREE.BoxGeometry(half, h, T);
+        const leaf = new THREE.Mesh(geo, panel);
+        const sg = d.axis === 'x' ? new THREE.BoxGeometry(T + 0.02, 0.06, half * 0.8) : new THREE.BoxGeometry(half * 0.8, 0.06, T + 0.02);
+        const st = new THREE.Mesh(sg, strip);
+        st.position.y = 0.1;
+        leaf.add(st);
+        g.add(leaf);
+        leaves.push({ mesh: leaf, side });
+      }
+      g.position.set(d.axis === 'x' ? d.plane : (d.u0 + d.u1) / 2, d.y0 + h / 2, d.axis === 'x' ? (d.u0 + d.u1) / 2 : d.plane);
+      g.visible = false;
+      root.add(g);
+      out.push({ d, g, leaves, half });
+    }
+    return out;
+  }
+
+  updateDoors() {
+    const v = this.v;
+    for (const L of this.doorLeaves) {
+      if (!L.g.visible) continue;
+      const o = v.doors[L.d.id].open;
+      for (const lf of L.leaves) {
+        const u = lf.side * (L.half / 2 + o * L.half * 0.98);
+        if (L.d.axis === 'x') lf.mesh.position.z = u; else lf.mesh.position.x = u;
+        lf.mesh.visible = o < 0.98; // (fully open: inside the wall)
+      }
+    }
+  }
+
+  // the interior near you, and lit windows wherever you can't see in
+  showRooms() {
+    const v = this.v, m = this.model, I = v.interior;
+    const p = v.game.player;
+    let room = null;
+    if (p.aboard && p.vessel === v) room = I.roomAt(p.mode === 'seat' ? _v.fromArray(v.type.seats[p.seat || 0].pos) : p.sPos, 1.0);
+    else if (p.aboard && p.vessel.parent === v) room = I.roomAt(p.vessel.lpos, 3.0);
+    const ri = room ? I.rooms.indexOf(room) : -1;
+    if (ri === this._ri) return;
+    this._ri = ri;
+    const vis = visibleRooms(I, ri);
+    for (const [id, n] of m.rooms) n.visible = vis.has(id);
+    for (const L of this.doorLeaves) L.g.visible = vis.has(L.d.rooms[0]) || vis.has(L.d.rooms[1]);
+    if (m.hall) m.hall.visible = [...vis].some((id) => id.startsWith('eng-') || id === 'reactor-pass');
+    for (const [id, n] of m.glows) n.visible = ri < 0 || !vis.has(id);
   }
 }

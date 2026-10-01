@@ -179,6 +179,7 @@ uniform float uTime;
 uniform float uVignette;
 uniform vec3 uFlash;
 uniform float uRadial;
+uniform float uEncode; // 1: sRGB for the canvas; 0: linear, into an sRGB texture (a screen in the world)
 varying vec2 vUv;
 vec3 aces(vec3 x) {
   const float a = 2.51, b = 0.03, c = 2.43, d = 0.59, e = 0.14;
@@ -212,7 +213,7 @@ void main() {
   } else c = aces(c);
   // blue-noise-ish dither to hide banding in skies
   float n = fract(sin(dot(gl_FragCoord.xy + uTime, vec2(12.9898, 78.233))) * 43758.5453) - 0.5;
-  gl_FragColor = vec4(toSRGB(c) + n / 255.0, 1.0);
+  gl_FragColor = uEncode > 0.5 ? vec4(toSRGB(c) + n / 255.0, 1.0) : vec4(c, 1.0);
 }
 `;
 
@@ -222,6 +223,73 @@ function hdrTarget(w, h, opts = {}) {
     minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
     depthBuffer: false, stencilBuffer: false, generateMipmaps: false, ...opts,
   });
+}
+
+// One view of the world: its own camera, render targets and eye adaptation,
+// drawn into its own rectangle of the canvas (the whole of it, or one half
+// of a split screen). The same pipeline will draw into a texture for screens
+// inside the world (a viewscreen).
+export class EngineView {
+  constructor(engine) {
+    this.engine = engine;
+    this.camera = new THREE.PerspectiveCamera(70, 1, engine.near, engine.far);
+    this.camera.matrixAutoUpdate = true;
+    this.rect = { x: 0, y: 0, w: 1, h: 1 }; // CSS px from the canvas's top left
+    this.width = 4; this.height = 4;       // device px
+    // what the game sets each frame for this view's exposure and effects
+    this.meterRef = 0.03;
+    this.meterNearCut = 0;
+    this.exposureBias = 1;
+    this.flash = new THREE.Vector3(0, 0, 0);
+    this.radialBlur = 0;
+    this.maxExposure = 260;
+    this.adaptReset = true;
+    this.lastHDR = null;
+    const w = 4, h = 4;
+    this.depthTex = new THREE.DepthTexture(w, h, THREE.FloatType);
+    this.depthTex.format = THREE.DepthFormat;
+    this.depthTex.minFilter = THREE.NearestFilter;
+    this.depthTex.magFilter = THREE.NearestFilter;
+    this.rtScene = hdrTarget(w, h, { depthBuffer: true, depthTexture: this.depthTex });
+    this.rtA = hdrTarget(w, h);
+    this.rtB = hdrTarget(w, h);
+    this.rtLum = hdrTarget(128, 128, { minFilter: THREE.LinearMipmapLinearFilter, generateMipmaps: true });
+    this.rtAdapt = [hdrTarget(1, 1, { type: THREE.FloatType, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter }),
+      hdrTarget(1, 1, { type: THREE.FloatType, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter })];
+    this.adaptIdx = 0;
+    this.bloomLevels = [];
+    this.bloomUp = [];
+    this.fxTarget = null;
+    // half-resolution volume pass output: [0] in-scattered light, [1] transmittance
+    this.rtVolume = new THREE.WebGLRenderTarget(w, h, {
+      count: 2, type: THREE.HalfFloatType, format: THREE.RGBAFormat,
+      minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: false, stencilBuffer: false,
+    });
+  }
+
+  // W x H device pixels
+  setSize(W, H) {
+    this.width = W; this.height = H;
+    this.rtScene.setSize(W, H);
+    this.rtA.setSize(W, H);
+    this.rtB.setSize(W, H);
+    this.rtVolume.setSize(Math.max(1, W >> 1), Math.max(1, H >> 1));
+    if (this.fxTarget) this.fxTarget.setSize(W, H);
+    for (const l of this.bloomLevels) l.dispose();
+    for (const l of this.bloomUp) l.dispose();
+    this.bloomLevels = [];
+    let bw = W >> 1, bh = H >> 1;
+    for (let i = 0; i < 6 && bw >= 8 && bh >= 8; i++) {
+      this.bloomLevels.push(hdrTarget(bw, bh));
+      bw >>= 1; bh >>= 1;
+    }
+    this.bloomUp = this.bloomLevels.map((l) => hdrTarget(l.width, l.height));
+  }
+
+  dispose() {
+    for (const t of [this.rtScene, this.rtA, this.rtB, this.rtLum, ...this.rtAdapt, this.rtVolume, this.fxTarget, this.out, ...this.bloomLevels, ...this.bloomUp]) if (t) t.dispose();
+    this.depthTex.dispose();
+  }
 }
 
 export class Engine {
@@ -256,35 +324,80 @@ export class Engine {
     this.renderScale = opts.renderScale || 1;
     this.near = 0.05;
     this.far = 1e13;
-    this.camera = new THREE.PerspectiveCamera(70, 1, this.near, this.far);
-    this.camera.matrixAutoUpdate = true;
     this.scene = new THREE.Scene();
     this.scene.matrixWorldAutoUpdate = true;
     this.transparentScene = new THREE.Scene();
     this.atmospheres = []; // {atmo, active} set per frame
-    this.exposureBias = 1;
     this.bloomStrength = 0.9;
     this.whiteBalance = new THREE.Vector3(1, 1, 1);
-    this.flash = new THREE.Vector3(0, 0, 0);
     this.vignette = 0.35;
     this.time = 0;
-    this.adaptReset = true;
     this.minExposure = 0.04;
-    this.maxExposure = 260;
     // exposure metering: luminance of an 18% grey card under the light at the
-    // camera (set by the game each frame), and how far the frame's own
-    // brightness may move exposure from it, in stops
-    this.meterRef = 0.03;
+    // camera (set by the game each frame, per view), and how far the frame's
+    // own brightness may move exposure from it, in stops
     this.meterUp = 5;
     this.meterDown = 0.5;
     this.toneCurve = 'agx';   // or 'aces'
     this.meterStrength = 0.75; // how much of the solid surfaces' brightness the eye compensates
-    this._buildTargets();
+    // the views drawn on the canvas (one per player: a split screen with two)
+    // and the one being set up / drawn now
+    this.fovBase = 70;
+    this.layout = 'top-bottom'; // or 'side-by-side'
+    this.views = [new EngineView(this)];
+    this.view = this.views[0];
     this._buildMaterials();
     this.resize();
   }
 
   get depthMode() { return this.reversed ? 0 : 1; }
+
+  // the view being drawn now: its camera, size and exposure state
+  get camera() { return this.view.camera; }
+  get width() { return this.view.width; }
+  get height() { return this.view.height; }
+  get flash() { return this.view.flash; }
+  get rtAdapt() { return this.view.rtAdapt; }
+  get adaptIdx() { return this.view.adaptIdx; }
+  get lastHDR() { return this.view.lastHDR; }
+  get depthTex() { return this.view.depthTex; }
+  get exposureBias() { return this.view.exposureBias; }
+  set exposureBias(v) { this.view.exposureBias = v; }
+  get meterRef() { return this.view.meterRef; }
+  set meterRef(v) { this.view.meterRef = v; }
+  get meterNearCut() { return this.view.meterNearCut; }
+  set meterNearCut(v) { this.view.meterNearCut = v; }
+  get radialBlur() { return this.view.radialBlur; }
+  set radialBlur(v) { this.view.radialBlur = v; }
+  get maxExposure() { return this.view.maxExposure; }
+  set maxExposure(v) { this.view.maxExposure = v; }
+  // a reset (a new place, a cut) re-meters every view at once
+  get adaptReset() { return this.view.adaptReset; }
+  set adaptReset(v) { for (const w of this.views) w.adaptReset = v; }
+
+  // A view drawn into a texture (w x h) instead of the canvas: a screen in
+  // the world showing a camera's picture (the tank's viewscreen). Not one of
+  // the canvas's views; drawn by setting engine.view to it and rendering.
+  makeOffscreenView(w, h, fov = 60) {
+    const v = new EngineView(this);
+    v.out = new THREE.WebGLRenderTarget(w, h, { type: THREE.UnsignedByteType, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false });
+    v.out.texture.colorSpace = THREE.SRGBColorSpace; // (stored encoded, read back as linear)
+    v.rect = { x: 0, y: 0, w, h };
+    v.setSize(w, h);
+    v.camera.aspect = w / h;
+    v.camera.fov = fov;
+    v.camera.updateProjectionMatrix();
+    return v;
+  }
+
+  // n views: a split screen for two players (or back to one)
+  setViewCount(n) {
+    while (this.views.length < n) this.views.push(new EngineView(this));
+    while (this.views.length > n) this.views.pop().dispose();
+    if (!this.views.includes(this.view)) this.view = this.views[0];
+    this.adaptReset = true;
+    this.resize();
+  }
 
   // the exposure in use now (a 1x1 GPU readback: for the debug readout only)
   readExposure() {
@@ -294,35 +407,13 @@ export class Engine {
     return Math.min(this.maxExposure, Math.max(this.minExposure, 0.18 / Math.pow(2, b[0])));
   }
 
-  _buildTargets() {
-    const w = 4, h = 4;
-    this.depthTex = new THREE.DepthTexture(w, h, THREE.FloatType);
-    this.depthTex.format = THREE.DepthFormat;
-    this.depthTex.minFilter = THREE.NearestFilter;
-    this.depthTex.magFilter = THREE.NearestFilter;
-    this.rtScene = hdrTarget(w, h, { depthBuffer: true, depthTexture: this.depthTex });
-    this.rtA = hdrTarget(w, h);
-    this.rtB = hdrTarget(w, h);
-    // transparent pass shares the scene depth
-    this.rtLum = hdrTarget(128, 128, { minFilter: THREE.LinearMipmapLinearFilter, generateMipmaps: true });
-    this.rtAdapt = [hdrTarget(1, 1, { type: THREE.FloatType, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter }),
-      hdrTarget(1, 1, { type: THREE.FloatType, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter })];
-    this.adaptIdx = 0;
-    this.bloomLevels = [];
-    // half-resolution volume pass output: [0] in-scattered light, [1] transmittance
-    this.rtVolume = new THREE.WebGLRenderTarget(w, h, {
-      count: 2, type: THREE.HalfFloatType, format: THREE.RGBAFormat,
-      minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: false, stencilBuffer: false,
-    });
-  }
-
   _buildMaterials() {
     const mk = (frag, uniforms) => new THREE.ShaderMaterial({ uniforms, vertexShader: FULLSCREEN_VERT, fragmentShader: frag, depthTest: false, depthWrite: false });
     const depthU = () => ({ uDepthMode: { value: this.depthMode }, uNear: { value: this.near }, uFar: { value: this.far }, uLogDepthFC: { value: Math.log2(this.far + 1) } });
     this.depthUniforms = depthU;
     this.bgMat = mk(BG_FRAG, { tColor: { value: null }, tDepth: { value: null }, tSky: { value: null }, uCamRot: { value: new THREE.Matrix3() }, uTanHalf: { value: new THREE.Vector2() }, uSkyGain: { value: 1 }, ...depthU() });
     this.lumMat = mk(LUM_FRAG, { tColor: { value: null }, tDepth: { value: null }, uRef: { value: 0.03 }, uNearCut: { value: 0 }, ...depthU() });
-    this.adaptMat = mk(ADAPT_FRAG, { tLum: { value: this.rtLum.texture }, tPrev: { value: null }, uDt: { value: 0.016 }, uLevel: { value: 7 }, uReset: { value: 1 }, uRef: { value: 0.03 }, uUp: { value: 5 }, uDown: { value: 0.5 }, uStrength: { value: 0.75 } });
+    this.adaptMat = mk(ADAPT_FRAG, { tLum: { value: null }, tPrev: { value: null }, uDt: { value: 0.016 }, uLevel: { value: 7 }, uReset: { value: 1 }, uRef: { value: 0.03 }, uUp: { value: 5 }, uDown: { value: 0.5 }, uStrength: { value: 0.75 } });
     this.brightMat = mk(BRIGHT_FRAG, { tColor: { value: null }, tAdapt: { value: null }, uKey: { value: 0.18 }, uMinExp: { value: 0.04 }, uMaxExp: { value: 260 }, uTexel: { value: new THREE.Vector2() } });
     this.downMat = mk(DOWN_FRAG, { tSrc: { value: null }, uTexel: { value: new THREE.Vector2() } });
     this.upMat = mk(UP_FRAG, { tSrc: { value: null }, tBase: { value: null }, uTexel: { value: new THREE.Vector2() }, uRadius: { value: 1 } });
@@ -331,8 +422,20 @@ export class Engine {
       tColor: { value: null }, tBloom: { value: null }, tAdapt: { value: null },
       uKey: { value: 0.18 }, uMinExp: { value: 0.04 }, uMaxExp: { value: 260 }, uExposureBias: { value: 1 }, uBloom: { value: 0.9 },
       toneMappingExposure: { value: 1 }, uToneCurve: { value: 1 },
-      uWhiteBalance: { value: this.whiteBalance }, uTime: { value: 0 }, uVignette: { value: 0.35 }, uFlash: { value: this.flash }, uRadial: { value: 0 },
+      uWhiteBalance: { value: this.whiteBalance }, uTime: { value: 0 }, uVignette: { value: 0.35 }, uFlash: { value: null }, uRadial: { value: 0 }, uEncode: { value: 1 },
     });
+  }
+
+  // where view i goes on a canvas w x h (CSS px): all of it, or half of a
+  // split screen (player 1 on top / on the left), with a 2 px seam
+  viewRect(i, n, w, h) {
+    if (n < 2) return { x: 0, y: 0, w, h };
+    if (this.layout === 'side-by-side') {
+      const half = Math.floor(w / 2);
+      return i === 0 ? { x: 0, y: 0, w: half - 1, h } : { x: half + 1, y: 0, w: w - half - 1, h };
+    }
+    const half = Math.floor(h / 2);
+    return i === 0 ? { x: 0, y: 0, w, h: half - 1 } : { x: 0, y: half + 1, w, h: h - half - 1 };
   }
 
   resize() {
@@ -341,25 +444,27 @@ export class Engine {
     const pr = Math.min(window.devicePixelRatio || 1, 2) * this.renderScale;
     this.renderer.setPixelRatio(pr);
     this.renderer.setSize(w, h, false);
-    const W = Math.max(2, Math.floor(w * pr)), H = Math.max(2, Math.floor(h * pr));
-    this.width = W; this.height = H; this.pixelRatio = pr;
-    this.camera.aspect = w / h;
-    this.camera.updateProjectionMatrix();
-    this.rtScene.setSize(W, H);
-    this.rtA.setSize(W, H);
-    this.rtB.setSize(W, H);
-    this.rtVolume.setSize(Math.max(1, W >> 1), Math.max(1, H >> 1));
-    for (const l of this.bloomLevels) l.dispose();
-    this.bloomLevels = [];
-    let bw = W >> 1, bh = H >> 1;
-    for (let i = 0; i < 6 && bw >= 8 && bh >= 8; i++) {
-      this.bloomLevels.push(hdrTarget(bw, bh));
-      bw >>= 1; bh >>= 1;
-    }
-    this.bloomUp = this.bloomLevels.map((l) => hdrTarget(l.width, l.height));
+    this.cssW = w; this.cssH = h; this.pixelRatio = pr;
+    this.views.forEach((v, i) => {
+      v.rect = this.viewRect(i, this.views.length, w, h);
+      v.setSize(Math.max(2, Math.floor(v.rect.w * pr)), Math.max(2, Math.floor(v.rect.h * pr)));
+    });
+    this.setFov(this.fovBase);
   }
 
-  setFov(deg) { this.camera.fov = deg; this.camera.updateProjectionMatrix(); }
+  // The field of view setting is the full screen's vertical one; a view
+  // wider than the screen (the top / bottom halves) keeps its horizontal
+  // field instead, so a split screen shows as much across, less up and down
+  setFov(deg) {
+    this.fovBase = deg;
+    const sa = (this.cssW || 16) / (this.cssH || 9);
+    for (const v of this.views) {
+      const va = v.rect.w / Math.max(1, v.rect.h);
+      v.camera.aspect = va;
+      v.camera.fov = THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(deg) / 2) * Math.min(1, sa / va)));
+      v.camera.updateProjectionMatrix();
+    }
+  }
 
   get tanHalf() {
     const t = Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2);
@@ -429,24 +534,28 @@ export class Engine {
     this._activeQuery = null;
   }
 
-  // atmos: list of {material, body}, ordered far -> near
-  render(dt, sky, atmos) {
+  // Draws the current view (this.view) into its rectangle of the canvas.
+  // atmos: list of {material, body}, ordered far -> near. dt: real time
+  // (eye adaptation); animate: false for a second view in the same frame
+  // (time-driven effects advance once per frame)
+  render(dt, sky, atmos, animate = true) {
     this.gpuBegin();
-    this._render(dt, sky, atmos);
+    this._render(dt, sky, atmos, animate);
     this.gpuEnd();
   }
 
-  _render(dt, sky, atmos) {
+  _render(dt, sky, atmos, animate) {
     const r = this.renderer;
-    const cam = this.camera;
-    this.time += dt;
+    const V = this.view;
+    const cam = V.camera;
+    if (animate) this.time += dt;
     cam.updateMatrixWorld();
     const camRot = new THREE.Matrix3().setFromMatrix4(cam.matrixWorld);
     const tanHalf = this.tanHalf;
 
     // 1. opaque scene into the HDR target
     this.passBegin('scene');
-    r.setRenderTarget(this.rtScene);
+    r.setRenderTarget(V.rtScene);
     r.setClearColor(0x000000, 1);
     r.clear(true, true, false);
     r.render(this.scene, cam);
@@ -454,21 +563,21 @@ export class Engine {
 
     // 2. background where nothing was drawn
     const bg = this.bgMat.uniforms;
-    bg.tColor.value = this.rtScene.texture;
-    bg.tDepth.value = this.depthTex;
+    bg.tColor.value = V.rtScene.texture;
+    bg.tDepth.value = V.depthTex;
     bg.tSky.value = sky ? sky.cubeRT.texture : null;
     bg.uCamRot.value.copy(camRot);
     bg.uTanHalf.value.copy(tanHalf);
     this.passBegin('background');
-    renderFullscreen(r, this.bgMat, this.rtA);
+    renderFullscreen(r, this.bgMat, V.rtA);
     this.passEnd();
-    let src = this.rtA, dst = this.rtB;
+    let src = V.rtA, dst = V.rtB;
 
     // 3. atmospheres
     for (const a of atmos) {
       const u = a.material.uniforms;
       u.tColor.value = src.texture;
-      u.tDepth.value = this.depthTex;
+      u.tDepth.value = V.depthTex;
       u.uCamRot.value.copy(camRot);
       u.uTanHalf.value.copy(tanHalf);
       u.uDepthMode.value = this.depthMode;
@@ -476,15 +585,15 @@ export class Engine {
       if (u.uSteps && u.uSigma === undefined) u.uTime.value = this.time;
       this.passBegin(a.material.uniforms.uSigma ? 'volume' : 'atmosphere');
       if (a.halfRes) {
-        renderFullscreen(r, a.material, this.rtVolume);
+        renderFullscreen(r, a.material, V.rtVolume);
         this.passEnd();
         this.passBegin('composite');
         const c = this.volCompMat.uniforms;
         c.tColor.value = src.texture;
-        c.tDepth.value = this.depthTex;
-        c.tL.value = this.rtVolume.textures[0];
-        c.tT.value = this.rtVolume.textures[1];
-        c.uLowSize.value.set(this.rtVolume.width, this.rtVolume.height);
+        c.tDepth.value = V.depthTex;
+        c.tL.value = V.rtVolume.textures[0];
+        c.tT.value = V.rtVolume.textures[1];
+        c.uLowSize.value.set(V.rtVolume.width, V.rtVolume.height);
         c.uDepthMode.value = this.depthMode;
         renderFullscreen(r, this.volCompMat, dst);
       } else renderFullscreen(r, a.material, dst);
@@ -498,82 +607,88 @@ export class Engine {
     if (anyFx) {
       this.passBegin('transparent');
       // draw into src using the scene depth: re-bind via a temporary target sharing depth
-      if (!this._fxTarget) {
-        this._fxTarget = hdrTarget(this.width, this.height, { depthBuffer: true, depthTexture: this.depthTex });
-      }
-      if (this._fxTarget.width !== this.width || this._fxTarget.height !== this.height) this._fxTarget.setSize(this.width, this.height);
+      if (!V.fxTarget) V.fxTarget = hdrTarget(V.width, V.height, { depthBuffer: true, depthTexture: V.depthTex });
+      if (V.fxTarget.width !== V.width || V.fxTarget.height !== V.height) V.fxTarget.setSize(V.width, V.height);
       // copy src into fx target color, then render transparents
       this._copyMat = this._copyMat || new THREE.ShaderMaterial({ uniforms: { tSrc: { value: null } }, vertexShader: FULLSCREEN_VERT, fragmentShader: 'uniform sampler2D tSrc; varying vec2 vUv; void main(){ gl_FragColor = texture(tSrc, vUv); }', depthTest: false, depthWrite: false });
       this._copyMat.uniforms.tSrc.value = src.texture;
-      renderFullscreen(r, this._copyMat, this._fxTarget);
-      r.setRenderTarget(this._fxTarget);
+      renderFullscreen(r, this._copyMat, V.fxTarget);
+      r.setRenderTarget(V.fxTarget);
       r.render(this.transparentScene, cam);
-      src = this._fxTarget;
+      src = V.fxTarget;
       this.passEnd();
     }
 
-    this.lastHDR = src; // (debug readback)
+    V.lastHDR = src; // (debug readback)
 
     // 4. eye adaptation
     this.passBegin('post');
     this.lumMat.uniforms.tColor.value = src.texture;
-    this.lumMat.uniforms.uRef.value = this.meterRef;
-    this.lumMat.uniforms.tDepth.value = this.depthTex;
-    this.lumMat.uniforms.uNearCut.value = this.meterNearCut || 0;
+    this.lumMat.uniforms.uRef.value = V.meterRef;
+    this.lumMat.uniforms.tDepth.value = V.depthTex;
+    this.lumMat.uniforms.uNearCut.value = V.meterNearCut || 0;
     this.lumMat.uniforms.uDepthMode.value = this.depthMode;
-    renderFullscreen(r, this.lumMat, this.rtLum);
-    const prev = this.rtAdapt[this.adaptIdx], next = this.rtAdapt[1 - this.adaptIdx];
+    renderFullscreen(r, this.lumMat, V.rtLum);
+    const prev = V.rtAdapt[V.adaptIdx], next = V.rtAdapt[1 - V.adaptIdx];
+    this.adaptMat.uniforms.tLum.value = V.rtLum.texture;
     this.adaptMat.uniforms.tPrev.value = prev.texture;
     this.adaptMat.uniforms.uDt.value = Math.min(dt, 0.25);
-    this.adaptMat.uniforms.uReset.value = this.adaptReset ? 1 : 0;
-    this.adaptMat.uniforms.uRef.value = this.meterRef;
+    this.adaptMat.uniforms.uReset.value = V.adaptReset ? 1 : 0;
+    this.adaptMat.uniforms.uRef.value = V.meterRef;
     this.adaptMat.uniforms.uUp.value = this.meterUp;
     this.adaptMat.uniforms.uDown.value = this.meterDown;
     this.adaptMat.uniforms.uStrength.value = this.meterStrength;
-    this.adaptReset = false;
+    V.adaptReset = false;
     renderFullscreen(r, this.adaptMat, next);
-    this.adaptIdx = 1 - this.adaptIdx;
+    V.adaptIdx = 1 - V.adaptIdx;
     const adapt = next.texture;
 
     // 5. bloom
     let bloomTex = null;
-    if (this.bloomLevels.length && this.bloomStrength > 0) {
+    if (V.bloomLevels.length && this.bloomStrength > 0) {
       const b = this.brightMat.uniforms;
       b.tColor.value = src.texture; b.tAdapt.value = adapt;
-      b.uTexel.value.set(1 / this.width, 1 / this.height);
-      b.uMinExp.value = this.minExposure; b.uMaxExp.value = this.maxExposure;
-      renderFullscreen(r, this.brightMat, this.bloomLevels[0]);
-      for (let i = 1; i < this.bloomLevels.length; i++) {
-        const s = this.bloomLevels[i - 1];
+      b.uTexel.value.set(1 / V.width, 1 / V.height);
+      b.uMinExp.value = this.minExposure; b.uMaxExp.value = V.maxExposure;
+      renderFullscreen(r, this.brightMat, V.bloomLevels[0]);
+      for (let i = 1; i < V.bloomLevels.length; i++) {
+        const s = V.bloomLevels[i - 1];
         this.downMat.uniforms.tSrc.value = s.texture;
         this.downMat.uniforms.uTexel.value.set(1 / s.width, 1 / s.height);
-        renderFullscreen(r, this.downMat, this.bloomLevels[i]);
+        renderFullscreen(r, this.downMat, V.bloomLevels[i]);
       }
-      let up = this.bloomLevels[this.bloomLevels.length - 1];
-      for (let i = this.bloomLevels.length - 2; i >= 0; i--) {
+      let up = V.bloomLevels[V.bloomLevels.length - 1];
+      for (let i = V.bloomLevels.length - 2; i >= 0; i--) {
         this.upMat.uniforms.tSrc.value = up.texture;
-        this.upMat.uniforms.tBase.value = this.bloomLevels[i].texture;
+        this.upMat.uniforms.tBase.value = V.bloomLevels[i].texture;
         this.upMat.uniforms.uTexel.value.set(1 / up.width, 1 / up.height);
         this.upMat.uniforms.uRadius.value = 1.0;
-        renderFullscreen(r, this.upMat, this.bloomUp[i]);
-        up = this.bloomUp[i];
+        renderFullscreen(r, this.upMat, V.bloomUp[i]);
+        up = V.bloomUp[i];
       }
       bloomTex = up.texture;
     }
 
-    // 6. tonemap to the canvas
+    // 6. tonemap into the view's rectangle of the canvas
     const t = this.toneMat.uniforms;
     t.tColor.value = src.texture;
     t.tBloom.value = bloomTex;
     t.tAdapt.value = adapt;
-    t.uExposureBias.value = this.exposureBias;
+    t.uExposureBias.value = V.exposureBias;
+    t.uFlash.value = V.flash;
     t.uToneCurve.value = this.toneCurve === 'aces' ? 0 : 1;
     t.uBloom.value = bloomTex ? this.bloomStrength * 0.06 : 0;
     t.uTime.value = this.time;
-    t.uVignette.value = this.vignette + (this.radialBlur || 0) * 0.4;
-    t.uRadial.value = this.radialBlur || 0;
-    t.uMinExp.value = this.minExposure; t.uMaxExp.value = this.maxExposure;
-    renderFullscreen(r, this.toneMat, null);
+    t.uVignette.value = this.vignette + (V.radialBlur || 0) * 0.4;
+    t.uRadial.value = V.radialBlur || 0;
+    t.uMinExp.value = this.minExposure; t.uMaxExp.value = V.maxExposure;
+    t.uEncode.value = V.out ? 0 : 1;
+    if (V.out) renderFullscreen(r, this.toneMat, V.out);
+    else {
+      const rc = V.rect;
+      r.setViewport(rc.x, (this.cssH || rc.h) - rc.y - rc.h, rc.w, rc.h); // (GL: from the bottom)
+      renderFullscreen(r, this.toneMat, null);
+    }
     this.passEnd();
   }
 }

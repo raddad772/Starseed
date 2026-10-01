@@ -78,7 +78,7 @@ export class ShipVisual {
   constructor(engine, ship) {
     this.engine = engine;
     this.ship = ship;
-    const m = buildShip('SV-' + (Math.abs(engine.time * 1000 | 0) % 90 + 10) + ' WAYFARER');
+    const m = buildShip(`${ship.registry || 'SV-27'} ${ship.name.toUpperCase()}`);
     this.model = m;
     engine.scene.add(m.root);
     m.root.traverse((o) => { o.frustumCulled = false; });
@@ -141,7 +141,7 @@ export class ShipVisual {
       leg.pivot.rotation.z = (1 - s.gear) * 1.45 * -leg.side;
       const comp = Math.min(s.legComp[i] || 0, 0.9);
       leg.lower.position.y = -0.85 + comp;
-      s.legComp[i] = (s.legComp[i] || 0) * 0.8; // decays unless refreshed by contact
+      if (dt > 0) s.legComp[i] = (s.legComp[i] || 0) * 0.8; // decays unless refreshed by contact (once a frame: a second view passes dt 0)
     }
     // plumes
     const L = s.limits;

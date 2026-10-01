@@ -56,16 +56,35 @@ export const TEST_SCENES = [
     run: (g) => standFacingSun(g, 6, 40, 0.05),
   },
   {
-    label: 'Carrier hangar',
-    note: 'Bastion\'s hangar deck: every lamp lit; Tab for routes, Space to jetpack',
+    label: 'Carrier flight bay',
+    note: 'Bastion\'s starboard bay beside your shuttle: Tab for routes, Space to jetpack',
     run: (g) => g.startAboard(),
+  },
+  {
+    label: 'Cargo run: the cart',
+    note: 'In the bay cart in Bastion\'s starboard bay, the container\'s ramp ahead: drive in (W), park, F to get out',
+    run: (g) => {
+      g.startAboard();
+      g.parkCraft();
+      g.player.sitDown(0, g.cart);
+    },
+  },
+  {
+    label: 'Cargo run: the lifter',
+    note: 'In the lifter on its pad; the container is a pad aft and inboard: lift (Space), hover over it, settle, Y clamps',
+    run: (g) => {
+      g.startAboard();
+      g.parkCraft();
+      g.player.sitDown(0, g.lifter);
+    },
   },
   {
     label: 'Carrier bridge',
     note: 'Standing behind the command seat',
     run: (g) => {
       g.startAboard();
-      g.player.placeAboard(g.carrier, new THREE.Vector3(55, 196, 401), new THREE.Vector3(0, 0, -1));
+      const st = g.carrier.type.seats[0].stand;
+      g.player.placeAboard(g.carrier, new THREE.Vector3(st[0], st[1], st[2] + 1.5), new THREE.Vector3(0, 0, -1));
     },
   },
   {

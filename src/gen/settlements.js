@@ -83,7 +83,7 @@ class Heap {
   }
 }
 
-function biomeName(Tc, W, h, ocean) {
+export function biomeName(Tc, W, h, ocean) {
   if (ocean) return 'ocean';
   if (Tc < -10) return 'ice sheet';
   if (Tc < -2) return 'tundra';

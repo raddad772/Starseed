@@ -5,6 +5,7 @@ import { TerrainGenerator } from '../gen/terrain.js';
 import { buildChunk, chunkTransferables } from '../gen/chunkbuilder.js';
 import { analyzeSettlements } from '../gen/settlements.js';
 import { scatterFlora, floraSpecies, FLORA_KINDS } from '../gen/flora.js';
+import { terrainPortrait } from '../gen/portrait.js';
 
 const params = new Map();
 const gens = new Map();
@@ -37,6 +38,13 @@ self.onmessage = (e) => {
       const r = scatterFlora(g, m.face, m.level, m.ix, m.iy, m.maxLevel, g._species);
       r.type = 'flora'; r.job = m.job;
       self.postMessage(r, FLORA_KINDS.map((k) => r[k].buffer));
+      return;
+    }
+    if (m.type === 'portrait') {
+      // (another system's world comes with its terrain parameters)
+      if (m.terrain && !params.has(m.body)) params.set(m.body, m.terrain);
+      const r = terrainPortrait(gen(m.body), m.options || {});
+      self.postMessage({ type: 'portrait', job: m.job, px: r.px, size: r.size, cover: r.cover }, [r.px.buffer]);
       return;
     }
     if (m.type === 'analyze') {

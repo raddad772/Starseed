@@ -15,6 +15,7 @@ export class MapView {
   constructor(game) {
     this.game = game;
     this.open = false;
+    this.owner = null; // the player looking at it (it takes their view)
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(50, 1, 1, 1e14);
     this.focus = null;
@@ -121,61 +122,94 @@ export class MapView {
   // focus the view on a body and make it the target
   select(b) {
     const g = this.game;
-    this.focus = b; g.target = b;
+    this.focus = b; (this.owner || g.player).target = b;
     this.dist = Math.max(b.R * 12, (b.data.kind === 'moon' ? b.data.orbit.a : b.soi) * 1.5);
     g.requestSurvey(b, 80);
   }
 
   // controller: right stick turns the view, RT / LT zoom in / out, the D-pad
-  // (or LB / RB) steps through the bodies, B or View closes
-  padUpdate(ps, dt) {
+  // (or LB / RB) steps through the bodies, B or View closes. On the pause
+  // screen (embedded) only left / right step: the rest works its tabs
+  padUpdate(ps, dt, embedded = false) {
     this.yaw -= ps.rx * 2.2 * dt;
     this.pitch = THREE.MathUtils.clamp(this.pitch + ps.ry * 1.6 * dt, -1.5, 1.5);
     this.dist *= Math.pow(6, (ps.lt - ps.rt) * dt);
-    const step = (ps.hits.has('RIGHT') || ps.hits.has('DOWN') || ps.hits.has('RB')) ? 1 : ((ps.hits.has('LEFT') || ps.hits.has('UP') || ps.hits.has('LB')) ? -1 : 0);
+    const step = embedded ? (ps.hits.has('RIGHT') ? 1 : (ps.hits.has('LEFT') ? -1 : 0))
+      : (ps.hits.has('RIGHT') || ps.hits.has('DOWN') || ps.hits.has('RB')) ? 1 : ((ps.hits.has('LEFT') || ps.hits.has('UP') || ps.hits.has('LB')) ? -1 : 0);
     if (step) {
       const list = this.items.filter((it) => !it.body.isStar).map((it) => it.body);
       const i = list.indexOf(this.focus);
       this.select(list[(i + step + list.length) % list.length]);
     }
-    if (ps.hits.has('B') || ps.hits.has('VIEW')) this.toggle();
+    if (!embedded && (ps.hits.has('B') || ps.hits.has('VIEW'))) this.toggle();
   }
 
-  toggle() {
-    this.open = !this.open;
+  // the pause screen's map: the whole screen, for player p (focused where they are)
+  openFull(p) {
+    if (this.open && this.full) return;
+    if (this.open) this.close();
+    this.open = true; this.full = true; this.owner = p;
+    this.labelsEl.hidden = false;
+    const inp = p.input || this.game.input;
+    this.legend.innerHTML = (inp.usingPad ? 'Right stick: rotate · RT / LT: zoom · D-pad ◂ ▸: next world'
+      : 'Drag to rotate · wheel to zoom · click a world to focus it')
+      + ' · <span style="color:var(--engaged)">green: habitable zone</span> · <span style="color:var(--target)">dashed: snow line</span> · <span style="color:var(--nav)">magenta: your trajectory</span>';
+    const cur = p.currentBody();
+    this.focus = cur;
+    this.dist = Math.max(cur.R * 14, cur.soi && isFinite(cur.soi) ? cur.soi * 0.6 : cur.R * 40);
+  }
+
+  close() {
+    this.open = false; this.full = false; this.owner = null;
+    this.labelsEl.hidden = true;
+  }
+
+  // open or close it for player p (open for another player: it moves to p's view)
+  toggle(p = this.game.player) {
     const g = this.game;
+    const handOver = this.open && this.owner && this.owner !== p;
+    if (!handOver) this.open = !this.open;
+    if (handOver && this.owner.input) this.owner.input.requestLock();
+    this.owner = this.open ? p : null;
+    this.full = false;
     this.labelsEl.hidden = !this.open;
-    this.legend.innerHTML = (g.input.usingPad
+    const inp = p.input || g.input;
+    this.legend.innerHTML = (inp.usingPad
       ? 'Right stick: rotate · RT / LT: zoom · D-pad: next body (targets it) · B: close'
       : 'Drag to rotate · wheel to zoom · click a body to focus and target')
       + ' · <span style="color:var(--engaged)">green: habitable zone</span> · <span style="color:var(--target)">dashed: snow line</span> · <span style="color:var(--nav)">magenta: your trajectory</span>';
     if (this.open) {
-      g.input.releaseLock();
-      const cur = g.player.currentBody();
-      if (!this.focus) { this.focus = cur; this.dist = Math.max(cur.R * 14, cur.soi && isFinite(cur.soi) ? cur.soi * 0.6 : cur.R * 40); }
-    } else g.input.requestLock();
+      inp.releaseLock();
+      const cur = p.currentBody();
+      if (!this.focus || handOver) { this.focus = cur; this.dist = Math.max(cur.R * 14, cur.soi && isFinite(cur.soi) ? cur.soi * 0.6 : cur.R * 40); }
+    } else inp.requestLock();
   }
 
-  render(dt) {
+  // into its owner's view: rect {x, y, w, h} in CSS px (default: the whole canvas)
+  render(dt, rect = null) {
     const g = this.game;
     const r = g.engine.renderer;
     const focusPos = this.focus ? this.focus.pos : g.universe.star.pos;
     const cam = this.camera;
+    const rc = rect || { x: 0, y: 0, w: window.innerWidth, h: window.innerHeight };
+    if (Math.abs(cam.aspect - rc.w / rc.h) > 1e-4) cam.aspect = rc.w / rc.h;
     cam.position.set(Math.cos(this.pitch) * Math.sin(this.yaw), Math.sin(this.pitch), Math.cos(this.pitch) * Math.cos(this.yaw)).multiplyScalar(this.dist);
     cam.near = this.dist * 1e-4; cam.far = this.dist * 1e5;
     cam.updateProjectionMatrix();
     cam.lookAt(0, 0, 0);
     cam.updateMatrixWorld();
-    const pxPerRad = window.innerHeight / THREE.MathUtils.degToRad(cam.fov);
+    const pxPerRad = rc.h / THREE.MathUtils.degToRad(cam.fov);
     // floating origin: everything relative to the focus
     this.root.position.copy(focusPos).negate();
-    const w = window.innerWidth, h = window.innerHeight;
+    const w = rc.w, h = rc.h;
     const place = (worldPos, el, show = true) => {
       _v.copy(worldPos).sub(focusPos).project(cam);
       const vis = show && _v.z < 1 && _v.z > -1 && Math.abs(_v.x) < 1.05 && Math.abs(_v.y) < 1.05;
       el.style.display = vis ? '' : 'none';
-      if (vis) { el.style.left = ((_v.x + 1) / 2 * w) + 'px'; el.style.top = ((1 - _v.y) / 2 * h) + 'px'; }
+      if (vis) { el.style.left = (rc.x + (_v.x + 1) / 2 * w) + 'px'; el.style.top = (rc.y + (1 - _v.y) / 2 * h) + 'px'; }
     };
+    this.legend.style.left = (rc.x + 16) + 'px';
+    this.legend.style.bottom = (window.innerHeight - rc.y - rc.h + 72) + 'px';
     for (const it of this.items) {
       const b = it.body;
       it.mesh.position.copy(b.pos);
@@ -212,10 +246,11 @@ export class MapView {
         this.vesselMarks.set(v, vm);
       }
       const vp = v.getWorldPos(new THREE.Vector3());
-      vm.mesh.visible = !v.dead;
+      const shown = !v.dead && g.listed(v);
+      vm.mesh.visible = shown;
       vm.mesh.position.copy(vp);
       vm.mesh.scale.setScalar(3 / pxPerRad * cam.position.distanceTo(_v.copy(vp).sub(focusPos)));
-      place(vp, vm.el, !v.dead);
+      place(vp, vm.el, shown);
     }
     // ship and its conic
     const s = g.focus.root;
@@ -227,9 +262,14 @@ export class MapView {
     this.updateTrajectory();
     const prevAuto = r.autoClear;
     r.setRenderTarget(null);
+    const gy = window.innerHeight - rc.y - rc.h; // (GL: from the bottom)
+    r.setViewport(rc.x, gy, rc.w, rc.h);
+    r.setScissor(rc.x, gy, rc.w, rc.h);
+    r.setScissorTest(true);
     r.setClearColor(0x03070b, 1);
     r.clear(true, true, false);
     r.render(this.scene, cam);
+    r.setScissorTest(false);
     r.autoClear = prevAuto;
   }
 

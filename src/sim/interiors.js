@@ -104,6 +104,13 @@ export class ShuttleInterior {
     return 'ok';
   }
 
+  // Can something be set down here (ship-local): in the cabin, or on the open ramp
+  spotInside(p) {
+    const I = SHIP_INTERIOR;
+    for (const c of I.cells) if (p.x > c.min[0] + 0.15 && p.x < c.max[0] - 0.15 && p.z > c.min[2] + 0.15 && p.z < c.max[2] - 0.15) return true;
+    return this.v.ramp > 0.85 && p.z >= I.rampHinge.z && Math.abs(p.x) < I.rampWidth - 0.15 && p.z < I.rampHinge.z + I.rampLength * Math.cos(this.rampAngle());
+  }
+
   // Is a ship-local point within the boardable volume (interior or open ramp)?
   boardable(p) {
     const I = SHIP_INTERIOR;
@@ -124,8 +131,8 @@ export class ShuttleInterior {
     const dSeat = Math.hypot(pl.sPos.x - seat.x, pl.sPos.z - seat.z);
     const nearRampCtl = Math.abs(pl.sPos.z - 6.4) < 1.6 && pl.sPos.z < 7.4;
     if (dSeat < 1.3) {
-      pl.prompt = { key: 'F', text: 'Take the pilot seat' };
-      if (input.hit('KeyF')) pl.sitDown(0);
+      pl.prompt = pl.seatOffer(this.v, 0);
+      if (pl.prompt.key && input.hit('KeyF')) pl.sitDown(0);
     } else if (nearRampCtl) {
       pl.prompt = { key: 'F', text: this.v.rampTarget > 0.5 ? 'Close ramp' : 'Lower ramp' };
       if (input.hit('KeyF')) pl.game.toggleRamp(this.v);
@@ -148,7 +155,36 @@ export class RoomInterior {
     this.lifts = t.lifts || [];
     this.seats = t.seats || [];
     this.hullBoxes = t.colliders || [];
-    this.sprint = 1.3;
+    // small craft: ramps (a door that, open, is a walkway down to the ground)
+    // and hatches (climbed through from outside)
+    this.ramps = t.ramps || [];
+    this.entries = t.entries || [];
+    this.sprint = t.big ? 1.3 : 0.8;
+  }
+
+  // An open ramp's walkway at (x, z): its height there, or null off it
+  rampAt(x, z) {
+    for (const r of this.ramps) {
+      const d = this.v.type.doors.find((dd) => dd.id === r.door);
+      const open = this.v.doors[r.door].open;
+      if (open < 0.85) continue;
+      const th = open * d.angle, s = Math.sin(th), c = Math.cos(th);
+      if (Math.abs(x) > r.width / 2 || s < 0.2) continue;
+      const t = (z - r.hinge[1]) / s;
+      if (t < -0.2 || t > r.length) continue;
+      return r.hinge[0] + Math.max(0, t) * c;
+    }
+    return null;
+  }
+
+  // on a ramp, beyond its end (stepping off onto whatever is below)
+  offRamp(p) {
+    for (const r of this.ramps) {
+      const d = this.v.type.doors.find((dd) => dd.id === r.door);
+      const th = this.v.doors[r.door].open * d.angle, s = Math.sin(th);
+      if (Math.abs(p.x) <= r.width / 2 && s > 0.2 && (p.z - r.hinge[1]) / s > r.length) return true;
+    }
+    return false;
   }
 
   // room whose footprint holds (x, z) with its floor at or just below y
@@ -167,6 +203,8 @@ export class RoomInterior {
   floorAt(x, z, y) {
     const r = this.roomAt(_p.set(x, y, z));
     let f = r ? r.min[1] : null;
+    const ry = this.ramps.length ? this.rampAt(x, z) : null;
+    if (ry !== null && y > ry - 1.2 && (f === null || ry > f)) f = ry;
     for (const s of this.solids) {
       if (x < s.min[0] - 0.05 || x > s.max[0] + 0.05 || z < s.min[2] - 0.05 || z > s.max[2] + 0.05) continue;
       if (s.max[1] <= y + 0.35 && (f === null || s.max[1] > f)) f = s.max[1];
@@ -181,32 +219,58 @@ export class RoomInterior {
     if (r && !(r.open && r.open.includes('+y')) && pl.sPos.y + HEIGHT > r.max[1]) { pl.sPos.y = r.max[1] - HEIGHT; if (pl.sVel.y > 0) pl.sVel.y = 0; }
   }
 
+  // A room's open sides now: one behind a door (`gate`: the side's door id,
+  // a ramp, a container's rear door) only while that door is open
+  openSides(r) {
+    if (r.whenFree && this.v.parent) return [];
+    const o = r.open || [];
+    if (!r.gate) return o;
+    return o.filter((side) => !r.gate[side] || !this.v.doors[r.gate[side]] || this.v.doors[r.gate[side]].open > 0.85);
+  }
+
+  // a doorway whose sliding door is shut (not walkable until it opens)
+  shut(r) {
+    const st = r.type === 'door' && this.v.doors[r.id];
+    return !!st && st.open < 0.7;
+  }
+
   // walkable test with the body radius kept off closed walls
   fits(r, p) {
-    const o = r.open || [];
+    if (this.shut(r)) return false;
+    const o = this.openSides(r);
     const x0 = r.min[0] + (o.includes('-x') ? 0 : RADIUS), x1 = r.max[0] - (o.includes('+x') ? 0 : RADIUS);
     const z0 = r.min[2] + (o.includes('-z') ? 0 : RADIUS), z1 = r.max[2] - (o.includes('+z') ? 0 : RADIUS);
     return p.x >= x0 && p.x <= x1 && p.z >= z0 && p.z <= z1 && p.y >= r.min[1] - 0.6 && p.y <= r.max[1];
   }
 
+  spotInside(p) { return !!this.roomAt(p, 1.0); }
+
   confine(pl) {
     const p = pl.sPos;
     let ok = false;
     for (const r of this.rooms) if (this.fits(r, p)) { ok = true; pl._room = r; break; }
+    // walking a lowered ramp, or off its end
+    if (!ok && this.ramps.length) {
+      if (this.rampAt(p.x, p.z) !== null) { ok = true; pl._room = null; }
+      else if (this.offRamp(p)) return 'exit';
+    }
     if (!ok) {
       const prev = pl._room;
-      // stepped off an open edge (a deck lip, a hangar door) into space
+      // out through a hatch: onto the step outside it
+      if (prev && prev.exitTo && this.leftThrough(prev, p)) { p.set(prev.exitTo[0], prev.exitTo[1], prev.exitTo[2]); return 'exit'; }
+      // stepped off an open edge (a deck lip, a hangar door, a lowered ramp's top) into space
       if (prev && prev.open) {
-        const out = (prev.open.includes('-x') && p.x < prev.min[0]) || (prev.open.includes('+x') && p.x > prev.max[0])
-          || (prev.open.includes('-z') && p.z < prev.min[2]) || (prev.open.includes('+z') && p.z > prev.max[2])
-          || (prev.open.includes('+y') && p.y > prev.max[1]);
+        const o = this.openSides(prev);
+        const out = (o.includes('-x') && p.x < prev.min[0]) || (o.includes('+x') && p.x > prev.max[0])
+          || (o.includes('-z') && p.z < prev.min[2]) || (o.includes('+z') && p.z > prev.max[2])
+          || (o.includes('+y') && p.y > prev.max[1]);
         if (out) return 'exit';
       }
       // otherwise slide along the nearest wall of a room on this level
       let best = null, bd = Infinity;
       for (const r of this.rooms) {
-        if (Math.abs(r.min[1] - (prev ? prev.min[1] : p.y)) > 0.7) continue;
-        const o = r.open || [];
+        if (Math.abs(r.min[1] - (prev ? prev.min[1] : p.y)) > 0.7 || this.shut(r)) continue;
+        const o = this.openSides(r);
         const x = THREE.MathUtils.clamp(p.x, r.min[0] + (o.includes('-x') ? 0 : RADIUS), r.max[0] - (o.includes('+x') ? 0 : RADIUS));
         const z = THREE.MathUtils.clamp(p.z, r.min[2] + (o.includes('-z') ? 0 : RADIUS), r.max[2] - (o.includes('+z') ? 0 : RADIUS));
         const d = (x - p.x) ** 2 + (z - p.z) ** 2;
@@ -225,15 +289,58 @@ export class RoomInterior {
 
   interact(pl, input) {
     const p = pl.sPos;
+    // hatches to the craft this ship carries (the yacht, the escape pods)
+    for (const h of this.v.type.hatches || []) {
+      if (Math.hypot(p.x - h.pos[0], p.z - h.pos[2]) > 1.8 || Math.abs(p.y - h.pos[1]) > 1.2) continue;
+      const craft = this.v.children.find((c) => c.hatchKey === h.key && c.attached && !c.dead);
+      if (!craft) { pl.prompt = { key: 'F', text: `${h.label} · away` }; return; }
+      pl.prompt = { key: 'F', text: `Board the ${h.label.toLowerCase()} · ${craft.name}` };
+      if (input.hit('KeyF')) {
+        pl.fade = 1;
+        if (craft.type.homeHatch) { pl.enterVessel(craft, new THREE.Vector3(...craft.type.homeHatch), new THREE.Vector3(), new THREE.Vector3(0, 0, -1)); pl.grounded = true; }
+        else pl.sitDown(0, craft);
+      }
+      return;
+    }
+    // aboard a craft docked under its host: back up the hatch overhead
+    const hh = this.v.type.homeHatch;
+    if (hh && this.v.home && this.v.parent && this.v.attached && Math.hypot(p.x - hh[0], p.z - hh[2]) < 1.6 && Math.abs(p.y - hh[1]) < 1.2) {
+      pl.prompt = { key: 'F', text: `Up the hatch into ${this.v.home.host.name}` };
+      if (input.hit('KeyF')) pl.leaveCraft();
+      return;
+    }
+    // out the way you came in: a hatch, an airlock, a canopy
+    for (const e of this.entries) {
+      if (e.whenFree && this.v.parent) continue;
+      if (Math.hypot(p.x - e.inside[0], p.z - e.inside[2]) > 1.0 || Math.abs(p.y - e.inside[1]) > 1.2) continue;
+      pl.prompt = { key: 'F', text: `Climb out · ${e.label}` };
+      if (input.hit('KeyF')) {
+        if (e.canopy) this.v.boardingT = 1.6;
+        pl.fade = 1;
+        p.set(e.outside[0], e.outside[1], e.outside[2]);
+        pl.exitVessel();
+      }
+      return;
+    }
     for (let i = 0; i < this.seats.length; i++) {
       const s = this.seats[i];
       if (Math.hypot(p.x - s.pos[0], p.z - s.pos[2]) < 1.4 && Math.abs(p.y - s.pos[1]) < 1.2) {
-        pl.prompt = { key: 'F', text: `Take the ${s.label.toLowerCase()} · fly ${this.v.name}` };
-        if (input.hit('KeyF')) pl.sitDown(i);
+        pl.prompt = pl.seatOffer(this.v, i);
+        if (pl.prompt.key && input.hit('KeyF')) pl.sitDown(i);
         return;
       }
     }
     for (const l of this.lifts) {
+      if (l.stops) {
+        // a lift with several stops: its panel picks the deck
+        const at = l.stops.findIndex((st) => Math.abs(p.y - st.y) < 1.5);
+        if (at >= 0 && Math.hypot(p.x - l.x, p.z - l.z) < 2.2) {
+          pl.prompt = { key: 'F', text: `${l.label} · choose a deck` };
+          if (input.hit('KeyF')) pl.game.openLift(this.v, l, at);
+          return;
+        }
+        continue;
+      }
       for (const [from, to] of [[l.a, l.b], [l.b, l.a]]) {
         if (Math.hypot(p.x - from[0], p.z - from[2]) < 2.0 && Math.abs(p.y - from[1]) < 1.5) {
           const up = to[1] > from[1];
@@ -256,7 +363,20 @@ export class RoomInterior {
     return null;
   }
 
-  boardable() { return false; }
+  // walked out of a room through one of its open sides
+  leftThrough(r, p) {
+    if (r.whenFree && this.v.parent) return false; // (docked: the airlock is against the dock)
+    const o = r.open || [];
+    return (o.includes('-x') && p.x < r.min[0]) || (o.includes('+x') && p.x > r.max[0])
+      || (o.includes('-z') && p.z < r.min[2]) || (o.includes('+z') && p.z > r.max[2]);
+  }
+
+  // someone outside stepping onto a lowered ramp comes aboard
+  boardable(p) {
+    if (!this.ramps.length) return false;
+    const y = this.rampAt(p.x, p.z);
+    return y !== null && p.y > y - 0.8 && p.y < y + 1.6;
+  }
 
   // ---------------------------------------------------------------- wayfinding
   // Rooms are the nodes. Rooms on one level that overlap meet at a doorway
@@ -276,6 +396,16 @@ export class RoomInterior {
       adj[j].push({ to: i, at, kind: 'door' });
     }
     for (const l of this.lifts) {
+      if (l.stops) {
+        // every pair of stops is a ride
+        const pts = l.stops.map((st) => new THREE.Vector3(l.x, st.y, l.z));
+        const idx = pts.map((q) => R.indexOf(this.roomAt(q, 1.0)));
+        for (let a = 0; a < pts.length; a++) for (let b = 0; b < pts.length; b++) {
+          if (a === b || idx[a] < 0 || idx[b] < 0) continue;
+          adj[idx[a]].push({ to: idx[b], at: pts[a], exit: pts[b], kind: 'lift', label: l.label, deck: l.stops[b].deck });
+        }
+        continue;
+      }
       const ia = R.indexOf(this.roomAt(V(l.a), 1.0)), ib = R.indexOf(this.roomAt(V(l.b), 1.0));
       if (ia < 0 || ib < 0) continue;
       adj[ia].push({ to: ib, at: V(l.a), kind: 'lift', label: l.label });
@@ -317,7 +447,9 @@ export class RoomInterior {
   }
 
   liftExit(e) {
+    if (e.exit) return e.exit;
     for (const l of this.lifts) {
+      if (!l.a) continue;
       if (l.a[0] === e.at.x && l.a[1] === e.at.y && l.a[2] === e.at.z) return new THREE.Vector3(...l.b);
       if (l.b[0] === e.at.x && l.b[1] === e.at.y && l.b[2] === e.at.z) return new THREE.Vector3(...l.a);
     }
@@ -338,10 +470,17 @@ export class RoomInterior {
     }
     for (const z of v.type.zones || []) {
       if (z.kind === 'pad') out.push({ label: `${z.name}`, at: new THREE.Vector3(z.pad[0] + 12, z.pad[1], z.pad[2]) });
+      else if (z.mouth) out.push({ label: z.name, at: new THREE.Vector3((z.min[0] + z.max[0]) / 2, z.min[1], (z.min[2] + z.max[2]) / 2) });
       else {
         const r = this.rooms.find((rr) => rr.capture);
         if (r) out.push({ label: `${z.name} deck`, at: new THREE.Vector3((r.min[0] + r.max[0]) / 2, r.min[1], (r.min[2] + r.max[2]) / 2) });
       }
+    }
+    // the rooms worth a visit (a laid-out ship names them by type)
+    const WORTH = ['astrogation', 'mess', 'medical', 'engcontrol', 'yachtdock', 'flightops', 'hydroponics', 'lounge', 'recreation', 'workshop', 'reactor'];
+    for (const r of this.rooms) {
+      if (!WORTH.includes(r.type)) continue;
+      out.push({ label: r.name, at: new THREE.Vector3((r.min[0] + r.max[0]) / 2, r.min[1], (r.min[2] + r.max[2]) / 2) });
     }
     return out;
   }
@@ -349,6 +488,30 @@ export class RoomInterior {
 
 const _p = new THREE.Vector3();
 
+// ---------------------------------------------------------------- craft you only sit in
+
+// The yacht and the escape pods: a seat and nothing to walk around in
+export class SeatInterior {
+  constructor(vessel) {
+    this.v = vessel; this.rooms = []; this.seats = vessel.type.seats;
+    this.hullBoxes = vessel.type.colliders || []; // (what someone walking by bumps into)
+  }
+  roomAt() { return null; }
+  floorAt() { return null; }
+  spotInside() { return false; }
+  vacuumAt() { return false; }
+  capture() { return null; }
+  boardable() { return false; }
+  confine() { return 'exit'; }
+  ceilingClamp() {}
+  interact() {}
+  graph() { return []; }
+  nextStep() { return null; }
+  destinations() { return []; }
+}
+
 export function makeInterior(vessel) {
+  if (vessel.type.rooms && vessel.type.key !== 'shuttle') return new RoomInterior(vessel, vessel.type);
+  if (vessel.type.seatOnly) return new SeatInterior(vessel);
   return vessel.type.key === 'shuttle' ? new ShuttleInterior(vessel) : new RoomInterior(vessel, vessel.type);
 }

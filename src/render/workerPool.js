@@ -7,6 +7,7 @@ import { TerrainGenerator } from '../gen/terrain.js';
 import { buildChunk } from '../gen/chunkbuilder.js';
 import { analyzeSettlements } from '../gen/settlements.js';
 import { scatterFlora, floraSpecies } from '../gen/flora.js';
+import { terrainPortrait } from '../gen/portrait.js';
 
 export class WorkerPool {
   constructor(count, bodies) {
@@ -84,7 +85,7 @@ export class WorkerPool {
       let g = this.gens.get(m.body);
       if (!g) {
         const b = this.bodies.find((x) => x.id === m.body);
-        g = new TerrainGenerator(b.terrain);
+        g = new TerrainGenerator(m.terrain || b.terrain);
         this.gens.set(m.body, g);
       }
       let r;
@@ -93,6 +94,7 @@ export class WorkerPool {
         if (!g._species) g._species = floraSpecies(this.bodies.find((x) => x.id === m.body).terrain);
         r = scatterFlora(g, m.face, m.level, m.ix, m.iy, m.maxLevel, g._species); r.type = 'flora';
       }
+      else if (m.type === 'portrait') { const p = terrainPortrait(g, m.options || {}); r = { type: 'portrait', px: p.px, size: p.size, cover: p.cover }; }
       else r = { type: 'analyze', result: analyzeSettlements(g, m.options || {}) };
       this.pending.delete(e.job);
       e.resolve(r);
