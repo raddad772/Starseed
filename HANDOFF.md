@@ -228,6 +228,25 @@ shows controller configs can be complex (an open design question: see the queue)
   start moves you there (`resetFleet()` first: FTL idle, big ships back on their home orbits); Launch
   without picking carries on where you were.
 
+## Quick menu and Choose a world (session 0f13fab4, uncommitted, verified in a test tab)
+
+- Dave prefers No Man's Sky's quick menu for rare actions. `src/ui/quickMenu.js`: lower-left list,
+  categories then actions, built per frame from game state (your ship's systems when seated, your ship
+  / summon on foot, routes aboard big ships, a Targets list, Navigation, Time warp, Controls). Opens
+  with D-pad Left (PAD_LAYOUT LEFT = 'Backquote' in every mode; D-pad Right is now free) or ` on the
+  keyboard. Pad: up/down, A/right choose, B/left back/close; the router takes only the D-pad and A/B
+  (`padRouter` may return a Set), sticks keep flying. Keyboard: arrows/wheel, 1-9, Enter, Backspace.
+  Actions inject the same key hit their own key would (or run a function); `stay` keeps it open.
+- Dave: "a custom start screen ... select planets ... sites like on land -> near a river ... or
+  biomes". Survey (`analyzeSettlements`, SETTLEMENT_VERSION 2) now also returns `spots`: the best
+  landable spot per kind (river, river mouth, lake shore, coast / other-liquid shore, lava shore,
+  plains, mountains, every biome covering >= 24 cells on living worlds; crater floor / rim, pole or
+  terminator elsewhere; moonlets fall back to their flattest ground). Briefing tab "Choose a world"
+  (main.js `setStartTab`, `renderWorlds`, `showWorld`): planets with their moons, picking one previews
+  its orbit; its sites list once the survey is in. Keys `site:<bodyId>:<spotKey>` ->
+  `Game.startAtSpot` (cover held with `loadHold` until the survey resolves; `startToken` drops stale
+  results) -> `startOnSurface(b, dir, spot)` (morning if the sun is under 10 deg; respawn there).
+
 After a reboot: restart the dev server (`preview_start` with launch config `starseed`, or
 `python3 tools/serve.py 8765` in ~/dev/starseed).
 

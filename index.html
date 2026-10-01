@@ -64,6 +64,21 @@ canvas#view { position: fixed; inset: 0; width: 100%; height: 100%; display: blo
 #messages div.caution { border-left-color: var(--caution); color: var(--caution); }
 #prompt { position: absolute; left: 50%; top: 60%; transform: translateX(-50%); font: var(--step-0) var(--font-ui); letter-spacing: 0.1em; color: var(--ink); padding: 6px 12px; background: var(--glass); border: 1px solid var(--hair); }
 #prompt kbd { font: 700 var(--step--1) var(--font-num); color: var(--target); border: 1px solid var(--target); padding: 1px 5px; margin-right: 6px; border-radius: 2px; }
+/* quick menu (lower left): categories, then actions; the highlighted row in cyan */
+#quickMenu { left: calc(16px + env(safe-area-inset-left, 0px)); bottom: calc(68px + env(safe-area-inset-bottom, 0px)); width: min(300px, calc(100% - 32px)); box-sizing: border-box; }
+#quickMenu h3 { margin-bottom: 2px; }
+#quickMenu ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
+#quickMenu li { display: grid; grid-template-columns: 1.3em 1fr auto; gap: 8px; align-items: baseline; padding: 5px 8px; border-left: 2px solid transparent; }
+#quickMenu li.sel { border-left-color: var(--target); background: rgba(79, 214, 230, 0.12); }
+#quickMenu li.sel .ql { color: var(--target); }
+#quickMenu li.empty { grid-template-columns: 1fr; color: var(--ink-dim); }
+#quickMenu .qn { font: var(--step--1) var(--font-num); color: var(--ink-dim); }
+#quickMenu .ql { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#quickMenu .qv { font: var(--step--1) var(--font-num); color: var(--ink-dim); white-space: nowrap; max-width: 11em; overflow: hidden; text-overflow: ellipsis; }
+#quickMenu .qv b { color: var(--ink); font-weight: 700; }
+#quickMenu .qmore { height: 10px; font-size: 9px; line-height: 10px; text-align: center; color: var(--ink-dim); }
+#quickMenu .qhint { margin-top: 4px; font-size: var(--step--1); color: var(--ink-dim); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+#quickMenu .qhint kbd { font: 700 var(--step--1) var(--font-num); color: var(--ink); }
 /* controller buttons in prompts: face buttons as coloured rounds, the rest as labels */
 kbd.pb { display: inline-grid; place-items: center; min-width: 1.6em; height: 1.6em; box-sizing: border-box; padding: 0 0.45em; border-radius: 0.8em;
   font: 700 var(--step--1)/1 var(--font-num); color: var(--ink); border: 1px solid var(--ink-dim); vertical-align: middle; }
@@ -92,6 +107,19 @@ kbd.pb { display: inline-grid; place-items: center; min-width: 1.6em; height: 1.
 .picks button span { font-weight: 400; color: var(--ink-dim); font-size: 0.92em; }
 .picks button[aria-checked="true"] { border-color: var(--target); background: rgba(79, 214, 230, 0.12); }
 .picks button[aria-checked="true"] b { color: var(--target); }
+.startHead { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+.startTabs { display: flex; gap: 6px; }
+.startTabs button { padding: 7px 10px; }
+.startTabs button.on { border-color: var(--target); color: var(--target); }
+#customPick { display: grid; gap: 10px; }
+.worlds { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 4px; }
+.worlds button { text-transform: none; letter-spacing: 0.02em; text-align: left; display: grid; gap: 2px; padding: 7px 9px; line-height: 1.2; }
+.worlds button b { color: var(--ink); }
+.worlds button span { font-weight: 400; color: var(--ink-dim); font-size: 0.92em; }
+.worlds button.moon b::before { content: '↳ '; color: var(--ink-dim); font-weight: 400; }
+.worlds button[aria-checked="true"] { border-color: var(--target); background: rgba(79, 214, 230, 0.12); }
+.worlds button[aria-checked="true"] b { color: var(--target); }
+.picks button:disabled { opacity: 0.6; cursor: default; }
 .seedrow { display: flex; gap: 8px; flex-wrap: wrap; align-items: stretch; }
 .seedrow input { flex: 1 1 180px; min-width: 0; font: 700 var(--step-2)/1 var(--font-num); letter-spacing: 0.12em; color: var(--target); background: rgba(0,0,0,0.35);
   border: 1px solid var(--hair); border-radius: 2px; padding: 10px 12px; text-transform: uppercase; }
@@ -167,6 +195,7 @@ select { font: 400 var(--step--1) var(--font-ui); color: var(--ink); background:
   <div id="modeStrip" class="cluster"></div>
   <div id="messages" aria-live="polite"></div>
   <div id="prompt" hidden></div>
+  <div id="quickMenu" class="cluster" hidden></div>
 </div>
 <div id="loading" hidden>
   <div class="loadbox" role="progressbar" aria-labelledby="loadText" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
@@ -187,8 +216,14 @@ select { font: 400 var(--step--1) var(--font-ui); color: var(--ink); background:
       <button id="launch" class="primary" type="button">Launch</button>
     </div>
     <div class="startPick">
-      <div class="label">Where to begin</div>
+      <div class="startHead"><div class="label">Where to begin</div>
+        <div class="tabs startTabs"><button type="button" data-st="suggested" class="on">Suggested</button><button type="button" data-st="custom">Choose a world</button></div></div>
       <div id="startPick" class="picks" role="radiogroup" aria-label="Where to begin"></div>
+      <div id="customPick" hidden>
+        <div id="worldPick" class="worlds" role="radiogroup" aria-label="World"></div>
+        <div id="siteHead" class="label"></div>
+        <div id="sitePick" class="picks" role="radiogroup" aria-label="Where on it"></div>
+      </div>
     </div>
     <div id="starLine"></div>
     <canvas id="schematic" aria-label="System schematic: orbits on a logarithmic distance axis with the habitable zone shaded"></canvas>
@@ -208,6 +243,7 @@ select { font: 400 var(--step--1) var(--font-ui); color: var(--ink); background:
         <kbd>J</kbd><span>FTL drive (outside mass lock)</span>
         <kbd>, / .</kbd><span>Time warp down / up</span>
         <kbd>M</kbd><span>System map · Tab: cycle targets</span>
+        <kbd>`</kbd><span>Quick menu: ship systems, targets, routes, time</span>
         <kbd>T</kbd><span>Target what's under the cursor (or the reticle)</span>
         <kbd>V</kbd><span>Toggle chase camera</span>
         <kbd>K</kbd><span>Show surveyed settlement sites</span>

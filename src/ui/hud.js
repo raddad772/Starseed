@@ -154,6 +154,7 @@ export class Hud {
       <kbd>T</kbd><span>Target what's under the reticle</span><kbd>V</kbd><span>Cockpit · chase · landing view</span>
       <kbd>G / R / L</kbd><span>Gear · ramp · floodlights</span><kbd>J</kbd><span>FTL drive</span>
       <kbd>, / .</kbd><span>Time warp</span><kbd>M</kbd><span>System map</span>
+      <kbd>\`</kbd><span>Quick menu: ship systems, targets, routes, time (1-9 pick, Backspace back)</span>
       <kbd>K</kbd><span>Settlement survey markers</span><kbd>B</kbd><span>Summon ship</span>
       <kbd>Right mouse / Alt</kbd><span>Free look from the pilot seat</span><kbd>Esc</kbd><span>Pause</span></div>`;
     this.overlay.hidden = false;

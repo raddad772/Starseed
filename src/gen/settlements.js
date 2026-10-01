@@ -9,6 +9,8 @@
 //      lakes), sheltered coasts and estuaries, temperate climate, fertile and
 //      vegetated land, moderate elevation, defensible relief
 //   4. pick the best sites with non-maximum suppression; trace the major rivers
+//   5. places to start a game: the best landable spot of each kind (beside a
+//      river, on the coast, in the mountains, in each biome, a crater floor...)
 // Airless or hostile worlds get "outpost" scoring instead: flat ground near
 // polar ice, crater rims, the terminator band of tidally locked planets.
 // Fully deterministic (fixed grid, stable sort tie-breaks).
@@ -16,7 +18,7 @@
 import { S_LEN, S_H, S_TEMP, S_MOIST, S_INLAND, S_MOUNT, S_CRATER } from './terrain.js';
 import * as dm from '../core/dmath.js';
 
-export const SETTLEMENT_VERSION = 1;
+export const SETTLEMENT_VERSION = 2;
 
 function icosphere(level) {
   const t = (1 + Math.sqrt(5)) / 2;
@@ -285,6 +287,63 @@ export function analyzeSettlements(gen, opts = {}) {
     if (sites.length >= maxSites) break;
   }
 
+  // ---- places to start: the best spot of each kind, on ground flat enough to land
+  const spots = [];
+  const liquid = gen.p.liquid;
+  const flatF = (i) => 1 - dm.smoothstep(0.01, 0.09, slope[i]);
+  const mild = (i) => { if (!habitable) return 1; const d = (T[i] - 273.15 - 16) / 14; return dm.exp(-d * d); };
+  const biomeOf = (i) => habitable ? biomeName(T[i] - 273.15, W[i], h[i], false) : (gen.p.icy ? 'icy plain' : (crater[i] > 0.1 ? 'crater floor' : 'regolith plain'));
+  const count = (i, f) => { let c = 0; for (const j of nbr[i]) if (f(j)) c++; return c; };
+  let maxH = 1;
+  for (let i = 0; i < n; i++) if (isLand(i) && h[i] > maxH) maxH = h[i];
+  const best = (key, label, fit, maxSlope = 0.09) => {
+    let bi = -1, bs = 0;
+    for (let i = 0; i < n; i++) {
+      if (!isLand(i) || slope[i] > maxSlope) continue;
+      const f = fit(i);
+      if (f > bs) { bs = f; bi = i; }
+    }
+    if (bi < 0) return;
+    const v = verts[bi];
+    spots.push({
+      key, label, dir: [v[0], v[1], v[2]],
+      biome: biomeOf(bi), elevation: Math.round(h[bi]), temperatureC: Math.round(T[bi] - 273.15),
+    });
+  };
+  if (doHydro) {
+    const riverF = (i) => acc[i] >= riverMin ? 0.5 + Math.min(1, dm.log(acc[i] / riverMin) / 3) : 0;
+    best('river', 'Beside a river', (i) => count(i, (j) => ocean[j]) ? 0 : flatF(i) * riverF(i) * (0.4 + mild(i)));
+    best('mouth', 'Where a river meets the sea', (i) => count(i, (j) => ocean[j]) ? flatF(i) * riverF(i) * (0.4 + mild(i)) : 0);
+    best('lake', 'On a lake shore', (i) => count(i, (j) => lake[j]) ? flatF(i) * (0.4 + mild(i)) : 0);
+  }
+  if (hasSea) {
+    best('coast', liquid === 'water' ? 'On the coast' : `On the shore of a ${liquid} sea`,
+      (i) => count(i, (j) => ocean[j]) && acc[i] < riverMin ? flatF(i) * (0.4 + mild(i)) * (h[i] < 60 ? 1.2 : 1) : 0);
+  }
+  if (liquid === 'lava') best('lava', 'On the shore of a lava sea', (i) => flatF(i) * Math.min(3, count(i, (j) => rawH[j] < 0)));
+  best('plain', 'Out on the open plains', (i) => flatF(i) * flatF(i) * (1 - dm.smoothstep(20, 300, relief[i])) * (0.4 + mild(i)) * (1 - h[i] / maxH * 0.5));
+  best('mountain', 'High in the mountains', (i) => h[i] > maxH * 0.45 ? flatF(i) * (h[i] / maxH) * (h[i] / maxH) * (0.5 + mount[i]) : 0);
+  if (habitable) {
+    // each biome that covers a fair share of the land: its most typical flat spot
+    const area = new Map();
+    for (let i = 0; i < n; i++) if (isLand(i)) { const b = biomeOf(i); area.set(b, (area.get(b) || 0) + 1); }
+    const biomes = [...area.entries()].filter(([, c]) => c >= 24).sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1));
+    const phrase = { 'ice sheet': 'On the ice sheet', tundra: 'On the tundra', steppe: 'On the steppe', grassland: 'Out on the grasslands',
+      savanna: 'On the savanna', 'hot desert': 'In the hot desert', 'cold desert': 'In the cold desert', scrub: 'In the scrubland' };
+    for (const [name] of biomes) {
+      best('biome-' + name.replace(/ /g, '-'), phrase[name] || `In the ${name}`, (i) => biomeOf(i) === name ? flatF(i) * (0.3 + count(i, (j) => isLand(j) && biomeOf(j) === name) / 6) * (0.5 + mild(i)) : 0);
+    }
+  } else {
+    best('crater', 'On a crater floor', (i) => crater[i] > 0.2 ? flatF(i) * crater[i] : 0);
+    best('rim', 'On a crater rim', (i) => { let rim = 0; for (const j of nbr[i]) rim = Math.max(rim, crater[j] - crater[i]); return flatF(i) * rim; });
+    if (cl.locked) {
+      const ss = cl.substellar;
+      best('terminator', 'On the terminator, the sun on the horizon', (i) => { const v = verts[i]; return flatF(i) * Math.max(0, 1 - Math.abs(v[0] * ss[0] + v[1] * ss[1] + v[2] * ss[2]) * 4); });
+    } else best('polar', 'Near the pole', (i) => Math.abs(verts[i][1]) > 0.8 ? flatF(i) * Math.abs(verts[i][1]) : 0);
+  }
+  // small, lumpy bodies: just the flattest ground there is
+  if (!spots.length) best('surface', 'On the surface', (i) => 1 / (0.01 + slope[i]), Infinity);
+
   let land = 0, lakes = 0;
   for (let i = 0; i < n; i++) { if (!ocean[i]) land++; if (lake[i]) lakes++; }
   return {
@@ -293,6 +352,7 @@ export function analyzeSettlements(gen, opts = {}) {
     landFraction: land / n, lakeCells: lakes,
     habitable,
     sites,
+    spots,
     rivers: rivers.slice(0, 24).map((r) => ({ mouth: r.mouth, flux: Math.round(r.flux), length: Math.round(r.length), path: r.path })),
   };
 }

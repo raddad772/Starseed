@@ -25,6 +25,7 @@ import { ShipVisual } from './render/shipVisual.js';
 import { BigShipVisual } from './render/bigShipVisual.js';
 import { LightRig } from './render/lightRig.js';
 import { Hud } from './ui/hud.js';
+import { QuickMenu } from './ui/quickMenu.js';
 import { MapView } from './ui/map.js';
 import { AudioEngine } from './audio.js';
 import * as U from './core/units.js';
@@ -62,6 +63,7 @@ export class Game {
     this.player = new Player(this);
     this.player.vessel = this.ship;
     this.hud = new Hud(this);
+    this.quick = new QuickMenu(this);
     this.map = new MapView(this);
     this.audio = new AudioEngine(this);
     this.camMode = 'first';
@@ -186,10 +188,17 @@ export class Game {
     this.applyStart(this.startPending || 'surface');
   }
 
-  // The landing site: standing off the parked ship's port bow, looking back at it
-  startOnSurface() {
-    const b = this.respawnInfo.body, s = this.ship, p = this.player;
-    if (!s.landed || s.parent || s.body !== b) this.landShipAt(b, this.startDir, null);
+  // On the ground beside your parked ship, off its port bow, looking back at
+  // it: the home landing site, or a spot chosen on any world (spot: a
+  // survey's start spot, for the arrival message)
+  startOnSurface(b = this.startBody, dir = this.startDir, spot = null) {
+    const s = this.ship, p = this.player;
+    this.respawnInfo = { body: b, dir: dir.clone() };
+    const here = s.landed && !s.parent && s.body === b && s.landedPosF.clone().normalize().dot(dir) > 0.99999;
+    if (!here) {
+      if (this.sunElevation(b, dir) < 0.17) { this.t = this.findMorning(b, dir, 30, this.t); this.universe.update(this.t); }
+      this.landShipAt(b, dir, null);
+    }
     const sp = s.landedPosF.clone();
     const sq = s.landedQuatF.clone();
     const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(sq);
@@ -205,11 +214,34 @@ export class Game {
     this.target = null;
     this.route = null;
     this.setWarp(0);
-    const name = b.data.name, site = this.site;
+    const name = b.data.name, site = !spot && b === this.startBody ? this.site : null;
     this.beginLoading('surface', `Descending to ${name}`, () => {
       this.message(`${name}: ${b.data.label}`, 'nav');
-      if (site) this.message(`Landing site: ${site.biome}, ${site.reasons.slice(0, 2).join(', ')}`);
+      if (spot) this.message(`${spot.label} · ${spot.biome} · ${spot.temperatureC} °C · ${spot.elevation.toLocaleString()} m`);
+      else if (site) this.message(`Landing site: ${site.biome}, ${site.reasons.slice(0, 2).join(', ')}`);
     });
+  }
+
+  // A spot picked on the start screen ('site:<body>:<spot key>'): the body's
+  // survey says where; the cover stays up (and the world holds) until it does
+  startAtSpot(b, spotKey) {
+    const token = this.startToken;
+    this.beginLoading('surface', `Surveying ${b.data.name}`);
+    this.loadHold = true;
+    this.requestSurvey(b, 90).then((res) => {
+      if (token !== this.startToken) return; // another start was picked meanwhile
+      this.loadHold = false;
+      const spot = res && res.spots && res.spots.find((sp) => sp.key === spotKey);
+      this.startOnSurface(b, spot ? new THREE.Vector3(...spot.dir) : this.fallbackSite(b), spot);
+    }, (err) => { console.error(err); if (token === this.startToken) { this.loadHold = false; this.startOnSurface(b, this.fallbackSite(b), null); } });
+  }
+
+  // sine of the sun's elevation over the horizon at a body-fixed direction, now
+  sunElevation(b, dirF) {
+    const pos = new THREE.Vector3(), q = new THREE.Quaternion();
+    this.universe.bodyStateAt(b, this.t, pos);
+    b.orientationAt(this.t, q);
+    return pos.negate().normalize().applyQuaternion(q.invert()).dot(dirF);
   }
 
   // Hold the world while the view streams in behind the loading cover.
@@ -263,9 +295,12 @@ export class Game {
   applyStart(key) {
     this.startPending = null;
     this.openingBody = null;
+    this.loadHold = false;
+    this.startToken = (this.startToken || 0) + 1;
     if (this.everLaunched) this.resetFleet(); // a fresh start after playing: nothing left mid-flight
     if (key === 'carrier' && this.carrier && !this.carrier.dead) this.startAboard();
     else if (key && key.startsWith('orbit:') && this.universe.bodies[+key.slice(6)]) this.startInOrbit(this.universe.bodies[+key.slice(6)]);
+    else if (key && key.startsWith('site:') && this.universe.bodies[+key.split(':')[1]]) this.startAtSpot(this.universe.bodies[+key.split(':')[1]], key.split(':')[2]);
     else this.startOnSurface();
   }
 
@@ -667,6 +702,7 @@ export class Game {
     const input = this.input;
     const pm = this.player.mode;
     input.pollPad(pm === 'seat' ? 'flight' : (pm === 'eva' ? 'eva' : 'foot'), dtReal);
+    this.quick.update(dtReal);
     this.handleGlobalKeys(input);
     if (this.state === 'loading') this.updateLoading(dtReal);
     if (this.state === 'playing' && !this.paused) this.simulate(dtReal);
@@ -723,7 +759,7 @@ export class Game {
   updateLoading(dt) {
     this.loadTimer += dt;
     this.universe.update(this.t);
-    if (!this.respawnInfo) { // surveying the landing site: no measure yet, creep toward 10%
+    if (!this.respawnInfo || this.loadHold) { // surveying: no measure yet, creep toward 10%
       this.loadProgress = 0.1 * (1 - Math.exp(-this.loadTimer / 2));
       this.hud.setLoading(this.loadText, this.loadProgress);
       return;

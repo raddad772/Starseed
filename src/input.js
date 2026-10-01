@@ -143,8 +143,9 @@ export class Input {
     }
     Object.assign(ps, { lx, ly, rx, ry, lt: gp.buttons[BTN.LT] ? gp.buttons[BTN.LT].value : 0, rt: gp.buttons[BTN.RT] ? gp.buttons[BTN.RT].value : 0 });
     if (ps.hits.size || Math.hypot(lx, ly) > 0.5 || Math.hypot(rx, ry) > 0.5) this.setDevice('pad');
-    // a menu or the map takes the pad: the game sees none of it this frame
-    if (this.padRouter && this.padRouter(ps, dt)) {
+    // a menu or the map takes the pad (true: all of it; a Set: those buttons)
+    const taken = this.padRouter ? this.padRouter(ps, dt) : false;
+    if (taken === true) {
       for (const i of Object.values(BTN)) this.padPrev[i] = pressed(i);
       this.lb.down = pressed(BTN.LB); this.lb.used = true;
       return;
@@ -153,7 +154,7 @@ export class Input {
     for (const [name, i] of Object.entries(BTN)) {
       const now = pressed(i), was = !!this.padPrev[i];
       this.padPrev[i] = now;
-      if (name === 'LB') continue;
+      if (name === 'LB' || (taken && taken.has(name))) continue;
       if (name === 'START') { if (now && !was && this.onPadPause) this.onPadPause(); continue; }
       const m = L.buttons[name];
       if (!m || !now) continue;

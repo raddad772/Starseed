@@ -53,24 +53,81 @@ function applySettings() {
 }
 
 let startChoice = null;
+let briefSys = null;          // the system the briefing shows
+let startTab = 'suggested';   // 'suggested' | 'custom' (choose a world)
+let customWorld = null;       // the world picked on the custom tab (body id)
+
+// pick a start: mark it everywhere it is listed and show it behind the briefing
+function pickStart(key) {
+  startChoice = key;
+  for (const b of $('briefing').querySelectorAll('[data-start]')) b.setAttribute('aria-checked', String(b.dataset.start === key));
+  if (game && previewed !== startChoice) { game.requestStart(startChoice); previewed = startChoice; }
+}
+const pickButton = (key, title, sub, extra = '') => `<button type="button" role="radio" data-start="${key}" aria-checked="${key === startChoice}" ${extra}><b>${title}</b><span>${sub}</span></button>`;
+function wirePicks(box) {
+  for (const el of box.querySelectorAll('[data-start]')) {
+    el.onclick = () => pickStart(el.dataset.start);
+    el.ondblclick = () => { pickStart(el.dataset.start); launchGame(); };
+  }
+}
+
+function setStartTab(tab) {
+  startTab = tab;
+  for (const b of document.querySelectorAll('.startTabs [data-st]')) b.classList.toggle('on', b.dataset.st === tab);
+  $('startPick').hidden = tab !== 'suggested';
+  $('customPick').hidden = tab !== 'custom';
+  if (tab === 'custom' && customWorld === null && briefSys) showWorld(briefSys.startBodyId, false);
+}
+for (const b of document.querySelectorAll('.startTabs [data-st]')) b.onclick = () => setStartTab(b.dataset.st);
+
+// Choose a world: every planet and moon; picking one shows it from orbit
+// and lists where on it you can land (from its terrain survey)
+function renderWorlds(sys) {
+  const box = $('worldPick');
+  const order = [];
+  for (const pl of sys.bodies.filter((b) => b.kind === 'planet')) order.push(pl, ...sys.bodies.filter((b) => b.kind === 'moon' && b.parentId === pl.id));
+  box.innerHTML = order.map((b) =>
+    `<button type="button" role="radio" data-world="${b.id}" class="${b.kind === 'moon' ? 'moon' : ''}" aria-checked="${b.id === customWorld}"><b>${b.name}</b><span>${b.label}</span></button>`).join('');
+  for (const el of box.querySelectorAll('[data-world]')) el.onclick = () => showWorld(+el.dataset.world, true);
+}
+
+function showWorld(id, preview) {
+  customWorld = id;
+  for (const b of $('worldPick').querySelectorAll('[data-world]')) b.setAttribute('aria-checked', String(+b.dataset.world === id));
+  const sb = briefSys.bodies.find((b) => b.id === id);
+  $('siteHead').textContent = `Where on ${sb.name}`;
+  const box = $('sitePick');
+  const orbit = pickButton(`orbit:${id}`, 'In orbit', `Floating beside your ship above ${sb.name}`);
+  const body = game && game.universe.bodies[id];
+  box.innerHTML = orbit + (body && body.solid ? pickButton('', 'Surveying…', 'Finding places to land', 'disabled') : '');
+  wirePicks(box);
+  if (preview) pickStart(`orbit:${id}`);
+  if (!body || !body.solid) return;
+  game.requestSurvey(body, 90).then((res) => {
+    if (customWorld !== id) return;
+    const spots = (res && res.spots) || [];
+    box.innerHTML = orbit + spots.map((sp) => pickButton(`site:${id}:${sp.key}`, sp.label,
+      `${sp.biome} · ${sp.temperatureC} °C · ${sp.elevation.toLocaleString()} m`)).join('');
+    wirePicks(box);
+  });
+}
+
 function showBriefing(s) {
   const sys = generateSystem(s);
   renderBriefing(sys, { starLine: $('starLine'), schematic: $('schematic'), table: $('planetTable') });
   $('seedInput').value = s;
-  // where to begin (the first is the default)
+  // where to begin (the first is the default; a new system starts afresh)
   const opts = startOptions(sys);
   if (!opts.some((o) => o.key === startChoice)) startChoice = opts[0].key;
+  briefSys = sys;
+  customWorld = null;
   const box = $('startPick');
-  box.innerHTML = opts.map((o) => `<button type="button" role="radio" data-start="${o.key}" aria-checked="${o.key === startChoice}"><b>${o.title}</b><span>${o.sub}</span></button>`).join('');
-  for (const el of box.querySelectorAll('[data-start]')) {
-    el.onclick = () => {
-      startChoice = el.dataset.start;
-      for (const b of box.querySelectorAll('[data-start]')) b.setAttribute('aria-checked', String(b === el));
-      // the view behind the briefing moves to the chosen start
-      if (game && previewed !== startChoice) { game.requestStart(startChoice); previewed = startChoice; }
-    };
-    el.ondblclick = () => { startChoice = el.dataset.start; launchGame(); };
-  }
+  box.innerHTML = opts.map((o) => pickButton(o.key, o.title, o.sub)).join('');
+  wirePicks(box);
+  renderWorlds(sys);
+  $('sitePick').innerHTML = '';
+  $('siteHead').textContent = '';
+  setStartTab('suggested');
 }
 
 // The start shown behind the briefing (null once you have played on from it:
@@ -223,7 +280,7 @@ function openMenu() {
 input.padRouter = (ps, dt) => {
   if (!game) return false;
   const menu = openMenu();
-  if (!menu && !game.map.open) { padMenu.setCur(null); return false; }
+  if (!menu && !game.map.open) { padMenu.setCur(null); return game.quick.open ? game.quick.pad(ps, dt) : false; }
   if (ps.hits.has('START')) { input.onPadPause(); return true; }
   if (menu) {
     // R3: the controller layout (from the pause menu), or close it
