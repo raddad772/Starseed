@@ -66,7 +66,7 @@ void main() {
 }
 `;
 
-function plumeMaterial(color, vacuum) {
+export function plumeMaterial(color, vacuum) {
   return new THREE.ShaderMaterial({
     uniforms: { uThrottle: { value: 0 }, uTime: { value: 0 }, uColor: { value: new THREE.Vector3(...color) }, uLength: { value: 1 }, uVacuum: { value: vacuum } },
     vertexShader: PLUME_VERT, fragmentShader: PLUME_FRAG,
@@ -114,17 +114,6 @@ export class ShipVisual {
     shell.position.set(0, 1.2, 0);
     this.fx.add(shell);
     this.plasma = shell;
-    // lights for standard materials
-    this.sun = new THREE.DirectionalLight(0xffffff, 1);
-    this.sun.castShadow = true;
-    this.sun.shadow.mapSize.set(2048, 2048);
-    const sc = this.sun.shadow.camera;
-    sc.left = -18; sc.right = 18; sc.top = 18; sc.bottom = -18; sc.near = 1; sc.far = 160;
-    this.sun.shadow.bias = -0.0005;
-    this.sun.shadow.normalBias = 0.03;
-    engine.scene.add(this.sun, this.sun.target);
-    this.hemi = new THREE.HemisphereLight(0x8899aa, 0x332211, 0.1);
-    engine.scene.add(this.hemi);
     this.time = 0;
     this.navBlink = 0;
     this.floodOn = false;
@@ -140,6 +129,7 @@ export class ShipVisual {
     m.root.quaternion.copy(s.quat);
     this.fx.position.copy(m.root.position);
     this.fx.quaternion.copy(s.quat);
+    m.root.visible = this.fx.visible = !s.dead && m.root.position.lengthSq() < 4e10;
     // animations
     s.gear += THREE.MathUtils.clamp(s.gearTarget - s.gear, -dt / 3, dt / 3);
     s.ramp += THREE.MathUtils.clamp(s.rampTarget - s.ramp, -dt / 3.5, dt / 3.5);
@@ -191,19 +181,7 @@ export class ShipVisual {
     // nav lights blink
     this.navBlink = (this.navBlink + dt) % 1.6;
     for (const n of m.navLights) n.visible = this.navBlink < 0.12;
-    // lighting from the sun (transmittance-filtered by the caller)
-    if (lighting) {
-      this.sun.color.copy(lighting.sunColor);
-      this.sun.intensity = lighting.sunIntensity;
-      this.sun.position.copy(m.root.position).addScaledVector(lighting.sunDir, 80);
-      this.sun.target.position.copy(m.root.position);
-      this.sun.target.updateMatrixWorld();
-      this.hemi.color.copy(lighting.skyColor);
-      this.hemi.groundColor.copy(lighting.groundColor);
-      this.hemi.intensity = lighting.skyIntensity;
-      this.hemi.position.copy(lighting.up);
-      m.flood.intensity = this.floodOn ? 3.0 : 0;
-    }
+    m.flood.intensity = this.floodOn ? 3.0 : 0;
   }
 
   // cockpit multi-function displays

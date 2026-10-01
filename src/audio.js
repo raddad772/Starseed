@@ -58,9 +58,9 @@ export class AudioEngine {
 
   update(dt) {
     if (!this.ready) return;
-    const g = this.game, s = g.ship, p = g.player;
-    if (this.ctx.state === 'suspended') this.ctx.resume();
-    const inShip = p.mode === 'seat' || p.mode === 'ship';
+    const g = this.game, s = g.focus, p = g.player;
+    if (this.ctx.state === 'suspended' && !g.paused) this.ctx.resume();
+    const inShip = p.aboard;
     const nearShip = inShip || (g.camPos.distanceTo(s.getWorldPos(this._v || (this._v = s.pos.clone()))) < 400);
     const air = Math.min(1, (inShip ? s.env.pressure : p.env.pressure) * 1.2);
     const carry = inShip ? 1 : (nearShip ? air * 0.6 : 0); // vacuum carries no sound outside
@@ -82,9 +82,9 @@ export class AudioEngine {
     this.set(this.rcs.g, rcsNow * 0.12, 0.02);
     // ftl drone
     const f = g.ftl;
-    const fe = f.state === 'spool' ? (1 - f.timer / 5) * 0.2 : (f.state === 'cruise' ? 0.18 : 0);
+    const fe = f.state === 'spool' ? (1 - f.timer / f.spoolTime) * 0.2 : (f.state === 'cruise' ? 0.18 : 0);
     this.set(this.ftlG, fe * (inShip ? 1 : 0), 0.3);
-    this.ftl.frequency.setTargetAtTime(60 + f.effect * 140 + (f.state === 'spool' ? (1 - f.timer / 5) * 80 : 0), this.ctx.currentTime, 0.2);
+    this.ftl.frequency.setTargetAtTime(60 + f.effect * 140 + (f.state === 'spool' ? (1 - f.timer / f.spoolTime) * 80 : 0), this.ctx.currentTime, 0.2);
     // footsteps
     if (p.footstep !== this.lastFoot) { this.lastFoot = p.footstep; if (p.grounded && (p.mode === 'surface' || p.mode === 'ship')) this.tick(p.mode === 'ship' ? 900 : 300, 0.06 * Math.max(0.2, air)); }
     // alarms

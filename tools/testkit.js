@@ -31,7 +31,8 @@ export function body(name) { return g().universe.bodies.find((b) => b.data.name 
 export function orbit(name, altM, dir = [0.3, 0.8, 0.52]) {
   const gm = g(), s = gm.ship, p = gm.player, V = s.pos.constructor;
   const b = body(name);
-  p.sitDown(0); s.rampTarget = 0; s.ramp = 0; s.gearTarget = 0; s.gear = 0;
+  if (s.parent) s.leaveParent();
+  p.sitDown(0, s); s.rampTarget = 0; s.ramp = 0; s.gearTarget = 0; s.gear = 0;
   s.body = b; s.landed = false; s.rails = false; s.dead = false;
   const r = b.R + altM;
   const radial = new V(...dir).normalize();

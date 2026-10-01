@@ -482,7 +482,7 @@ export const SHIP_INTERIOR = {
   // walkable cells the player is confined to (union of boxes)
   cells: [
     { min: [-1.95, 0, -6.95], max: [1.95, 2.5, 7.15] },   // cabin incl. ramp bay
-    { min: [-1.55, 0.25, -11.1], max: [1.55, 2.4, -6.9] }, // cockpit (raised floor)
+    { min: [-1.55, 0.25, -11.1], max: [1.55, 2.4, -6.3] }, // cockpit (raised floor), overlapping the cabin so the doorway is passable
   ],
   solids: [
     { min: [-1.9, 0, 2.8], max: [-1.0, 0.9, 4.0] },

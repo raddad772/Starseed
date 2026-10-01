@@ -170,8 +170,29 @@ export class MapView {
         it.label.classList.toggle('target', g.target === b);
       }
     }
+    // other ships
+    this.vesselMarks = this.vesselMarks || new Map();
+    for (const v of g.vessels) {
+      if (v === g.focus.root) continue;
+      let vm = this.vesselMarks.get(v);
+      if (!vm) {
+        const mesh = new THREE.Mesh(new THREE.OctahedronGeometry(1), new THREE.MeshBasicMaterial({ color: 0x4fd6e6 }));
+        this.root.add(mesh);
+        const el = document.createElement('div');
+        el.className = 'ml';
+        el.textContent = v.name;
+        this.labelsEl.appendChild(el);
+        vm = { mesh, el };
+        this.vesselMarks.set(v, vm);
+      }
+      const vp = v.getWorldPos(new THREE.Vector3());
+      vm.mesh.visible = !v.dead;
+      vm.mesh.position.copy(vp);
+      vm.mesh.scale.setScalar(3 / pxPerRad * cam.position.distanceTo(_v.copy(vp).sub(focusPos)));
+      place(vp, vm.el, !v.dead);
+    }
     // ship and its conic
-    const s = g.ship;
+    const s = g.focus.root;
     const sp = s.getWorldPos(new THREE.Vector3());
     this.shipMarker.position.copy(sp);
     const ds = cam.position.distanceTo(_v.copy(sp).sub(focusPos));
@@ -187,7 +208,7 @@ export class MapView {
   }
 
   updateTrajectory() {
-    const g = this.game, s = g.ship;
+    const g = this.game, s = g.focus.root;
     const pos = this.trajGeo.attributes.position;
     const arr = pos.array;
     if (s.landed || g.ftl.state === 'cruise') { this.traj.visible = false; return; }

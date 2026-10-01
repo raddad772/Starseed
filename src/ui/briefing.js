@@ -1,4 +1,24 @@
-// Start screen: seed entry, star summary, system schematic and planet table.
+// Start screen: seed entry, where to begin, star summary, system schematic
+// and planet table.
+
+// Where a new game can begin, best first: orbits of the home world, the most
+// striking giant (ringed if any) and a big moon with its giant in the sky,
+// then the carrier's hangar and the landing site.
+export function startOptions(sys) {
+  const byId = (id) => sys.bodies.find((b) => b.id === id);
+  const home = byId(sys.startBodyId);
+  const opts = [{ key: `orbit:${home.id}`, title: `Orbit of ${home.name}`, sub: `${home.label}, floating beside your ship` }];
+  const giants = sys.bodies.filter((b) => b.kind === 'planet' && !b.solid)
+    .sort((a, b) => (b.rings ? 1 : 0) - (a.rings ? 1 : 0) || b.R - a.R);
+  if (giants[0]) opts.push({ key: `orbit:${giants[0].id}`, title: `Orbit of ${giants[0].name}`, sub: `${giants[0].label}${giants[0].rings ? ' with rings' : ''}` });
+  // the moon that sees its giant largest in the sky
+  const skySize = (m) => byId(m.parentId).R / m.orbit.a;
+  const moons = sys.bodies.filter((b) => b.kind === 'moon' && b.R > 60000 && giants.some((g) => g.id === b.parentId)).sort((a, b) => skySize(b) - skySize(a));
+  if (moons[0]) opts.push({ key: `orbit:${moons[0].id}`, title: `Orbit of ${moons[0].name}`, sub: `${moons[0].label}, ${byId(moons[0].parentId).name} in the sky` });
+  opts.push({ key: 'carrier', title: 'Aboard Bastion', sub: 'The carrier\'s hangar, beside your docked ship' });
+  opts.push({ key: 'surface', title: `On ${home.name}`, sub: 'The landing site, beside your ship' });
+  return opts;
+}
 
 export function renderBriefing(sys, el) {
   const s = sys.star;

@@ -80,6 +80,11 @@ uniform float uPixelRatio;
 uniform float uTwinkle;
 uniform float uTime;
 uniform float uExtinction;
+uniform sampler2D tAdapt;
+uniform float uKey;
+uniform float uMinExp;
+uniform float uMaxExp;
+uniform float uStarExp;
 varying vec3 vColor;
 #include <common>
 #include <logdepthbuf_pars_vertex>
@@ -87,7 +92,13 @@ void main() {
   vec4 mv = modelViewMatrix * vec4(position, 1.0);
   gl_Position = projectionMatrix * mv;
   float tw = 1.0 + uTwinkle * 0.45 * sin(uTime * (7.0 + fract(position.x * 0.137) * 9.0) + position.y);
-  vColor = color * tw * uExtinction;
+  // In space the stars stay visible beside a sunlit planet or ship (as the
+  // eye sees them, not a camera): below the exposure they were set for, they
+  // are brightened to match, up to 12x. Not inside an atmosphere: no stars
+  // in a daytime sky.
+  float expo = clamp(uKey / exp2(texture(tAdapt, vec2(0.5)).r), uMinExp, uMaxExp);
+  float boost = mix(clamp(uStarExp / expo, 1.0, 12.0), 1.0, clamp(uTwinkle * 2.0, 0.0, 1.0));
+  vColor = color * tw * uExtinction * boost;
   gl_PointSize = size * uPixelRatio;
   #include <logdepthbuf_vertex>
 }
@@ -162,7 +173,8 @@ export class Sky {
     g.setAttribute('color', new THREE.BufferAttribute(col, 3));
     g.setAttribute('size', new THREE.BufferAttribute(size2, 1));
     this.starMat = new THREE.ShaderMaterial({
-      uniforms: { uPixelRatio: { value: 1 }, uTwinkle: { value: 0 }, uTime: { value: 0 }, uExtinction: { value: 1 } },
+      uniforms: { uPixelRatio: { value: 1 }, uTwinkle: { value: 0 }, uTime: { value: 0 }, uExtinction: { value: 1 },
+        tAdapt: { value: null }, uKey: { value: 0.18 }, uMinExp: { value: 0.04 }, uMaxExp: { value: 260 }, uStarExp: { value: 70 } },
       vertexShader: STAR_VERT, fragmentShader: STAR_FRAG,
       blending: THREE.AdditiveBlending, depthWrite: false, transparent: true,
     });

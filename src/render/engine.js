@@ -35,7 +35,11 @@ void main() {
 `;
 
 const LUM_FRAG = /* glsl */`
+${GLSL_DEPTH}
 uniform sampler2D tColor;
+uniform sampler2D tDepth;
+uniform float uRef;
+uniform float uNearCut;
 varying vec2 vUv;
 void main() {
   vec3 c = vec3(0.0);
@@ -44,19 +48,28 @@ void main() {
   c += texture(tColor, vUv + vec2(-0.25, 0.25) / 128.0).rgb;
   c += texture(tColor, vUv + vec2(0.25, 0.25) / 128.0).rgb;
   float l = dot(c * 0.25, vec3(0.2126, 0.7152, 0.0722));
-  // centre-weighted mean of clamped linear luminance: exposes for the lit
-  // subject (a geometric mean would be dominated by black sky), while the
-  // clamp keeps a tiny sun disk from crushing the whole frame
+  // luminance relative to the incident-light reference (an 18% grey card lit
+  // where the camera is), clamped to [-6, +3] stops
+  float x = clamp(l / max(uRef, 1e-9), 1.0 / 64.0, 8.0);
+  // Solid surfaces set the exposure: ground, hulls, planets. A bright sky
+  // (and clouds, and the sun) barely counts, so it blows out a little rather
+  // than plunging the ground into darkness; a dark sky (black space, night)
+  // counts a third, so it still opens the exposure up some. Seated in a
+  // cockpit, the cockpit itself (dashboard, screens, canopy frame: anything
+  // within uNearCut of the eye) is not the world and barely counts; walking
+  // about, surfaces a few metres away count a quarter. Centre-weighted.
+  float d = texture(tDepth, vUv).r;
+  bool sky = isSkyDepth(d);
   float w = 1.0 - 0.6 * length(vUv - 0.5);
-  float lc = clamp(l, 0.0, 24.0);
-  // mean and energy-weighted (squared) mean: small bright subjects against
-  // black space should still pull the exposure down
-  // alpha: 4th-power mean, which tracks a bright subject covering only a few
-  // percent of the frame. Scaled x20 so sunlit values (~0.05) stay well inside
-  // half-float range; clamped at 0.6 so the sun disk itself cannot dominate.
-  float l4 = min(l * 20.0, 12.0);
-  l4 *= l4;
-  gl_FragColor = vec4(lc * w, w, lc * lc * w, l4 * l4 * w);
+  float dz = viewZFromDepth(d);
+  float near = uNearCut > 0.0 ? (dz < uNearCut ? 0.01 : 1.0) : mix(0.25, 1.0, smoothstep(3.0, 12.0, dz));
+  w *= sky ? mix(0.35, 0.04, smoothstep(0.25, 1.0, x)) : near;
+  // z/w: 4th-power mean over solid surfaces only, which tracks a bright
+  // subject covering a few percent of the frame (a sunlit planet beside a
+  // dark hull) so it is not blown out
+  float ws = sky ? 0.0 : w;
+  float x2 = x * x;
+  gl_FragColor = vec4(log2(x) * w, w, x2 * x2 * ws, ws);
 }
 `;
 
@@ -66,15 +79,22 @@ uniform sampler2D tPrev;
 uniform float uDt;
 uniform float uLevel;
 uniform float uReset;
+uniform float uRef;
+uniform float uUp;
+uniform float uDown;
+uniform float uStrength;
 varying vec2 vUv;
 void main() {
   vec4 m = textureLod(tLum, vec2(0.5), uLevel);
-  float mean = m.x / max(m.y, 1e-4);
-  float rms = sqrt(max(m.z / max(m.y, 1e-4), 0.0));
-  float p4 = sqrt(sqrt(max(m.a / max(m.y, 1e-4), 0.0))) / 20.0;
-  float avg = log2(max(max(max(mean, rms * 0.3), p4 * 0.5), 1e-7));
+  float logAvg = m.x / max(m.y, 1e-6);
+  float hi = m.w > 1e-3 ? log2(max(sqrt(sqrt(m.z / m.w)) * 0.25, 1e-6)) : -99.0;
+  // stops from the incident-light anchor: dark scenes (night, black space, a
+  // shadowed valley) open up by as much as uUp; bright ones close down by at
+  // most uDown
+  float stops = clamp(max(logAvg * uStrength, hi), -uUp, uDown);
+  float avg = log2(max(uRef, 1e-9)) + stops;
   float prev = texture(tPrev, vec2(0.5)).r;
-  float speed = avg > prev ? 1.6 : 0.9; // adapt to bright faster than to dark
+  float speed = avg > prev ? 1.1 : 0.6; // adapt to bright faster than to dark
   float k = uReset > 0.5 ? 1.0 : 1.0 - exp(-uDt * speed);
   gl_FragColor = vec4(mix(prev, avg, k), 0.0, 0.0, 1.0);
 }
@@ -144,6 +164,8 @@ void main() {
 `;
 
 const TONEMAP_FRAG = /* glsl */`
+${THREE.ShaderChunk.tonemapping_pars_fragment}
+uniform float uToneCurve; // 1: AgX (wide highlight range), 0: ACES fit (punchier, clips sooner)
 uniform sampler2D tColor;
 uniform sampler2D tBloom;
 uniform sampler2D tAdapt;
@@ -181,7 +203,13 @@ void main() {
   c += uFlash;
   float v = 1.0 - uVignette * pow(length(vUv - 0.5) * 1.25, 2.4);
   c *= v;
-  c = aces(c);
+  if (uToneCurve > 0.5) {
+    // AgX holds about 6.5 stops above mid-grey before white (ACES about 5), so a
+    // bright sky keeps its gradient and clouds; its neutral look is soft, so
+    // give saturation a little back
+    c = AgXToneMapping(c);
+    c = clamp(mix(vec3(dot(c, vec3(0.2126, 0.7152, 0.0722))), c, 1.2), 0.0, 1.0);
+  } else c = aces(c);
   // blue-noise-ish dither to hide banding in skies
   float n = fract(sin(dot(gl_FragCoord.xy + uTime, vec2(12.9898, 78.233))) * 43758.5453) - 0.5;
   gl_FragColor = vec4(toSRGB(c) + n / 255.0, 1.0);
@@ -243,12 +271,28 @@ export class Engine {
     this.adaptReset = true;
     this.minExposure = 0.04;
     this.maxExposure = 260;
+    // exposure metering: luminance of an 18% grey card under the light at the
+    // camera (set by the game each frame), and how far the frame's own
+    // brightness may move exposure from it, in stops
+    this.meterRef = 0.03;
+    this.meterUp = 5;
+    this.meterDown = 0.5;
+    this.toneCurve = 'agx';   // or 'aces'
+    this.meterStrength = 0.75; // how much of the solid surfaces' brightness the eye compensates
     this._buildTargets();
     this._buildMaterials();
     this.resize();
   }
 
   get depthMode() { return this.reversed ? 0 : 1; }
+
+  // the exposure in use now (a 1x1 GPU readback: for the debug readout only)
+  readExposure() {
+    const rt = this.rtAdapt[this.adaptIdx];
+    const b = new Float32Array(4);
+    this.renderer.readRenderTargetPixels(rt, 0, 0, 1, 1, b);
+    return Math.min(this.maxExposure, Math.max(this.minExposure, 0.18 / Math.pow(2, b[0])));
+  }
 
   _buildTargets() {
     const w = 4, h = 4;
@@ -277,8 +321,8 @@ export class Engine {
     const depthU = () => ({ uDepthMode: { value: this.depthMode }, uNear: { value: this.near }, uFar: { value: this.far }, uLogDepthFC: { value: Math.log2(this.far + 1) } });
     this.depthUniforms = depthU;
     this.bgMat = mk(BG_FRAG, { tColor: { value: null }, tDepth: { value: null }, tSky: { value: null }, uCamRot: { value: new THREE.Matrix3() }, uTanHalf: { value: new THREE.Vector2() }, uSkyGain: { value: 1 }, ...depthU() });
-    this.lumMat = mk(LUM_FRAG, { tColor: { value: null } });
-    this.adaptMat = mk(ADAPT_FRAG, { tLum: { value: this.rtLum.texture }, tPrev: { value: null }, uDt: { value: 0.016 }, uLevel: { value: 7 }, uReset: { value: 1 } });
+    this.lumMat = mk(LUM_FRAG, { tColor: { value: null }, tDepth: { value: null }, uRef: { value: 0.03 }, uNearCut: { value: 0 }, ...depthU() });
+    this.adaptMat = mk(ADAPT_FRAG, { tLum: { value: this.rtLum.texture }, tPrev: { value: null }, uDt: { value: 0.016 }, uLevel: { value: 7 }, uReset: { value: 1 }, uRef: { value: 0.03 }, uUp: { value: 5 }, uDown: { value: 0.5 }, uStrength: { value: 0.75 } });
     this.brightMat = mk(BRIGHT_FRAG, { tColor: { value: null }, tAdapt: { value: null }, uKey: { value: 0.18 }, uMinExp: { value: 0.04 }, uMaxExp: { value: 260 }, uTexel: { value: new THREE.Vector2() } });
     this.downMat = mk(DOWN_FRAG, { tSrc: { value: null }, uTexel: { value: new THREE.Vector2() } });
     this.upMat = mk(UP_FRAG, { tSrc: { value: null }, tBase: { value: null }, uTexel: { value: new THREE.Vector2() }, uRadius: { value: 1 } });
@@ -286,6 +330,7 @@ export class Engine {
     this.toneMat = mk(TONEMAP_FRAG, {
       tColor: { value: null }, tBloom: { value: null }, tAdapt: { value: null },
       uKey: { value: 0.18 }, uMinExp: { value: 0.04 }, uMaxExp: { value: 260 }, uExposureBias: { value: 1 }, uBloom: { value: 0.9 },
+      toneMappingExposure: { value: 1 }, uToneCurve: { value: 1 },
       uWhiteBalance: { value: this.whiteBalance }, uTime: { value: 0 }, uVignette: { value: 0.35 }, uFlash: { value: this.flash }, uRadial: { value: 0 },
     });
   }
@@ -467,14 +512,24 @@ export class Engine {
       this.passEnd();
     }
 
+    this.lastHDR = src; // (debug readback)
+
     // 4. eye adaptation
     this.passBegin('post');
     this.lumMat.uniforms.tColor.value = src.texture;
+    this.lumMat.uniforms.uRef.value = this.meterRef;
+    this.lumMat.uniforms.tDepth.value = this.depthTex;
+    this.lumMat.uniforms.uNearCut.value = this.meterNearCut || 0;
+    this.lumMat.uniforms.uDepthMode.value = this.depthMode;
     renderFullscreen(r, this.lumMat, this.rtLum);
     const prev = this.rtAdapt[this.adaptIdx], next = this.rtAdapt[1 - this.adaptIdx];
     this.adaptMat.uniforms.tPrev.value = prev.texture;
     this.adaptMat.uniforms.uDt.value = Math.min(dt, 0.25);
     this.adaptMat.uniforms.uReset.value = this.adaptReset ? 1 : 0;
+    this.adaptMat.uniforms.uRef.value = this.meterRef;
+    this.adaptMat.uniforms.uUp.value = this.meterUp;
+    this.adaptMat.uniforms.uDown.value = this.meterDown;
+    this.adaptMat.uniforms.uStrength.value = this.meterStrength;
     this.adaptReset = false;
     renderFullscreen(r, this.adaptMat, next);
     this.adaptIdx = 1 - this.adaptIdx;
@@ -512,6 +567,7 @@ export class Engine {
     t.tBloom.value = bloomTex;
     t.tAdapt.value = adapt;
     t.uExposureBias.value = this.exposureBias;
+    t.uToneCurve.value = this.toneCurve === 'aces' ? 0 : 1;
     t.uBloom.value = bloomTex ? this.bloomStrength * 0.06 : 0;
     t.uTime.value = this.time;
     t.uVignette.value = this.vignette + (this.radialBlur || 0) * 0.4;
