@@ -501,7 +501,10 @@ export function buildBody(rng, proto, star, host) {
       mie: [1.5e-6, 1.5e-6, 1.5e-6], mieAbs: [0.2e-6, 0.2e-6, 0.25e-6], mieH: H * 0.7, mieG: 0.75,
       // methane absorbs red light: the blue of Uranus and Neptune
       ozone: [2.5e-6 * methane + 0.05e-6, 0.6e-6 * methane, 0.0], ozoneCenter: 0, ozoneWidth: 0, absorptionExp: true,
-      height: 14 * H,
+      // (a giant's haze a thin limb: a few hundredths of its radius at most, as Jupiter's and
+      // Neptune's, and so well inside its rings, which begin at ~1.2 radii; the game's tenth-size
+      // worlds with real scale heights would otherwise wrap it a third of its radius deep)
+      height: Math.min(14 * H, 0.04 * b.R),
       depth: 40 * H, // the shader's atmosphere goes well below the 1-bar level
     };
     b.atmosphere = atm;
