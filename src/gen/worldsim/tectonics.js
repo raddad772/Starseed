@@ -726,16 +726,48 @@ export class Tectonics {
     }
     const idx = this._idx || (this._idx = new Int32Array(n));
     for (let c = 0; c < n; c++) idx[c] = c;
-    idx.sort((a, b) => h[a] - h[b] || a - b);
-    let A = 0, total = 0;
+    let total = 0;
     for (let c = 0; c < n; c++) total += area[c];
-    let k = 0;
-    while (k < n - 1 && A + area[idx[k]] < total * this.oceanFrac) A += area[idx[k++]];
-    const sl = h[idx[k]];
+    const sl = h[areaQuantile(idx, h, area, total * this.oceanFrac)];
     this.seaLevel = sl;
     for (let c = 0; c < n; c++) h[c] -= sl;
     return h;
   }
+}
+
+// the first cell, in order of height (then index), whose area added to all lower ones'
+// reaches target (the highest if none does): a weighted quickselect, linear time, instead of
+// sorting every cell each step. idx: the cells (reordered in place)
+function areaQuantile(idx, h, area, target) {
+  const before = (a, b) => h[a] < h[b] || (h[a] === h[b] && a < b);
+  let lo = 0, hi = idx.length, acc = 0;
+  while (hi - lo > 24) {
+    // (pivot: the median of three, by position)
+    const m = (lo + hi) >> 1;
+    let a = idx[lo], b = idx[m], c = idx[hi - 1];
+    if (before(b, a)) { const t = a; a = b; b = t; }
+    if (before(c, b)) { b = c; if (before(b, a)) b = a; }
+    const pv = b;
+    // partition [lo, hi): the cells before the pivot, the pivot, the cells after it
+    let i = lo, j = hi - 1, less = 0;
+    for (let k = lo; k <= j;) {
+      const x = idx[k];
+      if (x === pv) { k++; continue; }
+      if (before(x, pv)) { idx[k] = idx[i]; idx[i] = x; i++; k++; less += area[x]; }
+      else { idx[k] = idx[j]; idx[j] = x; j--; }
+    }
+    // (now [lo, i) before the pivot, [i, j] the pivot alone, (j, hi) after it)
+    for (let k = i; k <= j; k++) if (idx[k] !== pv) { const t = idx[k]; idx[k] = idx[i]; idx[i] = t; }
+    if (acc + less >= target) { hi = i; continue; }
+    if (acc + less + area[pv] >= target) return pv;
+    acc += less + area[pv];
+    lo = j + 1;
+    if (lo >= hi) return pv;
+  }
+  // a few left: in order, then the first to reach it
+  const rest = Array.from(idx.subarray(lo, hi)).sort((a, b) => h[a] - h[b] || a - b);
+  for (let k = 0; k < rest.length; k++) { if (k === rest.length - 1 || acc + area[rest[k]] >= target) return rest[k]; acc += area[rest[k]]; }
+  return idx[idx.length - 1];
 }
 
 // depth (m) of ocean floor of an age (Myr): it sinks as it cools, levelling
