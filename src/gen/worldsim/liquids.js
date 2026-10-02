@@ -13,22 +13,12 @@
 // sulfur.)
 
 import * as dm from '../../core/dmath.js';
+import { MATERIALS } from './materials.js';
 
-// Tt, Pt: triple point (K, bar); Tc: critical temperature (K); Tb: boiling (or for CO2,
-// sublimation) point at 1 atm (K); L: heat of vaporisation (kJ/mol); rho: liquid
-// density (kg/m^3); deep, shallow: the colours of the liquid (sRGB)
-export const SUBSTANCES = {
-  water:    { Tt: 273.16, Pt: 0.006, Tc: 647, Tb: 373.15, L: 40.7, rho: 1000, deep: '#0b2a4a', shallow: '#1f7f8f' },
-  // (water with ~10% ammonia: liquid down to ~240 K; the eutectic, 33%, to 176 K)
-  'ammonia-water': { Tt: 240, Pt: 0.001, Tc: 600, Tb: 370, L: 40, rho: 950, deep: '#1a2c3a', shallow: '#4f7f86' },
-  CO2:      { Tt: 216.6, Pt: 5.18, Tc: 304.1, Tb: 194.7, L: 26.1, rho: 1100, deep: '#22303a', shallow: '#7d96a3' },
-  nitrogen: { Tt: 63.15, Pt: 0.125, Tc: 126.2, Tb: 77.4, L: 5.57, rho: 808, deep: '#2a3644', shallow: '#93a8ba' },
-  methane:  { Tt: 90.7, Pt: 0.117, Tc: 190.6, Tb: 111.7, L: 8.19, rho: 422, deep: '#1d1712', shallow: '#3a2e22' },
-  ethane:   { Tt: 90.4, Pt: 1.1e-5, Tc: 305.3, Tb: 184.6, L: 14.7, rho: 545, deep: '#1d1712', shallow: '#3a2e22' },
-  ammonia:  { Tt: 195.4, Pt: 0.061, Tc: 405.5, Tb: 239.8, L: 23.3, rho: 682, deep: '#1b2630', shallow: '#6f8790' },
-  SO2:      { Tt: 197.6, Pt: 0.0167, Tc: 430.7, Tb: 263.1, L: 24.9, rho: 1460, deep: '#3a3418', shallow: '#a89a52' },
-  sulfur:   { Tt: 388, Pt: 1e-5, Tc: 1314, Tb: 717.8, L: 45, rho: 1820, deep: '#3a1a08', shallow: '#c4661c' },
-};
+// (each liquid's properties are in materials.js: triple point Tt, Pt; critical
+// temperature Tc; boiling or sublimation point Tb at 1 atm; heat of vaporisation L;
+// density rho; colours)
+export const SUBSTANCES = Object.fromEntries(Object.entries(MATERIALS).filter(([, m]) => m.kind === 'liquid' && m.Tb));
 
 // vapour pressure (bar) of a substance at T K
 export function pSat(name, T) {

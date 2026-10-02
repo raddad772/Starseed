@@ -91,7 +91,7 @@ if (init === 'auto') {
   if (F.beaches && F.beaches.length) console.log('  beaches:  ' + F.beaches.map((f) => `${Math.round(f.lengthKm)} km of ${f.sand} @${ll(f)}`).join('; '));
   if (F.seaCliffs && F.seaCliffs.length) console.log('  sea cliffs: ' + F.seaCliffs.map((f) => `${Math.round(f.height)} m of ${f.rock} @${ll(f)}`).join('; '));
   if (F.mountainCoasts && F.mountainCoasts.length) console.log('  mountain coasts: ' + F.mountainCoasts.map((f) => `${Math.round(f.height)} m of ${f.rock} @${ll(f)}`).join('; '));
-  if (F.reefs && F.reefs.length) console.log('  reefs:    ' + F.reefs.map((f) => `${Math.round(f.areaKm2)} km2`).join('; ') + (F.atolls.length ? `; atolls: ${F.atolls.length}` : ''));
+  if (F.reefs && F.reefs.length) console.log('  reef systems: ' + F.reefs.map((f) => `${Math.round(f.lengthKm)} km long (${Math.round(f.areaKm2 / 1000)}k km2 of shallows)`).join('; ') + (F.atolls.length ? `; atolls: ${F.atolls.length}` : ''));
   if (F.iceFields && F.iceFields.length) console.log('  ice:      ' + F.iceFields.map((f) => `${f.kind} ${Math.round(f.areaKm2 / 1000)}k km2, ${Math.round(f.thickness)} m thick`).join('; '));
   if (F.fjords && F.fjords.length) console.log('  fjords:   ' + F.fjords.map((f) => `cut ${Math.round(f.depthCut)} m @${ll(f)}`).join('; '));
   if (F.volcanoes && F.volcanoes.length) console.log('  volcanoes: ' + F.volcanoes.map((f) => (f.heightM ? `${Math.round(f.heightM)} m shield` : 'hotspot') + ` @${ll(f)}`).join('; '));

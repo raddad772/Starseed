@@ -22,7 +22,7 @@ import { Rng } from '../../core/rng.js';
 import { TerrainGenerator, S_LEN, S_H, S_MOIST, S_TEMP } from '../terrain.js';
 import { SimGrid } from './grid.js';
 import { Erosion } from './erosion.js';
-import { Tectonics } from './tectonics.js';
+import { Tectonics, blur } from './tectonics.js';
 import { Impacts } from './impacts.js';
 import { barrenWorld } from './barren.js';
 import { stagnantWorld } from './stagnant.js';
@@ -30,6 +30,10 @@ import { Lithology, R as ROCK, marineRock } from './lithology.js';
 import { Glaciers } from './glaciers.js';
 import { Coasts } from './coasts.js';
 import { climate, biomeOfKoppen } from './climate.js';
+
+// river erosion (stream power) constants, deep time and the fine epoch: real K ~1e-6
+// m^0.1/yr for m = 0.45, x ~0.8 at the game's 1/10 scale (areas and lengths shrink)
+const KD = +(globalThis.process?.env?.WS_KD || 6e-7), KF = +(globalThis.process?.env?.WS_KF || 8e-7);
 
 // which process path the history calls for
 export function choosePath(body) {
@@ -98,7 +102,7 @@ export function worldSim(body, star, opts = {}) {
   const ht = new Float64Array(Gt.n), ut = new Float64Array(Gt.n);
   T.heights(ht, null);
   const sea = !!p.liquid && p.liquid !== 'lava' && p.ocean > 0;
-  const Et = new Erosion(Gt, ht, { sea, K: 3e-6, rain: rainT, m: 0.45, kd: 1 });
+  const Et = new Erosion(Gt, ht, { sea, K: KD, rain: rainT, m: 0.45, kd: 1 });
   for (let k = 0; k < myr / tdt; k++) {
     Et.rainK = H.at(myr - k * tdt, 'rain') || 0.05; // the climate then, vs now
     Et.bare = !plantsAt(H, myr - k * tdt);           // no land plants yet: nothing holds the soil
@@ -124,24 +128,34 @@ export function worldSim(body, star, opts = {}) {
     if (h[c] > 0) h[c] += (hashJitter(c) - 0.5) * 5;
   }
   const h0 = Float64Array.from(h);
+  const lakeShare = (Ex, hx) => { let lk = 0, land = 0; for (let c = 0; c < hx.length; c++) { if (Ex.base[c]) continue; land += Ex.G.area[c]; if (Ex.fill[c] - hx[c] > 20) lk += Ex.G.area[c]; } return (100 * lk / Math.max(land, 1)).toFixed(1); };
   // the rock: each place's layers, from what the plates carried there
   const lith = buildRock(G, Gt, T, rng.fork('rock'));
-  const E = new Erosion(G, h, { sea, K: 1e-5, rain, pet, m: 0.45, kd: 1 });
+  const E = new Erosion(G, h, { sea, K: KF, rain, pet, m: 0.45, kd: 1 });
   E.U.set(U);
+  E.findBase(); E.route();
+  log(`lakes on the plates' surface: ${lakeShare(E, h)}% of the land under standing water (if every basin filled)`);
   const Ef = new Impacts(G, { rng: rng.fork('impacts-fine'), g: body.gravity, pressure, rate, scale });
   const steps = opts.steps ?? 60, dt = opts.dt ?? 2.5e5;
   const hb = new Float64Array(G.n);
   const ice = new Glaciers(G, p.climate, scale);
-  const sea2 = new Coasts(G, { corals: H.life && H.life.animals != null && H.lifeStage >= 6, warm: 0.5 });
+  const pH = H.seaPH ?? 8.2;
+  const sea2 = new Coasts(G, { corals: H.life && H.life.animals != null && H.lifeStage >= 6, warm: 0.5, pH });
   const hMax = 9000 * Math.sqrt(9.81 / body.gravity);
   let iceMax = 0;
+  // (the fine grid's cells on the plates' grid, for the isostasy's regional averaging)
+  const fineToT = new Int32Array(G.n), fineReg = new Float64Array(Gt.n), coarseN = new Uint32Array(Gt.n), isoDh = new Float64Array(G.n);
+  for (let c = 0; c < G.n; c++) fineToT[c] = Gt.cellAt(G.dir[c * 3], G.dir[c * 3 + 1], G.dir[c * 3 + 2]);
+  let totalArea = 0, wetArea = 0;
+  for (let c = 0; c < G.n; c++) { totalArea += G.area[c]; if (h[c] < 0) wetArea += G.area[c]; }
+  const oceanShare = wetArea / totalArea;
   for (let k = 0; k < steps; k++) {
     Ef.step(dt / 1e6, 6 * G.spacing / 1000, (c, dh) => { h[c] += h[c] < 0 ? dh * 0.5 : dh; if (dh < 0) lith.erode(c, -dh); else lith.deposit(c, dh, ROCK.regolith); }, k * dt / 1e6);
     E.rainK = H.at((steps - k) * dt / 1e6, 'rain') || 0.05;
     E.petK = dm.exp(0.06 * ((H.at((steps - k) * dt / 1e6, 'T') ?? H.T) - H.T)); // (warmer then: more evaporation)
     E.bare = !plantsAt(H, (steps - k) * dt / 1e6);
     E.veg = E.bare ? null : vegFrom(rain, E.rainK, E.veg);
-    lith.kField(1e-5, E.K);               // each place wears as its exposed rock does
+    lith.kField(KF, E.K);                 // each place wears as its exposed rock does
     // (crust can't hold mountains past ~9 km on an Earth: uplift fades out near the limit)
     for (let c = 0; c < G.n; c++) E.U[c] = U[c] * Math.max(0, Math.min(1, (hMax - h[c]) / (0.15 * hMax)));
     hb.set(h);
@@ -151,6 +165,16 @@ export function worldSim(body, star, opts = {}) {
     iceMax = Math.max(iceMax, ice.step(h, E, rain, dt, (H.at(ago, 'T') ?? H.T) - H.T));
     // the sea's edge: waves, sand, reefs (warm seas reach further from the equator in a warm climate)
     sea2.step(h, lith, E, dt, 1 + ((H.at(ago, 'T') ?? H.T) - 288) / 40);
+    // isostasy: the regional part of this step's wear and fill (spread over a few hundred
+    // km on the plates' coarser grid) floats back ~85% (worn regions rise, loaded basins sink)
+    {
+      fineReg.fill(0); coarseN.fill(0);
+      for (let c = 0; c < G.n; c++) { const q = fineToT[c]; fineReg[q] += h[c] - (hb[c] + E.U[c] * dt); coarseN[q]++; }
+      for (let q = 0; q < Gt.n; q++) fineReg[q] = coarseN[q] ? fineReg[q] / coarseN[q] : 0;
+      blur(Gt, fineReg, 9);
+      for (let c = 0; c < G.n; c++) { d[0] = G.dir[c * 3]; d[1] = G.dir[c * 3 + 1]; d[2] = G.dir[c * 3 + 2]; isoDh[c] = -0.85 * Gt.sample(fineReg, d); }
+    }
+    if (opts.onFineStep) opts.onFineStep(k, E, h);
     // what was cut comes off the layers; what settled goes on as new rock (river sand and
     // gravel on land, mud in lakes, salt where closed lakes dried, the sea's own on its floor)
     for (let c = 0; c < G.n; c++) {
@@ -159,13 +183,28 @@ export function worldSim(body, star, opts = {}) {
       const salt = E.saltDz[c];
       if (salt > 0) { dz -= salt; }
       if (dz > 0.01) {
-        if (E.base[c]) lith.deposit(c, dz, marineRock(-h[c], Math.abs(G.dir[c * 3 + 1]) < 0.55, H.lifeEver, dz > 5));
+        if (E.base[c]) lith.deposit(c, dz, marineRock(-h[c], Math.abs(G.dir[c * 3 + 1]) < 0.55, H.lifeEver, dz > 5, pH));
         else lith.deposit(c, dz, E.lakeKind[c] ? ROCK.shale : ROCK.alluvium);
       }
       if (salt > 0) lith.deposit(c, salt, ROCK.salt);
     }
+    for (let c = 0; c < G.n; c++) h[c] += isoDh[c];
+    // sea level holds the world's ocean share (as the plates' epoch does): wear moves land
+    // into the sea, and low coasts would otherwise slip under it
+    {
+      let lo = -500, hi = 500;
+      for (let it = 0; it < 24; it++) {
+        const mid = (lo + hi) / 2;
+        let w = 0;
+        for (let c = 0; c < G.n; c++) if (h[c] < mid) w += G.area[c];
+        if (w / totalArea < oceanShare) lo = mid; else hi = mid;
+      }
+      const sl = (lo + hi) / 2;
+      if (Math.abs(sl) > 0.01) for (let c = 0; c < G.n; c++) h[c] -= sl;
+    }
   }
   E.findBase(); E.route(); E.lakes(); E.drain();
+  log(`lakes after the fine epoch: ${lakeShare(E, h)}% of the land below the basins' brims`);
   {
     const LL = E.lakeList, closed = LL.filter((l) => l.closed), k2 = 1 / (scale * scale) / 1e6;
     log(`lakes: ${LL.length}, ${closed.length} closed (${closed.filter((l) => l.kind === 2).length} salt lakes, ${closed.filter((l) => l.kind === 3).length} salt flats)`);

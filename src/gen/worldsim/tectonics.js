@@ -641,16 +641,23 @@ export class Tectonics {
     }
     E.step(dt * 1e6);
     this._dbg('pre');
-    // back into the crust: the mean change of each frame cell
-    const self = this;
+    // back into the crust. Isostasy: the regional part of the change (spread over ~3
+    // cells, a few hundred km: the crust's flexure) is rock taken off or laid on, and
+    // the crust floats back up or sinks under it (so a km of rock worn off a region
+    // lowers it ~150 m: continents last); the local rest (valleys, fans) stays as relief
+    const reg = this._reg || (this._reg = new Float64Array(n));
+    for (let c = 0; c < n; c++) reg[c] = E.h[c] - h0[c];
+    blur(G, reg, 9);
     const sum = this._sum || (this._sum = new Float64Array(n)), cnt = this._cnt || (this._cnt = new Uint16Array(n));
+    const sumR = this._sumR || (this._sumR = new Float64Array(n));
     const sumH = this._sumH || (this._sumH = new Float64Array(n)), sumY = this._sumY || (this._sumY = new Float64Array(n));
     for (const P of plates) {
-      sum.fill(0); cnt.fill(0); sumH.fill(0); sumY.fill(0);
-      for (let c = 0; c < n; c++) if (owner[c] === P.id) { const q = src[c]; sum[q] += E.h[c] - h0[c]; cnt[q]++; sumH[q] += h0[c]; sumY[q] += Math.abs(G.dir[c * 3 + 1]); }
+      sum.fill(0); cnt.fill(0); sumR.fill(0); sumH.fill(0); sumY.fill(0);
+      for (let c = 0; c < n; c++) if (owner[c] === P.id) { const q = src[c]; sum[q] += E.h[c] - h0[c]; sumR[q] += reg[c]; cnt[q]++; sumH[q] += h0[c]; sumY[q] += Math.abs(G.dir[c * 3 + 1]); }
       for (let s = 0; s < n; s++) {
         if (!cnt[s] || !P.own[s]) continue;
         let dh = sum[s] / cnt[s];
+        const dReg = sumR[s] / cnt[s];
         // the sediment record: laid down where it builds (limestone and chalk on warm,
         // shallow, living shelves), stripped first where it wears
         if (dh > 0) {
@@ -661,10 +668,10 @@ export class Tectonics {
           const r = Math.min(P.sed[s], -dh);
           P.carb[s] -= r * (P.carb[s] / P.sed[s]); P.sed[s] -= r;
         }
-        // volcanoes wear down first; craters fill first
-        if (dh < 0 && P.relief[s] > 0) { const a = Math.min(P.relief[s], -dh); P.relief[s] -= a; dh += a; }
-        else if (dh > 0 && P.relief[s] < 0) { const a = Math.min(-P.relief[s], dh); P.relief[s] += a; dh -= a; }
-        P.thick[s] = Math.max(OCEAN_KM * 0.5, P.thick[s] + dh / M_PER_KM);
+        // the local part shapes the relief (volcanoes wear down, craters fill, valleys cut);
+        // the regional part is rock on or off the crust (km), which floats to suit
+        P.relief[s] += dh - dReg;
+        P.thick[s] = Math.max(OCEAN_KM * 0.5, P.thick[s] + dReg / 1000);
         if (P.cont[s] < 1 && P.thick[s] > 12) { const was = P.cont[s]; P.cont[s] = Math.max(P.cont[s], Math.min(1, (P.thick[s] - 12) / 15)); if (was <= 0.5 && P.cont[s] > 0.5) this.stats.sedGain++; }
       }
     }
@@ -771,6 +778,21 @@ function smoothRaw(G, f, iters) {
 }
 
 function norm3(v) { const l = Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]) || 1; v[0] /= l; v[1] /= l; v[2] /= l; return v; }
+
+// neighbour averaging, iters times (spreads a field over ~sqrt(iters) cells; keeps its
+// level, unlike smoothField)
+export function blur(G, f, iters) {
+  const t = new Float64Array(G.n);
+  for (let it = 0; it < iters; it++) {
+    for (let c = 0; c < G.n; c++) {
+      let s = f[c] * 2, w = 2;
+      for (let e = G.nStart[c]; e < G.nStart[c + 1]; e++) { s += f[G.nbr[e]]; w++; }
+      t[c] = s / w;
+    }
+    f.set(t);
+  }
+  return f;
+}
 
 export function smoothField(G, f, iters) {
   const t = new Float64Array(G.n);

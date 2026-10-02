@@ -11,23 +11,11 @@
 // colour the land shows. The stacks are what the local detail will carve into
 // mesas, buttes and chalk cliffs (too small for this grid: a cell is tens of km).
 
-export const ROCKS = [
-  // name, erodibility (x K), colour (sRGB), how steep it stands (deg, for later cliffs)
-  { name: 'granite',   k: 0.45, color: '#8f8580', stand: 70 },  // continental basement (granite, gneiss)
-  { name: 'basalt',    k: 0.6,  color: '#3e3c3a', stand: 75 },  // sea floor, lava flows, flood basalts
-  { name: 'andesite',  k: 0.65, color: '#6b6560', stand: 70 },  // arc volcanoes
-  { name: 'sandstone', k: 1.0,  color: '#b9875a', stand: 60 },  // rivers, deserts, beaches turned to rock
-  { name: 'shale',     k: 2.0,  color: '#5f6457', stand: 30 },  // mud: lakes, deltas, deep sea
-  { name: 'limestone', k: 0.8,  color: '#bdb7a6', stand: 65 },  // shells on warm shelves
-  { name: 'chalk',     k: 1.4,  color: '#e9e6dc', stand: 55 },  // the finest shells, in warm clear seas
-  { name: 'alluvium',  k: 3.0,  color: '#7c6a52', stand: 25 },  // loose river sand and gravel
-  { name: 'salt',      k: 4.0,  color: '#e8dfd8', stand: 35 },  // evaporites in drying basins
-  { name: 'regolith',  k: 2.2,  color: '#77746e', stand: 30 },  // impact rubble
-  { name: 'ice',       k: 1.2,  color: '#e4eef5', stand: 40 },  // icy worlds' crust
-  { name: 'quartz sand', k: 3.0, color: '#d9c08a', stand: 20 },  // beaches off granite and sandstone
-  { name: 'coral sand',  k: 3.0, color: '#f2ece0', stand: 20 },  // white beaches by the reefs
-  { name: 'black sand',  k: 3.0, color: '#2b2a2a', stand: 20 },  // volcanic islands' beaches
-];
+import { MATERIALS, carbonateOK } from './materials.js';
+
+// (the properties live in materials.js; this order is the index stored in the layers)
+const ROCK_NAMES = ['granite', 'basalt', 'andesite', 'sandstone', 'shale', 'limestone', 'chalk', 'alluvium', 'salt', 'regolith', 'ice', 'quartz sand', 'coral sand', 'black sand'];
+export const ROCKS = ROCK_NAMES.map((name) => ({ name, k: MATERIALS[name].k, color: MATERIALS[name].color, stand: MATERIALS[name].stand }));
 export const R = Object.fromEntries(ROCKS.map((r, i) => [r.name, i]));
 const KMULT = Float32Array.from(ROCKS.map((r) => r.k));
 
@@ -84,9 +72,9 @@ export class Lithology {
 }
 
 // the rock a sea floor lays down where sediment settles: carbonate on warm,
-// shallow, living shelves (chalk where it's clear, far from river mud),
-// otherwise mud
-export function marineRock(depth, warm, life, muddy) {
-  if (life && warm && depth < 200) return muddy ? R.limestone : R.chalk;
+// shallow, living shelves (chalk where it's clear, far from river mud) if the sea
+// isn't too acid for shells (pH: materials.js seaPH), otherwise mud
+export function marineRock(depth, warm, life, muddy, pH = 8.2) {
+  if (life && warm && depth < 200 && carbonateOK(pH) > 0.5) return muddy ? R.limestone : R.chalk;
   return R.shale;
 }

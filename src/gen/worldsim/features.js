@@ -23,7 +23,8 @@
 //   plateaus   high, flat country (high ground that's gentle across)
 //   beaches    the longest stretches of sandy shore, by sand (white coral, black, golden)
 //   sea cliffs the tallest, by rock (chalk cliffs: Dover's)
-//   reefs      coral reefs, and atolls (a reef ring round a sunken island, lagoon inside)
+//   reefs      coral reef systems (the reef-bearing shallows, by length), and atolls (a reef
+//              ring round a sunken island, lagoon inside)
 //   glaciers   ice fields and the longest glaciers (from glaciers.js)
 //   fjords     glacier-cut troughs the sea has flooded
 //   craters, volcanoes: passed in from the processes that made them
@@ -326,7 +327,8 @@ export function findFeatures(G, h, opts = {}) {
       const cells = [], q = [c0]; seenR[c0] = 1;
       while (q.length) { const c = q.pop(); cells.push(c); for (let e = G.nStart[c]; e < G.nStart[c + 1]; e++) { const o = G.nbr[e]; if (!seenR[o] && Co.reef[o] >= 5) { seenR[o] = 1; q.push(o); } } }
       let area = 0; for (const c of cells) area += G.area[c];
-      out.reefs.push({ areaKm2: area * toReal * toReal / 1e6, ...where(cells[0]) });
+      // (a reef system: the reef-bearing shallows; the reefs themselves fill a part of them)
+      out.reefs.push({ areaKm2: area * toReal * toReal / 1e6, lengthKm: spanOf(G, cells) * toReal / 1000, ...where(cells[0]) });
     }
     out.reefs.sort((a, b) => b.areaKm2 - a.areaKm2);
     // atolls: a little ring of reef round sea, with no land inside

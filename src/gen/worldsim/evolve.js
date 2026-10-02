@@ -42,6 +42,7 @@ import * as dm from '../../core/dmath.js';
 import { hzSeff } from '../star.js';
 import { equilibriumTemp } from '../bodies.js';
 import { surfaceLiquids, mainLiquid, pSat } from './liquids.js';
+import { seaPH } from './materials.js';
 
 const LEVELS = ['none', 'microbial mats', 'vascular flora', 'complex biosphere'];
 // life's stages, and the key each one's time goes under in `life`
@@ -560,6 +561,7 @@ export function evolveWorld(ctx) {
     lifeStage: stage, lifeStageName: STAGES[stage], diversity: stage > 0 ? div : 0, usableLight: parK,
     air, airType: airTypeOf(air, P, { titanish, runaway, oceans, T }), redox, CO, field: fieldAt(age, dynamo, regime === 'stagnant' ? 0.6 : 1),
     liquids, mainLiquid: main ? main.name : null, mainLiquidDepth: main ? main.depthM : 0,
+    seaPH: oceans > 0.001 ? seaPH(pCO2, pSO2) : null,
     extinctions, bigImpacts, floodBasalts: lips, eruption, recovering,
     plantsMyr, floraStage, floraName: ['bare', 'microbial crusts', 'ground cover', 'shrubs and ferns', 'forests', 'diverse forests and grasslands'][floraStage + 1], maxTreeM,
     series, events, carbon,

@@ -59,7 +59,9 @@ export class Heap {
 
 const EPS = 1e-4; // the gradient laid across filled lakes and flats (m per cell)
 const SEA_MIN = 0.002; // the smallest sea (share of the surface; smaller hollows are basins)
+const SILL = 10;       // m: water below sea level joined to a sea over a sill lower than this is sea
 const SALT = 1.5e-4;   // salt left per m^3 of river water evaporated away (m^3)
+const SPILL_K = 5;     // how much harder an overflowing lake's spillway cuts
 
 export class Erosion {
   // G: SimGrid; h: heights (m, sea level 0), edited in place
@@ -114,16 +116,18 @@ export class Erosion {
       seen.fill(0);
       let total = 0;
       for (let c = 0; c < n; c++) total += G.area[c];
+      // (joined over sills a few metres high counts as joined: a strait's outflow cuts its
+      // sill down to the sea, and the Black Sea is a sea)
       for (let c0 = 0; c0 < n; c0++) {
         if (seen[c0] || h[c0] >= 0) continue;
         let qn = 0, area = 0;
         q[qn++] = c0; seen[c0] = 1;
         for (let i = 0; i < qn; i++) {
           const c = q[i];
-          area += G.area[c];
-          for (let e = G.nStart[c]; e < G.nStart[c + 1]; e++) { const o = G.nbr[e]; if (!seen[o] && h[o] < 0) { seen[o] = 1; q[qn++] = o; } }
+          if (h[c] < 0) area += G.area[c];
+          for (let e = G.nStart[c]; e < G.nStart[c + 1]; e++) { const o = G.nbr[e]; if (!seen[o] && h[o] < SILL) { seen[o] = 1; q[qn++] = o; } }
         }
-        if (area >= SEA_MIN * total) for (let i = 0; i < qn; i++) base[q[i]] = 1;
+        if (area >= SEA_MIN * total) for (let i = 0; i < qn; i++) if (h[q[i]] < 0) base[q[i]] = 1;
       }
       return;
     }
@@ -273,8 +277,21 @@ export class Erosion {
     this.drain();
     const veg = this.veg, chanA = (this.chanCells ?? 30) * G.spacing * G.spacing;
     this.nStep++;
+    // an overflowing lake's spillway (its outlet and a few cells on down) cuts harder:
+    // the floods that tear through a lake's rim (Bonneville's outlet fell ~100 m in weeks)
+    const spill = this._spill || (this._spill = new Uint8Array(n));
+    spill.fill(0);
+    for (const l of this.lakeList) {
+      if (l.closed || l.spill < 0) continue;
+      let c = l.spill;
+      for (let k = 0; k < 6 && c >= 0 && !base[c]; k++) { spill[c] = 1; c = rcv[c]; }
+    }
     // incise, downstream first: h' = (h + dt U + f h'_r) / (1 + f)
     qs.fill(0);
+    // (which cells were under a lake before this step's cutting: only they keep sediment;
+    // a cell the river just cut is lower than the old water surface but isn't a lake)
+    const wasLake = this._wasLake || (this._wasLake = new Uint8Array(n));
+    for (let c = 0; c < n; c++) wasLake[c] = !base[c] && fill[c] - h[c] > 0.5 ? 1 : 0;
     for (let k = 0; k < n; k++) {
       const c = order[k];
       if (base[c]) continue;
@@ -282,12 +299,12 @@ export class Erosion {
       const hr = base[r] && this.sea ? 0 : h[r]; // a river's base level is the sea surface
       const h0 = h[c], hu = h0 + dt * U[c];
       let hn;
-      if (fill[c] - h0 > 0.5 || hu <= hr) hn = hu; // a lake bed, or below its outlet: nothing cut
+      if (wasLake[c] || hu <= hr) hn = hu; // a lake bed, or below its outlet: nothing cut
       else {
         // (life: with no land plants nothing holds the soil, so all of it wears faster;
         // with them, plant cover shields the slopes (the channels still cut))
         const life = this.bare ? 1.5 : (veg && A[c] < chanA ? 1 - 0.6 * veg[c] : 1);
-        const f = K[c] * life * dt * dm.pow(A[c], m) / rcvD[c];
+        const f = K[c] * life * (spill[c] ? SPILL_K : 1) * dt * dm.pow(A[c], m) / rcvD[c];
         hn = (hu + f * hr) / (1 + f);
       }
       h[c] = hn;
@@ -299,7 +316,7 @@ export class Erosion {
     for (let k = n - 1; k >= 0; k--) {
       const c = order[k];
       if (base[c]) continue;
-      const room = fill[c] - h[c];
+      const room = wasLake[c] ? fill[c] - h[c] : 0;
       if (room > 0.5 && qs[c] > 0) {
         const d = Math.min(qs[c], room * area[c]);
         h[c] += d / area[c]; qs[c] -= d;
