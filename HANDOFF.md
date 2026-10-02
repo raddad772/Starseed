@@ -121,9 +121,8 @@ Open:
   lava flows wanted.
 - **Secondary craters, ejecta muting older relief:** not yet.
 - **Near-field loading:** the volume rings make the descent slow with few workers.
-- **Near-field seam:** a dotted dark line where the volume's outer ring meets the heightfield
-  (both clipped at the same radius, terrainMaterial.js uNear; their heights differ a little on
-  steep ground: a crack). Wants an overlap or a skirt.
+- **Near-field seam:** fixed: the heightfield reaches 3% in under the volume's last ring, 0.4 m
+  low (terrainMaterial.js NEAR_OVERLAP), so the dotted crack where they met is covered.
 - **Hidden-tab GPU:** in a hidden page the GPU tile sim crawls (~0.9 s a step; Chromium throttles
   it), so test-tab refinements take minutes: load the test tab with `&tilegpu=0` (the tile sims
   on the CPU's integer reference, the same results). Screenshots of a hidden pane: post the

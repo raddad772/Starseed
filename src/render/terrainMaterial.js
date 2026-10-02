@@ -7,6 +7,7 @@ import { GLSL_NOISE } from './glsl.js';
 export const DETAIL_PERIOD = 4096; // metres; every detail tile period divides this
 
 const VERT = /* glsl */`
+#define NEAR_OVERLAP 0.97
 attribute vec3 morph;
 attribute vec4 nrm;
 attribute vec4 mnrm;
@@ -19,6 +20,9 @@ uniform vec3 uCamLocal;
 uniform vec2 uMorph;
 uniform vec3 uOriginMod;
 uniform vec3 uNearOff;     // this mesh's origin less the near field's centre (body-fixed)
+uniform vec2 uNear;
+uniform vec3 uNearUp;
+uniform float uNearMode;
 varying vec3 vNearRel;
 varying float vOcc;
 varying vec3 vWorldPos;
@@ -40,6 +44,13 @@ void main() {
   vMat = mat;
   vExt = ext;
   vMorphK = m;
+  // (a heightfield mesh reaches a little way in under the near field's last ring, a little
+  // low: wherever the two surfaces' heights differ at the ring's edge, one covers the joint)
+  if (uNear.x > 0.5 && uNearMode < 0.5) {
+    vec3 rel = uNearOff + p;
+    float dn = length(rel - uNearUp * dot(rel, uNearUp));
+    p -= uNearUp * (0.4 * (1.0 - smoothstep(NEAR_OVERLAP * uNear.y, uNear.y, dn)));
+  }
   vec4 wp = modelMatrix * vec4(p, 1.0);
   vWorldPos = wp.xyz;
   vNormal = normalize(mat3(modelMatrix) * n);
@@ -53,6 +64,7 @@ void main() {
 `;
 
 const FRAG = /* glsl */`
+#define NEAR_OVERLAP 0.97
 uniform vec3 uSunDir;
 uniform vec3 uSunE;
 uniform vec3 uCenter;
@@ -121,7 +133,7 @@ void main() {
   float waterEnc = vCol.a;
   if (uNear.x > 0.5) {
     float dn = length(vNearRel - uNearUp * dot(vNearRel, uNearUp));
-    if (uNearMode < 0.5) { if (dn < uNear.y && waterEnc < 0.004) discard; }
+    if (uNearMode < 0.5) { if (dn < NEAR_OVERLAP * uNear.y && waterEnc < 0.004) discard; }
     else if (dn < uNearBand.x || dn > uNearBand.y) discard;
   }
   float veg = vMat.r, snow = vMat.g, rock = vMat.b, sand = vMat.a;
