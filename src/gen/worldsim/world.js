@@ -28,6 +28,7 @@ import { stagnantWorld } from './stagnant.js';
 import { Lithology, R as ROCK, marineRock } from './lithology.js';
 import { Glaciers } from './glaciers.js';
 import { Coasts } from './coasts.js';
+import { climate, biomeOfKoppen } from './climate.js';
 
 // which process path the history calls for
 export function choosePath(body) {
@@ -105,13 +106,19 @@ export function worldSim(body, star, opts = {}) {
     if (opts.onPlateStep) opts.onPlateStep(T, ht, k * tdt);
   }
   T.heights(ht, ut);
+  // the climate on the plates' surface: the fine epoch's rain and snow come from it
+  const Gc = new SimGrid(opts.Nc ?? 40, body.R);
+  const climOpts = climateOpts(body, star);
+  let clim = climateOn(Gc, Gt, ht, climOpts);
+  log(`climate: ${summarizeKoppen(clim)}`);
   log(`plates: ${myr} Myr, ${T.plates.filter((q) => !q.dead).length} plates, ${T.hot.length} hotspots (${T.activity.name}), ${(T.events || []).length} rifts/welds, ${T.impacts.events.length} impacts`);
   // the finer epoch: the plates' surface and uplift, rivers cutting it finer
   const h = new Float64Array(G.n), U = new Float64Array(G.n), rain = new Float64Array(G.n);
   const d = [0, 0, 0];
   for (let c = 0; c < G.n; c++) {
     d[0] = G.dir[c * 3]; d[1] = G.dir[c * 3 + 1]; d[2] = G.dir[c * 3 + 2];
-    h[c] = Gt.sample(ht, d); U[c] = Gt.sample(ut, d); rain[c] = Gt.sample(rainT, d);
+    h[c] = Gt.sample(ht, d); U[c] = Gt.sample(ut, d);
+    rain[c] = Math.max(0.03, Gc.sample(clim.Pann, d) / 1000); // (rain in m/yr, from the climate)
     if (h[c] > 0) h[c] += (hashJitter(c) - 0.5) * 5;
   }
   const h0 = Float64Array.from(h);
@@ -156,6 +163,10 @@ export function worldSim(body, star, opts = {}) {
   log(`ice: up to ${iceMax} cells covered; ${ice.everIce.reduce((a, b) => a + b, 0)} cells ever glaciated`);
   // how rivers run now: meandering where plants hold the banks, braided on bare ground
   out.riverStyle = plantsAt(H, 0) ? 'meandering' : 'braided';
+  // the climate now, on the finished surface: biomes for the game
+  clim = climateOn(Gc, G, h, climOpts);
+  log(`climate now: ${summarizeKoppen(clim)}`);
+  out.climate = clim; out.Gc = Gc;
   // the beaches' sand shows as the surface rock there
   const rock = lith.exposed();
   for (let c = 0; c < G.n; c++) if (sea2.beach[c] > 2 && h[c] >= 0) rock[c] = sea2.sand[c];
@@ -200,6 +211,29 @@ function buildRock(G, Gt, T, rng) {
 }
 
 function hash(a, b) { let x = Math.imul(a ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul(b, 0xc2b2ae35); x ^= x >>> 13; x = Math.imul(x, 0x27d4eb2f); x ^= x >>> 16; return (x >>> 0) / 4294967296; }
+
+// the climate's inputs from the body and its star
+function climateOpts(body, star) {
+  const cl = body.terrain.climate, r = body.rotation;
+  return {
+    S: body.insolation, obliquity: r.obliquity, ecc: body.orbitE || 0, perihelion: (body.orbit ? body.orbit.w : 0) - (r.tiltAzimuth || 0),
+    locked: !!cl.locked, substellar: cl.substellar, rotH: r.locked ? 1e4 : Math.abs(r.periodRealH || 24), retro: !!r.retrograde, hadley: cl.hadley,
+    pressure: body.atmosphere ? body.atmosphere.pressure : 0, Tmean: body.Tsurf, albedo: body.albedo, lapse: cl.lapse,
+    yearDays: 365.25 * Math.sqrt(body.aAU * body.aAU * body.aAU / star.mass),
+  };
+}
+// run it on heights from another grid
+function climateOn(Gc, Gsrc, hsrc, o) {
+  const hc = new Float64Array(Gc.n), d = [0, 0, 0], uv = { face: 0, u: 0, v: 0 };
+  for (let c = 0; c < Gc.n; c++) { d[0] = Gc.dir[c * 3]; d[1] = Gc.dir[c * 3 + 1]; d[2] = Gc.dir[c * 3 + 2]; hc[c] = Gsrc.sample(hsrc, d, uv); }
+  return climate(Gc, { ...o, h: hc });
+}
+function summarizeKoppen(clim) {
+  const t = {};
+  let land = 0;
+  for (const k of clim.koppen) { if (k === 'sea') continue; land++; const b = biomeOfKoppen(k); t[b] = (t[b] || 0) + 1; }
+  return Object.entries(t).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${(v / land * 100).toFixed(0)}%`).join(', ');
+}
 
 // were there land plants this many Myr ago (the history's life)?
 function plantsAt(H, agoMyr) {

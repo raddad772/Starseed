@@ -435,10 +435,11 @@ The order agreed: work down this list; keep the statuses current.
 | 8 | **Glaciers:** ice flow and erosion off peaks and in cold epochs; ice-age sea-level swings | done v1: glaciers and ice sheets, U-valleys, fjords (see below); ice-age cycles and sea-level swings still to do |
 | 9 | **Coasts:** wave erosion (cliffs, platforms, stacks), reefs (fringing, barrier, atolls), **beaches (Dave: "amazing beaches")** and spits. Sand takes its source's colour: white coral, black basalt (volcanic islands), golden quartz (granite and sandstone), pink (coral and shells). Feature finder: longest beaches, white and black sand beaches | done v1 (`worldsim/coasts.js`): wave exposure (open sea within 6 cells), coastal wear by rock softness, sea cliffs (energy > 0.4, h > 60), beaches from river sediment plus wear on gentle shores with sand by source (coral / black / quartz: rock types 11-13), coral reefs up to the surface (complex life, warm, clear, < 60 m), atolls. Features: beaches (longest, plus the best of each sand), sea cliffs (<= 1 km, by rock: chalk = Dover), mountain coasts, reefs, atolls. Checked on Quokarn: 1400 km golden beaches, a 150 km coral-sand beach, a 50 km black-sand beach, 18k km2 reefs, 5 atolls. Still to do: longshore drift (spits, barrier islands), wave-cut platforms and stacks at local detail, pink sand, beach colour in the render |
 | 10 | **Life's effect on erosion:** plant cover holds soil (less hillslope wash), meandering vs braided rivers; atmosphere changes (O2 and others) through rain and temperature | done v1: before land plants, erosion x1.5 everywhere (bare ground); after, cover = rain-based, slopes (A < 30 cells) wear x(1 - 0.6 cover); `riverStyle` meandering or braided by whether plants exist now; follows the history's plant arrival and extinction through both epochs (checked on Quokarn, plants 30 Myr ago, and Vaidriar). Still to do: soil depth (item 12); river channel style in the render |
-| 11 | **Climate model:** seasons from tilt, wind belts, rain shadows, Köppen biomes; rain for every path | todo (step 3 below) |
+| 11 | **Climate model:** seasons from tilt, wind belts, rain shadows, Köppen biomes; rain for every path. **Deserts (Dave asked):** subtropical sinking air, rain shadows, continental interiors, cold-current coasts, polar cold; then salt flats, dune seas, flash-flood erosion and mesas | done v1 on the plates path (`worldsim/climate.js`, see the notes below); deserts in the climate done; desert landforms in progress |
 | 12 | Soil depth: meadows vs forests | todo, later |
 | 12b | **Plant maturity (Dave):** the time since land plants arrived sets the flora: <~50 Myr ground cover (mosses), ~50-90 Myr shrubs and ferns, ~90+ Myr forests (Earth's first trees ~85 Myr after land plants), ~300+ Myr diverse forests and grasslands; tree height scales with gravity (taller on weak gravity) | done v1: evolve.js gives `plantsMyr`, `floraStage` (-1 bare, 0 microbial crusts, 1 ground cover, 2 shrubs and ferns, 3 forests, 4 diverse forests and grasslands), `floraName`, `maxTreeM` (forests 30 -> 90 m, then 110 m, x sqrt(9.81/g), cap 250). bodies.js passes `floraStage` and `maxTree` into the terrain params; flora.js has no trees below stage 3, no shrubs below 2, crusts only (plants x0.08) below 1, trees capped at 0.6 maxTree (x1.6 base at stage 4). In the game now. Still to do: species variety growing with stage (more forms), grasses at stage 4, the catalog line |
 | 13 | Regime changes within one run; Venus resurfacing; icy shells; Titan methane rain | todo |
+| 14 | **Slab-pull steering (Dave asked about plate rotation):** today each plate keeps a random Euler pole (plates mostly slide, a few spin); slab pull only scales speed. Steer each plate's pole so it moves toward its own trenches (plates follow their sinking slabs; trench-ringed plates are fastest) | todo |
 
 Notes:
 - **Item 7 v1 (`worldsim/lithology.js`):**
@@ -489,6 +490,40 @@ Notes:
     33 km peaks; U is now x(1 - fade) and capped at 10 mm/yr, giving a 9.6 km top peak and 4-5 km
     canyons on Ishiodreill;
   - oversize impacts were clamped to the cap (piles of identical basins); they are now redrawn.
+- **Item 11 v1 (`worldsim/climate.js`, 2026-10-01):**
+  - **Energy balance:** monthly insolation from tilt, eccentricity and perihelion; per-cell heat
+    capacity (ocean 50 m, land by air pressure; both deeper as sqrt(year length)); band-coupled
+    (36 bands in sin(lat), harmonic-mean capacity) with implicit poleward diffusion
+    D = 0.2 sqrt(P) x spin factor ((rotH/24)^0.3 in [0.5, 3]; locked x6, bands are rings round the
+    substellar point); outgoing heat A (T/Tmean)^ex, ex = 4 - 1.5 (wet air) so the slope is ~2 W/m2/K
+    near the mean and a hot day side can't run away; A bisected so the mean matches the history's
+    T; ice albedo below 271 K; a cloud deck on locked water worlds' day sides.
+  - **Gyres:** sea cells within ~20 deg of a coast to the east in the subtropics get a cold current
+    (-45 W/m2), within ~20 deg of a coast to the west in 15-60 deg a warm one (+35); wide basins only;
+    mirrored on backward spinners.
+  - **Rain:** wind belts by Hadley count (mirrored on backward spinners); evaporation 0.08 qs(T) per
+    cell off the sea; land gives back at most 60% of what fell on it; carried downwind (80 sweeps,
+    precomputed link geometry); rain-out (0.015 + 0.1 rise) x stability x (sea 0.5) + 0.3 upslope,
+    rise 1 in the rain belt, 0.04 in the sinking subtropics; stability from the ground vs its band's
+    air at sea level (summer monsoons, dry winter continents); land within two cells of a cold
+    current x0.2-ish (fog deserts); what the air can't hold (its band's air temperature less lapse)
+    comes out; scaled to ~1000 mm/yr x e^(0.025 dT) x sqrt(ocean/0.7).
+  - **Köppen** classes and broad biomes; the lab draws `<body>-auto-plates-climate.png`.
+  - **Checked** (old-generator heights, 8 temperate worlds): land rain 450-850 mm/yr vs sea
+    860-1700; deserts 6-43% of land (Saeverkion, 44 deg tilt: temperate and mediterranean; Seamibest,
+    78% land: 41% desert); locked Thugroadath 60 C under its sun, -14 C opposite; Heludriom (0.06
+    bar) 163 C / -80 C; ~0.6-1.2 s at N 40. Quokarn's plates world: cold interior deserts, a hot core,
+    wet west coasts.
+  - **Known:** Seamibest (78% land, 994-day year, 38 deg tilt) swings ~100 K at 45N on land; plausible
+    for a land world with long seasons. The rain distribution is still steep near coasts.
+  - **To do:**
+    - desert landforms: closed lakes by water balance (salt flats when dry), dune seas, flash-flood
+      erosion (Langbein-Schumm: semi-arid wears fastest), mesa country flagged for the local detail;
+    - glaciers from the climate's temperatures and snow (they still use the generator's latitude law);
+    - reefs from sea temperatures (they still use a latitude band);
+    - features: largest desert, dune sea, salt flat, forest; the climate on the stagnant and barren
+      paths (Mars' wet era, Titan's methane);
+    - biomes into the game's flora and colours (with the snapshot, step 7).
 - **Big closed-basin lakes** (up to ~2M km2 real) stay full because erosion fills every basin to
   its spill point. Real ones overflow and cut their outlets (wet) or dry to salt flats (arid): this
   needs the climate (item 11), a lake water balance of rain against evaporation.
@@ -712,6 +747,11 @@ cover, sea ice.
   - Determinism tests: JS vs WASM bit-identical on fixed inputs.
 - **Performance target:** a whole system within a few minutes on first visit (Dave allows ~10), then
   instant from the cache.
+- **Pre-generated library (Dave, 2026-10-01):** "even if we just pre generate 1000 really good
+  systems for people to explore that's great. And if they want to go deeper it takes time." So: a
+  shipped set of curated, fully simulated systems (cached snapshots, picked with the seed summaries
+  for variety), and any other seed generated on demand. Keep the generator deterministic so the
+  library can be rebuilt from seeds and a version.
 
 ### 8. Validation (keep doing this)
 

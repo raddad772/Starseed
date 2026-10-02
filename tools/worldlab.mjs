@@ -94,6 +94,7 @@ if (init === 'auto') {
   if (F.volcanoes && F.volcanoes.length) console.log('  volcanoes: ' + F.volcanoes.map((f) => (f.heightM ? `${Math.round(f.heightM)} m shield` : 'hotspot') + ` @${ll(f)}`).join('; '));
   markFeatures(rgb, W_, F);
   writePNG(`${out}/${name}-map.png`, W_, W_ / 2, rgb);
+  if (Wd.climate) writePNG(`${out}/${name}-climate.png`, W_, W_ / 2, renderKoppen(Wd.Gc, Wd.h, Wd.G, Wd.climate, W_));
   if (Wd.rock) {
     writePNG(`${out}/${name}-rock.png`, W_, W_ / 2, renderRock(Wd.G, Wd.h, Wd.rock, W_));
     const counts = {}; for (const r of Wd.rock) { if (true) counts[ROCKS[r].name] = (counts[ROCKS[r].name] || 0) + 1; }
@@ -338,6 +339,22 @@ function renderBarren(G, Wd, w, tint = [1, 0.98, 0.95]) {
     g = g * (1 - 0.45 * M[i]) + 90 * F[i];
     if (rmax > 0 && RV[i] > rmax * 0.003) g *= 0.6 + 0.4 * (1 - Math.min(1, Math.log(RV[i] / (rmax * 0.003)) / 4)); // old valleys
     rgb[i * 3] = Math.min(255, g * shade * tint[0]); rgb[i * 3 + 1] = Math.min(255, g * shade * tint[1]); rgb[i * 3 + 2] = Math.min(255, g * shade * tint[2]);
+  }
+  return rgb;
+}
+// Köppen climates in their standard colours (Peel et al. 2007), shaded by the relief
+function renderKoppen(Gc, h, G, clim, w) {
+  const KOPPEN_COLORS = { Af: '#0000ff', Am: '#0078ff', Aw: '#46aafa', BWh: '#ff0000', BWk: '#ff9696', BSh: '#f5a500', BSk: '#ffdc64', Csa: '#ffff00', Csb: '#c8c800', Csc: '#969600', Cwa: '#96ff96', Cwb: '#64c864', Cwc: '#329632', Cfa: '#c8ff50', Cfb: '#64ff50', Cfc: '#32c800', Dsa: '#ff00ff', Dsb: '#c800c8', Dsc: '#963296', Dsd: '#966496', Dwa: '#aaafff', Dwb: '#5a78dc', Dwc: '#4b50b4', Dwd: '#320087', Dfa: '#00ffff', Dfb: '#37c8ff', Dfc: '#007d7d', Dfd: '#00465f', ET: '#b2b2b2', EF: '#686868' };
+  const hh = w / 2, rgb = new Uint8Array(w * hh * 3), d = [0, 0, 0], uv = { face: 0, u: 0, v: 0 };
+  const hex = (s) => [parseInt(s.slice(1, 3), 16), parseInt(s.slice(3, 5), 16), parseInt(s.slice(5, 7), 16)];
+  for (let y = 0; y < hh; y++) for (let x = 0; x < w; x++) {
+    const lat = Math.PI / 2 - (y + 0.5) / hh * Math.PI, lon = (x + 0.5) / w * 2 * Math.PI;
+    d[0] = Math.cos(lat) * Math.cos(lon); d[1] = Math.sin(lat); d[2] = Math.cos(lat) * Math.sin(lon);
+    const z = G.sample(h, d, uv), i = (y * w + x) * 3;
+    let c;
+    if (z < 0) c = [25, 45, 80];
+    else { const k = clim.koppen[Gc.cellAt(d[0], d[1], d[2])]; c = k === 'sea' ? [60, 80, 110] : hex(KOPPEN_COLORS[k] || '#ffffff'); }
+    rgb[i] = c[0]; rgb[i + 1] = c[1]; rgb[i + 2] = c[2];
   }
   return rgb;
 }
