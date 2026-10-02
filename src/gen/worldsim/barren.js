@@ -54,7 +54,7 @@ export function barrenWorld(G, opts) {
   const decay = dm.exp(-DT_MYR / WEATHER_MYR);
   const stats = { craters: 0, basins: 0, flooded: 0, biggest: 0 };
   for (let t = 0; t < age; t += DT_MYR / 1000) {
-    const made = imp.step(DT_MYR, dMin, apply, t * 1000, t);
+    const made = imp.step(DT_MYR, dMin, apply, t * 1000, t, h);
     cum.push(cum[cum.length - 1] + imp.density(DT_MYR, t));
     for (const e of made) {
       stats.craters++;

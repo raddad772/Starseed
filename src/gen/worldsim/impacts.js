@@ -20,7 +20,7 @@
 
 import * as dm from '../../core/dmath.js';
 import { hashInts } from '../../core/rng.js';
-import { VEXAG, craterForm, craterDh } from '../craters.js';
+import { VEXAG, craterForm, craterDh, excavation } from '../craters.js';
 
 export { VEXAG };
 const MOON_G = 1.62;
@@ -81,7 +81,7 @@ export class Impacts {
   // dt Myr of impacts, craters at least dMin km across as drawn (game km);
   // apply(cell, dh) adds relief. tGyr: when, since the world formed (omit:
   // today's rate). Returns the craters made.
-  step(dt, dMin, apply, t = 0, tGyr) {
+  step(dt, dMin, apply, t = 0, tGyr, h = null) {
     const D0 = Math.max(dMin / this.scale, this.dAir); // (real km)
     const lam = this.ratePerMyr(D0, tGyr) * dt;
     const made = [];
@@ -92,7 +92,7 @@ export class Impacts {
       let D = D0 / Math.sqrt(1 - this.rng.next());
       if (D > Dmax) { k++; if (++this._rejects > 1e6) break; continue; }
       const at = this.rng.unitVector();
-      this.stamp(at, D, apply);
+      this.stamp(at, D, apply, h);
       const e = { t, D, at };
       made.push(e); this.events.push(e);
     }
@@ -100,8 +100,10 @@ export class Impacts {
   }
 
   // a crater of D km (real) at direction `at`: drawn at the scaled width, real depth, in its
-  // own form (craters.js: its impact's angle and heading, its rim's slumps, its peak's knobs)
-  stamp(at, D, apply) {
+  // own form (craters.js: its impact's angle and heading, its rim's slumps, its peak's knobs).
+  // Given the ground (h), it excavates: what stood inside its cavity is gone, its floor level
+  // at the ground's mean there (craters.js excavation), its rim and ejecta built on the ground
+  stamp(at, D, apply, h = null) {
     const G = this.G;
     const Dd = D * 1000 * this.scale, key = hashInts(Math.round(at[0] * 1e7), Math.round(at[1] * 1e7), Math.round(at[2] * 1e7), Math.round(D * 1000));
     const F = craterForm(Dd, { g: this.g, scale: this.scale }, key);
@@ -112,14 +114,22 @@ export class Impacts {
     const el = Math.sqrt(ex * ex + ey * ey + ez * ez); ex /= el; ey /= el; ez /= el;
     const nx = at[1] * ez - at[2] * ey, ny = at[2] * ex - at[0] * ez, nz = at[0] * ey - at[1] * ex;
     const c0 = G.cellAt(at[0], at[1], at[2]);
-    // the cells within reach (breadth first from the centre)
-    const seen = new Set([c0]), q = [c0], d = G.dir;
+    // the cells within reach (breadth first from the centre), and the ground's mean in its cavity
+    const seen = new Set([c0]), q = [c0], d = G.dir, cells = [], angs = [];
+    let hs = 0, ws = 0;
     for (let i = 0; i < q.length; i++) {
       const c = q[i], dx = d[c * 3], dy = d[c * 3 + 1], dz = d[c * 3 + 2];
       const ang = dm.acos(Math.min(1, dx * at[0] + dy * at[1] + dz * at[2]));
       if (ang > reach && c !== c0) continue;
-      apply(c, craterDh(F, ang * G.R, dx * ex + dy * ey + dz * ez, dx * nx + dy * ny + dz * nz));
+      cells.push(c); angs.push(ang);
+      if (h && ang * G.R < 0.8 * F.R) { hs += h[c]; ws++; }
       for (let e = G.nStart[c]; e < G.nStart[c + 1]; e++) { const o = G.nbr[e]; if (!seen.has(o)) { seen.add(o); q.push(o); } }
+    }
+    const mean = ws ? hs / ws : 0;
+    for (let k = 0; k < cells.length; k++) {
+      const c = cells[k], dx = d[c * 3], dy = d[c * 3 + 1], dz = d[c * 3 + 2], dist = angs[k] * G.R;
+      const dh = craterDh(F, dist, dx * ex + dy * ey + dz * ez, dx * nx + dy * ny + dz * nz);
+      apply(c, h && ws ? dh + excavation(F, dist) * (mean - h[c]) : dh);
     }
   }
 }

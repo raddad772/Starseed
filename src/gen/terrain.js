@@ -22,6 +22,8 @@ import { Rng, hash3i } from '../core/rng.js';
 import * as dm from '../core/dmath.js';
 import { fibonacciSphere, faceUVFromDir, FACES } from './cubesphere.js';
 import { patchAt } from './dunes.js';
+import { CraterField } from './craters.js';
+import { craterFloor, TILE_CELLS } from './worldsim/impacts.js';
 import { SnapshotSampler } from './worldsim/snapshot.js';
 import { RIVER_REC } from './worldsim/refine.js';
 import { ROCKS, R as ROCK } from './worldsim/lithology.js';
@@ -638,6 +640,19 @@ export class TerrainGenerator {
         const lift = t.top - Math.max(0, dist - edge) * 0.7 + 40 * dm.smoothstep(edge * 0.35, 0, dist);
         if (lift > h) { h = lift; out[S_VOLC] = Math.max(out[S_VOLC], dist < edge ? 1 : 0.7); }
       }
+    }
+    // the finer craters (craters.js CraterField): the octaves below the finest level that
+    // stamped its own, each where the sampling resolves it
+    if (S.s.crat && S.s.crater && !this._bare) {
+      const cf = this._craters || (this._craters = new CraterField(S, S.s.crater, (p.seed && p.seed[0]) | 0, R, (at) => {
+        // (the ground at a crater's centre before the field's craters: its floor's level)
+        this._bare = true;
+        const sc = this._bs || (this._bs = new Float64Array(S_LEN)), hb = this.sampleSnap(at[0], at[1], at[2], 30, sc)[S_H];
+        this._bare = false;
+        return hb * this.hScale;
+      }));
+      cf.setTop(S.ref ? Math.max(craterFloor(S.refCell, TILE_CELLS), S.s.crater.Dair) : S.s.crater.Dw);
+      h = cf.heightAt(x, y, z, minWavelength, h * this.hScale) / this.hScale;
     }
     // dunes: a sand sea's, the wind's own work (dunes.js), turned to the wind there; barchans
     // at its thin edges, transverse ridges where the sand is deep; only where they can be seen

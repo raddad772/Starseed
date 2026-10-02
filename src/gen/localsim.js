@@ -343,11 +343,12 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
     const P = gen.snap ? gen.snap.rain(dx, dy, dz) : 800;
     rain[c] = Math.max(0.05, Math.min(3, (P || 800) / 1000));
   }
-  // the craters this level's cells draw round and the level above's couldn't (craters.js): on
-  // the ground it starts from, so the run wears them and the mean is held to them
-  if (rf && S && S.s.crat && S.s.crater) {
+  // the craters the refinement's cells draw round and the world sim's couldn't (craters.js): on
+  // the ground it starts from, so the run wears them and the mean is held to them (the finer
+  // ones the sampler draws, where the ground is seen: no tile edges among them)
+  if (refine && S && S.s.crat && S.s.crater) {
     const K = S.s.crater, cellL = chunkArcSize(L, R) / MT;
-    const Dhi = pyr ? craterFloor(4 * cellL, TILE_CELLS) : K.Dw, Dlo = Math.max(craterFloor(cellL, TILE_CELLS), K.Dair);
+    const Dhi = K.Dw, Dlo = Math.max(craterFloor(cellL, TILE_CELLS), K.Dair);
     if (Dlo < Dhi) stampCraters(B, G, face, S, Dlo, Dhi, K, (gen.p.seed && gen.p.seed[0]) | 0, R);
   }
   // (an icy shell's ridges: as wide as they are, or as this level's cells hold, less the level above's)

@@ -23,7 +23,7 @@ import { TerrainGenerator, S_LEN, S_H, S_MOIST, S_TEMP } from '../terrain.js';
 import { SimGrid } from './grid.js';
 import { Erosion } from './erosion.js';
 import { Tectonics, blur, smoothField } from './tectonics.js';
-import { Impacts } from './impacts.js';
+import { Impacts, craterFloor, worldCell, WORLD_CELLS } from './impacts.js';
 import { barrenWorld } from './barren.js';
 import { stagnantWorld } from './stagnant.js';
 import { Lithology, R as ROCK, marineRock } from './lithology.js';
@@ -238,7 +238,7 @@ export function worldSim(body, star, opts = {}) {
   for (let c = 0; c < G.n; c++) { totalArea += G.area[c]; if (h[c] < 0) wetArea += G.area[c]; }
   const oceanShare = wetArea / totalArea;
   for (let k = 0; k < steps; k++) {
-    Ef.step(dt / 1e6, 6 * G.spacing / 1000, (c, dh) => { h[c] += h[c] < 0 ? dh * 0.5 : dh; if (dh < 0) lith.erode(c, -dh); else lith.deposit(c, dh, ROCK.regolith); }, k * dt / 1e6);
+    Ef.step(dt / 1e6, craterFloor(worldCell(G.R, G.N), WORLD_CELLS) / 1000, (c, dh) => { h[c] += h[c] < 0 ? dh * 0.5 : dh; if (dh < 0) lith.erode(c, -dh); else lith.deposit(c, dh, ROCK.regolith); }, k * dt / 1e6, undefined, h);
     E.rainK = H.at((steps - k) * dt / 1e6, 'rain') || 0.05;
     E.petK = dm.exp(0.06 * ((H.at((steps - k) * dt / 1e6, 'T') ?? H.T) - H.T)); // (warmer then: more evaporation)
     E.bare = !plantsAt(H, (steps - k) * dt / 1e6);
@@ -309,7 +309,7 @@ export function worldSim(body, star, opts = {}) {
   if (iceAgeK > 0.3) log(`ice ages: swings of ${iceAgeK.toFixed(1)} K; the sea fell up to ${Math.round(maxDrop)} m at the glacials`);
   // plates stopped long ago: the craters of all the time since, on the worn landscape
   if (stopped && sinceStop > 0.01) {
-    const made = Ef.step(sinceStop * 1000, 6 * G.spacing / 1000, (c, dh) => { h[c] += dh; if (dh < 0) lith.erode(c, -dh); else lith.deposit(c, dh, ROCK.regolith); }, steps * dt / 1e6);
+    const made = Ef.step(sinceStop * 1000, craterFloor(worldCell(G.R, G.N), WORLD_CELLS) / 1000, (c, dh) => { h[c] += dh; if (dh < 0) lith.erode(c, -dh); else lith.deposit(c, dh, ROCK.regolith); }, steps * dt / 1e6, undefined, h);
     log(`the plates stopped ${Math.round(sinceStop * 1000)} Myr ago: ${made.length} craters since, on the old continents`);
   }
   E.findBase(); E.route(); E.lakes(); E.drain();
@@ -478,7 +478,7 @@ function stampFresh(G, h, H, body, scale) {
   const imp = new Impacts(G, { rng: new Rng('fresh'), g: body.gravity, scale });
   const melt = new Float32Array(G.n);
   const R = D / 2 * 1000 * scale / G.R;
-  imp.stamp(f.at, D, (c, dh) => { h[c] += dh; });
+  imp.stamp(f.at, D, (c, dh) => { h[c] += dh; }, h);
   for (let c = 0; c < G.n; c++) {
     const cosA = G.dir[c * 3] * f.at[0] + G.dir[c * 3 + 1] * f.at[1] + G.dir[c * 3 + 2] * f.at[2];
     if (cosA > dm.cos(R * 0.6)) melt[c] = f.kind === 'impact-winter' ? 1 : Math.max(0.2, f.lavaFrac || 0);

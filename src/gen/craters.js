@@ -22,18 +22,41 @@ export const VEXAG = 2.5;
 
 const QPI = dm.PI / 4;
 const REACH = 3;          // (the ejecta reach 3 radii)
+const LAT = 6;            // (an octave's lattice cells, in its smallest craters' widths: wider than any one's reach)
+
+// the craters D in [D0, D1) of lattice cell (i, j) on face f (nL cells a side): as many as the
+// record there gives its area (a Poisson draw), placed evenly in it, sized by the D^-2 law
+// within the octave, each of its own age; the same for every tile, sampler and machine
+const _d = [0, 0, 0], _d00 = [0, 0, 0], _d10 = [0, 0, 0], _d01 = [0, 0, 0], _d11 = [0, 0, 0];
+export function latticeCraters(f, i, j, D0, D1, nL, S, seed, R) {
+  const sL = 2 / nL, u0 = -1 + i * sL, v0 = -1 + j * sL, rate = 1 / (D0 * D0) - 1 / (D1 * D1), out = [];
+  dirFromFaceUV(f, u0, v0, _d00); dirFromFaceUV(f, u0 + sL, v0, _d10); dirFromFaceUV(f, u0, v0 + sL, _d01); dirFromFaceUV(f, u0 + sL, v0 + sL, _d11);
+  const ax = _d11[0] - _d00[0], ay = _d11[1] - _d00[1], az = _d11[2] - _d00[2], bx = _d01[0] - _d10[0], by = _d01[1] - _d10[1], bz = _d01[2] - _d10[2];
+  const cx = ay * bz - az * by, cy = az * bx - ax * bz, cz = ax * by - ay * bx;
+  const area = 0.5 * Math.sqrt(cx * cx + cy * cy + cz * cz) * R * R;
+  dirFromFaceUV(f, u0 + sL / 2, v0 + sL / 2, _d);
+  const lam = S.crat(_d[0], _d[1], _d[2]) * rate * area;
+  if (!(lam > 1e-9)) return out;
+  const rng = new Rng([hashInts(f, i, j, D0 | 0), seed >>> 0, 0xc7a7e2, nL]);
+  let k = poisson(rng, lam);
+  while (k-- > 0) {
+    const at = dirFromFaceUV(f, u0 + sL * rng.next(), v0 + sL * rng.next(), [0, 0, 0]);
+    const D = 1 / Math.sqrt(1 / (D0 * D0) - rng.next() * rate);
+    out.push({ at, D, age: rng.next(), key: rng.u32() });
+  }
+  return out;
+}
 
 // stamps the craters D in [Dlo, Dhi) (m across as drawn) onto B: heights on a tile's grid G
 // (localsim.js tileGrid) on face `face`. S: the snapshot's sampler; K: its craters' scales
 // ({ g, scale }); seed: the world's; R: its radius (m). Returns how many it drew.
 export function stampCraters(B, G, face, S, Dlo, Dhi, K, seed, R) {
   const NG = G.N, du = G.du, list = [];
-  const d = [0, 0, 0], d00 = [0, 0, 0], d10 = [0, 0, 0], d01 = [0, 0, 0], d11 = [0, 0, 0], uv = { face: 0, u: 0, v: 0 };
+  const d = [0, 0, 0], uv = { face: 0, u: 0, v: 0 };
   const uvM = QPI * R * 0.7;      // (metres per unit of a face's u, v at the least: near its corners)
   for (let D0 = Dlo; D0 < Dhi; D0 *= 2) {
     // an octave's lattice: cells about four of its biggest craters across, each face's own
-    const D1 = Math.min(2 * D0, Dhi), Lm = 8 * D0, nL = Math.max(1, Math.floor(2 * QPI * R / Lm)), sL = 2 / nL;
-    const rate = 1 / (D0 * D0) - 1 / (D1 * D1);
+    const D1 = Math.min(2 * D0, Dhi), Lm = LAT * D0, nL = Math.max(1, Math.floor(2 * QPI * R / Lm)), sL = 2 / nL;
     // (the lattice cells a crater reaching the tile can be in: found by probing the tile and
     // round it, past its face's edges too, at a third of a lattice cell)
     const ext = (REACH * D1 / 2 + 1.5 * Lm) / uvM, step = sL / 3;
@@ -47,26 +70,12 @@ export function stampCraters(B, G, face, S, Dlo, Dhi, K, seed, R) {
       const key = (uv.face * nL + j) * nL + i;
       if (seen.has(key)) continue;
       seen.add(key);
-      // its craters: as many as the record there gives its area (a Poisson draw), placed
-      // evenly in it, sized by the D^-2 law within the octave, each of its own age
-      const f = uv.face, u0 = -1 + i * sL, v0 = -1 + j * sL;
-      dirFromFaceUV(f, u0, v0, d00); dirFromFaceUV(f, u0 + sL, v0, d10); dirFromFaceUV(f, u0, v0 + sL, d01); dirFromFaceUV(f, u0 + sL, v0 + sL, d11);
-      const ax = d11[0] - d00[0], ay = d11[1] - d00[1], az = d11[2] - d00[2], bx = d01[0] - d10[0], by = d01[1] - d10[1], bz = d01[2] - d10[2];
-      const cx = ay * bz - az * by, cy = az * bx - ax * bz, cz = ax * by - ay * bx;
-      const area = 0.5 * Math.sqrt(cx * cx + cy * cy + cz * cz) * R * R;
-      dirFromFaceUV(f, u0 + sL / 2, v0 + sL / 2, d);
-      const lam = S.crat(d[0], d[1], d[2]) * rate * area;
-      if (!(lam > 1e-9)) continue;
-      const rng = new Rng([hashInts(f, i, j, D0 | 0), seed >>> 0, 0xc7a7e2, nL]);
-      let k = poisson(rng, lam);
-      while (k-- > 0) {
-        const at = dirFromFaceUV(f, u0 + sL * rng.next(), v0 + sL * rng.next(), [0, 0, 0]);
-        const D = 1 / Math.sqrt(1 / (D0 * D0) - rng.next() * rate);
-        list.push({ at, D, age: rng.next(), key: rng.u32() });
-      }
+      for (const cr of latticeCraters(uv.face, i, j, D0, D1, nL, S, seed, R)) list.push(cr);
     }
   }
-  // each onto the tile: its centre on the tile's face, then the cells within its reach
+  // each onto the tile, oldest first (the younger overprint them): its centre on the tile's
+  // face, then the cells within its reach
+  list.sort((p, q) => q.age - p.age || q.key - p.key);
   const F = FACES[face], cellMin = 0.7 * G.spacing, dir = G.dir;
   for (const cr of list) {
     const at = cr.at, dn = at[0] * F.N[0] + at[1] * F.N[1] + at[2] * F.N[2];
@@ -86,11 +95,18 @@ export function stampCraters(B, G, face, S, Dlo, Dhi, K, seed, R) {
     let ex = ref[1] * at[2] - ref[2] * at[1], ey = ref[2] * at[0] - ref[0] * at[2], ez = ref[0] * at[1] - ref[1] * at[0];
     const el = Math.sqrt(ex * ex + ey * ey + ez * ez); ex /= el; ey /= el; ez /= el;
     const nx = at[1] * ez - at[2] * ey, ny = at[2] * ex - at[0] * ez, nz = at[0] * ey - at[1] * ex;
+    // (the ground's mean in its cavity: where its floor settles)
+    let hs = 0, ws = 0;
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      const c = j * NG + i, x = dir[c * 3] - at[0], y = dir[c * 3 + 1] - at[1], z = dir[c * 3 + 2] - at[2];
+      if (Math.sqrt(x * x + y * y + z * z) * R < 0.8 * Rc) { hs += B[c]; ws++; }
+    }
+    const mean = ws ? hs / ws : 0;
     for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
       const c = j * NG + i, dx = dir[c * 3], dy = dir[c * 3 + 1], dz = dir[c * 3 + 2], x = dx - at[0], y = dy - at[1], z = dz - at[2];
       const dist = Math.sqrt(x * x + y * y + z * z) * R;
       if (dist >= REACH * Rc * Fm.reach) continue;
-      B[c] += wear * craterDh(Fm, dist, dx * ex + dy * ey + dz * ez, dx * nx + dy * ny + dz * nz);
+      B[c] += wear * craterDh(Fm, dist, dx * ex + dy * ey + dz * ez, dx * nx + dy * ny + dz * nz) + (ws ? excavation(Fm, dist) * (mean - B[c]) : 0);
     }
   }
   return list.length;
@@ -193,6 +209,11 @@ export function craterDh(F, dist, tx, ty) {
   return v;
 }
 
+// how fully a crater replaces the ground at dist m from its centre (0..1): all of it inside its
+// cavity (what stood there is thrown out; the floor level at the ground's mean), less up its
+// walls, none from its rim out (built on the ground, as its ejecta are)
+export function excavation(F, dist) { return 1 - dm.smoothstep(0.6, 0.95, dist / F.R); }
+
 // (a table round the circle read between entries k and k + 1 by a Catmull-Rom cubic: no creases)
 function cubic(T, k, f) {
   const n = T.length, a = T[(k + n - 1) % n], b = T[k], c = T[(k + 1) % n], d = T[(k + 2) % n];
@@ -205,6 +226,87 @@ function smin(a, b, k) {
   if (k <= 0) return m;
   const h = Math.max(k - Math.abs(a - b), 0) / k;
   return m - h * h * k * 0.25;
+}
+
+// ---- the finer craters, drawn where the ground is sampled (terrain.js): the octaves below the
+// finest level that stamps its own (the refinement's, or before it the world sim's), each one
+// only where the sampling resolves it (so they come into view as the ground nears, with no tile
+// edges among them), from the same lattice as the tiles'; each lattice cell's craters (their
+// forms, wear and frames) made once and kept
+export class CraterField {
+  // S: the snapshot's sampler, K its crater scales, seed the world's, R its radius
+  // baseAt(at): the ground (m) at a crater's centre without the field's craters (its floor's level)
+  constructor(S, K, seed, R, baseAt) { this.S = S; this.K = K; this.seed = seed; this.R = R; this.baseAt = baseAt; this.cache = new Map(); this.Dmax = 0; this.bands = []; this.hits = []; this.depth = 0; }
+  // the octaves below Dmax (m), down to 16 m (or the smallest the air lets through)
+  setTop(Dmax) {
+    if (Dmax === this.Dmax) return;
+    this.Dmax = Dmax; this.bands = [];
+    for (let D0 = Dmax / 2; D0 >= Math.max(16, this.K.Dair || 0); D0 /= 2) this.bands.push({ D0, D1: 2 * D0, nL: Math.max(1, Math.floor(2 * QPI * this.R / (LAT * D0))) });
+  }
+  _cell(b, B, f, i, j) {
+    const key = ((b * 6 + f) * B.nL + j) * B.nL + i;
+    let list = this.cache.get(key);
+    if (list) return list;
+    if (this.cache.size > 40000) this.cache.clear();
+    list = latticeCraters(f, i, j, B.D0, B.D1, B.nL, this.S, this.seed, this.R).map((cr) => {
+      const F = craterForm(cr.D, this.K, cr.key), Dref = 1000 * this.K.scale, kap = 12 * cr.age * (Dref / cr.D) * (Dref / cr.D), wear = 1 / (1 + kap);
+      F.ks = (0.08 + 0.5 * (1 - wear)) * (F.depth + F.rim);
+      const at = cr.at, ref = Math.abs(at[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
+      let ex = ref[1] * at[2] - ref[2] * at[1], ey = ref[2] * at[0] - ref[0] * at[2], ez = ref[0] * at[1] - ref[1] * at[0];
+      const el = Math.sqrt(ex * ex + ey * ey + ez * ez); ex /= el; ey /= el; ez /= el;
+      return { at, F, wear, band: b, age: cr.age, key: cr.key, base: NaN, reach: REACH * (cr.D / 2) * F.reach, e: [ex, ey, ez], n: [at[1] * ez - at[2] * ey, at[2] * ex - at[0] * ez, at[0] * ey - at[1] * ex] };
+    });
+    this.cache.set(key, list);
+    return list;
+  }
+  // the ground (m) at unit direction (x, y, z), sampled minW m apart, struck by the field's
+  // craters there (those of its first nb octaves): h0 the ground before them; each, oldest
+  // first, excavates (its floor level at the ground at its centre as the bigger craters left
+  // it) and builds its rim and ejecta on what's there
+  heightAt(x, y, z, minW, h0, nb = this.bands.length) {
+    const hit = this.hits[this.depth] || (this.hits[this.depth] = []);
+    hit.length = 0;
+    for (let b = 0; b < nb; b++) {
+      const B = this.bands[b], amp = dm.smoothstep(4 * minW, 8 * minW, B.D0);
+      if (amp <= 0) break;     // (finer octaves are finer still)
+      const sL = 2 / B.nL;
+      for (let f = 0; f < 6; f++) {
+        const Fc = FACES[f], dn = x * Fc.N[0] + y * Fc.N[1] + z * Fc.N[2];
+        if (dn < 0.5) continue;
+        const u = dm.atan((x * Fc.U[0] + y * Fc.U[1] + z * Fc.U[2]) / dn) / QPI, v = dm.atan((x * Fc.V[0] + y * Fc.V[1] + z * Fc.V[2]) / dn) / QPI;
+        const i0 = Math.floor((u + 1) / sL), j0 = Math.floor((v + 1) / sL);
+        for (let j = j0 - 1; j <= j0 + 1; j++) {
+          if (j < 0 || j >= B.nL) continue;
+          for (let i = i0 - 1; i <= i0 + 1; i++) {
+            if (i < 0 || i >= B.nL) continue;
+            for (const c of this._cell(b, B, f, i, j)) {
+              const ax = x - c.at[0], ay = y - c.at[1], az = z - c.at[2], dist = Math.sqrt(ax * ax + ay * ay + az * az) * this.R;
+              if (dist >= c.reach) continue;
+              hit.push(c, dist, amp);
+            }
+          }
+        }
+      }
+    }
+    if (!hit.length) return h0;
+    // (oldest first)
+    const m = hit.length / 3, ord = [];
+    for (let k = 0; k < m; k++) ord.push(k);
+    if (m > 1) ord.sort((p, q) => hit[q * 3].age - hit[p * 3].age || hit[q * 3].key - hit[p * 3].key);
+    const H = hit.slice();
+    let h = h0;
+    for (let k = 0; k < m; k++) {
+      const c = H[ord[k] * 3], dist = H[ord[k] * 3 + 1], amp = H[ord[k] * 3 + 2];
+      if (c.base !== c.base) {
+        // (its floor's level: the ground at its centre with the coarser octaves' craters on it)
+        this.depth++;
+        c.base = this.heightAt(c.at[0], c.at[1], c.at[2], 0, this.baseAt(c.at), c.band);
+        this.depth--;
+      }
+      h += amp * (c.wear * craterDh(c.F, dist, x * c.e[0] + y * c.e[1] + z * c.e[2], x * c.n[0] + y * c.n[1] + z * c.n[2]) + excavation(c.F, dist) * (c.base - h));
+    }
+    return h;
+  }
 }
 
 // ---- an icy shell's double ridges (barren.js crackShell): great-circle arcs { pole, u, v,

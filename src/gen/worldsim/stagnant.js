@@ -66,7 +66,7 @@ export function stagnantWorld(G, opts) {
   const hs = new Float64Array(n);
   const stats = { craters: 0, shields: nShield, wetSteps: 0, canyon: !!canyon, dichotomy: !!dich };
   for (let t = 0; t < age; t += DT_MYR / 1000) {
-    stats.craters += imp.step(DT_MYR, dMin, (c, dh) => { h[c] += dh; }, t * 1000, t).length;
+    stats.craters += imp.step(DT_MYR, dMin, (c, dh) => { h[c] += dh; }, t * 1000, t, h).length;
     cum.push(cum[cum.length - 1] + imp.density(DT_MYR, t));
     // the rise swells, the shields build, while the interior is hot
     if (rise && t < volcEnd * 0.7) {
