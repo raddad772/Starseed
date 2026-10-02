@@ -315,9 +315,9 @@ export class Tectonics {
     const relax = this.coupled ? 0 : dt / RELAX_MYR, fade = dm.exp(-dt / 4), sink = dm.exp(-dt / SINK_MYR);
     for (const P of plates) {
       if (P.dead) continue;
-      const { own, thick, cont, age, rate } = P;
-      for (let s = 0; s < n; s++) {
-        if (!own[s]) continue;
+      const { thick, cont, age, rate } = P, L = P._own;
+      for (let k = 0; k < P._nOwn; k++) {
+        const s = L[k];
         if (cont[s] < 0.5) { age[s] += dt; if (P.relief[s] > 0) P.relief[s] *= sink; }
         if (thick[s] > CONT_KM) thick[s] -= (thick[s] - CONT_KM) * relax;
         rate[s] *= fade;
@@ -458,21 +458,51 @@ export class Tectonics {
   // neighbours and stays.) Without this, such ghost crust surfaces in odd
   // collisions and blocks merges.
   clearGhosts() {
-    const { G, plates, owner, src } = this;
+    const { G, plates, src } = this;
     const n = G.n;
     const seen = this._seen || (this._seen = new Uint8Array(n));
+    const by = this.byOwner();
+    this.ownLists();
     for (const P of plates) {
       if (P.dead) continue;
-      seen.fill(0);
-      for (let c = 0; c < n; c++) if (owner[c] === P.id) seen[src[c]] = 1;
-      const { own } = P;
-      for (let s = 0; s < n; s++) {
-        if (!own[s] || seen[s]) continue;
+      const a = by.start[P.id], b = by.start[P.id + 1];
+      for (let k = a; k < b; k++) seen[src[by.cells[k]]] = 1;
+      const { own } = P, L = P._own;
+      for (let k = 0; k < P._nOwn; k++) {
+        const s = L[k];
+        if (seen[s]) continue;
         let near = false;
         for (let e = G.nStart[s]; e < G.nStart[s + 1]; e++) if (seen[G.nbr[e]]) { near = true; break; }
         if (!near) { own[s] = 0; P.area--; }
       }
+      for (let k = a; k < b; k++) seen[src[by.cells[k]]] = 0;
     }
+    this.ownLists();
+  }
+
+  // each living plate's own cells (in its frame, ascending): P._own[0 .. P._nOwn)
+  ownLists() {
+    const n = this.G.n;
+    for (const P of this.plates) {
+      if (P.dead) { P._nOwn = 0; continue; }
+      const L = P._own || (P._own = new Int32Array(n)), own = P.own;
+      let k = 0;
+      for (let s = 0; s < n; s++) if (own[s]) L[k++] = s;
+      P._nOwn = k;
+    }
+  }
+  // the world's cells grouped by the plate showing there (ascending within each): plate p's
+  // are cells[start[p] .. start[p + 1])
+  byOwner() {
+    const n = this.G.n, np = this.plates.length, owner = this.owner;
+    const B = this._by || (this._by = { cells: new Int32Array(n), start: new Int32Array(np + 2) });
+    if (B.start.length < np + 2) B.start = new Int32Array(np + 2);
+    const st = B.start;
+    st.fill(0);
+    for (let c = 0; c < n; c++) st[owner[c] + 2]++;
+    for (let p = 0; p < np; p++) st[p + 2] += st[p + 1];
+    for (let c = 0; c < n; c++) B.cells[st[owner[c] + 1]++] = c;
+    return B;
   }
 
   // plate B joins plate A: all of B's crust (shown or not) moves into A's
@@ -572,20 +602,25 @@ export class Tectonics {
   spread(dt) {
     const { G, plates } = this;
     const n = G.n;
+    // (each plate's own cells)
+    this.ownLists();
     // the guard rail: the continents' mean thickness
     let vol = 0, cells = 0;
     for (const P of plates) {
       if (P.dead) continue;
-      for (let s = 0; s < n; s++) if (P.own[s] && P.cont[s] >= 0.5) { vol += P.thick[s]; cells++; }
+      const L = P._own;
+      for (let k = 0; k < P._nOwn; k++) { const s = L[k]; if (P.cont[s] >= 0.5) { vol += P.thick[s]; cells++; } }
     }
     const mean = cells ? vol / cells : EQ_KM;
     this.collapse = mean > RAIL_KM[1] ? 1 + (mean - RAIL_KM[1]) : mean < RAIL_KM[0] ? 0 : 1;
     const d = this._spread || (this._spread = new Float32Array(n));
     for (const P of plates) {
-      const { own, thick, cont } = P;
-      d.fill(0);
-      for (let s = 0; s < n; s++) {
-        if (!own[s] || cont[s] < 0.5 || thick[s] <= CONT_KM) continue;
+      if (P.dead) continue;
+      const { own, thick, cont } = P, L = P._own, m = P._nOwn;
+      for (let k = 0; k < m; k++) d[L[k]] = 0;
+      for (let k = 0; k < m; k++) {
+        const s = L[k];
+        if (cont[s] < 0.5 || thick[s] <= CONT_KM) continue;
         const ex = thick[s] - CONT_KM;
         for (let e = G.nStart[s]; e < G.nStart[s + 1]; e++) {
           const o = G.nbr[e];
@@ -602,17 +637,19 @@ export class Tectonics {
       // extension: the whole continent thins toward EQ_KM and what it gives up
       // becomes new continental margin (the plate's ocean cells next to it)
       let freed = 0;
-      const k = Math.min(1, dt * this.collapse / EXTEND_MYR);
-      for (let s = 0; s < n; s++) {
-        if (!own[s] || cont[s] < 0.5 || thick[s] <= EQ_KM) continue;
-        const v = (thick[s] - EQ_KM) * k;
+      const kx = Math.min(1, dt * this.collapse / EXTEND_MYR);
+      for (let k = 0; k < m; k++) {
+        const s = L[k];
+        if (cont[s] < 0.5 || thick[s] <= EQ_KM) continue;
+        const v = (thick[s] - EQ_KM) * kx;
         d[s] -= v; freed += v;
       }
       if (freed > 0) {
         const margin = this._margin || (this._margin = []);
         margin.length = 0;
-        for (let s = 0; s < n; s++) {
-          if (!own[s] || cont[s] >= 0.5) continue;
+        for (let k = 0; k < m; k++) {
+          const s = L[k];
+          if (cont[s] >= 0.5) continue;
           for (let e = G.nStart[s]; e < G.nStart[s + 1]; e++) { const o = G.nbr[e]; if (own[o] && cont[o] >= 0.5) { margin.push(s); break; } }
         }
         if (margin.length) {
@@ -620,10 +657,11 @@ export class Tectonics {
           for (const s of margin) d[s] += each;
         } else {
           // (no ocean beside it on this plate: it stays as it was)
-          for (let s = 0; s < n; s++) if (own[s] && cont[s] >= 0.5 && thick[s] > EQ_KM) d[s] += (thick[s] - EQ_KM) * k;
+          for (let k = 0; k < m; k++) { const s = L[k]; if (cont[s] >= 0.5 && thick[s] > EQ_KM) d[s] += (thick[s] - EQ_KM) * kx; }
         }
       }
-      for (let s = 0; s < n; s++) {
+      for (let k = 0; k < m; k++) {
+        const s = L[k];
         if (!d[s]) continue;
         thick[s] += d[s];
         if (d[s] > 0 && cont[s] < 1 && thick[s] > 12) { const was = cont[s]; cont[s] = Math.max(cont[s], Math.min(1, (thick[s] - 12) / 15)); if (was <= 0.5 && cont[s] > 0.5) this.stats.spreadGain++; }
@@ -671,11 +709,18 @@ export class Tectonics {
     const sum = this._sum || (this._sum = new Float64Array(n)), cnt = this._cnt || (this._cnt = new Uint16Array(n));
     const sumR = this._sumR || (this._sumR = new Float64Array(n));
     const sumH = this._sumH || (this._sumH = new Float64Array(n)), sumY = this._sumY || (this._sumY = new Float64Array(n));
+    const by = this.byOwner(), touched = this._touched || (this._touched = new Int32Array(n));
     for (const P of plates) {
-      sum.fill(0); cnt.fill(0); sumR.fill(0); sumH.fill(0); sumY.fill(0);
-      for (let c = 0; c < n; c++) if (owner[c] === P.id) { const q = src[c]; sum[q] += E.h[c] - h0[c]; sumR[q] += reg[c]; cnt[q]++; sumH[q] += h0[c]; sumY[q] += Math.abs(G.dir[c * 3 + 1]); }
-      for (let s = 0; s < n; s++) {
-        if (!cnt[s] || !P.own[s]) continue;
+      // (this plate's world cells, gathered onto its frame's cells: only those touched)
+      let nt = 0;
+      for (let k = by.start[P.id]; k < by.start[P.id + 1]; k++) {
+        const c = by.cells[k], q = src[c];
+        if (!cnt[q]) { touched[nt++] = q; sum[q] = sumR[q] = sumH[q] = sumY[q] = 0; }
+        sum[q] += E.h[c] - h0[c]; sumR[q] += reg[c]; cnt[q]++; sumH[q] += h0[c]; sumY[q] += Math.abs(G.dir[c * 3 + 1]);
+      }
+      for (let t = 0; t < nt; t++) {
+        const s = touched[t];
+        if (!P.own[s]) { cnt[s] = 0; continue; }
         let dh = sum[s] / cnt[s];
         const dReg = sumR[s] / cnt[s];
         // the sediment record: laid down where it builds (limestone and chalk on warm,
@@ -693,6 +738,7 @@ export class Tectonics {
         P.relief[s] += dh - dReg;
         P.thick[s] = Math.max(OCEAN_KM * 0.5, P.thick[s] + dReg / 1000);
         if (P.cont[s] < 1 && P.thick[s] > 12) { const was = P.cont[s]; P.cont[s] = Math.max(P.cont[s], Math.min(1, (P.thick[s] - 12) / 15)); if (was <= 0.5 && P.cont[s] > 0.5) this.stats.sedGain++; }
+        cnt[s] = 0;
       }
     }
     this._dbg('erode');
