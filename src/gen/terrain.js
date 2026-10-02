@@ -948,7 +948,7 @@ export class TerrainGenerator {
     const wd = s[S_WDEPTH];
     if (!(wd > 0.05) && h < 0 && p.liquid && this.contThreshold > -1e8) return this.shadeNoise(s, slope, col, mat);
     if (wd > 0.05) {
-      const k = dm.smoothstep(0, 60, wd), dim = wd < 3 ? 0.8 + 0.2 * k : 1;
+      const k = dm.smoothstep(0, 60, wd), dim = 0.8 + 0.2 * dm.smoothstep(0, 3, wd);   // (no step at any depth: a lake's bed changing by a metre shows nowhere)
       col[0] = (P.waterShallow[0] + (P.waterDeep[0] - P.waterShallow[0]) * k) * dim;
       col[1] = (P.waterShallow[1] + (P.waterDeep[1] - P.waterShallow[1]) * k) * dim;
       col[2] = (P.waterShallow[2] + (P.waterDeep[2] - P.waterShallow[2]) * k) * dim;
