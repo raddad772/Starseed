@@ -29,7 +29,7 @@ const EVA_AGL = 4000;        // m above the ground: spacewalk physics above, on-
 // only once released (W down the ramp must not become a jetpack burn)
 const MOVE_KEYS = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'KeyC', 'KeyQ', 'KeyE', 'ShiftLeft'];
 
-const _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3(), _v4 = new THREE.Vector3();
+const _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3(), _v4 = new THREE.Vector3(), _v5 = new THREE.Vector3(), _v6 = new THREE.Vector3();
 const _q1 = new THREE.Quaternion(), _q2 = new THREE.Quaternion();
 const _m4 = new THREE.Matrix4();
 const _x1 = new THREE.Vector3(), _x2 = new THREE.Vector3();
@@ -454,6 +454,49 @@ export class Player {
     return ship && !ship.dead && ship.body === b && !ship.parent;
   }
 
+  // the ground under body-fixed point p (m above datum): in the near field the volume's floor
+  // under it (gen/volume.js: a cave's floor, a ledge, the foot of an overhang), else the
+  // heightfield's
+  groundAt(b, p) {
+    const ng = b.near;
+    if (ng && ng.within(p)) { const f = ng.floorBelow(p); if (f != null) return f; }
+    return b.groundHeight(p);
+  }
+
+  groundNormalAt(b, up, gh, out) {
+    const ng = b.near, p = _v5.copy(up).multiplyScalar(b.R + gh - 0.05);
+    if (ng && ng.within(p)) {
+      ng.densityAt(p, out);
+      out.negate();
+      if (out.lengthSq() > 1e-12) { out.normalize(); if (out.dot(up) > -0.2) return out; }
+    }
+    return b.groundNormal(up, out, gh);
+  }
+
+  // out of the volume's rock: walls push the body back (sideways), a roof stops a jump
+  pushOutOfRock(b, up) {
+    const ng = b.near;
+    if (!ng || !ng.within(this.fPos)) return;
+    const g = _v5, q = _v6;
+    for (const h of [0.5, 1.25]) {
+      q.copy(this.fPos).addScaledVector(up, h);
+      const d = ng.densityAt(q, g);
+      const gl = g.length();
+      if (gl < 1e-6) continue;
+      const pen = (d + 0.35 * gl) / gl;          // (0.35 m: the body's radius)
+      if (pen <= 0) continue;
+      g.addScaledVector(up, -g.dot(up));          // sideways only (the floor holds the feet)
+      const hl = g.length();
+      if (hl < 1e-6) continue;
+      g.divideScalar(hl);
+      this.fPos.addScaledVector(g, -Math.min(pen, 0.5));
+      const into = this.fVel.dot(g);
+      if (into > 0) this.fVel.addScaledVector(g, -into);
+    }
+    q.copy(this.fPos).addScaledVector(up, 1.8);
+    if (ng.densityAt(q) > 0 && this.fVel.dot(up) > 0) this.fVel.addScaledVector(up, -this.fVel.dot(up));
+  }
+
   updateSurface(dt, input, mouse) {
     const b = this.body;
     const up = _v4.copy(this.fPos).normalize();
@@ -467,7 +510,7 @@ export class Player {
     const right = fwd.clone().cross(up).normalize();
     const mv = new THREE.Vector3().addScaledVector(fwd, input.axis('KeyS', 'KeyW')).addScaledVector(right, input.axis('KeyA', 'KeyD'));
     // ground under us
-    const gh = b.groundHeight(up);
+    const gh = this.groundAt(b, this.fPos);
     // (water: the sea, a lake or a river; afloat where it's deeper than you wade)
     const water = b.data.terrain.liquid === 'water' && b.isWaterAt(up);
     const groundR = b.R + gh;
@@ -479,7 +522,7 @@ export class Player {
     const vt = this.fVel.clone().addScaledVector(up, -vn);
     if (this.grounded) {
       // traction: slopes steeper than ~45 degrees shed you
-      const n = b.groundNormal(up, _v2, gh);
+      const n = this.groundNormalAt(b, up, gh, _v2);
       const slopeCos = n.dot(up);
       if (slopeCos < 0.68 && !this.swimming) {
         const down = up.clone().multiplyScalar(-g).addScaledVector(n, g * slopeCos);
@@ -520,7 +563,7 @@ export class Player {
     this.fPos.addScaledVector(this.fVel, dt);
     // ground collision
     const up2 = _v1.copy(this.fPos).normalize();
-    const gh2 = b.groundHeight(up2);
+    const gh2 = this.groundAt(b, this.fPos);
     // (afloat: 1.3 m down in the water, or on the bed of a shallow stream)
     const wd2 = water ? b.liquidDepthAt(up2) : 0;
     const floorR = b.R + gh2 - (wd2 > 0.3 ? Math.min(1.3, wd2) : 0);
@@ -533,6 +576,7 @@ export class Player {
       if (vn2 < 0) this.fVel.addScaledVector(up2, -vn2);
       this.grounded = true;
     } else if (rr > floorR + 0.5) this.grounded = false;
+    this.pushOutOfRock(b, up2);
     this.rampSupport();
     this.collideShipExterior();
     this.collideFlora(b);

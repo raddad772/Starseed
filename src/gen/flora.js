@@ -10,6 +10,7 @@
 import { Rng, hashInts, hash3f } from '../core/rng.js';
 import { dirFromFaceUV, chunkUVBounds, chunkArcSize } from './cubesphere.js';
 import { S_LEN, S_H, S_TEMP, S_MOIST, S_WDEPTH } from './terrain.js';
+import { cliffWeightAt } from './volume.js';
 import * as dm from '../core/dmath.js';
 import { CHUNK_N } from './chunkbuilder.js';
 
@@ -164,6 +165,7 @@ export function scatterFlora(gen, face, level, ix, iy, maxLevel, species) {
   const out = { tree: [], shrub: [], plant: [], rock: [], boulder: [] };
   const s = new Float64Array(S_LEN);
   const s2 = new Float64Array(S_LEN);
+  const s3 = new Float64Array(S_LEN);
   const col = [0, 0, 0], mat = new Float64Array(8);
   const dir = [0, 0, 0];
   const hasSea = !!gen.p.liquid && gen.contThreshold > -1e8;
@@ -175,6 +177,8 @@ export function scatterFlora(gen, face, level, ix, iy, maxLevel, species) {
     gen.sample(dir[0], dir[1], dir[2], minW, s);
     const h = s[S_H];
     if ((hasSea && h < 0.5) || s[S_WDEPTH] > 0) continue;
+    // (cliff country is stepped and cut back in the volume: nothing stands there on the heightfield)
+    if (cliffWeightAt(gen, dir, s3) > 0.12) continue;
     // slope from a tiny finite difference
     const e = 0.75 / R;
     const hx = gen.sample(dir[0] + e * (Math.abs(dir[1]) < 0.9 ? 1 : 0), dir[1] + e * (Math.abs(dir[1]) < 0.9 ? 0 : 1), dir[2], minW, s2)[S_H];

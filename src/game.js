@@ -7,6 +7,8 @@
 // stepped on one clock, parents before children.
 
 import { WorldSims } from './sim/worldSims.js';
+import { NearGround } from './sim/nearGround.js';
+import { findCliffCountry } from './gen/volume.js';
 import * as THREE from 'three';
 import { generateSystem } from './gen/system.js';
 import { S_LEN, S_H, S_WDEPTH } from './gen/terrain.js';
@@ -65,7 +67,7 @@ export class Game {
     this.engine.scene.add(this.sky.points);
     this.cloudNoise = makeCloudNoise(64);
     this.world = new WorldRenderer(this.engine, this.universe, this.pool, this.detailTex, this.cloudNoise);
-    // simulated worlds (WORLDSIM.md step 7; opt-in for now: ?worldsim=1)
+    // simulated worlds (WORLDSIM.md step 7; ?worldsim=0 for the noise worlds, to compare)
     if (opts.worldsim) { this.worldSims = new WorldSims(this, { N: opts.simN, workers: opts.simWorkers }); }
     this.lights = new LightRig(this.engine);
     this.t = 0;
@@ -626,6 +628,21 @@ export class Game {
       const id = key && key.startsWith('orbit:') ? +key.slice(6) : key && key.startsWith('site:') ? +key.split(':')[1] : (this.ship && this.ship.body && this.ship.body.data ? this.ship.body.data.id : null);
       this.worldSims.requestAll(id);
     }
+    if (this.opts.testSpot && !this._testSpotDone) { this._testSpotDone = true; this.goTestSpot(this.opts.testSpot); }
+  }
+
+  // testing launch spots (?test=): 'cliffs' starts on the start world's steepest hard-rock
+  // country below 2.5 km (gen/volume.js: cliffs, overhangs, caves), in the morning, beside the
+  // ship; once that world's sim is in (from the cache at once, else when it's done)
+  async goTestSpot(kind) {
+    const b = this.ship && this.ship.body;
+    if (!b || !b.solid || kind !== 'cliffs') return;
+    const id = b.data.id;
+    if (this.worldSims) while (!['ready', 'failed'].includes(this.worldSims.status.get(id))) await new Promise((r) => setTimeout(r, 300));
+    const d = findCliffCountry(b.terrain);
+    if (!d) return;
+    this.startOnSurface(b, new THREE.Vector3(d[0], d[1], d[2]));
+    console.log(`test spot (${kind}): ${b.data.name} at ${(Math.asin(d[1]) * 180 / Math.PI).toFixed(2)}, ${(Math.atan2(d[2], d[0]) * 180 / Math.PI).toFixed(2)}`);
   }
 
   // The opening shot: a spot in orbit composed like a film still. The body
@@ -1575,6 +1592,18 @@ export class Game {
       }
     }
     this.setCur(null);
+    // the near field (sim/nearGround.js): round the first player on a world, its ground a volume
+    {
+      const p = this.players[0], v = p.vessel, b = v ? v.body : p.body;
+      if (b && b.solid && b.terrain && !(v && v.parent)) {
+        const pos = this._nearPos || (this._nearPos = new THREE.Vector3());
+        if (p.mode === 'surface') pos.copy(p.fPos);
+        else if (v) pos.copy(v.pos).applyQuaternion(b.qInv);
+        else pos.copy(p.ePos).applyQuaternion(b.qInv);
+        (b.near || (b.near = new NearGround(b))).update(pos);
+        for (const o of this.universe.bodies) if (o !== b && o.near) o.near.active = false;
+      }
+    }
     for (const v of this.vessels) v.nav.update(dtReal);
     // warp guard: thrust input or atmosphere drops rails warp
     if (warp > 4) {

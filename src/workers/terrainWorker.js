@@ -6,9 +6,11 @@ import { buildChunk, chunkTransferables } from '../gen/chunkbuilder.js';
 import { analyzeSettlements } from '../gen/settlements.js';
 import { scatterFlora, floraSpecies, FLORA_KINDS } from '../gen/flora.js';
 import { terrainPortrait } from '../gen/portrait.js';
+import { VolumeField, buildVolumeChunk, volumeTransferables } from '../gen/volume.js';
 
 const params = new Map();
 const gens = new Map();
+const fields = new Map();   // body|anchor -> VolumeField
 
 function gen(id) {
   let g = gens.get(id);
@@ -36,6 +38,16 @@ self.onmessage = (e) => {
       const r = buildChunk(gen(m.body), m.face, m.level, m.ix, m.iy, m.N);
       r.type = 'chunk'; r.job = m.job;
       self.postMessage(r, chunkTransferables(r));
+      return;
+    }
+    if (m.type === 'vchunk') {
+      // the near field's volume (volume.js): one field per body and anchor, its columns cached
+      // across the chunks that share them
+      const g = gen(m.body), key = m.body + '|' + m.anchor.o.join(',');
+      let f = fields.get(key);
+      if (!f || f.gen !== g) { f = new VolumeField(g, m.anchor); fields.set(key, f); if (fields.size > 4) fields.delete(fields.keys().next().value); }
+      const r = buildVolumeChunk(f, m.ci, m.cj, m.ck);
+      self.postMessage({ type: 'vchunk', job: m.job, mesh: r }, volumeTransferables(r));
       return;
     }
     if (m.type === 'flora') {

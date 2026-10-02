@@ -79,6 +79,8 @@ export class WorldRenderer {
       uAmbientFloor: { value: new THREE.Vector3(0.0004, 0.0004, 0.0005) },
       uDebug: { value: 0 },
       tNoise: { value: this.cloudNoise },
+      uNear: { value: new THREE.Vector2(0, 0) },
+      uNearUp: { value: new THREE.Vector3(0, 1, 0) },
     };
     if (a) {
       const clouds = b.data.atmosphere && b.data.atmosphere.clouds;

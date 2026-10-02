@@ -13,6 +13,8 @@ import { CHUNK_N, chunkIndices } from '../gen/chunkbuilder.js';
 import { makeTerrainMaterial, DETAIL_PERIOD } from './terrainMaterial.js';
 import { FloraSet } from './floraRender.js';
 import { floraOf } from '../sim/floraField.js';
+import { VCHUNK } from '../gen/volume.js';
+import { NEAR_RADIUS } from '../sim/nearGround.js';
 
 const FLORA_DIST = 1600;
 
@@ -74,6 +76,10 @@ export class PlanetTerrain {
     this.floraLevel = Math.max(2, this.maxLevel - 3);
     this.floraSet = null;
     this.floraCount = 0;
+    // the near field's volume chunks (gen/volume.js), by lattice key
+    this.near = new Map();
+    this.nearAnchor = null;
+    this._nl = [0, 0, 0];
   }
 
   // camFixed: camera position in the body-fixed frame (relative to centre)
@@ -91,6 +97,7 @@ export class PlanetTerrain {
     for (const r of this.roots) this.select(r);
     // hide everything not selected this frame, recycle stale meshes
     this.collect();
+    this.nearUpdate();
     return this.visibleList;
   }
 
@@ -306,6 +313,113 @@ export class PlanetTerrain {
     for (const root of this.roots) walk(root);
   }
 
+  // the near field (sim/nearGround.js): its volume meshed in chunks inside NEAR_RADIUS of its
+  // centre, nearest first; the heightfield gives way to them there (terrainMaterial.js)
+  nearUpdate() {
+    const ng = this.body.near, on = !!(ng && ng.active && ng.field);
+    const u = this.shared.uNear.value;
+    if (!on) { u.set(0, 0); for (const ch of this.near.values()) if (ch.mesh) ch.mesh.visible = false; return; }
+    if (ng.anchor !== this.nearAnchor || ng.field.gen !== this.nearGen) { this.disposeNear(); this.nearAnchor = ng.anchor; this.nearGen = ng.field.gen; }
+    const F = ng.field, c = ng.centre, L = F.toLocal(c[0], c[1], c[2], this._nl);
+    const N = VCHUNK, R0 = NEAR_RADIUS, want = new Set();
+    let pending = 0;
+    const ci0 = Math.floor((L[0] - R0) / N), ci1 = Math.floor((L[0] + R0) / N);
+    const ck0 = Math.floor((L[2] - R0) / N), ck1 = Math.floor((L[2] + R0) / N);
+    for (let ci = ci0; ci <= ci1; ci++) for (let ck = ck0; ck <= ck1; ck++) {
+      const dx = Math.max(ci * N - L[0], 0, L[0] - (ci + 1) * N), dz = Math.max(ck * N - L[2], 0, L[2] - (ck + 1) * N);
+      const dh = Math.hypot(dx, dz);
+      if (dh > R0) continue;
+      // the column's surface from its corners' heights, to the lattice's y (the tangent plane
+      // drops away from the anchor by rho^2 / 2R); rock above for overhangs, caves below
+      let hmin = Infinity, hmax = -Infinity;
+      for (const [x, z] of [[ci * N, ck * N], [ci * N + N, ck * N], [ci * N, ck * N + N], [ci * N + N, ck * N + N]]) {
+        const col = F.colAt(x, z);
+        if (col.Hc < hmin) hmin = col.Hc;
+        if (col.Hc > hmax) hmax = col.Hc;
+      }
+      const sag = (((ci + 0.5) * N) ** 2 + ((ck + 0.5) * N) ** 2) / (2 * this.R);
+      const y0 = hmin - sag - (dh < 48 ? 60 : 24), y1 = hmax - sag + 24;
+      for (let cj = Math.floor(y0 / N); cj <= Math.floor(y1 / N); cj++) {
+        const dy = Math.max(cj * N - L[1], 0, L[1] - (cj + 1) * N), dist = Math.hypot(dx, dy, dz);
+        const key = ci + ',' + cj + ',' + ck;
+        want.add(key);
+        let ch = this.near.get(key);
+        if (!ch) { ch = { key, ci, cj, ck, mesh: null, job: null, state: 0 }; this.near.set(key, ch); }
+        const pr = 0.5 + dist / 40;
+        if (ch.state === 0) this.requestNear(ch, ng, pr);
+        else if (ch.state === 1) this.pool.reprioritize(ch.job, pr);
+        if (ch.state !== 2) pending++;
+      }
+    }
+    // the volume takes over (drawn, and walked on) once everything round the centre is meshed
+    if (!ng.ready && pending === 0) ng.ready = true;
+    u.set(ng.ready ? 1 : 0, NEAR_RADIUS);
+    const cl = Math.hypot(c[0], c[1], c[2]);
+    this.shared.uNearUp.value.set(c[0] / cl, c[1] / cl, c[2] / cl);
+    // chunks no longer wanted go once they're well outside
+    for (const [key, ch] of this.near) {
+      if (want.has(key)) continue;
+      const dx = Math.max(ch.ci * N - L[0], 0, L[0] - (ch.ci + 1) * N), dy = Math.max(ch.cj * N - L[1], 0, L[1] - (ch.cj + 1) * N), dz = Math.max(ch.ck * N - L[2], 0, L[2] - (ch.ck + 1) * N);
+      if (Math.hypot(dx, dy, dz) > R0 + 2 * N) this.disposeNearChunk(ch);
+    }
+    // where each mesh sits from the centre (the shader's cut between volume and heightfield)
+    for (const ch of this.near.values()) {
+      if (!ch.mesh) continue;
+      const o = ch.mesh.userData.origin;
+      ch.mesh.material.uniforms.uNearOff.value.set(o[0] - c[0], o[1] - c[1], o[2] - c[2]);
+      ch.mesh.visible = ng.ready;
+    }
+    for (const node of this.visibleList) {
+      const o = node.mesh.userData.origin;
+      node.mesh.material.uniforms.uNearOff.value.set(o[0] - c[0], o[1] - c[1], o[2] - c[2]);
+    }
+  }
+
+  requestNear(ch, ng, priority) {
+    ch.state = 1;
+    const gen = this.generation, anchor = ng.anchor;
+    ch.job = this.pool.submit({ type: 'vchunk', body: this.body.id, anchor, ci: ch.ci, cj: ch.cj, ck: ch.ck }, priority);
+    ch.job.promise.then((data) => {
+      if (gen !== this.generation || anchor !== this.nearAnchor || this.near.get(ch.key) !== ch) return;
+      ch.state = 2;
+      ch.job = null;
+      if (data.mesh) ch.mesh = this.buildNearMesh(data.mesh);
+    }, () => { ch.state = 0; ch.job = null; });
+  }
+
+  buildNearMesh(d) {
+    const g = new THREE.BufferGeometry();
+    const pos = new THREE.BufferAttribute(d.position, 3), nrm = new THREE.BufferAttribute(d.nrm, 4, true), col = new THREE.BufferAttribute(d.col, 4, true);
+    // (no morphing: the same buffers stand for the morph targets)
+    g.setAttribute('position', pos); g.setAttribute('morph', pos);
+    g.setAttribute('nrm', nrm); g.setAttribute('mnrm', nrm);
+    g.setAttribute('col', col); g.setAttribute('mcol', col);
+    g.setAttribute('mat', new THREE.BufferAttribute(d.mat, 4, true));
+    g.setAttribute('ext', new THREE.BufferAttribute(d.ext, 4, true));
+    g.setAttribute('occ', new THREE.BufferAttribute(d.occ, 1, true));
+    g.setIndex(new THREE.BufferAttribute(d.index, 1));
+    g.computeBoundingSphere();
+    const m = new THREE.Mesh(g, makeTerrainMaterial(this.shared));
+    m.position.set(d.origin[0], d.origin[1], d.origin[2]);
+    m.matrixAutoUpdate = false;
+    m.updateMatrix();
+    m.userData.origin = d.origin;
+    const uu = m.material.uniforms, P = DETAIL_PERIOD;
+    uu.uMorph.value.set(1e30, 2e30);
+    uu.uNearMode.value = 1;
+    uu.uOriginMod.value.set(((d.origin[0] % P) + P) % P, ((d.origin[1] % P) + P) % P, ((d.origin[2] % P) + P) % P);
+    this.group.add(m);
+    return m;
+  }
+
+  disposeNearChunk(ch) {
+    if (ch.job && ch.state === 1) this.pool.cancel(ch.job);
+    if (ch.mesh) { this.group.remove(ch.mesh); ch.mesh.geometry.dispose(); ch.mesh.material.dispose(); ch.mesh = null; }
+    this.near.delete(ch.key);
+  }
+
+  disposeNear() { for (const ch of [...this.near.values()]) this.disposeNearChunk(ch); }
+
   // true when every visible node near the camera is at full requested detail
   isSettled() { return this.pendingCount === 0; }
 
@@ -317,5 +431,6 @@ export class PlanetTerrain {
   dispose() {
     this.generation++;
     for (const r of this.roots) this.disposeNode(r);
+    this.disposeNear();
   }
 }

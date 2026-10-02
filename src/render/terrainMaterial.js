@@ -14,9 +14,13 @@ attribute vec4 col;
 attribute vec4 mcol;
 attribute vec4 mat;
 attribute vec4 ext;
+attribute float occ;       // (volume chunks: how much rock overhangs; 0 where absent)
 uniform vec3 uCamLocal;
 uniform vec2 uMorph;
 uniform vec3 uOriginMod;
+uniform vec3 uNearOff;     // this mesh's origin less the near field's centre (body-fixed)
+varying vec3 vNearRel;
+varying float vOcc;
 varying vec3 vWorldPos;
 varying vec3 vNormal;
 varying vec3 vFixedPos;
@@ -41,6 +45,8 @@ void main() {
   vNormal = normalize(mat3(modelMatrix) * n);
   vFixedPos = uOriginMod + p;
   vFixedNormal = n;
+  vNearRel = uNearOff + p;
+  vOcc = occ;
   gl_Position = projectionMatrix * viewMatrix * wp;
   #include <logdepthbuf_vertex>
 }
@@ -60,6 +66,13 @@ uniform float uCloudOpacity;
 uniform vec3 uLavaColor;
 uniform vec3 uAmbientFloor;
 uniform float uDebug;
+// the near field (volume.js): x on, y its radius; uNearMode 0 a heightfield mesh (gives way to
+// the volume inside, but for its water), 1 a volume chunk (shown only inside)
+uniform vec2 uNear;
+uniform vec3 uNearUp;      // the up at its centre: the cut is a vertical cylinder, any height
+uniform float uNearMode;
+varying vec3 vNearRel;
+varying float vOcc;
 varying vec3 vWorldPos;
 varying vec3 vNormal;
 varying vec3 vFixedPos;
@@ -105,6 +118,11 @@ void main() {
   #include <logdepthbuf_fragment>
   vec3 albedo = vCol.rgb * vCol.rgb;
   float waterEnc = vCol.a;
+  if (uNear.x > 0.5) {
+    float dn = length(vNearRel - uNearUp * dot(vNearRel, uNearUp));
+    if (uNearMode < 0.5) { if (dn < uNear.y && waterEnc < 0.004) discard; }
+    else if (dn > uNear.y) discard;
+  }
   float veg = vMat.r, snow = vMat.g, rock = vMat.b, sand = vMat.a;
   float emissive = vExt.r, wet = vExt.g, rough = vExt.b;
   vec3 rel = vWorldPos - uCenter;
@@ -190,6 +208,8 @@ void main() {
     vec3 direct = uSunE * sunT * ndl;
     vec3 ambient = uSunE * skyE * wrap + uAmbientFloor;
     color = albedo / PI * (direct + ambient);
+    // (under overhangs and in caves: little sky and less sun)
+    color *= 1.0 - 0.94 * vOcc;
     // wet / icy sheen
     vec3 V = normalize(-vWorldPos);
     vec3 H = normalize(V + uSunDir);
@@ -262,6 +282,8 @@ export function makeTerrainMaterial(shared) {
       uCamLocal: { value: new THREE.Vector3() },
       uMorph: { value: new THREE.Vector2(1e9, 2e9) },
       uOriginMod: { value: new THREE.Vector3() },
+      uNearOff: { value: new THREE.Vector3() },
+      uNearMode: { value: 0 },
     },
     vertexShader: VERT,
     fragmentShader: FRAG,
