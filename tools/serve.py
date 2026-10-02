@@ -8,6 +8,10 @@ class NoCache(http.server.SimpleHTTPRequestHandler):
     def end_headers(self):
         self.send_header('Cache-Control', 'no-store, must-revalidate')
         self.send_header('Expires', '0')
+        # cross-origin isolation: SharedArrayBuffer (the worlds' refinements, shared by the
+        # workers rather than copied to each)
+        self.send_header('Cross-Origin-Opener-Policy', 'same-origin')
+        self.send_header('Cross-Origin-Embedder-Policy', 'require-corp')
         super().end_headers()
     def log_message(self, *a):
         pass
