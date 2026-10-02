@@ -2,6 +2,102 @@
 
 Dave is play-testing and giving feedback in short bursts.
 
+## NOW: simulated worlds (world lab), session 0f13fab4, uncommitted
+
+**The plan to act on is `WORLDSIM.md`** (ground rules, state, ordered steps). Work through it in order
+and keep it current. Next up: its ARCHITECTURE section, U1 to U4. One unified, authoritative forward
+history for every rocky body, which replaces bodies.js's present-state rules; one terrain driver; and
+system impact "busyness". Then climate (step 3).
+
+Direction from Dave:
+- **Worlds:** worlds made by simulation, not noise: plate tectonics, weathering and erosion carving
+  valleys and canyons over time, rivers that run from mountains to the sea, coral reefs, impact craters
+  ("fewer with a moon"), and biomes from temperature and humidity with seasons, where axial tilt matters.
+- **Epochs:**
+  1. deep time (plates and coarse erosion);
+  2. recent time (fine erosion with climate and rock layers);
+  3. ice ages and present (glaciers and fjords, sea-level swings, reefs, coastal cliffs);
+  4. a coarse snapshot from which fine detail is generated near the player.
+- **Run once:** plates move only during generation. The only thing that changes at runtime is the
+  season, from the orbit's phase blending precomputed monthly fields.
+- **Scope and budget:** this applies to worlds with water and plate tectonics; others keep their own
+  processes. Up to ~10 minutes per star system is fine as long as the result is cached.
+- **Language:** Dave wants C or C++ for the WASM port, not Rust. GPU math isn't bit-identical across
+  vendors, so the GPU is for render-only detail. The port uses its own math functions (port dmath),
+  no fast-math, `-ffp-contract=off`, and no relaxed SIMD. Apple clang probably lacks the wasm32 backend
+  (unchecked); Homebrew LLVM (with lld) or emscripten will be needed.
+- **Glaciers:** carving down off peaks (cirques, arêtes, horns, U-valleys), not only in ice ages.
+  They need a flow model (ice thickness flowing downhill) fed by the climate's snow and melt, with
+  erosion that follows the ice's sliding speed. Valley glaciers show at a 2 km grid; cirques and horns
+  need the local detail near the player.
+- **Soil depth (a later pass):** soil is made from bedrock and creeps downslope, so it's thin on ridges
+  and steep slopes and deep in valleys. Meadows grow where it's shallow, forests where it's deep.
+- **Gameplay direction:** interstellar package delivery, with the sim making each delivery a physics
+  problem. It needs save/load (carrying world state between systems), places (outposts from the
+  settlement-site analysis), goods with limits, a job board and a galaxy. Discussed only; nothing built.
+
+- **More direction from Dave:**
+  - The sea only sets the erosion base level in deep time: set it by rule (the ocean fraction), not
+    as a sim output.
+  - Let worlds vary (continental thickness and area); use guard rails, not targets.
+  - Use realistic impact rates and sizes.
+  - Volcanoes, volcanic islands and beautiful island chains (sometimes). Activity is a random world
+    trait, including over-active worlds.
+  - Interesting variety: dry worlds, water worlds, no plate tectonics, and so on.
+  - Rain depends on how hot and wet a world is.
+  - A planetary history comes first: whether life ever arose (sometimes never), and the initial
+    atmosphere and how it changed. Atmosphere drives temperature, which drives rain and erosion over time.
+  - Check across seeds.
+
+Files (new, all in `src/gen/worldsim/`):
+- `grid.js`: SimGrid, a cube-sphere with N x N cells per face, flat neighbour tables, `cellAt` without
+  atan, and `sample` bilinear within a face.
+- `erosion.js`: implicit FastScape stream power.
+  - Routing is a priority flood with slope-weighted random receivers, so the grid doesn't show.
+  - Lakes fill with sediment; shelves build on the sea floor; hillslope creep.
+- `tectonics.js`: each plate keeps its crust in its own frame grid (`own`, `thick`, `cont`, `age`,
+  `rate`, `relief`), and world cells gather it by rotating back into each frame.
+  - **Plate interactions:**
+    - subduction raises arcs and island arcs (new continent);
+    - continental collision stacks crust, with an 85 km hard limit that fills outward;
+    - gaps become new ocean floor (GDH1 depth).
+  - **Driving forces:** slab pull sets plate speed (0.15-0.9 deg/Myr); collisions merge plate motions,
+    and sustained ones weld two plates into one; rifts split big continental plates (sooner when there
+    are few plates).
+  - **Crust upkeep:** gravitational spreading (nonlinear, so plateaus dome); extension thins
+    continents over 40 km and adds the crust at their margins (100 Myr); a guard rail speeds collapse
+    only when the mean passes 50 km; ghost crust (hidden under other plates) is cleared each step.
+  - **Volcanism:**
+    - activity tiers (quiet / Earth-like / busy / over-active);
+    - hotspots fixed in the mantle with a swell, pulsed shield volcanoes, and chains that sink as they
+      move away;
+    - arc volcano cones behind trenches.
+  - **Sea level and erosion:** sea level comes from the ocean-fraction rule; `stepEroded` couples
+    coarse erosion every step. Erosion takes volcanoes down before crust and fills craters first.
+- `impacts.js`: the present-day lunar production rate (N(>=1 km) 8.4e-4 per km^2 per Gyr, falling as
+  D^-2), scaled by gravity, with small impactors filtered by the air; complex crater profile.
+- `tools/worldlab.mjs`: the driver and PNG maps.
+
+Run: `node tools/worldlab.mjs <seed> <bodyId|start> --init tect --myr 400 --N 192 --steps 40 --dt 2.5e5
+--kd 1 --deepK 3e-6 [--hot N] [--impacts 1] [--at peak|mouth|hot --zoom km] --out <dir>`.
+- **Outputs:** `<body>-plates.png` (frames over time), `-map.png` (before/after) and `-zoom-*.png`.
+- **Worlds with water and tectonics, for multi-seed checks:** FSPB-8DTW start (Moadeal), LAB-0 7,
+  LAB-2 5, LAB-4 5, LAB-5 5 (Dorith, 94% ocean), LAB-6 5. Run them in parallel; ~1 min each at N=128.
+- **Timings (M4, node):** 400 Myr of tectonics plus coarse erosion at N=128 is ~50 s; fine erosion is
+  ~90 ms/step at N=256.
+
+Verified across the six worlds (maps only, nothing in the game):
+- **Stable and varied:**
+  - continental crust stays at 35-43 km mean thickness;
+  - plate counts 7-22 with rifts and welds (a supercontinent cycle);
+  - sea floor 40-100 Myr old on average;
+  - median land 0.4-2 km;
+  - continental area drifts up on some worlds into broad shallow seas.
+- **Features:** plateaus dome; hotspot tracks and island groups appear; impacts happen and get eroded.
+
+Known issues and next steps: see `WORLDSIM.md`. The grid-like patch on Xenzhei was rift-thinned
+shelf (crossing rifts). Dave: fine. Rift lines now meander. Equirectangular lab maps smear at the poles.
+
 ## START HERE (end of session 0f13fab4, before a context compaction)
 
 Everything up to the polish work is committed ("Two local players, walkable craft, ..."; Dave asks for commits explicitly; not pushed). The dev server

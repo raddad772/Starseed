@@ -9,6 +9,8 @@
 import * as dm from '../core/dmath.js';
 import * as U from '../core/units.js';
 import { hzSeff } from './star.js';
+import { drawPigments, albedoRGB } from './pigments.js';
+import { evolveWorld } from './worldsim/evolve.js';
 import { hsv, mixRGB, scaleRGB, hexToLinear, jitterColor } from './color.js';
 
 const LOG10 = (x) => dm.log10(x);
@@ -78,18 +80,6 @@ function rayleighRel(comp) {
 // Photosynthetic pigment colour follows the host star's spectrum
 // (Kiang et al. 2007): F stars -> blue-green/teal, G -> greens (with
 // occasional "purple Earth" retinal pigments), K -> yellow-orange, M -> dark red/black.
-function vegetationColor(rng, teff) {
-  let h, s, v;
-  if (teff > 6100) { h = rng.range(0.42, 0.55); s = rng.range(0.45, 0.7); v = rng.range(0.22, 0.38); }
-  else if (teff > 5200) {
-    if (rng.chance(0.15)) { h = rng.range(0.78, 0.9); s = rng.range(0.4, 0.6); v = rng.range(0.18, 0.3); }
-    else { h = rng.range(0.2, 0.36); s = rng.range(0.5, 0.75); v = rng.range(0.18, 0.34); }
-  } else if (teff > 3900) { h = rng.range(0.07, 0.17); s = rng.range(0.55, 0.8); v = rng.range(0.2, 0.36); }
-  else { h = rng.range(0.94, 1.03); s = rng.range(0.35, 0.7); v = rng.range(0.06, 0.16); }
-  const c = hsv(h, s, v);
-  return c.map((x) => x * x); // treat HSV output as sRGB-ish: square for rough linearisation
-}
-
 // ---------------------------------------------------------------- mineral palettes
 
 const MINERALS = {
@@ -126,7 +116,8 @@ function pickMinerals(rng, kind) {
 function buildAtmosphere(rng, b, star, S, proto) {
   const vesc = b.vEscReal / 1000;
   const Scrit = 0.0008 * vesc * vesc * vesc * vesc; // cosmic shoreline, I ~ v_esc^4
-  const x = LOG10(Scrit / S) + rng.normal(0, 0.25);
+  // (flare stars: a red dwarf's planets take far more X-ray/UV per unit of light)
+  const x = LOG10(Scrit / (S * dm.pow(star.xuv || 1, 0.6))) + rng.normal(0, 0.25);
   const massE = b.massEarth;
   if (x < 0) return null;
 
@@ -186,6 +177,31 @@ function buildAtmosphere(rng, b, star, S, proto) {
   if (a.tau === undefined) a.tau = a.tauK * dm.pow(a.pressure, 0.9);
   a.mu = meanMolar(a.comp);
   return a;
+}
+
+// The air a world's history has left it (worldsim/evolve.js): its type for the
+// renderer, its make-up, and the albedo and greenhouse depth (tau) that give
+// the history's temperature through this file's Tsurf formula
+function atmosphereNow(rng, h, S) {
+  if (h.titanish && h.T < 140) {
+    // a cold moon's nitrogen and methane, frozen in place (Titan)
+    const p = dm.clamp(rng.lognormal(1.4, 0.55), 0.2, 6);
+    const a = { type: 'titan', pressure: p, comp: { N2: 0.95, CH4: 0.05 }, albedo: 0.22, tauK: 0.7, life: false, snowball: false };
+    a.tau = a.tauK * dm.pow(p, 0.9); a.mu = meanMolar(a.comp);
+    return a;
+  }
+  if (h.P < 0.003) return null;
+  const P = h.P, co2 = h.pCO2 / P, o2 = h.pO2 / P, n2 = Math.max(0, 1 - co2 - o2) / 1.01;
+  const comp = { N2: n2, Ar: n2 * 0.01, CO2: co2 };
+  if (o2 > 1e-4) comp.O2 = o2;
+  let type;
+  if (h.runaway || (h.T > 400 && co2 > 0.5 && P > 3)) type = 'venus';
+  else if (co2 > 0.5 && (h.oceans <= 0.001 || h.T < 255)) type = P < 0.1 ? 'mars' : 'coldco2';
+  else type = 'temperate';
+  const albedo = dm.clamp(h.albedo, 0.05, 0.8);
+  const Teq = equilibriumTemp(S, albedo);
+  const tau = Math.max(0, (dm.pow(h.T / Teq, 4) - 1) / 0.75);
+  return { type, pressure: P, comp, albedo, tau, life: h.lifeLevel !== 'none', snowball: h.snowball, mu: meanMolar(comp) };
 }
 
 // Optical parameters for the scattering shader (game units = metres)
@@ -417,38 +433,47 @@ export function buildBody(rng, proto, star, host) {
 
   // ---- terrestrial bodies
   const volcanicMoon = (proto.tidalHeating || 0) > 0.6 && b.comp.water < 0.15;
-  let atm = volcanicMoon ? null : buildAtmosphere(rng.fork('atmosphere'), b, star, S, proto);
   const tidalHeating = proto.tidalHeating || 0;
+  // its whole history, formation to now: the present (air, warmth, water, life) is where it led
+  // (an exceptional world's cause: exceptional.js)
+  const exc = proto.exception || null;
+  const tidalEff = Math.max(tidalHeating, exc && exc.tidal ? exc.tidal : 0);
+  const hist = evolveWorld({ rng: rng.fork('history'), star, S, massE: b.massEarth, radiusM: b.radiusM, gravity: b.gravity, vEsc: b.vEscReal / 1000, comp: b.comp, kind: proto.kind, tidal: tidalEff, exception: exc });
+  if (exc) b.exceptional = { kind: exc.kind, text: exc.text };
+  b.history = hist;
+  let atm = volcanicMoon ? null : atmosphereNow(rng.fork('atmosphere'), hist, S);
   let albedo;
   if (atm) albedo = atm.albedo;
   else albedo = b.comp.water > 0.2 ? rng.range(0.45, 0.7) : rng.range(0.08, 0.16);
   if (tidalHeating > 0.6 && b.comp.water < 0.15) albedo = rng.range(0.5, 0.65); // sulfur frosts
   let Teq = equilibriumTemp(S, albedo);
   let Tsurf = atm ? Teq * dm.pow(1 + 0.75 * atm.tau, 0.25) : Teq;
+  // (a freshly melted crust glows whatever the air: the history's heat)
+  if (exc && exc.kind === 'impact-melt') Tsurf = Math.max(Tsurf, hist.T);
 
   // ---- hydrosphere
   const hydroRng = rng.fork('hydro');
   let hydro = { water: 'none', oceanFraction: 0, iceCover: 0, liquid: null };
-  const logW = LOG10(Math.max(b.comp.water, 1e-9));
+  // the water the history left (in Earth oceans), spread by how much there is
+  const waterNow = hist.oceans * 2.3e-4;
+  const logW = LOG10(Math.max(waterNow, 1e-9));
   const coverage = dm.smoothstep(0, 1, dm.clamp((logW + 5.5) / 3.2, 0, 1));
   const pBar = atm ? atm.pressure : 0;
-  if (atm && atm.type === 'temperate') {
-    if (Tsurf < 252 && b.comp.water > 1e-6) {
-      // ice-albedo runaway: snowball world
-      albedo = 0.55; Teq = equilibriumTemp(S, albedo); Tsurf = Teq * dm.pow(1 + 0.75 * atm.tau, 0.25);
-    }
-    if (Tsurf > 273 && Tsurf < boilingPoint(pBar) && pBar > 0.006) {
-      hydro = { water: 'liquid', liquid: 'water', oceanFraction: dm.clamp(coverage * hydroRng.range(0.85, 1.1), 0.02, 1.0), iceCover: 0 };
-      if (b.comp.water > 0.02) hydro.oceanFraction = 1.0; // global ocean world
-    } else if (Tsurf <= 273) {
-      hydro = { water: 'frozen', liquid: null, oceanFraction: dm.clamp(coverage, 0.05, 1), iceCover: dm.clamp(0.6 + (273 - Tsurf) / 60, 0.6, 1) };
-    }
-  } else if (atm && atm.type === 'titan') {
+  if (atm && atm.type === 'titan') {
     hydro = { water: 'frozen', liquid: 'methane', oceanFraction: hydroRng.range(0.02, 0.12), iceCover: 0 };
-  } else if (!atm || atm.type === 'mars' || atm.type === 'coldco2') {
-    if (b.comp.water > 0.15) hydro = { water: 'frozen', liquid: null, oceanFraction: 0, iceCover: 1 };
-    else if (Tsurf < 240 && b.comp.water > 1e-5) hydro = { water: 'frozen', liquid: null, oceanFraction: 0, iceCover: dm.clamp(0.08 + coverage * 0.3, 0, 0.45) };
-  }
+  } else if (hist.oceans > 0.001 && pBar > 0.006 && Tsurf < boilingPoint(pBar)) {
+    if (hist.snowball || Tsurf < 255) hydro = { water: 'frozen', liquid: null, oceanFraction: dm.clamp(coverage, 0.05, 1), iceCover: dm.clamp(0.75 + (255 - Tsurf) / 60, 0.75, 1) };
+    else {
+      hydro = { water: 'liquid', liquid: 'water', oceanFraction: dm.clamp(coverage * hydroRng.range(0.85, 1.1), 0.02, 1.0), iceCover: Tsurf < 273 ? (273 - Tsurf) / 18 * 0.6 : 0 };
+      if (waterNow > 0.02) hydro.oceanFraction = 1.0; // global ocean world
+    }
+  } else if (b.comp.water > 0.15) hydro = { water: 'frozen', liquid: null, oceanFraction: 0, iceCover: 1 };
+  else if (Tsurf < 240 && b.comp.water > 1e-5) hydro = { water: 'frozen', liquid: null, oceanFraction: 0, iceCover: dm.clamp(0.08 + coverage * 0.3, 0, 0.45) };
+  // a young world: its magma ocean still crusting over
+  if (hist.age < 0.05 && !volcanicMoon) hydro = { water: 'none', liquid: 'lava', oceanFraction: dm.clamp(0.9 - hist.age * 14, 0.15, 0.9) * hydroRng.range(0.8, 1), iceCover: 0 };
+  // exceptional lava worlds: tide-heated (lava lakes and seas), or freshly struck (a magma sea)
+  if (exc && exc.kind === 'tidal-lava') hydro = { water: 'none', liquid: 'lava', oceanFraction: exc.lavaFrac, iceCover: 0 };
+  if (exc && exc.kind === 'impact-melt') hydro = { water: 'none', liquid: 'lava', oceanFraction: dm.clamp(0.9 - exc.ago * 30, 0.2, 0.9), iceCover: 0 };
   // Lava worlds: dayside hot enough to keep silicate seas molten
   if (Teq > 900) {
     hydro = { water: 'none', liquid: 'lava', oceanFraction: Teq > 1300 ? hydroRng.range(0.4, 0.8) : hydroRng.range(0.04, 0.2), iceCover: 0 };
@@ -466,11 +491,14 @@ export function buildBody(rng, proto, star, host) {
 
   // ---- life
   let life = null;
-  if (atm && atm.life && hydro.water === 'liquid' && Tsurf > 262 && Tsurf < 325) {
+  if (hist.lifeLevel !== 'none' && hydro.water === 'liquid') {
     const lr = rng.fork('life');
+    // its pigments, tuned to its star's light: the foliage colour follows
+    const pigment = drawPigments(lr.fork('pigment'), star.teff);
     life = {
-      level: lr.weighted([[2, 'microbial mats'], [4, 'vascular flora'], [3, 'complex biosphere']]),
-      vegColor: vegetationColor(lr, star.teff),
+      level: hist.lifeLevel,
+      pigment,
+      vegColor: albedoRGB(pigment),
       dryColor: null,
       density: lr.range(0.55, 1.0),
     };
@@ -492,7 +520,7 @@ export function buildBody(rng, proto, star, host) {
   b.atmosphere = atm;
 
   // ---- terrain style for the generator
-  b.terrain = terrainParams(rng.fork('terrain'), b, star, minerals, tidalHeating, proto);
+  b.terrain = terrainParams(rng.fork('terrain'), b, star, minerals, tidalEff, proto);
   b.label = terrestrialLabel(b);
   b.esi = esi(b);
   b.habitability = habitabilityScore(b);
@@ -508,12 +536,16 @@ function terrainParams(rng, b, star, minerals, tidalHeating, proto) {
   const liquidWater = hydro.water === 'liquid';
   const g = b.gravity;
   const relief = dm.clamp(8500 * 9.81 / g, 2500, 21000) * rng.range(0.7, 1.25) * (icy ? 0.45 : 1);
-  const tectonics = (!icy && b.massEarth > 0.35 && (liquidWater || rng.chance(0.3))) ? rng.range(0.55, 1) : (b.massEarth > 0.15 ? rng.range(0, 0.25) : 0);
+  const h = b.history;
+  const tectonics = h ? (h.regime === 'mobile' && !icy ? rng.range(0.55, 1) : (b.massEarth > 0.15 ? rng.range(0, 0.25) : 0))
+    : ((!icy && b.massEarth > 0.35 && (liquidWater || rng.chance(0.3))) ? rng.range(0.55, 1) : (b.massEarth > 0.15 ? rng.range(0, 0.25) : 0));
   let craters;
   if (airless) craters = rng.range(0.55, 1.0);
   else if (P < 0.1) craters = rng.range(0.25, 0.55);
   else craters = tectonics > 0.5 ? rng.range(0, 0.06) : rng.range(0.02, 0.2);
-  const volcanism = hydro.liquid === 'lava' ? 1 : dm.clamp(tidalHeating + (b.massEarth > 0.3 ? rng.range(0, 0.45) : rng.range(0, 0.15)), 0, 1);
+  // (the history's interior heat now: young worlds seethe, old ones are still)
+  const volcanism = hydro.liquid === 'lava' ? 1 : h ? dm.clamp(tidalHeating + 0.18 * h.heatNow * rng.range(0.6, 1.4), 0, 1)
+    : dm.clamp(tidalHeating + (b.massEarth > 0.3 ? rng.range(0, 0.45) : rng.range(0, 0.15)), 0, 1);
   if (volcanism > 0.7 || tidalHeating > 0.5) craters *= 0.15; // young resurfaced crust
   const erosion = liquidWater ? rng.range(0.55, 0.95) : (atm && P > 0.05 ? rng.range(0.25, 0.55) : rng.range(0.0, 0.1));
   const dunes = (atm && !liquidWater && P > 0.004 && atm.type !== 'titan' || (atm && atm.type === 'titan')) ? rng.range(0.25, 1.0) : 0;
@@ -592,7 +624,11 @@ function terrestrialLabel(b) {
   if (atm && atm.type === 'venus') return size + 'greenhouse world';
   if (h.water === 'liquid') return h.oceanFraction >= 0.99 ? 'Ocean world' : 'Temperate terrestrial';
   if (atm && atm.type === 'titan') return moon ? 'Titan-like moon' : 'Methane-haze world';
-  if (h.water === 'frozen' && h.iceCover > 0.55) return (atm && atm.type === 'temperate') ? 'Snowball world' : (moon ? 'Icy moon' : 'Icy world');
+  if (h.water === 'frozen' && h.iceCover > 0.55) {
+    // (a world that froze over near its star's habitable zone is a snowball; far out, just frozen)
+    if (atm && atm.type === 'temperate') return b.Teq > 200 ? 'Snowball world' : (moon ? 'Frozen moon' : 'Frozen world');
+    return moon ? 'Icy moon' : 'Icy world';
+  }
   if (b.terrain && b.terrain.volcanism > 0.75) return moon ? 'Volcanic moon' : 'Volcanic world';
   if (atm && (atm.type === 'mars' || atm.type === 'coldco2')) return size + (b.Tsurf < 240 ? 'cold desert' : 'desert world');
   if (b.comp.water > 0.2) return moon ? 'Icy moon' : 'Icy body';

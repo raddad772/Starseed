@@ -3,7 +3,8 @@
 A procedural, browser-playable star-system game in the spirit of No Man's Sky: Three.js r186
 (vendored), plain ES modules, no build step. Dave play-tests it and gives feedback in short bursts.
 
-**Read `HANDOFF.md` first.** It has the current state, everything Dave asked for and how it was done,
+**Read `HANDOFF.md` first.** For world generation (the simulated-worlds work), `WORLDSIM.md` is the
+plan to act on. It has the current state, everything Dave asked for and how it was done,
 what is verified, and the queue.
 
 - Dev server: launch config `starseed` (`.claude/launch.json`) or `python3 tools/serve.py 8765`.

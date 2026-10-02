@@ -21,6 +21,7 @@ import * as dm from '../core/dmath.js';
 import * as U from '../core/units.js';
 import { generateStar } from './star.js';
 import { buildBody } from './bodies.js';
+import { pickException } from './exceptional.js';
 import { makeOrbit, orbitState } from '../core/kepler.js';
 import { makeName, roman, PLANET_LETTERS } from './names.js';
 import { qFromTo, qAxisAngle, qMul, qRotate, qConj, norm, cross, perp, dot } from '../core/vec.js';
@@ -31,7 +32,9 @@ const M_SUN_IN_EARTH = U.M_SUN / U.M_EARTH;
 
 function makeDisk(rng, star) {
   return {
-    sigma1: 11 * star.mass * dm.pow(10, star.metallicity) * rng.lognormal(1, 0.5), // g/cm^2 of solids at 1 AU
+    // (disk mass grows faster than the star's: ~M^1.5, Andrews et al. 2013, so
+    // red dwarfs get small, compact families)
+    sigma1: 11 * dm.pow(star.mass, 1.5) * dm.pow(10, star.metallicity) * rng.lognormal(1, 0.5), // g/cm^2 of solids at 1 AU
     snow: star.snowLine * rng.range(0.85, 1.15),
     iceBoost: rng.range(2.5, 4.0),
     pebbleBoost: rng.lognormal(1.9, 0.4),
@@ -85,9 +88,11 @@ function formPlanets(rng, star, disk) {
     if (beyond) {
       const crit = pr.lognormal(10, 0.3);
       const growthMyr = 0.6 * dm.pow(aAU / 5, 2.2) * dm.pow(10 / Math.max(core, 0.5), 0.8);
-      if (core >= crit && growthMyr < gasLeft) {
+      // (gas giants need a gas-rich disk: their frequency goes ~ with the star's
+      // mass, Johnson et al. 2010; around red dwarfs they're rare)
+      if (core >= crit && growthMyr < gasLeft && pr.next() < Math.min(1, star.mass * 1.1)) {
         // runaway gas accretion; each giant eats gas and opens a gap
-        const mJ = Math.min(pr.powerLaw(0.1, 8, -1.3), pr.chance(0.85) ? 3 : 8) * dm.pow(10, star.metallicity * 0.5);
+        const mJ = Math.min(pr.powerLaw(0.1, 8, -1.3), pr.chance(0.85) ? 3 : 8) * dm.pow(10, star.metallicity * 0.5) * Math.min(1, star.mass / 0.6);
         proto.massEarth = Math.max(mJ * 317.8, core * 3);
         proto.comp = { iron: 0.1, rock: 0.3, water: 0.6, envelope: 1 - Math.min(0.15, core / proto.massEarth) };
         gasLeft *= 0.45;
@@ -308,12 +313,61 @@ function startScore(b, bodies) {
   return s;
 }
 
-export function generateSystem(seedInput) {
+// The head of a system, decided first and cheaply from its seed: the star, its
+// disk, its planets' orbits and make-up, their names, and whether one of them
+// is exceptional. generateSystem builds everything else on top of exactly this,
+// so a summary (summarizeSystem) always agrees with the full system.
+function systemHead(seedInput) {
   const seed = String(seedInput);
   const root = Rng.fromString(`starseed/v${GENERATOR_VERSION}/${seed}`);
   const star = generateStar(root.fork('star'));
   const disk = makeDisk(root.fork('disk'), star);
   const protos = formPlanets(root.fork('formation'), star, disk);
+  const exception = pickException(root.fork('exception'), protos, star);
+  const planetRng = root.fork('planets');
+  const names = protos.map((proto) => makeName(planetRng.fork('p' + proto.slot).fork('name'), 2, 3));
+  const debris = systemDebris(root.fork('debris'), protos, disk);
+  return { seed, root, star, disk, protos, exception, planetRng, names, debris };
+}
+
+// How cluttered a system is with leftover rock and ice (it scales every
+// world's impact rate; impacts.js): wide by nature, more with giant planets to
+// stir their belts and with more leftover disk solids; sometimes the giants'
+// orbits shift and fling a late storm of debris inward (as the Nice model has
+// the Solar System's late heavy bombardment)
+function systemDebris(rng, protos, disk) {
+  const giants = protos.filter((p) => p.comp.envelope > 0.5).length;
+  const level = rng.lognormal(1, 0.7) * (giants ? 1.4 + 0.2 * giants : 0.6) * dm.pow(disk.sigma1 / 11, 0.3);
+  const spike = giants >= 2 && rng.next() < 0.3 ? { atGyr: rng.range(0.4, 1.0), widthGyr: rng.range(0.05, 0.15), strength: rng.lognormal(15, 0.6) } : null;
+  const name = level < 0.5 ? 'quiet' : level < 2 ? 'ordinary' : level < 5 ? 'busy' : 'a shooting gallery';
+  return { level, spike, name };
+}
+
+// A quick look at a system from its seed (for finding interesting ones across
+// the galaxy): the star (type, colour, size, age), its planets' names, sizes and
+// orbits, which sit in the habitable zone, and any exceptional world. A fraction
+// of a millisecond, against tens for the full system.
+export function summarizeSystem(seedInput) {
+  const H = systemHead(seedInput), s = H.star;
+  const planets = H.protos.map((p, i) => {
+    const cls = p.comp.envelope > 0.5 ? 'gas giant' : p.comp.envelope > 0.04 && p.massEarth > 8 ? 'ice giant' : p.comp.envelope > 0.001 ? 'mini-Neptune' : p.massEarth < 0.08 ? 'dwarf' : 'rocky';
+    const inHZ = p.aAU >= s.hz.optimisticInner && p.aAU <= s.hz.optimisticOuter;
+    return { name: H.names[i], letter: PLANET_LETTERS[i], aAU: p.aAU, massEarth: p.massEarth, kind: cls, inHZ, rockyInHZ: inHZ && cls !== 'gas giant' && cls !== 'ice giant', exceptional: p.exception ? p.exception.kind : null };
+  });
+  return {
+    seed: H.seed, name: s.name, catalog: s.catalog, spectral: s.spectral, teff: s.teff, color: s.color,
+    mass: s.mass, radius: s.radius, luminosity: s.luminosity, age: s.age, metallicity: s.metallicity,
+    planets, nPlanets: planets.length,
+    hzRocky: planets.filter((p) => p.rockyInHZ).map((p) => p.name),
+    exceptional: H.exception ? { kind: H.exception.kind, planet: planets.find((p) => p.exceptional).name, text: H.exception.text } : null,
+    debris: { level: H.debris.level, name: H.debris.name, lateBombardment: !!H.debris.spike },
+  };
+}
+
+export function generateSystem(seedInput) {
+  const H = systemHead(seedInput);
+  const { seed, root, star, disk, protos } = H;
+  star.debris = H.debris;
 
   star.id = 0;
   star.parentId = -1;
@@ -325,7 +379,7 @@ export function generateSystem(seedInput) {
   const bodies = [star];
 
   const nGiants = protos.filter((p) => p.comp.envelope > 0.5).length;
-  const planetRng = root.fork('planets');
+  const planetRng = H.planetRng;
   protos.forEach((proto, idx) => {
     const pr = planetRng.fork('p' + proto.slot);
     proto.kind = 'planet';
@@ -335,7 +389,7 @@ export function generateSystem(seedInput) {
     body.parentId = 0;
     body.index = idx;
     body.designation = `${star.name} ${PLANET_LETTERS[idx]}`;
-    body.name = makeName(pr.fork('name'), 2, 3);
+    body.name = H.names[idx];
     const el = orbitalElements(pr.fork('orbit'), proto, protos.length, nGiants);
     body.orbitE = el.e;
     body.aAU = proto.aAU;
