@@ -23,7 +23,8 @@ self.onmessage = (e) => {
     // its landmarks, named (the catalog shows them)
     try {
       const F = findFeatures(W.G, W.h, { E: W.E, scale: b.R / b.radiusM, craters: W.craters || [], volcanoes: W.volcanoes, tuyas: W.tuyas, glaciers: W.glaciers, coasts: W.coasts, rock: W.rock, rockNames: ROCKS.map((r) => r.name), climate: W.climate, Gc: W.Gc, dunes: W.dunes, mesas: W.mesas, soil: W.soil, drowned: W.drowned, top: 5 });
-      snap.landmarks = landmarks(nameLandmarks(F, `${m.seed}|${m.body}`));
+      const dry = !b.terrain.liquid || b.terrain.liquid === 'lava';
+      snap.landmarks = landmarks(nameLandmarks(F, `${m.seed}|${m.body}`, dry), dry);
     } catch (err) { self.postMessage({ type: 'log', job: m.job, body: m.body, msg: 'landmarks failed: ' + err }); }
     snap.ms = Math.round(performance.now() - t0);
     self.postMessage({ type: 'snapshot', job: m.job, body: m.body, snap }, snapshotBuffers(snap));

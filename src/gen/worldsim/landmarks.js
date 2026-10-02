@@ -26,9 +26,17 @@ const FORMS = {
   gorges: ['the # Gorge', 'the # Canyon'],
   waterfalls: ['# Falls', '# Force'],
 };
+// on a world with no surface liquid now: what its wetter past carved, dry
+const DRY = {
+  rivers: ['the # Valley', 'the # Valley', 'the # Channel'],
+  lakes: ['the # Basin', '# Playa', '# Dry Lake'],
+  saltLakes: ['the # Salt Pan', 'the # Salt Flat'],
+  waterfalls: ['# Dry Falls', 'the # Cataract'],
+};
 
-// names every listed feature (sets .name) in place; key: a string (seed and body)
-export function nameLandmarks(F, key) {
+// names every listed feature (sets .name) in place; key: a string (seed and body); dry: the
+// world has no surface liquid now (its rivers and lakes are dry valleys and basins)
+export function nameLandmarks(F, key, dry = false) {
   const used = new Set();
   const root = Rng.fromString('landmarks|' + key);
   for (const kind of Object.keys(FORMS)) {
@@ -41,7 +49,8 @@ export function nameLandmarks(F, key) {
       let n = pick();
       for (let k = 0; k < 6 && used.has(n); k++) n = pick();
       used.add(n);
-      const forms = kind === 'lakes' && f.salt ? FORMS.saltLakes : FORMS[kind];
+      const set = dry ? { ...FORMS, ...DRY } : FORMS;
+      const forms = kind === 'lakes' && f.salt ? set.saltLakes : set[kind];
       f.name = forms[rng.int(0, forms.length - 1)].replace('#', n);
     }
   }
@@ -52,13 +61,13 @@ const km = (x) => x >= 1e6 ? `${(x / 1e6).toFixed(1)}M` : x >= 1e4 ? `${Math.rou
 const cap = (s) => s[0].toUpperCase() + s.slice(1);
 
 // the headline landmarks for the game, most striking first: [{ kind, name, text, lat, lon }]
-export function landmarks(F) {
+export function landmarks(F, dry = false) {
   const out = [];
   const add = (kind, f, text) => { if (f && f.name) out.push({ kind, name: cap(f.name), text, lat: f.lat, lon: f.lon }); };
   if (F.peaks && F.peaks[0]) add('peak', F.peaks[0], `${Math.round(F.peaks[0].height).toLocaleString('en-US')} m`);
-  if (F.rivers && F.rivers[0]) add('river', F.rivers[0], `${km(F.rivers[0].lengthKm)} km`);
+  if (F.rivers && F.rivers[0]) add('river', F.rivers[0], `${km(F.rivers[0].lengthKm)} km${dry ? ', dry' : ''}`);
   const lake = F.lakes && F.lakes.find((l) => !l.underIce);
-  if (lake) add('lake', lake, `${km(lake.areaKm2)} km²`);
+  if (lake) add('lake', lake, `${km(lake.areaKm2)} km²${dry ? ', dry' : ''}`);
   if (F.reefs && F.reefs[0]) add('reef', F.reefs[0], `${km(F.reefs[0].lengthKm)} km`);
   if (F.deserts && F.deserts[0]) add('desert', F.deserts[0], `${km(F.deserts[0].areaKm2)} km²`);
   if (F.forests && F.forests[0]) add('forest', F.forests[0], `${F.forests[0].kind}, ${km(F.forests[0].areaKm2)} km²`);

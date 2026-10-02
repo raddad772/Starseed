@@ -62,6 +62,9 @@ export class TerrainGenerator {
     let rel = p.relief || 3000;
     if (p.snapshot) { rel = 0; for (const v of p.snapshot.h) { const a = Math.abs(v); if (a > rel) rel = a; } }
     this.hScale = Math.min(1, RELIEF_MAX * this.R / Math.max(1, rel));
+    // whether rivers and lakes hold anything now: a world too hot or cold for a surface liquid
+    // keeps the valleys and basins its wetter past carved (dry channels, playas), empty
+    this.wetNow = !!p.liquid && p.liquid !== 'lava';
     this.rockLin = ROCKS.map((r) => hexToLinear(r.color));
     const rng = new Rng(p.seed);
     this.nWarp = new Noise3(rng.seed32('warp'));
@@ -569,11 +572,11 @@ export class TerrainGenerator {
         h += (bank - h) * dm.smoothstep(flank, half * 1.2, rv.dist);
         if (rv.dist < half) {
           h = Math.min(h, bank - rv.depth * (1 - (rv.dist / half) * (rv.dist / half)));
-          wl = Math.max(bank - 0.6 - 0.03 * rv.depth, p.liquid ? 0.3 : -1e9);
+          if (this.wetNow) wl = Math.max(bank - 0.6 - 0.03 * rv.depth, 0.3);
         }
       }
     }
-    if (flooded && lk.L > wl) wl = lk.L;
+    if (flooded && this.wetNow && lk.L > wl) wl = lk.L;
     else if (!lk && h < 0 && wl < -1e8 && S.inland[S.G.cellAt(x, y, z)]) h = 0.5 - 0.02 * h;
     // tuyas: a flat lava cap where the ice's surface was (a small cone on it), flanks at ~35
     // degrees of glassy rubble down to the ground round it

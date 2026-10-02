@@ -650,18 +650,26 @@ export class Game {
     return [cd[0], cd[1], cd[2]];
   }
 
-  // testing launch spots (?test=): 'river' beside the start world's biggest river;
-  // 'cliffs' starts on the start world's steepest hard-rock
+  // testing launch spots (?test=): 'river' beside the biggest river on the start world (or,
+  // when that's dry, on the nearest world with a liquid at its surface); 'cliffs' starts on the
+  // start world's steepest hard-rock
   // country below 2.5 km (gen/volume.js: cliffs, overhangs, caves), in the morning, beside the
   // ship; once that world's sim is in (from the cache at once, else when it's done)
   async goTestSpot(kind, token) {
-    const b = this.startBody;
+    let b = this.startBody;
     if (!b || !b.solid || (kind !== 'cliffs' && kind !== 'river')) return;
+    const wetNow = (x) => x.solid && x.data.terrain && x.data.terrain.liquid && x.data.terrain.liquid !== 'lava';
+    if (kind === 'river' && !wetNow(b)) {
+      const wet = this.universe.bodies.filter(wetNow).sort((x, y) => x.pos.distanceTo(b.pos) - y.pos.distanceTo(b.pos));
+      if (!wet.length) { this.message(`Test spot: no world in this system has rivers running now (${b.data.name}'s are dry); try ?seed=LAB-271&test=river`, 'caution'); return; }
+      b = wet[0];
+      this.message(`Test spot: ${this.startBody.data.name} is dry; going to ${b.data.name} (${b.data.terrain.liquid}) once its sim is in`, 'nav');
+    }
     const id = b.data.id;
     if (this.worldSims) while (!['ready', 'failed'].includes(this.worldSims.status.get(id))) await new Promise((r) => setTimeout(r, 300));
     if (token !== this.startToken) return;   // (another start since: that one goes there instead)
     const d = kind === 'river' ? this.findBigRiver(b) : findCliffCountry(b.terrain);
-    if (!d) return;
+    if (!d) { this.message(`Test spot: no ${kind === 'river' ? 'big river' : 'cliff country'} found on ${b.data.name}`, 'caution'); return; }
     // (the ship down on the nearest gentle ground, the cliffs in sight)
     const site = gentleNear(b.terrain, d) || d;
     this.startOnSurface(b, new THREE.Vector3(site[0], site[1], site[2]));
