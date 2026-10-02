@@ -141,6 +141,7 @@ export function worldSim(body, star, opts = {}) {
   T.heights(ht, null);
   const sea = !!p.liquid && p.liquid !== 'lava' && p.ocean > 0;
   const Et = new Erosion(Gt, ht, { sea, K: KD, rain: rainT, m: 0.45, kd: 1 });
+  Et.routeEvery = 2;   // (0.5 Myr steps: the drainage hardly changes from one to the next)
   const realms = new RealmTracker(Gt, rng.fork('realms'));
   for (let k = 0; k < myr / tdt; k++) {
     Et.rainK = H.at(myr - k * tdt, 'rain') || 0.05; // the climate then, vs now

@@ -20,7 +20,7 @@ import { MT } from '../tileshape.js';
 import * as dm from '../../core/dmath.js';
 import { Noise3 } from '../../core/noise.js';
 
-export const SIM_VERSION = 5;
+export const SIM_VERSION = 6;
 
 // a world's grid size: maxN for an Earth-sized one, finer cells don't help a small one
 // (N ~ sqrt(radius): Mars ~210, the Moon ~150, a moonlet 64)

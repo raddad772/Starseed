@@ -274,11 +274,17 @@ export class Erosion {
   step(dt) {
     const { G, h, U, K, A, rcv, rcvD, order, base, fill, qs, eroded, m } = this;
     const n = G.n, area = G.area;
-    this.findBase();
-    this.route();
-    this.lakes();
-    this.drain();
+    // (where the land barely moves a step, its routing kept for routeEvery steps: the sea's
+    // reach, the ways down, the lakes, the water)
+    if (!(this.routeEvery > 1) || this.nStep % this.routeEvery === 0 || !this._routed) {
+      this.findBase();
+      this.route();
+      this.lakes();
+      this.drain();
+      this._routed = true;
+    }
     const veg = this.veg, chanA = (this.chanCells ?? 30) * G.spacing * G.spacing;
+    const powA = this._powA && this._powM === m ? this._powA : (this._powM = m, this._powA = dm.powFixed(m));
     this.nStep++;
     // an overflowing lake's spillway (its outlet and a few cells on down) cuts harder:
     // the floods that tear through a lake's rim (Bonneville's outlet fell ~100 m in weeks)
@@ -307,7 +313,7 @@ export class Erosion {
         // (life: with no land plants nothing holds the soil, so all of it wears faster;
         // with them, plant cover shields the slopes (the channels still cut))
         const life = this.bare ? 1.5 : (veg && A[c] < chanA ? 1 - 0.6 * veg[c] : 1);
-        const f = K[c] * life * (spill[c] ? SPILL_K : 1) * dt * dm.pow(A[c], m) / rcvD[c];
+        const f = K[c] * life * (spill[c] ? SPILL_K : 1) * dt * powA(A[c]) / rcvD[c];
         hn = (hu + f * hr) / (1 + f);
       }
       h[c] = hn;

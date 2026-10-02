@@ -91,6 +91,23 @@ export function pow(x, y) {
   return exp(y * log(x));
 }
 
+// x^m for one fixed m, fast, for x > 0 (normal numbers): x's power of two from its bits, its
+// mantissa's power from a table (4096 steps, read between them), so a hot loop doesn't take an
+// exp and a log a cell. Deterministic (table built with pow above; + * only after). Relative
+// error ~1e-7
+const _pf = new Float64Array(1), _pu = new Uint32Array(_pf.buffer);
+export function powFixed(m) {
+  const T = new Float64Array(4097), P2 = new Float64Array(2100);
+  for (let k = 0; k <= 4096; k++) T[k] = pow(1 + k / 4096, m);
+  for (let e = -1022; e <= 1023; e++) P2[e + 1075] = exp(e * m * 0.6931471805599453);
+  return (x) => {
+    _pf[0] = x;
+    const e = ((_pu[1] >>> 20) & 0x7ff) - 1023;
+    const f = (x * POW2[POW2_OFF - e] - 1) * 4096, k = Math.floor(f);
+    return P2[e + 1075] * (T[k] + (T[k + 1] - T[k]) * (f - k));
+  };
+}
+
 export function cbrt(x) { return x < 0 ? -pow(-x, 1 / 3) : pow(x, 1 / 3); }
 
 // fdlibm-style 3-part pi/2 for Cody-Waite argument reduction

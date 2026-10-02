@@ -43,43 +43,33 @@ export class Coasts {
     this.mud = new Float32Array(n);      // mud on sheltered shores (m): tidal flats, mangroves, marsh
   }
 
-  // which cells are coast, and how exposed each is (the share of open sea within ~6 cells).
-  // sea: which cells are sea (erosion.js's base: a dry hollow below sea level isn't), else h < 0
+  // which cells are coast, and how exposed each is: the share of open sea within ~6 cells, as
+  // the sea mask spread six times over each cell's neighbours (a smoothed mask, not a search
+  // from every coastal cell). sea: which cells are sea (erosion.js's base: a dry hollow below
+  // sea level isn't), else h < 0
   survey(h, sea) {
     const { G, energy, coast } = this;
-    const n = G.n;
-    const wetAt = sea ? (c) => sea[c] === 1 : (c) => h[c] < 0;
-    this.wetAt = wetAt;
-    coast.fill(0);
+    const n = G.n, nS = G.nStart, nb = G.nbr;
+    const wet = this._wet || (this._wet = new Uint8Array(n));
+    for (let c = 0; c < n; c++) wet[c] = sea ? (sea[c] === 1 ? 1 : 0) : (h[c] < 0 ? 1 : 0);
+    this.wetAt = (c) => wet[c] === 1;
+    let a = this._ea || (this._ea = new Float32Array(n)), t = this._eb || (this._eb = new Float32Array(n));
     for (let c = 0; c < n; c++) {
-      let wet = false, dry = false;
-      for (let e = G.nStart[c]; e < G.nStart[c + 1]; e++) { if (wetAt(G.nbr[e])) wet = true; else dry = true; }
-      coast[c] = !wetAt(c) ? (wet ? 1 : 0) : (dry ? 2 : 0);
+      let w = false, d = false;
+      for (let e = nS[c]; e < nS[c + 1]; e++) { if (wet[nb[e]]) w = true; else d = true; }
+      coast[c] = !wet[c] ? (w ? 1 : 0) : (d ? 2 : 0);
+      a[c] = wet[c];
     }
-    // (rings outward by a queue; a cell is seen once per search by its stamp)
-    const mark = this._mark || (this._mark = new Int32Array(n)), q = this._q || (this._q = new Int32Array(n));
-    let stamp = this._stamp || 0;
-    for (let c = 0; c < n; c++) {
-      if (!coast[c]) { energy[c] = 0; continue; }
-      let sea = 0, all = 0;
-      mark[c] = ++stamp;
-      let head = 0, tail = 0;
-      q[tail++] = c;
-      for (let k = 0; k < 6; k++) {
-        const end = tail;
-        for (; head < end; head++) {
-          const x = q[head];
-          for (let e = G.nStart[x]; e < G.nStart[x + 1]; e++) {
-            const o = G.nbr[e];
-            if (mark[o] === stamp) continue;
-            mark[o] = stamp; q[tail++] = o; all++;
-            if (wetAt(o)) sea++;
-          }
-        }
+    for (let k = 0; k < 6; k++) {
+      for (let c = 0; c < n; c++) {
+        let s2 = a[c], m = 1;
+        for (let e = nS[c]; e < nS[c + 1]; e++) { s2 += a[nb[e]]; m++; }
+        t[c] = s2 / m;
       }
-      energy[c] = dm.smoothstep(0.3, 0.85, sea / Math.max(1, all));
+      const x = a; a = t; t = x;
     }
-    this._stamp = stamp;
+    for (let c = 0; c < n; c++) energy[c] = coast[c] ? dm.smoothstep(0.3, 0.85, a[c]) : 0;
+    this._ea = a; this._eb = t;
   }
 
   // one step of dt years: waves on the land's edge, sand on the shores, reefs in the shallows.
