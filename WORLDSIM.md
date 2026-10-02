@@ -24,6 +24,8 @@ simulated worlds" has the latest state and run commands.
   for render-only detail (its math isn't identical across vendors).
 - **Lab first.** Iterate in `tools/worldlab.mjs` and look at the maps. Check across several seeds before
   calling anything done (see Validation). Send Dave contact sheets.
+- **Checkpoints.** Commit good checkpoints as milestones land (CLAUDE.md). Commit only our own files,
+  since other sessions may share the tree; push only when Dave asks. World-sim checkpoint: c9caba1.
 - **Coordination.** Message the "XBox Work on Mac" session before and after browser test sessions (see
   CLAUDE.md). The lab is node-only and needs no browser.
 

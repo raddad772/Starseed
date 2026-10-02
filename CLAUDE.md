@@ -13,5 +13,6 @@ what is verified, and the queue.
   `?workers=2`, using `tools/testkit.js` and `tools/probe.js`. Message the "XBox Work on Mac" session
   (SendMessage) before and after browser test sessions; it runs real-time emulator measurements.
 - If Dave rejects a tool call with "STOP", close your test tabs, say where things stand, and wait.
-- Commit only when Dave asks. End commit messages with
-  `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
+- Commit good checkpoints as work lands (each working, verified step); don't let work pile up
+  uncommitted. Commit only your own files (other sessions may share the tree). Push only when Dave
+  asks. End commit messages with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.

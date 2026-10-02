@@ -100,7 +100,7 @@ shelf (crossing rifts). Dave: fine. Rift lines now meander. Equirectangular lab 
 
 ## START HERE (end of session 0f13fab4, before a context compaction)
 
-Everything up to the polish work is committed ("Two local players, walkable craft, ..."; Dave asks for commits explicitly; not pushed). The dev server
+Everything up to the polish work is committed ("Two local players, walkable craft, ..."), and the world simulation up to c9caba1. Commit good checkpoints as work lands; push only when Dave asks (CLAUDE.md). The dev server
 (launch config `starseed`, port 8765) and Blender (MCP) were running. "XBox Work on Mac" just said
 "XBox Work done" (machine free); message it before and after any browser / Blender run (it asks for
 ~10-15 min exclusive pauses now and then: close the test tab, no Blender, reply "paused").
