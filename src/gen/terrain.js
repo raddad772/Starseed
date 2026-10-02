@@ -532,6 +532,18 @@ export class TerrainGenerator {
       }
       h += sum * (h < 0 ? 0.5 : 1);
     }
+    // rivers: a channel along the sim's river lines (meandering), as wide and deep as its
+    // water, with a flat floodplain round it
+    const rv = this._riverAt(x, y, z);
+    if (rv) {
+      const half = rv.w * 0.5;
+      if (rv.dist < half * 4) {
+        const bank = Math.max(h, 0.5);
+        const plain = dm.smoothstep(half * 4, half * 1.2, rv.dist);
+        h = h + (bank - h) * plain * 0.6;           // the floodplain levels off
+        if (rv.dist < half) h = Math.min(h, bank - rv.depth * (1 - (rv.dist / half) * (rv.dist / half)));
+      }
+    }
     // a lake's surface is level (looked up a little off true, so shores wander rather than
     // follow the sim's cells)
     const lake = this._lakeAt(x, y, z);
@@ -548,6 +560,34 @@ export class TerrainGenerator {
     out[S_LAVA] = S.melt(x, y, z);
     if (p.liquid === 'lava' && h < 0) out[S_LAVA] = 1;
     return out;
+  }
+
+  // the nearest simulated river line here (this cell's and its neighbours' segments to
+  // their downstream cells), the point wiggled so channels meander: { dist (m), w, depth }
+  _riverAt(x, y, z) {
+    const S = this.snap, s = S.s;
+    if (!s.rcv) return null;
+    const G = S.G, R = this.R, c0 = G.cellAt(x, y, z);
+    // (meanders: the point pushed about on a few-km scale)
+    const mf = R / 6000, mk = 2500 / R;
+    const px = x + mk * this.nMisc.noise(x * mf + 11, y * mf, z * mf), py = y + mk * this.nMisc.noise(x * mf, y * mf + 13, z * mf), pz = z + mk * this.nMisc.noise(x * mf, y * mf, z * mf + 17);
+    let best = null;
+    const test = (c) => {
+      const r = s.river[c], to = s.rcv[c];
+      if (r < 0.55 || to < 0 || s.h[c] < 0) return;
+      const ax = G.dir[c * 3], ay = G.dir[c * 3 + 1], az = G.dir[c * 3 + 2];
+      const bx = G.dir[to * 3] - ax, by = G.dir[to * 3 + 1] - ay, bz = G.dir[to * 3 + 2] - az;
+      const L2 = bx * bx + by * by + bz * bz;
+      const t = L2 > 0 ? Math.max(0, Math.min(1, ((px - ax) * bx + (py - ay) * by + (pz - az) * bz) / L2)) : 0;
+      const dx = px - (ax + bx * t), dy = py - (ay + by * t), dz = pz - (az + bz * t);
+      const dist = Math.sqrt(dx * dx + dy * dy + dz * dz) * R;
+      const k = (r - 0.55) / 0.45;   // (0 a stream, 1 the greatest river)
+      const w = 40 + 1800 * k * k, depth = 3 + 25 * k;
+      if (!best || dist - w < best.dist - best.w) best = { dist, w, depth };
+    };
+    test(c0);
+    for (let e = G.nStart[c0]; e < G.nStart[c0 + 1]; e++) test(G.nbr[e]);
+    return best;
   }
 
   // the simulated lake surface here, looked up a little off true (wandering shores)
@@ -599,9 +639,13 @@ export class TerrainGenerator {
         mat[0] = vegW;
       }
     }
-    // rivers: wet, darker ground along them
-    const rv = S.river(x, y, z);
-    if (rv > 0.55) { const k = dm.smoothstep(0.55, 0.9, rv) * 0.35; r *= 1 - k; g *= 1 - k * 0.8; b *= 1 - k * 0.6; mat[6] = Math.max(mat[6], k); }
+    // rivers: water in the channel, wet darker ground on the floodplain
+    const rl = this._riverAt(x, y, z);
+    if (rl && rl.dist < rl.w * 0.5 && Tc > -1) {
+      col[0] = P.waterShallow[0] * 0.8; col[1] = P.waterShallow[1] * 0.8; col[2] = P.waterShallow[2] * 0.8;
+      mat[4] = rl.depth; return;
+    }
+    if (rl && rl.dist < rl.w * 2.5) { const k = 0.3 * dm.smoothstep(rl.w * 2.5, rl.w * 0.6, rl.dist); r *= 1 - k; g *= 1 - k * 0.8; b *= 1 - k * 0.6; mat[6] = Math.max(mat[6], k); }
     // snow where it's cold
     const snow = dm.smoothstep(-2, -10, Tc) * (1 - 0.5 * rockW);
     if (snow > 0) { r += (P.snow[0] - r) * snow; g += (P.snow[1] - g) * snow; b += (P.snow[2] - b) * snow; mat[1] = snow; }

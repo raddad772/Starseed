@@ -781,9 +781,15 @@ terrain workers (`pool.setSnapshot`), the physics' generator and the renderer
 (`world.rebuildTerrain`). Browser check (LAB-271, N 128): Opast's sim 36 s in the worker, its
 continents, seas, ice sheet and red-foliage land show from orbit; on the ground a 31 C desert plain
 (moisture 0.04), walkable; airless bodies in seconds; a reload loads from the cache instantly; no
-new console errors. To do next: ice edges smoothed (stair-steps at the grid), river channels
-carved at walking scale, lake water surfaces (not solid), loading progress in the UI, making it
-the default (Dave decides), N 256-384 for visited worlds.
+new console errors. Since (2026-10-02): ice edges ragged at the fine scale, lake shores looked up
+a little off true (wandering), clouds from the climate's cloud map, and **river channels at walking
+scale**: snapshots carry each cell's downstream cell (`rcv`, SIM_VERSION 3); `_riverAt` finds the
+nearest river line among a cell's and its neighbours' segments (the point wiggled on a few-km
+scale: meanders), channel width 40 m to ~1.8 km and depth 3-28 m by discharge, a flattened
+floodplain to 4 half-widths, water in the channel core (shadeSnap), wet ground beside it.
+Opast transect across a big river: water over ~1.4 km, the bed 30-40 m under the banks.
+To do next: lake and river water as real water surfaces (not solid ground), loading progress in
+the UI, making it the default (Dave decides), N 256-384 for visited worlds.
 
 - **Snapshot format per body:**
   - heights; top rock layer and its stack;

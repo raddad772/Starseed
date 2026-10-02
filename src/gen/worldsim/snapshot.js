@@ -13,7 +13,7 @@
 
 import { SimGrid } from './grid.js';
 
-export const SIM_VERSION = 2;
+export const SIM_VERSION = 3;
 
 // W: worldSim's result; body: the body
 export function packSnapshot(W, body) {
@@ -30,9 +30,11 @@ export function packSnapshot(W, body) {
     for (let c = 0; c < n; c++) if (!W.E.base[c] && amax > 0) river[c] = Math.max(0, Math.log(Math.max(W.E.A[c], 1e-30) / (amax * 1e-4)) / Math.log(1e4));
   }
   const melt = W.melt ? Float32Array.from(W.melt) : new Float32Array(n);
+  // where each cell's water goes (river lines for channels at walking scale)
+  const rcv = W.E && W.E.rcv ? Int32Array.from(W.E.rcv) : new Int32Array(n).fill(-1);
   const relief = new Float32Array(n);
   for (let c = 0; c < n; c++) { let r = 0; for (let e = G.nStart[c]; e < G.nStart[c + 1]; e++) r = Math.max(r, Math.abs(W.h[c] - W.h[G.nbr[e]])); relief[c] = r; }
-  const out = { version: SIM_VERSION, path: W.path, N: G.N, R: G.R, h, water, rock, ice, river, melt, relief, Nc: 0 };
+  const out = { version: SIM_VERSION, path: W.path, N: G.N, R: G.R, h, water, rock, ice, river, melt, relief, rcv, Nc: 0 };
   if (W.climate && W.Gc) {
     const Gc = W.Gc, m = Gc.n, lapse = body.terrain && body.terrain.climate ? body.terrain.climate.lapse ?? 0.0065 : 0.0065;
     out.Nc = Gc.N;
@@ -49,7 +51,7 @@ export function packSnapshot(W, body) {
 
 // the arrays a snapshot carries (for transfer lists and caching)
 export function snapshotBuffers(s) {
-  return ['h', 'water', 'rock', 'ice', 'river', 'melt', 'relief', 'Tsea', 'P', 'cover', 'forest', 'open', 'cloud'].filter((k) => s[k]).map((k) => s[k].buffer);
+  return ['h', 'water', 'rock', 'ice', 'river', 'melt', 'relief', 'rcv', 'Tsea', 'P', 'cover', 'forest', 'open', 'cloud'].filter((k) => s[k]).map((k) => s[k].buffer);
 }
 
 // reads a snapshot at any direction
