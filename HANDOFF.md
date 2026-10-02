@@ -135,6 +135,10 @@ surveying many worlds; bit-exact across runs and clients, not across revisions):
   (~5-16 km real), most cells holding one in the field's middle, low domes (flanks of a few
   degrees, exaggerated as the craters), half with a summit pit, faded in by resolution. Moadeal
   has 29 fields (e.g. 52.85N 21.5E). Venus's tesserae are still to draw.
+- **The climate grid read smoothly:** its fields (sea-level temperature, rain, the life map's
+  cover / forest / open) are read as the cells' B-spline blend (`snapshot.js _gcRead`, the
+  corners kept for the fields read at the same point): plant cover showed the coarse grid's
+  squares from afar. Next: vegetation by the ground (wetter valleys, bare ridges, aspect).
 - **Rivers from afar:** a river narrower than the sampling's spacing is drawn as wide as that
   spacing (its true width near), so far terrain shows it as a line of water, not as the few
   vertices that happen to land in it (dotted water, or none).

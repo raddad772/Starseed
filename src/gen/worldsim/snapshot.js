@@ -311,8 +311,21 @@ export class SnapshotSampler {
     out.L = L; out.own = false; out.q = Math.sqrt(q2); return out;
   }
   // the climate grid's
-  Tsea(x, y, z) { return this.Gc ? this.Gc.sample(this.s.Tsea, this._d(x, y, z), this.uv) : null; }
-  rain(x, y, z) { return this.Gc ? this.Gc.sample(this.s.P, this._d(x, y, z), this.uv) : null; }
+  // (the climate grid's fields read smoothly, the cells' cubic B-spline blend: its cells are
+  // big, and read bilinearly they showed as squares; the blend's cells and weights kept for
+  // the next field read at the same point)
+  _gcRead(f, x, y, z) {
+    const d = this._d(x, y, z), c = this._gcc || (this._gcc = new Int32Array(16)), w = this._gcw || (this._gcw = new Float64Array(16));
+    if (d[0] !== this._gcx || d[1] !== this._gcy || d[2] !== this._gcz) {
+      this.Gc.corners16(d, c, w, this._gcuv || (this._gcuv = { face: 0, u: 0, v: 0 }));
+      this._gcx = d[0]; this._gcy = d[1]; this._gcz = d[2];
+    }
+    let s = 0;
+    for (let k = 0; k < 16; k++) s += f[c[k]] * w[k];
+    return s;
+  }
+  Tsea(x, y, z) { return this.Gc ? this._gcRead(this.s.Tsea, x, y, z) : null; }
+  rain(x, y, z) { return this.Gc ? this._gcRead(this.s.P, x, y, z) : null; }
   // how much of a sand sea it is there (0..1: its cells blended, so the edges thin out)
   duneMask(x, y, z) {
     if (!this.s.dunes) return 0;
@@ -324,9 +337,9 @@ export class SnapshotSampler {
   }
   // the crater record there (craters.js): N(>= D) per m^2 is this / D^2 (D in m as drawn)
   crat(x, y, z) { const q = this.s.crat ? this.s.crat[this.G.cellAt(x, y, z)] : 0; return q ? dm.pow(10, q / 20 - 12) : 0; }
-  cover(x, y, z) { return this.Gc && this.s.cover ? this.Gc.sample(this.s.cover, this._d(x, y, z), this.uv) : 0; }
-  forest(x, y, z) { return this.Gc && this.s.forest ? this.Gc.sample(this.s.forest, this._d(x, y, z), this.uv) : 0; }
-  open(x, y, z) { return this.Gc && this.s.open ? this.Gc.sample(this.s.open, this._d(x, y, z), this.uv) : 0; }
+  cover(x, y, z) { return this.Gc && this.s.cover ? this._gcRead(this.s.cover, x, y, z) : 0; }
+  forest(x, y, z) { return this.Gc && this.s.forest ? this._gcRead(this.s.forest, x, y, z) : 0; }
+  open(x, y, z) { return this.Gc && this.s.open ? this._gcRead(this.s.open, x, y, z) : 0; }
 }
 
 // the cloud cover as an equirectangular map for the render (w x w/2 bytes, the cover):
