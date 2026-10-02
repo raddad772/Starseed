@@ -162,19 +162,25 @@ export function evolveWorld(ctx) {
       life[STAGE_KEYS[stage]] = null; regained[stage] = 1; stage--;
     }
   };
-  // the surface sterilised: deep microbes may come back up (else the world is dead, and
-  // life may arise again)
-  const sterilise = (t, text, deep) => {
+  // the surface sterilised: what lives deeper may come back up (keep: the highest stage
+  // the refuge holds; else the world is dead, and life may arise again)
+  const sterilise = (t, text, deep, keep = 1) => {
     const back = deep && er.next() < deep;
-    record(t, 1, 'sterilised', text);
-    for (let k = 2; k <= 8; k++) life[STAGE_KEYS[k]] = null;
-    if (back) { stage = 1; div = 0.003; ev(t, 'reseeded', 'microbes deep in the crust survive it, and come back up'); }
+    keep = Math.min(keep, stage);
+    record(t, back ? 1 - DIV_CAP[keep] / Math.max(DIV_CAP[stage], 1e-3) : 1, 'sterilised', text);
+    for (let k = (back ? keep : 0) + 1; k <= 8; k++) { if (life[STAGE_KEYS[k]] != null && k > 1) regained[k] = 1; if (k > 1) life[STAGE_KEYS[k]] = null; }
+    if (back) { stage = keep; div = Math.min(div, 0.5 * DIV_CAP[keep]); ev(t, 'reseeded', keep >= 2 ? 'life in the deep sea comes through it, and spreads back up' : 'microbes deep in the crust survive it, and come back up'); }
     else { stage = 0; div = 0; life.origin = null; lastSterile = t; }
   };
   // a big impact (crater D km): dust and soot over the sky, by its energy (vs Chicxulub's
   // ~180 km on an Earth), spread over the world's area, held longer in thick air
   const strike = (t, D, P) => {
-    if (D >= 0.3 * Rkm) { sterilise(t, `a ${Math.round(D)} km impact boils the ${D >= 0.5 * Rkm ? 'seas' : 'surface'}`, D >= 0.5 * Rkm ? 0.25 : 0.6); return; }
+    // once there's life it's hard to kill: a surface-sterilising impact spares the deep
+    // sea and its vents; boiling the seas spares the microbes in the crust; only melting
+    // the crust itself (a magma ocean) is nearly always the end
+    if (D >= 0.55 * Rkm) { sterilise(t, `a ${Math.round(D)} km impact melts the crust`, 0.03, 1); return; }
+    if (D >= 0.4 * Rkm) { sterilise(t, `a ${Math.round(D)} km impact boils the seas`, 0.85, 1); return; }
+    if (D >= 0.25 * Rkm) { sterilise(t, `a ${Math.round(D)} km impact sterilises the surface`, 0.98, 4); return; }
     const De = D * dm.pow(1.62 / 9.81, 0.17) / sizeK;
     const tau0 = 40 * dm.pow(De / 180, 3.4) * (6371 / Rkm) * (6371 / Rkm) * (P < 0.01 ? 0.1 : 1);
     const te = dm.clamp(dm.pow(Math.max(P, 0.01), 0.3), 0.5, 3);
@@ -350,8 +356,11 @@ export function evolveWorld(ctx) {
       // ~50x, land plants ~20x, land animals ~10x)
       const ozone = pO2 > 0 ? 1 - dm.exp(-pO2 / 0.005) : 0;
       const dose = xuvAt(t) / 0.32 * (1 - 0.95 * ozone) / 0.05 * (dynamo ? 1 : 2.5) * dm.exp(-(P - 1) / 2);
-      const doseSea = 0.02 * dose + 0.2;
-      const radCurve = (R, kill) => (1 + 0.6 * R / (R + 2)) * dm.exp(-(R / kill) * (R / kill));
+      const radCurve = (R, kill, Rdeep = R) => (1 + 0.6 * R / (R + 2)) * dm.exp(-(Rdeep / kill) * (Rdeep / kill));
+      // the sea: a few metres of water stop UV and the star's particles, so sea life gets
+      // mutation from the sunlit layer (~1% of the surface dose) while the deep water is a
+      // refuge (~0.1%): only the deadliest skies touch it
+      const seaRad = (kill) => radCurve(0.2 + 0.01 * dose, kill, 0.2 + 0.001 * dose);
       // oxygen: animals need some; a lot is toxic and burns (oxidative stress, wildfire)
       const oxCurve = dm.smoothstep(0.03, 0.12, pO2) * (1 - 0.7 * dm.smoothstep(0.4, 1.0, pO2));
       let boost = 1;
@@ -362,11 +371,11 @@ export function evolveWorld(ctx) {
       const next = stage + 1;
       const grad = (1 + 0.3 * Math.min(H, 3)) * (pO2 > 0.01 ? 1.3 : 1);
       let rate = 0;
-      if (next === 2) rate = warmth * radCurve(doseSea, 500) * dm.pow(dm.clamp(parK * S(t), 0, 2), 0.7) * (lightNow > 0.005 ? 1 : 0);
+      if (next === 2) rate = warmth * seaRad(500) * dm.pow(dm.clamp(parK * S(t), 0, 2), 0.7) * (lightNow > 0.005 ? 1 : 0);
       else if (next === 3) rate = warmth * prod / (0.4 + 0.6 * H);
-      else if (next === 4) rate = warmth * prod * radCurve(doseSea, 500) * (pO2 > 0 ? 1 : 0);
-      else if (next === 5) rate = warmth * prod * radCurve(doseSea, 50) * Math.min(1, pO2 / 0.01);
-      else if (next === 6) rate = warmth * prod * radCurve(doseSea, 50) * oxCurve;
+      else if (next === 4) rate = warmth * prod * seaRad(500) * (pO2 > 0 ? 1 : 0);
+      else if (next === 5) rate = warmth * prod * seaRad(50) * Math.min(1, pO2 / 0.01);
+      else if (next === 6) rate = warmth * prod * seaRad(50) * oxCurve;
       else if (next === 7) rate = warmth * prod * radCurve(dose, 20) * (landAt(t) > 0.05 ? 1 : 0);
       else if (next === 8) rate = warmth * prod * radCurve(dose, 10) * oxCurve;
       // life already on land under a sky turned deadly (the field dies, the ozone thins, the
