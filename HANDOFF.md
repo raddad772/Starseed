@@ -102,6 +102,11 @@ surveying many worlds; bit-exact across runs and clients, not across revisions):
   a lake (Opast's salt pan was drawn as deep ocean).
 - **Maria** fill the lows (snapshot `mareLv`; the contact rule lays their basalt in the lows near
   a mare, so its edge embays craters instead of tracing cells). No alluvium on airless worlds.
+- **Straight lake shores:** Opast's big salt lake (33N 170W) has long straight east-west shores
+  and a straight island with comb-like spits, in the refinement too: probably the world sim's
+  filled lake flats (their faint fill gradient counts steps, so its contours run along the grid).
+  The tiles' distance-based fill (`flatK`) in the world sim's routing would likely fix it (all
+  worlds change: a careful pass).
 - **GPU check still to rerun** on a fluvial tile (the hidden pane throttles the GPU too hard to
   finish one): the integer sim's code is unchanged on that path since its last check; the
   airless path (streams skipped) was checked bit-identical (Idaull).
