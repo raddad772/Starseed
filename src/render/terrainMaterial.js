@@ -219,7 +219,8 @@ void main() {
     // wet / icy sheen
     vec3 V = normalize(-vWorldPos);
     vec3 H = normalize(V + uSunDir);
-    float sp = pow(max(dot(N, H), 0.0), mix(20.0, 120.0, snow)) * (0.03 + 0.25 * snow + 0.3 * wet);
+    // (an airless world's ground is regolith, frost included: matte, no gloss)
+    float sp = pow(max(dot(N, H), 0.0), mix(20.0, 120.0, snow)) * (0.03 + 0.25 * snow + 0.3 * wet) * (uHasAtmo > 0.5 ? 1.0 : 0.1);
     color += uSunE * sunT * sp * ndl;
   }
   // molten rock glows regardless of lighting

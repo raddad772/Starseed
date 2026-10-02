@@ -16,6 +16,11 @@ Dave is play-testing and giving feedback in short bursts.
 
 All are recorded in WORLDSIM.md (step 7, items 6, 16b and 18).
 
+**Backlog from Dave's play-testing (2026-10-02), for later:**
+- **Jetpack:** flight-assist modes like the ships' (with ROT off you can spin out of control).
+- **Terrain:** shadows from terrain on itself (a near-field shadow map).
+- **Local terrain sim (localsim.js):** being built; it replaces the near field's rule-based cliffs.
+
 **The plan to act on is `WORLDSIM.md`**: its DEEP-TIME CHECKLIST table has every item with its status
 (items 1-19, most at v1) and step 7 (the game) has the in-game state. In one line: worlds come from a
 forward history (evolve.js: star, chemistry, air by gas, liquids, life's stages, extinctions) and a

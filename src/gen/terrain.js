@@ -54,6 +54,11 @@ export class TerrainGenerator {
     this.R = p.R;
     // a simulated world (worldsim/snapshot.js): its heights and surfaces instead of noise
     this.snap = p.snapshot ? new SnapshotSampler(p.snapshot) : null;
+    // heights are real on worlds drawn at a tenth of their size, which makes a small body's real
+    // relief a blob: it's held to ~6% of the drawn radius (no change for an Earth's or a Moon's)
+    let rel = p.relief || 3000;
+    if (p.snapshot) { rel = 0; for (const v of p.snapshot.h) { const a = Math.abs(v); if (a > rel) rel = a; } }
+    this.hScale = Math.min(1, 0.06 * this.R / Math.max(1, rel));
     this.rockLin = ROCKS.map((r) => hexToLinear(r.color));
     const rng = new Rng(p.seed);
     this.nWarp = new Noise3(rng.seed32('warp'));
@@ -184,7 +189,12 @@ export class TerrainGenerator {
 
   // Full sample. minWavelength (m) band-limits the fine octaves.
   sample(x, y, z, minWavelength, out) {
-    if (this.snap) return this.sampleSnap(x, y, z, minWavelength, out);
+    const o = this.snap ? this.sampleSnap(x, y, z, minWavelength, out) : this.sampleNoise(x, y, z, minWavelength, out);
+    if (this.hScale < 1) { o[S_H] *= this.hScale; o[S_WDEPTH] *= this.hScale; }
+    return o;
+  }
+
+  sampleNoise(x, y, z, minWavelength, out) {
     const p = this.p;
     const R = this.R;
     const relief = this.relief;

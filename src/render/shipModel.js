@@ -203,13 +203,16 @@ export function buildShip(name = 'SS-01') {
   // glass reflects specularly and scatters almost nothing diffusely: a dark
   // base colour keeps a sunlit canopy from glowing as a grey haze
   const glassMat = new THREE.MeshPhysicalMaterial({ color: 0x141a1e, metalness: 0, roughness: 0.04, transmission: 0, transparent: true, opacity: 0.14, depthWrite: false, side: THREE.DoubleSide });
-  // ...and like glass, clear looked through square on (the pilot's view) but more and more a
-  // sheen at a slant (Fresnel), so from outside the canopy reads as glass, not a hole
+  // ...and like glass, clear looked through square on but more and more a sheen at a slant
+  // (Fresnel), so from outside the canopy reads as glass, not a hole; from inside (its back
+  // faces) it stays clear, with no sheen in the pilot's eyes
   glassMat.onBeforeCompile = (sh) => {
     sh.fragmentShader = sh.fragmentShader.replace('#include <opaque_fragment>', `#include <opaque_fragment>
-      float fresK = pow(1.0 - abs(dot(normalize(normal), normalize(vViewPosition))), 2.5);
-      gl_FragColor.a = mix(0.16, 0.85, fresK);
-      gl_FragColor.rgb += vec3(0.05, 0.07, 0.09) * fresK;`);
+      if (gl_FrontFacing) {
+        float fresK = pow(1.0 - abs(dot(normalize(normal), normalize(vViewPosition))), 2.5);
+        gl_FragColor.a = mix(0.16, 0.85, fresK);
+        gl_FragColor.rgb += vec3(0.05, 0.07, 0.09) * fresK;
+      } else gl_FragColor.a = 0.06;`);
   };
   const frameMat = new THREE.MeshStandardMaterial({ color: 0x34393f, metalness: 0.7, roughness: 0.4 });
   const nozzleMat = new THREE.MeshStandardMaterial({ color: 0x4a3d33, metalness: 0.9, roughness: 0.3 });
