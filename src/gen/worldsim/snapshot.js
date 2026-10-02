@@ -7,13 +7,13 @@
 //                      thickness, rivers (discharge, 0..1 by log), a fresh melt sheet,
 //                      local relief (for how rugged the fine detail is)
 //   on the climate grid the yearly mean brought to sea level (K), rain (mm/yr), plant
-//                      cover and its forest and open shares (life.js)
+//                      cover and its forest and open shares (life.js), cloud cover
 //
 // Versioned: a cache keyed by seed, body and SIM_VERSION drops stale ones.
 
 import { SimGrid } from './grid.js';
 
-export const SIM_VERSION = 1;
+export const SIM_VERSION = 2;
 
 // W: worldSim's result; body: the body
 export function packSnapshot(W, body) {
@@ -39,13 +39,17 @@ export function packSnapshot(W, body) {
     out.Tsea = new Float32Array(m); out.P = Float32Array.from(W.climate.Pann);
     for (let c = 0; c < m; c++) out.Tsea[c] = W.climate.Tann[c] + (W.climate.sea[c] ? 0 : lapse * Math.max(0, W.climate.h ? W.climate.h[c] : 0));
     if (W.life) { out.cover = Float32Array.from(W.life.cover); out.forest = Float32Array.from(W.life.forest); out.open = Float32Array.from(W.life.open); }
+    // cloud cover (for the render's clouds): more where it rains (rising air), clear over
+    // deserts and the sinking subtropics, stratocumulus decks over cold-current seas
+    out.cloud = new Float32Array(m);
+    for (let c = 0; c < m; c++) out.cloud[c] = Math.min(0.95, Math.max(0.05, 0.1 + 0.8 * Math.sqrt(Math.max(0, W.climate.Pann[c]) / 2500) + 0.35 * (W.climate.upwell ? W.climate.upwell[c] : 0)));
   }
   return out;
 }
 
 // the arrays a snapshot carries (for transfer lists and caching)
 export function snapshotBuffers(s) {
-  return ['h', 'water', 'rock', 'ice', 'river', 'melt', 'relief', 'Tsea', 'P', 'cover', 'forest', 'open'].filter((k) => s[k]).map((k) => s[k].buffer);
+  return ['h', 'water', 'rock', 'ice', 'river', 'melt', 'relief', 'Tsea', 'P', 'cover', 'forest', 'open', 'cloud'].filter((k) => s[k]).map((k) => s[k].buffer);
 }
 
 // reads a snapshot at any direction
@@ -74,4 +78,17 @@ export class SnapshotSampler {
   cover(x, y, z) { return this.Gc && this.s.cover ? this.Gc.sample(this.s.cover, this._d(x, y, z), this.uv) : 0; }
   forest(x, y, z) { return this.Gc && this.s.forest ? this.Gc.sample(this.s.forest, this._d(x, y, z), this.uv) : 0; }
   open(x, y, z) { return this.Gc && this.s.open ? this.Gc.sample(this.s.open, this._d(x, y, z), this.uv) : 0; }
+}
+
+// the cloud cover as an equirectangular map (w x w/2, RGBA bytes: R = cover) for the render
+export function cloudMapPixels(s, w = 256) {
+  if (!s.cloud || !s.Nc) return null;
+  const Gc = new SimGrid(s.Nc, s.R), hh = w / 2, px = new Uint8Array(w * hh * 4), d = [0, 0, 0], uv = { face: 0, u: 0, v: 0 };
+  for (let y = 0; y < hh; y++) for (let x = 0; x < w; x++) {
+    const lat = (y + 0.5) / hh * Math.PI - Math.PI / 2, lon = (x + 0.5) / w * 2 * Math.PI - Math.PI;
+    d[0] = Math.cos(lat) * Math.cos(lon); d[1] = Math.sin(lat); d[2] = Math.cos(lat) * Math.sin(lon);
+    const i = (y * w + x) * 4;
+    px[i] = Math.round(255 * Gc.sample(s.cloud, d, uv)); px[i + 1] = px[i]; px[i + 2] = px[i]; px[i + 3] = 255;
+  }
+  return { px, w, h: hh };
 }

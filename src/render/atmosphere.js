@@ -228,6 +228,8 @@ uniform float uTime;
 uniform vec4 uCloud;       // altitude, thickness, cover, scale
 uniform vec4 uCloudColor;  // rgb, opacity
 uniform float uCloudOn;
+uniform sampler2D tCloudMap;
+uniform float uCloudMapOn;
 uniform float uSteps;
 uniform float uExposureHint;
 varying vec2 vUv;
@@ -243,6 +245,8 @@ float cloudDensity(vec3 pFixedDir) {
   float lat = asin(clamp(pFixedDir.y, -1.0, 1.0));
   float n = texture(tNoise, q / 140000.0).r * 0.6 + texture(tNoise, q / 33000.0 + 0.5).r * 0.4;
   float hadley = 0.12 * cos(abs(lat) * 6.0);
+  // (with the simulated climate's cloud map: its cover moves the clouds where it rains)
+  if (uCloudMapOn > 0.5) hadley = (texture(tCloudMap, vec2(atan(pFixedDir.z, pFixedDir.x) / 6.2832 + 0.5, lat / 3.14159 + 0.5)).r - 0.5) * 0.6;
   float bias = (uCloud.z - 0.5) * 0.3;
   float cov = smoothstep(0.6 - bias, 0.8 - bias, n + hadley);
   // fine texture inside covered areas
@@ -510,6 +514,7 @@ export class Atmosphere {
       uCloud: { value: new THREE.Vector4(clouds ? clouds.altitude : 0, clouds ? clouds.thickness : 0, clouds ? clouds.cover : 0, clouds ? clouds.scale : 1) },
       uCloudColor: { value: new THREE.Vector4(clouds ? clouds.color[0] : 1, clouds ? clouds.color[1] : 1, clouds ? clouds.color[2] : 1, clouds ? clouds.opacity : 0) },
       uCloudOn: { value: clouds && !this.body.giant ? 1 : 0 },
+      tCloudMap: { value: blankCloudMap() }, uCloudMapOn: { value: 0 },
       uSteps: { value: 16 },
       tNoise: { value: null },
       uWindMax: { value: 12 },
@@ -559,3 +564,10 @@ vec3 atmoSkyIrradiance(float r, float mu) {
   return texture(tIrr, uv).rgb;
 }
 `;
+
+// a 1x1 stand-in until a simulated world's cloud map arrives
+let _blank = null;
+export function blankCloudMap() {
+  if (!_blank) { _blank = new THREE.DataTexture(new Uint8Array([128, 128, 128, 255]), 1, 1); _blank.needsUpdate = true; }
+  return _blank;
+}

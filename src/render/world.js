@@ -2,6 +2,7 @@
 
 import * as THREE from 'three';
 import { PlanetTerrain } from './planetTerrain.js';
+import { cloudMapPixels } from '../gen/worldsim/snapshot.js';
 import { Atmosphere } from './atmosphere.js';
 import { makeStarMesh } from './sky.js';
 import { makeGiantMesh, makeRingMesh } from './giant.js';
@@ -34,6 +35,14 @@ export class WorldRenderer {
     it.terrain.dispose();
     it.terrain = new PlanetTerrain(it.body, this.pool, it.shared);
     it.group.add(it.terrain.group);
+    // its clouds where its climate puts them
+    const snap = it.body.data.terrain && it.body.data.terrain.snapshot;
+    const map = snap ? cloudMapPixels(snap) : null;
+    if (map && it.atmo) {
+      const tex = new THREE.DataTexture(map.px, map.w, map.h);
+      tex.wrapS = THREE.RepeatWrapping; tex.magFilter = THREE.LinearFilter; tex.minFilter = THREE.LinearFilter; tex.needsUpdate = true;
+      for (const m of [it.atmo.material, it.volume && it.volume.material]) if (m && m.uniforms.tCloudMap) { m.uniforms.tCloudMap.value = tex; m.uniforms.uCloudMapOn.value = 1; }
+    }
   }
 
   makeItem(b) {

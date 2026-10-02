@@ -25,6 +25,8 @@ uniform sampler2D tMS;
 uniform sampler3D tNoise;
 uniform sampler2D tColor;
 uniform sampler2D tDepth;
+uniform sampler2D tCloudMap;
+uniform float uCloudMapOn;
 uniform vec3 uCenter;
 uniform vec3 uSunDir;
 uniform vec3 uSunE;
@@ -100,6 +102,8 @@ float coverage(int i, vec3 dirF, vec3 q) {
   }
   float n = texture(tNoise, q / 140000.0).r * 0.6 + texture(tNoise, q / 33000.0 + 0.5).r * 0.4;
   float hadley = 0.12 * cos(abs(lat) * 6.0);
+  // (with the simulated climate's cloud map: its cover moves the clouds where it rains)
+  if (uCloudMapOn > 0.5) hadley = (texture(tCloudMap, vec2(atan(dirF.z, dirF.x) / 6.2832 + 0.5, lat / 3.14159 + 0.5)).r - 0.5) * 0.6;
   return smoothstep(0.6 - uDeck[i].w, 0.8 - uDeck[i].w, n + hadley);
 }
 
@@ -313,6 +317,7 @@ export class VolumePass {
       tMS: { value: atmo.ms.texture },
       tNoise: { value: noiseTex },
       tColor: { value: null }, tDepth: { value: null },
+      tCloudMap: { value: atmo.material.uniforms.tCloudMap ? atmo.material.uniforms.tCloudMap.value : null }, uCloudMapOn: { value: 0 },
       uCenter: { value: new THREE.Vector3() },
       uSunDir: { value: new THREE.Vector3(1, 0, 0) },
       uSunE: { value: new THREE.Vector3(1, 1, 1) },
