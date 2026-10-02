@@ -724,7 +724,8 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
     // with no liquid has no datum, its craters and basins as deep as they are)
     if (gen.p.liquid) for (let c = 0; c < n; c++) if (!water[c] && h[c] < 0.5) h[c] = 0.5 - 0.02 * h[c];
     const AL = ROCKS.findIndex((r) => r.name === 'alluvium'), aLay = 4e8 * (cell / 900) * (cell / 900);
-    for (let c = 0; c < n; c++) {
+    // (where water runs: on an airless world nothing ever carried it)
+    if (K0 > 0) for (let c = 0; c < n; c++) {
       if (water[c] || E.rcv[c] < 0) continue;
       const sl = (h[c] - h[E.rcv[c]]) / E.rcvD[c];
       if (E.A[c] > aLay && sl < 0.004) rockC[c] = AL;
