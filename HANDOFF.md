@@ -102,9 +102,11 @@ surveying many worlds; bit-exact across runs and clients, not across revisions):
   a lake (Opast's salt pan was drawn as deep ocean).
 - **Maria** fill the lows (snapshot `mareLv`; the contact rule lays their basalt in the lows near
   a mare, so its edge embays craters instead of tracing cells). No alluvium on airless worlds.
-- **A straight ridge:** Opast's big salt lake (33N 170W) is crossed by a one-cell-wide, dead
-  straight east-west ridge in the world sim's own heights (a scar from its plate history, to
-  trace), and the waves comb its narrow shores into regular spits.
+- **Grid-row ridges (fixed):** the plates' frame grids map many world cells to one frame cell
+  where a plate has barely turned, and collisions' thickening and impacts were applied once per
+  world cell: a frame row shown by two world rows grew twice, a dead straight ridge along a grid
+  row (Opast's salt lake). Now shared among the world cells showing each frame cell. Worth a
+  look: Dorith (LAB-5 5) has a straight N-S coast near 156E (a young rift margin, or not).
 - **GPU check still to rerun** on a fluvial tile (the hidden pane throttles the GPU too hard to
   finish one): the integer sim's code is unchanged on that path since its last check; the
   airless path (streams skipped) was checked bit-identical (Idaull).

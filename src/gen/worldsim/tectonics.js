@@ -250,6 +250,19 @@ export class Tectonics {
       }
       cN[c] = k;
     }
+    // (how many world cells stand on each overriding plate's frame cell where crust meets: what
+    // they do to it is shared among them, not done once for each, or a frame row that two world
+    // rows happen to show would thicken twice: a ridge along the grid)
+    const share = this._share || (this._share = new Map());
+    share.clear();
+    for (let c = 0; c < n; c++) {
+      const k = cN[c];
+      if (k < 2) continue;
+      let o = 0, best = -Infinity;
+      for (let i = 0; i < k; i++) { const P = plates[cP[c * 4 + i]], s = cS[c * 4 + i]; const score = P.cont[s] * 10 - P.age[s] / 200 - cP[c * 4 + i] * 1e-6; if (score > best) { best = score; o = i; } }
+      const key = cP[c * 4 + o] * n + cS[c * 4 + o];
+      share.set(key, (share.get(key) || 0) + 1);
+    }
     // resolve
     for (let c = 0; c < n; c++) {
       const k = cN[c];
@@ -263,7 +276,7 @@ export class Tectonics {
         const score = P.cont[s] * 10 - P.age[s] / 200 - cP[c * 4 + i] * 1e-6;
         if (score > best) { best = score; o = i; }
       }
-      const O = plates[cP[c * 4 + o]], so = cS[c * 4 + o];
+      const O = plates[cP[c * 4 + o]], so = cS[c * 4 + o], each = 1 / (share.get(O.id * n + so) || 1);
       newOwner[c] = O.id; src[c] = so;
       for (let i = 0; i < k; i++) {
         if (i === o) continue;
@@ -275,7 +288,7 @@ export class Tectonics {
           st.collide++;
           // continents meet: neither sinks, the crust stacks up on the plate in
           // front (part of the thickened root drops into the mantle)
-          thicken(G, O, so, B.thick[sb] * STACK, dt);
+          thicken(G, O, so, B.thick[sb] * STACK * each, dt);
           O.cont[so] = Math.max(O.cont[so], B.cont[sb]);
           pair[Math.min(O.id, B.id) * MAX_PLATES + Math.max(O.id, B.id)]++;
         } else {
@@ -286,7 +299,7 @@ export class Tectonics {
           { const q = B.id * 3, gx = cent[q], gy = cent[q + 1], gz = cent[q + 2], x = G.dir[c * 3], y = G.dir[c * 3 + 1], z = G.dir[c * 3 + 2];
             tor[q] += gy * z - gz * y; tor[q + 1] += gz * x - gx * z; tor[q + 2] += gx * y - gy * x; }
           if (this.rng.next() < ARC_P * this.activity.arcs) this.arcs.push(c, O.id);
-          thicken(G, O, so, 0.9, dt);
+          thicken(G, O, so, 0.9 * each, dt);
           if (O.cont[so] < 0.5) { O.cont[so] = Math.min(1, O.cont[so] + 0.02); if (O.cont[so] > 0.5) st.arcGain++; } // island arcs grow new continent
         }
       }
@@ -682,10 +695,16 @@ export class Tectonics {
     this.step(dt);
     if (this.impacts) {
       const dMin = 3 * this.G.spacing / 1000;
-      this.impacts.step(dt, dMin, (c, dh) => {
-        const P = this.plates[this.owner[c]], s = this.src[c];
-        P.relief[s] += P.cont[s] > 0.5 ? dh : dh * 0.5; // (the sea floor keeps less)
-      }, this.t);
+      // (each world cell's share, then each frame cell the mean of the world cells showing it:
+      // a crater isn't stamped twice into a frame row two world rows show)
+      const acc = this._impAcc || (this._impAcc = new Map());
+      acc.clear();
+      this.impacts.step(dt, dMin, (c, dh) => { acc.set(c, (acc.get(c) || 0) + dh); }, this.t);
+      if (acc.size) {
+        const fr = new Map();
+        for (const [c, dh] of acc) { const key = this.owner[c] * n + this.src[c], e = fr.get(key); if (e) { e[0] += dh; e[1]++; } else fr.set(key, [dh, 1]); }
+        for (const [key, e] of fr) { const P = this.plates[Math.floor(key / n)], s = key % n, dh = e[0] / e[1]; P.relief[s] += P.cont[s] > 0.5 ? dh : dh * 0.5; }   // (the sea floor keeps less)
+      }
     }
     this.heights(E.h, null);
     const h0 = this._h0 || (this._h0 = new Float64Array(n));
