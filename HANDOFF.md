@@ -98,6 +98,12 @@ Open:
 - **Drainage pattern:** D8-straight parallel gullies on even slopes (MFD routing would help).
 - **Chaos terrain:** icy chaos is a flat matrix; its rafts should be drawn by the finer levels.
 - **Near-field loading:** the volume rings make the descent slow with few workers.
+- **Near-field seam:** a dotted dark line where the volume's outer ring meets the heightfield
+  (both clipped at the same radius, terrainMaterial.js uNear; their heights differ a little on
+  steep ground: a crack). Wants an overlap or a skirt.
+- **Hidden-tab GPU:** in a hidden page the GPU tile sim crawls (~0.9 s a step; Chromium throttles
+  it), so test-tab refinements take minutes. Screenshots of a hidden pane: post the canvas to a
+  small local receiver (scratchpad `recv.py`) instead.
 - **Fractal hold:** the measured H runs ~0.1 above the target (calibrate).
 
 Measuring tool (scratchpad `fractal.mjs` pattern): variogram slope (H) and box-counting coast D per
