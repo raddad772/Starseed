@@ -14,7 +14,7 @@ import { makeTerrainMaterial, DETAIL_PERIOD } from './terrainMaterial.js';
 import { FloraSet } from './floraRender.js';
 import { floraOf } from '../sim/floraField.js';
 import { VCHUNK } from '../gen/volume.js';
-import { NEAR_RADIUS } from '../sim/nearGround.js';
+import { NEAR_RINGS } from '../sim/nearGround.js';
 
 const FLORA_DIST = 1600;
 
@@ -313,61 +313,86 @@ export class PlanetTerrain {
     for (const root of this.roots) walk(root);
   }
 
-  // the near field (sim/nearGround.js): its volume meshed in chunks inside NEAR_RADIUS of its
-  // centre, nearest first; the heightfield gives way to them there (terrainMaterial.js)
+  // the near field (sim/nearGround.js): its volume meshed in chunks, in rings round its centre
+  // that coarsen outward (NEAR_RINGS: 1 m cells to 160 m, 2 m to 400 m, 4 m to 1 km, and 8 m to
+  // 2.5 km once you're up off the ground), nearest first. A ring is drawn once it has all been
+  // meshed (each mesh only inside its ring's band); the heightfield gives way out to the last
+  // ring drawn (terrainMaterial.js)
   nearUpdate() {
     const ng = this.body.near, on = !!(ng && ng.active && ng.field);
     const u = this.shared.uNear.value;
     if (!on) { u.set(0, 0); for (const ch of this.near.values()) if (ch.mesh) ch.mesh.visible = false; return; }
-    if (ng.anchor !== this.nearAnchor || ng.field.gen !== this.nearGen) { this.disposeNear(); this.nearAnchor = ng.anchor; this.nearGen = ng.field.gen; }
-    const F = ng.field, c = ng.centre, L = F.toLocal(c[0], c[1], c[2], this._nl);
-    const N = VCHUNK, R0 = NEAR_RADIUS, want = new Set();
-    let pending = 0;
-    const ci0 = Math.floor((L[0] - R0) / N), ci1 = Math.floor((L[0] + R0) / N);
-    const ck0 = Math.floor((L[2] - R0) / N), ck1 = Math.floor((L[2] + R0) / N);
-    for (let ci = ci0; ci <= ci1; ci++) for (let ck = ck0; ck <= ck1; ck++) {
-      const dx = Math.max(ci * N - L[0], 0, L[0] - (ci + 1) * N), dz = Math.max(ck * N - L[2], 0, L[2] - (ck + 1) * N);
-      const dh = Math.hypot(dx, dz);
-      if (dh > R0) continue;
-      // the column's surface from its corners' heights, to the lattice's y (the tangent plane
-      // drops away from the anchor by rho^2 / 2R); rock above for overhangs, caves below
-      let hmin = Infinity, hmax = -Infinity;
-      for (const [x, z] of [[ci * N, ck * N], [ci * N + N, ck * N], [ci * N, ck * N + N], [ci * N + N, ck * N + N]]) {
-        const col = F.colAt(x, z);
-        if (col.Hc < hmin) hmin = col.Hc;
-        if (col.Hc > hmax) hmax = col.Hc;
-      }
-      const sag = (((ci + 0.5) * N) ** 2 + ((ck + 0.5) * N) ** 2) / (2 * this.R);
-      const y0 = hmin - sag - (dh < 48 ? 60 : 24), y1 = hmax - sag + 24;
-      for (let cj = Math.floor(y0 / N); cj <= Math.floor(y1 / N); cj++) {
-        const dy = Math.max(cj * N - L[1], 0, L[1] - (cj + 1) * N), dist = Math.hypot(dx, dy, dz);
-        const key = ci + ',' + cj + ',' + ck;
-        want.add(key);
-        let ch = this.near.get(key);
-        if (!ch) { ch = { key, ci, cj, ck, mesh: null, job: null, state: 0 }; this.near.set(key, ch); }
-        const pr = 0.5 + dist / 40;
-        if (ch.state === 0) this.requestNear(ch, ng, pr);
-        else if (ch.state === 1) this.pool.reprioritize(ch.job, pr);
-        if (ch.state !== 2) pending++;
-      }
+    if (ng.anchor !== this.nearAnchor || ng.field.gen !== this.nearGen) {
+      this.disposeNear(); this.nearAnchor = ng.anchor; this.nearGen = ng.field.gen; this.ringShown = NEAR_RINGS.map(() => false);
     }
-    // the volume takes over (drawn, and walked on) once everything round the centre is meshed
-    if (!ng.ready && pending === 0) ng.ready = true;
-    u.set(ng.ready ? 1 : 0, NEAR_RADIUS);
+    const F = ng.field, c = ng.centre, L = F.toLocal(c[0], c[1], c[2], this._nl);
+    const want = new Set();
+    // (the outermost ring only up off the ground, with some hysteresis)
+    this.highRing = ng.alt > 150 || (this.highRing && ng.alt > 100);
+    for (let ri = 0; ri < NEAR_RINGS.length; ri++) {
+      const ring = NEAR_RINGS[ri];
+      if (ring.high && !this.highRing) continue;
+      const lv = ring.level, S = 1 << lv, size = VCHUNK * S;
+      let pending = 0;
+      const ci0 = Math.floor((L[0] - ring.r1) / size), ci1 = Math.floor((L[0] + ring.r1) / size);
+      const ck0 = Math.floor((L[2] - ring.r1) / size), ck1 = Math.floor((L[2] + ring.r1) / size);
+      for (let ci = ci0; ci <= ci1; ci++) for (let ck = ck0; ck <= ck1; ck++) {
+        const x0 = ci * size, x1 = x0 + size, z0 = ck * size, z1 = z0 + size;
+        const dx = Math.max(x0 - L[0], 0, L[0] - x1), dz = Math.max(z0 - L[2], 0, L[2] - z1);
+        const dmin = Math.hypot(dx, dz), dmax = Math.hypot(Math.max(Math.abs(x0 - L[0]), Math.abs(x1 - L[0])), Math.max(Math.abs(z0 - L[2]), Math.abs(z1 - L[2])));
+        if (dmin > ring.r1 || dmax < ring.r0) continue;
+        // the footprint's surface from a few of its columns' heights, to the lattice's y (the
+        // tangent plane drops away from the anchor by rho^2 / 2R); room above for overhangs,
+        // below for caves (deep near the player)
+        let hmin = Infinity, hmax = -Infinity;
+        for (let a = 0; a <= 2; a++) for (let b2 = 0; b2 <= 2; b2++) {
+          const col = F.colAt(Math.round(x0 + a * size / 2), Math.round(z0 + b2 * size / 2));
+          if (col.Hc < hmin) hmin = col.Hc;
+          if (col.Hc > hmax) hmax = col.Hc;
+        }
+        const sag = (((x0 + x1) / 2) ** 2 + ((z0 + z1) / 2) ** 2) / (2 * this.R);
+        const pad = 16 + size * 0.25;
+        const y0 = hmin - sag - (lv === 0 && dmin < 48 ? 60 : pad), y1 = hmax - sag + pad;
+        for (let cj = Math.floor(y0 / size); cj <= Math.floor(y1 / size); cj++) {
+          const dy = Math.max(cj * size - L[1], 0, L[1] - (cj + 1) * size), dist = Math.hypot(dmin, dy);
+          const key = lv + ':' + ci + ',' + cj + ',' + ck;
+          want.add(key);
+          let ch = this.near.get(key);
+          if (!ch) { ch = { key, level: lv, ring: ri, ci, cj, ck, mesh: null, job: null, state: 0 }; this.near.set(key, ch); }
+          const pr = 0.5 + ri * 2 + dist / (40 * S);
+          if (ch.state === 0) this.requestNear(ch, ng, pr);
+          else if (ch.state === 1) this.pool.reprioritize(ch.job, pr);
+          if (ch.state !== 2) pending++;
+        }
+      }
+      if (pending === 0) this.ringShown[ri] = true;
+    }
+    // the volume takes over (drawn, and walked on) once the first ring is meshed; the heightfield
+    // gives way out to the last ring drawn in an unbroken run from the centre
+    if (this.ringShown[0]) ng.ready = true;
+    let cover = 0;
+    for (let ri = 0; ri < NEAR_RINGS.length; ri++) {
+      if (!this.ringShown[ri] || (NEAR_RINGS[ri].high && !this.highRing)) break;
+      cover = NEAR_RINGS[ri].r1;
+    }
+    u.set(ng.ready ? 1 : 0, cover);
     const cl = Math.hypot(c[0], c[1], c[2]);
     this.shared.uNearUp.value.set(c[0] / cl, c[1] / cl, c[2] / cl);
-    // chunks no longer wanted go once they're well outside
+    // chunks no longer wanted go once they're well outside their ring (or it's off)
     for (const [key, ch] of this.near) {
       if (want.has(key)) continue;
-      const dx = Math.max(ch.ci * N - L[0], 0, L[0] - (ch.ci + 1) * N), dy = Math.max(ch.cj * N - L[1], 0, L[1] - (ch.cj + 1) * N), dz = Math.max(ch.ck * N - L[2], 0, L[2] - (ch.ck + 1) * N);
-      if (Math.hypot(dx, dy, dz) > R0 + 2 * N) this.disposeNearChunk(ch);
+      const ring = NEAR_RINGS[ch.ring], size = VCHUNK * (1 << ch.level);
+      const dx = Math.max(ch.ci * size - L[0], 0, L[0] - (ch.ci + 1) * size), dz = Math.max(ch.ck * size - L[2], 0, L[2] - (ch.ck + 1) * size);
+      if ((ring.high && !this.highRing) || Math.hypot(dx, dz) > ring.r1 + 2 * size) this.disposeNearChunk(ch);
     }
-    // where each mesh sits from the centre (the shader's cut between volume and heightfield)
+    // where each mesh sits from the centre (the shader's cut between rings, and the heightfield)
     for (const ch of this.near.values()) {
       if (!ch.mesh) continue;
-      const o = ch.mesh.userData.origin;
-      ch.mesh.material.uniforms.uNearOff.value.set(o[0] - c[0], o[1] - c[1], o[2] - c[2]);
-      ch.mesh.visible = ng.ready;
+      const o = ch.mesh.userData.origin, ring = NEAR_RINGS[ch.ring];
+      const uu = ch.mesh.material.uniforms;
+      uu.uNearOff.value.set(o[0] - c[0], o[1] - c[1], o[2] - c[2]);
+      uu.uNearBand.value.set(ring.r0, ring.r1);
+      ch.mesh.visible = ng.ready && this.ringShown[ch.ring] && ring.r1 <= cover;
     }
     for (const node of this.visibleList) {
       const o = node.mesh.userData.origin;
@@ -378,7 +403,7 @@ export class PlanetTerrain {
   requestNear(ch, ng, priority) {
     ch.state = 1;
     const gen = this.generation, anchor = ng.anchor;
-    ch.job = this.pool.submit({ type: 'vchunk', body: this.body.id, anchor, ci: ch.ci, cj: ch.cj, ck: ch.ck }, priority);
+    ch.job = this.pool.submit({ type: 'vchunk', body: this.body.id, anchor, ci: ch.ci, cj: ch.cj, ck: ch.ck, level: ch.level }, priority);
     ch.job.promise.then((data) => {
       if (gen !== this.generation || anchor !== this.nearAnchor || this.near.get(ch.key) !== ch) return;
       ch.state = 2;

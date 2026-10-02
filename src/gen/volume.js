@@ -14,8 +14,10 @@
 //            risers (near-vertical faces a few metres to a dozen high) wandering along the
 //            contours
 //   strata   on those faces hard beds stand out and soft ones are cut back (ledges, overhangs),
-//            the beds dipping a little; at the sea's level the waves cut a notch (sea caves)
-//   rubble   faces knobbly, not planed
+//            the beds dipping a little; at the sea's level the waves cut a notch (sea caves);
+//            faces knobbly, not planed. All sideways: a point reads the terraced surface a
+//            little up or down the slope from where it is, by an amount that changes with
+//            height, so a face is pushed out or cut back but a tread never rises
 //   caves    tunnels where two noise fields are both near zero: karst in limestone, lava tubes
 //            in basalt, rare in other rock; opening where they meet hillsides and cliffs
 
@@ -68,7 +70,7 @@ export class VolumeField {
   }
 
   _key(i, k) { return (i + 32768) * 65536 + (k + 32768); }
-  _trim() { if (this.base.size > 400000) { this.base.clear(); this.terr.clear(); this.cols.clear(); } if (this.pts.size > 200000) this.pts.clear(); }
+  _trim() { if (this.base.size > 1500000) { this.base.clear(); this.terr.clear(); this.cols.clear(); } if (this.pts.size > 200000) this.pts.clear(); }
 
   // the heightfield and the rock under column (i, k)
   baseAt(i, k) {
@@ -125,9 +127,17 @@ export class VolumeField {
     if (c) return c;
     const t = this.terrAt(i, k);
     const gx = (this.terrAt(i + 1, k).Hc - this.terrAt(i - 1, k).Hc) / 2, gz = (this.terrAt(i, k + 1).Hc - this.terrAt(i, k - 1).Hc) / 2;
-    c = { Hc: t.Hc, wc: t.wc, s8: t.s8, cm: t.cm, dip: t.dip, gc: Math.sqrt(gx * gx + gz * gz) };
+    const gc = Math.sqrt(gx * gx + gz * gz);
+    c = { Hc: t.Hc, wc: t.wc, s8: t.s8, cm: t.cm, dip: t.dip, gc, ux: gc > 1e-6 ? gx / gc : 0, uz: gc > 1e-6 ? gz / gc : 0 };
     this.cols.set(key, c);
     return c;
+  }
+
+  // the terraced surface between columns (bilinear)
+  hcAt(x, z) {
+    const i = Math.floor(x), k = Math.floor(z), fx = x - i, fz = z - k;
+    const a = this.terrAt(i, k).Hc, b = this.terrAt(i + 1, k).Hc, c = this.terrAt(i, k + 1).Hc, d = this.terrAt(i + 1, k + 1).Hc;
+    return (a * (1 - fx) + b * fx) * (1 - fz) + (c * (1 - fx) + d * fx) * fz;
   }
 
   // bedding: +1 a hard bed, -1 a soft one, at radial height r (m)
@@ -140,22 +150,28 @@ export class VolumeField {
   // the bed's shade (for the colour banding on rock faces)
   bedShade(r, dip) { return hashInts(Math.floor((r + dip) / 2.7) + 2000000, this.bedSeed) / 4294967296; }
 
-  // density at lattice point (i, j, k): positive in rock
-  density(i, j, k) {
+  // density at lattice point (i, j, k) of cell size s (m): positive in rock. Coarser cells
+  // leave out what they can't hold (the finest rubble at 2 m, the rest and the beds' ledges
+  // fading by 8 m, caves past 2 m), so far rings don't shimmer
+  density(i, j, k, s = 1) {
+    if (s !== 1) { i *= s; j *= s; k *= s; }
     const a = this.a, c = this.colAt(i, k);
     const px = a.o[0] + i * a.e[0] + j * a.u[0] + k * a.n[0];
     const py = a.o[1] + i * a.e[1] + j * a.u[1] + k * a.n[1];
     const pz = a.o[2] + i * a.e[2] + j * a.u[2] + k * a.n[2];
     const r = Math.sqrt(px * px + py * py + pz * pz) - this.R;
     let d = c.Hc - r;
-    if (c.wc > 0.01) {
-      const face = c.wc * Math.min(c.gc, 8);
-      if (face > 0.02) {
-        d += face * (1.5 * this.strata(r, c.dip) + 0.8 * (this.nRub.noise(px / 4.7, py / 4.7, pz / 4.7) + 0.5 * this.nRub.noise(px / 2.3 + 7.1, py / 2.3, pz / 2.3)));
-        if (this.hasSea) d -= face * 3 * Math.exp(-((r - 0.8) / 1.3) * ((r - 0.8) / 1.3));
-      }
+    if (c.wc > 0.01 && c.gc > 0.05 && s < 8) {
+      // how far this height's face stands out (m): hard beds out, soft in, knobbly, the notch
+      const fine = s < 2 ? 0.5 * this.nRub.noise(px / 2.3 + 7.1, py / 2.3, pz / 2.3) : 0;
+      const coarse = s < 4 ? this.nRub.noise(px / 4.7, py / 4.7, pz / 4.7) : 0;
+      let out = (s < 4 ? 1.5 : 0.75) * this.strata(r, c.dip) + 0.8 * (coarse + fine);
+      if (this.hasSea) out -= 3 * Math.exp(-((r - 0.8) / 1.3) * ((r - 0.8) / 1.3));
+      out *= c.wc;
+      // ...by reading the terraced surface that far up the slope (into the cliff)
+      d = this.hcAt(i + out * c.ux, k + out * c.uz) - r;
     }
-    if (c.cm > 0.02) {
+    if (c.cm > 0.02 && s <= 2) {
       const depth = c.Hc - r;
       if (depth > -2 && depth < 95) {
         const q = 1 / 34;
@@ -228,14 +244,15 @@ function encodeColor(c) { return Math.max(0, Math.min(255, Math.round(Math.sqrt(
 // mesh chunk (ci, cj, ck) of the field by surface nets: one vertex per cell the surface crosses
 // (the mean of its edge crossings), a quad per lattice edge it crosses. Vertices are relative to
 // the chunk's corner (body-fixed axes); null when the chunk holds no surface
-export function buildVolumeChunk(field, ci, cj, ck) {
-  const N = VCHUNK, a = field.a, gen = field.gen, R = field.R;
+// level: the cell size 2^level m (the near field's rings: finest nearest)
+export function buildVolumeChunk(field, ci, cj, ck, level = 0) {
+  const N = VCHUNK, a = field.a, gen = field.gen, R = field.R, S = 1 << level;
   const i0 = ci * N, j0 = cj * N, k0 = ck * N;
   // density on the lattice, with a border (normals, the quads at the low edges)
   const D = new Float64Array(GN * GN * GN);
   let dmin = Infinity, dmax = -Infinity;
   for (let z = 0; z < GN; z++) for (let y = 0; y < GN; y++) for (let x = 0; x < GN; x++) {
-    const v = field.density(i0 + x - B, j0 + y - B, k0 + z - B);
+    const v = field.density(i0 + x - B, j0 + y - B, k0 + z - B, S);
     D[(z * GN + y) * GN + x] = v;
     if (v < dmin) dmin = v; if (v > dmax) dmax = v;
   }
@@ -297,12 +314,12 @@ export function buildVolumeChunk(field, ci, cj, ck) {
   }
   if (!idx.length) return null;
   // to body-fixed axes, relative to the chunk's corner; colour and occlusion per vertex
-  const ox = a.o[0] + i0 * a.e[0] + j0 * a.u[0] + k0 * a.n[0], oy = a.o[1] + i0 * a.e[1] + j0 * a.u[1] + k0 * a.n[1], oz = a.o[2] + i0 * a.e[2] + j0 * a.u[2] + k0 * a.n[2];
+  const ox = a.o[0] + S * (i0 * a.e[0] + j0 * a.u[0] + k0 * a.n[0]), oy = a.o[1] + S * (i0 * a.e[1] + j0 * a.u[1] + k0 * a.n[1]), oz = a.o[2] + S * (i0 * a.e[2] + j0 * a.u[2] + k0 * a.n[2]);
   const position = new Float32Array(nv * 3), nrm = new Int8Array(nv * 4), col = new Uint8Array(nv * 4), mat = new Uint8Array(nv * 4), ext = new Uint8Array(nv * 4), occ = new Uint8Array(nv);
   const s = new Float64Array(S_LEN), cc = [0, 0, 0], mm = new Float64Array(8);
   let minR = Infinity, maxR = -Infinity;
   for (let v = 0; v < nv; v++) {
-    const lx = P[v * 3], ly = P[v * 3 + 1], lz = P[v * 3 + 2];
+    const lx = P[v * 3] * S, ly = P[v * 3 + 1] * S, lz = P[v * 3 + 2] * S;
     const bx = lx * a.e[0] + ly * a.u[0] + lz * a.n[0], by = lx * a.e[1] + ly * a.u[1] + lz * a.n[1], bz = lx * a.e[2] + ly * a.u[2] + lz * a.n[2];
     position[v * 3] = bx; position[v * 3 + 1] = by; position[v * 3 + 2] = bz;
     const Px = ox + bx, Py = oy + by, Pz = oz + bz, Pl = Math.sqrt(Px * Px + Py * Py + Pz * Pz);
@@ -319,7 +336,7 @@ export function buildVolumeChunk(field, ci, cj, ck) {
     const slope = Math.max(0, Math.min(1, 1 - (nx * ux + ny * uy + nz * uz)));
     gen.shade(s, slope, cc, mm);
     // rock faces banded by their beds
-    const colm = field.colAt(Math.round(i0 + lx), Math.round(k0 + lz));
+    const colm = field.colAt(Math.round(i0 * S + lx), Math.round(k0 * S + lz));
     if (mm[2] > 0.15 && colm.wc > 0.05) {
       const b = field.bedShade(r, colm.dip), k = 1 + (0.86 + 0.28 * b - 1) * Math.min(1, mm[2] * 1.5);
       cc[0] *= k * (1 + 0.05 * (b - 0.5)); cc[1] *= k; cc[2] *= k * (1 - 0.05 * (b - 0.5));
@@ -328,12 +345,15 @@ export function buildVolumeChunk(field, ci, cj, ck) {
     mat[v * 4] = Math.round(mm[0] * 255); mat[v * 4 + 1] = Math.round(mm[1] * 255); mat[v * 4 + 2] = Math.round(mm[2] * 255); mat[v * 4 + 3] = Math.round(mm[3] * 255);
     ext[v * 4] = Math.round(Math.min(1, mm[5]) * 255); ext[v * 4 + 1] = Math.round(Math.min(1, mm[6]) * 255);
     ext[v * 4 + 2] = Math.round(Math.min(1, s[12] / 1.4) * 255); ext[v * 4 + 3] = Math.round((0.5 + 0.5 * s[10]) * 255);
-    // sky: how much rock overhangs this point (probes straight up; caves and overhangs dark)
+    // sky: how much rock overhangs this point (probes straight up; caves and overhangs dark;
+    // the far rings hold neither)
     let o = 0;
-    const W = [[2.5, 0.25], [6, 0.35], [14, 0.4]];
-    for (const [h, w] of W) {
-      const d = field.densityLocal(i0 + lx, j0 + ly + h, k0 + lz);
-      o += w * smooth(-0.5, 0.5, d);
+    if (S <= 2) {
+      const W = [[2.5, 0.25], [6, 0.35], [14, 0.4]];
+      for (const [h, w] of W) {
+        const d = field.densityLocal(i0 * S + lx, j0 * S + ly + h, k0 * S + lz);
+        o += w * smooth(-0.5, 0.5, d);
+      }
     }
     occ[v] = Math.round(Math.min(1, o) * 255);
   }

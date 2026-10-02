@@ -71,6 +71,7 @@ uniform float uDebug;
 uniform vec2 uNear;
 uniform vec3 uNearUp;      // the up at its centre: the cut is a vertical cylinder, any height
 uniform float uNearMode;
+uniform vec2 uNearBand;    // (a volume chunk) its ring's band from the centre
 varying vec3 vNearRel;
 varying float vOcc;
 varying vec3 vWorldPos;
@@ -121,7 +122,7 @@ void main() {
   if (uNear.x > 0.5) {
     float dn = length(vNearRel - uNearUp * dot(vNearRel, uNearUp));
     if (uNearMode < 0.5) { if (dn < uNear.y && waterEnc < 0.004) discard; }
-    else if (dn > uNear.y) discard;
+    else if (dn < uNearBand.x || dn > uNearBand.y) discard;
   }
   float veg = vMat.r, snow = vMat.g, rock = vMat.b, sand = vMat.a;
   float emissive = vExt.r, wet = vExt.g, rough = vExt.b;
@@ -284,6 +285,7 @@ export function makeTerrainMaterial(shared) {
       uOriginMod: { value: new THREE.Vector3() },
       uNearOff: { value: new THREE.Vector3() },
       uNearMode: { value: 0 },
+      uNearBand: { value: new THREE.Vector2(0, 0) },
     },
     vertexShader: VERT,
     fragmentShader: FRAG,

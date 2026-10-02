@@ -46,7 +46,7 @@ self.onmessage = (e) => {
       const g = gen(m.body), key = m.body + '|' + m.anchor.o.join(',');
       let f = fields.get(key);
       if (!f || f.gen !== g) { f = new VolumeField(g, m.anchor); fields.set(key, f); if (fields.size > 4) fields.delete(fields.keys().next().value); }
-      const r = buildVolumeChunk(f, m.ci, m.cj, m.ck);
+      const r = buildVolumeChunk(f, m.ci, m.cj, m.ck, m.level || 0);
       self.postMessage({ type: 'vchunk', job: m.job, mesh: r }, volumeTransferables(r));
       return;
     }

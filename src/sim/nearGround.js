@@ -7,7 +7,15 @@
 
 import { VolumeField, anchorAt } from '../gen/volume.js';
 
-export const NEAR_RADIUS = 160;      // m: the volume inside, the heightfield beyond
+export const NEAR_RADIUS = 160;      // m: the finest ring (walked on); coarser ones beyond
+// the rendered rings: cell size 2^level m, the band (m from the centre) each draws; 'high' only
+// up off the ground
+export const NEAR_RINGS = [
+  { level: 0, r0: 0, r1: NEAR_RADIUS },
+  { level: 1, r0: NEAR_RADIUS, r1: 400 },
+  { level: 2, r0: 400, r1: 1000 },
+  { level: 3, r0: 1000, r1: 2500, high: true },
+];
 const ANCHOR_RANGE = 1500;           // m: how far the player goes before the lattice re-anchors
 const NEAR_ALT = 2500;               // m above the ground: higher, there's no near field
 
@@ -31,7 +39,8 @@ export class NearGround {
     const b = this.body, gen = b.terrain;
     if (!gen || !b.solid) { this.active = false; return; }
     const r = pos.length();
-    this.active = r - b.R - Math.max(0, b.groundHeight(pos)) < NEAR_ALT;
+    this.alt = r - b.R - Math.max(0, b.groundHeight(pos));
+    this.active = this.alt < NEAR_ALT;
     if (!this.active) return;
     const a = this.anchor;
     const far = !a || Math.hypot(pos.x - a.o[0], pos.y - a.o[1], pos.z - a.o[2]) - (r - b.R) > ANCHOR_RANGE;
