@@ -66,7 +66,7 @@ export class WorldSims {
     this.steps = opts.steps || 40;
     this.status = new Map();   // body id -> 'queued' | 'running' | 'ready' | 'failed'
     this.queue = [];           // { kind: 'sim', id, N } | { kind: 'refine', id, face, snap }
-    this.refine = new Map();   // body id -> { R (refine.js), faces done, status }
+    this.refine = new Map();   // body id -> { R (refine.js), tiles done of total, status }
     this.phase = new Map();    // body id -> the running sim's stage
     this.dbP = openDB();
     this.dbP.then(dbPrune);
@@ -104,7 +104,7 @@ export class WorldSims {
     const all = [...this.status.values()], ready = all.filter((v) => v === 'ready' || v === 'failed').length;
     const name = (id) => this.game.system.bodies[id].name;
     const running = [...this.status].filter(([, v]) => v === 'running').map(([id]) => `${name(id)}: ${this.phase.get(id) || 'starting'}…`);
-    for (const [id, st] of this.refine) if (st.status === 'running') running.push(`${name(id)}: coasts and valleys, ${st.faces} of 6`);
+    for (const [id, st] of this.refine) if (st.status === 'running') running.push(`${name(id)}: coasts and valleys, ${Math.round(100 * (st.done || 0) / (st.total || 1))}%`);
     if (ready >= all.length && !running.length) { this.el.textContent = `Simulated worlds ready (${ready})`; this.el.style.opacity = '0'; return; }
     this.el.style.opacity = '0.75';
     this.el.textContent = `Simulating worlds: ${ready} of ${all.length} ready${running.length ? ' · ' + running.join(' · ') : ''}`;
@@ -145,22 +145,26 @@ export class WorldSims {
   // a world's refinement: from the cache, or its six faces queued (the start world's first)
   async requestRefine(id, snap) {
     if (this.refine.has(id)) return;
-    const st = { R: null, faces: 0, status: 'queued' };
+    const st = { R: null, done: 0, total: 0, status: 'queued' };
     this.refine.set(id, st);
     const cached = await dbGet(await this.dbP, this.refKey(id));
     if (cached && cached.version === TILE_VERSION) { st.R = fromStorable(cached); this._applyRefine(id, st, true); return; }
     st.R = newRefine(refineLevelN(snap.N));
     st.t0 = performance.now();
-    const jobs = [0, 1, 2, 3, 4, 5].map((face) => ({ kind: 'refine', id, face, snap }));
+    // (a tile a job: each a second or two, so a worker's soon free for the pyramid's tiles)
+    const n = st.R.n, jobs = [];
+    for (let face = 0; face < 6; face++) for (let tj = 0; tj < n; tj++) for (let ti = 0; ti < n; ti++) jobs.push({ kind: 'refine', id, face, ti, tj, snap });
+    st.total = jobs.length; st.done = 0;
     if (id === this.game.system.startBodyId) this.queue.unshift(...jobs); else this.queue.push(...jobs);
     this._next();
   }
 
   // start queued sims on any free workers
-  // the next job for a worker: the tile worker takes the pyramid's tiles, then refinements; a
-  // sim worker takes sims, then refinements, then tiles
+  // the next job for a worker: the tile workers take the pyramid's tiles, then refinements; a
+  // sim worker the pyramid's tiles too before another world's sim (the ground under the camera
+  // first), then refinements
   _pick(w) {
-    const order = w.role === 'tile' ? ['pyr', 'refine'] : ['sim', 'refine', 'pyr'];
+    const order = w.role === 'tile' ? ['pyr', 'refine'] : ['pyr', 'sim', 'refine'];
     for (const kind of order) {
       const i = this.queue.findIndex((j) => j.kind === kind);
       if (i >= 0) return this.queue.splice(i, 1)[0];
@@ -175,12 +179,18 @@ export class WorldSims {
       if (!job) continue;
       w.job = job;
       if (job.kind === 'pyr') {
-        w.worker.postMessage({ type: 'pyr', job: job.id, seed: this.seed, body: job.id, L: job.L, face: job.face, ti: job.ti, tj: job.tj, snap: job.snap, refine: job.refine, parents: job.parents });
+        // (a world's snapshot goes to a worker once: it keeps the world's generator)
+        const has = w.hasSnap || (w.hasSnap = new Set());
+        const snap = has.has(job.id) ? null : job.snap;
+        has.add(job.id);
+        w.worker.postMessage({ type: 'pyr', job: job.id, seed: this.seed, body: job.id, L: job.L, face: job.face, ti: job.ti, tj: job.tj, snap, refine: job.refine, refKey: this.refKey(job.id), parents: job.parents });
         continue;
       }
       if (job.kind === 'refine') {
         this.refine.get(job.id).status = 'running';
-        w.worker.postMessage({ type: 'refine', job: job.id, seed: this.seed, body: job.id, face: job.face, snap: job.snap });
+        const has = w.hasSnap || (w.hasSnap = new Set()), snap = has.has(job.id) ? null : job.snap;
+        has.add(job.id);
+        w.worker.postMessage({ type: 'refine', job: job.id, seed: this.seed, body: job.id, face: job.face, ti: job.ti, tj: job.tj, snap });
         continue;
       }
       this.status.set(job.id, 'running');
@@ -210,8 +220,8 @@ export class WorldSims {
     if (m.type === 'refined') {
       w.job = null;
       const st = this.refine.get(m.body);
-      st.faces++;
-      if (st.faces === 6 && complete(st.R)) {
+      st.done++;
+      if (st.done === st.total && complete(st.R)) {
         st.ms = performance.now() - st.t0;
         dbPut(await this.dbP, this.refKey(m.body), toStorable(st.R));
         this._applyRefine(m.body, st, false);

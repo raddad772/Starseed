@@ -13,7 +13,11 @@
 import { generateSystem } from '../src/gen/system.js';
 import { SIM_VERSION, simNFor } from '../src/gen/worldsim/snapshot.js';
 import { TerrainGenerator } from '../src/gen/terrain.js';
-import { prepareTile, MT, KEEP } from '../src/gen/localsim.js';
+import { prepareTile, tileAt, MT, KEEP } from '../src/gen/localsim.js';
+import { fromStorable, RefineReader } from '../src/gen/worldsim/refine.js';
+import { TILE_VERSION } from '../src/gen/tileshape.js';
+import { findCliffCountry } from '../src/gen/volume.js';
+import { faceUVFromDir } from '../src/gen/cubesphere.js';
 import { runInt, PASSES } from '../src/gpu/itile.js';
 import { ITileGPU } from '../src/gpu/itileGPU.js';
 import { ROCKS } from '../src/gen/worldsim/lithology.js';
@@ -30,12 +34,23 @@ try {
   const snap = await new Promise((res, rej) => { const r = indexedDB.open('starseed-worldsim', 1); r.onsuccess = () => { const g = r.result.transaction('snap').objectStore('snap').get(key); g.onsuccess = () => res(g.result); g.onerror = rej; }; r.onerror = rej; });
   if (!snap) throw new Error('no cached sim for ' + key + ' (run the game on this seed first)');
   const gen = new TerrainGenerator({ ...b.terrain, snapshot: snap });
-  const face = +(q.get('face') ?? 1), ti = +(q.get('ti') ?? 1), tj = +(q.get('tj') ?? 0);
+  let face = +(q.get('face') ?? 1), ti = +(q.get('ti') ?? 1), tj = +(q.get('tj') ?? 0);
   let t0 = performance.now();
+  // ?kind=pyr: a tile of the pyramid's first level over the game's cached refinement, at the
+  // world's cliff country (its geology: the columns read each step)
+  let popts = null;
+  if (q.get('kind') === 'pyr') {
+    const rec = await new Promise((res, rej) => { const r = indexedDB.open('starseed-worldsim', 1); r.onsuccess = () => { const g = r.result.transaction('snap').objectStore('snap').get(key + '|r' + TILE_VERSION); g.onsuccess = () => res(g.result); g.onerror = rej; }; r.onerror = rej; });
+    if (!rec) throw new Error('no cached refinement (run the game on this seed first)');
+    const R = fromStorable(rec), d = findCliffCountry(gen), uv = {}; faceUVFromDir(d, uv);
+    const t = tileAt(uv.face, uv.u, uv.v, R.L + 2 * +(q.get('lv') || 1));
+    face = t.face; ti = t.ti; tj = t.tj;
+    popts = { kind: 'pyr', L: R.L + 2 * +(q.get('lv') || 1), parent: new RefineReader(R) };
+  }
   for (const k of ['fill', 'accum', 'jump', 'collapse']) if (q.get(k)) PASSES[k] = +q.get(k);
-  const P = prepareTile(gen, face, ti, tj, { kind: 'refine', steps: q.get('steps') ? +q.get('steps') : undefined });
+  const P = prepareTile(gen, face, ti, tj, { ...(popts || { kind: 'refine' }), steps: q.get('steps') ? +q.get('steps') : undefined });
   const I = P.ints();
-  log(`${b.name} refinement tile ${face},${ti},${tj}: ${I.NG}² cells, set up in ${((performance.now() - t0) / 1000).toFixed(1)} s`);
+  log(`${b.name} ${popts ? 'pyramid' : 'refinement'} tile ${face},${ti},${tj}: ${I.NG}² cells${I.geo ? ', with geology' : ''}, set up in ${((performance.now() - t0) / 1000).toFixed(1)} s`);
   const gpu = await ITileGPU.create();
   if (!gpu) throw new Error('no WebGPU');
   const check = +(q.get('check') ?? 6);

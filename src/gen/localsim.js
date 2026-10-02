@@ -182,7 +182,7 @@ function jointAt(J, X, Y, cell) {
   let w = 0;
   for (const j of J) {
     const m = Math.max(1, Math.ceil(6 * cell / j.sp)), sp = j.sp * m, seg = j.seg * m;
-    const nx = dm.cos(j.a), ny = dm.sin(j.a);
+    const nx = j.nx ?? (j.nx = dm.cos(j.a)), ny = j.ny ?? (j.ny = dm.sin(j.a));
     const q = X * nx + Y * ny, t = -X * ny + Y * nx;
     const i0 = Math.floor(q / sp);
     for (let i = i0 - 2; i <= i0 + 2; i++) {
@@ -714,9 +714,10 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
     out.hard[o] = Math.round(255 * (rf ? hardAt(c) : col.at(h[c] + bedOff[c])));     // (the rock's: its joints don't show)
     if (rf) { out.rockC[o] = rockC[c]; out.water[o] = water[c]; }
     out.talus[o] = Math.min(255, Math.round(talus[c] * 25));
-    out.flow[o] = Math.round(255 * Math.max(0, Math.min(1, dm.log(Math.max(1, E.A[c])) / amax)));
+    const lgA = dm.log(Math.max(1, E.A[c]));
+    out.flow[o] = Math.round(255 * Math.max(0, Math.min(1, lgA / amax)));
     // (the water through it on one scale for every level: log of its rain-weighted area, m^2, to 1e11)
-    if (rf) out.fl[o] = Math.round(255 * Math.max(0, Math.min(1, dm.log(Math.max(1, E.A[c])) / lA)));
+    if (rf) out.fl[o] = Math.round(255 * Math.max(0, Math.min(1, lgA / lA)));
     // (the way down: which of the 8 neighbours, 0..7 as di, dj = -1..1 row by row; 255 none)
     const r = E.rcv[c];
     if (r < 0) out.rcv[o] = 255;

@@ -173,12 +173,15 @@ export class PlanetTerrain {
   // the ground changed in a patch of a face (u0..u1, v0..v1: a terrain tile arrived): the chunks
   // over it are built again, each drawn as it was until its new mesh is in (and its plants
   // scattered again on the new ground)
-  invalidate(face, u0, v0, u1, v1) {
+  // (only chunks fine enough to show it: vertices no further apart than maxSpacing m)
+  invalidate(face, u0, v0, u1, v1, maxSpacing = Infinity) {
     const walk = (node) => {
       const s = 2 / (1 << node.level), nu = -1 + node.ix * s, nv = -1 + node.iy * s;
       if (node.face !== face || nu > u1 || nu + s < u0 || nv > v1 || nv + s < v0) return;
-      if (node.state === 2) node.stale = true;
-      else if (node.state === 1) node.restale = true;
+      if (node.arc / CHUNK_N <= maxSpacing) {
+        if (node.state === 2) node.stale = true;
+        else if (node.state === 1) node.restale = true;
+      }
       if (node.children) for (const c of node.children) walk(c);
     };
     for (const r of this.roots) walk(r);

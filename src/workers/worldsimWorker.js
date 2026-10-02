@@ -21,32 +21,41 @@ const gpu = () => gpuP || (gpuP = ITileGPU.create().catch(() => null));
 
 let sys = null, sysSeed = null;
 const pyrGens = new Map();   // body -> its generator for the pyramid's tiles
+const refGens = new Map();   // body -> its generator for its refinement's tiles (no refinement on it)
+const snaps = new Map();     // body -> its world sim's snapshot (sent once)
 
 self.onmessage = async (e) => {
   const m = e.data;
   try {
-    if (sysSeed !== m.seed) { sys = generateSystem(m.seed); sysSeed = m.seed; }
+    if (sysSeed !== m.seed) { sys = generateSystem(m.seed); sysSeed = m.seed; snaps.clear(); pyrGens.clear(); refGens.clear(); }
+    if (m.snap) snaps.set(m.body, m.snap);   // (a world's snapshot comes once: kept for its tiles)
     if (m.type === 'refine') {
-      // one face of a world's refinement (localsim.js 'refine' tiles), each tile posted as done
-      const b = sys.bodies[m.body], gen = new TerrainGenerator({ ...b.terrain, snapshot: m.snap });
-      const n = 1 << refineLevel(gen), G = await gpu();
-      for (let tj = 0; tj < n; tj++) for (let ti = 0; ti < n; ti++) {
-        const P = prepareTile(gen, m.face, ti, tj, { kind: 'refine' }), I = P.ints();
-        P.fromInts(G ? await G.run(I) : runInt(I));
-        const p = packTile(P.finish());
-        self.postMessage({ type: 'tile', job: m.job, body: m.body, tile: p }, [p.h.buffer, p.rw.buffer]);
+      // one tile of a world's refinement (localsim.js 'refine'); the world's generator kept
+      // between them (its snapshot comes once to each worker)
+      let gen = refGens.get(m.body);
+      if (!gen) {
+        const b = sys.bodies[m.body];
+        if (!snaps.has(m.body)) throw new Error(`no snapshot for body ${m.body} in this worker`);
+        gen = new TerrainGenerator({ ...b.terrain, snapshot: snaps.get(m.body) });
+        refGens.set(m.body, gen);
       }
+      const G = await gpu(), P = prepareTile(gen, m.face, m.ti, m.tj, { kind: 'refine' }), I = P.ints();
+      P.fromInts(G ? await G.run(I) : runInt(I));
+      const p = packTile(P.finish());
+      self.postMessage({ type: 'tile', job: m.job, body: m.body, tile: p }, [p.h.buffer, p.rw.buffer]);
       self.postMessage({ type: 'refined', job: m.job, body: m.body, face: m.face });
       return;
     }
     if (m.type === 'pyr') {
       // one tile of the terrain pyramid (gen/terrainTiles.js), on the level above's tiles (or
       // the refinement): its heights (m) and rock | water << 5 come back
+      // (the world's generator kept between its tiles: its snapshot comes once to each worker)
       let gen = pyrGens.get(m.body);
-      if (!gen || gen._refine !== m.refine) {
+      if (!gen || gen._key !== m.refKey) {
         const b = sys.bodies[m.body];
-        gen = new TerrainGenerator({ ...b.terrain, snapshot: m.snap, refine: m.refine });
-        gen._refine = m.refine;
+        if (!snaps.has(m.body)) throw new Error(`no snapshot for body ${m.body} in this worker`);
+        gen = new TerrainGenerator({ ...b.terrain, snapshot: snaps.get(m.body), refine: m.refine });
+        gen._key = m.refKey;
         pyrGens.set(m.body, gen);
       }
       let src = m.refine;

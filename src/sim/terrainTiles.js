@@ -24,6 +24,8 @@ export class TerrainTiles {
     this.missing = 0;           // tiles wanted and not here yet
     this.missingCore = 0;       // of them, those under the camera (the descent waits for these)
     this.t = 1;
+    this.inval = [];            // patches of ground changed, made again once the tiles stop coming
+    this.lastArrive = 0;
     this._p = null; this._uv = { face: 0, u: 0, v: 0 }; this._d = [0, 0, 0];
   }
 
@@ -43,6 +45,7 @@ export class TerrainTiles {
     this.t += dt;
     if (!ws || (!force && this.t < 0.25)) return;
     this.t = 0;
+    this.flush();
     this.missing = 0; this.missingCore = 0;
     const b = g.universe.dominantBody(g.camPos);
     if (!b || !b.solid || !b.data.terrain) return;
@@ -76,7 +79,7 @@ export class TerrainTiles {
       this.missing++;
       if (t.dist === 0) this.missingCore++;
       const key = this.key(b.data.id, t.L, uv.face, t.ti, t.tj);
-      if (this.pending.has(key) || this.pending.size >= 3) continue;
+      if (this.pending.has(key) || this.pending.size >= 4) continue;
       // its parent: the refinement, or the tile of the level above it lies in (made first)
       let parents = [];
       if (t.L > R.L + 2) {
@@ -103,10 +106,24 @@ export class TerrainTiles {
     set.put(face, ti, tj, tile);
     g.pool.setPyrTile(b.data.id, L, face, ti, tj, tile);
     const s = 2 / (1 << L), m = KEEP * s / MT;
-    const terr = g.world.terrainOf(b.data.id);
-    if (terr && terr.invalidate) terr.invalidate(face, -1 + ti * s - m, -1 + tj * s - m, -1 + (ti + 1) * s + m, -1 + (tj + 1) * s + m);
-    // (the near field's volume reads the ground as the generator draws it: made again)
-    if (b.near && b.near.field) b.near.field = null;
+    // (the chunks over it: made again once the tiles stop coming, those fine enough to show it)
+    const cell = (Math.PI / 2) * b.R / ((1 << L) * MT);
+    this.inval.push({ id: b.data.id, face, u0: -1 + ti * s - m, v0: -1 + tj * s - m, u1: -1 + (ti + 1) * s + m, v1: -1 + (tj + 1) * s + m, spacing: 8 * cell, near: cell <= 60 });
+    this.lastArrive = performance.now();
+  }
+
+  // the ground under the tiles that came: its chunks made again (a moment after the last, so a
+  // run of tiles makes them once); a fine level's near field too
+  flush(force = false) {
+    if (!this.inval.length || (!force && performance.now() - this.lastArrive < 750 && this.pending.size)) return;
+    const g = this.game;
+    for (const p of this.inval) {
+      const terr = g.world.terrainOf(p.id);
+      if (terr && terr.invalidate) terr.invalidate(p.face, p.u0, p.v0, p.u1, p.v1, p.spacing);
+      const b = g.universe.bodies[p.id];
+      if (p.near && b && b.near && b.near.field) b.near.field = null;
+    }
+    this.inval.length = 0;
   }
 
   // too many tiles at a level: the furthest from the point under the camera go
