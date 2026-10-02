@@ -2,7 +2,19 @@
 
 Dave is play-testing and giving feedback in short bursts.
 
-## NOW: simulated worlds (session 109eda38, 2026-10-01), committed as it went
+## NOW: simulated worlds (session 109eda38, 2026-10-01/02), committed as it went
+
+**Latest (2026-10-02):**
+- **Water:** lakes and rivers are real water (you wade and swim; your eyes stay above the water).
+- **Simulation:** finer sims for visited worlds, swapped in once you leave; two sims in parallel;
+  a world-sim progress line.
+- **Render:** smoothed, warped cloud maps; aurora and airglow from each world's field, wind and air.
+- **World features:** tuyas where hotspots erupted under ice; flora from the life map; moons'
+  eclipses in their climate.
+- **Catalog:** named landmarks.
+- **C/WASM:** kernels (native/sim.c), bit-identical to the JavaScript.
+
+All are recorded in WORLDSIM.md (step 7, items 6, 16b and 18).
 
 **The plan to act on is `WORLDSIM.md`**: its DEEP-TIME CHECKLIST table has every item with its status
 (items 1-19, most at v1) and step 7 (the game) has the in-game state. In one line: worlds come from a
@@ -30,8 +42,8 @@ Direction from Dave:
   processes. Up to ~10 minutes per star system is fine as long as the result is cached.
 - **Language:** Dave wants C or C++ for the WASM port, not Rust. GPU math isn't bit-identical across
   vendors, so the GPU is for render-only detail. The port uses its own math functions (port dmath),
-  no fast-math, `-ffp-contract=off`, and no relaxed SIMD. Apple clang probably lacks the wasm32 backend
-  (unchecked); Homebrew LLVM (with lld) or emscripten will be needed.
+  no fast-math, `-ffp-contract=off`, and no relaxed SIMD. Built with Homebrew LLVM
+  (`tools/build-wasm.sh`: clang --target=wasm32 + wasm-ld; Apple clang lacks the backend).
 - **Glaciers:** carving down off peaks (cirques, arêtes, horns, U-valleys), not only in ice ages.
   They need a flow model (ice thickness flowing downhill) fed by the climate's snow and melt, with
   erosion that follows the ice's sliding speed. Valley glaciers show at a 2 km grid; cirques and horns

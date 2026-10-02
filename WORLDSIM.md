@@ -808,7 +808,33 @@ Opast transect across a big river: water over ~1.4 km, the bed 30-40 m under the
 **Loading progress**: a corner line shows worlds ready and the running world's stage (from its
 log lines).
 
-To do next: making it the default (Dave decides), N 256-384 for visited worlds.
+**Since then (2026-10-02):**
+- **Finer sims for visited worlds:** a world a player is on or near (within half its radius) gets
+  an N 288 sim (`?simHiN=`, 0 for none), queued after every world's first. It is a different run of
+  the same history, so it goes in only once nobody is near that world, and loads from the cache
+  after that.
+- **Parallel sims:** two at once on 8+ cores (`?simWorkers=`; ~0.4 GB each at N 192).
+- **Lighter samplers:** snapshot samplers use `GridLite` (centres from tabulated tangents,
+  neighbours on demand; a SimGrid held ~130 bytes a cell per body in every terrain worker). Samples
+  are identical.
+- **Cloud maps:** baked in the worker (512 x 256), smoothed across the climate grid, looked up
+  through a noise warp so cloudy country billows; the map's swing on the cloud threshold narrowed
+  to +/-0.18.
+- **Life map:** the game's flora takes trees from its forest share and shrubs and grass from its
+  open share.
+- **Landmarks:** named (landmarks.js) and shown in the catalog.
+- **Cache:** SIM_VERSION 4, and stale versions are pruned from IndexedDB.
+- **C for WASM:** native/sim.c, built by tools/build-wasm.sh with Homebrew LLVM into
+  src/wasm/sim.wasm.js (base64, so still no build step), loaded by worldsim/native.js with the
+  JavaScript as reference and fallback. Kernels so far: erosion's `route()` and tectonics' `blur()`.
+  - The output is bit-identical (the same height hash with or without them).
+  - route() runs 1.33x faster alone, and the whole sim ~5% faster.
+  - V8 runs these typed-array loops well, so porting more of them buys little. The cheap big win
+    was the parallel workers.
+  - Next candidates if needed: tectonics heights/spread (~20%), coasts step/survey (~15%, which may
+    first have algorithmic savings: survey's open-sea search each step).
+
+To do next: making it the default (Dave decides).
 
 - **Snapshot format per body:**
   - heights; top rock layer and its stack;
