@@ -16,10 +16,61 @@ Dave is play-testing and giving feedback in short bursts.
 
 All are recorded in WORLDSIM.md (step 7, items 6, 16b and 18).
 
+**Terrain below the world sim's grid (2026-10-02, later), all committed:**
+
+Dave's rules:
+- "history, not noise" (memory: history-not-noise).
+- No grid-size minimum feature.
+- Terrain "tunable by fractal dimension like real coastlines and mountains", without looking like noise.
+
+What's in:
+- **The tile sim (`src/gen/localsim.js`):** one sim, three kinds.
+  - `refine` covers the whole world at ~4x the world sim's resolution.
+  - `pyr` makes finer levels, 4x each, around the camera, each on the level above.
+  - `region` and `local` add structure (beds, faults, joints) and are headless only.
+  - The history:
+    - stream power, with channel heads by place;
+    - creep, and collapse to each rock's angle;
+    - an ice-age low sea, then its rise (drowned valleys);
+    - waves, and longshore drift on soft shores;
+    - rock read as a stack at each height, with deposits in the lows and alluvium.
+  - Fractal hold: each level's added relief is held to H by place (roughness by place).
+- **The integer GPU sim:**
+  - `src/gpu/itile.js` is the integer reference.
+  - `src/gpu/itileGPU.js` is the WebGPU version, bit-identical to it (`tools/gputile.html` checks).
+  - It runs a 608² tile in 0.8 s.
+- **Refinement (`worldsim/refine.js`):**
+  - Runs after each world's sim on a dedicated GPU tile worker.
+  - Cached in IndexedDB (`TILE_VERSION`).
+  - Shared with the terrain workers as SharedArrayBuffers. The dev server sends COOP/COEP headers for this.
+  - Read as smooth cubic fields.
+- **Pyramid (`src/sim/terrainTiles.js`):**
+  - Tiles are wanted when the camera can resolve them.
+  - The generator blends the levels by coverage.
+  - Only the chunks under a new tile are rebuilt.
+  - The descent waits for the tiles.
+- **Coasts and contacts:**
+  - Coasts follow the ground's contours (no stair-steps).
+  - Rock contacts are a stratigraphic stack with blending on even ground.
+  - A dry world's rivers and lakes are empty.
+
+Open:
+- **Flat ground:** rock contacts still inherit the world sim's straight cell lines.
+- **Tile speed:** ~5 s a pyramid tile, mostly CPU setup and finish (move to the GPU).
+- **Near-field loading:** the volume rings make the descent slow with few workers.
+- **Rivers:** still drawn from the world sim's lines, not the tiles' drainage.
+- **Fractal hold:** the measured H runs ~0.1 above the target (calibrate).
+- **Structure:** beds, faults and joints exist only in the headless region/local kinds; they belong
+  at the finer pyramid levels.
+
+Measuring tool (scratchpad `fractal.mjs` pattern): variogram slope (H) and box-counting coast D per
+level.
+
 **Backlog from Dave's play-testing (2026-10-02), for later:**
 - **Jetpack:** flight-assist modes like the ships' (with ROT off you can spin out of control).
 - **Terrain:** shadows from terrain on itself (a near-field shadow map).
-- **Local terrain sim (localsim.js):** being built; it replaces the near field's rule-based cliffs.
+- **Exposure:** a lit moonlet against black space blows out (the meter opens ~5 stops); Dave said
+  not now.
 
 **The plan to act on is `WORLDSIM.md`**: its DEEP-TIME CHECKLIST table has every item with its status
 (items 1-19, most at v1) and step 7 (the game) has the in-game state. In one line: worlds come from a
