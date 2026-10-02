@@ -96,11 +96,16 @@ export class SimGrid {
     const N = this.N;
     return (f * N + this._edge(b)) * N + this._edge(a);
   }
+  // the column (or row) whose tangent edges hold t: te[k] <= t < te[k + 1], clamped to the
+  // face. A guess from Math.atan, then stepped against the edges themselves, so it's exact
+  // (the same as a binary search) whatever the engine's atan does in its last bits
   _edge(t) {
-    const te = this.tanEdges;
-    let lo = 0, hi = this.N; // te[lo] <= t < te[hi]
-    while (hi - lo > 1) { const m = (lo + hi) >> 1; if (te[m] <= t) lo = m; else hi = m; }
-    return lo;
+    const te = this.tanEdges, N = this.N;
+    let k = Math.floor((Math.atan(t) * (4 / Math.PI) + 1) * 0.5 * N);
+    if (k < 0) k = 0; else if (k > N - 1) k = N - 1;
+    while (k > 0 && te[k] > t) k--;
+    while (k < N - 1 && te[k + 1] <= t) k++;
+    return k;
   }
 
   // the cell containing a unit direction

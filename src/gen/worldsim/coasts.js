@@ -56,23 +56,30 @@ export class Coasts {
       for (let e = G.nStart[c]; e < G.nStart[c + 1]; e++) { if (wetAt(G.nbr[e])) wet = true; else dry = true; }
       coast[c] = !wetAt(c) ? (wet ? 1 : 0) : (dry ? 2 : 0);
     }
+    // (rings outward by a queue; a cell is seen once per search by its stamp)
+    const mark = this._mark || (this._mark = new Int32Array(n)), q = this._q || (this._q = new Int32Array(n));
+    let stamp = this._stamp || 0;
     for (let c = 0; c < n; c++) {
       if (!coast[c]) { energy[c] = 0; continue; }
       let sea = 0, all = 0;
-      const seen = new Set([c]);
-      let front = [c];
+      mark[c] = ++stamp;
+      let head = 0, tail = 0;
+      q[tail++] = c;
       for (let k = 0; k < 6; k++) {
-        const next = [];
-        for (const x of front) for (let e = G.nStart[x]; e < G.nStart[x + 1]; e++) {
-          const o = G.nbr[e];
-          if (seen.has(o)) continue;
-          seen.add(o); next.push(o); all++;
-          if (wetAt(o)) sea++;
+        const end = tail;
+        for (; head < end; head++) {
+          const x = q[head];
+          for (let e = G.nStart[x]; e < G.nStart[x + 1]; e++) {
+            const o = G.nbr[e];
+            if (mark[o] === stamp) continue;
+            mark[o] = stamp; q[tail++] = o; all++;
+            if (wetAt(o)) sea++;
+          }
         }
-        front = next;
       }
       energy[c] = dm.smoothstep(0.3, 0.85, sea / Math.max(1, all));
     }
+    this._stamp = stamp;
   }
 
   // one step of dt years: waves on the land's edge, sand on the shores, reefs in the shallows.
