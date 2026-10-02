@@ -138,13 +138,18 @@ export function worldSim(body, star, opts = {}) {
   T.heights(ht, null);
   const sea = !!p.liquid && p.liquid !== 'lava' && p.ocean > 0;
   const Et = new Erosion(Gt, ht, { sea, K: KD, rain: rainT, m: 0.45, kd: 1 });
+  const realms = new RealmTracker(Gt, rng.fork('realms'));
   for (let k = 0; k < myr / tdt; k++) {
     Et.rainK = H.at(myr - k * tdt, 'rain') || 0.05; // the climate then, vs now
     Et.bare = !plantsAt(H, myr - k * tdt);           // no land plants yet: nothing holds the soil
     Et.veg = Et.bare ? null : vegFrom(rainT, Et.rainK, Et.veg);
     T.stepEroded(tdt, Et);
+    // life's realms ride the plates (every 10 Myr, while there are land plants)
+    if (!Et.bare && k % Math.round(10 / tdt) === 0) realms.check(T, ht, myr - k * tdt);
     if (opts.onPlateStep) opts.onPlateStep(T, ht, k * tdt);
   }
+  if (realms.checks) realms.check(T, ht, 0);
+  if (realms.checks) log(`realms: ${realms.count()} lineages on the land now; ${realms.interchanges.length} interchanges (landmasses meeting), ${realms.splits} divergences (split apart)`);
   T.heights(ht, ut);
   // the climate on the plates' surface: the fine epoch's rain and snow come from it
   const Gc = new SimGrid(opts.Nc ?? 40, body.R);
@@ -152,9 +157,11 @@ export function worldSim(body, star, opts = {}) {
   let clim = climateOn(Gc, Gt, ht, climOpts);
   // life on the map (life.js), and the climate again with its plant cover (forests darken
   // the land, plants hand rain on inland): the cover then holds the fine epoch's soil
-  let life0 = lifeOn(Gc, clim, H, rng.fork('life0'), null);
+  // (the realms the plates' history left, on the climate grid)
+  const realmGc = realms.checks ? realms.onGrid(Gc) : null;
+  let life0 = lifeOn(Gc, clim, H, rng.fork('life0'), null, realmGc);
   clim = climateOn(Gc, Gt, ht, climOpts, null, life0);
-  life0 = lifeOn(Gc, clim, H, rng.fork('life0'), null);
+  life0 = lifeOn(Gc, clim, H, rng.fork('life0'), null, realmGc);
   log(`climate: ${summarizeKoppen(clim)}`);
   log(`plates: ${myr} Myr, ${T.plates.filter((q) => !q.dead).length} plates, ${T.hot.length} hotspots (${T.activity.name}), ${(T.events || []).length} rifts/welds, ${T.impacts.events.length} impacts`);
   // the finer epoch: the plates' surface and uplift, rivers cutting it finer
@@ -339,7 +346,8 @@ export function worldSim(body, star, opts = {}) {
     log(`soil: ${(deep / la * 100).toFixed(0)}% of ice-free land deeper than 2 m, ${(thin / la * 100).toFixed(0)}% thinner than 0.3 m; wetlands ${(wetA / la * 100).toFixed(1)}%; loess ${(loessA / la * 100).toFixed(1)}%`);
   }
   // life on the map now, with the soil and groundwater (and rivers' nutrients at the coasts)
-  const life = lifeOn(Gc, clim, H, rng.fork('life'), { G, soil, E, h });
+  const life = lifeOn(Gc, clim, H, rng.fork('life'), { G, soil, E, h }, realmGc);
+  life.interchanges = realms.interchanges;
   {
     const S = life.summary(life.env);
     log(`life: land ${(S.landCover * 100).toFixed(0)}% covered (forest ${(S.forest * 100).toFixed(0)}%, open ${(S.open * 100).toFixed(0)}%), sea life ${(S.seaLife * 100).toFixed(0)}%, ${S.realms} realms`);
@@ -450,9 +458,60 @@ function climateOn(Gc, Gsrc, hsrc, o, seaSrc, veg) {
   out.h = hc;
   return out;
 }
+// Life's realms through deep time (WORLDSIM.md 15b): lineages on the land, riding the
+// plates. Each check finds the landmasses: land with none is colonised (a new lineage);
+// landmasses that meet mix their realms (an interchange: the Americas'); a realm split
+// across landmasses diverges, its smaller pieces becoming lineages of their own over
+// ~20 Myr (Australia's). Kept per plate frame cell, so they move with the plates
+class RealmTracker {
+  constructor(G, rng) { this.G = G; this.rng = rng; this.next = 0; this.checks = 0; this.world = new Int32Array(G.n).fill(-1); this.interchanges = []; this.splits = 0; this._met = new Set(); }
+  check(T, h, agoMyr) {
+    const G = this.G, n = G.n, w = this.world;
+    // where each realm is now: carried by the plates since the last check
+    if (this.checks) for (let c = 0; c < n; c++) { const P = T.plates[T.owner[c]]; w[c] = P.realm ? P.realm[T.src[c]] : -1; }
+    // the landmasses
+    const comp = new Int32Array(n).fill(-1), comps = [];
+    for (let c0 = 0; c0 < n; c0++) {
+      if (comp[c0] >= 0 || h[c0] < 0) continue;
+      const cells = [c0], q = [c0]; comp[c0] = comps.length;
+      while (q.length) { const c = q.pop(); for (let e = G.nStart[c]; e < G.nStart[c + 1]; e++) { const o = G.nbr[e]; if (comp[o] < 0 && h[o] >= 0) { comp[o] = comps.length; q.push(o); cells.push(o); } } }
+      comps.push(cells);
+    }
+    const homes = new Map();   // realm -> landmasses it's on (and how much)
+    const minCells = Math.max(20, Math.round(n * 0.0005));   // (specks of island don't make lineages)
+    comps.forEach((cells, i) => {
+      if (cells.length < minCells) { for (const c of cells) w[c] = -1; return; }
+      const count = new Map();
+      for (const c of cells) if (w[c] >= 0) count.set(w[c], (count.get(w[c]) || 0) + 1);
+      if (!count.size) { const id = this.next++; for (const c of cells) w[c] = id; count.set(id, cells.length); }
+      else {
+        // the land without a lineage takes the landmass's commonest (they spread over it)
+        let top = -1, best = 0; for (const [id, k] of count) if (k > best) { best = k; top = id; }
+        for (const c of cells) if (w[c] < 0) w[c] = top;
+        // realms meeting: an interchange (each pair once)
+        const big = [...count].filter(([, k]) => k > Math.max(minCells, 0.05 * cells.length)).map(([id]) => id).sort((a, b) => a - b);
+        for (let a = 0; a < big.length; a++) for (let b = a + 1; b < big.length; b++) { const key = big[a] + ':' + big[b]; if (!this._met.has(key)) { this._met.add(key); this.interchanges.push({ agoMyr, realms: [big[a], big[b]] }); } }
+      }
+      for (const [id, k] of count) { if (!homes.has(id)) homes.set(id, []); homes.get(id).push([i, k]); }
+    });
+    // a realm on several landmasses: the smaller pieces diverge, a chance per check (~20 Myr)
+    for (const [id, list] of homes) {
+      if (list.length < 2) continue;
+      list.sort((a, b) => b[1] - a[1]);
+      for (let j = 1; j < list.length; j++) if (this.rng.next() < 0.5 && list[j][1] >= minCells) { const nid = this.next++; this.splits++; for (const c of comps[list[j][0]]) if (w[c] === id) w[c] = nid; }
+    }
+    // back into the plates' frames
+    for (const P of T.plates) { if (!P.realm || P.realm.length !== n) P.realm = new Int32Array(n); P.realm.fill(-1); }
+    for (let c = 0; c < n; c++) { const P = T.plates[T.owner[c]]; P.realm[T.src[c]] = w[c]; }
+    this.checks++;
+  }
+  count() { const k = new Map(); for (const r of this.world) if (r >= 0) k.set(r, (k.get(r) || 0) + 1); const min = Math.max(20, Math.round(this.G.n * 0.0005)); return [...k.values()].filter((x) => x >= min).length; }
+  onGrid(Gc) { const out = new Int32Array(Gc.n).fill(-1); for (let c = 0; c < Gc.n; c++) out[c] = this.world[this.G.cellAt(Gc.dir[c * 3], Gc.dir[c * 3 + 1], Gc.dir[c * 3 + 2])]; return out; }
+}
+
 // the life map on the climate grid; fine: { G, soil, E, h } to bring the fine epoch's soil,
 // groundwater and river nutrients up to it (else soil 1 m and groundwater deep)
-function lifeOn(Gc, clim, H, rng, fine) {
+function lifeOn(Gc, clim, H, rng, fine, realmInit = null) {
   const n = Gc.n;
   const env = { land: new Uint8Array(n), T: clim.Tann, Tm: clim.Tm, P: clim.Pann, Pm: clim.Pm, pet: new Float64Array(n), soil: new Float64Array(n).fill(1), wtd: new Float64Array(n).fill(30), upwell: clim.upwell, coastNutr: new Float64Array(n) };
   for (let c = 0; c < n; c++) { env.land[c] = clim.sea[c] ? 0 : 1; env.pet[c] = petOf(clim.Tann[c], clim.Pann[c] / 1000); }
@@ -467,6 +526,7 @@ function lifeOn(Gc, clim, H, rng, fine) {
     for (let q = 0; q < n; q++) { if (cnt[q]) { env.soil[q] = sum[q] / cnt[q]; env.wtd[q] = wsum[q] / cnt[q]; } nmax = Math.max(nmax, nut[q]); }
     for (let q = 0; q < n; q++) env.coastNutr[q] = nmax > 0 ? Math.min(1, 10 * nut[q] / nmax) : 0;
   }
+  env.realmInit = realmInit;
   const L = new LifeMap(Gc, H, rng).run(env, 20, 0.5);
   L.env = env;
   L.plantCover = new Float32Array(n);

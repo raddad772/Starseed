@@ -103,7 +103,10 @@ export class LifeMap {
     // landmass (each landmass's lineage, its own since the window began)
     if (tPlants > startAgo) {
       const comp = this.comp;
-      for (let c = 0; c < n; c++) if (env.land[c] && pot.landPot[c] > 0.02) { this.landed[c] = 1; this.realm[c] = comp[c]; this.since[c] = Math.min(tPlants, age); this.realmNext = Math.max(this.realmNext, comp[c] + 1); }
+      // (the realms the plates' history made, where it tracked them: world.js RealmTracker)
+      const init = env.realmInit;
+      const off = init ? 1 + Math.max(-1, ...init) : 0;
+      for (let c = 0; c < n; c++) if (env.land[c] && pot.landPot[c] > 0.02) { this.landed[c] = 1; this.realm[c] = init && init[c] >= 0 ? init[c] : off + comp[c]; this.since[c] = Math.min(tPlants, age); this.realmNext = Math.max(this.realmNext, this.realm[c] + 1); }
     } else {
       // they arrive in the window: from the sea's edge where it's richest, then spread
       let best = -1;
