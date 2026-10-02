@@ -452,7 +452,8 @@ export function buildBody(rng, proto, star, host) {
   let Teq = equilibriumTemp(S, albedo);
   let Tsurf = atm ? Teq * dm.pow(1 + 0.75 * atm.tau, 0.25) : Teq;
   // (a freshly melted crust glows whatever the air: the history's heat)
-  if (exc && exc.kind === 'impact-melt') Tsurf = Math.max(Tsurf, hist.T);
+  if (exc && (exc.kind === 'impact-melt' || exc.kind === 'just-boiled')) Tsurf = Math.max(Tsurf, hist.T);
+  if (exc && exc.kind === 'impact-winter') Tsurf = hist.T;   // (the soot's cold)
 
   // ---- hydrosphere
   const hydroRng = rng.fork('hydro');
@@ -483,6 +484,8 @@ export function buildBody(rng, proto, star, host) {
   // exceptional lava worlds: tide-heated (lava lakes and seas), or freshly struck (a magma sea)
   if (exc && exc.kind === 'tidal-lava') hydro = { water: 'none', liquid: 'lava', oceanFraction: exc.lavaFrac, iceCover: 0 };
   if (exc && exc.kind === 'impact-melt') hydro = { water: 'none', liquid: 'lava', oceanFraction: dm.clamp(0.9 - exc.ago * 30, 0.2, 0.9), iceCover: 0 };
+  // just struck (WORLDSIM.md 17): a magma ocean crusting over, by how far it has cooled
+  if (hist.fresh && hist.fresh.kind === 'just-boiled' && hist.fresh.lavaFrac > 0.01) hydro = { water: 'none', liquid: 'lava', oceanFraction: hist.fresh.lavaFrac, iceCover: 0 };
   // Lava worlds: dayside hot enough to keep silicate seas molten
   if (Teq > 900) {
     hydro = { water: 'none', liquid: 'lava', oceanFraction: Teq > 1300 ? hydroRng.range(0.4, 0.8) : hydroRng.range(0.04, 0.2), iceCover: 0 };

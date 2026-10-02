@@ -85,7 +85,8 @@ export function worldSim(body, star, opts = {}) {
   if (resurfaceAt != null) log(`resurfaced ${Math.round((age - resurfaceAt) * 1000)} Myr ago${crack ? ' (an icy shell, cracking under the tides)' : ''}`);
   if (path === 'barren') {
     const W = barrenWorld(G, { rng: rng.fork('barren'), body, age, scale, volcEnd: 1 + 15 * dm.pow(body.massEarth, 0.6), rate, spike, resurfaceAt, resurfaceShare, crack });
-    return Object.assign(out, { h: W.h, mare: W.mare, fresh: W.fresh, stats: W.stats, craters: survivors(G, W.impacts.events, resurfaceAt, W.plains, W.mare) });
+    const melt = stampFresh(G, W.h, H, body, scale);
+    return Object.assign(out, { h: W.h, mare: W.mare, fresh: W.fresh, stats: W.stats, craters: survivors(G, W.impacts.events, resurfaceAt, W.plains, W.mare), melt });
   }
   if (path === 'stagnant') {
     let wet = wetWindow(H);
@@ -97,7 +98,8 @@ export function worldSim(body, star, opts = {}) {
     if (!wet && H.titanish && (H.mainLiquid === 'methane' || H.mainLiquid === 'ethane')) { wet = [Math.max(0, age - 1), age]; rainK0 = 0.005; seaFrac = Math.min(0.05, (H.mainLiquidDepth || 0) / ((H.mainLiquidDepth || 0) + 100)); log('methane rain: channels and polar lakes'); }
     const S = stagnantWorld(G, { rng: rng.fork('stagnant'), body, age, scale, wet, seaFrac, rainK0, tier: H.tier, volcEnd: 1 + 15 * dm.pow(body.massEarth, 0.6), rate, spike, resurfaceAt, resurfaceShare });
     const volcanoes = S.shields.map((v) => ({ ...latLonOf(v.at), heightM: v.H }));
-    return Object.assign(out, { h: S.h, volc: S.volc, river: S.river, stats: S.stats, wet, seaFrac, craters: survivors(G, S.impacts.events, resurfaceAt, S.volc), volcanoes });
+    const melt = stampFresh(G, S.h, H, body, scale);
+    return Object.assign(out, { h: S.h, volc: S.volc, river: S.river, stats: S.stats, wet, seaFrac, craters: survivors(G, S.impacts.events, resurfaceAt, S.volc), volcanoes, melt });
   }
 
   // ---- plates: the generator's continents as the starting crust
@@ -337,7 +339,8 @@ export function worldSim(body, star, opts = {}) {
   // (rias, estuaries)
   const drowned = new Uint8Array(G.n);
   for (let c = 0; c < G.n; c++) if (lowRiver[c] && h[c] < 0) drowned[c] = 1;
-  return Object.assign(out, { h, h0, E, Gt, ht, tect: T, impacts: Ef, craters: T.impacts.events.concat(Ef.events), volcanoes, lith, rock, glaciers: ice, veg: E.veg, coasts: sea2, dunes, mesas, soil, drowned });
+  const melt = stampFresh(G, h, H, body, scale);
+  return Object.assign(out, { h, h0, E, Gt, ht, tect: T, impacts: Ef, craters: T.impacts.events.concat(Ef.events), volcanoes, lith, rock, glaciers: ice, veg: E.veg, coasts: sea2, dunes, mesas, soil, drowned, melt });
 }
 
 // Each fine cell's layers from the plates' record there: the basement (granite
@@ -378,6 +381,23 @@ function buildRock(G, Gt, T, rng) {
 }
 
 function hash(a, b) { let x = Math.imul(a ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul(b, 0xc2b2ae35); x ^= x >>> 13; x = Math.imul(x, 0x27d4eb2f); x ^= x >>> 16; return (x >>> 0) / 4294967296; }
+
+// a fresh strike (exceptional.js; WORLDSIM.md 17) stamped where it hit: an impact winter's
+// crater, a just-boiled world's basin (half the world across); its floor a melt sheet,
+// glowing while it's young (the render: blackbody from the temperature, no lava bucket)
+function stampFresh(G, h, H, body, scale) {
+  if (!H || !H.fresh || !H.fresh.at) return null;
+  const f = H.fresh, D = f.kind === 'impact-winter' ? f.D : 0.5 * body.radiusM / 1000;
+  const imp = new Impacts(G, { rng: new Rng('fresh'), g: body.gravity, scale });
+  const melt = new Float32Array(G.n);
+  const R = D / 2 * 1000 * scale / G.R;
+  imp.stamp(f.at, D, (c, dh) => { h[c] += dh; });
+  for (let c = 0; c < G.n; c++) {
+    const cosA = G.dir[c * 3] * f.at[0] + G.dir[c * 3 + 1] * f.at[1] + G.dir[c * 3 + 2] * f.at[2];
+    if (cosA > dm.cos(R * 0.6)) melt[c] = f.kind === 'impact-winter' ? 1 : Math.max(0.2, f.lavaFrac || 0);
+  }
+  return melt;
+}
 
 // the craters still to be seen after a resurfacing: the younger ones, and older ones on the
 // highlands it didn't reach

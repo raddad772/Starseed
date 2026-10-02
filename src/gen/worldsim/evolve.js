@@ -248,7 +248,7 @@ export function evolveWorld(ctx) {
 
   // an exceptional world's cause (exceptional.js): a giant impact a few Myr ago
   const exc = ctx.exception || null;
-  const impT = exc && exc.kind === 'impact-melt' ? Math.max(0, age - exc.ago) : null;
+  const impT = exc && exc.kind === 'impact-melt' ? Math.max(0, age - exc.ago) : exc && exc.kind === 'just-boiled' ? Math.max(0, age - exc.agoYears / 1e9) : null;
   let impactDone = false;
   if (exc && exc.kind === 'tidal-lava') events.push({ t: Math.min(0.1, age * 0.5), ago: age - Math.min(0.1, age * 0.5), kind: 'resonance', text: 'its orbit locks into resonance with a neighbour: the tides begin to heat it' });
 
@@ -564,7 +564,28 @@ export function evolveWorld(ctx) {
   if (!events.find((e) => e.kind === 'plates stop') && regime === 'mobile' && massE <= 0.2) { regime = 'stagnant'; tStop = 0; }
   if (massE <= 0.2 && tStop == null) tStop = 0;
   // ---- the present
-  if (impT != null) { const since = age - impT; T = Math.max(T, 400 + 900 * dm.exp(-since / 0.008)); }
+  if (impT != null && exc.kind === 'impact-melt') { const since = age - impT; T = Math.max(T, 400 + 900 * dm.exp(-since / 0.008)); }
+  // freshly struck (exceptional.js; WORLDSIM.md 17): the state it's in now
+  let fresh = null;
+  if (exc && exc.kind === 'just-boiled') {
+    // cooling: rock vapour for ~a thousand years, a steam sky over a magma ocean, then a
+    // crust; the seas come back as rain once the surface is under ~600 K (~1e5 yr)
+    const y = exc.agoYears;
+    const Tnow = T + (2400 - T) * dm.exp(-y / 4e4);
+    const phase = y < 1500 ? 'rock-vapour sky' : Tnow > 900 ? 'steam over a magma ocean' : Tnow > 600 ? 'a fresh crust, glowing through its cracks' : Tnow > 273 && oceans0 > 0.001 ? 'the first rains: seas coming back' : 'cooled: the new crust freezing over';
+    fresh = { kind: 'just-boiled', agoYears: y, at: exc.at, T: Tnow, phase, lavaFrac: dm.clamp((Tnow - 900) / 1500, 0, 0.95), steamBar: Tnow > 600 ? oceans0 * 270 : 0 };
+    T = Math.max(T, Tnow);
+  }
+  if (exc && exc.kind === 'impact-winter') {
+    // the soot's darkness falls off over years; the cold lags it; the die-off is under way
+    const y = exc.agoYears, tau0 = 40 * dm.pow(exc.D / 180, 3.4) * (6371 / Rkm) * (6371 / Rkm);
+    const tau = tau0 * dm.exp(-y / dm.clamp(dm.pow(Math.max(Ptot(), 0.01), 0.3), 0.5, 3));
+    const light = dm.exp(-Math.min(tau, 30));
+    const cooling = 18 * (1 - light) * (1 - dm.exp(-y / 0.3));
+    fresh = { kind: 'impact-winter', agoYears: y, at: exc.at, D: exc.D, sootTau: tau, light, cooling };
+    T -= cooling;
+    if (stage > 0) { eventAt = exc.at; eventKm = 3 * exc.D; die(age, Math.min(0.9, 0.75 * dm.pow(exc.D / 180, 1.5)), 'impact', `a ${Math.round(exc.D)} km impact ${y < 2 ? 'months' : Math.round(y) + ' years'} ago: the sky is still black with soot, the fires and the cold go on`); eventAt = null; }
+  }
   const P = Ptot();
   if (stage === 0 && everLife) life.extinct = lastSterile ?? extinctions.length ? extinctions[extinctions.length - 1].t : age;
   const level = stage === 0 ? 0 : stage >= 8 ? 3 : stage === 7 ? 2 : 1;
@@ -622,7 +643,7 @@ export function evolveWorld(ctx) {
     seaPH: oceans > 0.001 ? seaPH(pCO2, pSO2) : null,
     solvent: stage > 0 ? solvent : null, backbone: stage > 0 ? backbone : null,
     metabolisms: stage > 0 ? energyOf({ air, P, solvent, oceans, redox }).pairs.map((p) => p[0]) : [],
-    extinctions, bigImpacts, floodBasalts: lips, superEruptions, eruption, recovering, radiusKm: Rkm, tidal,
+    extinctions, bigImpacts, floodBasalts: lips, superEruptions, eruption, recovering, radiusKm: Rkm, tidal, fresh,
     plantsMyr, floraStage, floraName: ['bare', 'microbial crusts', 'ground cover', 'shrubs and ferns', 'forests', 'diverse forests and grasslands'][floraStage + 1], maxTreeM,
     series, events, carbon,
     exception: exc,

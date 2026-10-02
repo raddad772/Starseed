@@ -8,6 +8,11 @@
 //                 kneads it like Io, and its surface is lakes and seas of lava
 //   impact-melt   a giant impact a few million years ago: the crust melted, the
 //                 seas (and anything living) went with it, and it still glows
+//   just-boiled   the same, years to a million years ago: a rock-vapour sky, then
+//                 steam over a magma ocean, then a crust with glowing cracks, then the
+//                 first rains bringing the seas back
+//   impact-winter a Chicxulub-class strike in the last few decades: soot in the sky,
+//                 fires, the cold, a melt sheet glowing in the fresh crater
 //
 // More kinds to come (see WORLDSIM.md: exceptional worlds).
 
@@ -24,6 +29,18 @@ const KINDS = [
     kind: 'impact-melt', weight: 1,
     eligible: (p) => rocky(p) && p.massEarth > 0.05,
     apply: (p, rng) => ({ kind: 'impact-melt', ago: rng.logUniform(0.002, 0.03), text: 'struck by another world a few million years ago: its crust melted, and it still glows' }),
+  },
+  {
+    // (WORLDSIM.md 17) struck so recently that it's still cooling: years to a million years
+    kind: 'just-boiled', weight: 0.7,
+    eligible: (p) => rocky(p) && p.massEarth > 0.05,
+    apply: (p, rng) => ({ kind: 'just-boiled', agoYears: Math.round(rng.logUniform(300, 1e6)), at: rng.unitVector(), text: 'struck by another world only moments ago, as worlds go: its crust melted and the seas boiled, and it is still cooling' }),
+  },
+  {
+    // a Chicxulub-class strike within the last few decades, on a world with seas
+    kind: 'impact-winter', weight: 0.5,
+    eligible: (p, star) => rocky(p) && p.massEarth > 0.2 && p.comp.water > 1e-4 && p.aAU > 0.6 * Math.sqrt(star.luminosity) && p.aAU < 2 * Math.sqrt(star.luminosity),
+    apply: (p, rng) => ({ kind: 'impact-winter', agoYears: rng.logUniform(0.1, 6), D: rng.range(150, 320), at: rng.unitVector(), text: 'an asteroid struck it a few years ago: soot darkens the sky, fires burn, and the cold has come' }),
   },
 ];
 
