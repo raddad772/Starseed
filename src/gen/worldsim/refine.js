@@ -192,7 +192,7 @@ function bigChannels(rec, half, size, phase, dn, up, G, Rw) {
       o.w = 2 * (half[nodes[id]] + f * (half[nodes[iu]] - half[nodes[id]])); o.k = size[nodes[id]] + f * (size[nodes[iu]] - size[nodes[id]]);
       // (its belt widening from what the sampler's meanders give a river of BIG_W to its full
       // swing by twice that: no step where the one gives way to the other)
-      const a0 = Math.min(1, 1800 / (BIG_W * F.half)), aw = Math.min(1, a0 + (1 - a0) * (o.w - BIG_W) / BIG_W);
+      const a0 = Math.min(1, 1800 / (BIG_W * F.half)), aw = Math.min(1, a0 + (1 - a0) * Math.max(0, (o.w - BIG_W) / BIG_W));
       o.h = H[id] + f * (H[iu] - H[id]); o.A = (Amp[id] + f * (Amp[iu] - Amp[id])) * aw;
       return o;
     };
