@@ -174,7 +174,7 @@ export class PauseScreen {
     const rows = [];
     const row = (k, v) => rows.push(`<dt>${k}</dt><dd>${v}</dd>`);
     row('Zone', esc(zoneOf(sys, b)));
-    if (b.kind === 'moon') row('Orbit', `${Math.round(b.orbit.a / 1000).toLocaleString()} km`);
+    if (b.kind === 'moon') row('Orbit', `${Math.round(b.orbit.a / 1000).toLocaleString()} km${b.eclipse >= 0.01 ? ` · in its planet's shadow ${(b.eclipse * 100).toFixed(b.eclipse < 0.1 ? 1 : 0)}% of the time` : ''}`);
     else row('Orbit', `${b.aAU.toFixed(2)} AU · ${b.insolation >= 0.1 ? b.insolation.toFixed(2) : b.insolation.toFixed(3)}× Earth's sunlight`);
     row('Day', b.rotation.locked ? 'tidally locked' : `${b.rotation.periodRealH.toFixed(1)} h`);
     if (b.solid) row('Surface', `${fmtT(b.Tsurf)} (${fmtT(b.Tmin)} to ${fmtT(b.Tmax)})`);

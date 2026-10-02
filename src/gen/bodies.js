@@ -400,7 +400,7 @@ export function buildBody(rng, proto, star, host) {
     comp: proto.comp,
     waterFrac: proto.comp.water,
   };
-  const S = star.luminosity / (proto.aStarAU * proto.aStarAU);
+  let S = star.luminosity / (proto.aStarAU * proto.aStarAU);
   b.insolation = S;
   // class
   if (proto.comp.envelope > 0.5) b.class = 'gasGiant';
@@ -482,6 +482,18 @@ export function buildBody(rng, proto, star, host) {
   // (an exceptional world's cause: exceptional.js)
   const exc = proto.exception || null;
   const tidalEff = Math.max(tidalHeating, exc && exc.tidal ? exc.tidal : 0);
+  // a moon spends part of each orbit in its planet's shadow: the share of the orbit behind
+  // the planet (asin(Rp/a)/pi: Europa ~3.5%, a close moon of a big giant 10%+), in the part of
+  // the planet's year when the shadow lines up with the moon's orbit (a tilted planet's moons
+  // pass above and below it near solstice; inclined orbits likewise). Its climate's sunlight
+  b.eclipse = 0;
+  if (proto.kind === 'moon' && host && host.radiusM && proto.aReal > host.radiusM) {
+    const beta = Math.asin(host.radiusM / proto.aReal);
+    const tilt = (host.rotation ? Math.abs(host.rotation.obliquity) : 0) + (proto.i || 0);
+    const inLine = beta >= tilt ? 1 : (2 / Math.PI) * Math.asin(beta / tilt);
+    b.eclipse = (beta / Math.PI) * inLine;
+  }
+  S = S * (1 - b.eclipse);
   const hist = evolveWorld({ rng: rng.fork('history'), star, S, massE: b.massEarth, radiusM: b.radiusM, gravity: b.gravity, vEsc: b.vEscReal / 1000, comp: b.comp, kind: proto.kind, tidal: tidalEff, exception: exc, host, aHost: proto.aReal || 0 });
   if (exc) b.exceptional = { kind: exc.kind, text: exc.text };
   b.history = hist;
