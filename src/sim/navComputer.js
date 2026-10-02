@@ -165,7 +165,7 @@ export class NavComputer {
     this.appr = null;
     this.go('depart');
     s.assist = 2;
-    this.say(`${this.orderText()}${s.pilot ? ' · any flight input takes over' : ''}`);
+    this.say(`${this.orderText()}${s.pilot ? ' · N to take the controls' : ''}`);
     return true;
   }
 
@@ -253,7 +253,7 @@ export class NavComputer {
     const piloted = !!s.pilot;
     if (b.isStar) return { state: piloted ? 'Flying' : 'Drifting', line: `around ${b.data.name}`, tone: 'caution' };
     const o = s.orbit();
-    const safeR = b.R + (b.atm ? b.atmHeight : 0) + (b.data.terrain ? b.data.terrain.relief * 1.6 : 0);
+    const safeR = b.R + (b.atm ? b.atmHeight : 0) + (b.relief * 1.6);
     const km = (m) => `${Math.round(m / 1000).toLocaleString()} km`;
     if (piloted) return { state: 'Flying', line: `${s.pilot === g.player ? 'you' : s.pilot.label} · ${km(s.altitude)} over ${b.data.name}`, tone: 'ok' };
     if (!o.bound) return { state: 'Drifting', line: `escaping ${b.data.name}`, tone: 'caution' };
@@ -363,7 +363,7 @@ export class NavComputer {
     };
     for (const X of g.universe.bodies) {
       if (landing && X === d.body) continue;
-      const R = X.isStar ? X.R * 3 : (X.solid ? X.R + (X.data.terrain ? X.data.terrain.relief * 1.6 : 0) + 1500 : X.R + (X.atmHeight || 0) * 0.6);
+      const R = X.isStar ? X.R * 3 : (X.solid ? X.R + (X.relief * 1.6) + 1500 : X.R + (X.atmHeight || 0) * 0.6);
       consider(X.pos, X.vel, R);
     }
     for (const h of g.vessels) {
@@ -686,7 +686,7 @@ export class NavComputer {
 
   hop(A) {
     const b = this.ship.body;
-    const cruise = b.atm ? Math.max(6000, (b.data.terrain ? b.data.terrain.relief * 1.6 : 0) + 3000) : Math.min(40000, Math.max(5000, b.R * 0.04));
+    const cruise = b.atm ? Math.max(6000, (b.relief * 1.6) + 3000) : Math.min(40000, Math.max(5000, b.R * 0.04));
     this.surfaceFlight(A, cruise);
   }
 
@@ -1013,7 +1013,7 @@ export class NavComputer {
 
   parkRadius(b) {
     const s = this.ship;
-    const relief = b.data.terrain ? b.data.terrain.relief * 1.6 : 0;
+    const relief = b.relief * 1.6;
     const low = b.R + Math.max((b.atm ? b.atmHeight * 1.3 : 0), relief + 15000, 30000);
     // big ships stay out of the air and the FTL lock, where the fleet parks
     return s.big ? Math.max(low, lockRadius(b) * 1.05) : low;

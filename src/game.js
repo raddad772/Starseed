@@ -1645,10 +1645,16 @@ export class Game {
       const pv = this.piloted;
       if (!pv) continue;
       this.pilotControls(pv, dtReal, p._mouse, p._in);
-      // nav computers fly their ships (any flight input from a pilot takes over)
+      // nav computers fly their ships: the pilot's stick and thrust are locked out until it's
+      // switched off (N, the quick menu), so a nudge of the mouse doesn't drop the order
       if (pv.nav.active) {
         const c = pv.ctrl;
-        if (c.fwd || c.strafe || c.lift || c.roll || c.brake || pv.stick.length() > 0.35) pv.nav.cancel('off: manual control');
+        if (c.fwd || c.strafe || c.lift || c.roll || c.brake || c.boost || pv.stick.length() > 0.35) {
+          const now = performance.now();
+          if (!(now < pv._navHintT)) { pv._navHintT = now + 5000; this.message('Nav computer flying · N to take the controls', 'nav'); }
+        }
+        c.fwd = c.strafe = c.lift = c.pitch = c.yaw = c.roll = 0; c.boost = c.brake = false;
+        pv.stick.set(0, 0);
       }
     }
     this.setCur(null);
