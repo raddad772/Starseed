@@ -189,6 +189,7 @@ function boot(s) {
       workers: params.get('workers') ? +params.get('workers') : undefined,
       worldsim: params.get('worldsim') !== '0', simN: params.get('simN') ? +params.get('simN') : undefined,
       simWorkers: params.get('simWorkers') ? +params.get('simWorkers') : undefined,
+      tileGPU: params.get('tilegpu') !== '0',   // (?tilegpu=0: the tile sims on the CPU, for a hidden test tab)
       testSpot: params.get('test') || undefined,
       renderScale: params.get('scale') ? +params.get('scale') : settings.scale,
       reversedDepth: params.get('logdepth') ? false : undefined,

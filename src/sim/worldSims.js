@@ -64,6 +64,7 @@ export class WorldSims {
     this.N = opts.N || 288;
     this.myr = opts.myr || 150;
     this.steps = opts.steps || 40;
+    this.gpu = opts.gpu !== false;   // (the tile sims on the GPU where there is one)
     this.status = new Map();   // body id -> 'queued' | 'running' | 'ready' | 'failed'
     this.queue = [];           // { kind: 'sim', id, N } | { kind: 'refine', id, face, snap }
     this.refine = new Map();   // body id -> { R (refine.js), tiles done of total, status }
@@ -183,14 +184,14 @@ export class WorldSims {
         const has = w.hasSnap || (w.hasSnap = new Set());
         const snap = has.has(job.id) ? null : job.snap;
         has.add(job.id);
-        w.worker.postMessage({ type: 'pyr', job: job.id, seed: this.seed, body: job.id, L: job.L, face: job.face, ti: job.ti, tj: job.tj, snap, refine: job.refine, refKey: this.refKey(job.id), parents: job.parents });
+        w.worker.postMessage({ type: 'pyr', job: job.id, seed: this.seed, body: job.id, L: job.L, face: job.face, ti: job.ti, tj: job.tj, snap, refine: job.refine, refKey: this.refKey(job.id), parents: job.parents, gpu: this.gpu });
         continue;
       }
       if (job.kind === 'refine') {
         this.refine.get(job.id).status = 'running';
         const has = w.hasSnap || (w.hasSnap = new Set()), snap = has.has(job.id) ? null : job.snap;
         has.add(job.id);
-        w.worker.postMessage({ type: 'refine', job: job.id, seed: this.seed, body: job.id, face: job.face, ti: job.ti, tj: job.tj, snap });
+        w.worker.postMessage({ type: 'refine', job: job.id, seed: this.seed, body: job.id, face: job.face, ti: job.ti, tj: job.tj, snap, gpu: this.gpu });
         continue;
       }
       this.status.set(job.id, 'running');

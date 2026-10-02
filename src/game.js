@@ -69,7 +69,7 @@ export class Game {
     this.cloudNoise = makeCloudNoise(64);
     this.world = new WorldRenderer(this.engine, this.universe, this.pool, this.detailTex, this.cloudNoise);
     // simulated worlds (WORLDSIM.md step 7; ?worldsim=0 for the noise worlds, to compare)
-    if (opts.worldsim) { this.worldSims = new WorldSims(this, { N: opts.simN, workers: opts.simWorkers }); this.tiles = new TerrainTiles(this); }
+    if (opts.worldsim) { this.worldSims = new WorldSims(this, { N: opts.simN, workers: opts.simWorkers, gpu: opts.tileGPU !== false }); this.tiles = new TerrainTiles(this); }
     this.lights = new LightRig(this.engine);
     this.t = 0;
     this.warpIndex = 0;

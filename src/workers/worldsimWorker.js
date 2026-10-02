@@ -39,7 +39,7 @@ self.onmessage = async (e) => {
         gen = new TerrainGenerator({ ...b.terrain, snapshot: snaps.get(m.body) });
         refGens.set(m.body, gen);
       }
-      const G = await gpu(), P = prepareTile(gen, m.face, m.ti, m.tj, { kind: 'refine' }), I = P.ints();
+      const G = m.gpu === false ? null : await gpu(), P = prepareTile(gen, m.face, m.ti, m.tj, { kind: 'refine' }), I = P.ints();
       P.fromInts(G ? await G.run(I) : runInt(I));
       const T = P.finish(), p = packTile(T);
       p.riv = tileRivers(T);
@@ -61,7 +61,7 @@ self.onmessage = async (e) => {
       }
       let src = m.refine;
       if (m.parents.length) { src = new TileSet(m.L - 2); for (const p of m.parents) src.put(p.face, p.ti, p.tj, p); }
-      const P = prepareTile(gen, m.face, m.ti, m.tj, { kind: 'pyr', L: m.L, parent: new RefineReader(src) }), I = P.ints(), G = await gpu();
+      const P = prepareTile(gen, m.face, m.ti, m.tj, { kind: 'pyr', L: m.L, parent: new RefineReader(src) }), I = P.ints(), G = m.gpu === false ? null : await gpu();
       P.fromInts(G ? await G.run(I) : runInt(I));
       const T = P.finish(), rw = new Uint8Array(T.rockC.length);
       for (let o = 0; o < rw.length; o++) rw[o] = (T.rockC[o] & 31) | (T.water[o] << 5);
