@@ -21,7 +21,7 @@ import * as dm from '../../core/dmath.js';
 import { Noise3 } from '../../core/noise.js';
 import { dunePatches } from '../dunes.js';
 
-export const SIM_VERSION = 8;
+export const SIM_VERSION = 9;
 
 // a world's grid size: maxN for an Earth-sized one, finer cells don't help a small one
 // (N ~ sqrt(radius): Mars ~210, the Moon ~150, a moonlet 64)
@@ -65,6 +65,9 @@ export function packSnapshot(W, body) {
   const out = { version: SIM_VERSION, path: W.path, N: G.N, R: G.R, h, water, rock, ice, river, melt, relief, rcv, Nc: 0, sea: !!(body.terrain && body.terrain.liquid) };
   // the flat-topped volcanoes eruptions under ice left (world.js)
   out.tuyas = (W.tuyas || []).map((t) => ({ d: t.d.slice(), top: t.top, r: t.r }));
+  // the sea itself (the erosion's base: water below the datum joined to a body big enough to be
+  // a sea): an inland hollow below the datum is a basin, dry or a lake, not sea
+  if (W.E && W.E.sea && W.E.base) { out.ocean = new Uint8Array(n); for (let c = 0; c < n; c++) out.ocean[c] = W.E.base[c] && W.h[c] < 0 ? 1 : 0; }
   // the crater record below the grid (barren.js): by cell, log-scaled (20 a decade, 0: none),
   // and the craters' scales (craters.js)
   if (W.crater) {
@@ -97,7 +100,7 @@ export function packSnapshot(W, body) {
 
 // the arrays a snapshot carries (for transfer lists and caching)
 export function snapshotBuffers(s) {
-  return ['h', 'water', 'rock', 'ice', 'river', 'melt', 'relief', 'rcv', 'Tsea', 'P', 'cover', 'forest', 'open', 'cloud', 'cloudPx', 'crat', 'dunes'].filter((k) => s[k]).map((k) => s[k].buffer);
+  return ['h', 'water', 'rock', 'ice', 'river', 'melt', 'relief', 'rcv', 'Tsea', 'P', 'cover', 'forest', 'open', 'cloud', 'cloudPx', 'crat', 'dunes', 'ocean'].filter((k) => s[k]).map((k) => s[k].buffer);
 }
 
 // reads a snapshot at any direction
@@ -123,18 +126,20 @@ export class SnapshotSampler {
     }
     this.uv = { face: 0, u: 0, v: 0 };
     this.d = [0, 0, 0];
-    // land cells with no sea beside them (where a dip below the datum is still dry land)
+    // land cells with no sea beside them (where a dip below the datum is still dry land); a
+    // sea cell: the world sim's sea where it says (else any cell below the datum not a lake)
     const G = this.G, n = G.n, nb = this.nb, N = s.N;
+    const isSea = s.ocean ? (c) => s.ocean[c] === 1 : (c) => s.h[c] < 0 && !(s.water[c] > -1e8);
     this.inland = new Uint8Array(n);
     for (let c = 0; c < n; c++) {
-      if (s.h[c] < 0 && !(s.water[c] > -1e8)) continue;
+      if (isSea(c)) continue;
       let sea = false;
       const i = c % N, j = Math.floor(c / N) % N;
       if (i > 0 && j > 0 && i < N - 1 && j < N - 1) {   // (inside a face: the 8 round it)
-        for (let dj = -N; dj <= N && !sea; dj += N) for (let di = -1; di <= 1; di++) { const q = c + dj + di; if (s.h[q] < 0 && !(s.water[q] > -1e8)) { sea = true; break; } }
+        for (let dj = -N; dj <= N && !sea; dj += N) for (let di = -1; di <= 1; di++) { const q = c + dj + di; if (isSea(q)) { sea = true; break; } }
       } else {
         const k = G.nbrs(c, nb);
-        for (let e = 0; e < k; e++) { const q = nb[e]; if (s.h[q] < 0 && !(s.water[q] > -1e8)) { sea = true; break; } }
+        for (let e = 0; e < k; e++) { const q = nb[e]; if (isSea(q)) { sea = true; break; } }
       }
       if (!sea) this.inland[c] = 1;
     }
@@ -143,7 +148,7 @@ export class SnapshotSampler {
     this.seaHops = new Uint8Array(n).fill(8);
     const q = new Int32Array(n);
     let qn = 0;
-    if (s.sea !== false) for (let c = 0; c < n; c++) if (s.h[c] < 0 && !(s.water[c] > -1e8)) { this.seaHops[c] = 0; q[qn++] = c; }
+    if (s.sea !== false) for (let c = 0; c < n; c++) if (isSea(c)) { this.seaHops[c] = 0; q[qn++] = c; }
     for (let i = 0; i < qn; i++) {
       const c = q[i], d = this.seaHops[c] + 1;
       if (d >= 8) continue;
