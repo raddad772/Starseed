@@ -37,9 +37,10 @@ export class WorldRenderer {
     it.group.add(it.terrain.group);
     // its clouds where its climate puts them
     const snap = it.body.data.terrain && it.body.data.terrain.snapshot;
-    const map = snap ? cloudMapPixels(snap) : null;
+    // (baked with the snapshot; a snapshot cached before that, baked here, coarser)
+    const map = !snap ? null : snap.cloudPx ? { px: snap.cloudPx, w: snap.cloudW, h: snap.cloudW / 2 } : cloudMapPixels(snap, 256);
     if (map && it.atmo) {
-      const tex = new THREE.DataTexture(map.px, map.w, map.h);
+      const tex = new THREE.DataTexture(map.px, map.w, map.h, THREE.RedFormat);
       tex.wrapS = THREE.RepeatWrapping; tex.magFilter = THREE.LinearFilter; tex.minFilter = THREE.LinearFilter; tex.needsUpdate = true;
       for (const m of [it.atmo.material, it.volume && it.volume.material]) if (m && m.uniforms.tCloudMap) { m.uniforms.tCloudMap.value = tex; m.uniforms.uCloudMapOn.value = 1; }
     }
