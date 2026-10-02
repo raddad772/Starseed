@@ -54,14 +54,27 @@ export class Coasts {
     for (let c = 0; c < n; c++) wet[c] = sea ? (sea[c] === 1 ? 1 : 0) : (h[c] < 0 ? 1 : 0);
     this.wetAt = (c) => wet[c] === 1;
     let a = this._ea || (this._ea = new Float32Array(n)), t = this._eb || (this._eb = new Float32Array(n));
+    const band = this._band || (this._band = new Int32Array(n)), seen = this._seen || (this._seen = new Uint8Array(n));
+    let nb0 = 0;
     for (let c = 0; c < n; c++) {
       let w = false, d = false;
       for (let e = nS[c]; e < nS[c + 1]; e++) { if (wet[nb[e]]) w = true; else d = true; }
       coast[c] = !wet[c] ? (w ? 1 : 0) : (d ? 2 : 0);
-      a[c] = wet[c];
+      a[c] = wet[c]; t[c] = wet[c]; seen[c] = 0;
+      if (coast[c]) { band[nb0++] = c; seen[c] = 1; }
+    }
+    // (only the coast's cells read the result, and only cells within five steps of the coast
+    // change in six passes (the mask is even everywhere else): the passes run over that band, the
+    // same sums as over the whole grid)
+    let nBand = nb0, from = 0;
+    for (let k = 0; k < 5; k++) {
+      const to = nBand;
+      for (let q = from; q < to; q++) { const c = band[q]; for (let e = nS[c]; e < nS[c + 1]; e++) { const o = nb[e]; if (!seen[o]) { seen[o] = 1; band[nBand++] = o; } } }
+      from = to;
     }
     for (let k = 0; k < 6; k++) {
-      for (let c = 0; c < n; c++) {
+      for (let q = 0; q < nBand; q++) {
+        const c = band[q];
         let s2 = a[c], m = 1;
         for (let e = nS[c]; e < nS[c + 1]; e++) { s2 += a[nb[e]]; m++; }
         t[c] = s2 / m;
