@@ -180,6 +180,7 @@ uniform float uVignette;
 uniform vec3 uFlash;
 uniform float uRadial;
 uniform float uEncode; // 1: sRGB for the canvas; 0: linear, into an sRGB texture (a screen in the world)
+uniform float uContrast;
 varying vec2 vUv;
 vec3 aces(vec3 x) {
   const float a = 2.51, b = 0.03, c = 2.43, d = 0.59, e = 0.14;
@@ -210,6 +211,11 @@ void main() {
     // give saturation a little back
     c = AgXToneMapping(c);
     c = clamp(mix(vec3(dot(c, vec3(0.2126, 0.7152, 0.0722))), c, 1.2), 0.0, 1.0);
+    // and contrast: an S-curve on the display-encoded value, steeper through the midtones
+    // (x uContrast) and easing at the ends, so nothing clips
+    vec3 t = 2.0 * pow(c, vec3(1.0 / 2.2)) - 1.0;
+    t += uContrast * t * (1.0 - t * t);
+    c = pow(clamp(0.5 * t + 0.5, 0.0, 1.0), vec3(2.2));
   } else c = aces(c);
   // blue-noise-ish dither to hide banding in skies
   float n = fract(sin(dot(gl_FragCoord.xy + uTime, vec2(12.9898, 78.233))) * 43758.5453) - 0.5;
@@ -421,7 +427,7 @@ export class Engine {
     this.toneMat = mk(TONEMAP_FRAG, {
       tColor: { value: null }, tBloom: { value: null }, tAdapt: { value: null },
       uKey: { value: 0.18 }, uMinExp: { value: 0.04 }, uMaxExp: { value: 260 }, uExposureBias: { value: 1 }, uBloom: { value: 0.9 },
-      toneMappingExposure: { value: 1 }, uToneCurve: { value: 1 },
+      toneMappingExposure: { value: 1 }, uToneCurve: { value: 1 }, uContrast: { value: 0.22 },
       uWhiteBalance: { value: this.whiteBalance }, uTime: { value: 0 }, uVignette: { value: 0.35 }, uFlash: { value: null }, uRadial: { value: 0 }, uEncode: { value: 1 },
     });
   }
