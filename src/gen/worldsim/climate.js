@@ -33,11 +33,12 @@ const SIGMA_EARTH = 1361; // W/m^2 at 1 S_earth
 
 // opts: { h (heights on G, m), S (x Earth), obliquity, ecc, perihelion (solar longitude, rad),
 //   locked, substellar ([x,y,z] in the body frame), rotH (rotation period, hours), retro
-//   (spins backward), hadley, pressure (bar), Tmean (target annual mean, K), albedo, yearDays }
+//   (spins backward), hadley, pressure (bar), Tmean (target annual mean, K), albedo, yearDays,
+//   sea (optional: which cells are sea; else those below sea level) }
 export function climate(G, opts) {
   const n = G.n, d = G.dir, h = opts.h;
-  const sea = new Uint8Array(n);
-  for (let c = 0; c < n; c++) sea[c] = h[c] < 0 ? 1 : 0;
+  const sea = opts.sea ? Uint8Array.from(opts.sea) : new Uint8Array(n);
+  if (!opts.sea) for (let c = 0; c < n; c++) sea[c] = h[c] < 0 ? 1 : 0;
   const lat = new Float64Array(n);
   for (let c = 0; c < n; c++) lat[c] = dm.asin(Math.max(-1, Math.min(1, d[c * 3 + 1])));
   const P = Math.max(opts.pressure || 0, 0.001);

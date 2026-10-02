@@ -65,15 +65,18 @@ if (init === 'auto') {
   else if (Wd.path === 'stagnant') rgb = renderBarren(Wd.G, { h: Wd.h, mare: Wd.volc, fresh: new Float32Array(Wd.G.n), river: Wd.river }, W_, [1.0, 0.72, 0.52]);
   else rgb = renderBarren(Wd.G, Wd, W_, p.icy ? [0.92, 0.97, 1.05] : [1, 0.98, 0.95]);
   // what a surveyor would name first
-  const F = findFeatures(Wd.G, Wd.h, { E: Wd.E, scale: body.R / body.radiusM, craters: Wd.craters || [], volcanoes: Wd.volcanoes, glaciers: Wd.glaciers, coasts: Wd.coasts, rock: Wd.rock, rockNames: ROCKS.map((r) => r.name), top: 5 });
+  const F = findFeatures(Wd.G, Wd.h, { E: Wd.E, scale: body.R / body.radiusM, craters: Wd.craters || [], volcanoes: Wd.volcanoes, glaciers: Wd.glaciers, coasts: Wd.coasts, rock: Wd.rock, rockNames: ROCKS.map((r) => r.name), climate: Wd.climate, Gc: Wd.Gc, top: 5 });
   if (Wd.glaciers) paintIce(rgb, W_, Wd.G, Wd.glaciers.ice);
   const ll = (f) => `${f.lat.toFixed(0)},${f.lon.toFixed(0)}`;
   console.log('features:');
   console.log('  peaks:    ' + F.peaks.map((f) => `${Math.round(f.height)} m (prominence ${Math.round(f.prominence)}) @${ll(f)}`).join('; '));
   console.log('  ranges:   ' + F.ranges.map((f) => `${Math.round(f.lengthKm)} km long, ${Math.round(f.areaKm2 / 1000)}k km2, top ${Math.round(f.peak)} m`).join('; '));
-  if (F.rivers.length) console.log('  rivers:   ' + F.rivers.map((f) => `${Math.round(f.lengthKm)} km to the sea @${ll(f)}`).join('; '));
+  if (F.rivers.length) console.log('  rivers:   ' + F.rivers.map((f) => `${Math.round(f.lengthKm)} km to ${f.inland ? 'a closed basin' : 'the sea'} @${ll(f)}`).join('; '));
   if (F.gorges.length) console.log('  gorges:   ' + F.gorges.map((f) => `${f.kind} ${Math.round(f.depth)} m deep @${ll(f)}`).join('; '));
-  if (F.lakes.length) console.log('  lakes:    ' + F.lakes.map((f) => `${Math.round(f.areaKm2)} km2, ${Math.round(f.depth)} m deep`).join('; '));
+  if (F.lakes.length) console.log('  lakes:    ' + F.lakes.map((f) => `${f.underIce ? 'under the ice, ' : f.salt ? 'salt ' : ''}${Math.round(f.areaKm2)} km2, ${Math.round(f.depth)} m deep${f.level < 0 ? `, surface ${Math.round(-f.level)} m below sea level` : ''} @${ll(f)}`).join('; '));
+  if (F.saltFlats.length) console.log('  salt flats: ' + F.saltFlats.map((f) => `${Math.round(f.areaKm2)} km2${f.height < 0 ? ` at ${Math.round(-f.height)} m below sea level` : ''} @${ll(f)}`).join('; '));
+  if (F.deserts.length) console.log('  deserts:  ' + F.deserts.map((f) => `${f.kind} ${Math.round(f.areaKm2 / 1000)}k km2 @${ll(f)}`).join('; '));
+  if (F.forests.length) console.log('  forests:  ' + F.forests.map((f) => `${f.kind} ${Math.round(f.areaKm2 / 1000)}k km2 @${ll(f)}`).join('; '));
   if (F.trenches.length) console.log('  trenches: ' + F.trenches.map((f) => `${Math.round(f.depth)} m @${ll(f)}`).join('; '));
   if (F.craters.length) console.log('  craters:  ' + F.craters.map((f) => `${Math.round(f.diameterKm)} km`).join('; '));
   if (F.highest) console.log(`  highest:  ${Math.round(F.highest.height)} m @${ll(F.highest)}`);
@@ -456,12 +459,15 @@ function paint(G, h, E, w, hh, dirAt, px, mPerPx) {
   const rgb = new Uint8Array(w * hh * 3);
   const Z = new Float64Array(w * hh), lake = new Float64Array(w * hh);
   const d = [0, 0, 0], uv = { face: 0, u: 0, v: 0 };
-  const depth = new Float64Array(G.n);
-  for (let c = 0; c < G.n; c++) depth[c] = E.base[c] ? 0 : Math.max(0, E.fill[c] - h[c]);
+  const depth = new Float64Array(G.n), seaF = new Float64Array(G.n);
+  for (let c = 0; c < G.n; c++) { depth[c] = E.base[c] ? 0 : Math.max(0, (E.water ? E.water[c] : E.fill[c]) - h[c]); seaF[c] = E.base[c] || h[c] >= 0 ? 1 : 0; }
+  const kind = new Uint8Array(w * hh), dryLow = new Uint8Array(w * hh);
   for (let y = 0; y < hh; y++) for (let x = 0; x < w; x++) {
     dirAt(x, y, d);
     Z[y * w + x] = G.sample(h, d, uv);
     lake[y * w + x] = G.sample(depth, d, uv);
+    if (E.lakeKind) kind[y * w + x] = E.lakeKind[G.cellAt(d[0], d[1], d[2])];
+    dryLow[y * w + x] = G.sample(seaF, d, uv) < 0.5 ? 1 : 0; // (below sea level, but no sea: a dry hollow)
   }
   const ex = 6; // vertical exaggeration for the shading
   for (let y = 0; y < hh; y++) for (let x = 0; x < w; x++) {
@@ -470,9 +476,10 @@ function paint(G, h, E, w, hh, dirAt, px, mPerPx) {
     const zx = (Z[y * w + Math.min(w - 1, x + 1)] - Z[y * w + Math.max(0, x - 1)]) / (2 * mx) * ex;
     const zy = (Z[Math.min(hh - 1, y + 1) * w + x] - Z[Math.max(0, y - 1) * w + x]) / (2 * my) * ex;
     const nl = Math.sqrt(zx * zx + zy * zy + 1);
-    const shade = z < 0 ? 1 : Math.max(0.25, Math.min(1.35, (zx * 0.6 + zy * 0.6 + 0.85) / nl / 0.85));
-    let col = hypso(z);
-    if (z >= 0 && lake[i] > 2) col = [40, 90, 150];
+    const shade = z < 0 && !dryLow[i] ? 1 : Math.max(0.25, Math.min(1.35, (zx * 0.6 + zy * 0.6 + 0.85) / nl / 0.85));
+    let col = dryLow[i] ? hypso(1).map((v) => v * 0.85) : hypso(z);
+    if ((z >= 0 || dryLow[i]) && lake[i] > 2) col = kind[i] === 2 ? [50, 130, 140] : [40, 90, 150];
+    if (kind[i] === 3) col = [236, 232, 222];        // salt flat
     rgb[i * 3] = Math.min(255, col[0] * shade); rgb[i * 3 + 1] = Math.min(255, col[1] * shade); rgb[i * 3 + 2] = Math.min(255, col[2] * shade);
   }
   // rivers: each cell with enough water to its receiver
@@ -483,7 +490,7 @@ function paint(G, h, E, w, hh, dirAt, px, mPerPx) {
   const thr = Math.max(amax * 0.004, meanA * 60);
   const a = [0, 0, 0], b = [0, 0, 0];
   for (let c = 0; c < G.n; c++) {
-    if (E.base[c] || E.A[c] < thr) continue;
+    if (E.base[c] || E.A[c] < thr || (E.lakeKind && E.lakeKind[c])) continue; // (not across lakes and dry lake beds)
     const r = E.rcv[c];
     if (r < 0) continue;
     a[0] = G.dir[c * 3]; a[1] = G.dir[c * 3 + 1]; a[2] = G.dir[c * 3 + 2];

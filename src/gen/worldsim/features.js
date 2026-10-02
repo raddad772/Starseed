@@ -9,7 +9,10 @@
 //   rivers     traced from each mouth up the larger branch to the source, by length
 //   gorges     where a river has cut deepest below the ridges beside it: canyons
 //              when the walls are steep
-//   lakes      basins the water fills (from the routing's filled surface), by area
+//   lakes      water standing in basins, by area: fresh where they spill, salt where
+//              they're closed (the climate's evaporation wins: erosion.js)
+//   salt flats closed basins dried to salt (the Bonneville's, the Uyuni's)
+//   deserts, forests  the largest of each, from the climate's Köppen map
 //   trenches   the deepest sea floor (the deepest is the world's deepest wet spot)
 //   lowest dry the lowest ground below sea level not joined to the ocean (a Dead Sea)
 //   lands      continents, the largest islands, and archipelagos and chains (small
@@ -29,13 +32,14 @@
 
 import * as dm from '../../core/dmath.js';
 
-// G: SimGrid; h: heights (m, sea level 0). opts: { E: an Erosion after route()+drain(),
-// scale (game/real), craters: [{D, at, t}], volcanoes: [{at, H}], top: how many of each }
+// G: SimGrid; h: heights (m, sea level 0). opts: { E: an Erosion after route()+lakes()+drain(),
+// scale (game/real), craters: [{D, at, t}], volcanoes: [{at, H}], climate + Gc (climate.js on
+// its grid), top: how many of each }
 export function findFeatures(G, h, opts = {}) {
   const n = G.n, top = opts.top ?? 8, scale = opts.scale ?? 0.1;
   const toReal = 1 / scale;                         // game metres -> real metres (horizontal)
   const where = (c) => latLon(G, c);
-  const out = { peaks: [], ranges: [], rivers: [], gorges: [], lakes: [], trenches: [], craters: [], volcanoes: [], continents: [], islands: [], archipelagos: [], waterfalls: [], cliffs: [], plateaus: [], lowestDry: null, deepestWet: null, highest: null };
+  const out = { peaks: [], ranges: [], rivers: [], gorges: [], lakes: [], saltFlats: [], deserts: [], forests: [], trenches: [], craters: [], volcanoes: [], continents: [], islands: [], archipelagos: [], waterfalls: [], cliffs: [], plateaus: [], lowestDry: null, deepestWet: null, highest: null };
 
   // ---- peaks by prominence: add cells high to low, joining their neighbours'
   // groups; where two groups meet, the lower one's summit gets its prominence
@@ -92,6 +96,7 @@ export function findFeatures(G, h, opts = {}) {
   const E = opts.E;
   if (E) {
     const { rcv, rcvD, A, base, fill } = E;
+    const water = E.water || fill, kindOf = E.lakeKind || null;
     // the main donor of each cell (its biggest tributary)
     const main = new Int32Array(n).fill(-1);
     for (let c = 0; c < n; c++) { const r = rcv[c]; if (r >= 0 && (main[r] < 0 || A[c] > A[main[r]])) main[r] = c; }
@@ -103,29 +108,38 @@ export function findFeatures(G, h, opts = {}) {
     for (let c = 0; c < n; c++) {
       if (base[c] || A[c] < minA) continue;
       const r = rcv[c];
-      if (r >= 0 && !base[r]) continue; // not a mouth
+      // a mouth: into the sea, or into a closed lake or salt flat (a river that never reaches the sea)
+      const inland = r >= 0 && kindOf && !kindOf[c] && kindOf[r] >= 2;
+      if (r >= 0 && !base[r] && !inland) continue;
       let len = 0, x = c, steps = 0;
       while (main[x] >= 0 && steps++ < 100000) { len += rcvD[main[x]]; x = main[x]; }
-      rivers.push({ mouth: c, source: x, lengthKm: len * toReal / 1000, discharge: A[c], ...where(c), source_: where(x) });
+      rivers.push({ mouth: c, source: x, lengthKm: len * toReal / 1000, discharge: A[c], inland, ...where(c), source_: where(x) });
     }
     rivers.sort((a, b) => b.lengthKm - a.lengthKm);
     out.rivers = rivers.slice(0, top);
-    // lakes: connected cells under the filled surface
+    // lakes: connected cells under standing water (salt if closed); salt flats likewise
     const lk = new Uint8Array(n);
+    const wet = (c) => !base[c] && water[c] - h[c] >= 1;
+    const flat = (c) => kindOf && kindOf[c] === 3;
     for (let c0 = 0; c0 < n; c0++) {
-      if (lk[c0] || base[c0] || fill[c0] - h[c0] < 1) continue;
+      if (lk[c0] || !(wet(c0) || flat(c0))) continue;
+      const isFlat = !wet(c0), test = isFlat ? flat : wet;
       const cells = [], q = [c0];
       lk[c0] = 1;
       while (q.length) {
         const c = q.pop(); cells.push(c);
-        for (let e = G.nStart[c]; e < G.nStart[c + 1]; e++) { const o = G.nbr[e]; if (!lk[o] && !base[o] && fill[o] - h[o] >= 1) { lk[o] = 1; q.push(o); } }
+        for (let e = G.nStart[c]; e < G.nStart[c + 1]; e++) { const o = G.nbr[e]; if (!lk[o] && test(o)) { lk[o] = 1; q.push(o); } }
       }
-      let area = 0, depth = 0;
-      for (const c of cells) { area += G.area[c]; depth = Math.max(depth, fill[c] - h[c]); }
-      out.lakes.push({ areaKm2: area * toReal * toReal / 1e6, depth, level: fill[cells[0]], ...where(cells[0]) });
+      let area = 0, depth = 0, deep = cells[0], salt = false, iced = 0;
+      for (const c of cells) { area += G.area[c]; if (water[c] - h[c] > depth) { depth = water[c] - h[c]; deep = c; } if (kindOf && kindOf[c] === 2) salt = true; if (opts.glaciers && opts.glaciers.ice[c] > 0) iced++; }
+      const underIce = iced * 2 > cells.length; // (beneath an ice sheet: Vostok's kind)
+      if (isFlat) { if (!underIce) out.saltFlats.push({ areaKm2: area * toReal * toReal / 1e6, height: h[cells[0]], ...where(cells[0]) }); }
+      else out.lakes.push({ areaKm2: area * toReal * toReal / 1e6, depth, level: water[deep], salt: salt && !underIce, underIce, ...where(deep) });
     }
     out.lakes.sort((a, b) => b.areaKm2 - a.areaKm2);
     out.lakes = out.lakes.slice(0, top);
+    out.saltFlats.sort((a, b) => b.areaKm2 - a.areaKm2);
+    out.saltFlats = out.saltFlats.slice(0, top);
     // gorges: along rivers, the cut below the highest ground within a few cells
     const gorges = [];
     for (let c = 0; c < n; c++) {
@@ -170,9 +184,11 @@ export function findFeatures(G, h, opts = {}) {
     for (const c of cells) { ocean[c] = 1; if (deepest < 0 || h[c] < h[deepest]) deepest = c; }
   }
   if (deepest >= 0) out.deepestWet = { depth: -h[deepest], ...where(deepest) };
+  // (dry: not under the sea, nor under a lake's water)
+  const underWater = (c) => opts.E && opts.E.water && !opts.E.base[c] && opts.E.water[c] - h[c] >= 1;
   let low = -1, hiC = -1;
   for (let c = 0; c < n; c++) {
-    if (!ocean[c] && (low < 0 || h[c] < h[low])) low = c;
+    if (!ocean[c] && !underWater(c) && (low < 0 || h[c] < h[low])) low = c;
     if (hiC < 0 || h[c] > h[hiC]) hiC = c;
   }
   if (low >= 0 && h[low] < 0) out.lowestDry = { height: h[low], ...where(low) };
@@ -319,6 +335,35 @@ export function findFeatures(G, h, opts = {}) {
   }
   if (opts.craters) out.craters = opts.craters.slice().sort((a, b) => b.D - a.D).slice(0, top).map((k) => ({ diameterKm: k.D, ...latLonDir(k.at), when: k.t }));
   if (opts.volcanoes) out.volcanoes = opts.volcanoes.slice(0, top);
+  // ---- deserts and forests: connected regions of the climate's Köppen map
+  if (opts.climate && opts.Gc) {
+    const Gc = opts.Gc, K = opts.climate.koppen, m = Gc.n;
+    const cls = (k) => (k.startsWith('BW') ? 'desert' : (k[0] === 'A' && k !== 'Aw') || k[0] === 'C' || (k[0] === 'D' && k[1] !== 's') ? 'forest' : null);
+    const seen = new Uint8Array(m);
+    for (let c0 = 0; c0 < m; c0++) {
+      if (seen[c0] || K[c0] === 'sea') continue;
+      const want = cls(K[c0]);
+      if (!want) continue;
+      const cells = [], q = [c0];
+      seen[c0] = 1;
+      while (q.length) {
+        const c = q.pop(); cells.push(c);
+        for (let e = Gc.nStart[c]; e < Gc.nStart[c + 1]; e++) { const o = Gc.nbr[e]; if (!seen[o] && K[o] !== 'sea' && cls(K[o]) === want) { seen[o] = 1; q.push(o); } }
+      }
+      let area = 0, hot = 0, mid = cells[0], best = -1;
+      const kinds = {};
+      for (const c of cells) { area += Gc.area[c]; if (K[c].endsWith('h')) hot++; kinds[K[c]] = (kinds[K[c]] || 0) + 1; }
+      // its middle: the cell farthest from its edge (a few rounds of peeling)
+      const inside = new Set(cells);
+      for (const c of cells) { let d = 0; for (let e = Gc.nStart[c]; e < Gc.nStart[c + 1]; e++) if (inside.has(Gc.nbr[e])) d++; if (d > best) { best = d; mid = c; } }
+      const main = Object.entries(kinds).sort((a, b) => b[1] - a[1])[0][0];
+      const f = { areaKm2: area * toReal * toReal / 1e6, ...latLon(Gc, mid) };
+      if (want === 'desert') out.deserts.push({ ...f, kind: hot * 2 > cells.length ? 'hot' : 'cold' });
+      else out.forests.push({ ...f, kind: forestName(main) });
+    }
+    out.deserts.sort((a, b) => b.areaKm2 - a.areaKm2); out.deserts = out.deserts.slice(0, top);
+    out.forests.sort((a, b) => b.areaKm2 - a.areaKm2); out.forests = out.forests.slice(0, top);
+  }
   return out;
 }
 
@@ -359,4 +404,10 @@ function spanOf(G, cells) {
   const [a] = far(cells[0]);
   const [, cosB] = far(a);
   return dm.acos(Math.max(-1, Math.min(1, cosB))) * G.R;
+}
+
+function forestName(k) {
+  if (k[0] === 'A') return 'rainforest';
+  if (k[0] === 'C') return k[1] === 's' ? 'mediterranean woodland' : 'temperate forest';
+  return k[2] === 'c' || k[2] === 'd' ? 'boreal forest' : 'continental forest';
 }

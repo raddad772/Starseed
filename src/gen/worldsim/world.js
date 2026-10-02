@@ -17,6 +17,7 @@
 // giant's moons, the giant's pull. (To come: icy-moon shells, Venus-style
 // resurfacing, glaciers, climate, regime changes mid-history in one run.)
 
+import * as dm from '../../core/dmath.js';
 import { Rng } from '../../core/rng.js';
 import { TerrainGenerator, S_LEN, S_H, S_MOIST, S_TEMP } from '../terrain.js';
 import { SimGrid } from './grid.js';
@@ -67,14 +68,14 @@ export function worldSim(body, star, opts = {}) {
   const out = { path, G, rate, spike };
 
   if (path === 'barren') {
-    const W = barrenWorld(G, { rng: rng.fork('barren'), body, age, scale, volcEnd: 1 + 15 * Math.pow(body.massEarth, 0.6), rate, spike });
+    const W = barrenWorld(G, { rng: rng.fork('barren'), body, age, scale, volcEnd: 1 + 15 * dm.pow(body.massEarth, 0.6), rate, spike });
     return Object.assign(out, { h: W.h, mare: W.mare, fresh: W.fresh, stats: W.stats, craters: W.impacts.events });
   }
   if (path === 'stagnant') {
     const wet = wetWindow(H);
     const oceanAt = wet ? Math.max(...Array.from(H.series.oceans)) : 0;
     const seaFrac = wet ? Math.min(0.4, Math.max(0, (Math.log10(Math.max(oceanAt * 2.3e-4, 1e-9)) + 5.5) / 3.2) * 0.45) : 0;
-    const S = stagnantWorld(G, { rng: rng.fork('stagnant'), body, age, scale, wet, seaFrac, tier: H.tier, volcEnd: 1 + 15 * Math.pow(body.massEarth, 0.6), rate, spike });
+    const S = stagnantWorld(G, { rng: rng.fork('stagnant'), body, age, scale, wet, seaFrac, tier: H.tier, volcEnd: 1 + 15 * dm.pow(body.massEarth, 0.6), rate, spike });
     const volcanoes = S.shields.map((v) => ({ ...latLonOf(v.at), heightM: v.H }));
     return Object.assign(out, { h: S.h, volc: S.volc, river: S.river, stats: S.stats, wet, seaFrac, craters: S.impacts.events, volcanoes });
   }
@@ -113,18 +114,19 @@ export function worldSim(body, star, opts = {}) {
   log(`climate: ${summarizeKoppen(clim)}`);
   log(`plates: ${myr} Myr, ${T.plates.filter((q) => !q.dead).length} plates, ${T.hot.length} hotspots (${T.activity.name}), ${(T.events || []).length} rifts/welds, ${T.impacts.events.length} impacts`);
   // the finer epoch: the plates' surface and uplift, rivers cutting it finer
-  const h = new Float64Array(G.n), U = new Float64Array(G.n), rain = new Float64Array(G.n);
+  const h = new Float64Array(G.n), U = new Float64Array(G.n), rain = new Float64Array(G.n), pet = new Float64Array(G.n);
   const d = [0, 0, 0];
   for (let c = 0; c < G.n; c++) {
     d[0] = G.dir[c * 3]; d[1] = G.dir[c * 3 + 1]; d[2] = G.dir[c * 3 + 2];
     h[c] = Gt.sample(ht, d); U[c] = Gt.sample(ut, d);
     rain[c] = Math.max(0.03, Gc.sample(clim.Pann, d) / 1000); // (rain in m/yr, from the climate)
+    pet[c] = petOf(Gc.sample(clim.Tann, d), rain[c]);
     if (h[c] > 0) h[c] += (hashJitter(c) - 0.5) * 5;
   }
   const h0 = Float64Array.from(h);
   // the rock: each place's layers, from what the plates carried there
   const lith = buildRock(G, Gt, T, rng.fork('rock'));
-  const E = new Erosion(G, h, { sea, K: 1e-5, rain, m: 0.45, kd: 1 });
+  const E = new Erosion(G, h, { sea, K: 1e-5, rain, pet, m: 0.45, kd: 1 });
   E.U.set(U);
   const Ef = new Impacts(G, { rng: rng.fork('impacts-fine'), g: body.gravity, pressure, rate, scale });
   const steps = opts.steps ?? 60, dt = opts.dt ?? 2.5e5;
@@ -136,6 +138,7 @@ export function worldSim(body, star, opts = {}) {
   for (let k = 0; k < steps; k++) {
     Ef.step(dt / 1e6, 6 * G.spacing / 1000, (c, dh) => { h[c] += h[c] < 0 ? dh * 0.5 : dh; if (dh < 0) lith.erode(c, -dh); else lith.deposit(c, dh, ROCK.regolith); }, k * dt / 1e6);
     E.rainK = H.at((steps - k) * dt / 1e6, 'rain') || 0.05;
+    E.petK = dm.exp(0.06 * ((H.at((steps - k) * dt / 1e6, 'T') ?? H.T) - H.T)); // (warmer then: more evaporation)
     E.bare = !plantsAt(H, (steps - k) * dt / 1e6);
     E.veg = E.bare ? null : vegFrom(rain, E.rainK, E.veg);
     lith.kField(1e-5, E.K);               // each place wears as its exposed rock does
@@ -148,23 +151,35 @@ export function worldSim(body, star, opts = {}) {
     iceMax = Math.max(iceMax, ice.step(h, E, rain, dt, (H.at(ago, 'T') ?? H.T) - H.T));
     // the sea's edge: waves, sand, reefs (warm seas reach further from the equator in a warm climate)
     sea2.step(h, lith, E, dt, 1 + ((H.at(ago, 'T') ?? H.T) - 288) / 40);
-    // what was cut comes off the layers; what settled goes on as new rock
+    // what was cut comes off the layers; what settled goes on as new rock (river sand and
+    // gravel on land, mud in lakes, salt where closed lakes dried, the sea's own on its floor)
     for (let c = 0; c < G.n; c++) {
-      const dz = h[c] - (hb[c] + E.U[c] * dt);
-      if (dz < -0.01) lith.erode(c, -dz);
-      else if (dz > 0.01) {
-        if (h[c] >= 0) lith.deposit(c, dz, ROCK.alluvium);
-        else lith.deposit(c, dz, marineRock(-h[c], Math.abs(G.dir[c * 3 + 1]) < 0.55, H.lifeEver, dz > 5));
+      let dz = h[c] - (hb[c] + E.U[c] * dt);
+      if (dz < -0.01) { lith.erode(c, -dz); continue; }
+      const salt = E.saltDz[c];
+      if (salt > 0) { dz -= salt; }
+      if (dz > 0.01) {
+        if (E.base[c]) lith.deposit(c, dz, marineRock(-h[c], Math.abs(G.dir[c * 3 + 1]) < 0.55, H.lifeEver, dz > 5));
+        else lith.deposit(c, dz, E.lakeKind[c] ? ROCK.shale : ROCK.alluvium);
       }
+      if (salt > 0) lith.deposit(c, salt, ROCK.salt);
     }
   }
-  E.findBase(); E.route(); E.drain();
+  E.findBase(); E.route(); E.lakes(); E.drain();
+  {
+    const LL = E.lakeList, closed = LL.filter((l) => l.closed), k2 = 1 / (scale * scale) / 1e6;
+    log(`lakes: ${LL.length}, ${closed.length} closed (${closed.filter((l) => l.kind === 2).length} salt lakes, ${closed.filter((l) => l.kind === 3).length} salt flats)`);
+    const big = LL.slice().sort((a, b) => b.area - a.area).slice(0, 5);
+    log('  biggest basins: ' + big.map((l) => `${Math.round(l.area * k2)} km2 ${l.closed ? (l.kind === 2 ? 'salt lake' : 'salt flat') : 'open'} (rain ${(l.P / l.area).toFixed(2)}, evap ${(l.E / l.area).toFixed(2)} m/yr, in/out ${(l.inflow / Math.max(1e-9, l.E - l.P)).toFixed(2)})`).join('; '));
+  }
   const volcanoes = T.hot.map((v) => ({ ...latLonOf(v.at), hotspot: true }));
   log(`ice: up to ${iceMax} cells covered; ${ice.everIce.reduce((a, b) => a + b, 0)} cells ever glaciated`);
   // how rivers run now: meandering where plants hold the banks, braided on bare ground
   out.riverStyle = plantsAt(H, 0) ? 'meandering' : 'braided';
   // the climate now, on the finished surface: biomes for the game
-  clim = climateOn(Gc, G, h, climOpts);
+  // (open water for the climate: the sea and the lakes)
+  const wetMask = Uint8Array.from(E.base, (b, c) => b || E.water[c] - h[c] >= 1 ? 1 : 0);
+  clim = climateOn(Gc, G, h, climOpts, wetMask);
   log(`climate now: ${summarizeKoppen(clim)}`);
   out.climate = clim; out.Gc = Gc;
   // the beaches' sand shows as the surface rock there
@@ -222,11 +237,22 @@ function climateOpts(body, star) {
     yearDays: 365.25 * Math.sqrt(body.aAU * body.aAU * body.aAU / star.mass),
   };
 }
-// run it on heights from another grid
-function climateOn(Gc, Gsrc, hsrc, o) {
+// run it on heights from another grid (seaSrc: which source cells are sea, else below sea level)
+function climateOn(Gc, Gsrc, hsrc, o, seaSrc) {
   const hc = new Float64Array(Gc.n), d = [0, 0, 0], uv = { face: 0, u: 0, v: 0 };
-  for (let c = 0; c < Gc.n; c++) { d[0] = Gc.dir[c * 3]; d[1] = Gc.dir[c * 3 + 1]; d[2] = Gc.dir[c * 3 + 2]; hc[c] = Gsrc.sample(hsrc, d, uv); }
-  return climate(Gc, { ...o, h: hc });
+  const sea = seaSrc ? new Uint8Array(Gc.n) : null;
+  for (let c = 0; c < Gc.n; c++) {
+    d[0] = Gc.dir[c * 3]; d[1] = Gc.dir[c * 3 + 1]; d[2] = Gc.dir[c * 3 + 2]; hc[c] = Gsrc.sample(hsrc, d, uv);
+    if (sea) sea[c] = seaSrc[Gsrc.cellAt(d[0], d[1], d[2])];
+  }
+  return climate(Gc, { ...o, h: hc, sea });
+}
+// potential evaporation (m/yr) from the yearly mean temperature (K) and rain (m/yr):
+// ~0.7 m/yr in a mild wet climate, 2-3 in a hot desert (its dry air drinks more), little
+// in the cold (where frozen ground sheds what falls: the tundra's countless lakes)
+function petOf(T, P) {
+  const t = Math.max(-30, Math.min(40, T - 273.15));
+  return 0.3 * dm.exp(0.06 * t) * (1 + 0.8 * dm.smoothstep(0.8, 0.15, P) * dm.smoothstep(0, 15, t));
 }
 function summarizeKoppen(clim) {
   const t = {};

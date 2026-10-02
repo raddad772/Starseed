@@ -433,13 +433,14 @@ The order agreed: work down this list; keep the statuses current.
 | 6 | **Feature finder:** peaks by prominence, ranges, rivers, gorges and canyons, lakes, trenches, deepest wet and dry spots, continents, islands, archipelagos and chains, waterfall sites, cliffs, plateaus, craters, volcanoes | done v1 (`worldsim/features.js` `findFeatures`; the lab prints and marks them). Still to do: names, deltas, fjords and mesas once they exist, deserts and forests (climate), "largest crater lake"; the catalog and game use (step 10) |
 | 7 | **Rock layers of different hardness:** basement granite, oceanic and hotspot basalt, stratified sediments, chalk and limestone from warm living seas; erosion cuts the exposed layer | done v1, global (see below) |
 | 8 | **Glaciers:** ice flow and erosion off peaks and in cold epochs; ice-age sea-level swings | done v1: glaciers and ice sheets, U-valleys, fjords (see below); ice-age cycles and sea-level swings still to do |
-| 9 | **Coasts:** wave erosion (cliffs, platforms, stacks), reefs (fringing, barrier, atolls), **beaches (Dave: "amazing beaches")** and spits. Sand takes its source's colour: white coral, black basalt (volcanic islands), golden quartz (granite and sandstone), pink (coral and shells). Feature finder: longest beaches, white and black sand beaches | done v1 (`worldsim/coasts.js`): wave exposure (open sea within 6 cells), coastal wear by rock softness, sea cliffs (energy > 0.4, h > 60), beaches from river sediment plus wear on gentle shores with sand by source (coral / black / quartz: rock types 11-13), coral reefs up to the surface (complex life, warm, clear, < 60 m), atolls. Features: beaches (longest, plus the best of each sand), sea cliffs (<= 1 km, by rock: chalk = Dover), mountain coasts, reefs, atolls. Checked on Quokarn: 1400 km golden beaches, a 150 km coral-sand beach, a 50 km black-sand beach, 18k km2 reefs, 5 atolls. Still to do: longshore drift (spits, barrier islands), wave-cut platforms and stacks at local detail, pink sand, beach colour in the render |
+| 9 | **Coasts:** wave erosion (cliffs, platforms, stacks), reefs (fringing, barrier, atolls), **beaches (Dave: "amazing beaches")** and spits. **Tides (Dave: "don't forget tides"):** tidal range from the moons and the star (force ~ M/d^3), amplified in funnel bays (Fundy), tidal flats, salt marshes, mangroves, estuaries; locked worlds almost none (only eccentricity tides); the game's water level moving with them. Sand takes its source's colour: white coral, black basalt (volcanic islands), golden quartz (granite and sandstone), pink (coral and shells). Feature finder: longest beaches, white and black sand beaches | done v1 (`worldsim/coasts.js`): wave exposure (open sea within 6 cells), coastal wear by rock softness, sea cliffs (energy > 0.4, h > 60), beaches from river sediment plus wear on gentle shores with sand by source (coral / black / quartz: rock types 11-13), coral reefs up to the surface (complex life, warm, clear, < 60 m), atolls. Features: beaches (longest, plus the best of each sand), sea cliffs (<= 1 km, by rock: chalk = Dover), mountain coasts, reefs, atolls. Checked on Quokarn: 1400 km golden beaches, a 150 km coral-sand beach, a 50 km black-sand beach, 18k km2 reefs, 5 atolls. Still to do: longshore drift (spits, barrier islands), wave-cut platforms and stacks at local detail, pink sand, beach colour in the render |
 | 10 | **Life's effect on erosion:** plant cover holds soil (less hillslope wash), meandering vs braided rivers; atmosphere changes (O2 and others) through rain and temperature | done v1: before land plants, erosion x1.5 everywhere (bare ground); after, cover = rain-based, slopes (A < 30 cells) wear x(1 - 0.6 cover); `riverStyle` meandering or braided by whether plants exist now; follows the history's plant arrival and extinction through both epochs (checked on Quokarn, plants 30 Myr ago, and Vaidriar). Still to do: soil depth (item 12); river channel style in the render |
 | 11 | **Climate model:** seasons from tilt, wind belts, rain shadows, Köppen biomes; rain for every path. **Deserts (Dave asked):** subtropical sinking air, rain shadows, continental interiors, cold-current coasts, polar cold; then salt flats, dune seas, flash-flood erosion and mesas | done v1 on the plates path (`worldsim/climate.js`, see the notes below); deserts in the climate done; desert landforms in progress |
 | 12 | Soil depth: meadows vs forests | todo, later |
 | 12b | **Plant maturity (Dave):** the time since land plants arrived sets the flora: <~50 Myr ground cover (mosses), ~50-90 Myr shrubs and ferns, ~90+ Myr forests (Earth's first trees ~85 Myr after land plants), ~300+ Myr diverse forests and grasslands; tree height scales with gravity (taller on weak gravity) | done v1: evolve.js gives `plantsMyr`, `floraStage` (-1 bare, 0 microbial crusts, 1 ground cover, 2 shrubs and ferns, 3 forests, 4 diverse forests and grasslands), `floraName`, `maxTreeM` (forests 30 -> 90 m, then 110 m, x sqrt(9.81/g), cap 250). bodies.js passes `floraStage` and `maxTree` into the terrain params; flora.js has no trees below stage 3, no shrubs below 2, crusts only (plants x0.08) below 1, trees capped at 0.6 maxTree (x1.6 base at stage 4). In the game now. Still to do: species variety growing with stage (more forms), grasses at stage 4, the catalog line |
 | 13 | Regime changes within one run; Venus resurfacing; icy shells; Titan methane rain | todo |
 | 14 | **Slab-pull steering (Dave asked about plate rotation):** today each plate keeps a random Euler pole (plates mostly slide, a few spin); slab pull only scales speed. Steer each plate's pole so it moves toward its own trenches (plates follow their sinking slabs; trench-ringed plates are fastest) | todo |
+| 15 | **Life: stages, pace and extinctions (Dave, 2026-10-01).** "We start out likely with bacterial analog... more complex life, sea life, plant life, animal life"; "a living world of single cell organisms" when young; "a recently struck world with volcanic clouds choking everything, or a young planet with ocean life but not much on land yet". **Stages:** single cells at vents -> photosynthesis (mats, stromatolites; pigment colours) -> oxygen (banded iron, red beds) -> complex cells -> soft-bodied sea life -> sea animals and reefs -> land plants (floraStage) -> land animals (small, then large). **Pace (Dave):** more usable energy, more innovation: usable light (photon energy from the star's spectrum: a dim red dwarf's far-red light barely drives oxygenic photosynthesis, so oxygen comes late or never and complex life with it), warmth, chemical energy (vents, volcanism, tides); UV from active stars raises mutation (faster change) but keeps life off land until oxygen makes ozone; large animals need oxygen. **Extinctions:** big impacts (the same draws that make the craters, so the worst crater and the worst die-off match), flood-basalt eruptions (laid as basalt provinces in the rock), snowballs, greenhouse and oxygen crashes; each knocks diversity back by its size, recovery over Myr, the worst reset stages (microbes in the deep crust can reseed after sterilisation). **Present states:** a flood-basalt eruption under way (volcanic haze), a world recovering from a recent strike (low diversity, ferns everywhere), a fresh impact winter (a rare exceptional world) | todo, next after the desert landforms |
 
 Notes:
 - **Item 7 v1 (`worldsim/lithology.js`):**
@@ -517,13 +518,25 @@ Notes:
   - **Known:** Seamibest (78% land, 994-day year, 38 deg tilt) swings ~100 K at 45N on land; plausible
     for a land world with long seasons. The rain distribution is still steep near coasts.
   - **To do:**
-    - desert landforms: closed lakes by water balance (salt flats when dry), dune seas, flash-flood
-      erosion (Langbein-Schumm: semi-arid wears fastest), mesa country flagged for the local detail;
+    - desert landforms: closed lakes DONE (see below); dune seas, mesa country flagged for the local
+      detail still to do. Flash-flood erosion (Langbein-Schumm, semi-arid wears fastest) already
+      comes out of the plant-cover rule (erosion ~ rain^0.45 x (1 - 0.6 cover));
     - glaciers from the climate's temperatures and snow (they still use the generator's latitude law);
     - reefs from sea temperatures (they still use a latitude band);
     - features: largest desert, dune sea, salt flat, forest; the climate on the stagnant and barren
       paths (Mars' wet era, Titan's methane);
     - biomes into the game's flora and colours (with the snapshot, step 7).
+- **Closed basins (2026-10-01, erosion.js `lakes()`):** the sea is only connected water below sea
+  level of at least 0.2% of the surface; smaller hollows are basins. Each lake's balance: runoff
+  by Schreiber's curve (P e^(-PET/P)), PET from the climate (0.3 e^(0.06 T) m/yr, x1.8 in warm dry
+  air), loss (PET - P) off the lake. A lake that can't fill is closed: no water or sediment leaves
+  (drain stops, sediment spreads over its floor), it shrinks to the balancing area (salt lake) with
+  salt flats round it to ~3x that, or dries to a salt flat; salt 1.5e-4 m^3 per m^3 of inflow,
+  laid as salt in the rock. Lake mud as shale. Features: lakes (fresh, salt, under the ice), salt
+  flats, rivers to closed basins, the largest deserts and forests (Köppen regions). Checked:
+  Quokarn 285 lakes, 163 closed; a Messinian-style salt flat 289k km2 at 2.6 km below sea level;
+  4,000 km rivers ending inland; perched inland seas (cut-off ocean basins, Black Sea style, 4.7 km
+  deep). Moukspi (0.02 bar): every lake a salt flat.
 - **Big closed-basin lakes** (up to ~2M km2 real) stay full because erosion fills every basin to
   its spill point. Real ones overflow and cut their outlets (wet) or dry to salt flats (arid): this
   needs the climate (item 11), a lake water balance of rain against evaporation.
@@ -780,6 +793,14 @@ are solid and Dave agrees.
   largest crater, hotspot chains, regime, volcanic activity tier).
 - **Features list for the survey/delivery game ideas:** named peaks, rivers, craters, volcanoes,
   reefs, with coordinates.
+- **Timelapse from orbit (Dave, 2026-10-01, later):** watch a world's history play out on the globe:
+  continents drifting and colliding, ice sheets advancing, seas rising and falling, deserts and
+  forests moving. The sim is deterministic and stepped, so either:
+  - keep frames as it runs (coarse heights ~50 KB per frame at N 64, plus ice, sea level and the
+    history's climate per frame; a few hundred frames fit the cache), played back with blending
+    between frames; or
+  - keep a checkpoint (say 50 Myr ago) and replay the recent history on request, at any detail.
+  The `onPlateStep` hook in world.js is the place to take frames.
 
 ## Open notes and decisions
 

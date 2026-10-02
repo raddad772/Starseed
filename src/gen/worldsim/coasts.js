@@ -37,15 +37,18 @@ export class Coasts {
     this.coast = new Uint8Array(n);      // 1: land touching the sea, 2: sea touching land
   }
 
-  // which cells are coast, and how exposed each is (the share of open sea within ~6 cells)
-  survey(h) {
+  // which cells are coast, and how exposed each is (the share of open sea within ~6 cells).
+  // sea: which cells are sea (erosion.js's base: a dry hollow below sea level isn't), else h < 0
+  survey(h, sea) {
     const { G, energy, coast } = this;
     const n = G.n;
+    const wetAt = sea ? (c) => sea[c] === 1 : (c) => h[c] < 0;
+    this.wetAt = wetAt;
     coast.fill(0);
     for (let c = 0; c < n; c++) {
       let wet = false, dry = false;
-      for (let e = G.nStart[c]; e < G.nStart[c + 1]; e++) { if (h[G.nbr[e]] < 0) wet = true; else dry = true; }
-      coast[c] = h[c] >= 0 ? (wet ? 1 : 0) : (dry ? 2 : 0);
+      for (let e = G.nStart[c]; e < G.nStart[c + 1]; e++) { if (wetAt(G.nbr[e])) wet = true; else dry = true; }
+      coast[c] = !wetAt(c) ? (wet ? 1 : 0) : (dry ? 2 : 0);
     }
     for (let c = 0; c < n; c++) {
       if (!coast[c]) { energy[c] = 0; continue; }
@@ -58,7 +61,7 @@ export class Coasts {
           const o = G.nbr[e];
           if (seen.has(o)) continue;
           seen.add(o); next.push(o); all++;
-          if (h[o] < 0) sea++;
+          if (wetAt(o)) sea++;
         }
         front = next;
       }
@@ -71,7 +74,7 @@ export class Coasts {
   step(h, lith, E, dt, warmK) {
     const { G, energy, coast, beach, sand, reef, cliff } = this;
     const n = G.n;
-    this.survey(h);
+    this.survey(h, E ? E.base : null);
     for (let c = 0; c < n; c++) {
       if (coast[c] === 1) {
         // waves: wear the edge toward a platform just under the surface, softer rock faster
@@ -89,7 +92,7 @@ export class Coasts {
           beach[c] += supply;
           sand[c] = this.sandOf(c, lith);
         }
-      } else if (h[c] < 0 && h[c] > -REEF_DEPTH && this.corals) {
+      } else if (h[c] < 0 && h[c] > -REEF_DEPTH && this.corals && this.wetAt(c)) {
         // coral: warm, clear (little river mud), shallow, building up to the surface
         const warm = Math.abs(G.dir[c * 3 + 1]) < this.warm * warmK;
         const muddy = E && E.qs ? E.qs[c] / G.area[c] > 0.002 * dt / 2.5e5 : false;
