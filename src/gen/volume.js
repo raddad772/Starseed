@@ -161,6 +161,10 @@ export class VolumeField {
     const pz = a.o[2] + i * a.e[2] + j * a.u[2] + k * a.n[2];
     const r = Math.sqrt(px * px + py * py + pz * pz) - this.R;
     let d = c.Hc - r;
+    // (far from the column's surface its sign is the column's: the faces below stand out at most
+    // ~10 m from it, and caves only hollow rock within ~95 m of the top; there, no more to read)
+    const far = 14 + 2 * s;
+    if (d < -far || (d > far && !(c.cm > 0.02 && s <= 2 && d < 97))) return d;
     if (c.wc > 0.01 && c.gc > 0.05 && s < 8) {
       // how far this height's face stands out (m): hard beds out, soft in, knobbly, the notch
       const fine = s < 2 ? 0.5 * this.nRub.noise(px / 2.3 + 7.1, py / 2.3, pz / 2.3) : 0;
@@ -271,6 +275,25 @@ function encodeColor(c) { return Math.max(0, Math.min(255, Math.round(Math.sqrt(
 export function buildVolumeChunk(field, ci, cj, ck, level = 0) {
   const N = VCHUNK, a = field.a, gen = field.gen, R = field.R, S = 1 << level;
   const i0 = ci * N, j0 = cj * N, k0 = ck * N;
+  // (a chunk wholly above its columns' ground, or wholly in their rock where no cave reaches,
+  // holds no surface: known from the columns and the chunk's corners, without its lattice)
+  {
+    let hlo = Infinity, hhi = -Infinity, cave = false;
+    for (let z = 0; z < GN; z++) for (let x = 0; x < GN; x++) {
+      const c = field.colAt((i0 + x - B) * S, (k0 + z - B) * S);
+      if (c.Hc < hlo) hlo = c.Hc; if (c.Hc > hhi) hhi = c.Hc;
+      if (c.cm > 0.02 && S <= 2) cave = true;
+    }
+    let rlo = Infinity, rhi = -Infinity;
+    for (let q = 0; q < 8; q++) {
+      const ii = (i0 - B + (q & 1 ? GN - 1 : 0)) * S, jj = (j0 - B + (q & 2 ? GN - 1 : 0)) * S, kk = (k0 - B + (q & 4 ? GN - 1 : 0)) * S;
+      const px = a.o[0] + ii * a.e[0] + jj * a.u[0] + kk * a.n[0], py = a.o[1] + ii * a.e[1] + jj * a.u[1] + kk * a.n[1], pz = a.o[2] + ii * a.e[2] + jj * a.u[2] + kk * a.n[2];
+      const r = Math.sqrt(px * px + py * py + pz * pz) - R;
+      if (r < rlo) rlo = r; if (r > rhi) rhi = r;
+    }
+    const far = 14 + 2 * S + 2;
+    if (rlo - hhi > far || (hlo - rhi > (cave ? 97 : far))) return null;
+  }
   // density on the lattice, with a border (normals, the quads at the low edges)
   const D = new Float64Array(GN * GN * GN);
   let dmin = Infinity, dmax = -Infinity;
