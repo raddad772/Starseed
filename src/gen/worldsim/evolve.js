@@ -148,6 +148,10 @@ export function evolveWorld(ctx) {
   // (the system's clutter; a giant host's gravity pulls more onto its moons: as world.js)
   const host = ctx.host || null;
   const focus = host && !host.solid && host.massEarth > 10 ? 1 + 2 * Math.sqrt(Math.min(host.massEarth / 317.8, 4)) : 1;
+  // a giant host's radiation belts: a moon deep in its magnetosphere takes a brutal particle
+  // dose (Europa's ~5 Sv a day), one far out little (Callisto); x Earth's surface dose
+  const belts = host && !host.solid && host.massEarth > 50 && ctx.aHost > 0
+    ? 1 + 2e5 * Math.min(4, host.massEarth / 317.8) * dm.exp(-(ctx.aHost / Math.max(host.radiusM || 7e7, 1)) / 2.5) : 1;
   const debris = (star.debris ? star.debris.level : 1) * focus, spike = star.debris ? star.debris.spike : null;
   const sizeK = dm.pow(1.62 / g, 0.17), areaKm2 = 4 * dm.PI * Rkm * Rkm;
   const impactRate = (D, tG) => {   // craters >= D km per Myr (impacts.js's law)
@@ -495,7 +499,8 @@ export function evolveWorld(ctx) {
       // Some quickens mutation; too much kills (microbes take ~500x, complex sea life
       // ~50x, land plants ~20x, land animals ~10x)
       const ozone = pO2 > 0 ? 1 - dm.exp(-pO2 / 0.005) : 0;
-      const dose = xuvAt(t) / 0.32 * (1 - 0.95 * ozone) / 0.05 * shield * dm.exp(-(P - 1) / 2);
+      // (the giant's belts too, cut by the moon's own field and air: Ganymede's field helps)
+      const dose = (xuvAt(t) / 0.32 * (1 - 0.95 * ozone) / 0.05 * shield + (belts - 1) * shield / 2.5) * dm.exp(-(P - 1) / 2);
       const radCurve = (R, kill, Rdeep = R) => (1 + 0.6 * R / (R + 2)) * dm.exp(-(Rdeep / kill) * (Rdeep / kill));
       // the sea: a few metres of water stop UV and the star's particles, so sea life gets
       // mutation from the sunlit layer (~1% of the surface dose) while the deep water is a
@@ -643,7 +648,7 @@ export function evolveWorld(ctx) {
     seaPH: oceans > 0.001 ? seaPH(pCO2, pSO2) : null,
     solvent: stage > 0 ? solvent : null, backbone: stage > 0 ? backbone : null,
     metabolisms: stage > 0 ? energyOf({ air, P, solvent, oceans, redox }).pairs.map((p) => p[0]) : [],
-    extinctions, bigImpacts, floodBasalts: lips, superEruptions, eruption, recovering, radiusKm: Rkm, tidal, fresh,
+    extinctions, bigImpacts, floodBasalts: lips, superEruptions, eruption, recovering, radiusKm: Rkm, tidal, fresh, belts,
     plantsMyr, floraStage, floraName: ['bare', 'microbial crusts', 'ground cover', 'shrubs and ferns', 'forests', 'diverse forests and grasslands'][floraStage + 1], maxTreeM,
     series, events, carbon,
     exception: exc,

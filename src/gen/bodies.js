@@ -482,7 +482,7 @@ export function buildBody(rng, proto, star, host) {
   // (an exceptional world's cause: exceptional.js)
   const exc = proto.exception || null;
   const tidalEff = Math.max(tidalHeating, exc && exc.tidal ? exc.tidal : 0);
-  const hist = evolveWorld({ rng: rng.fork('history'), star, S, massE: b.massEarth, radiusM: b.radiusM, gravity: b.gravity, vEsc: b.vEscReal / 1000, comp: b.comp, kind: proto.kind, tidal: tidalEff, exception: exc, host });
+  const hist = evolveWorld({ rng: rng.fork('history'), star, S, massE: b.massEarth, radiusM: b.radiusM, gravity: b.gravity, vEsc: b.vEscReal / 1000, comp: b.comp, kind: proto.kind, tidal: tidalEff, exception: exc, host, aHost: proto.aReal || 0 });
   if (exc) b.exceptional = { kind: exc.kind, text: exc.text };
   b.history = hist;
   let atm = volcanicMoon ? null : atmosphereNow(rng.fork('atmosphere'), hist, S);
