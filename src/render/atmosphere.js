@@ -208,6 +208,36 @@ void main() {
 
 // ---------------------------------------------------------------- composite pass
 
+// the air's own light (bodies.js airGlow), for the atmosphere pass and the volumetric one:
+// aurora curtains in the upper air along each magnetic pole's oval (a faint glow all over
+// without a field), green low and red at their tops for oxygen; airglow, a thin layer below
+// them. Per unit of the shell's thickness, so their strengths are vertical radiances. Needs
+// uRadius, uTop, uToFixed, uTime and tNoise declared before it
+export const GLSL_AIRLIGHT = `
+uniform vec4 uAurora;      // aurora strength, oval latitude, oval width (rad); airglow strength
+uniform vec3 uAuroraLo;
+uniform vec3 uAuroraHi;
+uniform vec3 uAirglowCol;
+uniform vec3 uMagAxis;     // in the body's frame
+vec3 airLight(vec3 p, float r) {
+  if (uAurora.x + uAurora.w <= 0.0) return vec3(0.0);
+  float hgt = (r - uRadius) / (uTop - uRadius);
+  vec3 em = vec3(0.0);
+  if (uAurora.x > 0.0 && hgt > 0.5) {
+    vec3 pf = uToFixed * (p / r);
+    float ml = asin(clamp(dot(pf, uMagAxis), -1.0, 1.0));
+    float band = uAurora.y > 0.0 ? exp(-pow((abs(ml) - uAurora.y) / uAurora.z, 2.0)) : 0.3;
+    float layer = smoothstep(0.55, 0.66, hgt) * (1.0 - smoothstep(0.72, 1.0, hgt));
+    float folds = texture(tNoise, pf * 7.0 + vec3(0.0, 0.0, uTime * 0.003)).r;
+    float rays = texture(tNoise, vec3(pf.x * 55.0, pf.z * 55.0, pf.y * 8.0 + uTime * 0.02)).r;
+    float curtain = uAurora.y > 0.0 ? smoothstep(0.5, 0.7, folds) * (0.25 + 1.5 * rays * rays) : 0.5 + 0.5 * folds;
+    em += uAurora.x * band * layer * curtain * mix(uAuroraLo, uAuroraHi, smoothstep(0.66, 0.9, hgt));
+  }
+  if (uAurora.w > 0.0) em += uAurora.w * exp(-pow((hgt - 0.6) / 0.03, 2.0)) * uAirglowCol;
+  return em / (uTop - uRadius);
+}
+`;
+
 const PASS_FRAG = /* glsl */`
 ${GLSL_RAY}
 ${GLSL_DEPTH}
@@ -238,6 +268,8 @@ float ign(vec2 p) { return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00
 
 uniform sampler3D tNoise;
 uniform float uWindMax;
+${GLSL_AIRLIGHT}
+vec3 gEm;   // (emitted light along the ray so far: not lit by the sun, so kept apart)
 // Same coverage field as the volumetric pass (render/volume.js, mode 1), so
 // switching between the far 2D shell and near 3D clouds is seamless.
 float cloudDensity(vec3 pFixedDir) {
@@ -274,6 +306,7 @@ void march(float t0, float t1, vec3 D, float tca, vec3 perp, float cosTheta, flo
     vec3 Ts = exp(-e * dt);
     vec3 eSafe = max(e, vec3(1e-14));
     L += T * (S - S * Ts) / eSafe;
+    gEm += T * airLight(p, r) * dt;
     T *= Ts;
   }
 }
@@ -301,6 +334,7 @@ void main() {
   float jitter = ign(gl_FragCoord.xy);
   int steps = int(uSteps);
   vec3 L = vec3(0.0), T = vec3(1.0);
+  gEm = vec3(0.0);
 
   // cloud shell intersection
   float tc = -1.0;
@@ -315,11 +349,13 @@ void main() {
   }
   if (tc < 0.0) {
     march(t0, t1, D, tca, perp, cosTheta, jitter, L, T, steps);
-    outL = vec4(L * uSunE, 1.0); outT = vec4(T, 1.0);
+    outL = vec4(L * uSunE + gEm, 1.0); outT = vec4(T, 1.0);
     return;
   }
   // segment before the cloud
   march(t0, tc, D, tca, perp, cosTheta, jitter, L, T, steps / 2 + 2);
+  vec3 em1 = gEm;
+  gEm = vec3(0.0);
   vec3 pc = (tc - tca) * D - perp;
   float rc = length(pc);
   vec3 up = pc / rc;
@@ -341,9 +377,21 @@ void main() {
   }
   // final = scene * T*(1-a)*T2 + L + T*((1-a)*L2 + a*cl)
   outT = vec4(T * (1.0 - alpha) * T2, 1.0);
-  outL = vec4((L + T * ((1.0 - alpha) * L2 + alpha * cl)) * uSunE, 1.0);
+  outL = vec4((L + T * ((1.0 - alpha) * L2 + alpha * cl)) * uSunE + em1 + T * (1.0 - alpha) * gEm, 1.0);
 }
 `;
+
+
+// the aurora and airglow uniforms from bodies.js airGlow (none for a giant or older data)
+export function glowUniforms(g) {
+  return {
+    uAurora: { value: new THREE.Vector4(g ? g.aurora : 0, g ? g.ovalLat : -1, g ? g.ovalWidth : 0.1, g ? g.airglow : 0) },
+    uAuroraLo: { value: v3(g ? g.colorLow : [0, 1, 0]) },
+    uAuroraHi: { value: v3(g ? g.colorHigh : [1, 0, 0]) },
+    uAirglowCol: { value: v3(g ? g.airglowColor : [0, 1, 0]) },
+    uMagAxis: { value: v3(g ? g.magAxis : [0, 1, 0]) },
+  };
+}
 
 let _quadScene = null, _quadCam = null, _quad = null;
 function fsQuad() {
@@ -515,6 +563,7 @@ export class Atmosphere {
       uCloudColor: { value: new THREE.Vector4(clouds ? clouds.color[0] : 1, clouds ? clouds.color[1] : 1, clouds ? clouds.color[2] : 1, clouds ? clouds.opacity : 0) },
       uCloudOn: { value: clouds && !this.body.giant ? 1 : 0 },
       tCloudMap: { value: blankCloudMap() }, uCloudMapOn: { value: 0 },
+      ...glowUniforms(this.body.atm.render.glow),
       uSteps: { value: 16 },
       tNoise: { value: null },
       uWindMax: { value: 12 },

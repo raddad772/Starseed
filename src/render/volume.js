@@ -12,7 +12,7 @@
 
 import * as THREE from 'three';
 import { GLSL_RAY, GLSL_DEPTH, GLSL_ATMO_LUT, FULLSCREEN_VERT } from './glsl.js';
-import { GLSL_MEDIUM } from './atmosphere.js';
+import { GLSL_MEDIUM, GLSL_AIRLIGHT, glowUniforms } from './atmosphere.js';
 
 const FRAG = /* glsl */`
 ${GLSL_RAY}
@@ -48,6 +48,7 @@ uniform float uEqJet;
 uniform float uWindMax;
 uniform vec3 uPal[6];
 uniform float uFade;
+${GLSL_AIRLIGHT}
 uniform vec2 uShape;   // base shape scale, detail scale (metres)
 layout(location = 0) out highp vec4 outL;
 layout(location = 1) out highp vec4 outT;
@@ -245,6 +246,7 @@ void main() {
       vec3 Ts = exp(-ext * dt);
       L += T * (S - S * Ts) / max(ext, vec3(1e-12));
       if (uGlow > 0.0 && h < -20000.0) Lth += T * thermalGlow(h) * (vec3(1.0) - Ts);
+      Lth += T * airLight(p, r) * dt;   // (aurora and airglow: the air's own light)
       T *= Ts;
       if (max(T.x, max(T.y, T.z)) < 0.003) { T = vec3(0.0); break; }
     }
@@ -339,6 +341,7 @@ export class VolumePass {
       uWindMax: { value: d.giant ? d.giant.windMax : 12 },
       uPal: { value: [0, 1, 2, 3, 4, 5].map((i) => { const p = d.giant ? d.giant.palette[i % d.giant.palette.length] : [1, 1, 1]; return new THREE.Vector3(p[0], p[1], p[2]); }) },
       uFade: { value: 1 },
+      ...glowUniforms(body.atm && body.atm.render ? body.atm.render.glow : null),
       uShape: { value: new THREE.Vector2(mode === 0 ? 13000 : 4200, mode === 0 ? 2100 : 850) },
       uT1: { value: d.giant ? d.giant.T1bar : 288 },
       uLapse: { value: d.giant ? d.giant.lapse : 0 },
