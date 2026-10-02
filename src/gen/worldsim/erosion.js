@@ -23,6 +23,7 @@
 
 import * as dm from '../../core/dmath.js';
 import { hashInts } from '../../core/rng.js';
+import { routeNative } from './native.js';
 
 // a binary min-heap of (key, cell), ties broken by cell index (deterministic)
 export class Heap {
@@ -137,6 +138,8 @@ export class Erosion {
   }
 
   route() {
+    // (compiled when it can be: native/sim.c's route() is this, operation for operation)
+    if (routeNative(this, this.wander, this.nStep * 0x9e3779b1)) return;
     const { G, h, base, fill, rcv, rcvD, order, heap } = this;
     const { nStart, nbr, nDist } = G;
     const n = G.n;
