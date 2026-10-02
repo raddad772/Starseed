@@ -19,6 +19,7 @@ import { barrenWorld } from '../src/gen/worldsim/barren.js';
 import { stagnantWorld } from '../src/gen/worldsim/stagnant.js';
 import { simOptsFor, worldSim } from '../src/gen/worldsim/world.js';
 import { findFeatures } from '../src/gen/worldsim/features.js';
+import { nameLandmarks, landmarks } from '../src/gen/worldsim/landmarks.js';
 import { ROCKS } from '../src/gen/worldsim/lithology.js';
 import { Rng } from '../src/core/rng.js';
 import { writePNG } from './png.mjs';
@@ -104,6 +105,8 @@ if (init === 'auto') {
   if (F.fjords && F.fjords.length) console.log('  fjords:   ' + F.fjords.map((f) => `cut ${Math.round(f.depthCut)} m @${ll(f)}`).join('; '));
   if (F.volcanoes && F.volcanoes.length) console.log('  volcanoes: ' + F.volcanoes.map((f) => (f.heightM ? `${Math.round(f.heightM)} m shield` : 'hotspot') + ` @${ll(f)}`).join('; '));
   if (F.tuyas && F.tuyas.length) console.log('  tuyas (erupted under the ice): ' + F.tuyas.map((f) => `${Math.round(f.heightM)} m tall, top ${Math.round(f.topM)} m, ${f.widthKm.toFixed(1)} km across @${ll(f)}`).join('; '));
+  nameLandmarks(F, `${seed}|${body.id}`);
+  console.log('  landmarks: ' + landmarks(F).map((l) => `${l.name} (${l.text})`).join('; '));
   markFeatures(rgb, W_, F);
   writePNG(`${out}/${name}-map.png`, W_, W_ / 2, rgb);
   if (Wd.climate) writePNG(`${out}/${name}-climate.png`, W_, W_ / 2, renderKoppen(Wd.Gc, Wd.h, Wd.G, Wd.climate, W_));

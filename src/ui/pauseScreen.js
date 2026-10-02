@@ -203,6 +203,9 @@ export class PauseScreen {
     if (H && H.eruption) now.push('flood basalts erupting');
     if (H && H.recovering) now.push(`recovering from a die-off ${Math.round(H.recovering.agoMyr)} Myr ago`);
     if (now.length) row('Now', esc(now.join(' · ')));
+    // a simulated world's landmarks (worldsim/landmarks.js)
+    const lm = b.terrain && b.terrain.snapshot && b.terrain.snapshot.landmarks;
+    if (lm && lm.length) row('Landmarks', lm.slice(0, 5).map((l) => `${esc(l.name)} <span style="opacity:0.65">${esc(l.text)}</span>`).join(' · '));
     if (b.moons && b.moons.length) row('Moons', `${b.moons.length}${b.rings ? ' · rings' : ''}`);
     else if (b.rings) row('Rings', 'yes');
     if (b.esi > 0.3) row('ESI', b.esi.toFixed(2));
