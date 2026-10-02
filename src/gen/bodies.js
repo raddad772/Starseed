@@ -10,6 +10,7 @@ import * as dm from '../core/dmath.js';
 import * as U from '../core/units.js';
 import { hzSeff } from './star.js';
 import { drawPigments, albedoRGB } from './pigments.js';
+import { SUBSTANCES } from './worldsim/liquids.js';
 import { evolveWorld } from './worldsim/evolve.js';
 import { hsv, mixRGB, scaleRGB, hexToLinear, jitterColor } from './color.js';
 
@@ -59,8 +60,8 @@ function tidalLockTime(aM, massPrimaryKg, massKg, radiusM, Q, k2) {
 }
 
 // Rayleigh cross-section relative to air ((n-1)^2 ratio)
-const RAYLEIGH_REL = { N2: 1.02, O2: 0.86, Ar: 0.9, CO2: 2.36, H2: 0.21, He: 0.014, CH4: 2.25, H2O: 0.75, SO2: 4.0 };
-const MOLAR = { N2: 28.01, O2: 32.0, Ar: 39.95, CO2: 44.01, H2: 2.016, He: 4.003, CH4: 16.04, H2O: 18.02, SO2: 64.07 };
+const RAYLEIGH_REL = { N2: 1.02, O2: 0.86, Ar: 0.9, CO2: 2.36, H2: 0.21, He: 0.014, CH4: 2.25, H2O: 0.75, SO2: 4.0, CO: 1.2, NH3: 1.9, H2S: 3.2 };
+const MOLAR = { N2: 28.01, O2: 32.0, Ar: 39.95, CO2: 44.01, H2: 2.016, He: 4.003, CH4: 16.04, H2O: 18.02, SO2: 64.07, CO: 28.01, NH3: 17.03, H2S: 34.08 };
 const EARTH_RAYLEIGH = [5.802e-6, 13.558e-6, 33.1e-6];
 const N0 = 2.547e25; // Earth sea-level number density (m^-3)
 
@@ -191,9 +192,11 @@ function atmosphereNow(rng, h, S) {
     return a;
   }
   if (h.P < 0.003) return null;
-  const P = h.P, co2 = h.pCO2 / P, o2 = h.pO2 / P, n2 = Math.max(0, 1 - co2 - o2) / 1.01;
-  const comp = { N2: n2, Ar: n2 * 0.01, CO2: co2 };
-  if (o2 > 1e-4) comp.O2 = o2;
+  const P = h.P, co2 = h.pCO2 / P, o2 = h.pO2 / P;
+  // the history's air by gas (evolve.js): fractions, the traces dropped
+  const comp = {};
+  for (const k in h.air) { const x = h.air[k] / P; if (x > 1e-6 && k !== 'H2O') comp[k] = x; }
+  if (!comp.N2) comp.N2 = Math.max(0, 1 - co2 - o2) / 1.01;
   let type;
   if (h.runaway || (h.T > 400 && co2 > 0.5 && P > 3)) type = 'venus';
   else if (co2 > 0.5 && (h.oceans <= 0.001 || h.T < 255)) type = P < 0.1 ? 'mars' : 'coldco2';
@@ -459,7 +462,13 @@ export function buildBody(rng, proto, star, host) {
   const logW = LOG10(Math.max(waterNow, 1e-9));
   const coverage = dm.smoothstep(0, 1, dm.clamp((logW + 5.5) / 3.2, 0, 1));
   const pBar = atm ? atm.pressure : 0;
-  if (atm && atm.type === 'titan') {
+  // a surface liquid other than water (liquids.js: methane and ethane, nitrogen, CO2,
+  // ammonia-water, SO2, sulfur), spread by its depth as a global layer
+  const other = hist.mainLiquid && hist.mainLiquid !== 'water' ? hist.mainLiquid : null;
+  if (other && !(hist.oceans > 0.001 && pBar > 0.006 && Tsurf < boilingPoint(pBar) && Tsurf > 273)) {
+    const d = hist.mainLiquidDepth;
+    hydro = { water: b.comp.water > 1e-5 ? 'frozen' : 'none', liquid: other === 'ethane' ? 'methane' : other, oceanFraction: dm.clamp(d / (d + 100), 0.005, 1), iceCover: 0, depthM: d };
+  } else if (atm && atm.type === 'titan' && hist.titanish) {
     hydro = { water: 'frozen', liquid: 'methane', oceanFraction: hydroRng.range(0.02, 0.12), iceCover: 0 };
   } else if (hist.oceans > 0.001 && pBar > 0.006 && Tsurf < boilingPoint(pBar)) {
     if (hist.snowball || Tsurf < 255) hydro = { water: 'frozen', liquid: null, oceanFraction: dm.clamp(coverage, 0.05, 1), iceCover: dm.clamp(0.75 + (255 - Tsurf) / 60, 0.75, 1) };
@@ -571,8 +580,8 @@ function terrainParams(rng, b, star, minerals, tidalHeating, proto) {
     veg: b.life ? b.life.vegColor : null,
     vegDry: b.life ? b.life.dryColor : null,
     snow: icy && rng.chance(0.35) ? mixRGB([0.9, 0.92, 0.95], minerals.rock, 0.3) : [0.92, 0.94, 0.97],
-    waterDeep: hydro.liquid === 'methane' ? hexToLinear('#1d1712') : jitterColor(rng, hexToLinear(rng.chance(0.8) ? '#0b2a4a' : '#0d3b36'), 0.15),
-    waterShallow: hydro.liquid === 'methane' ? hexToLinear('#3a2e22') : jitterColor(rng, hexToLinear(rng.chance(0.75) ? '#1f7f8f' : '#2f8a6a'), 0.15),
+    waterDeep: hydro.liquid && hydro.liquid !== 'water' && SUBSTANCES[hydro.liquid] ? hexToLinear(SUBSTANCES[hydro.liquid].deep) : jitterColor(rng, hexToLinear(rng.chance(0.8) ? '#0b2a4a' : '#0d3b36'), 0.15),
+    waterShallow: hydro.liquid && hydro.liquid !== 'water' && SUBSTANCES[hydro.liquid] ? hexToLinear(SUBSTANCES[hydro.liquid].shallow) : jitterColor(rng, hexToLinear(rng.chance(0.75) ? '#1f7f8f' : '#2f8a6a'), 0.15),
     lava: [3.5, 0.9, 0.12],
   };
   return {

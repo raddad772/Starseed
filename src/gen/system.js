@@ -106,7 +106,8 @@ function formPlanets(rng, star, disk) {
       }
     } else {
       proto.massEarth = core;
-      const iron = dm.clamp(pr.normal(0.32, 0.06) + (aAU < 0.25 ? 0.12 : 0), 0.15, 0.7);
+      // (an alpha-rich, metal-poor cloud has less iron for its rock: smaller cores)
+      const iron = dm.clamp(pr.normal(0.32, 0.06) * dm.pow(10, -(star.alphaFe || 0)) + (aAU < 0.25 ? 0.12 : 0), 0.12, 0.7);
       const water = pr.logUniform(8e-6, 3e-3) * (aAU > disk.snow * 0.6 ? 10 : 1);
       proto.comp = { iron, rock: 1 - iron - water, water, envelope: 0 };
       // sub-Neptunes: cores above ~2 M_earth often keep a few % H/He ...

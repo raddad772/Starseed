@@ -41,6 +41,7 @@
 import * as dm from '../../core/dmath.js';
 import { hzSeff } from '../star.js';
 import { equilibriumTemp } from '../bodies.js';
+import { surfaceLiquids, mainLiquid, pSat } from './liquids.js';
 
 const LEVELS = ['none', 'microbial mats', 'vascular flora', 'complex biosphere'];
 // life's stages, and the key each one's time goes under in `life`
@@ -75,7 +76,10 @@ export function evolveWorld(ctx) {
   const age = Math.max(0.02, star.age);
   const massE = Math.max(ctx.massE, 1e-6);
   const vesc = ctx.vEsc;
-  const water0 = ctx.comp.water || 0;
+  // (a carbon-rich birth cloud, C/O past ~0.8, locks its oxygen in CO and carbides:
+  // little water forms)
+  const CO = star.CO ?? 0.55;
+  const water0 = (ctx.comp.water || 0) * dm.clamp(1 - (CO - 0.8) / 0.3, 0.02, 1);
   const tidal = ctx.tidal || 0;
   const tauMS = star.tauMS || 10;
   const lum = (t) => (1 + 0.73 * t / tauMS) / (1 + 0.73 * age / tauMS);
@@ -87,28 +91,47 @@ export function evolveWorld(ctx) {
   // ---- traits of this world
   const r = rng.next();
   let tier = r < 0.15 ? 0 : r < 0.55 ? 1 : r < 0.85 ? 2 : 3;
-  const heatK = [0.75, 1, 1.25, 1.6][tier];
+  const heatK = [0.75, 1, 1.25, 1.6][tier] * dm.pow(star.radio ?? 1, 0.7); // (the cloud's thorium and uranium)
   // radiogenic heat (1 = Earth at 4.5 Gyr), aged faster on small worlds; tidal on top
   const sAge = dm.pow(massE, 0.35), sFlux = dm.pow(massE, 0.15);
   const radHeat = (t) => { const u = t / sAge; return (0.6 * dm.exp(-(u - 4.5) / 2.5) + 0.4 * dm.exp(-(u - 4.5) / 10)) * sFlux * heatK; };
   const heat = (t) => radHeat(t) + 12 * tidal * tidal;
-  const dynamoEnd = 0.6 * dm.pow(massE / 0.107, 1.5) * rng.range(0.7, 1.4);   // Gyr (x0.6 if the lid stagnates: below)
+  // the core's dynamo: lasts longer in big worlds with big iron cores and heat flowing
+  // out of them (x0.6 if the lid stagnates and traps the heat: below; Mars' died early)
+  const iron = ctx.comp.iron ?? 0.32;
+  const dynamoEnd = 0.6 * dm.pow(massE / 0.107, 1.5) * dm.pow(iron / 0.32, 1.5) * dm.pow(star.radio ?? 1, 0.5) * rng.range(0.7, 1.4);   // Gyr
+  // the field's strength (x Earth's): the core's size, fading as the dynamo runs down; it
+  // shields the air from the star's wind and the ground from its particles
+  const fieldAt = (t, on, lid) => on ? dm.clamp(dm.pow(iron / 0.32, 0.7) * dm.pow(massE, 0.3) * Math.min(1, (dynamoEnd * lid - t) / 0.5 + 0.3), 0.15, 2) : 0;
+  const shieldOf = (B) => 1 + 1.5 * (1 - Math.min(1, B));   // x2.5 with no field
   // volatiles: water in Earth oceans, carbon and nitrogen in bar (for this world)
   const oceans0 = water0 / 2.3e-4;
   // (a world's share of gas makes surface pressure ~ M^0.9: a small world's air is thin)
   const pK = dm.pow(massE, 0.9);
-  const carbon = rng.lognormal(70, 0.5) * pK * dm.clamp(water0 / 1e-4, 0.1, 3);
+  const carbon = rng.lognormal(70, 0.5) * pK * dm.clamp(water0 / 1e-4, 0.1, 3) * dm.pow(CO / 0.55, 1.5);
   let N2 = rng.lognormal(1.0, 0.5) * pK;
   // escape: e-folds of air lost per Gyr at the cosmic shoreline (calibrated to bodies.js's)
   const Scrit = 0.0008 * vesc * vesc * vesc * vesc;
   const escLuck = rng.lognormal(1, 0.5);
   const xuvAt = (t) => dm.pow(star.xuv || 1, 0.6) * (t < (star.activeGyr || 0.1) ? 1.6 : dm.pow(t / (star.activeGyr || 0.1), -1.2) * 1.6 + 0.3);
-  const escRate = (t, field) => 1.6 * S(t) * xuvAt(t) / Scrit * escLuck * (field ? 1 : 2.5);
+  const escRate = (t, shield) => 1.6 * S(t) * xuvAt(t) / Scrit * escLuck * shield;
   // too cold to hold a gas atmosphere: nitrogen and CO2 freeze onto the ground (Ganymede, Callisto)
   const frozenOut = teqBareOf(ctx.S) < 125;
   // a moon's frozen methane-and-nitrogen air (Titan) on cold, icy, big-enough worlds
   const teqBare = teqBareOf(ctx.S);
-  const titanish = teqBare < 125 && water0 > 0.08 && massE > 0.008 && rng.next() < (ctx.kind === 'planet' ? 0.6 : 0.28);
+  const titanish = teqBare < 125 && water0 > 0.08 && massE > 0.008 && rng.next() < (ctx.kind === 'planet' ? 0.6 : 0.28) && teqBare > 65; // (colder: the nitrogen freezes onto the ground)
+  // ---- what it's made of (WORLDSIM.md 16; broad curves): the mantle's redox (dIW: Earth
+  // ~+3.5) from its water and the cloud's carbon (carbon worlds are reduced); it decides
+  // what the volcanoes breathe: CO2, water, SO2 when oxidised; CO, H2, CH4, NH3, H2S
+  // when reduced. Big rocky worlds may keep some birth hydrogen (a hydrogen greenhouse)
+  const chem = rng.fork('chem');
+  const redox = dm.clamp(3.5 + dm.log10(Math.max(water0, 1e-7) / 2.3e-4) - 6 * Math.max(0, CO - 0.8) + chem.normal(0, 0.8), -5, 5);
+  const fOx = dm.smoothstep(-1.5, 2.5, redox);
+  const fH2 = 0.05 + 0.6 * (1 - dm.smoothstep(-3, 2, redox));
+  const sulfur = chem.lognormal(1, 0.6);
+  let pH2 = massE > 1.3 ? chem.lognormal(5, 1.2) * (massE - 1.3) * pK / dm.pow(massE, 0.9) : 0;
+  let pCO = 0, pCH4 = 0, pNH3 = 0, pSO2 = 0, pH2S = 0, N2ice = 0, CO2ice = 0;
+  const Ptot = () => N2 * 1.01 + pCO2 + pO2 + pH2 + pCH4 + pCO;
   // life's luck: the rate it arises while habitable (per Gyr; some worlds never)
   const lifeRate = rng.next() < 0.25 ? 0 : rng.lognormal(2.5, 1.2);
   // the life clock's luck: each stage's difficulty for this world
@@ -137,7 +160,7 @@ export function evolveWorld(ctx) {
   let oceans = oceans0, pCO2 = Math.min(carbon, 4), pO2 = 0, snow = false, runaway = false;
   let regime = 'mobile', dynamo = true, tStop = null, tDyn = null;
   let life = { origin: null, photo: null, goe: null, euk: null, complex: null, animals: null, plants: null, landAnimals: null, extinct: null };
-  let stage = 0, div = 0, everLife = false, lastSterile = null;
+  let stage = 0, div = 0, everLife = false, lastSterile = null, offFor = 0, snowSince = 0;
   const regained = new Uint8Array(9);   // stages once evolved and lost (relatives remain: easier again)
   const extinctions = [], bigImpacts = [], lips = [];
   const radiations = [];        // [t, loss]: the emptied world's boost to new forms
@@ -191,7 +214,7 @@ export function evolveWorld(ctx) {
     if (years > 0.02) darken(t, years, 'impact', `a ${Math.round(D)} km impact darkens the sky for ${years >= 1 ? years.toFixed(1) + ' years' : Math.round(years * 12) + ' months'}`);
   };
   let T = 0, A = 0.3, ice = 0;
-  const series = { t: [], T: [], P: [], pCO2: [], pO2: [], oceans: [], ice: [], heat: [], snowball: [], mobile: [], rain: [], stage: [], div: [], light: [] };
+  const series = { t: [], T: [], P: [], pCO2: [], pO2: [], oceans: [], ice: [], heat: [], snowball: [], mobile: [], rain: [], stage: [], div: [], light: [], pH2: [], pCH4: [] };
   const events = [];
   const ev = (t, kind, text) => events.push({ t, ago: age - t, kind, text });
   const landAt = (t) => dm.clamp(0.3 * (1 - dm.exp(-t / 1.0)), 0.02, 0.6);
@@ -199,10 +222,15 @@ export function evolveWorld(ctx) {
   const W0 = V_EARTH * 0.75 / (fT(288) * W_EARTH_LAND * 4);  // land weathering, plants on
   const Ws0 = V_EARTH * 0.25;                                  // sea-floor weathering
   // the greenhouse: background gas, CO2 (logarithmic when thin, steeper when thick), methane
-  const tempOf = (t, P, co2, ch4, snowed) => {
+  // (methane warms, but past ~a fifth of the CO2 it makes an orange organic haze that
+  // cools (Titan's, the early Earth's); hydrogen warms by collisions, more in thick air;
+  // ammonia warms strongly while it lasts)
+  const tempOf = (t, P, co2, _unused, snowed) => {
     const bg = Math.max(P - co2, 0);
-    const tau = 0.8 * dm.pow(bg, 0.9) + 0.25 * dm.log(1 + co2 / PCO2_EARTH) * dm.pow(1 + co2 / 3, 0.8) + (ch4 ? 0.45 : 0) + (titanish ? 0.6 * dm.pow(bg, 0.9) : 0);
-    const A0 = snowed ? SNOW_ALBEDO : dm.clamp(0.3 - 0.08 * (W_EARTH_LAND - landAt(t)) + 0.01 * co2 + (P < 0.01 ? -0.15 : 0), 0.06, 0.75);
+    const haze = pCH4 > 1e-4 && pCH4 > 0.2 * co2;
+    const minor = 0.35 * dm.log(1 + pCH4 / 1e-4) + 0.9 * dm.pow(Math.max(0, pH2 * P), 0.6) + 0.3 * dm.log(1 + pNH3 / 1e-6);
+    const tau = (0.8 * dm.pow(bg, 0.9) + 0.25 * dm.log(1 + co2 / PCO2_EARTH) * dm.pow(1 + co2 / 3, 0.8) + minor + (titanish ? 0.6 * dm.pow(bg, 0.9) : 0)) * (haze ? 0.92 : 1);
+    const A0 = snowed ? SNOW_ALBEDO : dm.clamp(0.3 - 0.08 * (W_EARTH_LAND - landAt(t)) + 0.01 * co2 + (P < 0.01 ? -0.15 : 0) + (haze ? 0.06 : 0), 0.06, 0.75);
     let Tt = equilibriumTemp(S(t), A0) * dm.pow(1 + 0.75 * tau, 0.25);
     let Aeff = A0;
     if (!snowed && oceans > 0.001 && P > 0.006) for (let it = 0; it < 6; it++) {
@@ -231,13 +259,14 @@ export function evolveWorld(ctx) {
       ev(t, 'impact', 'another world strikes it: the crust melts and the seas boil');
       oceans *= 0.3; snow = false;
       pCO2 = Math.min(carbon, pCO2 + carbon * 0.3); // (carbonate rock baked out)
-      if (life.origin != null && life.extinct == null) { life.extinct = t; ev(t, 'extinction', 'nothing living survives it'); }
+      if (stage > 0) sterilise(t, 'nothing living survives it', 0.03, 1);
     }
     // regime: plates need heat, water at the surface and size; very hot worlds pipe heat out through volcanoes
     const wet = oceans > 0.01 && !runaway;
     const canPlates = massE > 0.2 && wet && H > 0.45;
     if (regime === 'mobile' && !canPlates && t > 0.2) { regime = 'stagnant'; tStop = t; ev(t, 'plates stop', H < 0.45 ? 'the interior cools; the plates lock into one shell' : 'without water the plates seize into one shell'); }
     if (dynamo && t > dynamoEnd * (regime === 'stagnant' ? 0.6 : 1)) { dynamo = false; tDyn = t; ev(t, 'dynamo', 'the core cools and the magnetic field dies'); }
+    const field = fieldAt(t, dynamo, regime === 'stagnant' ? 0.6 : 1), shield = shieldOf(field);
     // outgassing: carbon and a little nitrogen with the heat (much less through a stagnant lid)
     const lidK = regime === 'mobile' ? 1 : 0.25;
     // a flood-basalt eruption: its CO2 on top (all in the step it starts: steps are longer
@@ -246,15 +275,47 @@ export function evolveWorld(ctx) {
     const V = V_EARTH * H * lidK * heatK * pK + (lipNow && !lipNow.spent ? lipNow.co2 / (dt * 1000) : 0);
     if (lipNow) lipNow.spent = true;
     N2 += 0.00002 * H * lidK * dt * 1000 * pK;
-    if (frozenOut && !titanish) { N2 = Math.min(N2, 1e-5); pCO2 = Math.min(pCO2, 1e-6); }
+    // nitrogen in the air is capped by its vapour pressure at the coldest ground (the rest
+    // is ice or liquid there, and comes back as the world warms: Triton's, Pluto's)
+    {
+      const tCold = Math.max(T || teqBare, teqBare) - 25;
+      const nTot = N2 + N2ice, capN = pSat('nitrogen', tCold);
+      N2 = Math.min(nTot, capN); N2ice = nTot - N2;
+    }
     // escape: thin the air (CO2 heavier, so a little slower); water from a moist upper air
-    const esc = escRate(t, dynamo) * dt;
+    const esc = escRate(t, shield) * dt;
     N2 *= dm.exp(-esc);
     pCO2 *= dm.exp(-esc * 0.6);
     // the climate now
-    const P = N2 * 1.01 + pCO2 + pO2;
-    const ch4 = life.origin != null && life.goe == null && t >= life.origin;
-    let [Tn, An] = tempOf(t, P, pCO2, ch4, snow);
+    // the minor gases: volcanic sources by the mantle's redox; sinks by escape, sunlight,
+    // rain and life. Most live far shorter than a step: their steady amounts. (bar/Gyr)
+    {
+      const Vg = V * 1000, wetNow = oceans > 0.001;
+      const anoxic = pO2 < 1e-3;
+      const srcH2 = 0.1 * Vg * fH2 / 0.05;
+      // the most hydrogen the star's X-rays and UV can drive off (energy-limited: ~120 bar/Gyr
+      // on Earth today, more round a young or active star, more off a puffy low-gravity world)
+      const Rr = (ctx.radiusM || 6.371e6) / 6.371e6;
+      const EL = 120 * xuvAt(t) / 0.32 * S(t) * Rr * Rr * Rr / massE;
+      const microbes = stage >= 1 && anoxic;
+      // methanogens eat most of the hydrogen (CO2 + 4 H2 -> CH4 + 2 H2O)
+      const eatH2 = microbes ? 0.8 : 0;
+      if (pH2 * 3e4 < EL) pH2 = srcH2 * (1 - eatH2) / 3e4;   // thin: diffusion-limited escape (~30 kyr)
+      else pH2 = Math.max(srcH2 * (1 - eatH2) / 3e4, pH2 - (EL - srcH2) * dt); // thick: the star strips it slowly
+      if (!anoxic) pH2 = Math.min(pH2, 1e-6);
+      if (teqBare < 25) pH2 = Math.min(pH2, 1e-6);   // (it freezes: hydrogen boils at ~20 K)
+      const prodNow = stage >= 2 ? 1 : 0;
+      const bioCH4 = microbes ? 0.25 * srcH2 * eatH2 + 50 * prodNow : stage >= 2 ? 100 * prodNow : 0;
+      pCH4 = (Vg * (1 - fOx) * 0.2 + bioCH4) * (anoxic ? 1e-5 / Math.max(0.3, xuvAt(t)) : 1e-8);
+      pCO = Vg * (1 - fOx) * 0.8 * (wetNow ? 1e-6 : 1e-3) * (microbes ? 0.3 : 1) * (anoxic ? 1 : 0.01);
+      const hazeNow = pCH4 > 1e-4 && pCH4 > 0.2 * pCO2;
+      pNH3 = Vg * 0.02 * (1 - dm.smoothstep(-3, 0, redox)) * 1e-7 * (hazeNow ? 100 : 1) * (wetNow ? 0.01 : 1) * (anoxic ? 1 : 0.01);
+      const srcS = 0.0125 * Vg * sulfur;
+      const tauS = wetNow ? 1e-11 : 1e-4;
+      pSO2 = redox > 1 ? srcS * tauS : 0; pH2S = redox > 1 ? 0 : srcS * tauS;
+    }
+    const P = Ptot();
+    let [Tn, An] = tempOf(t, P, pCO2, 0, snow);
     // the runaway: past the limit (with seas to boil) the water goes into the air and is lost
     if (!runaway && oceans > 0.001 && S(t) > sRun && P > 0.006) { runaway = true; ev(t, 'runaway', 'the star has brightened past the limit: the seas boil into the sky'); }
     if (runaway) { Tn = Math.max(Tn, 600 + 200 * dm.log(1 + oceans)); oceans *= dm.exp(-dt / 0.3 * xuvAt(t)); if (oceans < 0.001 && oceans > 0) { oceans = 0; ev(t, 'dry', 'the last water is lost to space'); } }
@@ -262,7 +323,7 @@ export function evolveWorld(ctx) {
     if (!runaway && oceans > 0) {
       const moist = Tn > 330 ? (Tn - 330) / 40 : 0;
       const bare = P < 0.006 && Tn > 210 ? 1 : 0;
-      const loss = (moist * 0.5 + bare * 3) * escRate(t, dynamo) * dt;
+      const loss = (moist * 0.5 + bare * 3) * escRate(t, shield) * dt;
       oceans *= dm.exp(-loss);
       if (oceans < 0.001) { if (oceans0 > 0.01) ev(t, 'dry', bare ? 'the thin air lets the water slip away' : 'the water is lost to space'); oceans = 0; }
     }
@@ -274,7 +335,7 @@ export function evolveWorld(ctx) {
     if (liquid) {
       const land = Math.min(landAt(t), 0.9 / (1 + oceans));
       const W = (x) => {
-        const T2 = tempOf(t, P - pCO2 + x, x, ch4, false)[0];
+        const T2 = tempOf(t, P - pCO2 + x, x, 0, false)[0];
         return (W0 * fT(T2) * dm.pow(x / PCO2_EARTH, 0.5) * land * bio + Ws0 * dm.exp((T2 - 288) / 40) * dm.pow(x / PCO2_EARTH, 0.25) * H) * openK;
       };
       let lo = 0, hi = Math.max(carbon, 1e-6);
@@ -283,12 +344,19 @@ export function evolveWorld(ctx) {
       pCO2 = Math.max(1e-8, (lo + hi) / 2);
     } else pCO2 = Math.min(carbon, pCO2 + V * dt * 1000 * (snow ? 1 : (oceans > 0.001 ? 0.3 : 1)));
     // CO2 condenses where it's cold enough (polar caps): its vapour pressure caps it
-    pCO2 = Math.min(pCO2, co2Sat(Tn - 25));
-    [Tn, An] = tempOf(t, N2 * 1.01 + pCO2 + pO2, pCO2, ch4, snow);
+    // CO2 too: past its vapour pressure at the cold poles it freezes there (Mars' caps);
+    // the caps give it back as the world warms; no more than the world's carbon
+    {
+      const capC = co2Sat(Tn - 25);
+      if (pCO2 > capC) { CO2ice += pCO2 - capC; pCO2 = capC; }
+      else if (CO2ice > 0) { const back = Math.min(CO2ice, capC - pCO2); CO2ice -= back; pCO2 += back; }
+      CO2ice = Math.min(CO2ice, Math.max(0, carbon - pCO2));
+    }
+    [Tn, An] = tempOf(t, Ptot(), pCO2, 0, snow);
     if (runaway) Tn = Math.max(Tn, 600 + 200 * dm.log(1 + oceans));
     // snowball in and out
     if (!snow && oceans > 0.001 && !runaway && P > 0.006 && Tn < T_SNOW_IN) { snow = true; ev(t, 'snowball', 'the ice runs to the equator: a snowball'); }
-    else if (snow && tempOf(t, N2 * 1.01 + pCO2 + pO2, pCO2, ch4, true)[0] > T_SNOW_OUT) { snow = false; ev(t, 'thaw', 'volcanic CO2 melts the snowball: a hothouse'); }
+    else if (snow && tempOf(t, Ptot(), pCO2, 0, true)[0] > T_SNOW_OUT) { snow = false; ev(t, 'thaw', 'volcanic CO2 melts the snowball: a hothouse'); }
     T = Tn; A = An;
     ice = snow ? 1 : dm.clamp((278 - T) / 30, 0, 1);
     // life
@@ -325,21 +393,37 @@ export function evolveWorld(ctx) {
       }
     }
     // flood basalts: a plume's head reaching the surface (more on hot, busy worlds)
-    if (!lipNow && er.next() < 1 - dm.exp(-0.04 * dm.pow(Math.max(H, 0), 1.5) * [0.5, 1, 1.6, 2.5][tier] * (regime === 'mobile' ? 1 : 0.7) * dt * 1000)) {
-      const co2 = 0.0008 * er.lognormal(1, 1.1) * pK, durMyr = er.range(0.3, 2);
+    if (!lipNow && er.next() < 1 - dm.exp(-0.04 * dm.clamp(H, 0, 3) * [0.5, 1, 1.6, 2.5][tier] * (regime === 'mobile' ? 1 : 0.7) * dt * 1000)) {
+      const co2 = 0.0004 * er.lognormal(1, 1.1) * pK, durMyr = er.range(0.3, 2);
       // (it starts somewhere in this step: whether it's still going now depends on where)
       const t0 = t + er.next() * dt;
       lipNow = { t: t0, dur: durMyr / 1000, co2, spent: false };
       const warm = tempOf(t, P + co2, pCO2 + co2, false, snow)[0] - tempOf(t, P, pCO2, false, snow)[0];
       lips.push({ t: t0, ago: age - t0, durMyr, co2, warm });
       if (stage > 0) {
-        const loss = (1 - dm.exp(-(warm / 12) * (warm / 12) * Math.sqrt(0.5 / durMyr))) * 0.95;
+        const loss = (1 - dm.exp(-(warm / 15) * (warm / 15) * Math.sqrt(0.5 / durMyr))) * 0.95;
         if (loss > 0.02) die(t, loss, 'eruption', `flood basalts pour out for ${Math.round(durMyr * 1000)} kyr: the world warms ${Math.round(warm)} K`);
       }
     }
+    // too cold or hot for liquid water at the surface for long: life retreats to an ocean
+    // under the ice (if heat keeps one: Europa's), or to warm rock deep down (Mars'
+    // possible relic), or ends
+    if (stage > 0 && !habitable && !snow) {
+      offFor += dt;
+      if (offFor > 0.05) {
+        offFor = 0;
+        const underIce = T < 271 && water0 > 0.01 && (H > 0.3 || tidal > 0.2);
+        if (underIce && stage > 1) { die(t, 1 - DIV_CAP[1] / Math.max(DIV_CAP[stage], 1e-3), 'cold', 'the seas freeze over: life retreats to the dark ocean under the ice'); for (let k = 2; k <= stage; k++) { if (life[STAGE_KEYS[k]] != null) regained[k] = 1; life[STAGE_KEYS[k]] = null; } stage = 1; }
+        else if (!underIce) sterilise(t, T < 271 ? 'the cold ends all life at the surface' : 'the heat ends all life at the surface', T < 271 ? 0.15 : 0.02, 1);
+      }
+    } else offFor = 0;
     if (stage > 0) {
       // the snowball: the light under the ice is a fiftieth; most life starves (refugia)
-      if (snow && series.snowball.length && !series.snowball[series.snowball.length - 1]) darken(t, 1e6, 'snowball', 'the ice closes over the seas');
+      if (snow && series.snowball.length && !series.snowball[series.snowball.length - 1]) { darken(t, 1e6, 'snowball', 'the ice closes over the seas'); snowSince = t; }
+      if (snow && stage > 1 && t - snowSince > 0.1) {
+        if (H > 0.3 || tidal > 0.2) { die(t, 1 - DIV_CAP[1] / Math.max(DIV_CAP[stage], 1e-3), 'snowball', 'the ice never lifts: only the life of the deep vents lives on'); for (let k = 2; k <= stage; k++) { if (life[STAGE_KEYS[k]] != null) regained[k] = 1; life[STAGE_KEYS[k]] = null; } stage = 1; }
+        else sterilise(t, 'the ice never lifts, and the vents go cold', 0, 1);
+      }
       // the end of all life: boiling, drying, or a freeze down to vents gone cold
       if (runaway || oceans < 0.001 || (snow && T < 220 && H < 0.3)) {
         sterilise(t, runaway ? 'the boiling seas end all life' : oceans < 0.001 ? 'the last water goes, and life with it' : 'the deep freeze ends all life', false);
@@ -358,7 +442,7 @@ export function evolveWorld(ctx) {
       // Some quickens mutation; too much kills (microbes take ~500x, complex sea life
       // ~50x, land plants ~20x, land animals ~10x)
       const ozone = pO2 > 0 ? 1 - dm.exp(-pO2 / 0.005) : 0;
-      const dose = xuvAt(t) / 0.32 * (1 - 0.95 * ozone) / 0.05 * (dynamo ? 1 : 2.5) * dm.exp(-(P - 1) / 2);
+      const dose = xuvAt(t) / 0.32 * (1 - 0.95 * ozone) / 0.05 * shield * dm.exp(-(P - 1) / 2);
       const radCurve = (R, kill, Rdeep = R) => (1 + 0.6 * R / (R + 2)) * dm.exp(-(Rdeep / kill) * (Rdeep / kill));
       // the sea: a few metres of water stop UV and the star's particles, so sea life gets
       // mutation from the sunlit layer (~1% of the surface dose) while the deep water is a
@@ -375,7 +459,7 @@ export function evolveWorld(ctx) {
       const grad = (1 + 0.3 * Math.min(H, 3)) * (pO2 > 0.01 ? 1.3 : 1);
       let rate = 0;
       if (next === 2) rate = warmth * seaRad(500) * dm.pow(dm.clamp(parK * S(t), 0, 2), 0.7) * (lightNow > 0.005 ? 1 : 0);
-      else if (next === 3) rate = warmth * prod / (0.4 + 0.6 * H);
+      else if (next === 3) rate = warmth * prod / (0.4 + 0.6 * H) * dm.smoothstep(-2, 2, redox) * (pH2 / P < 0.01 ? 1 : 0); // (a reduced mantle's gases, or hydrogen air, mop up the oxygen)
       else if (next === 4) rate = warmth * prod * seaRad(500) * (pO2 > 0 ? 1 : 0);
       else if (next === 5) rate = warmth * prod * seaRad(50) * Math.min(1, pO2 / 0.01);
       else if (next === 6) rate = warmth * prod * seaRad(50) * oxCurve;
@@ -410,7 +494,7 @@ export function evolveWorld(ctx) {
     } else if (pO2 > 0) pO2 *= dm.exp(-dt / 0.05);
     if (t - lastOut >= 0.005 || dt === steps[steps.length - 1]) {
       lastOut = t;
-      series.t.push(t); series.T.push(T); series.P.push(N2 * 1.01 + pCO2 + pO2); series.pCO2.push(pCO2); series.pO2.push(pO2);
+      series.t.push(t); series.T.push(T); series.P.push(Ptot()); series.pH2.push(pH2); series.pCH4.push(pCH4); series.pCO2.push(pCO2); series.pO2.push(pO2);
       series.oceans.push(oceans); series.ice.push(ice); series.heat.push(H); series.snowball.push(snow ? 1 : 0); series.mobile.push(regime === 'mobile' ? 1 : 0);
       series.rain.push(liquid ? dm.exp(0.07 * (T - 288)) : 0);
       series.stage.push(stage); series.div.push(stage > 0 ? div : 0);
@@ -422,7 +506,7 @@ export function evolveWorld(ctx) {
   if (massE <= 0.2 && tStop == null) tStop = 0;
   // ---- the present
   if (impT != null) { const since = age - impT; T = Math.max(T, 400 + 900 * dm.exp(-since / 0.008)); }
-  const P = N2 * 1.01 + pCO2 + pO2;
+  const P = Ptot();
   if (stage === 0 && everLife) life.extinct = lastSterile ?? extinctions.length ? extinctions[extinctions.length - 1].t : age;
   const level = stage === 0 ? 0 : stage >= 8 ? 3 : stage === 7 ? 2 : 1;
   // the present's passing states: an eruption under way, a world recovering from a die-off
@@ -437,6 +521,35 @@ export function evolveWorld(ctx) {
   const plantsMyr = life.plants != null && stage >= 7 ? (age - life.plants) * 1000 : 0;
   const floraStage = plantsMyr <= 0 ? (level >= 1 ? 0 : -1) : plantsMyr < 50 ? 1 : plantsMyr < 90 ? 2 : plantsMyr < 300 ? 3 : 4;
   const maxTreeM = floraStage >= 3 ? Math.min(250, (floraStage === 3 ? 30 + 60 * (plantsMyr - 90) / 210 : 110) * dm.pow(9.81 / Math.max(ctx.gravity, 1), 0.5)) : floraStage === 2 ? 4 : floraStage === 1 ? 0.3 : 0;
+  // the air now, by gas (bar): water vapour at half saturation over seas
+  // (a runaway's seas are in the air: an Earth ocean is ~270 bar of steam; a Titan keeps
+  // a few % methane from its seas and ices)
+  const vap = oceans <= 0.001 ? 0 : runaway || T > boilingPoint(P) ? oceans * 270 : Math.min(0.5 * 6.11e-3 * dm.exp(17.27 * (T - 273.15) / Math.max(T - 35.9, 1)), 0.5 * P);
+  if (titanish) pCH4 = Math.max(pCH4, 0.04 * P);
+  const air = { N2, Ar: 0.01 * N2, CO2: pCO2, O2: pO2, H2: pH2, CH4: pCH4, CO: pCO, NH3: pNH3, SO2: pSO2, H2S: pH2S, H2O: vap };
+  // what pools and freezes on the ground (liquids.js), from all the world has of each:
+  // water (an Earth ocean ~270 bar's worth), the nitrogen and CO2 in the air and frozen,
+  // a Titan's methane and the ethane sunlight has made of it over the ages, an icy
+  // world's ammonia (water-ammonia seas below water's freezing point), the sulfur of a
+  // hot volcanic world
+  // (an icy world's ammonia is dissolved in its water: seas of ammonia-water between
+  // ~240 and 273 K, eutectic brine from the top ~10 km of ice down to 176 K)
+  const lq = rng.fork('liquids');
+  const icy = water0 > 0.05;
+  const wBar = !runaway && oceans > 0.001 ? oceans * 270 : 0;
+  const brine = icy && T > 176 && T < 273;
+  const inv = {
+    water: brine ? 0 : wBar,
+    'ammonia-water': brine ? (T >= 240 ? wBar : Math.min(wBar, 10000 * 9.81 / 1e5 * 1000 * 0.09 * (ctx.gravity || 9.81) / 9.81)) : 0,
+    CO2: pCO2 + CO2ice, nitrogen: N2 + N2ice,
+    methane: titanish ? pCH4 + lq.lognormal(0.02, 1) * P : 0,
+    ethane: titanish ? 0.002 * age * P : 0,
+    ammonia: pNH3,
+    SO2: oceans < 0.001 ? pSO2 + 0.002 * sulfur * heat(age) : 0,
+    sulfur: T > 388 && T < 1000 && heat(age) > 1.5 ? 0.02 * sulfur : 0,
+  };
+  const liquids = surfaceLiquids(inv, T, P, ctx.gravity || 9.81).pools;
+  const main = mainLiquid(liquids);
   const out = {
     age, tier, activity: ACTIVITY_NAMES[tier],
     T, albedo: A, P, pCO2, pO2, N2,
@@ -445,6 +558,8 @@ export function evolveWorld(ctx) {
     heatNow: heat(age), young,
     life, lifeLevel: LEVELS[level], lifeEver: everLife, lifeLuck: lifeRate,
     lifeStage: stage, lifeStageName: STAGES[stage], diversity: stage > 0 ? div : 0, usableLight: parK,
+    air, airType: airTypeOf(air, P, { titanish, runaway, oceans, T }), redox, CO, field: fieldAt(age, dynamo, regime === 'stagnant' ? 0.6 : 1),
+    liquids, mainLiquid: main ? main.name : null, mainLiquidDepth: main ? main.depthM : 0,
     extinctions, bigImpacts, floodBasalts: lips, eruption, recovering,
     plantsMyr, floraStage, floraName: ['bare', 'microbial crusts', 'ground cover', 'shrubs and ferns', 'forests', 'diverse forests and grasslands'][floraStage + 1], maxTreeM,
     series, events, carbon,
@@ -465,6 +580,21 @@ export function evolveWorld(ctx) {
 }
 
 function teqBareOf(S) { return equilibriumTemp(S, 0.3); }
+// a broad name for an air by what dominates it and what marks it
+export function airTypeOf(air, P, h) {
+  if (P < 0.003) return 'none';
+  if (h.titanish) return 'nitrogen-methane';
+  const f = (k) => (air[k] || 0) / P;
+  if (h.runaway || (air.H2O || 0) > P) return (air.H2O || 0) > P ? 'steam' : 'carbon dioxide (hothouse)';
+  if (f('H2') > 0.3) return 'hydrogen';
+  if (f('O2') > 0.01) return 'oxygen';
+  if (f('CO2') > 0.5) return 'carbon dioxide';
+  if ((air.CH4 || 0) > 1e-4 && (air.CH4 || 0) > 0.2 * (air.CO2 || 0)) return 'methane haze';
+  if (f('CO') > 0.01) return 'carbon monoxide';
+  if (f('SO2') + f('H2S') > 1e-4) return 'sulfurous';
+  if (f('H2') > 0.01 || f('CH4') > 1e-3) return 'reducing nitrogen';
+  return 'nitrogen';
+}
 // water's boiling point (K) at P bar (Clausius-Clapeyron, L = 40.7 kJ/mol)
 function boilingPoint(P) { return 1 / (1 / 373.15 - 8.314 / 40700 * dm.log(Math.max(P, 1e-4) / 1.013)); }
 // photons in the 400-750 nm band per unit of a blackbody's light at teff (relative units)

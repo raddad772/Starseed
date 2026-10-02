@@ -95,11 +95,23 @@ export function generateStar(rng) {
   const GM = U.G * massReal * U.GM_SCALE;
   // Star rotation: younger and hotter stars spin faster (gyrochronology-flavoured)
   const rotPeriodDays = dm.clamp(25 * dm.sqrt(age / 4.6) * dm.pow(mass, -0.8), 2, 60) * rng.range(0.85, 1.15);
+  // what the birth cloud was made of (its planets share it): the galaxy enriches over
+  // time, and not evenly. Early on, massive stars' supernovae made mostly oxygen,
+  // magnesium and silicon; carbon came later from smaller stars' winds, iron later
+  // still from white-dwarf supernovae. So metal-poor (mostly old) stars are rich in
+  // O, Mg, Si for their iron ([alpha/Fe] up to ~+0.3: rocky planets with smaller iron
+  // cores) and poor in carbon (C/O ~0.3), metal-rich ones carbon-rich (C/O ~0.8; past
+  // ~0.8 the planets turn to carbides and graphite). The long-lived heat sources
+  // (thorium, uranium, from rare neutron-star mergers) vary from cloud to cloud
+  // (Unterborn et al. 2015: Th ~0.6-2.5x solar)
+  const alphaFe = dm.clamp(0.3 * dm.smoothstep(0, -0.6, metallicity) + rng.normal(0, 0.04), -0.05, 0.4);
+  const CO = dm.clamp(0.55 * dm.pow(10, 0.4 * metallicity) * rng.lognormal(1, 0.12), 0.2, 1.4);
+  const radio = dm.clamp(rng.lognormal(1, 0.35), 0.5, 2.5);
 
   return {
     kind: 'star',
     name, catalog,
-    mass, metallicity, age, tauMS, luminosity, radius, teff, activeGyr, xuv,
+    mass, metallicity, age, tauMS, luminosity, radius, teff, activeGyr, xuv, alphaFe, CO, radio,
     spectral: spectralClass(teff),
     color,
     hz, snowLine,
