@@ -51,6 +51,7 @@
 import * as dm from '../../core/dmath.js';
 import { hashInts } from '../../core/rng.js';
 import { Heap } from './erosion.js';
+import { blurNative } from './native.js';
 
 export const CONT_KM = 35, OCEAN_KM = 7, MAX_KM = 85; // (85: a hard limit; spreading keeps most crust well under it)
 const RELAX_MYR = 120; // thick crust spreads and wears down (when no erosion runs alongside)
@@ -809,6 +810,7 @@ function norm3(v) { const l = Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2])
 // neighbour averaging, iters times (spreads a field over ~sqrt(iters) cells; keeps its
 // level, unlike smoothField)
 export function blur(G, f, iters) {
+  if (blurNative(G, f, iters)) return f;   // (native/sim.c: the same, compiled)
   const t = new Float64Array(G.n);
   for (let it = 0; it < iters; it++) {
     for (let c = 0; c < G.n; c++) {

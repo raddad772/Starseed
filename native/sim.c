@@ -132,3 +132,16 @@ __attribute__((export_name("route"))) i32 route(
   }
   return k;
 }
+
+// ---- tectonics.js blur(): neighbour averaging, iters times (the cell counts twice)
+__attribute__((export_name("blur"))) void blur(
+    i32 n, const i32 *nStart, const i32 *nbr, double *f, double *t, i32 iters) {
+  for (i32 it = 0; it < iters; it++) {
+    for (i32 c = 0; c < n; c++) {
+      double s = f[c] * 2, w = 2;
+      for (i32 e = nStart[c]; e < nStart[c + 1]; e++) { s += f[nbr[e]]; w++; }
+      t[c] = s / w;
+    }
+    for (i32 c = 0; c < n; c++) f[c] = t[c];
+  }
+}

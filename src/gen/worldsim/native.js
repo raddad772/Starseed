@@ -56,6 +56,20 @@ function gridIn(G) {
   return g;
 }
 
+// tectonics.js blur() on wasm (a Float64Array field; others round each pass, so they stay
+// in JavaScript): false if unavailable
+export function blurNative(G, f, iters) {
+  if (!(f instanceof Float64Array) || iters <= 0 || !native()) return false;
+  const n = G.n;
+  const g = gridIn(G);
+  ex.arena_reset(grids[grids.length - 1].end);
+  const fp = alloc(8 * n), tp = alloc(8 * n);
+  heap(Float64Array, fp, n).set(f);
+  ex.blur(n, g.nStart, g.nbr, fp, tp, iters);
+  f.set(heap(Float64Array, fp, n));
+  return true;
+}
+
 // erosion.js route() on wasm: fills E.fill, E.rcv, E.rcvD, E.order; false if unavailable
 export function routeNative(E, wander, salt) {
   if (!native()) return false;
