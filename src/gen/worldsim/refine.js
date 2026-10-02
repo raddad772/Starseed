@@ -10,6 +10,7 @@
 
 import { FACES, dirFromFaceUV } from '../cubesphere.js';
 import { GridLite } from './grid.js';
+import { ROCK_UP } from './lithology.js';
 import { MT, KEEP, TILE_VERSION } from '../tileshape.js';
 import * as dm from '../../core/dmath.js';
 
@@ -252,7 +253,9 @@ export class RefineReader {
       if (W[k] < 1e-6) continue;
       const rel = (Hs[k] / W[k] - hb) / span;
       let score = W[k] + 1.5 * e * rel;
-      if (el) score += 0.45 * el * (dep && dep.has(rk[k]) ? -1 : dm.clamp(4 * rel, -1, 1));
+      // (and by where the ground stands among its own lows and rises: cover strata and lava hold
+      // the rises, the basement shows where valleys cut to it, deposits lie in the lows)
+      if (el) score += 0.8 * el * (dep && dep.has(rk[k]) ? -1 : dm.clamp(4 * rel + ROCK_UP[rk[k]], -1, 1)) * Math.min(1, 2.5 * W[k]);
       if (score > bs) { sec = best; ss = bs; bs = score; best = rk[k]; } else if (score > ss) { ss = score; sec = rk[k]; }
     }
     if (sec >= 0) { out.rock2 = sec; out.rockMix = 0.5 * (1 - dm.smoothstep(0, 0.12, bs - ss)); }

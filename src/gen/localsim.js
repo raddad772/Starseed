@@ -36,7 +36,7 @@
 import { dirFromFaceUV, chunkArcSize } from './cubesphere.js';
 import { S_LEN, S_H } from './terrain.js';
 import { Erosion } from './worldsim/erosion.js';
-import { ROCKS } from './worldsim/lithology.js';
+import { ROCKS, ROCK_UP } from './worldsim/lithology.js';
 import { Rng, hashInts } from '../core/rng.js';
 import * as dm from '../core/dmath.js';
 
@@ -73,7 +73,7 @@ const hu = (a, b, c, d) => hashInts(a, b, c, d) / 4294967296;    // a hash in [0
 // how hard each of the world sim's rocks is (0 soft .. 1 hard), from how fast it wears
 const ROCK_HD = ROCKS.map((r) => dm.clamp(1.25 - 0.4 * r.k, 0, 1));
 // (where a rock stands in a stack, by its kind: cover strata and lava over the old basement)
-const UPK = ROCKS.map((r) => ({ shale: 0.6, sandstone: 0.6, limestone: 0.6, chalk: 0.6, basalt: 0.4, andesite: 0.3, regolith: 0.3, granite: -0.6 })[r.name] ?? 0);
+const UPK = ROCK_UP;
 
 // ---- the rock column: hardness (0 soft .. 1 hard) by height, for the tile's rock
 const SUITE = { sandstone: 'sed', shale: 'sed', limestone: 'sed', chalk: 'sed', salt: 'sed', basalt: 'volc', andesite: 'volc', granite: 'xtal' };

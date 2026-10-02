@@ -18,6 +18,9 @@ const ROCK_NAMES = ['granite', 'basalt', 'andesite', 'sandstone', 'shale', 'lime
 export const ROCKS = ROCK_NAMES.map((name) => ({ name, k: MATERIALS[name].k, color: MATERIALS[name].color, stand: MATERIALS[name].stand }));
 export const R = Object.fromEntries(ROCKS.map((r, i) => [r.name, i]));
 const KMULT = Float32Array.from(ROCKS.map((r) => r.k));
+// where a rock stands in a stack, by its kind (-1..1): cover strata and lava over the old
+// basement (deposits, below all: they lie in the lows)
+export const ROCK_UP = Float32Array.from(ROCKS.map((r) => ({ shale: 0.6, sandstone: 0.6, limestone: 0.6, chalk: 0.6, basalt: 0.4, andesite: 0.3, regolith: 0.3, granite: -0.6 })[r.name] ?? 0));
 
 export class Lithology {
   // n cells, up to L layers each over a basement
