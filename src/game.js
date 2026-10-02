@@ -6,6 +6,7 @@
 // ship's zone fly in that ship's frame or sit docked in it, and everything is
 // stepped on one clock, parents before children.
 
+import { WorldSims } from './sim/worldSims.js';
 import * as THREE from 'three';
 import { generateSystem } from './gen/system.js';
 import { Universe } from './sim/universe.js';
@@ -63,6 +64,8 @@ export class Game {
     this.engine.scene.add(this.sky.points);
     this.cloudNoise = makeCloudNoise(64);
     this.world = new WorldRenderer(this.engine, this.universe, this.pool, this.detailTex, this.cloudNoise);
+    // simulated worlds (WORLDSIM.md step 7; opt-in for now: ?worldsim=1)
+    if (opts.worldsim) { this.worldSims = new WorldSims(this, { N: opts.simN || 192 }); }
     this.lights = new LightRig(this.engine);
     this.t = 0;
     this.warpIndex = 0;
@@ -617,6 +620,11 @@ export class Game {
     else if (key && key.startsWith('orbit:') && this.universe.bodies[+key.slice(6)]) this.startInOrbit(this.universe.bodies[+key.slice(6)]);
     else if (key && key.startsWith('site:') && this.universe.bodies[+key.split(':')[1]]) this.startAtSpot(this.universe.bodies[+key.split(':')[1]], key.split(':')[2]);
     else this.startOnSurface();
+    // the simulated worlds, the one we start at first
+    if (this.worldSims) {
+      const id = key && key.startsWith('orbit:') ? +key.slice(6) : key && key.startsWith('site:') ? +key.split(':')[1] : (this.ship && this.ship.body && this.ship.body.data ? this.ship.body.data.id : null);
+      this.worldSims.requestAll(id);
+    }
   }
 
   // The opening shot: a spot in orbit composed like a film still. The body
@@ -2132,6 +2140,7 @@ export class Game {
     // (other players' HUD and suit copies, and their controllers)
     for (const p of this.players.slice(1)) { p.ui.root.remove(); p.ui.suitEl.remove(); if (p.input.dispose) p.input.dispose(); }
     this.pool.dispose();
+    if (this.worldSims) this.worldSims.dispose();
     this.audio.dispose && this.audio.dispose();
   }
 }

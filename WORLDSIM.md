@@ -765,6 +765,26 @@ cover, sea ice.
 
 ### 7. Snapshot, fine detail and the game
 
+**v1 in the game, opt-in (2026-10-01; `?worldsim=1`, grid `?simN=` default 192):**
+worldsim/snapshot.js packs a world sim (fine grid: heights, lake surfaces, exposed rock or beach
+sand, ice, rivers 0..1, melt sheet, local relief; climate grid: yearly mean at sea level, rain,
+plant cover, forest and open shares; ~1.6 MB at N 96) and `SnapshotSampler` reads it.
+TerrainGenerator: with `p.snapshot`, `sampleSnap` takes the sim's heights plus derivative-damped
+hills from the grid spacing down and fine fractal detail, as rugged as the simulated relief there;
+lakes level at their surfaces; the sim's climate for temperature and moisture; `shadeSnap` colours
+from the exposed rock (materials.js colours, soil over gentle ground), beach sands, ice, lakes,
+the life map's cover (forest in the foliage colour, open country drier), wet ground along rivers,
+snow by temperature, a melt sheet's glow (mat[5]). src/workers/worldsimWorker.js regenerates the
+system from its seed and runs a body's sim; src/sim/worldSims.js queues every solid body (the
+start body first), caches snapshots in IndexedDB (seed|body|SIM_VERSION|N), hands them to the
+terrain workers (`pool.setSnapshot`), the physics' generator and the renderer
+(`world.rebuildTerrain`). Browser check (LAB-271, N 128): Opast's sim 36 s in the worker, its
+continents, seas, ice sheet and red-foliage land show from orbit; on the ground a 31 C desert plain
+(moisture 0.04), walkable; airless bodies in seconds; a reload loads from the cache instantly; no
+new console errors. To do next: ice edges smoothed (stair-steps at the grid), river channels
+carved at walking scale, lake water surfaces (not solid), loading progress in the UI, making it
+the default (Dave decides), N 256-384 for visited worlds.
+
 - **Snapshot format per body:**
   - heights; top rock layer and its stack;
   - soil, climate months, biome, river network (vector polylines with flow), lakes (levels), glaciers,

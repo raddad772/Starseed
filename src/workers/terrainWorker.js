@@ -26,6 +26,12 @@ self.onmessage = (e) => {
       for (const b of m.bodies) params.set(b.id, b.terrain);
       return;
     }
+    if (m.type === 'snapshot') {
+      // a simulated world arrived (worldsim/snapshot.js): its generator reads it from now on
+      const p = params.get(m.id);
+      if (p) { params.set(m.id, { ...p, snapshot: m.snapshot }); gens.delete(m.id); }
+      return;
+    }
     if (m.type === 'chunk') {
       const r = buildChunk(gen(m.body), m.face, m.level, m.ix, m.iy, m.N);
       r.type = 'chunk'; r.job = m.job;

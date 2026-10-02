@@ -36,6 +36,14 @@ export class WorkerPool {
     if (!this.workers.length) { this.fallback = true; this.gens = this.gens || new Map(); }
   }
 
+  // a body's simulated world (worldsim/snapshot.js) for the generators to read
+  setSnapshot(id, snap) {
+    const b = this.bodies.find((x) => x.id === id);
+    if (b) b.terrain = { ...b.terrain, snapshot: snap };
+    for (const w of this.workers) w.postMessage({ type: 'snapshot', id, snapshot: snap });
+    if (this.gens) this.gens.delete(id);
+  }
+
   // msg: { type, ... }, priority number. Returns a handle with .promise and .cancel()
   submit(msg, priority) {
     const job = this.nextJob++;

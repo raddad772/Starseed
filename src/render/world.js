@@ -25,6 +25,17 @@ export class WorldRenderer {
     this.timeSec = 0;
   }
 
+  // a body's terrain data changed (a simulated world arrived: worldSims.js): drop its
+  // meshes and build them again from the new data
+  rebuildTerrain(bodyId) {
+    const it = this.items.find((x) => x.body.data && x.body.data.id === bodyId);
+    if (!it || !it.terrain) return;
+    it.group.remove(it.terrain.group);
+    it.terrain.dispose();
+    it.terrain = new PlanetTerrain(it.body, this.pool, it.shared);
+    it.group.add(it.terrain.group);
+  }
+
   makeItem(b) {
     const it = { body: b, group: new THREE.Group(), atmo: null, terrain: null, mesh: null, shared: null, point: null };
     it.group.matrixAutoUpdate = true;

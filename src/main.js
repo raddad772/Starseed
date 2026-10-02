@@ -187,6 +187,7 @@ function boot(s) {
   try {
     game = new Game(canvas, input, s, {
       workers: params.get('workers') ? +params.get('workers') : undefined,
+      worldsim: params.get('worldsim') === '1', simN: params.get('simN') ? +params.get('simN') : undefined,
       renderScale: params.get('scale') ? +params.get('scale') : settings.scale,
       reversedDepth: params.get('logdepth') ? false : undefined,
     });

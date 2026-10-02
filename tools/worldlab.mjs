@@ -17,7 +17,7 @@ import { Impacts } from '../src/gen/worldsim/impacts.js';
 import { planetHistory } from '../src/gen/worldsim/history.js';
 import { barrenWorld } from '../src/gen/worldsim/barren.js';
 import { stagnantWorld } from '../src/gen/worldsim/stagnant.js';
-import { worldSim } from '../src/gen/worldsim/world.js';
+import { simOptsFor, worldSim } from '../src/gen/worldsim/world.js';
 import { findFeatures } from '../src/gen/worldsim/features.js';
 import { ROCKS } from '../src/gen/worldsim/lithology.js';
 import { Rng } from '../src/core/rng.js';
@@ -57,19 +57,8 @@ if (args.includes('--history')) process.exit(0);
 let t0 = performance.now();
 if (init === 'auto') {
   const host = body.parentId > 0 ? sys.bodies[body.parentId] : null;
-  // the open ocean's tide (m): each moon and the star, by the equilibrium tide (M/Mp)
-  // Rp^4/d^3 (Earth: Moon 0.36 m, Sun 0.16 m); a world locked to its host feels no tide from it
-  const tideOf = () => {
-    let a = 0;
-    const Rp = body.radiusM, Mp = body.massEarth;
-    for (const id of body.moons || []) { const m = sys.bodies[id]; const d = m.orbit.aReal || 0; if (d > 0) a += (m.massEarth / Mp) * Rp ** 4 / d ** 3; }
-    if (body.kind === 'moon' && !body.rotation.locked) { const hst = sys.bodies[body.parentId]; const d = body.orbit.aReal || 0; if (d > 0) a += (hst.massEarth / Mp) * Rp ** 4 / d ** 3; }
-    if (!(body.rotation.locked && body.kind !== 'moon')) { const d = body.aAU * 1.496e11; a += (sys.bodies[0].mass * 332946 / Mp) * Rp ** 4 / d ** 3; }
-    return Math.min(a, 30);
-  };
-  // (a big moon steadies the tilt: milder ice ages)
-  const bigMoon = (body.moons || []).some((id) => sys.bodies[id].massEarth / body.massEarth > 0.005);
-  const Wd = worldSim(body, sys.bodies[0], { N: +flag('N', 256), Nt, myr: +flag('myr', 300), steps: +flag('steps', 60), dt: +flag('dt', 2.5e5), host, bigMoon, tide: tideOf(), log: (m) => console.log(m) });
+  const so = simOptsFor(body, sys);
+  const Wd = worldSim(body, sys.bodies[0], { N: +flag('N', 256), Nt, myr: +flag('myr', 300), steps: +flag('steps', 60), dt: +flag('dt', 2.5e5), host, bigMoon: so.bigMoon, tide: so.tide, log: (m) => console.log(m) });
   console.log(`in ${ms(t0)}${Wd.stats ? ' ' + JSON.stringify(Wd.stats) : ''}${Wd.riverStyle ? ', rivers ' + Wd.riverStyle : ''}`);
   const name = `${body.name}-auto-${Wd.path}`;
   let rgb;

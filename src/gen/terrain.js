@@ -21,6 +21,9 @@ import { Noise3, ROT } from '../core/noise.js';
 import { Rng, hash3i } from '../core/rng.js';
 import * as dm from '../core/dmath.js';
 import { fibonacciSphere } from './cubesphere.js';
+import { SnapshotSampler } from './worldsim/snapshot.js';
+import { ROCKS } from './worldsim/lithology.js';
+import { hexToLinear } from './color.js';
 
 // Sample record layout
 export const S_H = 0;        // height above sea level / datum (m)
@@ -48,6 +51,9 @@ export class TerrainGenerator {
   constructor(p) {
     this.p = p;
     this.R = p.R;
+    // a simulated world (worldsim/snapshot.js): its heights and surfaces instead of noise
+    this.snap = p.snapshot ? new SnapshotSampler(p.snapshot) : null;
+    this.rockLin = ROCKS.map((r) => hexToLinear(r.color));
     const rng = new Rng(p.seed);
     this.nWarp = new Noise3(rng.seed32('warp'));
     this.nWarp2 = new Noise3(rng.seed32('warp2'));
@@ -177,6 +183,7 @@ export class TerrainGenerator {
 
   // Full sample. minWavelength (m) band-limits the fine octaves.
   sample(x, y, z, minWavelength, out) {
+    if (this.snap) return this.sampleSnap(x, y, z, minWavelength, out);
     const p = this.p;
     const R = this.R;
     const relief = this.relief;
@@ -474,6 +481,127 @@ export class TerrainGenerator {
   // mat[0]=vegetation, mat[1]=snow/ice, mat[2]=rock, mat[3]=sand, mat[4]=water depth (m, >0 = liquid),
   // mat[5]=emissive (lava), mat[6]=wetness/specular
   shade(s, slope, col, mat) {
+    if (this.snap) return this.shadeSnap(s, slope, col, mat);
+    return this.shadeNoise(s, slope, col, mat);
+  }
+
+  // ---- a simulated world (worldsim/snapshot.js): heights from the sim, with detail below
+  // its grid's spacing as rugged as the simulated relief there; lakes level at their
+  // surfaces; the climate from the sim's (else the generator's)
+  sampleSnap(x, y, z, minWavelength, out) {
+    const p = this.p, S = this.snap, R = this.R;
+    for (let i = 0; i < S_LEN; i++) out[i] = 0;
+    out[S_DX] = x; out[S_DY] = y; out[S_DZ] = z;
+    let h = S.h(x, y, z);
+    const rel = S.relief(x, y, z);
+    const mMask = dm.smoothstep(400, 2500, rel);
+    out[S_MOUNT] = mMask;
+    const amp = dm.clamp(rel * 0.3, 12, 900);
+    // hills from the grid's spacing down (derivative-damped: eroded-looking)
+    {
+      const lam0 = S.G.spacing;
+      const hf = R / lam0;
+      let fx = x * hf, fy = y * hf, fz = z * hf, nxs = x, nys = y, nzs = z;
+      let sum = 0, a = 1, dx = 0, dy = 0, dz = 0, lam = lam0;
+      for (let o = 0; o < 9; o++) {
+        if (lam < minWavelength) break;
+        const fade = dm.smoothstep(minWavelength, minWavelength * 2, lam);
+        this.nHill.noised(fx, fy, fz, tmp4);
+        const dr = tmp4[1] * nxs + tmp4[2] * nys + tmp4[3] * nzs;
+        dx += tmp4[1] - dr * nxs; dy += tmp4[2] - dr * nys; dz += tmp4[3] - dr * nzs;
+        sum += a * tmp4[0] * fade / (1 + 1.6 * (dx * dx + dy * dy + dz * dz));
+        a *= 0.5; lam *= 0.5;
+        const nx = ROT[0] * fx + ROT[1] * fy + ROT[2] * fz, ny = ROT[3] * fx + ROT[4] * fy + ROT[5] * fz, nz = ROT[6] * fx + ROT[7] * fy + ROT[8] * fz;
+        fx = nx * 2.0 + 1.3; fy = ny * 2.0 + 2.9; fz = nz * 2.0 - 4.1;
+        const rx = ROT[0] * nxs + ROT[1] * nys + ROT[2] * nzs, ry = ROT[3] * nxs + ROT[4] * nys + ROT[5] * nzs, rz = ROT[6] * nxs + ROT[7] * nys + ROT[8] * nzs;
+        nxs = rx; nys = ry; nzs = rz;
+      }
+      h += sum * amp * (h < 0 ? 0.4 : 1);
+    }
+    const rough = dm.clamp(0.3 + 0.9 * mMask, 0.1, 1.4) * (p.roughness ?? 1);
+    out[S_ROUGH] = rough;
+    {
+      const df = R / this.lamDetail;
+      let fx = x * df, fy = y * df, fz = z * df, lam = this.lamDetail, a = (p.relief || 3000) * 0.006 * rough, sum = 0;
+      for (let o = 0; o < 11; o++) {
+        if (lam < minWavelength) break;
+        sum += a * this.nDetail.noise(fx, fy, fz) * dm.smoothstep(minWavelength, minWavelength * 2, lam);
+        a *= 0.57; lam *= 0.5;
+        const nx = ROT[0] * fx + ROT[1] * fy + ROT[2] * fz, ny = ROT[3] * fx + ROT[4] * fy + ROT[5] * fz, nz = ROT[6] * fx + ROT[7] * fy + ROT[8] * fz;
+        fx = nx * 2.0 - 0.7; fy = ny * 2.0 + 1.1; fz = nz * 2.0 + 2.3;
+      }
+      h += sum * (h < 0 ? 0.5 : 1);
+    }
+    // a lake's surface is level
+    const lake = S.lake(x, y, z);
+    if (lake != null && lake > h) h = lake;
+    out[S_H] = h;
+    out[S_INLAND] = h > 0 ? 1 : 0;
+    out[S_VARIANT] = this.nClimate.fbm(x * 6 + 3, y * 6, z * 6, 3);
+    const Ts = S.Tsea(x, y, z);
+    if (Ts != null) {
+      const lapse = (p.climate && p.climate.lapse) || 0.0065;
+      out[S_TEMP] = Ts - lapse * Math.max(h, 0);
+      out[S_MOIST] = dm.clamp(S.rain(x, y, z) / 1500, 0, 1);
+    } else this.climate(x, y, z, h, out[S_INLAND], out);
+    out[S_LAVA] = S.melt(x, y, z);
+    if (p.liquid === 'lava' && h < 0) out[S_LAVA] = 1;
+    return out;
+  }
+
+  // the sim's surfaces: the exposed rock in its own colour (soil over it where gentle),
+  // beach sands, ice, lakes, plant cover from the life map (forest in the world's
+  // foliage colour, open country drier), wet ground along rivers, a glowing melt sheet
+  shadeSnap(s, slope, col, mat) {
+    const p = this.p, P = p.palette, S = this.snap;
+    const x = s[S_DX], y = s[S_DY], z = s[S_DZ], h = s[S_H];
+    if (h < 0 && p.liquid && this.contThreshold > -1e8) return this.shadeNoise(s, slope, col, mat);
+    for (let i = 0; i < 7; i++) mat[i] = 0;
+    const Tc = s[S_TEMP] - 273.15;
+    const lake = S.lake(x, y, z);
+    if (lake != null && h <= lake + 0.5) {
+      const k = 0.5;
+      col[0] = P.waterShallow[0] + (P.waterDeep[0] - P.waterShallow[0]) * k;
+      col[1] = P.waterShallow[1] + (P.waterDeep[1] - P.waterShallow[1]) * k;
+      col[2] = P.waterShallow[2] + (P.waterDeep[2] - P.waterShallow[2]) * k;
+      mat[4] = 10;
+      if (Tc < -2) { col[0] = P.snow[0] * 0.92; col[1] = P.snow[1] * 0.95; col[2] = P.snow[2]; mat[1] = 1; mat[4] = 0; }
+      return;
+    }
+    if (S.ice(x, y, z) > 5) { col[0] = P.snow[0]; col[1] = P.snow[1]; col[2] = P.snow[2]; mat[1] = 1; mat[6] = 0.3; return; }
+    const rt = S.rock(x, y, z), rc = this.rockLin[rt] || P.rock;
+    const sandy = rt >= 11; // quartz, coral, black sand (lithology.js)
+    // bare rock on steep ground; soil (or regolith) on gentle
+    const rockW = sandy ? 0 : dm.clamp(dm.smoothstep(0.12, 0.38, slope) + 0.3 * s[S_MOUNT] * dm.smoothstep(0.06, 0.2, slope), 0, 1);
+    const ground = P.soil || P.regolith;
+    let r = ground[0] + (rc[0] - ground[0]) * (sandy ? 1 : 0.35 + 0.65 * rockW);
+    let g = ground[1] + (rc[1] - ground[1]) * (sandy ? 1 : 0.35 + 0.65 * rockW);
+    let b = ground[2] + (rc[2] - ground[2]) * (sandy ? 1 : 0.35 + 0.65 * rockW);
+    if (sandy) mat[3] = 1; else mat[2] = rockW;
+    // plants: the life map's cover, forest in the foliage colour, open country drier
+    if (P.veg) {
+      const cov = S.cover(x, y, z), fo = S.forest(x, y, z), op = S.open(x, y, z);
+      const vegW = dm.clamp(cov * 1.2, 0, 1) * (1 - rockW) * (sandy ? 0.2 : 1) * dm.smoothstep(-6, 2, Tc);
+      if (vegW > 0) {
+        const f = fo / Math.max(1e-3, fo + op), dry = P.vegDry || P.veg;
+        const vr = dry[0] + (P.veg[0] - dry[0]) * f, vg = dry[1] + (P.veg[1] - dry[1]) * f, vb = dry[2] + (P.veg[2] - dry[2]) * f;
+        r += (vr - r) * vegW; g += (vg - g) * vegW; b += (vb - b) * vegW;
+        mat[0] = vegW;
+      }
+    }
+    // rivers: wet, darker ground along them
+    const rv = S.river(x, y, z);
+    if (rv > 0.55) { const k = dm.smoothstep(0.55, 0.9, rv) * 0.35; r *= 1 - k; g *= 1 - k * 0.8; b *= 1 - k * 0.6; mat[6] = Math.max(mat[6], k); }
+    // snow where it's cold
+    const snow = dm.smoothstep(-2, -10, Tc) * (1 - 0.5 * rockW);
+    if (snow > 0) { r += (P.snow[0] - r) * snow; g += (P.snow[1] - g) * snow; b += (P.snow[2] - b) * snow; mat[1] = snow; }
+    col[0] = r; col[1] = g; col[2] = b;
+    // a fresh melt sheet glows (blackbody by how hot: the render's job; here, how much)
+    const melt = s[S_LAVA];
+    if (melt > 0.05) { col[0] *= 1 - melt; col[1] *= 1 - melt; col[2] *= 1 - melt; mat[5] = melt; }
+  }
+
+  shadeNoise(s, slope, col, mat) {
     const p = this.p;
     const P = p.palette;
     const h = s[S_H];
