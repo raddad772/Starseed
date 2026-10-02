@@ -346,7 +346,7 @@ export function findFeatures(G, h, opts = {}) {
       const cells = [], q = [c0]; seen[c0] = 1;
       while (q.length) { const c = q.pop(); cells.push(c); for (let e = G.nStart[c]; e < G.nStart[c + 1]; e++) { const o = G.nbr[e]; if (!seen[o] && mask[o]) { seen[o] = 1; q.push(o); } } }
       let area = 0; for (const c of cells) area += G.area[c];
-      res.push({ kind, areaKm2: area * toReal * toReal / 1e6, ...where(cells[(cells.length / 2) | 0]) });
+      res.push({ kind, areaKm2: area * toReal * toReal / 1e6, lengthKm: spanOf(G, cells) * toReal / 1000, ...where(cells[(cells.length / 2) | 0]) });
     }
     return res.sort((a, b) => b.areaKm2 - a.areaKm2).slice(0, top);
   };
@@ -354,6 +354,16 @@ export function findFeatures(G, h, opts = {}) {
   if (opts.mesas) out.mesaCountry = regionsOf(opts.mesas, 'mesa country');
   if (opts.soil) out.wetlands = regionsOf(opts.soil.wet, 'wetland');
   if (opts.drowned) out.drownedValleys = regionsOf(opts.drowned, 'drowned valley');
+  if (opts.coasts && opts.coasts.tide) {
+    const Co = opts.coasts;
+    out.tidalFlats = regionsOf(Co.flat, 'tidal flats');
+    for (const f of out.tidalFlats) { const c = G.cellAt(...dirFromLatLon(f.lat, f.lon)); f.kind = Co.flat[c] === 2 ? 'mangroves' : 'salt marsh and tidal flats'; }
+    // the biggest tides: coastal cells by range, spaced apart
+    const idx = []; for (let c = 0; c < n; c++) if (Co.tide[c] > 0 && Co.coast[c] === 2) idx.push(c);
+    idx.sort((a, b) => Co.tide[b] - Co.tide[a]);
+    out.bigTides = [];
+    for (const c of idx) { if (out.bigTides.length >= top) break; if (out.bigTides.some((t) => G.dir[t.cell * 3] * G.dir[c * 3] + G.dir[t.cell * 3 + 1] * G.dir[c * 3 + 1] + G.dir[t.cell * 3 + 2] * G.dir[c * 3 + 2] > dm.cos(0.15))) continue; out.bigTides.push({ cell: c, rangeM: Co.tide[c], ...where(c) }); }
+  }
   // ---- deserts and forests: connected regions of the climate's Köppen map
   if (opts.climate && opts.Gc) {
     const Gc = opts.Gc, K = opts.climate.koppen, m = Gc.n;

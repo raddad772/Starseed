@@ -312,6 +312,13 @@ export function worldSim(body, star, opts = {}) {
     log(`life: land ${(S.landCover * 100).toFixed(0)}% covered (forest ${(S.forest * 100).toFixed(0)}%, open ${(S.open * 100).toFixed(0)}%), sea life ${(S.seaLife * 100).toFixed(0)}%, ${S.realms} realms`);
   }
   out.life = life;
+  // tides on the finished coasts (the open ocean's range from the moons and the star)
+  if (sea) {
+    sea2.survey(h, E.base);
+    sea2.tides(h, opts.tide ?? 0.3, sst);
+    let mx = 0; for (let c = 0; c < G.n; c++) mx = Math.max(mx, sea2.tide[c]);
+    log(`tides: ${(2 * (opts.tide ?? 0.3)).toFixed(1)} m in the open ocean, up to ${mx.toFixed(1)} m at the coast`);
+  }
   // drowned river valleys: channels cut across shelves the glacial sea left dry, flooded since
   // (rias, estuaries)
   const drowned = new Uint8Array(G.n);

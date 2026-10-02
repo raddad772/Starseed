@@ -8,6 +8,8 @@
 //              not-too-wild shores, in its source's colour: white coral sand by
 //              the reefs, black sand off basalt, golden quartz off granite and
 //              sandstone
+//   tides      the range from the moons and the star, amplified on broad shelves and in
+//              funnelling bays; big tides on sheltered muddy shores make tidal flats
 //   reefs      where there's complex life, coral builds up to the surface in warm,
 //              clear, shallow water: fringing reefs along coasts, and atolls round
 //              volcanic islands that sank away under them
@@ -113,6 +115,33 @@ export class Coasts {
           if (g > 0) { h[c] += g; reef[c] += g; lith.deposit(c, g, ROCK.limestone); }
         }
       }
+    }
+  }
+
+  // tides: the open ocean's range (m, from the moons and the star) amplified where the
+  // shelf is broad and shallow and where the coast funnels it into a bay (the Bay of
+  // Fundy's 16 m); sheltered muddy shores with big tides are tidal flats: mangroves in warm
+  // seas, salt marsh elsewhere. sst: the coldest month's sea (K)
+  tides(h, open, sst) {
+    const { G, coast } = this, n = G.n;
+    this.tide = new Float32Array(n); this.flat = new Uint8Array(n);
+    for (let c = 0; c < n; c++) {
+      if (!coast[c]) continue;
+      // the shelf: shallow sea within ~4 cells; the funnel: how enclosed the water is
+      let shallow = 0, all = 0, sea = 0;
+      const seen = new Set([c]); let front = [c];
+      for (let k = 0; k < 4; k++) {
+        const next = [];
+        for (const x of front) for (let e = G.nStart[x]; e < G.nStart[x + 1]; e++) {
+          const o = G.nbr[e]; if (seen.has(o)) continue; seen.add(o); next.push(o); all++;
+          if (h[o] < 0) { sea++; if (h[o] > -200) shallow++; }
+        }
+        front = next;
+      }
+      const shelf = sea ? shallow / sea : 0, enclosed = all ? 1 - sea / all : 0;
+      const amp = 1 + 4 * shelf * shelf + 6 * Math.max(0, enclosed - 0.4) * shelf;
+      this.tide[c] = 2 * open * amp;   // (range: twice the amplitude)
+      if (coast[c] === 1 && this.mud[c] > 2 && this.tide[c] > 2) this.flat[c] = sst && sst[c] > 293 ? 2 : 1;
     }
   }
 
