@@ -73,6 +73,13 @@ surveying many worlds; bit-exact across runs and clients, not across revisions):
   2a) and heading give lopsided ejecta and a lower rim uprange (long craters when grazing); rims
   slumped in scallops, outlines squared by joints, wandering terraces, central peaks as knobs.
   Dave: "Those big craters are too perfect" (perfect rings before this).
+  Craters excavate (Dave: "as if they are always impacting a flat plane"): inside its cavity a
+  crater replaces the ground (its floor level at the ground's mean there; `excavation`), its rim
+  and ejecta built on the ground, oldest first. Only the refinement stamps its octaves; every
+  finer octave is drawn by the sampler (`CraterField`, the same hashed lattice, cached per
+  worker, each octave faded in where the sampling resolves it: no square of extra craters where
+  the pyramid's tiles end; a crater's floor sits on the ground as bigger craters left it). Young
+  craters (~12% of the record) throw bright ejecta and rays (S_RAY), each crater's own.
 - **Airless worlds:** no climate means no rain: the tile sim runs no streams there (CPU and GPU
   skip routing and stream power, bit-identical; ~2x faster) and no fractal hold.
 - **Dry worlds:** with no liquid there is no sea (snapshot `sea: false`): ground below the datum
@@ -107,6 +114,12 @@ Open:
   migration history) would be the next step.
 - **Drainage pattern:** D8-straight parallel gullies on even slopes (MFD routing would help).
 - **Chaos terrain:** icy chaos is a flat matrix; its rafts should be drawn by the finer levels.
+- **Rock contacts on even ground:** cell-shaped polygons at the refinement (Touveatar's plains);
+  being tried: contacts decided by the tile's own lows and rises (basement in valleys, cover
+  strata and lava on rises).
+- **Venus-like worlds (Moadeal):** resurfaced plains are featureless; shield fields, coronae,
+  lava flows wanted.
+- **Secondary craters, ejecta muting older relief:** not yet.
 - **Near-field loading:** the volume rings make the descent slow with few workers.
 - **Near-field seam:** a dotted dark line where the volume's outer ring meets the heightfield
   (both clipped at the same radius, terrainMaterial.js uNear; their heights differ a little on
