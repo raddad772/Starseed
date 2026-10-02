@@ -655,6 +655,25 @@ export class TerrainGenerator {
       h = cf.heightAt(x, y, z, minWavelength, h * this.hScale) / this.hScale;
       out[S_RAY] = cf.ray;
     }
+    // chaos: where an icy shell broke over a warm spot, rafts of the old ridged plains standing
+    // tilted in a refrozen matrix (Europa's Conamara), each raft its own block
+    if (S.s.chaos) h += this._chaosAt(x, y, z, minWavelength) / this.hScale;
+    // the cracks' stains (Europa's lineae: salts and organics the ridges' warm ice brought up),
+    // a band ~1 km wide along each arc, what shows of them from orbit
+    if (S.s.lineae) {
+      const wS = Math.max(1000, 1.5 * minWavelength), ink = dm.pow(1000 / wS, 0.6);
+      let st = 0;
+      for (const A of S.s.lineae) {
+        const ax = Math.abs(x * A.pole[0] + y * A.pole[1] + z * A.pole[2]) * R;
+        if (ax > wS) continue;
+        let th = dm.atan2(x * A.v[0] + y * A.v[1] + z * A.v[2], x * A.u[0] + y * A.u[1] + z * A.u[2]) - A.start;
+        th -= dm.TWO_PI * Math.floor(th / dm.TWO_PI);
+        if (th > A.len) continue;
+        const e = Math.min(1, Math.min(th, A.len - th) / (0.05 * A.len));
+        st = Math.max(st, (1 - dm.smoothstep(0, wS, ax)) * e * ink);
+      }
+      out[S_LINEAE] = Math.min(1, st);
+    }
     // dunes: a sand sea's, the wind's own work (dunes.js), turned to the wind there; barchans
     // at its thin edges, transverse ridges where the sand is deep; only where they can be seen
     // (their mean sand sheet everywhere, so nothing jumps as they come into view)
@@ -760,6 +779,45 @@ export class TerrainGenerator {
     return best;
   }
 
+  // a chaos region's rafts at (x, y, z) (m): the shell's fragments ~600 m across (as drawn: ~6
+  // km real), each a block from a hashed seed (its own height and tilt), the refrozen matrix low
+  // between them; fading in where the sampling resolves them, out at the region's edge
+  _chaosAt(x, y, z, minW) {
+    const L = 600, amp = dm.smoothstep(L, L / 4, minW);
+    if (amp <= 0) return 0;
+    let dh = 0, ci = 0;
+    for (const C of this.snap.s.chaos) {
+      ci++;
+      const cosA = x * C.at[0] + y * C.at[1] + z * C.at[2];
+      if (cosA < dm.cos(1.1 * C.R)) continue;
+      const edge = 1 - dm.smoothstep(0.8, 1.1, dm.acos(Math.min(1, cosA)) / C.R);
+      // (the region's own plane: east and north at its middle, m)
+      const at = C.at, ref = Math.abs(at[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
+      let ex = ref[1] * at[2] - ref[2] * at[1], ey = ref[2] * at[0] - ref[0] * at[2], ez = ref[0] * at[1] - ref[1] * at[0];
+      const el = Math.sqrt(ex * ex + ey * ey + ez * ez); ex /= el; ey /= el; ez /= el;
+      const nx = at[1] * ez - at[2] * ey, ny = at[2] * ex - at[0] * ez, nz = at[0] * ey - at[1] * ex;
+      const px = (x * ex + y * ey + z * ez) * this.R / L, py = (x * nx + y * ny + z * nz) * this.R / L;
+      // (the nearest two seeds: which raft, and how far from its edge)
+      const i0 = Math.floor(px), j0 = Math.floor(py);
+      let d1 = 1e9, d2 = 1e9, hb = 0, s1x = 0, s1y = 0;
+      for (let j = j0 - 1; j <= j0 + 1; j++) for (let i = i0 - 1; i <= i0 + 1; i++) {
+        const hv = hash3i(i, j, 0xc4a0 + ci, 3), sx = i + 0.15 + 0.7 * (hv & 0xff) / 255, sy = j + 0.15 + 0.7 * ((hv >>> 8) & 0xff) / 255;
+        const dx = px - sx, dy = py - sy, d = Math.sqrt(dx * dx + dy * dy);
+        if (d < d1) { d2 = d1; d1 = d; hb = hv; s1x = sx; s1y = sy; } else if (d < d2) d2 = d;
+      }
+      // (a raft: its height and tilt its own, its edge broken back from the next; a third of the
+      // shell melted through, all matrix; the matrix low and hummocky, refrozen slush and rubble)
+      const tilt = ((hb >>> 16) & 0xff) / 255 - 0.5, tdir = ((hb >>> 24) & 0xff) / 255 * dm.TWO_PI;
+      const raft = C.H * (0.6 + 0.8 * ((hb >>> 4) & 0xf) / 15) + C.H * tilt * ((px - s1x) * dm.cos(tdir) + (py - s1y) * dm.sin(tdir));
+      const w = ((hb >>> 12) & 7) < 5 ? dm.smoothstep(0.03, 0.1, 0.5 * (d2 - d1)) : 0;
+      const qx = px * 6, qy = py * 6, qi = Math.floor(qx), qj = Math.floor(qy), fx = qx - qi, fy = qy - qj;
+      const hu = (i, j) => (hash3i(i, j, 0x5a5 + ci, 9) & 0xffff) / 65536;
+      const bump = (hu(qi, qj) * (1 - fx) + hu(qi + 1, qj) * fx) * (1 - fy) + (hu(qi, qj + 1) * (1 - fx) + hu(qi + 1, qj + 1) * fx) * fy;
+      dh += edge * amp * (raft * w + (-0.35 + 0.25 * bump) * C.H * (1 - w));
+    }
+    return dh;
+  }
+
   // the nearest river of the world's refinement (its own drainage: refine.js tileRivers), among
   // the world sim's cell here and its neighbours': { dist (m), w, depth, k, hs } as _riverAt's
   _refRiverAt(x, y, z) {
@@ -857,6 +915,8 @@ export class TerrainGenerator {
     // rivers: wet darker ground on the floodplain (the water itself is above)
     const rl = this._riverAt(x, y, z);
     if (rl && rl.dist < rl.w * 2.5) { const k = 0.3 * dm.smoothstep(rl.w * 2.5, rl.w * 0.6, rl.dist); r *= 1 - k; g *= 1 - k * 0.8; b *= 1 - k * 0.6; mat[6] = Math.max(mat[6], k); }
+    // the cracks' reddish-brown stains
+    if (s[S_LINEAE] > 0) { const l = 0.7 * s[S_LINEAE]; r += (0.42 - r) * l; g += (0.25 - g) * l; b += (0.13 - b) * l; }
     // snow where it's cold, if there's water to fall as snow (a water cycle, or an ice inventory);
     // thin frost on an icy moon; an airless rock stays bare
     const waterCycle = p.liquid === 'water' || (p.frozenOcean && p.climate.wet === 0 && p.iceCover > 0.55 && !p.icy);

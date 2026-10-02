@@ -111,7 +111,7 @@ export function worldSim(body, star, opts = {}) {
     // its rock: the old crust, the dark lava of the maria, an icy shell's refrozen plains
     const rock = new Uint8Array(G.n), BAS = ROCK.basalt, ICE = ROCK.ice;
     for (let c = 0; c < G.n; c++) rock[c] = W.mare[c] > 0.5 ? BAS : W.plains[c] > 0.5 && icy ? ICE : 0;
-    return Object.assign(out, { h: W.h, mare: W.mare, fresh: W.fresh, stats: W.stats, craters: survivors(G, W.impacts.events, resurfaceAt, W.plains, W.mare), melt, crater, lineae: W.lineae, rock });
+    return Object.assign(out, { h: W.h, mare: W.mare, fresh: W.fresh, stats: W.stats, craters: survivors(G, W.impacts.events, resurfaceAt, W.plains, W.mare), melt, crater, lineae: W.lineae, chaos: W.chaos, rock });
   }
   if (path === 'stagnant') {
     let wet = wetWindow(H);

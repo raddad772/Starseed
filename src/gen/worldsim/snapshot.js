@@ -21,7 +21,7 @@ import * as dm from '../../core/dmath.js';
 import { Noise3 } from '../../core/noise.js';
 import { dunePatches } from '../dunes.js';
 
-export const SIM_VERSION = 12;
+export const SIM_VERSION = 13;
 
 // a world's grid size: maxN for an Earth-sized one, finer cells don't help a small one
 // (N ~ sqrt(radius): Mars ~210, the Moon ~150, a moonlet 64)
@@ -81,6 +81,8 @@ export function packSnapshot(W, body) {
   if (W.dunes && W.dunes.some((v) => v)) { out.dunes = Uint8Array.from(W.dunes); out.dunePatch = dunePatches(); }
   // an icy shell's cracks (barren.js crackShell): arcs, for each level to draw its ridges
   if (W.lineae) out.lineae = W.lineae.map((a) => ({ pole: a.pole.slice(), u: a.u.slice(), v: a.v.slice(), start: a.start, len: a.len, H: a.H }));
+  // and where it broke into rafts over warm spots (chaos: the rafts drawn where the ground is seen)
+  if (W.chaos && W.chaos.length) out.chaos = W.chaos.map((c) => ({ at: c.at.slice(), R: c.R, H: c.H }));
   if (W.climate && W.Gc) {
     const Gc = W.Gc, m = Gc.n, lapse = body.terrain && body.terrain.climate ? body.terrain.climate.lapse ?? 0.0065 : 0.0065;
     out.Nc = Gc.N;

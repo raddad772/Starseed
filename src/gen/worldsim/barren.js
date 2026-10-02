@@ -89,7 +89,7 @@ export function barrenWorld(G, opts) {
   const crat = new Float32Array(n), all = cum[cum.length - 1], dtG = DT_MYR / 1000;
   // (a flood at a step's time buries that step's craters too)
   for (let c = 0; c < n; c++) crat[c] = all - cum[since[c] > 0 ? Math.min(cum.length - 1, Math.round(since[c] / dtG) + 1) : 0];
-  return { h, fresh, mare, plains, impacts: imp, stats, crat, dMin, lineae: cracks ? cracks.arcs : null };
+  return { h, fresh, mare, plains, impacts: imp, stats, crat, dMin, lineae: cracks ? cracks.arcs : null, chaos: cracks ? cracks.chaos : null };
 }
 
 // lava fills a basin's floor up to about half its depth: flat dark plains
@@ -152,12 +152,15 @@ export function crackShell(G, h, rng, tidal, scale, marks, since, age) {
   const chaos = [];
   for (let k = 0; k < nChaos; k++) {
     const at = rng.unitVector(), R = rng.range(40e3, 150e3) * scale / G.R;
-    chaos.push({ at, R });
+    chaos.push({ at, R, H: ridgeH });
     for (let c = 0; c < G.n; c++) {
       const cosA = G.dir[c * 3] * at[0] + G.dir[c * 3 + 1] * at[1] + G.dir[c * 3 + 2] * at[2];
-      if (cosA < dm.cos(R)) continue;
-      h[c] = h[c] * 0.3 - ridgeH; marks[c] = 1;   // (the shell broke and refroze: a low, level matrix)
-      if (since) since[c] = age;
+      if (cosA < dm.cos(1.15 * R)) continue;
+      // (the shell broke and refroze: a low, level matrix, its edge eased over a cell or two;
+      // the rafts in it are the finer levels')
+      const k2 = 1 - dm.smoothstep(0.85, 1.15, dm.acos(Math.min(1, cosA)) / R);
+      h[c] += k2 * (h[c] * 0.3 - ridgeH - h[c]);
+      if (k2 > 0.5) { marks[c] = 1; if (since) since[c] = age; }
     }
   }
   return { arcs, chaos };
