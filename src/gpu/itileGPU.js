@@ -31,6 +31,9 @@ struct Params { NG: u32, n: u32, salt: u32, PB: u32, NB: u32, RB: i32, axis: u32
 @group(0) @binding(20) var<storage, read_write> talus: array<i32>;
 @group(0) @binding(21) var<storage, read> MIn: array<i32>;
 @group(0) @binding(22) var<storage, read_write> MOut: array<i32>;
+@group(0) @binding(23) var<storage, read> GEO: array<u32>;            // each cell's suite | how broken (0..255) << 8
+@group(0) @binding(24) var<storage, read> BOFF: array<i32>;           // its beds' offset (m)
+@group(0) @binding(25) var<storage, read> COLT: array<u32>;           // the suites' columns: hardness by metre, 4 x 15000
 
 const PONDQ: i32 = 2048;
 const FMAX2: i32 = 2147418112;
@@ -91,6 +94,13 @@ fn floordiv(x: i32, m: i32) -> i32 { return select((x - (m - 1)) / m, x / m, x >
 @compute @workgroup_size(256) fn rise(@builtin(global_invocation_id) g: vec3u) {
   let c = g.x; if (c >= P.n) { return; }
   if ((info[c] & 2u) != 0u) { info[c] = info[c] | 1u; }
+}
+@compute @workgroup_size(256) fn hardness(@builtin(global_invocation_id) g: vec3u) {
+  let c = g.x; if (c >= P.n) { return; }
+  let gg = GEO[c]; let su = gg & 3u; let wk = (gg >> 8u) & 255u;
+  let z = clamp((hIn[c] >> 12u) + BOFF[c] + 3000, 0, 14999);
+  let hd = (COLT[su * 15000u + u32(z)] * (256u - ((wk * 179u) >> 8u))) >> 8u;
+  info[c] = (info[c] & 0xffff00ffu) | (hd << 8u);
 }
 @compute @workgroup_size(256) fn fill(@builtin(global_invocation_id) g: vec3u) {
   let c = g.x; if (c >= P.n) { return; }
@@ -194,7 +204,7 @@ fn floordiv(x: i32, m: i32) -> i32 { return select((x - (m - 1)) / m, x / m, x >
 }
 `;
 
-const ENTRIES = ['pinBlock', 'pinBlur', 'pinApply', 'rise', 'fill', 'receivers', 'accum', 'jumpInit', 'jump', 'jumpApply', 'creep', 'collapse'];
+const ENTRIES = ['pinBlock', 'pinBlur', 'pinApply', 'rise', 'hardness', 'fill', 'receivers', 'accum', 'jumpInit', 'jump', 'jumpApply', 'creep', 'collapse'];
 
 export class ITileGPU {
   static async create() {
@@ -255,6 +265,11 @@ export class ITileGPU {
       al0: this._buf('al0', n * 4), al1: this._buf('al1', n * 4), be0: this._buf('be0', n * 4), be1: this._buf('be1', n * 4), pt0: this._buf('pt0', n * 4), pt1: this._buf('pt1', n * 4),
       talus: put('talus', new Int32Array(n)), M0: this._buf('M0', NB * NB * 4), M1: this._buf('M1', NB * NB * 4),
     };
+    if (T.geo) {
+      const Gx = T.geo, geo = new Uint32Array(n);
+      for (let c = 0; c < n; c++) geo[c] = Gx.suite[c] | (Gx.weak[c] << 8);
+      B.GEO = put('GEO', geo); B.BOFF = put('BOFF', Gx.bedOff); B.COLT = put('COLT', Uint32Array.from(Gx.colHd));
+    }
     const params = [0, 1].map((ax) => this._buf('P' + ax, 32, GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST));
     const pdata = new Int32Array(8);
     let hc = 0, Fc = 0, Ac = 0;
@@ -277,6 +292,7 @@ export class ITileGPU {
         pass('pinApply', { 1: hb(), 2: hb2(), 8: B.info, 21: B['M' + m] }, wgN); hc = 1 - hc;
       }
       if (st === T.rise) pass('rise', { 8: B.info }, wgN);
+      if (T.geo) pass('hardness', { 1: hb(), 8: B.info, 23: B.GEO, 24: B.BOFF, 25: B.COLT }, wgN);
       for (let p = 0; p < PASSES.fill; p++) { pass('fill', { 1: hb(), 3: B['F' + Fc], 4: B['F' + (1 - Fc)], 8: B.info }, wgN); Fc = 1 - Fc; }
       pass('receivers', { 3: B['F' + Fc], 7: B.rcv, 8: B.info, 11: B.DW }, wgN);
       for (let p = 0; p < PASSES.accum; p++) { pass('accum', { 5: B['A' + Ac], 6: B['A' + (1 - Ac)], 7: B.rcv, 9: B.wa }, wgN); Ac = 1 - Ac; }

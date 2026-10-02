@@ -15,6 +15,7 @@
 //             once by pointer jumping
 //   creep     soil creep, faster on soft rock
 //   collapse  slopes past what their rock holds shed into the cells below (talus)
+//   hardness  (a pyramid tile's) each cell's rock's column read at its height: beds as they're cut
 // Products never overflow 32 bits: every fixed-point multiply is by a 16-bit fraction (mul16).
 
 import * as dm from '../core/dmath.js';
@@ -90,7 +91,7 @@ export function gridTables(T) {
 export function runInt(T) {
   const { NG, n, a, B } = T;
   const { D, W, CM, CE } = gridTables(T), { KH, KD, SC } = hardTables(T.kd0), AP = apowTable();
-  const flags = Uint8Array.from(T.flags), hd = T.hd;
+  const flags = Uint8Array.from(T.flags), hd = Uint8Array.from(T.hd), Gx = T.geo;
   let h = Int32Array.from(T.h0), h2 = new Int32Array(n);
   let F = Int32Array.from(T.h0), F2 = new Int32Array(n);
   let A = Uint32Array.from(a), A2 = new Uint32Array(n);
@@ -138,6 +139,12 @@ export function runInt(T) {
       }
     }
     if (st === T.rise) for (let c = 0; c < n; c++) if (flags[c] & 2) flags[c] |= 1;
+    // how hard each cell's rock is, as it stands now: its column's layer at its height
+    if (Gx) for (let c = 0; c < n; c++) {
+      let z = (h[c] >> 12) + Gx.bedOff[c] - Gx.colLo;
+      z = z < 0 ? 0 : z > 14999 ? 14999 : z;
+      hd[c] = (Gx.colHd[Gx.suite[c] * 15000 + z] * (256 - ((Gx.weak[c] * 179) >> 8))) >> 8;
+    }
     // lakes' surfaces
     for (let p = 0; p < PASSES.fill; p++) {
       for (let c = 0; c < n; c++) {

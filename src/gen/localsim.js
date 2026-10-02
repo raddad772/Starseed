@@ -74,30 +74,56 @@ const ROCK_HD = ROCKS.map((r) => dm.clamp(1.25 - 0.4 * r.k, 0, 1));
 // ---- the rock column: hardness (0 soft .. 1 hard) by height, for the tile's rock
 const SUITE = { sandstone: 'sed', shale: 'sed', limestone: 'sed', chalk: 'sed', salt: 'sed', basalt: 'volc', andesite: 'volc', granite: 'xtal' };
 
+const RI = Object.fromEntries(ROCKS.map((r, i) => [r.name, i]));
 function rockColumn(rockName, rng) {
   const suite = SUITE[rockName] || 'loose';
   const lo = -3000, n = 15000;                       // 1 m steps, -3 km .. 12 km
-  const hard = new Float32Array(n);
+  const hard = new Float32Array(n), type = new Uint8Array(n);
   let z = 0;
   while (z < n) {
-    let t, hd;
+    let t, hd, ty;
     if (suite === 'sed') {
       // (a bed's rock: sandstone or limestone hard, shale soft, now and then a thick hard one)
       const r = rng.next();
-      if (r < 0.4) { t = rng.range(2, 10); hd = rng.range(0.05, 0.25); }        // shale
-      else if (r < 0.85) { t = rng.range(3, 14); hd = rng.range(0.6, 0.85); }   // sandstone
-      else { t = rng.range(10, 28); hd = rng.range(0.8, 0.95); }                // a massive cap
+      if (r < 0.4) { t = rng.range(2, 10); hd = rng.range(0.05, 0.25); ty = RI.shale; }        // shale
+      else if (r < 0.85) { t = rng.range(3, 14); hd = rng.range(0.6, 0.85); ty = RI.sandstone; }   // sandstone
+      else { t = rng.range(10, 28); hd = rng.range(0.8, 0.95); ty = RI.limestone; }            // a massive cap
     } else if (suite === 'volc') {
       // a flow: its broken top soft, its core hard
       const top = rng.range(1, 3), core = rng.range(5, 18);
-      for (let k = 0; k < core && z < n; k++) hard[z++] = 0.9;
-      t = top; hd = 0.25;
-    } else if (suite === 'xtal') { t = rng.range(150, 600); hd = rng.range(0.865, 0.875); }   // (massive: no beds)
-    else { t = rng.range(3, 12); hd = rng.range(0.05, 0.3); }
-    for (let k = 0; k < t && z < n; k++) hard[z++] = hd;
+      for (let k = 0; k < core && z < n; k++) { type[z] = RI.basalt; hard[z++] = 0.9; }
+      t = top; hd = 0.25; ty = RI.regolith;
+    } else if (suite === 'xtal') { t = rng.range(150, 600); hd = rng.range(0.865, 0.875); ty = RI.granite; }   // (massive: no beds)
+    else { t = rng.range(3, 12); hd = rng.range(0.05, 0.3); ty = RI.alluvium; }
+    for (let k = 0; k < t && z < n; k++) { type[z] = ty; hard[z++] = hd; }
   }
-  return { lo, hard, suite, at(h) { const i = Math.round(h - lo); return hard[i < 0 ? 0 : i >= n ? n - 1 : i]; } };
+  const idx = (h) => { const i = Math.round(h - lo); return i < 0 ? 0 : i >= n ? n - 1 : i; };
+  return { lo, hard, type, suite, at(h) { return hard[idx(h)]; }, typeAt(h) { return type[idx(h)]; } };
 }
+// a column as a grid of cells sees it: each height's layers averaged over the height a cell's
+// slope lays bare (win m, about half a cell): beds thinner than that blur to their mean hardness
+// and show their commonest rock; thicker ones stand out (cliff bands where the cells are fine)
+function smoothColumn(col, win) {
+  const n = col.hard.length, w = Math.max(0, Math.round(win / 2));
+  if (w < 1) return col;
+  const hard = new Float32Array(n), type = new Uint8Array(n), pre = new Float64Array(n + 1);
+  for (let z = 0; z < n; z++) pre[z + 1] = pre[z] + col.hard[z];
+  const cnt = new Int32Array(32);
+  for (let z = -w; z < w && z < n; z++) if (z >= 0) cnt[col.type[z]]++;
+  for (let z = 0; z < n; z++) {
+    const a = Math.max(0, z - w), b = Math.min(n, z + w + 1);
+    hard[z] = (pre[b] - pre[a]) / (b - a);
+    if (z + w < n) cnt[col.type[z + w]]++;
+    if (z - w - 1 >= 0) cnt[col.type[z - w - 1]]--;
+    let best = col.type[z], bc = -1;
+    for (let t = 0; t < 32; t++) if (cnt[t] > bc) { bc = cnt[t]; best = t; }
+    type[z] = best;
+  }
+  const lo = col.lo, idx = (h) => { const i = Math.round(h - lo); return i < 0 ? 0 : i >= n ? n - 1 : i; };
+  return { lo, hard, type, suite: col.suite, at(h) { return hard[idx(h)]; }, typeAt(h) { return type[idx(h)]; } };
+}
+const SUITES = ['sed', 'volc', 'xtal', 'loose'], SUITE_ROCK = { sed: 'sandstone', volc: 'basalt', xtal: 'granite', loose: 'alluvium' };
+const DEPOSITS = new Set(['alluvium', 'salt', 'quartz sand', 'coral sand', 'black sand']);
 
 // ---- a region's structure (in the face's metres): its setting from the world sim there,
 // its beds' tilt and folds, its faults, its joint sets. Deterministic from the region.
@@ -258,14 +284,16 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
   const steps = opts.steps ?? (rf ? 120 : region ? 140 : 100);
   // its region's structure (a local tile's: the region it's in; a refinement's is the world
   // sim's own, its rock by place)
-  const rs = 1 << REGION_UP;
-  const ST = rf ? { faults: [], joints: [], fold: null, dipX: 0, dipY: 0, x0: 0, y0: 0, rel: 0, rock: 'granite', ri: 0, rj: 0, belt: 0 }
-    : opts.structure || regionStructure(gen, face, region ? ti : Math.floor(ti / rs), region ? tj : Math.floor(tj / rs));
+  // (a pyramid tile: the region its middle is in)
+  const rL = regionLevel(R), regOf = (t) => (L >= rL ? t >> (L - rL) : (t << (rL - L)) + (1 << (rL - L - 1)));
+  const rri = pyr ? regOf(ti) : region ? ti : Math.floor(ti / (1 << REGION_UP)), rrj = pyr ? regOf(tj) : region ? tj : Math.floor(tj / (1 << REGION_UP));
+  const ST = refine ? { faults: [], joints: [], fold: null, dipX: 0, dipY: 0, x0: 0, y0: 0, rel: 0, rock: 'granite', ri: 0, rj: 0, belt: 0 }
+    : opts.structure || regionStructure(gen, face, rri, rrj);
   // (faults from the regions round it reach in too)
   const faults = ST.faults.slice();
-  if (!opts.structure && !rf) for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+  if (!opts.structure && !refine) for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
     if (!di && !dj) continue;
-    const nr = 1 << regionLevel(R), ri = (region ? ti : Math.floor(ti / rs)) + di, rj = (region ? tj : Math.floor(tj / rs)) + dj;
+    const nr = 1 << rL, ri = rri + di, rj = rrj + dj;
     if (ri < 0 || rj < 0 || ri >= nr || rj >= nr) continue;
     for (const f of regionStructure(gen, face, ri, rj).faults) faults.push(f);
   }
@@ -344,11 +372,21 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
       else rockC[c] = S.rockAt(G.dir[c * 3], G.dir[c * 3 + 1], G.dir[c * 3 + 2], h[c] / hs);
     }
   };
-  const hardAt = rf ? (c) => ROCK_HD[rockC[c]] : (c, z) => col.at(z + bedOff[c]) * (1 - 0.7 * weak[c]);
+  // (a pyramid tile's: each cell's rock's suite of layers, tilted and folded, read at its height
+  // as it is now, so as valleys cut down through hard and soft beds, cliff bands stand)
+  const suiteC = pyr ? new Uint8Array(n) : null, cols = pyr ? SUITES.map((su) => smoothColumn(rockColumn(SUITE_ROCK[su], new Rng([hashInts(face, rri), hashInts(rrj, 0xc01 + SUITES.indexOf(su)), (gen.p.seed && gen.p.seed[0]) | 0, 0x5eb])), 0.5 * cell)) : null;
+  const readSuite = () => { for (let c = 0; c < n; c++) { const nm = ROCKS[rockC[c]].name; suiteC[c] = DEPOSITS.has(nm) ? 3 : Math.max(0, SUITES.indexOf(SUITE[nm] || 'loose')); } };
+  const hardAt = refine ? (c) => ROCK_HD[rockC[c]] : pyr ? (c, z = h[c]) => cols[suiteC[c]].at(z + bedOff[c]) * (1 - 0.7 * weak[c]) : (c, z) => col.at(z + bedOff[c]) * (1 - 0.7 * weak[c]);
   // the starting surface, with a few centimetres of jitter (so water has a way to choose)
   const h = new Float64Array(n);
   const jk = rng.int(1, 0x7fffffff);
   for (let c = 0; c < n; c++) h[c] = B[c] + 0.04 * (hu(jk, c, 0, 0) - 0.5);
+  // (a pyramid tile's faults have slipped before its run: their scarps wear through it)
+  if (pyr) faults.forEach((f, k) => {
+    f.done = true;
+    const fs = fside[k];
+    for (let c = 0; c < n; c++) if (fs[c]) { const dz = 0.5 * f.dz * fs[c]; h[c] += dz; bedOff[c] -= dz; }
+  });
   // where water leaves: the sea and the lakes, and the tile's edges where the land's own
   // drainage leaves it (the starting surface routed with every edge open: the edge cells the
   // big flows leave by). Those outlets are the valley floors, below the land's mean (the
@@ -409,6 +447,7 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
   // the end: the restore)
   const holdMean = opts.restore ? false : true;
   if (rf) readRock();
+  if (pyr) readSuite();
   const talus = new Float32Array(n), hd = new Float64Array(n), tmp = new Float64Array(n);
   const { nStart, nbr, nDist, area } = G;
   const fDone = new Uint8Array(faults.length);
@@ -417,7 +456,7 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
     const t = st / steps;
     // a fault slips: the ground and its beds on one side drop (or rise) by its throw
     faults.forEach((f, k) => {
-      if (fDone[k] || t < f.t) return;
+      if (fDone[k] || f.done || t < f.t) return;
       fDone[k] = 1;
       const fs = fside[k];
       for (let c = 0; c < n; c++) if (fs[c] && !E.base[c]) { const dz = 0.5 * f.dz * fs[c]; h[c] += dz; bedOff[c] -= dz; }
@@ -429,7 +468,7 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
     }
     if (lowstand && st === rise) for (let c = 0; c < n; c++) if (wet[c] === 1) E.base[c] = 1;
     if (st % 2 === 0) { E.nStep = st; E.route(); E.drain(); }
-    if (rf && st % 10 === 9) readRock();
+    if (rf && st % 10 === 9) { readRock(); if (pyr) readSuite(); }
     for (let c = 0; c < n; c++) hd[c] = hardAt(c, h[c]);
     // streams: implicit stream power, downstream first, each cell by the rock it's in
     const fill = E.fill, rcv = E.rcv, rcvD = E.rcvD, A = E.A, order = E.order;
@@ -483,7 +522,15 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
     }
     const Acu = new Uint16Array(n);
     for (let c = 0; c < n; c++) Acu[c] = Math.max(1, Math.min(65535, Math.round(AcC[c] / (aref / 16))));
-    return { NG, n, steps, rise: lowstand ? rise : -1, sz, flags, a, hd: hdI, h0, B: BI, aref, K0, kd0, sig, salt: jk, Acu };
+    let geo = null;
+    if (pyr) {
+      // (each cell's rock's column, read each step at its height: COL[suite x 15000 + metre])
+      const colHd = new Uint8Array(4 * 15000), suite = Uint8Array.from(suiteC), bedOffI = new Int32Array(n), weakI = new Uint8Array(n);
+      for (let k = 0; k < 4; k++) for (let z = 0; z < 15000; z++) colHd[k * 15000 + z] = Math.round(255 * cols[k].hard[z]);
+      for (let c = 0; c < n; c++) { bedOffI[c] = Math.round(bedOff[c]); weakI[c] = Math.round(255 * weak[c]); }
+      geo = { colHd, colLo: -3000, suite, bedOff: bedOffI, weak: weakI };
+    }
+    return { NG, n, steps, rise: lowstand ? rise : -1, sz, flags, a, hd: hdI, h0, B: BI, aref, K0, kd0, sig, salt: jk, Acu, geo };
   };
   const out0 = {};
   const fromInts = (r) => { for (let c = 0; c < n; c++) { h[c] = r.h[c] / 4096; talus[c] = r.talus[c] / 4096; } };
@@ -604,6 +651,11 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
         rockC[c] = best;
       }
       }
+    }
+    // (a pyramid tile's bedrock shows the layer of its suite at its height: banded cliffs)
+    if (pyr) {
+      readSuite();
+      for (let c = 0; c < n; c++) if (suiteC[c] !== 3) rockC[c] = cols[suiteC[c]].typeAt(h[c] + bedOff[c]);
     }
     water = new Uint8Array(n);
     const q = new Int32Array(n);
