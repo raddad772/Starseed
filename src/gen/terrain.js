@@ -20,7 +20,8 @@
 import { Noise3, ROT } from '../core/noise.js';
 import { Rng, hash3i } from '../core/rng.js';
 import * as dm from '../core/dmath.js';
-import { fibonacciSphere } from './cubesphere.js';
+import { fibonacciSphere, faceUVFromDir, FACES } from './cubesphere.js';
+import { patchAt } from './dunes.js';
 import { SnapshotSampler } from './worldsim/snapshot.js';
 import { ROCKS, R as ROCK } from './worldsim/lithology.js';
 import { hexToLinear } from './color.js';
@@ -41,7 +42,8 @@ export const S_VOLC = 11;    // volcanic flow darkening 0..1
 export const S_ROUGH = 12;   // roughness / rockiness tendency 0..1
 export const S_DX = 13, S_DY = 14, S_DZ = 15; // sample direction
 export const S_WDEPTH = 16;  // lake or river water over the ground here (m; its surface is S_H + this)
-export const S_LEN = 17;
+export const S_SAND = 17;    // wind-blown sand (a dune sea's) 0..1
+export const S_LEN = 18;
 
 // creeks from the terrain tiles' drainage: a channel from this much rain-weighted water (m^2),
 // water in it from this much
@@ -632,6 +634,24 @@ export class TerrainGenerator {
         if (lift > h) { h = lift; out[S_VOLC] = Math.max(out[S_VOLC], dist < edge ? 1 : 0.7); }
       }
     }
+    // dunes: a sand sea's, the wind's own work (dunes.js), turned to the wind there; barchans
+    // at its thin edges, transverse ridges where the sand is deep; only where they can be seen
+    // (their mean sand sheet everywhere, so nothing jumps as they come into view)
+    if (S.s.dunePatch && !(wl > h) && h > 0) {
+      const m = S.duneMask(x, y, z);
+      if (m > 0.15) {
+        const P = S.s.dunePatch, f = dm.smoothstep(0.15, 0.9, m), amp = dm.smoothstep(4 * P.cell * 10, 2 * P.cell, minWavelength);
+        const mean = (P.mean[0] + (P.mean[1] - P.mean[0]) * f) * P.slab;
+        let dh = mean;
+        if (amp > 0) {
+          const a = this._duneFrame(x, y, z), da = a.a / P.cell, db = a.b / P.cell;
+          const z0 = patchAt(P, 0, da, db), z1 = patchAt(P, 1, da, db);
+          dh = mean + ((z0 + (z1 - z0) * f) - mean) * amp;
+        }
+        h += dh * dm.smoothstep(0.15, 0.4, m);
+        out[S_SAND] = dm.smoothstep(0.15, 0.5, m);
+      }
+    }
     out[S_H] = h;
     if (wl > h) out[S_WDEPTH] = wl - h;
     out[S_INLAND] = h > 0 ? 1 : 0;
@@ -650,6 +670,43 @@ export class TerrainGenerator {
   // the nearest simulated river line here (this cell's and its neighbours' segments to
   // their downstream cells), the point wiggled so channels meander: { dist (m), w, depth,
   // k (0 a stream .. 1 the greatest river), hs (the sim's height along the line) }
+  // a sand sea's frame at (x, y, z): metres along the wind (a) and across it (b), on its cube
+  // face's plane. The wind: the trades in the tropics (west and toward the equator), the
+  // westerlies in mid-latitudes, easterlies round the poles; toward the sunward point on a
+  // world locked to its star
+  _duneFrame(x, y, z) {
+    const uv = this._duv || (this._duv = { face: 0, u: 0, v: 0 }), d = this._dd || (this._dd = [0, 0, 0]);
+    d[0] = x; d[1] = y; d[2] = z;
+    faceUVFromDir(d, uv);
+    const F = FACES[uv.face], Mq = dm.PI / 4 * this.R, X = uv.u * Mq, Y = uv.v * Mq;
+    // (east and north here)
+    let ex = -z, ez = x;
+    const el = Math.sqrt(ex * ex + ez * ez) || 1; ex /= el; ez /= el;
+    const nx = -y * ez, ny = x * ez - z * ex, nz = y * ex;
+    let wx, wy, wz;
+    const cl = this.p.climate;
+    if (cl && cl.locked && cl.substellar) {
+      const ss = cl.substellar, k = ss[0] * x + ss[1] * y + ss[2] * z;
+      wx = ss[0] - k * x; wy = ss[1] - k * y; wz = ss[2] - k * z;
+    } else {
+      const lat = Math.abs(y), sg = y >= 0 ? 1 : -1;
+      const e = lat < 0.5 ? -0.94 : lat < 0.87 ? 1 : -1, nn = lat < 0.5 ? -0.34 * sg : 0;
+      wx = e * ex + nn * nx; wy = nn * ny; wz = e * ez + nn * nz;
+    }
+    const wu = wx * F.U[0] + wy * F.U[1] + wz * F.U[2], wv = wx * F.V[0] + wy * F.V[1] + wz * F.V[2], wl = Math.sqrt(wu * wu + wv * wv) || 1;
+    const cu = wu / wl, cv = wv / wl, o = this._dfr || (this._dfr = { a: 0, b: 0 });
+    o.a = X * cu + Y * cv; o.b = -X * cv + Y * cu;
+    // (each stretch of a sand sea its own part of the field, shifted smoothly from cell to cell
+    // of the world sim: the field's repeat never lines up)
+    const S = this.snap, P = S.s.dunePatch, cc = this._dc16 || (this._dc16 = new Int32Array(16)), ww = this._dw16 || (this._dw16 = new Float64Array(16));
+    S.G.corners16(d, cc, ww, uv);
+    let oa = 0, ob = 0;
+    for (let k = 0; k < 16; k++) { const hv = hash3i(cc[k], 0x5d, 0xd0e5, 7); oa += ww[k] * (hv & 0xffff); ob += ww[k] * (hv >>> 16); }
+    const span = 0.5 * P.n * P.cell / 65536;
+    o.a += oa * span; o.b += ob * span;
+    return o;
+  }
+
   _riverAt(x, y, z) {
     const S = this.snap, s = S.s;
     if (!s.rcv) return null;
@@ -718,8 +775,10 @@ export class TerrainGenerator {
     const rt = S.rockAt(x, y, z, h / this.hScale), mix = S.rockMix, r2 = S.rock2;
     const c1 = this.rockLin[rt] || P.rock, c2 = this.rockLin[r2] || P.rock, rc = this._rcol || (this._rcol = [0, 0, 0]);
     for (let k = 0; k < 3; k++) rc[k] = c1[k] + (c2[k] - c1[k]) * mix;
+    // (a dune sea's sand over it)
+    if (s[S_SAND] > 0) { const sc = this.rockLin[ROCK['quartz sand']]; if (sc) for (let k = 0; k < 3; k++) rc[k] += (sc[k] - rc[k]) * s[S_SAND]; }
     // (how much of it is sand: quartz, coral, black sand, lithology.js; no bedrock shows there)
-    const sandW = (rt >= 11 ? 1 - mix : 0) + (r2 >= 11 ? mix : 0);
+    const sandW = Math.max((rt >= 11 ? 1 - mix : 0) + (r2 >= 11 ? mix : 0), s[S_SAND]);
     // bare rock on steep ground; soil (or regolith) on gentle
     const rockW = (1 - sandW) * dm.clamp(dm.smoothstep(0.12, 0.38, slope) + 0.3 * s[S_MOUNT] * dm.smoothstep(0.06, 0.2, slope), 0, 1);
     const ground = P.soil || P.regolith;

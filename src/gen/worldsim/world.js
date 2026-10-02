@@ -22,7 +22,7 @@ import { Rng } from '../../core/rng.js';
 import { TerrainGenerator, S_LEN, S_H, S_MOIST, S_TEMP } from '../terrain.js';
 import { SimGrid } from './grid.js';
 import { Erosion } from './erosion.js';
-import { Tectonics, blur } from './tectonics.js';
+import { Tectonics, blur, smoothField } from './tectonics.js';
 import { Impacts } from './impacts.js';
 import { barrenWorld } from './barren.js';
 import { stagnantWorld } from './stagnant.js';
@@ -382,6 +382,13 @@ export function worldSim(body, star, opts = {}) {
     let softBelow = false;
     for (let i = 1; i < lith.count[c]; i++) if (lith.type[c * lith.L + i] === ROCK.shale) softBelow = true;
     if (cap && softBelow && steep > 150 && steep < 1500) mesas[c] = 1;
+  }
+  // (a sand sea is wide: its cells' share of the country round them, so a lone sandy cell
+  // stays a sand sheet and a sea's edges thin out; 0..255)
+  {
+    const f = Float64Array.from(dunes);
+    smoothField(G, f, 3);
+    for (let c = 0; c < G.n; c++) dunes[c] = Math.round(255 * Math.min(1, f[c]));
   }
   // soil and groundwater (soil.js): dust for loess from the deserts and the ice's edges
   const dust = new Uint8Array(G.n), net = new Float64Array(G.n), tNow = new Float64Array(G.n);

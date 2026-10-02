@@ -19,8 +19,9 @@ import { RefineReader, TileSet } from './refine.js';
 import { MT } from '../tileshape.js';
 import * as dm from '../../core/dmath.js';
 import { Noise3 } from '../../core/noise.js';
+import { dunePatches } from '../dunes.js';
 
-export const SIM_VERSION = 7;
+export const SIM_VERSION = 8;
 
 // a world's grid size: maxN for an Earth-sized one, finer cells don't help a small one
 // (N ~ sqrt(radius): Mars ~210, the Moon ~150, a moonlet 64)
@@ -72,6 +73,9 @@ export function packSnapshot(W, body) {
     for (let c = 0; c < n; c++) out.crat[c] = crat[c] > 1e-12 ? Math.max(1, Math.min(255, Math.round((dm.log(crat[c]) / dm.log(10) + 12) * 20))) : 0;
     out.crater = k;
   }
+  // sand seas (world.js: truly dry, sand to hand, gentle ground) and the dunes the wind builds
+  // in them (dunes.js: the same patches for every world, made once)
+  if (W.dunes && W.dunes.some((v) => v)) { out.dunes = Uint8Array.from(W.dunes); out.dunePatch = dunePatches(); }
   // an icy shell's cracks (barren.js crackShell): arcs, for each level to draw its ridges
   if (W.lineae) out.lineae = W.lineae.map((a) => ({ pole: a.pole.slice(), u: a.u.slice(), v: a.v.slice(), start: a.start, len: a.len, H: a.H }));
   if (W.climate && W.Gc) {
@@ -93,7 +97,7 @@ export function packSnapshot(W, body) {
 
 // the arrays a snapshot carries (for transfer lists and caching)
 export function snapshotBuffers(s) {
-  return ['h', 'water', 'rock', 'ice', 'river', 'melt', 'relief', 'rcv', 'Tsea', 'P', 'cover', 'forest', 'open', 'cloud', 'cloudPx', 'crat'].filter((k) => s[k]).map((k) => s[k].buffer);
+  return ['h', 'water', 'rock', 'ice', 'river', 'melt', 'relief', 'rcv', 'Tsea', 'P', 'cover', 'forest', 'open', 'cloud', 'cloudPx', 'crat', 'dunes'].filter((k) => s[k]).map((k) => s[k].buffer);
 }
 
 // reads a snapshot at any direction
@@ -256,6 +260,15 @@ export class SnapshotSampler {
   // the climate grid's
   Tsea(x, y, z) { return this.Gc ? this.Gc.sample(this.s.Tsea, this._d(x, y, z), this.uv) : null; }
   rain(x, y, z) { return this.Gc ? this.Gc.sample(this.s.P, this._d(x, y, z), this.uv) : null; }
+  // how much of a sand sea it is there (0..1: its cells blended, so the edges thin out)
+  duneMask(x, y, z) {
+    if (!this.s.dunes) return 0;
+    const c = this._c16 || (this._c16 = new Int32Array(16)), w = this._w16 || (this._w16 = new Float64Array(16)), f = this.s.dunes;
+    this.G.corners16(this._d(x, y, z), c, w, this.uv);
+    let s = 0;
+    for (let k = 0; k < 16; k++) s += f[c[k]] * w[k];
+    return s / 255;
+  }
   // the crater record there (craters.js): N(>= D) per m^2 is this / D^2 (D in m as drawn)
   crat(x, y, z) { const q = this.s.crat ? this.s.crat[this.G.cellAt(x, y, z)] : 0; return q ? dm.pow(10, q / 20 - 12) : 0; }
   cover(x, y, z) { return this.Gc && this.s.cover ? this.Gc.sample(this.s.cover, this._d(x, y, z), this.uv) : 0; }

@@ -82,11 +82,18 @@ surveying many worlds; bit-exact across runs and clients, not across revisions):
 - **Refinement's start:** the world sim's surface read as a cubic B-spline (no bilinear facets, no
   stair-stepped one-cell valleys); the world grid's samplers read across face edges (no seams).
 - **Determinism sweep:** Math.hypot/exp/sin/log/asin in generation replaced by dmath.
+- **Dunes (`src/gen/dunes.js`):** Werner's slab model (lift, hop downwind, settle, lee shadow,
+  avalanche) run on two periodic patches (barchans; transverse ridges), once a process, carried
+  in desert worlds' snapshots. The sampler lays them over the world sim's sand seas (snapshot
+  `dunes`, smoothed so lone sandy cells stay sheets), turned to the trades / westerlies / the
+  substellar wind, shifted cell to cell so the repeat doesn't line up, faded in by resolution.
+- **Bare airless rock:** snow needs water (a water cycle or an ice inventory); maria are basalt.
 - **Survey tool:** `node tools/survey.mjs --out DIR --cache DIR SEED[:body] ...` writes each world's
   map and its landmarks at 400/60/12 km; the GPU check page takes `?seed=&body=` (runs the sim).
 
 Open:
-- **Desert landforms:** dunes, wadis and mesas at tile scales (flat featureless deserts now).
+- **Desert landforms:** dunes are in (below); wadis and mesas (the world sim marks mesa
+  country) still to draw.
 - **Big rivers:** drawn from the world sim's lines, not the tiles' drainage; hard to see under snow.
 - **Drainage pattern:** D8-straight parallel gullies on even slopes (MFD routing would help).
 - **Chaos terrain:** icy chaos is a flat matrix; its rafts should be drawn by the finer levels.

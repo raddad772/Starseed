@@ -354,7 +354,7 @@ export function findFeatures(G, h, opts = {}) {
     }
     return res.sort((a, b) => b.areaKm2 - a.areaKm2).slice(0, top);
   };
-  if (opts.dunes) out.duneSeas = regionsOf(opts.dunes, 'dune sea');
+  if (opts.dunes) out.duneSeas = regionsOf(opts.dunes.map((v) => (v > 127 ? 1 : 0)), 'dune sea');
   if (opts.mesas) out.mesaCountry = regionsOf(opts.mesas, 'mesa country');
   if (opts.soil) out.wetlands = regionsOf(opts.soil.wet, 'wetland');
   if (opts.drowned) out.drownedValleys = regionsOf(opts.drowned, 'drowned valley');
