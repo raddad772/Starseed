@@ -98,6 +98,8 @@ export function worldSim(body, star, opts = {}) {
   const Et = new Erosion(Gt, ht, { sea, K: 3e-6, rain: rainT, m: 0.45, kd: 1 });
   for (let k = 0; k < myr / tdt; k++) {
     Et.rainK = H.at(myr - k * tdt, 'rain') || 0.05; // the climate then, vs now
+    Et.bare = !plantsAt(H, myr - k * tdt);           // no land plants yet: nothing holds the soil
+    Et.veg = Et.bare ? null : vegFrom(rainT, Et.rainK, Et.veg);
     T.stepEroded(tdt, Et);
     if (opts.onPlateStep) opts.onPlateStep(T, ht, k * tdt);
   }
@@ -125,6 +127,8 @@ export function worldSim(body, star, opts = {}) {
   for (let k = 0; k < steps; k++) {
     Ef.step(dt / 1e6, 6 * G.spacing / 1000, (c, dh) => { h[c] += h[c] < 0 ? dh * 0.5 : dh; if (dh < 0) lith.erode(c, -dh); else lith.deposit(c, dh, ROCK.regolith); }, k * dt / 1e6);
     E.rainK = H.at((steps - k) * dt / 1e6, 'rain') || 0.05;
+    E.bare = !plantsAt(H, (steps - k) * dt / 1e6);
+    E.veg = E.bare ? null : vegFrom(rain, E.rainK, E.veg);
     lith.kField(1e-5, E.K);               // each place wears as its exposed rock does
     // (crust can't hold mountains past ~9 km on an Earth: uplift fades out near the limit)
     for (let c = 0; c < G.n; c++) E.U[c] = U[c] * Math.max(0, Math.min(1, (hMax - h[c]) / (0.15 * hMax)));
@@ -146,7 +150,9 @@ export function worldSim(body, star, opts = {}) {
   E.findBase(); E.route(); E.drain();
   const volcanoes = T.hot.map((v) => ({ ...latLonOf(v.at), hotspot: true }));
   log(`ice: up to ${iceMax} cells covered; ${ice.everIce.reduce((a, b) => a + b, 0)} cells ever glaciated`);
-  return Object.assign(out, { h, h0, E, Gt, ht, tect: T, impacts: Ef, craters: T.impacts.events.concat(Ef.events), volcanoes, lith, rock: lith.exposed(), glaciers: ice });
+  // how rivers run now: meandering where plants hold the banks, braided on bare ground
+  out.riverStyle = plantsAt(H, 0) ? 'meandering' : 'braided';
+  return Object.assign(out, { h, h0, E, Gt, ht, tect: T, impacts: Ef, craters: T.impacts.events.concat(Ef.events), volcanoes, lith, rock: lith.exposed(), glaciers: ice, veg: E.veg });
 }
 
 // Each fine cell's layers from the plates' record there: the basement (granite
@@ -187,6 +193,20 @@ function buildRock(G, Gt, T, rng) {
 }
 
 function hash(a, b) { let x = Math.imul(a ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul(b, 0xc2b2ae35); x ^= x >>> 13; x = Math.imul(x, 0x27d4eb2f); x ^= x >>> 16; return (x >>> 0) / 4294967296; }
+
+// were there land plants this many Myr ago (the history's life)?
+function plantsAt(H, agoMyr) {
+  const L = H.life;
+  if (!L || L.plants == null) return false;
+  const t = H.age - agoMyr / 1000;
+  return t >= L.plants && (L.extinct == null || t < L.extinct);
+}
+// plant cover from the rain: wetter, thicker (0..1)
+function vegFrom(rain, rainK, out) {
+  out = out && out.length === rain.length ? out : new Float32Array(rain.length);
+  for (let c = 0; c < rain.length; c++) out[c] = Math.min(1, Math.max(0, rain[c] * rainK * 1.3 - 0.1));
+  return out;
+}
 
 function latLonOf(d) { return { lat: Math.asin(Math.max(-1, Math.min(1, d[1]))) * 180 / Math.PI, lon: Math.atan2(d[2], d[0]) * 180 / Math.PI }; }
 

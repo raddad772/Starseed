@@ -58,7 +58,7 @@ let t0 = performance.now();
 if (init === 'auto') {
   const host = body.parentId > 0 ? sys.bodies[body.parentId] : null;
   const Wd = worldSim(body, sys.bodies[0], { N: +flag('N', 256), Nt, myr: +flag('myr', 300), steps: +flag('steps', 60), dt: +flag('dt', 2.5e5), host, log: (m) => console.log(m) });
-  console.log(`in ${ms(t0)}${Wd.stats ? ' ' + JSON.stringify(Wd.stats) : ''}`);
+  console.log(`in ${ms(t0)}${Wd.stats ? ' ' + JSON.stringify(Wd.stats) : ''}${Wd.riverStyle ? ', rivers ' + Wd.riverStyle : ''}`);
   const name = `${body.name}-auto-${Wd.path}`;
   let rgb;
   if (Wd.path === 'plates') rgb = render(Wd.G, Wd.h, Wd.E, W_);

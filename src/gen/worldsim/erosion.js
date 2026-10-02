@@ -161,6 +161,7 @@ export class Erosion {
     this.findBase();
     this.route();
     this.drain();
+    const veg = this.veg, chanA = (this.chanCells ?? 30) * G.spacing * G.spacing;
     this.nStep++;
     // incise, downstream first: h' = (h + dt U + f h'_r) / (1 + f)
     qs.fill(0);
@@ -173,7 +174,10 @@ export class Erosion {
       let hn;
       if (fill[c] - h0 > 0.5 || hu <= hr) hn = hu; // a lake bed, or below its outlet: nothing cut
       else {
-        const f = K[c] * dt * dm.pow(A[c], m) / rcvD[c];
+        // (life: with no land plants nothing holds the soil, so all of it wears faster;
+        // with them, plant cover shields the slopes (the channels still cut))
+        const life = this.bare ? 1.5 : (veg && A[c] < chanA ? 1 - 0.6 * veg[c] : 1);
+        const f = K[c] * life * dt * dm.pow(A[c], m) / rcvD[c];
         hn = (hu + f * hr) / (1 + f);
       }
       h[c] = hn;
