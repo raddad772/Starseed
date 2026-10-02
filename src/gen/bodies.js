@@ -289,10 +289,10 @@ function atmosphereRender(rng, b, atm, Tsurf, dustColor) {
   const scaleMax = Math.max(H, mieH * 0.6);
   // ground haze, at the game's scale (render/atmosphere.js uHaze): a thin layer that fades the
   // far ground as real air does across distances ten times the game's. More in thicker air, in
-  // damp air over seas and in dusty air over dry land; ~0.35 per game km at the datum on an Earth
+  // damp air over seas and in dusty air over dry land; ~0.25 per game km at the datum on an Earth
   // (the far lowlands and coasts lost in it, a mountain's summit standing out above), ~0.25
-  // optical depth straight up (a hazy day's)
-  const hazeK = P < 0.002 ? 0 : 4e-4 * dm.sqrt(Math.min(P, 3)) * (0.5 + 0.7 * seas + 0.4 * dry);
+  // optical depth straight up
+  const hazeK = P < 0.002 ? 0 : 3e-4 * dm.sqrt(Math.min(P, 3)) * (0.5 + 0.7 * seas + 0.4 * dry);
   const haze = [hazeK, 700 * dm.sqrt(9.81 / g), 0.1, 0];
   return {
     rayleigh, rayleighH: H, mie, mieAbs, mieH, mieG, haze,
