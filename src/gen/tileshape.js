@@ -4,4 +4,4 @@
 export const MT = 512;             // a tile's cells per side
 export const MARGIN = 48;          // cells simulated round it
 export const KEEP = MARGIN / 2;    // of which kept
-export const TILE_VERSION = 9;
+export const TILE_VERSION = 10;

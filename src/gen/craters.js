@@ -95,18 +95,21 @@ export function stampCraters(B, G, face, S, Dlo, Dhi, K, seed, R) {
     let ex = ref[1] * at[2] - ref[2] * at[1], ey = ref[2] * at[0] - ref[0] * at[2], ez = ref[0] * at[1] - ref[1] * at[0];
     const el = Math.sqrt(ex * ex + ey * ey + ez * ez); ex /= el; ey /= el; ez /= el;
     const nx = at[1] * ez - at[2] * ey, ny = at[2] * ex - at[0] * ez, nz = at[0] * ey - at[1] * ex;
-    // (the ground's mean in its cavity: where its floor settles)
-    let hs = 0, ws = 0;
+    // (the ground's level and slope over its cavity: where its floor settles, what its ejecta drape)
+    let ws = 0, sh = 0, sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0, sxh = 0, syh = 0;
     for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
-      const c = j * NG + i, x = dir[c * 3] - at[0], y = dir[c * 3 + 1] - at[1], z = dir[c * 3 + 2] - at[2];
-      if (Math.sqrt(x * x + y * y + z * z) * R < 0.8 * Rc) { hs += B[c]; ws++; }
+      const c = j * NG + i, dx = dir[c * 3], dy = dir[c * 3 + 1], dz = dir[c * 3 + 2], x = dx - at[0], y = dy - at[1], z = dz - at[2];
+      if (Math.sqrt(x * x + y * y + z * z) * R >= 0.8 * Rc) continue;
+      const px = (dx * ex + dy * ey + dz * ez) * R, py = (dx * nx + dy * ny + dz * nz) * R, hh = B[c];
+      ws++; sh += hh; sx += px; sy += py; sxx += px * px; syy += py * py; sxy += px * py; sxh += px * hh; syh += py * hh;
     }
-    const mean = ws ? hs / ws : 0;
+    const P = ws ? groundPlane(ws, sh, sx, sy, sxx, syy, sxy, sxh, syh) : null;
     for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
       const c = j * NG + i, dx = dir[c * 3], dy = dir[c * 3 + 1], dz = dir[c * 3 + 2], x = dx - at[0], y = dy - at[1], z = dz - at[2];
       const dist = Math.sqrt(x * x + y * y + z * z) * R;
       if (dist >= REACH * Rc * Fm.reach) continue;
-      B[c] += wear * craterDh(Fm, dist, dx * ex + dy * ey + dz * ez, dx * nx + dy * ny + dz * nz) + (ws ? excavation(Fm, dist) * (mean - B[c]) : 0);
+      const tx = dx * ex + dy * ey + dz * ez, ty = dx * nx + dy * ny + dz * nz;
+      B[c] += wear * craterDh(Fm, dist, tx, ty) + (P ? excavate(Fm, dist, B[c], P.mean, P.mean + P.gx * (tx * R - P.mx) + P.gy * (ty * R - P.my)) : 0);
     }
   }
   return list.length;
@@ -238,8 +241,26 @@ export function rayAt(F, dist, tx, ty) {
 
 // how fully a crater replaces the ground at dist m from its centre (0..1): all of it inside its
 // cavity (what stood there is thrown out; the floor level at the ground's mean), less up its
-// walls, none from its rim out (built on the ground, as its ejecta are)
+// walls; beyond its rim its ejecta blanket buries part of what was there (older small craters
+// and rough ground round a young crater muted), its own thickness built on top
 export function excavation(F, dist) { return 1 - dm.smoothstep(0.6, 0.95, dist / F.R); }
+// the change a crater makes to ground h at dist m from its centre, beyond its own shape: inside
+// its cavity the ground goes (to base, its floor's level); round its rim its ejecta bury part of
+// the ground's own relief (to plane: the ground's slope there, kept: a blanket drapes a hillside)
+export function excavate(F, dist, h, base, plane) {
+  const r = dist / F.R, wc = 1 - dm.smoothstep(0.6, 0.95, r), wb = 0.35 * (1 - dm.smoothstep(1.0, 2.2, r)) * (1 - wc);
+  return wc * (base - h) + wb * (plane - h);
+}
+// the ground's level and slope over a crater's cavity: from sums over cells there of h, x, y
+// (m in its tangent frame) and their products: { mean, gx, gy, mx, my } (plane(x, y) = mean +
+// gx (x - mx) + gy (y - my))
+export function groundPlane(n, sh, sx, sy, sxx, syy, sxy, sxh, syh) {
+  const mx = sx / n, my = sy / n, mean = sh / n;
+  const cxx = sxx / n - mx * mx, cyy = syy / n - my * my, cxy = sxy / n - mx * my, cxh = sxh / n - mx * mean, cyh = syh / n - my * mean;
+  const det = cxx * cyy - cxy * cxy;
+  if (!(det > 1e-9 * (cxx + cyy) * (cxx + cyy))) return { mean, gx: 0, gy: 0, mx, my };
+  return { mean, gx: (cxh * cyy - cyh * cxy) / det, gy: (cyh * cxx - cxh * cxy) / det, mx, my };
+}
 
 // (a table round the circle read between entries k and k + 1 by a Catmull-Rom cubic: no creases)
 function cubic(T, k, f) {
@@ -322,12 +343,18 @@ export class CraterField {
     for (let k = 0; k < m; k++) {
       const c = hit[ord[k] * 3], dist = hit[ord[k] * 3 + 1], amp = hit[ord[k] * 3 + 2];
       if (c.base !== c.base) {
-        // (its floor's level: the ground at its centre with the coarser octaves' craters on it)
+        // (its floor's level: the ground at its centre with the coarser octaves' craters on it;
+        // and the ground's slope there, half a radius each way: what its ejecta drape)
         this.depth++;
-        c.base = this.heightAt(c.at[0], c.at[1], c.at[2], 0, this.baseAt(c.at), c.band);
+        const at = c.at, q = 0.5 * c.F.R / this.R, g = (ox, oy) => {
+          const px = at[0] + ox * c.e[0] + oy * c.n[0], py = at[1] + ox * c.e[1] + oy * c.n[1], pz = at[2] + ox * c.e[2] + oy * c.n[2], l = Math.sqrt(px * px + py * py + pz * pz), d = [px / l, py / l, pz / l];
+          return this.heightAt(d[0], d[1], d[2], 0, this.baseAt(d), c.band);
+        };
+        c.base = g(0, 0); c.gx = (g(q, 0) - c.base) / (0.5 * c.F.R); c.gy = (g(0, q) - c.base) / (0.5 * c.F.R);
         this.depth--;
       }
-      h += amp * (c.wear * craterDh(c.F, dist, x * c.e[0] + y * c.e[1] + z * c.e[2], x * c.n[0] + y * c.n[1] + z * c.n[2]) + excavation(c.F, dist) * (c.base - h));
+      const tx = x * c.e[0] + y * c.e[1] + z * c.e[2], ty = x * c.n[0] + y * c.n[1] + z * c.n[2];
+      h += amp * (c.wear * craterDh(c.F, dist, tx, ty) + excavate(c.F, dist, h, c.base, c.base + (c.gx * tx + c.gy * ty) * this.R));
     }
     return h;
   }

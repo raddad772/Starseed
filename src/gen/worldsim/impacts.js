@@ -20,7 +20,7 @@
 
 import * as dm from '../../core/dmath.js';
 import { hashInts } from '../../core/rng.js';
-import { VEXAG, craterForm, craterDh, excavation } from '../craters.js';
+import { VEXAG, craterForm, craterDh, excavate, groundPlane } from '../craters.js';
 
 export { VEXAG };
 const MOON_G = 1.62;
@@ -116,20 +116,24 @@ export class Impacts {
     const c0 = G.cellAt(at[0], at[1], at[2]);
     // the cells within reach (breadth first from the centre), and the ground's mean in its cavity
     const seen = new Set([c0]), q = [c0], d = G.dir, cells = [], angs = [];
-    let hs = 0, ws = 0;
+    let ws = 0, sh = 0, sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0, sxh = 0, syh = 0;
     for (let i = 0; i < q.length; i++) {
       const c = q[i], dx = d[c * 3], dy = d[c * 3 + 1], dz = d[c * 3 + 2];
       const ang = dm.acos(Math.min(1, dx * at[0] + dy * at[1] + dz * at[2]));
       if (ang > reach && c !== c0) continue;
       cells.push(c); angs.push(ang);
-      if (h && ang * G.R < 0.8 * F.R) { hs += h[c]; ws++; }
+      if (h && ang * G.R < 0.8 * F.R) {
+        const px = (dx * ex + dy * ey + dz * ez) * G.R, py = (dx * nx + dy * ny + dz * nz) * G.R, hh = h[c];
+        ws++; sh += hh; sx += px; sy += py; sxx += px * px; syy += py * py; sxy += px * py; sxh += px * hh; syh += py * hh;
+      }
       for (let e = G.nStart[c]; e < G.nStart[c + 1]; e++) { const o = G.nbr[e]; if (!seen.has(o)) { seen.add(o); q.push(o); } }
     }
-    const mean = ws ? hs / ws : 0;
+    // (the ground's level and slope over its cavity: where its floor settles, what its ejecta drape)
+    const P = ws ? groundPlane(ws, sh, sx, sy, sxx, syy, sxy, sxh, syh) : null;
     for (let k = 0; k < cells.length; k++) {
       const c = cells[k], dx = d[c * 3], dy = d[c * 3 + 1], dz = d[c * 3 + 2], dist = angs[k] * G.R;
-      const dh = craterDh(F, dist, dx * ex + dy * ey + dz * ez, dx * nx + dy * ny + dz * nz);
-      apply(c, h && ws ? dh + excavation(F, dist) * (mean - h[c]) : dh);
+      const tx = dx * ex + dy * ey + dz * ez, ty = dx * nx + dy * ny + dz * nz, dh = craterDh(F, dist, tx, ty);
+      apply(c, P ? dh + excavate(F, dist, h[c], P.mean, P.mean + P.gx * (tx * G.R - P.mx) + P.gy * (ty * G.R - P.my)) : dh);
     }
   }
 }

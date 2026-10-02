@@ -21,7 +21,7 @@ import * as dm from '../../core/dmath.js';
 import { Noise3 } from '../../core/noise.js';
 import { dunePatches } from '../dunes.js';
 
-export const SIM_VERSION = 10;
+export const SIM_VERSION = 11;
 
 // a world's grid size: maxN for an Earth-sized one, finer cells don't help a small one
 // (N ~ sqrt(radius): Mars ~210, the Moon ~150, a moonlet 64)
