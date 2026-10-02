@@ -123,7 +123,10 @@ Open:
 - **Venus-like worlds:** after an overturn, lava flows (from vents, running to the lowest ground
   until spent: lobes and ponds) and coronae now; small shield fields and tesserae still wanted.
 - **Meanders:** big rivers wind only at the refinement's cell scale; a lateral-migration history
-  (or a simulated meander trace laid along each river) would give real meander belts.
+  (or a simulated meander trace laid along each river) would give real meander belts. A first
+  Howard-Knutson trace draft (scratchpad meanders-draft.js) ran away to sub-width wiggles; the
+  sine-generated curve (Langbein & Leopold, Kinoshita) is the robust alternative. Either needs
+  each river record's distance from its mouth (riverIndex: follow the receivers).
 - **Near-field loading:** the volume rings make the descent slow with few workers.
 - **Near-field seam:** fixed: the heightfield reaches 3% in under the volume's last ring, 0.4 m
   low (terrainMaterial.js NEAR_OVERLAP), so the dotted crack where they met is covered.
