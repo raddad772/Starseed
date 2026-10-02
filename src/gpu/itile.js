@@ -61,6 +61,7 @@ export function gridTables(T) {
   const { NG, n, sz } = T;
   const D = new Uint32Array(n * 8), W = new Uint16Array(n * 8), CM = new Uint32Array(n * 2), CE = new Int32Array(n * 2);
   const aunit = T.aref / 16;   // m^2 of drainage per unit of A
+  const c0 = T.K0 * dm.exp(0.45 * dm.log(aunit)) / (2048 * 16) * 65536;
   for (let j = 0; j < NG; j++) for (let i = 0; i < NG; i++) {
     const c = j * NG + i, s = sz[c];
     for (let k = 0; k < 8; k++) {
@@ -74,7 +75,7 @@ export function gridTables(T) {
     // f = K0 kh (A aunit)^0.45 / d(m), kh = KH / 2048, A^0.45 = APOW / 16
     for (let t = 0; t < 2; t++) {
       const d = (t ? s * 181 / 256 : s) / 1000;
-      let coef = T.K0 * dm.exp(0.45 * dm.log(aunit)) / (2048 * 16 * d) * 65536;   // f (x65536) per unit of KH APOW
+      let coef = c0 / d;   // f (x65536) per unit of KH APOW
       let e = 0;
       while (coef >= 1) { coef /= 2; e++; }
       while (coef < 0.5) { coef *= 2; e--; }

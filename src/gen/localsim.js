@@ -183,7 +183,7 @@ function tileGrid(face, ti, tj, L, R) {
   }
   const nStart = new Int32Array(n + 1), nbr = new Int32Array(n * 8), nDist = new Float64Array(n * 8), area = new Float64Array(n);
   let e = 0;
-  const dist = (a, b) => Math.hypot(dir[a * 3] - dir[b * 3], dir[a * 3 + 1] - dir[b * 3 + 1], dir[a * 3 + 2] - dir[b * 3 + 2]) * R;
+  const dist = (a, b) => { const x = dir[a * 3] - dir[b * 3], y = dir[a * 3 + 1] - dir[b * 3 + 1], z = dir[a * 3 + 2] - dir[b * 3 + 2]; return Math.sqrt(x * x + y * y + z * z) * R; };
   for (let j = 0; j < NG; j++) for (let i = 0; i < NG; i++) {
     const c = j * NG + i;
     nStart[c] = e;
@@ -271,20 +271,20 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
   }
   // the starting surface: the world sim's (region) or the region's (local); rain; the
   // world's standing water (the sea, its lakes), which stays where it is
-  const B = new Float64Array(n), rain = new Float64Array(n), X = new Float64Array(n), Y = new Float64Array(n);
+  const B = new Float64Array(n), rain = new Float64Array(n), X = new Float64Array(n), Y = new Float64Array(n), U = new Float64Array(n), V = new Float64Array(n);
   const wet = new Uint8Array(n), relC = new Float64Array(n), hs = gen.hScale;
   // (the relief over a cell of the level above, from the world sim's: relief grows with scale
   // about as its 0.7th power)
   const relK = rf ? dm.pow(Math.min(1, (pyr ? 4 * cell : S.G.spacing) / S.G.spacing), 0.7) : 1, dd = [0, 0, 0];
   for (let j = 0; j < NG; j++) for (let i = 0; i < NG; i++) {
     const c = j * NG + i, u = G.u0 + (i + 0.5) * G.du, v = G.v0 + (j + 0.5) * G.du;
-    X[c] = u * Mu; Y[c] = v * Mu;
+    X[c] = u * Mu; Y[c] = v * Mu; U[c] = u; V[c] = v;
     const dx = G.dir[c * 3], dy = G.dir[c * 3 + 1], dz = G.dir[c * 3 + 2];
     if (pyr) {
       // (the level above's surface, its water)
       dd[0] = dx; dd[1] = dy; dd[2] = dz;
       let hb;
-      if (parent.sample(dd)) {
+      if (parent.sampleUV(face, u, v) || parent.sample(dd)) {
         hb = parent.h;
         if (parent.lake > 0.5) wet[c] = 2; else if (parent.sea > 0.5 && hb < 0) wet[c] = 1;
       } else { hb = S.h(dx, dy, dz) * hs; if (hb < 0 && S.seaDist(dx, dy, dz) < 1) wet[c] = 1; }
@@ -340,7 +340,7 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
   const rockC = rf ? new Uint8Array(n) : null, rkOut = {};
   const readRock = () => {
     for (let c = 0; c < n; c++) {
-      if (pyr) { dd[0] = G.dir[c * 3]; dd[1] = G.dir[c * 3 + 1]; dd[2] = G.dir[c * 3 + 2]; rockC[c] = parent.sample(dd) ? parent.rockAt(h[c], rkOut) : S.rockAt(dd[0], dd[1], dd[2], h[c] / hs); }
+      if (pyr) { dd[0] = G.dir[c * 3]; dd[1] = G.dir[c * 3 + 1]; dd[2] = G.dir[c * 3 + 2]; rockC[c] = parent.sampleUV(face, U[c], V[c]) || parent.sample(dd) ? parent.rockAt(h[c], rkOut) : S.rockAt(dd[0], dd[1], dd[2], h[c] / hs); }
       else rockC[c] = S.rockAt(G.dir[c * 3], G.dir[c * 3 + 1], G.dir[c * 3 + 2], h[c] / hs);
     }
   };
@@ -389,10 +389,15 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
   {
     const RF = { shale: 0.3, sandstone: 2, limestone: 4, chalk: 5, basalt: 2, andesite: 1.2, alluvium: 1.5, 'quartz sand': 3, 'coral sand': 3, 'black sand': 3 };
     const rockF = ROCKS.map((r) => RF[r.name] ?? 1);
+    // ((1 / rain)^0.7 by a table over rain 0.3 .. 3, read between its entries: the same sums on
+    // every machine, without a pow a cell)
+    const RT = new Float64Array(272);
+    for (let k = 0; k < 272; k++) RT[k] = dm.pow(1 / (0.3 + k * 0.01), 0.7);
     for (let c = 0; c < n; c++) {
       const dx = G.dir[c * 3], dy = G.dir[c * 3 + 1], dz = G.dir[c * 3 + 2];
-      const rt = S ? S.s.rock[S.G.cellAt(dx, dy, dz)] : 0, relRaw = S ? S.relief(dx, dy, dz) * hs : 1000;
-      AcC[c] = opts.Ac ?? dm.clamp(3e4 * rockF[rt] * dm.pow(1 / Math.max(0.3, rain[c]), 0.7), 3e3, 1e6);
+      const rt = S ? S.s.rock[S.G.cellAt(dx, dy, dz)] : 0, relRaw = rf ? relC[c] / relK : S ? S.relief(dx, dy, dz) * hs : 1000;
+      const x = (Math.min(3, Math.max(0.3, rain[c])) - 0.3) * 100, k = Math.min(270, Math.floor(x)), rp = RT[k] + (RT[k + 1] - RT[k]) * (x - k);
+      AcC[c] = opts.Ac ?? dm.clamp(3e4 * rockF[rt] * rp, 3e3, 1e6);
       // the ground's roughness (Hurst exponent H; its surface's fractal dimension 3 - H): rough
       // where mountains are young and high, the rock hard and the climate dry; smoother where
       // the land is old and worn, soft, and wet enough for soil to creep
@@ -567,7 +572,7 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
       const DEP = new Set(['alluvium', 'salt', 'quartz sand', 'coral sand', 'black sand'].map((x) => ROCKS.findIndex((r) => r.name === x)));
       if (pyr) for (let c = 0; c < n; c++) {
         dd[0] = G.dir[c * 3]; dd[1] = G.dir[c * 3 + 1]; dd[2] = G.dir[c * 3 + 2];
-        if (parent.sample(dd)) rockC[c] = parent.rockAt(h[c], rkOut, dm.clamp(hl[c] / (1.5 * Math.sqrt(rl[c]) + 0.05), -1, 1), DEP);
+        if (parent.sampleUV(face, U[c], V[c]) || parent.sample(dd)) rockC[c] = parent.rockAt(h[c], rkOut, dm.clamp(hl[c] / (1.5 * Math.sqrt(rl[c]) + 0.05), -1, 1), DEP);
       }
       else {
       const cc = new Int32Array(4), ww = new Float64Array(4), uv = { face: 0, u: 0, v: 0 }, dd = [0, 0, 0], sr = S.s.rock, sh = S.s.h;

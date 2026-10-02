@@ -81,50 +81,60 @@ export class RefineReader {
   }
 
   sample(d) {
-    const R = this.src, n = R.n, s = this.s, du = this.du, reach = (KEEP + 1) * du;
-    const bx = this.bx, by = this.by, cx = this.cx, cy = this.cy;
-    let wsum = 0, hsum = 0, ssum = 0, lsum = 0, wbest = -1;
+    this._begin();
     for (let f = 0; f < 6; f++) {
       const F = FACES[f], dn = d[0] * F.N[0] + d[1] * F.N[1] + d[2] * F.N[2];
       if (dn < 0.5) continue;
-      const u = dm.atan((d[0] * F.U[0] + d[1] * F.U[1] + d[2] * F.U[2]) / dn) / QPI;
-      const v = dm.atan((d[0] * F.V[0] + d[1] * F.V[1] + d[2] * F.V[2]) / dn) / QPI;
-      if (u < -1 - reach || u > 1 + reach || v < -1 - reach || v > 1 + reach) continue;
-      const i0 = Math.floor((u + 1) / s), j0 = Math.floor((v + 1) / s);
-      for (let tj = j0 - 1; tj <= j0 + 1; tj++) {
-        if (tj < 0 || tj >= n) continue;
-        const fj = (v - (-1 + tj * s - KEEP * du)) / du - 0.5;
-        if (fj < 1 || fj > K - 3) continue;
-        for (let ti = i0 - 1; ti <= i0 + 1; ti++) {
-          if (ti < 0 || ti >= n) continue;
-          const fi = (u - (-1 + ti * s - KEEP * du)) / du - 0.5;
-          if (fi < 1 || fi > K - 3) continue;
-          const T = (f * n + tj) * n + ti;
-          let H, RW, off;
-          if (this.sparse) { const t = R.tiles.get(T); if (!t) continue; H = t.h; RW = t.rw; off = 0; }
-          else { if (R.done && !R.done[T]) continue; H = R.h; RW = R.rw; off = T * KK; }
-          // (each tile weighs least at the edge of its kept square, fully a margin's width in)
-          const w = Math.min(1, (Math.min(fi, K - 1 - fi) - 1) / (2 * KEEP)) * Math.min(1, (Math.min(fj, K - 1 - fj) - 1) / (2 * KEEP));
-          if (w <= 0) continue;
-          const i = Math.floor(fi), j = Math.floor(fj);
-          bspline(fi - i, bx); bspline(fj - j, by); catrom(fi - i, cx); catrom(fj - j, cy);
-          let hh = 0, sea = 0, lake = 0;
-          for (let q = 0; q < 4; q++) {
-            const row = off + (j - 1 + q) * K + i - 1;
-            for (let p = 0; p < 4; p++) {
-              hh += cx[p] * cy[q] * H[row + p];
-              const wt = RW[row + p] >> 5;
-              if (wt === 1) sea += bx[p] * by[q]; else if (wt === 2) lake += bx[p] * by[q];
-            }
+      this._face(f, dm.atan((d[0] * F.U[0] + d[1] * F.U[1] + d[2] * F.U[2]) / dn) / QPI, dm.atan((d[0] * F.V[0] + d[1] * F.V[1] + d[2] * F.V[2]) / dn) / QPI);
+    }
+    return this._end();
+  }
+  // the same at a face's (u, v) (it may run a little past the face's edge, into its tiles'
+  // margins), reading only that face's tiles: for a grid laid out on the face (a tile's cells)
+  sampleUV(f, u, v) { this._begin(); this._face(f, u, v); return this._end(); }
+
+  _begin() { this._ws = 0; this._hs = 0; this._ss = 0; this._ls = 0; this._wb = -1; }
+  _end() {
+    if (this._ws <= 0) { this.w = 0; return false; }
+    const ws = this._ws;
+    this.h = this._hs / ws; this.sea = this._ss / ws; this.lake = this._ls / ws; this.w = Math.min(1, ws);
+    return true;
+  }
+  _face(f, u, v) {
+    const R = this.src, n = R.n, s = this.s, du = this.du, reach = (KEEP + 1) * du;
+    if (u < -1 - reach || u > 1 + reach || v < -1 - reach || v > 1 + reach) return;
+    const bx = this.bx, by = this.by, cx = this.cx, cy = this.cy;
+    const i0 = Math.floor((u + 1) / s), j0 = Math.floor((v + 1) / s);
+    for (let tj = j0 - 1; tj <= j0 + 1; tj++) {
+      if (tj < 0 || tj >= n) continue;
+      const fj = (v - (-1 + tj * s - KEEP * du)) / du - 0.5;
+      if (fj < 1 || fj > K - 3) continue;
+      for (let ti = i0 - 1; ti <= i0 + 1; ti++) {
+        if (ti < 0 || ti >= n) continue;
+        const fi = (u - (-1 + ti * s - KEEP * du)) / du - 0.5;
+        if (fi < 1 || fi > K - 3) continue;
+        const T = (f * n + tj) * n + ti;
+        let H, RW, off;
+        if (this.sparse) { const t = R.tiles.get(T); if (!t) continue; H = t.h; RW = t.rw; off = 0; }
+        else { if (R.done && !R.done[T]) continue; H = R.h; RW = R.rw; off = T * KK; }
+        // (each tile weighs least at the edge of its kept square, fully a margin's width in)
+        const w = Math.min(1, (Math.min(fi, K - 1 - fi) - 1) / (2 * KEEP)) * Math.min(1, (Math.min(fj, K - 1 - fj) - 1) / (2 * KEEP));
+        if (w <= 0) continue;
+        const i = Math.floor(fi), j = Math.floor(fj);
+        bspline(fi - i, bx); bspline(fj - j, by); catrom(fi - i, cx); catrom(fj - j, cy);
+        let hh = 0, sea = 0, lake = 0;
+        for (let q = 0; q < 4; q++) {
+          const row = off + (j - 1 + q) * K + i - 1;
+          for (let p = 0; p < 4; p++) {
+            hh += cx[p] * cy[q] * H[row + p];
+            const wt = RW[row + p] >> 5;
+            if (wt === 1) sea += bx[p] * by[q]; else if (wt === 2) lake += bx[p] * by[q];
           }
-          wsum += w; hsum += w * hh; ssum += w * sea; lsum += w * lake;
-          if (w > wbest) { wbest = w; this.tH = H; this.tRW = RW; this.tOff = off; this.ri = i; this.rj = j; this.rbx.set(bx); this.rby.set(by); }
         }
+        this._ws += w; this._hs += w * hh; this._ss += w * sea; this._ls += w * lake;
+        if (w > this._wb) { this._wb = w; this.tH = H; this.tRW = RW; this.tOff = off; this.ri = i; this.rj = j; this.rbx.set(bx); this.rby.set(by); }
       }
     }
-    if (wsum <= 0) { this.w = 0; return false; }
-    this.h = hsum / wsum; this.sea = ssum / wsum; this.lake = lsum / wsum; this.w = Math.min(1, wsum);
-    return true;
   }
 
   // the rock at the last sample, for ground standing at h (m): each rock among the cells round

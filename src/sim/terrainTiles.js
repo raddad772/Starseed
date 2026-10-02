@@ -21,7 +21,8 @@ export class TerrainTiles {
   constructor(game) {
     this.game = game;
     this.pending = new Set();   // keys being made
-    this.missing = 0;           // tiles wanted and not here yet (the descent waits for them)
+    this.missing = 0;           // tiles wanted and not here yet
+    this.missingCore = 0;       // of them, those under the camera (the descent waits for these)
     this.t = 1;
     this._p = null; this._uv = { face: 0, u: 0, v: 0 }; this._d = [0, 0, 0];
   }
@@ -42,7 +43,7 @@ export class TerrainTiles {
     this.t += dt;
     if (!ws || (!force && this.t < 0.25)) return;
     this.t = 0;
-    this.missing = 0;
+    this.missing = 0; this.missingCore = 0;
     const b = g.universe.dominantBody(g.camPos);
     if (!b || !b.solid || !b.data.terrain) return;
     const st = ws.refine.get(b.data.id);
@@ -73,8 +74,9 @@ export class TerrainTiles {
       const set = pyr.get(t.L), T = (uv.face * (1 << t.L) + t.tj) * (1 << t.L) + t.ti;
       if (set && set.tiles.has(T)) continue;
       this.missing++;
+      if (t.dist === 0) this.missingCore++;
       const key = this.key(b.data.id, t.L, uv.face, t.ti, t.tj);
-      if (this.pending.has(key) || this.pending.size >= 2) continue;
+      if (this.pending.has(key) || this.pending.size >= 3) continue;
       // its parent: the refinement, or the tile of the level above it lies in (made first)
       let parents = [];
       if (t.L > R.L + 2) {

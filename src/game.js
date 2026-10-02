@@ -1626,7 +1626,7 @@ export class Game {
     const deepEnough = space || !terr || deepest >= terr.maxLevel - 1;
     const near = space ? 1 : this.nearBuilt(terr);
     // (the terrain pyramid's tiles under the landing spot, made before the ground's drawn)
-    const tilesIn = !this.tiles || this.tiles.missing === 0 || this.loadTimer > 30;
+    const tilesIn = !this.tiles || this.tiles.missingCore === 0 || this.loadTimer > 30;
     if (pending === 0 && deepEnough && near >= 1 && tilesIn) this.settleTime += dt; else this.settleTime = 0;
     // progress: on the surface the terrain refines level by level under you
     // (later levels take longer: cubed to keep pace with the clock), then the

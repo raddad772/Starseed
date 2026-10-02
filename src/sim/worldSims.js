@@ -73,9 +73,10 @@ export class WorldSims {
     const cores = (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 4;
     const nw = Math.max(1, Math.min(4, opts.workers || (cores >= 8 ? 2 : 1)));
     this.workers = [];
-    // (the sims' workers, and one for the GPU's tiles: the terrain pyramid near the player and
-    // the refinements, never waiting behind a world's minute-long sim)
-    for (let i = 0; i <= nw; i++) {
+    // (the sims' workers, and two for the GPU's tiles: the terrain pyramid near the player and
+    // the refinements, never waiting behind a world's minute-long sim; two, so one's CPU work
+    // overlaps the other's on the GPU)
+    for (let i = 0; i < nw + 2; i++) {
       const w = { worker: new Worker(new URL('../workers/worldsimWorker.js', import.meta.url), { type: 'module' }), job: null, role: i < nw ? 'sim' : 'tile' };
       w.worker.onmessage = (e) => this._onMessage(w, e.data);
       w.worker.onerror = (e) => {
