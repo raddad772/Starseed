@@ -819,10 +819,12 @@ Opast transect across a big river: water over ~1.4 km, the bed 30-40 m under the
 log lines).
 
 **Since then (2026-10-02):**
-- **Finer sims for visited worlds:** a world a player is on or near (within half its radius) gets
-  an N 288 sim (`?simHiN=`, 0 for none), queued after every world's first. It is a different run of
-  the same history, so it goes in only once nobody is near that world, and loads from the cache
-  after that.
+- **One sim per world (Dave: "We don't want worlds to change while we're away"):** each world's grid
+  is sized by its radius (`simNFor`: N 288 for an Earth, ~210 for a Mars, 64 for a moonlet;
+  `?simN=` sets the Earth figure). The earlier refinement, a finer re-run swapped in after you left,
+  is gone: a different run of the same history is a different world. Snapshots are 16 bytes a cell
+  (u16 ice and relief, byte river and melt, a one-byte drainage slot; SIM_VERSION 5). LAB-271's 13
+  worlds take ~75 MB per copy and ~2.5 min with two workers.
 - **Parallel sims:** two at once on 8+ cores (`?simWorkers=`; ~0.4 GB each at N 192).
 - **Lighter samplers:** snapshot samplers use `GridLite` (centres from tabulated tangents,
   neighbours on demand; a SimGrid held ~130 bytes a cell per body in every terrain worker). Samples

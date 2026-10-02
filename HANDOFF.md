@@ -6,8 +6,8 @@ Dave is play-testing and giving feedback in short bursts.
 
 **Latest (2026-10-02):**
 - **Water:** lakes and rivers are real water (you wade and swim; your eyes stay above the water).
-- **Simulation:** finer sims for visited worlds, swapped in once you leave; two sims in parallel;
-  a world-sim progress line.
+- **Simulation:** one sim per world, sized by radius (N 288 for an Earth; worlds never change once
+  made); two sims in parallel; a world-sim progress line.
 - **Render:** smoothed, warped cloud maps; aurora and airglow from each world's field, wind and air.
 - **World features:** tuyas where hotspots erupted under ice; flora from the life map; moons'
   eclipses in their climate.
