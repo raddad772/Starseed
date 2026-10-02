@@ -23,7 +23,7 @@ import { TerrainGenerator, S_LEN, S_H, S_MOIST, S_TEMP } from '../terrain.js';
 import { SimGrid } from './grid.js';
 import { Erosion } from './erosion.js';
 import { Tectonics, blur, smoothField } from './tectonics.js';
-import { Impacts, craterFloor, worldCell, WORLD_CELLS } from './impacts.js';
+import { Impacts, craterFloor, worldCell, WORLD_CELLS, airCut } from './impacts.js';
 import { barrenWorld } from './barren.js';
 import { stagnantWorld } from './stagnant.js';
 import { Lithology, R as ROCK, marineRock } from './lithology.js';
@@ -107,7 +107,7 @@ export function worldSim(body, star, opts = {}) {
     const W = barrenWorld(G, { rng: rng.fork('barren'), body, age, scale, volcEnd: 1 + 15 * dm.pow(body.massEarth, 0.6), rate, spike, resurfaceAt, resurfaceShare, crack });
     const melt = stampFresh(G, W.h, H, body, scale);
     // (the craters below its grid's: their record by place, for the finer levels to draw)
-    const crater = { crat: W.crat, g: body.gravity, scale, Dw: W.dMin * 1000, Dair: 0.03 * (body.atmosphere ? body.atmosphere.pressure : 0) * 1000 * scale };
+    const crater = { crat: W.crat, g: body.gravity, scale, Dw: W.dMin * 1000, Dair: airCut(body.atmosphere ? body.atmosphere.pressure : 0, body.gravity) * 1000 * scale };
     // its rock: the old crust, the dark lava of the maria, an icy shell's refrozen plains
     const rock = new Uint8Array(G.n), BAS = ROCK.basalt, ICE = ROCK.ice;
     for (let c = 0; c < G.n; c++) rock[c] = W.mare[c] > 0.5 ? BAS : W.plains[c] > 0.5 && icy ? ICE : 0;
@@ -124,7 +124,7 @@ export function worldSim(body, star, opts = {}) {
     const S = stagnantWorld(G, { rng: rng.fork('stagnant'), body, age, scale, wet, seaFrac, rainK0, tier: H.tier, volcEnd: 1 + 15 * dm.pow(body.massEarth, 0.6), rate, spike, resurfaceAt, resurfaceShare });
     const volcanoes = S.shields.map((v) => ({ ...latLonOf(v.at), heightM: v.H }));
     const melt = stampFresh(G, S.h, H, body, scale);
-    const crater = { crat: S.crat, g: body.gravity, scale, Dw: S.dMin * 1000, Dair: 0.03 * (body.atmosphere ? body.atmosphere.pressure : 0) * 1000 * scale };
+    const crater = { crat: S.crat, g: body.gravity, scale, Dw: S.dMin * 1000, Dair: airCut(body.atmosphere ? body.atmosphere.pressure : 0, body.gravity) * 1000 * scale };
     // its rock: the old crust, and lava where the volcanoes and floods laid it
     const rock = new Uint8Array(G.n), BAS = ROCK.basalt;
     for (let c = 0; c < G.n; c++) rock[c] = S.volc[c] > 0.5 ? BAS : 0;

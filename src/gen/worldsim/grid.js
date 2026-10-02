@@ -163,7 +163,7 @@ export class SimGrid {
     const x = (uv.u + 1) / 2 * N - 0.5, y = (uv.v + 1) / 2 * N - 0.5;
     const i0 = Math.floor(x), j0 = Math.floor(y), fx = x - i0, fy = y - j0, base = uv.face * N * N;
     const bx = this._bx || (this._bx = new Float64Array(4)), by = this._by || (this._by = new Float64Array(4));
-    for (const [t, o] of [[fx, bx], [fy, by]]) { const u = 1 - t, t2 = t * t, t3 = t2 * t; o[0] = u * u * u / 6; o[1] = (3 * t3 - 6 * t2 + 4) / 6; o[2] = (-3 * t3 + 3 * t2 + 3 * t + 1) / 6; o[3] = t3 / 6; }
+    bspline4(fx, bx); bspline4(fy, by);
     if (i0 >= 1 && j0 >= 1 && i0 < N - 2 && j0 < N - 2) {
       for (let q = 0; q < 4; q++) for (let p = 0; p < 4; p++) { c[q * 4 + p] = base + (j0 - 1 + q) * N + i0 - 1 + p; w[q * 4 + p] = bx[p] * by[q]; }
     } else {
@@ -172,6 +172,9 @@ export class SimGrid {
     }
   }
 }
+
+// (the cubic B-spline's four weights at t into o)
+function bspline4(t, o) { const u = 1 - t, t2 = t * t, t3 = t2 * t; o[0] = u * u * u / 6; o[1] = (3 * t3 - 6 * t2 + 4) / 6; o[2] = (-3 * t3 + 3 * t2 + 3 * t + 1) / 6; o[3] = t3 / 6; }
 
 // The same grid for reading a finished simulation (the game's samplers, one per body in
 // every terrain worker): the same cells, mapping and sampling, with each cell's centre and

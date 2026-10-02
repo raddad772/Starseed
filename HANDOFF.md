@@ -111,6 +111,30 @@ surveying many worlds; bit-exact across runs and clients, not across revisions):
   fifth in a step at 3 m deep, so a lake near 3 m deep showed every small change of its bed as a
   hard edge (a pyramid tile's bed sits ~1.4 m off its parent's: talus off the shores; and the
   bed's own fine relief, as sharp blotches). Now the dimming fades in over 0-3 m.
+- **Thick air and craters (SIM 16, TILE 16):** the air's cut goes by its mass per square metre
+  (pressure over gravity: `impacts.js airCut`, ~30 m real under Earth's air, ~1.3 km on Moadeal),
+  and above the cut it lets through only a share (`craters.js airKeep`: 1 - exp(-(D/10 Dair)^2),
+  ~6% of the craters 3 cuts and up, a third of those 10 cuts and up), in the world sim's draws
+  and the lattice's alike. A stagnant-lid overturn now resets the crater record of the highlands
+  it leaves standing too (crumpled, as Venus's tesserae: they keep 150 Myr more than the plains);
+  they kept the whole 4.5 Gyr record, so Moadeal's highlands were saturated with craters.
+- **Glaciers are a surface (S_ICE):** the ice was paint on the bed (every valley under an ice
+  cap showing, its edge a smooth curve across the land). Now the ice fills the ground's lows to a
+  level as much as it holds (`terrain.js`, after everything else): thin ice lies in the valleys
+  on the ground's own shape (tongues down them, ridges bare); ice thicker than the relief lifts
+  the surface into a smooth dome, ridges standing through; over the sea it floats (a tenth above
+  the water); no rivers or lakes under 30+ m of it. The snapshot's ice is the sim's smoothed
+  as a surface (6 passes of the bed plus ice over the ice; the sim's flux-based ice is thickest
+  along its flow lines, a ridge on each otherwise) and capped near its edge by Nye's plastic
+  profile (H^2 = 2 tau/(rho g) x; it was 3.5 km thick at the ice front). Checked on Opast's
+  sheet (71N 102E) and a mountain ice field (-45, -107).
+- **Sampler speed (bit-identical heights):** `faceUVFromDir` keeps its last answer (a sample
+  reads many fields at one point; atan was 12%); `corners16` no longer allocates; the
+  refinement's river curves and the great rivers' channel segments (groups of eight) are culled
+  by bounding circles; the river's wet ground goes in the sample (S_WET) instead of a second
+  river lookup in the shading. Dorith with its refinement: 21 -> 8.8 us a sample at 10 m cells,
+  14.5 -> 7.1 at 100 m (scratchpad `sbench.mjs`; `hashcheck.mjs` compares heights between trees).
+- **Survey maps were lit from the south-east** (bowls read as domes); now from the north-west.
 - **Snow by aspect:** a slope facing the pole (away from the star on a locked world) shades as
   up to 8 C colder, one facing the sun as warmer (none at the equator): the snowline runs down
   the shady sides of ridges and pulls back from the sunny ones. The chunk and volume builders

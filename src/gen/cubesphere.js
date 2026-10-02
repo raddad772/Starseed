@@ -31,7 +31,10 @@ export function dirFromFaceUV(f, u, v, out) {
 }
 
 // Unit direction -> { face, u, v } (grid coordinates in [-1,1])
+// (the last direction's answer kept: a sample reads many fields at the same point)
+let _lx = NaN, _ly = NaN, _lz = NaN, _lf = 0, _lu = 0, _lv = 0;
 export function faceUVFromDir(d, out) {
+  if (d[0] === _lx && d[1] === _ly && d[2] === _lz) { out.face = _lf; out.u = _lu; out.v = _lv; return out; }
   const ax = Math.abs(d[0]), ay = Math.abs(d[1]), az = Math.abs(d[2]);
   let f;
   if (ax >= ay && ax >= az) f = d[0] >= 0 ? 0 : 1;
@@ -44,6 +47,7 @@ export function faceUVFromDir(d, out) {
   out.face = f;
   out.u = dm.clamp(dm.atan(a) / QPI, -1, 1);
   out.v = dm.clamp(dm.atan(b) / QPI, -1, 1);
+  _lx = d[0]; _ly = d[1]; _lz = d[2]; _lf = f; _lu = out.u; _lv = out.v;
   return out;
 }
 

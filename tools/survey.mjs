@@ -135,7 +135,7 @@ for (const w of worlds) {
 function shadePixel(gen, s, gx, gy, b, col, mat, rgb, o) {
   gen.shade(s, Math.hypot(gx, gy), col, mat);
   const sea = s[S_H] < 0 && b.terrain.liquid && b.terrain.liquid !== 'lava';
-  const nl = Math.hypot(gx, gy, 1), sh = sea ? 1 : Math.max(0.12, (-gx * 0.5 + gy * 0.5 + 0.7) / nl / 0.86);
+  const nl = Math.hypot(gx, gy, 1), sh = sea ? 1 : Math.max(0.12, (gx * 0.5 - gy * 0.5 + 0.7) / nl / 0.86);
   const g = (v) => Math.round(255 * Math.min(1, Math.pow(Math.max(0, v * 0.85 * sh), 1 / 2.2)));
   rgb[o] = g(col[0]); rgb[o + 1] = g(col[1]); rgb[o + 2] = g(col[2]);
 }

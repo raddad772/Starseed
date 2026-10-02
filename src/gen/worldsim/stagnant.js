@@ -88,7 +88,9 @@ export function stagnantWorld(G, opts) {
     if (canyon && t > canyon.t && !canyon.done) { carveCanyon(G, h, canyon); canyon.done = true; }
     if (opts.resurfaceAt != null && !stats.resurfaced && t >= opts.resurfaceAt) {
       const level = resurface(G, h, opts.resurfaceShare ?? 0.75, volc);
-      for (let c = 0; c < n; c++) if (h[c] < level) since[c] = t;
+      // (the plains flooded; the highlands left standing crumpled in the same upheaval (tesserae),
+      // their old craters wrecked: they keep a little more than the plains, not the whole record)
+      for (let c = 0; c < n; c++) since[c] = h[c] < level ? t : Math.max(since[c], t - 0.15);
       stats.resurfaced = true;
     }
     // after an overturn the interior stays hot: lava keeps welling up over the new plains (flow

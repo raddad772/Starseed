@@ -21,7 +21,7 @@ import * as dm from '../../core/dmath.js';
 import { Noise3 } from '../../core/noise.js';
 import { dunePatches } from '../dunes.js';
 
-export const SIM_VERSION = 15;
+export const SIM_VERSION = 16;
 
 // a world's grid size: maxN for an Earth-sized one, finer cells don't help a small one
 // (N ~ sqrt(radius): Mars ~210, the Moon ~150, a moonlet 64)
@@ -39,7 +39,33 @@ export function packSnapshot(W, body) {
   const rock = W.rock ? Uint8Array.from(W.rock) : new Uint8Array(n);
   const u16 = (x) => Math.max(0, Math.min(65535, Math.round(x)));
   const ice = new Uint16Array(n);
-  if (W.glaciers) for (let c = 0; c < n; c++) ice[c] = u16(W.glaciers.ice[c]);
+  if (W.glaciers) {
+    // (the ice as its surface stands: smooth over a few cells, an ice sheet's surface being
+    // smooth over many times its thickness; the sim's ice, from the flux through each cell, is
+    // thickest along its flow lines, a ridge on each if drawn as it is. The bed and its ice
+    // averaged over the ice round each cell a few times, less the bed)
+    const gi = W.glaciers.ice;
+    let top = new Float64Array(n), t2 = new Float64Array(n);
+    // (and no thicker than ice stands so near its edge: Nye's plastic profile, H^2 = 2 (tau / rho
+    // g) x, x the real distance in from the nearest ground it leaves bare, a yield stress 100 kPa)
+    const hops = new Int32Array(n).fill(-1), q = new Int32Array(n);
+    let qn = 0;
+    for (let c = 0; c < n; c++) if (!(gi[c] > 0)) { hops[c] = 0; q[qn++] = c; }
+    for (let i = 0; i < qn; i++) { const c = q[i]; for (let e = G.nStart[c]; e < G.nStart[c + 1]; e++) { const o = G.nbr[e]; if (hops[o] < 0) { hops[o] = hops[c] + 1; q[qn++] = o; } } }
+    const scale = body.R && body.radiusM ? body.R / body.radiusM : 0.1, ty = 2 * 100e3 / (917 * (body.gravity || 9.81)) * G.spacing / scale;
+    const cap = (c) => hops[c] < 0 ? 1e9 : Math.sqrt(ty * (hops[c] - 0.5));
+    for (let c = 0; c < n; c++) top[c] = W.h[c] + Math.min(gi[c], cap(c));
+    for (let pass = 0; pass < 6; pass++) {
+      for (let c = 0; c < n; c++) {
+        if (!(gi[c] > 0)) { t2[c] = top[c]; continue; }
+        let s = 2 * top[c], w = 2;
+        for (let e = G.nStart[c]; e < G.nStart[c + 1]; e++) { const o = G.nbr[e]; if (gi[o] > 0) { s += top[o]; w++; } }
+        t2[c] = s / w;
+      }
+      const t = top; top = t2; t2 = t;
+    }
+    for (let c = 0; c < n; c++) if (gi[c] > 0) ice[c] = u16(Math.max(1, Math.min(top[c] - W.h[c], cap(c))));
+  }
   const river = new Uint8Array(n);
   if (W.E && W.E.A) {
     let amax = 0;
@@ -116,6 +142,9 @@ export class SnapshotSampler {
     this.Gc = s.Nc ? new GridLite(s.Nc, s.R) : null;
     this.nb = new Int32Array(8);
     this.cd = [0, 0, 0];
+    // (whether there's any glacier ice: most worlds have none to read)
+    this.hasIce = false;
+    if (s.ice) for (let c = 0; c < s.ice.length; c++) if (s.ice[c] > 0) { this.hasIce = true; break; }
     // tuyas by the cell they stand in (and its neighbours: they reach a few km)
     this.tuyaAt = null;
     if (s.tuyas && s.tuyas.length) {
@@ -188,6 +217,18 @@ export class SnapshotSampler {
     let s = 0;
     for (let k = 0; k < 16; k++) s += h[c[k]] * w[k];
     return s;
+  }
+  // the ice's thickness here (H) and the bed it lies on (hb), both smooth (the cells' B-spline
+  // blend); null where there's none
+  iceTop(x, y, z) {
+    const c = this._c16 || (this._c16 = new Int32Array(16)), w = this._w16 || (this._w16 = new Float64Array(16)), h = this.s.h, ice = this.s.ice;
+    this.G.corners16(this._d(x, y, z), c, w, this.uv);
+    let H = 0, hb = 0;
+    for (let k = 0; k < 16; k++) { H += ice[c[k]] * w[k]; hb += h[c[k]] * w[k]; }
+    if (!(H > 0.5)) return null;
+    const o = this._it || (this._it = { H: 0, hb: 0 });
+    o.H = H; o.hb = hb;
+    return o;
   }
   relief(x, y, z) { return this.G.sample(this.s.relief, this._d(x, y, z), this.uv); }
   ice(x, y, z) { return this.G.sample(this.s.ice, this._d(x, y, z), this.uv); }

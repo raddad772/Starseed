@@ -22,13 +22,23 @@ export const VEXAG = 2.5;
 
 const QPI = dm.PI / 4;
 const REACH = 3;          // (the ejecta reach 3 radii)
-const LAT = 6;            // (an octave's lattice cells, in its smallest craters' widths: wider than any one's reach)
+const LAT = 6;
+// the share of craters D across that the air lets through (Dair: the smallest it lets through at
+// all; any units): the small impactors break up, many of them well above that size (Venus has
+// no craters under ~3 km and few under ~25 km: ~6% of the craters 3 km and up an airless world
+// would have, a third of those 10 km and up, most of those 30 km and up)
+export function airKeep(D, Dair) {
+  if (!(Dair > 0)) return 1;
+  if (D < Dair) return 0;
+  const x = D / (10 * Dair);
+  return 1 - dm.exp(-x * x);
+}            // (an octave's lattice cells, in its smallest craters' widths: wider than any one's reach)
 
 // the craters D in [D0, D1) of lattice cell (i, j) on face f (nL cells a side): as many as the
 // record there gives its area (a Poisson draw), placed evenly in it, sized by the D^-2 law
 // within the octave, each of its own age; the same for every tile, sampler and machine
 const _d = [0, 0, 0], _d00 = [0, 0, 0], _d10 = [0, 0, 0], _d01 = [0, 0, 0], _d11 = [0, 0, 0];
-export function latticeCraters(f, i, j, D0, D1, nL, S, seed, R) {
+export function latticeCraters(f, i, j, D0, D1, nL, S, seed, R, Dair = 0) {
   const sL = 2 / nL, u0 = -1 + i * sL, v0 = -1 + j * sL, rate = 1 / (D0 * D0) - 1 / (D1 * D1), out = [];
   dirFromFaceUV(f, u0, v0, _d00); dirFromFaceUV(f, u0 + sL, v0, _d10); dirFromFaceUV(f, u0, v0 + sL, _d01); dirFromFaceUV(f, u0 + sL, v0 + sL, _d11);
   const ax = _d11[0] - _d00[0], ay = _d11[1] - _d00[1], az = _d11[2] - _d00[2], bx = _d01[0] - _d10[0], by = _d01[1] - _d10[1], bz = _d01[2] - _d10[2];
@@ -41,8 +51,10 @@ export function latticeCraters(f, i, j, D0, D1, nL, S, seed, R) {
   let k = poisson(rng, lam);
   while (k-- > 0) {
     const at = dirFromFaceUV(f, u0 + sL * rng.next(), v0 + sL * rng.next(), [0, 0, 0]);
-    const D = 1 / Math.sqrt(1 / (D0 * D0) - rng.next() * rate);
-    out.push({ at, D, age: rng.next(), key: rng.u32() });
+    const D = 1 / Math.sqrt(1 / (D0 * D0) - rng.next() * rate), age = rng.next(), key = rng.u32();
+    // (the air broke up most of the small ones)
+    if (Dair > 0 && (hashInts(key, 0xa12) >>> 0) / 4294967296 >= airKeep(D, Dair)) continue;
+    out.push({ at, D, age, key });
   }
   return out;
 }
@@ -70,7 +82,7 @@ export function stampCraters(B, G, face, S, Dlo, Dhi, K, seed, R) {
       const key = (uv.face * nL + j) * nL + i;
       if (seen.has(key)) continue;
       seen.add(key);
-      for (const cr of latticeCraters(uv.face, i, j, D0, D1, nL, S, seed, R)) list.push(cr);
+      for (const cr of latticeCraters(uv.face, i, j, D0, D1, nL, S, seed, R, K.Dair || 0)) list.push(cr);
     }
   }
   // each onto the tile, oldest first (the younger overprint them): its centre on the tile's
@@ -318,7 +330,7 @@ export class CraterField {
     let list = this.cache.get(key);
     if (list) return list;
     if (this.cache.size > 40000) this.cache.clear();
-    list = latticeCraters(f, i, j, B.D0, B.D1, B.nL, this.S, this.seed, this.R).map((cr) => {
+    list = latticeCraters(f, i, j, B.D0, B.D1, B.nL, this.S, this.seed, this.R, this.K.Dair || 0).map((cr) => {
       const F = craterForm(cr.D, this.K, cr.key), Dref = 1000 * this.K.scale, kap = 12 * cr.age * (Dref / cr.D) * (Dref / cr.D), wear = 1 / (1 + kap);
       F.ks = (0.08 + 0.5 * (1 - wear)) * (F.depth + F.rim);
       // (rays only where the air is too thin to stop what's thrown: under ~0.05 bar)

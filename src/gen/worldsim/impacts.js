@@ -20,7 +20,7 @@
 
 import * as dm from '../../core/dmath.js';
 import { hashInts } from '../../core/rng.js';
-import { VEXAG, craterForm, craterDh, excavate, groundPlane } from '../craters.js';
+import { VEXAG, craterForm, craterDh, excavate, groundPlane, airKeep } from '../craters.js';
 
 export { VEXAG };
 const MOON_G = 1.62;
@@ -30,6 +30,10 @@ const MOON_G = 1.62;
 // finer level of the terrain adds those of TILE_CELLS of its own cells up to the level above's
 // floor (craters.js): so a crater too small for a grid's cells is drawn by a level that holds it
 export const WORLD_CELLS = 16, TILE_CELLS = 10;
+// the smallest crater (km, real) a world's air lets through: by the air's mass over each square
+// metre (its pressure over gravity: Titan's 1.5 bar on its weak gravity is ten Earths' worth),
+// ~30 m under Earth's (craters.js airKeep: the share let through above it)
+export function airCut(pressure, g) { return 0.03 * (pressure || 0) * 9.81 / (g || 9.81); }
 export function craterFloor(cellM, k) { let D = 1; while (D < k * cellM) D *= 2; return D; }
 // (the world sim's cells, nominally: its faces' arc over N)
 export const worldCell = (R, N) => dm.PI / 2 * R / N;
@@ -46,7 +50,7 @@ export class Impacts {
     this.scale = opts.scale ?? 0.1;
     this.spike = opts.spike || null;
     this.sizeK = dm.pow(MOON_G / this.g, 0.17);            // crater size vs the Moon's for the same impactor
-    this.dAir = 0.03 * (opts.pressure || 0);                // km: smaller ones break up in the air
+    this.dAir = airCut(opts.pressure, this.g);               // km: smaller ones break up in the air
     const Rreal = G.R / this.scale / 1000;                  // km
     this.areaKm2 = 4 * dm.PI * Rreal * Rreal;
     this.events = [];
@@ -92,6 +96,8 @@ export class Impacts {
       let D = D0 / Math.sqrt(1 - this.rng.next());
       if (D > Dmax) { k++; if (++this._rejects > 1e6) break; continue; }
       const at = this.rng.unitVector();
+      // (most of the small ones broke up in the air)
+      if (this.rng.next() >= airKeep(D, this.dAir)) continue;
       this.stamp(at, D, apply, h);
       const e = { t, D, at };
       made.push(e); this.events.push(e);

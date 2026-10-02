@@ -47,7 +47,9 @@ export const S_ROUGH = 12;   // roughness / rockiness tendency 0..1
 export const S_DX = 13, S_DY = 14, S_DZ = 15; // sample direction
 export const S_WDEPTH = 16;  // lake or river water over the ground here (m; its surface is S_H + this)
 export const S_SAND = 17;    // wind-blown sand (a dune sea's) 0..1
-export const S_LEN = 18;
+export const S_ICE = 18;     // glacier ice over the ground here (m; S_H is its surface)
+export const S_WET = 19;     // a river's wet ground beside it 0..1
+export const S_LEN = 20;
 
 // creeks from the terrain tiles' drainage: a channel from this much rain-weighted water (m^2),
 // water in it from this much
@@ -60,6 +62,45 @@ const tmp4 = new Float64Array(4);
 
 function smin(a, b, k) { const h = dm.clamp(0.5 + 0.5 * (b - a) / k, 0, 1); return b + (a - b) * h - k * h * (1 - h); }
 function smax(a, b, k) { return -smin(-a, -b, k); }
+
+// the refinement's river curves' bounds (for _refRiverAt): each one's middle (x, y, z) and the
+// radius round it that holds its three control points (so the curve, inside their hull)
+function riverBounds(Rv) {
+  const rec = Rv.rec, n = rec.length / RIVER_REC, o = new Float64Array(n * 4);
+  for (let r = 0; r < n; r++) {
+    const b = r * RIVER_REC;
+    const cx = 0.25 * (rec[b] + 2 * rec[b + 3] + rec[b + 6]), cy = 0.25 * (rec[b + 1] + 2 * rec[b + 4] + rec[b + 7]), cz = 0.25 * (rec[b + 2] + 2 * rec[b + 5] + rec[b + 8]);
+    let m = 0;
+    for (let k = 0; k < 9; k += 3) { const dx = rec[b + k] - cx, dy = rec[b + k + 1] - cy, dz = rec[b + k + 2] - cz; m = Math.max(m, dx * dx + dy * dy + dz * dz); }
+    o[r * 4] = cx; o[r * 4 + 1] = cy; o[r * 4 + 2] = cz; o[r * 4 + 3] = Math.sqrt(m) * 1.0001;
+  }
+  return o;
+}
+
+// the great rivers' channel segments (refine.js bigChannels) in groups of eight per cell of the
+// index: gs[c] the cell's first group, gb each group's middle (x, y, z), the radius round it
+// that holds its segments' ends, and its widest half width
+function channelGroups(Bg) {
+  const n = Bg.start.length - 1, sg = Bg.seg, gs = new Int32Array(n + 1);
+  for (let c = 0; c < n; c++) gs[c + 1] = gs[c] + Math.ceil((Bg.start[c + 1] - Bg.start[c]) / 8);
+  const gb = new Float64Array(gs[n] * 5);
+  for (let c = 0; c < n; c++) {
+    const end = Bg.start[c + 1];
+    for (let e0 = Bg.start[c], g = gs[c]; e0 < end; e0 += 8, g++) {
+      const e1 = Math.min(e0 + 8, end);
+      let cx = 0, cy = 0, cz = 0, m = 0, mh = 0;
+      for (let e = e0; e < e1; e++) { const sb = Bg.idx[e] * BIG_REC; cx += sg[sb] + sg[sb + 3]; cy += sg[sb + 1] + sg[sb + 4]; cz += sg[sb + 2] + sg[sb + 5]; mh = Math.max(mh, sg[sb + 6]); }
+      const k = 2 * (e1 - e0); cx /= k; cy /= k; cz /= k;
+      for (let e = e0; e < e1; e++) {
+        const sb = Bg.idx[e] * BIG_REC;
+        for (let a = 0; a < 6; a += 3) { const dx = sg[sb + a] - cx, dy = sg[sb + a + 1] - cy, dz = sg[sb + a + 2] - cz; m = Math.max(m, dx * dx + dy * dy + dz * dz); }
+      }
+      const o = g * 5;
+      gb[o] = cx; gb[o + 1] = cy; gb[o + 2] = cz; gb[o + 3] = Math.sqrt(m) * 1.0001; gb[o + 4] = mh;
+    }
+  }
+  return { gs, gb };
+}
 
 export class TerrainGenerator {
   constructor(p) {
@@ -587,7 +628,9 @@ export class TerrainGenerator {
     // rim where the ground rises above it before the basin ends; the bed under it is the
     // ground, kept below the surface in the lake's own cells (a shallow lake stays one sheet
     // of water). A dip below the datum far from the sea stays dry.
-    const lk = this._lakeAt(x, y, z);
+    // (the glaciers' ice here: under it no rivers run and no lakes stand, below)
+    const it = S.hasIce ? S.iceTop(x, y, z) : null, iceH = it ? it.H : 0, itHb = it ? it.hb : 0;
+    const lk = iceH > 30 ? null : this._lakeAt(x, y, z);
     if (lk) {
       if (lk.own) h = Math.min(h, lk.L - 0.5);
       else h += Math.max(0, lk.L + 2 - h) * dm.smoothstep(0.55, 0.95, lk.q);
@@ -597,7 +640,9 @@ export class TerrainGenerator {
     // water, in a valley that levels off to its banks; the banks (and the water a little
     // below them) follow the sim's heights along the line, so the water only runs downhill
     let wl = -1e9;
-    const rv = this._riverAt(x, y, z);
+    const rv = iceH > 30 ? null : this._riverAt(x, y, z);
+    // (the wet ground along it, for the shading)
+    if (rv && rv.dist < rv.w * 2.5) out[S_WET] = dm.smoothstep(rv.w * 2.5, rv.w * 0.6, rv.dist);
     if (rv) {
       // (a meandering river's floodplain: the belt it has swung across, laid level near its banks;
       // and the loops it cut off, lakes while young, swales once filled)
@@ -705,6 +750,19 @@ export class TerrainGenerator {
         }
         h += dh * dm.smoothstep(0.15, 0.4, m);
         out[S_SAND] = dm.smoothstep(0.15, 0.5, m);
+      }
+    }
+    // the glaciers: their ice (the world sim's, smooth) filling the ground's lows to a level, as
+    // much as it holds: where it thins out it lies only in the valleys (the deepest first:
+    // tongues down them, the ridges between bare), on the ground's own shape; ice thicker than
+    // the ground's relief buries it under a smooth dome, ridges standing through (nunataks).
+    // Over the sea it floats, a tenth of it above the water. No open water on or under it
+    if (iceH > 0) {
+      {
+        const r = dm.clamp(0.5 * rel, 20, 1000), H = iceH;
+        let top = itHb + H - r * dm.exp(-H / r);
+        if (h < 0 && S.s.sea) top = Math.max(top, 0.1 * (top - h));
+        if (top > h) { out[S_ICE] = top - h; h += (top - h) * dm.smoothstep(0.5 * r, 2 * r, H); wl = -1e9; }
       }
     }
     out[S_H] = h;
@@ -838,12 +896,17 @@ export class TerrainGenerator {
   _refRiverAt(x, y, z) {
     const S = this.snap, Rv = S.riv, rec = Rv.rec, G = S.G, R = this.R, nb = S.nb;
     const c0 = G.cellAt(x, y, z), nn = G.nbrs(c0, nb);
+    // (each curve's bounds: a circle round its middle holding its control points, so a curve
+    // that can't come nearer than the best so far is passed over)
+    const bnd = Rv._bnd || (Rv._bnd = riverBounds(Rv));
     let best = null, bs = 1e30;
     for (let q = -1; q < nn; q++) {
       const c = q < 0 ? c0 : nb[q];
       for (let e = Rv.start[c]; e < Rv.start[c + 1]; e++) {
         const r = Rv.idx[e], b = r * RIVER_REC, half = Rv.half[r];
         if (Rv.big && Rv.big.has[r]) continue;   // (a great river's own winding channel, below)
+        const o = r * 4, ex = bnd[o] - x, ey = bnd[o + 1] - y, ez = bnd[o + 2] - z;
+        if ((Math.sqrt(ex * ex + ey * ey + ez * ez) - bnd[o + 3]) * R - 2 * half >= bs) continue;
         // (its curve: from halfway to its main inflow, through its cell, to halfway on)
         let bd = 1e30, bt = 0;
         for (let k = 0; k <= 8; k++) {
@@ -867,9 +930,15 @@ export class TerrainGenerator {
     // (the great rivers' channels, built winding: refine.js bigChannels)
     const Bg = Rv.big;
     let oxD = 1e9, oxA = 1, oxW = 0;
+    // (each cell's segments in groups of eight, each group's bounds a circle: passed over whole
+    // when none in it can come nearer than the best channel or oxbow so far)
+    const grp = Bg && (Bg._grp || (Bg._grp = channelGroups(Bg)));
     if (Bg) for (let q = -1; q < nn; q++) {
-      const c = q < 0 ? c0 : nb[q];
-      for (let e = Bg.start[c]; e < Bg.start[c + 1]; e++) {
+      const c = q < 0 ? c0 : nb[q], end = Bg.start[c + 1];
+      for (let e0 = Bg.start[c], g = grp.gs[c]; e0 < end; e0 += 8, g++) {
+      const o = g * 5, gx = grp.gb[o] - x, gy = grp.gb[o + 1] - y, gz = grp.gb[o + 2] - z, lb = (Math.sqrt(gx * gx + gy * gy + gz * gz) - grp.gb[o + 3]) * R;
+      if (lb >= oxD && lb - 2 * grp.gb[o + 4] >= bs) continue;
+      for (let e = e0, e1 = Math.min(e0 + 8, end); e < e1; e++) {
         const sb = Bg.idx[e] * BIG_REC, sg = Bg.seg;
         const ax = sg[sb + 3] - sg[sb], ay = sg[sb + 4] - sg[sb + 1], az = sg[sb + 5] - sg[sb + 2], qx = x - sg[sb], qy = y - sg[sb + 1], qz = z - sg[sb + 2];
         const L2 = ax * ax + ay * ay + az * az, t = L2 > 0 ? Math.max(0, Math.min(1, (qx * ax + qy * ay + qz * az) / L2)) : 0;
@@ -886,6 +955,7 @@ export class TerrainGenerator {
           best.dist = dist; best.w = 2 * half; best.k = k; best.depth = 3 + 25 * k; best.hs = sg[sb + 8] / this.hScale;
           best.axis = dist; best.belt = 0; best.ox = 1e9; best.oxW = 0;
         }
+      }
       }
     }
     if (best && oxD < (best.ox ?? 1e9)) { best.ox = oxD; best.oxAge = oxA; best.oxW = oxW; }
@@ -957,9 +1027,8 @@ export class TerrainGenerator {
       if (Tc < -2) { col[0] = P.snow[0] * 0.92; col[1] = P.snow[1] * 0.95; col[2] = P.snow[2]; mat[1] = 1; mat[4] = 0; }
       return;
     }
-    // (the ice's edge ragged at the fine scale, not the sim grid's lines)
-    const iceEdge = 5 + 120 * (1 + this.nDetail.noise(x * this.R / 6000, y * this.R / 6000, z * this.R / 6000));
-    if (S.ice(x, y, z) > iceEdge) { col[0] = P.snow[0]; col[1] = P.snow[1]; col[2] = P.snow[2]; mat[1] = 1; mat[6] = 0.3; return; }
+    // (a glacier's ice: its surface is the ground here, sampleSnap)
+    if (s[S_ICE] > 0.5) { col[0] = P.snow[0]; col[1] = P.snow[1]; col[2] = P.snow[2]; mat[1] = 1; mat[6] = 0.3; return; }
     // the rock (or sand) showing, and across a contact on even ground the other one, mixed
     const rt = S.rockAt(x, y, z, h / this.hScale), mix = S.rockMix, r2 = S.rock2;
     const c1 = this.rockLin[rt] || P.rock, c2 = this.rockLin[r2] || P.rock, rc = this._rcol || (this._rcol = [0, 0, 0]);
@@ -991,8 +1060,7 @@ export class TerrainGenerator {
       }
     }
     // rivers: wet darker ground on the floodplain (the water itself is above)
-    const rl = this._riverAt(x, y, z);
-    if (rl && rl.dist < rl.w * 2.5) { const k = 0.3 * dm.smoothstep(rl.w * 2.5, rl.w * 0.6, rl.dist); r *= 1 - k; g *= 1 - k * 0.8; b *= 1 - k * 0.6; mat[6] = Math.max(mat[6], k); }
+    if (s[S_WET] > 0) { const k = 0.3 * s[S_WET]; r *= 1 - k; g *= 1 - k * 0.8; b *= 1 - k * 0.6; mat[6] = Math.max(mat[6], k); }
     // the cracks' reddish-brown stains
     if (s[S_LINEAE] > 0) { const l = 0.7 * s[S_LINEAE]; r += (0.42 - r) * l; g += (0.25 - g) * l; b += (0.13 - b) * l; }
     // snow where it's cold, if there's water to fall as snow (a water cycle, or an ice inventory);
