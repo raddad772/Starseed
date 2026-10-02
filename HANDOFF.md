@@ -163,9 +163,10 @@ surveying many worlds; bit-exact across runs and clients, not across revisions):
   now weighs where the fine ground stands against the smooth surface (cover on the rises,
   basement in the hollows), as the tiles' did; and the starting cover's thickness varies at
   every scale (`world.js buildRock`), so where it thins out its edge is ragged. The long straight
-  contact on Touveatar (19N 136E) is neither: a 45-degree staircase of cells in the world sim's
-  exposed rock, set somewhere in its deposit/erosion history (an old shoreline or a deposition
-  front along the grid's diagonal?). Still open.
+  contact on Touveatar (19N 136E): its chalk cover thins in a smooth ramp (300 m to nothing over
+  six cells) where erosion deepens evenly up a slope, so it runs out along a straight contour; a
+  share of thickness can't move a pinch-out, so the cover also varies by +-180 m (SIM 22): the edge
+  now wanders a few cells with outliers and inliers, but the diagonal trend remains.
 - **Rock beds without the jigsaw (`src/gen/geology.js`, new):** a pyramid tile used the one
   region at its middle (its column, its planar dip) for the whole tile (up to 128 km), and the
   refinement outside it one rock per cell: each tile showed as a square of stripes, its edges

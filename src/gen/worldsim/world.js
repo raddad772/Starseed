@@ -479,8 +479,11 @@ function buildRock(G, Gt, T, rng) {
   for (let c = 0; c < G.n; c++) {
     d[0] = G.dir[c * 3]; d[1] = G.dir[c * 3 + 1]; d[2] = G.dir[c * 3 + 2];
     lith.base[c] = Gt.sample(contW, d, uv) + 0.15 * nzB.fbm(d[0] * kq, d[1] * kq, d[2] * kq, 5, 2, 0.6) > 0.5 ? ROCK.granite : ROCK.basalt;
+    // (as a share of it and, so that where it thins out the edge wanders too, not only its
+    // thickness, by so many metres: outliers of it on the bare basement, inliers through it)
     const vary = Math.max(0, 1 + 0.8 * nzS.fbm(d[0] * kq, d[1] * kq, d[2] * kq, 5, 2, 0.6));
-    let sed = Gt.sample(sedW, d, uv) * vary, carb = Math.min(Gt.sample(carbW, d, uv) * vary, sed);
+    const sed0 = Gt.sample(sedW, d, uv), add = 180 * nzS.fbm(d[0] * kq + 17.3, d[1] * kq - 4.1, d[2] * kq + 9.7, 5, 2, 0.6);
+    let sed = Math.max(0, sed0 * vary + add), carb = Math.min(Gt.sample(carbW, d, uv) * vary * (sed0 > 0 ? sed / Math.max(1, sed0 * vary) : 0), sed);
     // oldest first: each bed's thickness waves gently across the world
     for (let i = 0; i < beds.length && sed > 1; i++) {
       const B = beds[i];
