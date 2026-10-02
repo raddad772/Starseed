@@ -536,9 +536,12 @@ export class TerrainGenerator {
     const mMask = dm.smoothstep(400, 2500, rel);
     out[S_MOUNT] = mMask;
     const amp = dm.clamp(rel * 0.3, 12, 900);
+    let calm = 1;
     // hills from the grid's spacing down (derivative-damped: eroded-looking); with a
     // refinement, only those finer than it resolves
     {
+      // (none on a sand sea: blown sand is smooth)
+      if (S.s.dunes) calm = 1 - dm.smoothstep(0.15, 0.5, S.duneMask(x, y, z));
       const lam0 = S.G.spacing, lamCut = finest ? 2 * finest : 1e30;
       const hf = R / lam0;
       let fx = x * hf, fy = y * hf, fz = z * hf, nxs = x, nys = y, nzs = z;
@@ -556,21 +559,22 @@ export class TerrainGenerator {
         const rx = ROT[0] * nxs + ROT[1] * nys + ROT[2] * nzs, ry = ROT[3] * nxs + ROT[4] * nys + ROT[5] * nzs, rz = ROT[6] * nxs + ROT[7] * nys + ROT[8] * nzs;
         nxs = rx; nys = ry; nzs = rz;
       }
-      h += sum * amp * (h < 0 ? 0.4 : 1);
+      h += sum * amp * (h < 0 ? 0.4 : 1) * calm;
     }
     const rough = dm.clamp(0.3 + 0.9 * mMask, 0.1, 1.4) * (p.roughness ?? 1);
     out[S_ROUGH] = rough;
     {
-      const df = R / this.lamDetail;
+      // (the ground's grain below what the terrain's levels simulate: none of its features)
+      const df = R / this.lamDetail, lamCut = finest ? 2 * finest : 1e30;
       let fx = x * df, fy = y * df, fz = z * df, lam = this.lamDetail, a = (p.relief || 3000) * 0.006 * rough, sum = 0;
       for (let o = 0; o < 11; o++) {
         if (lam < minWavelength) break;
-        sum += a * this.nDetail.noise(fx, fy, fz) * dm.smoothstep(minWavelength, minWavelength * 2, lam);
+        if (lam < lamCut) sum += a * this.nDetail.noise(fx, fy, fz) * dm.smoothstep(minWavelength, minWavelength * 2, lam) * dm.smoothstep(lamCut, 0.5 * lamCut, lam);
         a *= 0.57; lam *= 0.5;
         const nx = ROT[0] * fx + ROT[1] * fy + ROT[2] * fz, ny = ROT[3] * fx + ROT[4] * fy + ROT[5] * fz, nz = ROT[6] * fx + ROT[7] * fy + ROT[8] * fz;
         fx = nx * 2.0 - 0.7; fy = ny * 2.0 + 1.1; fz = nz * 2.0 + 2.3;
       }
-      h += sum * (h < 0 ? 0.5 : 1);
+      h += sum * (h < 0 ? 0.5 : 1) * calm;
     }
     // a lake's surface is level and fills its basin out to the contour of its level (looked
     // up a little off true, so shores wander rather than follow the sim's cells), inside a

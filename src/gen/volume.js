@@ -24,7 +24,7 @@
 import * as dm from '../core/dmath.js';
 import { Noise3 } from '../core/noise.js';
 import { Rng, hashInts } from '../core/rng.js';
-import { S_LEN, S_H, S_WDEPTH, S_MOUNT, S_ROUGH } from './terrain.js';
+import { S_LEN, S_H, S_WDEPTH, S_MOUNT, S_ROUGH, S_SAND } from './terrain.js';
 import { ROCKS } from './worldsim/lithology.js';
 
 export const VCHUNK = 32;          // cells per chunk side (1 m cells)
@@ -90,6 +90,8 @@ export class VolumeField {
     } else {
       hard = Math.min(1, 0.45 + 0.4 * s[S_MOUNT] + 0.25 * s[S_ROUGH]); cave = 0.15;
     }
+    // (blown sand is loose: no cliffs, no caves in a dune)
+    if (s[S_SAND] > 0) { hard *= 1 - s[S_SAND]; cave *= 1 - s[S_SAND]; }
     b = { H: s[S_H], hard, cave };
     this.base.set(key, b);
     return b;
