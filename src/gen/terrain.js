@@ -601,8 +601,10 @@ export class TerrainGenerator {
     let best = null;
     const A = this._ra || (this._ra = [0, 0, 0]), B = this._rb || (this._rb = [0, 0, 0]);
     const test = (c) => {
-      const r = s.river[c], to = s.rcv[c];
-      if (r < 0.55 || to < 0 || s.h[c] < 0) return;
+      const r = s.river[c] / 255;
+      if (r < 0.55 || s.h[c] < 0) return;
+      const to = S.rcvOf(c);
+      if (to < 0) return;
       G.centre(c, A); G.centre(to, B);
       const ax = A[0], ay = A[1], az = A[2];
       const bx = B[0] - ax, by = B[1] - ay, bz = B[2] - az;

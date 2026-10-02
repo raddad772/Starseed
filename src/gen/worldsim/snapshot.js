@@ -1,11 +1,14 @@
 // A simulated world, packed for the game (WORLDSIM.md step 7): the world sim's
 // results as flat typed arrays (cached, sent to the terrain workers), and a sampler
-// the terrain generator reads instead of its noise.
+// the terrain generator reads instead of its noise. 16 bytes a cell (every terrain
+// worker holds a copy of every world's):
 //
 //   on the fine grid   heights (m, the game's convention: real metres on the drawn
-//                      sphere), lake surfaces, the exposed rock (or beach sand), ice
-//                      thickness, rivers (discharge, 0..1 by log), a fresh melt sheet,
-//                      local relief (for how rugged the fine detail is)
+//                      sphere; f32), lake surfaces (f32), the exposed rock (or beach
+//                      sand; u8), ice thickness (m, u16), rivers (discharge, 0..1 by log,
+//                      as 0..255), a fresh melt sheet (0..255), local relief (m, u16:
+//                      how rugged the fine detail is), where each cell drains (u8: which
+//                      of its neighbours, in GridLite.nbrs order; 255 none)
 //   on the climate grid the yearly mean brought to sea level (K), rain (mm/yr), plant
 //                      cover and its forest and open shares (life.js), cloud cover
 //
@@ -14,7 +17,14 @@
 import { GridLite } from './grid.js';
 import { Noise3 } from '../../core/noise.js';
 
-export const SIM_VERSION = 4;
+export const SIM_VERSION = 5;
+
+// a world's grid size: maxN for an Earth-sized one, finer cells don't help a small one
+// (N ~ sqrt(radius): Mars ~210, the Moon ~150, a moonlet 64)
+export function simNFor(body, maxN = 288) {
+  const k = Math.sqrt(Math.min(1, (body.radiusM || 6.371e6) / 6.371e6));
+  return Math.max(64, Math.min(maxN, Math.round(maxN * k / 8) * 8));
+}
 
 // W: worldSim's result; body: the body
 export function packSnapshot(W, body) {
@@ -23,18 +33,30 @@ export function packSnapshot(W, body) {
   const water = new Float32Array(n).fill(-1e9);
   if (W.E && W.E.water) for (let c = 0; c < n; c++) if (!W.E.base[c] && W.E.water[c] - W.h[c] > 1) water[c] = W.E.water[c];
   const rock = W.rock ? Uint8Array.from(W.rock) : new Uint8Array(n);
-  const ice = W.glaciers ? Float32Array.from(W.glaciers.ice) : new Float32Array(n);
-  const river = new Float32Array(n);
+  const u16 = (x) => Math.max(0, Math.min(65535, Math.round(x)));
+  const ice = new Uint16Array(n);
+  if (W.glaciers) for (let c = 0; c < n; c++) ice[c] = u16(W.glaciers.ice[c]);
+  const river = new Uint8Array(n);
   if (W.E && W.E.A) {
     let amax = 0;
     for (let c = 0; c < n; c++) if (!W.E.base[c] && W.E.A[c] > amax) amax = W.E.A[c];
-    for (let c = 0; c < n; c++) if (!W.E.base[c] && amax > 0) river[c] = Math.max(0, Math.log(Math.max(W.E.A[c], 1e-30) / (amax * 1e-4)) / Math.log(1e4));
+    for (let c = 0; c < n; c++) if (!W.E.base[c] && amax > 0) river[c] = Math.round(255 * Math.min(1, Math.max(0, Math.log(Math.max(W.E.A[c], 1e-30) / (amax * 1e-4)) / Math.log(1e4))));
   }
-  const melt = W.melt ? Float32Array.from(W.melt) : new Float32Array(n);
-  // where each cell's water goes (river lines for channels at walking scale)
-  const rcv = W.E && W.E.rcv ? Int32Array.from(W.E.rcv) : new Int32Array(n).fill(-1);
-  const relief = new Float32Array(n);
-  for (let c = 0; c < n; c++) { let r = 0; for (let e = G.nStart[c]; e < G.nStart[c + 1]; e++) r = Math.max(r, Math.abs(W.h[c] - W.h[G.nbr[e]])); relief[c] = r; }
+  const melt = new Uint8Array(n);
+  if (W.melt) for (let c = 0; c < n; c++) melt[c] = Math.round(255 * Math.min(1, Math.max(0, W.melt[c])));
+  // where each cell's water goes (river lines for channels at walking scale): which neighbour
+  const rcv = new Uint8Array(n).fill(255);
+  if (W.E && W.E.rcv) {
+    const L = new GridLite(G.N, G.R), nb = new Int32Array(8);
+    for (let c = 0; c < n; c++) {
+      const to = W.E.rcv[c];
+      if (to < 0) continue;
+      const k = L.nbrs(c, nb);
+      for (let e = 0; e < k; e++) if (nb[e] === to) { rcv[c] = e; break; }
+    }
+  }
+  const relief = new Uint16Array(n);
+  for (let c = 0; c < n; c++) { let r = 0; for (let e = G.nStart[c]; e < G.nStart[c + 1]; e++) r = Math.max(r, Math.abs(W.h[c] - W.h[G.nbr[e]])); relief[c] = u16(r); }
   const out = { version: SIM_VERSION, path: W.path, N: G.N, R: G.R, h, water, rock, ice, river, melt, relief, rcv, Nc: 0 };
   // the flat-topped volcanoes eruptions under ice left (world.js)
   out.tuyas = (W.tuyas || []).map((t) => ({ d: t.d.slice(), top: t.top, r: t.r }));
@@ -103,8 +125,15 @@ export class SnapshotSampler {
   h(x, y, z) { return this.G.sample(this.s.h, this._d(x, y, z), this.uv); }
   relief(x, y, z) { return this.G.sample(this.s.relief, this._d(x, y, z), this.uv); }
   ice(x, y, z) { return this.G.sample(this.s.ice, this._d(x, y, z), this.uv); }
-  river(x, y, z) { return this.G.sample(this.s.river, this._d(x, y, z), this.uv); }
-  melt(x, y, z) { return this.G.sample(this.s.melt, this._d(x, y, z), this.uv); }
+  river(x, y, z) { return this.G.sample(this.s.river, this._d(x, y, z), this.uv) / 255; }
+  melt(x, y, z) { return this.G.sample(this.s.melt, this._d(x, y, z), this.uv) / 255; }
+  // the cell cell c drains into (-1 none)
+  rcvOf(c) {
+    const slot = this.s.rcv[c];
+    if (slot === 255) return -1;
+    this.G.nbrs(c, this.rb || (this.rb = new Int32Array(8)));
+    return this.rb[slot];
+  }
   // the nearest cell's (categories, and lakes: a lake's surface is level)
   cell(x, y, z) { return this.G.cellAt(x, y, z); }
   rock(x, y, z) { return this.s.rock[this.G.cellAt(x, y, z)]; }

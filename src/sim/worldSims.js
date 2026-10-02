@@ -2,15 +2,13 @@
 // run in a background worker (nearest first), cached in IndexedDB by seed, body, sim
 // version and grid size, and handed to the terrain (the workers' generators, the
 // physics' generator) when it's ready; the body's terrain is then rebuilt from it.
-// A world a player visits gets a finer sim after every world has its first (finer rivers,
-// coasts and lakes). It is a different run of the same history, so it waits until nobody is
-// on or near that world (the land doesn't change under anyone's feet), and is used from the
-// cache from then on.
-// Two sims run at once on a machine with 8+ cores (each takes ~0.4 GB), else one.
-// Opt-in for now: ?worldsim=1 (grid size ?simN=, default 192; the finer ?simHiN=, default
-// 288, 0 for none; ?simWorkers= how many at once).
+// One sim per world, ever (a world doesn't change while you're away): its grid as fine as
+// its size merits (snapshot.js simNFor: N 288 for an Earth, coarser for smaller worlds).
+// Two sims run at once on a machine with 8+ cores (each takes ~0.5-0.65 GB), else one.
+// Opt-in for now: ?worldsim=1 (?simN= the grid for an Earth-sized world, default 288;
+// ?simWorkers= how many at once).
 
-import { SIM_VERSION } from '../gen/worldsim/snapshot.js';
+import { SIM_VERSION, simNFor } from '../gen/worldsim/snapshot.js';
 
 const DB = 'starseed-worldsim', STORE = 'snap';
 
@@ -47,18 +45,14 @@ function dbPut(db, key, val) {
 }
 
 export class WorldSims {
-  // game: the Game; opts: { N, hiN, myr, steps, workers }
+  // game: the Game; opts: { N (an Earth-sized world's grid), myr, steps, workers }
   constructor(game, opts = {}) {
     this.game = game;
     this.seed = game.seed;
-    this.N = opts.N || 192;
-    this.hiN = opts.hiN ?? 288;
+    this.N = opts.N || 288;
     this.myr = opts.myr || 150;
     this.steps = opts.steps || 40;
     this.status = new Map();   // body id -> 'queued' | 'running' | 'ready' | 'failed'
-    this.hi = new Map();       // body id -> the same, for its finer sim
-    this.pending = new Map();  // body id -> a finer snapshot waiting for everyone to leave
-    this.near = new Set();     // bodies a player is on or near (tick)
     this.queue = [];           // { id, N }
     this.phase = new Map();    // body id -> the running sim's stage
     this.dbP = openDB();
@@ -69,7 +63,7 @@ export class WorldSims {
     for (let i = 0; i < nw; i++) {
       const w = { worker: new Worker(new URL('../workers/worldsimWorker.js', import.meta.url), { type: 'module' }), job: null };
       w.worker.onmessage = (e) => this._onMessage(w, e.data);
-      w.worker.onerror = (e) => { console.error('world-sim worker error', e.message || e); if (w.job) this._failed(w.job); w.job = null; this._next(); };
+      w.worker.onerror = (e) => { console.error('world-sim worker error', e.message || e); if (w.job) this.status.set(w.job.id, 'failed'); w.job = null; this._next(); };
       this.workers.push(w);
     }
     this.onReady = null;   // (bodyId, snap) => void
@@ -87,27 +81,14 @@ export class WorldSims {
     const all = [...this.status.values()], ready = all.filter((v) => v === 'ready' || v === 'failed').length;
     const name = (id) => this.game.system.bodies[id].name;
     const running = [...this.status].filter(([, v]) => v === 'running').map(([id]) => `${name(id)}: ${this.phase.get(id) || 'starting'}…`);
-    const fine = [...this.hi].find(([, v]) => v === 'running');
-    if (fine && ready >= all.length) {
-      this.el.style.opacity = '0.75';
-      this.el.textContent = `Refining ${name(fine[0])} (finer rivers and coasts): ${this.phase.get(fine[0]) || 'starting'}…`;
-      return;
-    }
-    if (ready >= all.length) {
-      if (this.pending.size) {
-        // (said for a few seconds, then gone)
-        this.el.textContent = `Finer ${[...this.pending.keys()].map((id) => this.game.system.bodies[id].name).join(', ')} ready: in place when you next arrive`;
-        this.el.style.opacity = '0.75';
-        clearTimeout(this._fade); this._fade = setTimeout(() => { if (this.el) this.el.style.opacity = '0'; }, 8000);
-        return;
-      }
-      this.el.textContent = `Simulated worlds ready (${ready})`; this.el.style.opacity = '0'; return;
-    }
+    if (ready >= all.length) { this.el.textContent = `Simulated worlds ready (${ready})`; this.el.style.opacity = '0'; return; }
     this.el.style.opacity = '0.75';
     this.el.textContent = `Simulating worlds: ${ready} of ${all.length} ready${running.length ? ' · ' + running.join(' · ') : ''}`;
   }
 
-  key(id, N = this.N) { return `${this.seed}|${id}|v${SIM_VERSION}|N${N}`; }
+  // a world's grid (its size's: simNFor) and cache key
+  nFor(id) { return simNFor(this.game.system.bodies[id], this.N); }
+  key(id) { return `${this.seed}|${id}|v${SIM_VERSION}|N${this.nFor(id)}`; }
 
   // every solid body with terrain, nearest to `near` (a body id) first
   requestAll(nearId = null) {
@@ -119,58 +100,24 @@ export class WorldSims {
   async request(id) {
     if (this.status.has(id)) return;
     this.status.set(id, 'queued');
-    const db = await this.dbP;
-    // (a finer sim from an earlier visit stands in for the first)
-    const fine = this.hiN > this.N ? await dbGet(db, this.key(id, this.hiN)) : null;
-    if (fine) { this.hi.set(id, 'ready'); this._apply(id, fine, true); return; }
-    const cached = await dbGet(db, this.key(id));
+    const cached = await dbGet(await this.dbP, this.key(id));
     if (cached) { this._apply(id, cached, true); return; }
-    this.queue.push({ id, N: this.N });
+    this.queue.push({ id, N: this.nFor(id) });
     this._next();
   }
 
-  // every few seconds from the game: the bodies a player is on or near (a Set of ids). They
-  // get their finer sims; finer ones waiting for worlds nobody is near now go in.
-  tick(near) {
-    this.near = near;
-    for (const id of near) this.visit(id);
-    for (const [id, snap] of this.pending) if (!near.has(id)) { this.pending.delete(id); this._apply(id, snap, false); }
-  }
-
-  // a player is on or near this world: its finer sim, after every world's first
-  async visit(id) {
-    if (!(this.hiN > this.N) || this.hi.has(id)) return;
-    const b = this.game.system.bodies[id];
-    if (!b || !b.terrain || !b.solid) return;
-    this.hi.set(id, 'queued');
-    const fine = await dbGet(await this.dbP, this.key(id, this.hiN));
-    if (fine) { this.hi.set(id, 'ready'); this._fineReady(id, fine); return; }
-    this.queue.push({ id, N: this.hiN });
-    this._next();
-  }
-
-  // a finer sim to put in: now if nobody is near that world, else when they've all left
-  _fineReady(id, snap) {
-    this.queue = this.queue.filter((q) => !(q.id === id && q.N === this.N));
-    if (this.near.has(id)) this.pending.set(id, snap); else this._apply(id, snap, false);
-  }
-
-  // start queued sims on any free workers (every world's first sim before any finer one)
+  // start queued sims on any free workers
   _next() {
     for (const w of this.workers) {
       if (w.job || !this.queue.length) continue;
-      let k = this.queue.findIndex((q) => q.N === this.N);
-      if (k < 0) k = 0;
-      const job = this.queue.splice(k, 1)[0];
+      const job = this.queue.shift();
       w.job = job;
-      (job.N === this.N ? this.status : this.hi).set(job.id, 'running');
+      this.status.set(job.id, 'running');
       this.phase.delete(job.id);
       w.worker.postMessage({ type: 'sim', job: job.id, seed: this.seed, body: job.id, N: job.N, myr: this.myr, steps: this.steps });
     }
     this._progress();
   }
-
-  _failed(job) { (job.N === this.N ? this.status : this.hi).set(job.id, 'failed'); }
 
   async _onMessage(w, m) {
     if (m.type === 'log') {
@@ -180,17 +127,12 @@ export class WorldSims {
       if (k) { this.phase.set(m.body, { worldSim: 'deep time', plates: 'the recent epoch', 'lakes after': 'ice and climate', 'climate now': 'soil and water', soil: 'life', life: 'coasts' }[k[1]]); this._progress(); }
       return;
     }
-    if (m.type === 'error') { console.error(`world sim failed for body ${m.body}:`, m.message); if (w.job) this._failed(w.job); w.job = null; this._next(); return; }
+    if (m.type === 'error') { console.error(`world sim failed for body ${m.body}:`, m.message); this.status.set(m.body, 'failed'); w.job = null; this._next(); return; }
     if (m.type === 'snapshot') {
       w.job = null;
-      const fine = m.snap.N !== this.N;
-      dbPut(await this.dbP, this.key(m.body, m.snap.N), m.snap);
-      if (fine) { this.hi.set(m.body, 'ready'); this._fineReady(m.body, m.snap); }
-      // (a first sim that lands after a finer one is in, or waiting, is cached, not applied)
-      else if (this.hi.get(m.body) === 'ready') this.status.set(m.body, 'ready');
-      else this._apply(m.body, m.snap, false);
+      dbPut(await this.dbP, this.key(m.body), m.snap);
+      this._apply(m.body, m.snap, false);
       this._next();
-      this._progress();
     }
   }
 
@@ -207,5 +149,5 @@ export class WorldSims {
     this._progress();
   }
 
-  dispose() { for (const w of this.workers) w.worker.terminate(); clearTimeout(this._fade); if (this.el) this.el.remove(); }
+  dispose() { for (const w of this.workers) w.worker.terminate(); if (this.el) this.el.remove(); }
 }

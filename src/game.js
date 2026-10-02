@@ -66,7 +66,7 @@ export class Game {
     this.cloudNoise = makeCloudNoise(64);
     this.world = new WorldRenderer(this.engine, this.universe, this.pool, this.detailTex, this.cloudNoise);
     // simulated worlds (WORLDSIM.md step 7; opt-in for now: ?worldsim=1)
-    if (opts.worldsim) { this.worldSims = new WorldSims(this, { N: opts.simN || 192, hiN: opts.simHiN, workers: opts.simWorkers }); }
+    if (opts.worldsim) { this.worldSims = new WorldSims(this, { N: opts.simN, workers: opts.simWorkers }); }
     this.lights = new LightRig(this.engine);
     this.t = 0;
     this.warpIndex = 0;
@@ -1575,18 +1575,6 @@ export class Game {
       }
     }
     this.setCur(null);
-    // the simulated worlds: one a player is on or near (within half its radius) gets a finer sim
-    if (this.worldSims && (this._wsT = (this._wsT || 0) + dtReal) > 2) {
-      this._wsT = 0;
-      const near = new Set();
-      for (const p of this.players) {
-        const v = p.vessel, b = v ? v.body : p.body;
-        if (!b || !b.data || !b.terrain || (v && v.parent)) continue;
-        const r = p.mode === 'surface' ? b.R : v ? v.pos.length() : p.ePos.length();
-        if (r - b.R < 0.5 * b.R) near.add(b.data.id);
-      }
-      this.worldSims.tick(near);
-    }
     for (const v of this.vessels) v.nav.update(dtReal);
     // warp guard: thrust input or atmosphere drops rails warp
     if (warp > 4) {
