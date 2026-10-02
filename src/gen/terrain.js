@@ -745,8 +745,13 @@ export class TerrainGenerator {
     // rivers: wet darker ground on the floodplain (the water itself is above)
     const rl = this._riverAt(x, y, z);
     if (rl && rl.dist < rl.w * 2.5) { const k = 0.3 * dm.smoothstep(rl.w * 2.5, rl.w * 0.6, rl.dist); r *= 1 - k; g *= 1 - k * 0.8; b *= 1 - k * 0.6; mat[6] = Math.max(mat[6], k); }
-    // snow where it's cold
-    const snow = dm.smoothstep(-2, -10, Tc) * (1 - 0.5 * rockW);
+    // snow where it's cold, if there's water to fall as snow (a water cycle, or an ice inventory);
+    // thin frost on an icy moon; an airless rock stays bare
+    const waterCycle = p.liquid === 'water' || (p.frozenOcean && p.climate.wet === 0 && p.iceCover > 0.55 && !p.icy);
+    let snow = waterCycle || (p.iceCover > 0 && S.Gc) ? dm.smoothstep(-2, -10, Tc) * (1 - 0.5 * rockW) : 0;
+    if (p.icy) snow = Math.max(snow, 0.3 * (0.5 + 0.5 * s[S_VARIANT]) * (1 - 0.5 * dm.smoothstep(0.3, 0.6, slope)) * (1 - s[S_LINEAE]));
+    if (p.iceCover > 0 && !p.icy && !S.Gc) snow = Math.max(snow, dm.smoothstep(this.iceCapCut - 0.03, this.iceCapCut + 0.03, this.iceCapMetric(s)));
+    snow = dm.clamp(snow, 0, 1);
     if (snow > 0) { r += (P.snow[0] - r) * snow; g += (P.snow[1] - g) * snow; b += (P.snow[2] - b) * snow; mat[1] = snow; }
     col[0] = r; col[1] = g; col[2] = b;
     // a fresh melt sheet glows (blackbody by how hot: the render's job; here, how much)

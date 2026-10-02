@@ -108,7 +108,10 @@ export function worldSim(body, star, opts = {}) {
     const melt = stampFresh(G, W.h, H, body, scale);
     // (the craters below its grid's: their record by place, for the finer levels to draw)
     const crater = { crat: W.crat, g: body.gravity, scale, Dw: W.dMin * 1000, Dair: 0.03 * (body.atmosphere ? body.atmosphere.pressure : 0) * 1000 * scale };
-    return Object.assign(out, { h: W.h, mare: W.mare, fresh: W.fresh, stats: W.stats, craters: survivors(G, W.impacts.events, resurfaceAt, W.plains, W.mare), melt, crater, lineae: W.lineae });
+    // its rock: the old crust, the dark lava of the maria, an icy shell's refrozen plains
+    const rock = new Uint8Array(G.n), BAS = ROCK.basalt, ICE = ROCK.ice;
+    for (let c = 0; c < G.n; c++) rock[c] = W.mare[c] > 0.5 ? BAS : W.plains[c] > 0.5 && icy ? ICE : 0;
+    return Object.assign(out, { h: W.h, mare: W.mare, fresh: W.fresh, stats: W.stats, craters: survivors(G, W.impacts.events, resurfaceAt, W.plains, W.mare), melt, crater, lineae: W.lineae, rock });
   }
   if (path === 'stagnant') {
     let wet = wetWindow(H);
@@ -122,7 +125,10 @@ export function worldSim(body, star, opts = {}) {
     const volcanoes = S.shields.map((v) => ({ ...latLonOf(v.at), heightM: v.H }));
     const melt = stampFresh(G, S.h, H, body, scale);
     const crater = { crat: S.crat, g: body.gravity, scale, Dw: S.dMin * 1000, Dair: 0.03 * (body.atmosphere ? body.atmosphere.pressure : 0) * 1000 * scale };
-    return Object.assign(out, { h: S.h, volc: S.volc, river: S.river, stats: S.stats, wet, seaFrac, craters: survivors(G, S.impacts.events, resurfaceAt, S.volc), volcanoes, melt, crater });
+    // its rock: the old crust, and lava where the volcanoes and floods laid it
+    const rock = new Uint8Array(G.n), BAS = ROCK.basalt;
+    for (let c = 0; c < G.n; c++) rock[c] = S.volc[c] > 0.5 ? BAS : 0;
+    return Object.assign(out, { h: S.h, volc: S.volc, river: S.river, stats: S.stats, wet, seaFrac, craters: survivors(G, S.impacts.events, resurfaceAt, S.volc), volcanoes, melt, crater, rock });
   }
 
   // ---- plates: the generator's continents as the starting crust
