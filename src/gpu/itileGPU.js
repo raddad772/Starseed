@@ -263,13 +263,12 @@ export class ITileGPU {
     for (let st = 0; st < T.steps; st++) {
       const salt = hashInts(st, T.salt) >>> 0;
       for (const ax of [0, 1]) { pdata.set([NG, n, salt | 0, PB, NB, RB, ax, 0]); dev.queue.writeBuffer(params[ax], 0, pdata); }
-      const enc = dev.createCommandEncoder();
+      // (one compute pass a step: its dispatches run in order, each seeing the last one's writes)
+      const enc = dev.createCommandEncoder(), cp = enc.beginComputePass();
       const pass = (entry, binds, wg, P = params[0]) => {
-        const cp = enc.beginComputePass();
         cp.setPipeline(this.pipes[entry]);
         cp.setBindGroup(0, this._bg(entry, { 0: P, ...binds }));
         cp.dispatchWorkgroups(wg);
-        cp.end();
       };
       if (st % 2 === 1) {
         pass('pinBlock', { 1: hb(), 10: B.Bs, 22: B.M0 }, wgB);
@@ -287,7 +286,11 @@ export class ITileGPU {
       pass('jumpApply', { 1: hb(), 2: hb2(), 14: B['al' + jc], 16: B['be' + jc], 18: B['pt' + jc] }, wgN); hc = 1 - hc;
       pass('creep', { 1: hb(), 2: hb2(), 8: B.info, 11: B.DW, 13: B.TB }, wgN); hc = 1 - hc;
       for (let p = 0; p < PASSES.collapse; p++) { pass('collapse', { 1: hb(), 2: hb2(), 8: B.info, 11: B.DW, 13: B.TB, 20: B.talus }, wgN); hc = 1 - hc; }
+      cp.end();
       dev.queue.submit([enc.finish()]);
+      // (a couple of steps at a time, then wait for them: the game draws on the same GPU, and
+      // a queue full of steps would hold its frames back)
+      if (st % 2 === 1) await dev.queue.onSubmittedWorkDone();
     }
     // the result back
     const rb = (src) => { const b = dev.createBuffer({ size: n * 4, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST }); const e = dev.createCommandEncoder(); e.copyBufferToBuffer(src, 0, b, 0, n * 4); dev.queue.submit([e.finish()]); return b; };

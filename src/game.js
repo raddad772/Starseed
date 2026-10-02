@@ -1619,17 +1619,19 @@ export class Game {
     const pending = this.world.pendingNear();
     const space = this.loadMode === 'space';
     const terr = this.world.terrainOf(this.player.currentBody().id);
-    const deepEnough = space || !terr || terr.deepest >= terr.maxLevel - 1;
+    // (a terrain rebuilt mid-descent, its world's sim or refinement just in, hasn't measured yet)
+    const deepest = terr ? terr.deepest || 0 : 0;
+    const deepEnough = space || !terr || deepest >= terr.maxLevel - 1;
     const near = space ? 1 : this.nearBuilt(terr);
     if (pending === 0 && deepEnough && near >= 1) this.settleTime += dt; else this.settleTime = 0;
     // progress: on the surface the terrain refines level by level under you
     // (later levels take longer: cubed to keep pace with the clock), then the
     // last tiles drain; in space only the tiles in view drain; then a settle
-    const levels = space || !terr ? 1 : Math.min(1, terr.deepest / (terr.maxLevel - 1)) ** 3;
+    const levels = space || !terr ? 1 : Math.min(1, deepest / Math.max(1, terr.maxLevel - 1)) ** 3;
     if (deepEnough) this.loadPeak = Math.max(this.loadPeak, pending);
     const drain = !deepEnough ? 0 : (this.loadPeak ? 1 - pending / this.loadPeak : (this.loadTimer > 0.5 ? 1 : 0));
     const f = space || !terr ? 0.1 + 0.8 * drain : 0.1 + 0.4 * levels + 0.2 * drain + 0.2 * near;
-    this.loadProgress = Math.max(this.loadProgress, Math.min(0.99, f + 0.1 * Math.min(1, this.settleTime / 0.4)));
+    this.loadProgress = Math.max(this.loadProgress || 0, Math.min(0.99, (f || 0) + 0.1 * Math.min(1, this.settleTime / 0.4)));
     this.screenHud.setLoading(this.loadText, this.loadProgress);
     if ((this.settleTime > 0.4 && this.loadTimer > 1) || this.loadTimer > (space ? 10 : 40)) {
       this.state = 'playing';

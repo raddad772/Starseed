@@ -49,7 +49,9 @@ try {
   const tg = performance.now() - t0;
   log(`full run, ${I.steps} steps on the GPU: ${(tg / 1000).toFixed(2)} s (${(tg / I.steps).toFixed(1)} ms a step)`);
   P.fromInts(r);
+  t0 = performance.now();
   const T = P.finish();
+  log(`finish (water, rock, the kept square) on the CPU: ${((performance.now() - t0) / 1000).toFixed(2)} s`);
   // draw it: rock colours, hillshade, water
   const K = MT + 2 * KEEP, cv = document.getElementById('cv'), cx = cv.getContext('2d'), img = cx.createImageData(K, K), col = ROCKS.map((x) => hexToLinear(x.color));
   const g = (v) => Math.round(255 * Math.min(1, Math.pow(Math.max(0, v), 1 / 2.2)));

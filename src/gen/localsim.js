@@ -353,7 +353,7 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
   // refinement), a few hundred metres to a few km): uplift keeping pace with the wearing down,
   // as the world sim had it
   const sig = refine ? 4 : Math.round(NG / (region ? 10 : 20)), mean = new Float64Array(n), btmp = new Float64Array(NG);
-  const K0 = opts.K0 ?? (refine ? 0.05 : region ? 0.3 : 1.2e-2), kd0 = opts.kd0 ?? (refine ? 0.1 : region ? 0.15 : 0.06);
+  const K0 = opts.K0 ?? (refine ? 3 : region ? 0.3 : 1.2e-2), kd0 = opts.kd0 ?? (refine ? 0.25 : region ? 0.15 : 0.06);
   if (refine) readRock();
   const talus = new Float32Array(n), hd = new Float64Array(n), tmp = new Float64Array(n);
   const { nStart, nbr, nDist, area } = G;
