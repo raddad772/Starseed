@@ -17,6 +17,7 @@ import { Impacts } from '../src/gen/worldsim/impacts.js';
 import { planetHistory } from '../src/gen/worldsim/history.js';
 import { barrenWorld } from '../src/gen/worldsim/barren.js';
 import { stagnantWorld } from '../src/gen/worldsim/stagnant.js';
+import { worldSim } from '../src/gen/worldsim/world.js';
 import { Rng } from '../src/core/rng.js';
 import { writePNG } from './png.mjs';
 import fs from 'node:fs';
@@ -27,7 +28,9 @@ const pos = args.filter((a, i) => !a.startsWith('--') && !(i > 0 && args[i - 1].
 const seed = pos[0] || 'FSPB-8DTW';
 const N = +flag('N', 128), steps = +flag('steps', 100), dt = +flag('dt', 1e5);
 const K = +flag('K', 1e-5), upT = +flag('up', 5e6), kd = +flag('kd', 0);
-const init = flag('init', 'smooth'); // 'smooth': the generator's shape, smoothed; 'raw': its surface; 'tect': plate tectonics
+// 'auto' (default): the world's history picks the processes (worldsim/world.js);
+// 'tect' / 'stagnant' / 'barren': force one; 'smooth' / 'raw': erode the old generator's surface
+const init = flag('init', 'auto');
 const Nt = +flag('Nt', 128), myr = +flag('myr', 200);
 const deepK = +flag('deepK', 3e-7), deepKd = +flag('deepKd', 2); // erosion alongside the plates (0: none)
 const out = flag('out', '.'), W = +flag('W', 1024), W_ = W;
@@ -50,6 +53,19 @@ drawHistory(HIST, `${out}/${body.name}-history.png`);
 if (args.includes('--history')) process.exit(0);
 
 let t0 = performance.now();
+if (init === 'auto') {
+  const host = body.parentId > 0 ? sys.bodies[body.parentId] : null;
+  const Wd = worldSim(body, sys.bodies[0], { N: +flag('N', 256), Nt, myr: +flag('myr', 300), steps: +flag('steps', 60), dt: +flag('dt', 2.5e5), host, log: (m) => console.log(m) });
+  console.log(`in ${ms(t0)}${Wd.stats ? ' ' + JSON.stringify(Wd.stats) : ''}`);
+  const name = `${body.name}-auto-${Wd.path}`;
+  let rgb;
+  if (Wd.path === 'plates') rgb = render(Wd.G, Wd.h, Wd.E, W_);
+  else if (Wd.path === 'stagnant') rgb = renderBarren(Wd.G, { h: Wd.h, mare: Wd.volc, fresh: new Float32Array(Wd.G.n), river: Wd.river }, W_, [1.0, 0.72, 0.52]);
+  else rgb = renderBarren(Wd.G, Wd, W_, p.icy ? [0.92, 0.97, 1.05] : [1, 0.98, 0.95]);
+  writePNG(`${out}/${name}-map.png`, W_, W_ / 2, rgb);
+  console.log(`wrote ${out}/${name}-map.png`);
+  process.exit(0);
+}
 const G = new SimGrid(N, R);
 console.log(`grid N=${N}: ${G.n} cells, ~${(G.spacing / 1000).toFixed(1)} km, built in ${ms(t0)}`);
 

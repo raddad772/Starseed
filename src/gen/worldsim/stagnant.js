@@ -53,7 +53,7 @@ export function stagnantWorld(G, opts) {
   }
   const canyon = rise && rng.next() < 0.6 ? makeCanyon(rng, rise, scale) : null;
   // ---- the bombardment, the volcanoes, the wet era, through time
-  const imp = new Impacts(G, { rng: rng.fork('impacts'), g, pressure: body.atmosphere ? body.atmosphere.pressure : 0, scale });
+  const imp = new Impacts(G, { rng: rng.fork('impacts'), g, pressure: body.atmosphere ? body.atmosphere.pressure : 0, scale, rate: opts.rate ?? 1, spike: opts.spike });
   const dMin = 6 * G.spacing / 1000;
   const wet = opts.wet;
   let E = null, sl = 0;

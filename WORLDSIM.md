@@ -195,6 +195,21 @@ sim per world type.
     diamond world (high C/O), a deep global ocean (hycean), an eyeball world with an extreme day-night
     split, a rocky world with rings, a double planet, a geyser moon (cryovolcanic plumes), a chaotic-tilt
     world (wild seasons), a super-Venus, a moon near its Roche limit shedding a ring.
+- **U3 status: v1 done.** `src/gen/worldsim/world.js` `worldSim(body, star, { N, Nt, myr, steps,
+  dt, host, log })`. `choosePath(body)` reads the history:
+  - **plates** (mobile now, liquid seas): Tectonics plus coupled erosion over `myr`, rain from
+    `H.at(..., 'rain')`, impacts; then a fine erosion epoch with impacts.
+  - **stagnant** (one shell, with a past of water or air): stagnant.js with `wetWindow(H)` (when the
+    series had rain) and the sea fraction from the history's oceans.
+  - **barren:** barren.js.
+
+  All impacts take the system debris level x giant-host focusing (1 + 2 sqrt(M/M_jup)) plus the late
+  spike. Lab: `node tools/worldlab.mjs SEED BODY` (`--init auto` is the default now). Checked:
+  Ishiodreill (plates, 27 s at N=192 / 200 Myr), Zeloarkar (stagnant, 2 s), Moaskeanion (barren,
+  0.6 s).
+  - **Still to do:** regime changes within one run (plates early, then stagnant), Venus resurfacing,
+    icy shells, glaciers, the climate step, and the plates path's starting crust (it still seeds
+    continents from the old noise generator).
 - **U4 status: done (v1).** `systemDebris()` in system.js sits in the seed head.
   - level = lognormal(1, 0.7) x (giants ? 1.4 + 0.2 x giants : 0.6) x (disk solids / 11)^0.3.
   - Named quiet / ordinary / busy / "a shooting gallery" (68 / 26 / 4 / 1.4% over 2000 seeds;

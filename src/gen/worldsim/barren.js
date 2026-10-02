@@ -38,7 +38,7 @@ export function barrenWorld(G, opts) {
     h[c] = (lump[c] - 0.5) * 2500;
     if (lop) h[c] += lopAmp * (G.dir[c * 3] * lop[0] + G.dir[c * 3 + 1] * lop[1] + G.dir[c * 3 + 2] * lop[2]);
   }
-  const imp = new Impacts(G, { rng: rng.fork('impacts'), g: body.gravity, pressure: body.atmosphere ? body.atmosphere.pressure : 0, rate: opts.rate ?? 1, scale: opts.scale });
+  const imp = new Impacts(G, { rng: rng.fork('impacts'), g: body.gravity, pressure: body.atmosphere ? body.atmosphere.pressure : 0, rate: opts.rate ?? 1, scale: opts.scale, spike: opts.spike });
   const dMin = opts.dMin ?? 6 * G.spacing / 1000; // (smaller ones are the local detail's)
   const basalt = !(body.terrain && body.terrain.icy); // (icy worlds don't make dark lava seas)
   const volcEnd = opts.volcEnd ?? 0;
