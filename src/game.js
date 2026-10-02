@@ -9,6 +9,7 @@
 import { WorldSims } from './sim/worldSims.js';
 import * as THREE from 'three';
 import { generateSystem } from './gen/system.js';
+import { S_LEN, S_H, S_WDEPTH } from './gen/terrain.js';
 import { Universe } from './sim/universe.js';
 import { Engine } from './render/engine.js';
 import { WorkerPool } from './render/workerPool.js';
@@ -448,12 +449,12 @@ export class Game {
 
   fallbackSite(b) {
     const gen = b.terrain;
-    const s = new Float64Array(16);
+    const s = new Float64Array(S_LEN);
     for (let i = 0; i < 2000; i++) {
       const z = 1 - (i + 0.5) / 2000 * 2, r = Math.sqrt(1 - z * z), th = i * 2.399963;
       const d = [Math.cos(th) * r, z * 0.8, Math.sin(th) * r];
       gen.sample(d[0], d[1], d[2], 2000, s);
-      if (s[0] > 20 && s[0] < 1500) return new THREE.Vector3(...d).normalize();
+      if (s[S_H] > 20 && s[S_H] < 1500 && !(s[S_WDEPTH] > 0)) return new THREE.Vector3(...d).normalize();
     }
     return new THREE.Vector3(1, 0, 0);
   }

@@ -47,6 +47,22 @@ export class WorldSims {
     this.worker.onmessage = (e) => this._onMessage(e.data);
     this.worker.onerror = (e) => { console.error('world-sim worker error', e.message || e); this.busy = false; this._next(); };
     this.onReady = null;   // (bodyId, snap) => void
+    // a quiet progress line in a corner while worlds are being simulated
+    this.el = null;
+    if (typeof document !== 'undefined') {
+      this.el = document.createElement('div');
+      this.el.style.cssText = 'position:fixed;left:12px;bottom:10px;font:12px system-ui,sans-serif;color:#cfe3ff;opacity:0.75;pointer-events:none;z-index:5;text-shadow:0 1px 2px #000;transition:opacity 1.5s';
+      document.body.appendChild(this.el);
+    }
+  }
+
+  _progress() {
+    if (!this.el) return;
+    const all = [...this.status.values()], ready = all.filter((v) => v === 'ready').length;
+    const running = [...this.status].find(([, v]) => v === 'running');
+    if (ready >= all.length) { this.el.textContent = `Simulated worlds ready (${ready})`; this.el.style.opacity = '0'; return; }
+    this.el.style.opacity = '0.75';
+    this.el.textContent = `Simulating worlds: ${ready} of ${all.length} ready${running ? ` · ${this.game.system.bodies[running[0]].name}: ${this.phase || 'starting'}…` : ''}`;
   }
 
   key(id) { return `${this.seed}|${id}|v${SIM_VERSION}|N${this.N}`; }
@@ -72,11 +88,19 @@ export class WorldSims {
     const id = this.queue.shift();
     this.busy = true;
     this.status.set(id, 'running');
+    this.phase = null;
+    this._progress();
     this.worker.postMessage({ type: 'sim', job: id, seed: this.seed, body: id, N: this.N, myr: this.myr, steps: this.steps });
   }
 
   async _onMessage(m) {
-    if (m.type === 'log') { if (this.verbose) console.log(`[worldsim ${m.body}] ${m.msg}`); return; }
+    if (m.type === 'log') {
+      if (this.verbose) console.log(`[worldsim ${m.body}] ${m.msg}`);
+      // the sim's stages, from its log lines (deep time, the plates, the recent epoch, life)
+      const k = /^(worldSim|plates|lakes after|climate now|soil|life)/.exec(m.msg);
+      if (k) { this.phase = { worldSim: 'deep time', plates: 'the recent epoch', 'lakes after': 'ice and climate', 'climate now': 'soil and water', soil: 'life', life: 'coasts' }[k[1]]; this._progress(); }
+      return;
+    }
     if (m.type === 'error') { console.error(`world sim failed for body ${m.body}:`, m.message); this.status.set(m.body, 'failed'); this.busy = false; this._next(); return; }
     if (m.type === 'snapshot') {
       this.busy = false;
@@ -96,7 +120,8 @@ export class WorldSims {
     if (g.world.rebuildTerrain) g.world.rebuildTerrain(id);
     console.log(`world sim ${fromCache ? 'from cache' : `done in ${((snap.ms || 0) / 1000).toFixed(1)} s`}: ${b.name} (${snap.path})`);
     if (this.onReady) this.onReady(id, snap);
+    this._progress();
   }
 
-  dispose() { this.worker.terminate(); }
+  dispose() { this.worker.terminate(); if (this.el) this.el.remove(); }
 }

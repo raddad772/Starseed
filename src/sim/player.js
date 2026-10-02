@@ -468,9 +468,10 @@ export class Player {
     const mv = new THREE.Vector3().addScaledVector(fwd, input.axis('KeyS', 'KeyW')).addScaledVector(right, input.axis('KeyA', 'KeyD'));
     // ground under us
     const gh = b.groundHeight(up);
-    const water = b.isWaterAt(up) && b.data.terrain.liquid === 'water';
+    // (water: the sea, a lake or a river; afloat where it's deeper than you wade)
+    const water = b.data.terrain.liquid === 'water' && b.isWaterAt(up);
     const groundR = b.R + gh;
-    this.swimming = water && r < groundR + 0.6;
+    this.swimming = water && r < groundR + 0.6 && b.liquidDepthAt(up) > 1.1;
     let speed = input.down('ShiftLeft') ? SPRINT : WALK;
     if (this.swimming) speed = SWIM;
     if (mv.lengthSq() > 0) mv.normalize().multiplyScalar(speed);
@@ -520,7 +521,9 @@ export class Player {
     // ground collision
     const up2 = _v1.copy(this.fPos).normalize();
     const gh2 = b.groundHeight(up2);
-    const floorR = b.R + gh2 + (this.swimming || (water && b.isWaterAt(up2)) ? -1.3 : 0);
+    // (afloat: 1.3 m down in the water, or on the bed of a shallow stream)
+    const wd2 = water ? b.liquidDepthAt(up2) : 0;
+    const floorR = b.R + gh2 - (wd2 > 0.3 ? Math.min(1.3, wd2) : 0);
     const rr = this.fPos.length();
     if (rr <= floorR + 0.001 || (this.grounded && rr - floorR < 0.45 && this.fVel.dot(up2) <= 0.5)) {
       const impact = -this.fVel.dot(up2);
@@ -846,7 +849,8 @@ export class Player {
     if (this.mode === 'surface') {
       const b = this.body;
       const up = _v4.copy(this.fPos).normalize();
-      const eyeF = _v3.copy(this.fPos).addScaledVector(up, this.swimming ? 0.35 : EYE + bobY);
+      // (afloat: your eyes just above the water, 1.3 m above where you float)
+      const eyeF = _v3.copy(this.fPos).addScaledVector(up, this.swimming ? 1.5 : EYE + bobY);
       outPos.copy(eyeF).applyQuaternion(b.q).add(b.pos);
       const lq = lookQuat(up, this.heading, this.pitch, _q2);
       outQuat.copy(b.q).multiply(lq);

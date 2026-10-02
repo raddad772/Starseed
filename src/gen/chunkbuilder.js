@@ -8,7 +8,7 @@
 // to its parent at the moment they swap: no popping, no T-junction cracks.
 
 import { dirFromFaceUV, chunkUVBounds, chunkArcSize } from './cubesphere.js';
-import { S_LEN, S_H } from './terrain.js';
+import { S_LEN, surfaceOf } from './terrain.js';
 
 export const CHUNK_N = 32; // quads per side (even)
 
@@ -85,7 +85,6 @@ export function buildChunk(gen, face, level, ix, iy, N = CHUNK_N) {
   const spacing = arc / N;
   const minW = spacing * 2;
   const coarseMinW = spacing * 4;
-  const hasSea = !!gen.p.liquid && gen.contThreshold > -1e8;
 
   // chunk origin: centre direction at datum radius
   const cdir = [0, 0, 0];
@@ -104,8 +103,7 @@ export function buildChunk(gen, face, level, ix, iy, N = CHUNK_N) {
       const k = j * FV + i;
       const s = fineS.subarray(k * S_LEN, k * S_LEN + S_LEN);
       gen.sample(dir[0], dir[1], dir[2], minW, s);
-      let h = s[S_H];
-      if (hasSea && h < 0) h = 0;
+      const h = surfaceOf(gen, s);
       const r = R + h;
       fineP[k * 3] = dir[0] * r; fineP[k * 3 + 1] = dir[1] * r; fineP[k * 3 + 2] = dir[2] * r;
       if (i > 0 && j > 0 && i < FV - 1 && j < FV - 1) { if (h < minH) minH = h; if (h > maxH) maxH = h; }
@@ -140,8 +138,7 @@ export function buildChunk(gen, face, level, ix, iy, N = CHUNK_N) {
         const k = j * CV + i;
         const s = coarseS.subarray(k * S_LEN, k * S_LEN + S_LEN);
         gen.sample(dir[0], dir[1], dir[2], coarseMinW, s);
-        let h = s[S_H];
-        if (hasSea && h < 0) h = 0;
+        const h = surfaceOf(gen, s);
         const r = R + h;
         coarseP[k * 3] = dir[0] * r; coarseP[k * 3 + 1] = dir[1] * r; coarseP[k * 3 + 2] = dir[2] * r;
       }

@@ -5,7 +5,7 @@
 
 import * as THREE from 'three';
 import { orbitState } from '../core/kepler.js';
-import { TerrainGenerator, S_LEN, S_H } from '../gen/terrain.js';
+import { TerrainGenerator, S_LEN, surfaceOf, liquidDepthOf } from '../gen/terrain.js';
 import { dirFromFaceUV, faceUVFromDir, chunkArcSize } from '../gen/cubesphere.js';
 import { CHUNK_N } from '../gen/chunkbuilder.js';
 import * as U from '../core/units.js';
@@ -93,8 +93,7 @@ export class BodyRuntime {
       const key = fu.face + ':' + (i + corners[k][0]) + ':' + (j + corners[k][1]);
       let h = this._hcache && this._hcache.get(key);
       if (h === undefined) {
-        h = gen.sample(tmp[0], tmp[1], tmp[2], minW, this._scratch)[S_H];
-        if (gen.p.liquid && gen.contThreshold > -1e8 && h < 0) h = 0;
+        h = surfaceOf(gen, gen.sample(tmp[0], tmp[1], tmp[2], minW, this._scratch));
         if (!this._hcache) this._hcache = new Map();
         if (this._hcache.size > 4096) this._hcache.clear();
         this._hcache.set(key, h);
@@ -143,13 +142,16 @@ export class BodyRuntime {
     return out;
   }
 
-  isWaterAt(dirFixed) {
+  isWaterAt(dirFixed) { return this.liquidDepthAt(dirFixed) > 0.3; }
+
+  // how deep the liquid is under a body-fixed direction (the sea, a lake, a river), 0 if dry
+  liquidDepthAt(dirFixed) {
     const gen = this.terrain;
-    if (!gen || !gen.p.liquid || gen.contThreshold <= -1e8) return false;
+    if (!gen || !gen.p.liquid) return 0;
     const d = this._wd || (this._wd = [0, 0, 0]);
     const l = dirFixed.length();
     d[0] = dirFixed.x / l; d[1] = dirFixed.y / l; d[2] = dirFixed.z / l;
-    return gen.sample(d[0], d[1], d[2], 50, this._scratch)[S_H] < 0;
+    return liquidDepthOf(gen, gen.sample(d[0], d[1], d[2], 50, this._scratch));
   }
 
   // ---------------------------------------------------------------- atmosphere

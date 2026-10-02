@@ -9,7 +9,7 @@
 
 import { Rng, hashInts, hash3f } from '../core/rng.js';
 import { dirFromFaceUV, chunkUVBounds, chunkArcSize } from './cubesphere.js';
-import { S_LEN, S_H, S_TEMP, S_MOIST } from './terrain.js';
+import { S_LEN, S_H, S_TEMP, S_MOIST, S_WDEPTH } from './terrain.js';
 import * as dm from '../core/dmath.js';
 import { CHUNK_N } from './chunkbuilder.js';
 
@@ -104,7 +104,7 @@ function meadowCell(gen, species, ci, cj, ck) {
       const d = [px / l, py / l, pz / l];
       if (Math.floor(d[0] * R / MEADOW_CELL) !== ci || Math.floor(d[1] * R / MEADOW_CELL) !== cj || Math.floor(d[2] * R / MEADOW_CELL) !== ck) continue;
       const h = gen.sample(d[0], d[1], d[2], 40, s2)[S_H];
-      if (hasSea && h < 2) continue;
+      if ((hasSea && h < 2) || s2[S_WDEPTH] > 0) continue;
       const sl = broadSlope(gen, d, s2);
       if (sl < bestSlope) { bestSlope = sl; best = d; }
     }
@@ -174,7 +174,7 @@ export function scatterFlora(gen, face, level, ix, iy, maxLevel, species) {
     dirFromFaceUV(face, u, v, dir);
     gen.sample(dir[0], dir[1], dir[2], minW, s);
     const h = s[S_H];
-    if (hasSea && h < 0.5) continue;
+    if ((hasSea && h < 0.5) || s[S_WDEPTH] > 0) continue;
     // slope from a tiny finite difference
     const e = 0.75 / R;
     const hx = gen.sample(dir[0] + e * (Math.abs(dir[1]) < 0.9 ? 1 : 0), dir[1] + e * (Math.abs(dir[1]) < 0.9 ? 0 : 1), dir[2], minW, s2)[S_H];

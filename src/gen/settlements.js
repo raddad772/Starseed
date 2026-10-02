@@ -15,7 +15,7 @@
 // polar ice, crater rims, the terminator band of tidally locked planets.
 // Fully deterministic (fixed grid, stable sort tie-breaks).
 
-import { S_LEN, S_H, S_TEMP, S_MOIST, S_INLAND, S_MOUNT, S_CRATER } from './terrain.js';
+import { S_LEN, S_H, S_TEMP, S_MOIST, S_INLAND, S_MOUNT, S_CRATER, S_WDEPTH } from './terrain.js';
 import * as dm from '../core/dmath.js';
 
 export const SETTLEMENT_VERSION = 2;
@@ -108,8 +108,8 @@ export function analyzeSettlements(gen, opts = {}) {
   for (let i = 0; i < n; i++) {
     const v = verts[i];
     gen.sample(v[0], v[1], v[2], minW, s);
-    rawH[i] = s[S_H];
-    h[i] = hasSea && s[S_H] < 0 ? 0 : s[S_H];
+    rawH[i] = s[S_H] + s[S_WDEPTH];                 // (a lake's or river's surface)
+    h[i] = hasSea && rawH[i] < 0 ? 0 : rawH[i];
     T[i] = s[S_TEMP]; W[i] = s[S_MOIST]; inland[i] = s[S_INLAND]; mount[i] = s[S_MOUNT]; crater[i] = s[S_CRATER];
   }
   const ocean = new Uint8Array(n);

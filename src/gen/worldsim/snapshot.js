@@ -62,6 +62,15 @@ export class SnapshotSampler {
     this.Gc = s.Nc ? new SimGrid(s.Nc, s.R) : null;
     this.uv = { face: 0, u: 0, v: 0 };
     this.d = [0, 0, 0];
+    // land cells with no sea beside them (where a dip below the datum is still dry land)
+    const G = this.G, n = G.n;
+    this.inland = new Uint8Array(n);
+    for (let c = 0; c < n; c++) {
+      if (s.h[c] < 0 && !(s.water[c] > -1e8)) continue;
+      let sea = false;
+      for (let e = G.nStart[c]; e < G.nStart[c + 1]; e++) { const q = G.nbr[e]; if (s.h[q] < 0 && !(s.water[q] > -1e8)) { sea = true; break; } }
+      if (!sea) this.inland[c] = 1;
+    }
   }
   _d(x, y, z) { const d = this.d; d[0] = x; d[1] = y; d[2] = z; return d; }
   // smooth (bilinear) fields
@@ -74,6 +83,24 @@ export class SnapshotSampler {
   cell(x, y, z) { return this.G.cellAt(x, y, z); }
   rock(x, y, z) { return this.s.rock[this.G.cellAt(x, y, z)]; }
   lake(x, y, z) { const w = this.s.water[this.G.cellAt(x, y, z)]; return w > -1e8 ? w : null; }
+  // the lake level here: the cell's own lake (own), or a neighbouring cell's lake whose
+  // centre is within a cell's spacing (it fills its basin out to where the ground rises
+  // above it, so its shore is a contour, not the cells' outline), with q how far out
+  // (0 at its centre, 1 a spacing away: the basin's rim); else null
+  lakeLevel(x, y, z, out) {
+    const G = this.G, s = this.s, c0 = G.cellAt(x, y, z);
+    if (s.water[c0] > -1e8) { out.L = s.water[c0]; out.own = true; out.q = 0; return out; }
+    let L = -1e9, q2 = 1;
+    const lim = G.spacing / G.R, lim2 = lim * lim;
+    for (let e = G.nStart[c0]; e < G.nStart[c0 + 1]; e++) {
+      const q = G.nbr[e], w = s.water[q];
+      if (!(w > L)) continue;
+      const dx = x - G.dir[q * 3], dy = y - G.dir[q * 3 + 1], dz = z - G.dir[q * 3 + 2], d2 = dx * dx + dy * dy + dz * dz;
+      if (d2 < lim2) { L = w; q2 = d2 / lim2; }
+    }
+    if (L < -1e8) return null;
+    out.L = L; out.own = false; out.q = Math.sqrt(q2); return out;
+  }
   // the climate grid's
   Tsea(x, y, z) { return this.Gc ? this.Gc.sample(this.s.Tsea, this._d(x, y, z), this.uv) : null; }
   rain(x, y, z) { return this.Gc ? this.Gc.sample(this.s.P, this._d(x, y, z), this.uv) : null; }

@@ -40,7 +40,8 @@ export const S_VARIANT = 10; // low-frequency mineral variation -1..1
 export const S_VOLC = 11;    // volcanic flow darkening 0..1
 export const S_ROUGH = 12;   // roughness / rockiness tendency 0..1
 export const S_DX = 13, S_DY = 14, S_DZ = 15; // sample direction
-export const S_LEN = 16;
+export const S_WDEPTH = 16;  // lake or river water over the ground here (m; its surface is S_H + this)
+export const S_LEN = 17;
 
 const tmp4 = new Float64Array(4);
 
@@ -532,29 +533,43 @@ export class TerrainGenerator {
       }
       h += sum * (h < 0 ? 0.5 : 1);
     }
+    // a lake's surface is level and fills its basin out to the contour of its level (looked
+    // up a little off true, so shores wander rather than follow the sim's cells), inside a
+    // rim where the ground rises above it before the basin ends; the bed under it is the
+    // ground, kept below the surface in the lake's own cells (a shallow lake stays one sheet
+    // of water). A dip below the datum far from the sea stays dry.
+    const lk = this._lakeAt(x, y, z);
+    if (lk) {
+      if (lk.own) h = Math.min(h, lk.L - 0.5);
+      else h += Math.max(0, lk.L + 2 - h) * dm.smoothstep(0.55, 0.95, lk.q);
+    }
+    const flooded = lk && h < lk.L;
     // rivers: a channel along the sim's river lines (meandering), as wide and deep as its
-    // water, with a flat floodplain round it
+    // water, in a valley that levels off to its banks; the banks (and the water a little
+    // below them) follow the sim's heights along the line, so the water only runs downhill
+    let wl = -1e9;
     const rv = this._riverAt(x, y, z);
     if (rv) {
-      const half = rv.w * 0.5;
-      if (rv.dist < half * 4) {
-        const bank = Math.max(h, 0.5);
-        const plain = dm.smoothstep(half * 4, half * 1.2, rv.dist);
-        h = h + (bank - h) * plain * 0.6;           // the floodplain levels off
-        if (rv.dist < half) h = Math.min(h, bank - rv.depth * (1 - (rv.dist / half) * (rv.dist / half)));
+      const half = rv.w * 0.5, flank = half * 3 + S.G.spacing * (0.02 + 0.12 * rv.k);
+      if (rv.dist < flank) {
+        const bank = Math.max(rv.hs, 0) + 1 + 0.05 * rv.depth;
+        h += (bank - h) * dm.smoothstep(flank, half * 1.2, rv.dist);
+        if (rv.dist < half) {
+          h = Math.min(h, bank - rv.depth * (1 - (rv.dist / half) * (rv.dist / half)));
+          wl = Math.max(bank - 0.6 - 0.03 * rv.depth, p.liquid ? 0.3 : -1e9);
+        }
       }
     }
-    // a lake's surface is level (looked up a little off true, so shores wander rather than
-    // follow the sim's cells)
-    const lake = this._lakeAt(x, y, z);
-    if (lake != null && lake > h) h = lake;
+    if (flooded && lk.L > wl) wl = lk.L;
+    else if (!lk && h < 0 && wl < -1e8 && S.inland[S.G.cellAt(x, y, z)]) h = 0.5 - 0.02 * h;
     out[S_H] = h;
+    if (wl > h) out[S_WDEPTH] = wl - h;
     out[S_INLAND] = h > 0 ? 1 : 0;
     out[S_VARIANT] = this.nClimate.fbm(x * 6 + 3, y * 6, z * 6, 3);
     const Ts = S.Tsea(x, y, z);
     if (Ts != null) {
       const lapse = (p.climate && p.climate.lapse) || 0.0065;
-      out[S_TEMP] = Ts - lapse * Math.max(h, 0);
+      out[S_TEMP] = Ts - lapse * Math.max(h + out[S_WDEPTH], 0);
       out[S_MOIST] = dm.clamp(S.rain(x, y, z) / 1500, 0, 1);
     } else this.climate(x, y, z, h, out[S_INLAND], out);
     out[S_LAVA] = S.melt(x, y, z);
@@ -563,7 +578,8 @@ export class TerrainGenerator {
   }
 
   // the nearest simulated river line here (this cell's and its neighbours' segments to
-  // their downstream cells), the point wiggled so channels meander: { dist (m), w, depth }
+  // their downstream cells), the point wiggled so channels meander: { dist (m), w, depth,
+  // k (0 a stream .. 1 the greatest river), hs (the sim's height along the line) }
   _riverAt(x, y, z) {
     const S = this.snap, s = S.s;
     if (!s.rcv) return null;
@@ -583,18 +599,21 @@ export class TerrainGenerator {
       const dist = Math.sqrt(dx * dx + dy * dy + dz * dz) * R;
       const k = (r - 0.55) / 0.45;   // (0 a stream, 1 the greatest river)
       const w = 40 + 1800 * k * k, depth = 3 + 25 * k;
-      if (!best || dist - w < best.dist - best.w) best = { dist, w, depth };
+      if (!best || dist - w < best.dist - best.w) best = { dist, w, depth, k, hs: s.h[c] + (s.h[to] - s.h[c]) * t };
     };
     test(c0);
     for (let e = G.nStart[c0]; e < G.nStart[c0 + 1]; e++) test(G.nbr[e]);
     return best;
   }
 
-  // the simulated lake surface here, looked up a little off true (wandering shores)
+  // the simulated lake level here ({ L, own } or null: SnapshotSampler.lakeLevel), looked
+  // up a little off true (wandering shores)
   _lakeAt(x, y, z) {
     const S = this.snap, R = this.R;
-    const wk = 0.6 * S.G.spacing / R, wf = R / (S.G.spacing * 1.5);
-    return S.lake(x + wk * this.nMisc.noise(x * wf, y * wf, z * wf), y + wk * this.nMisc.noise(x * wf + 7, y * wf, z * wf), z + wk * this.nMisc.noise(x * wf, y * wf + 3, z * wf));
+    const wk = 0.4 * S.G.spacing / R, wf = R / (S.G.spacing * 1.5);
+    let px = x + wk * this.nMisc.noise(x * wf, y * wf, z * wf), py = y + wk * this.nMisc.noise(x * wf + 7, y * wf, z * wf), pz = z + wk * this.nMisc.noise(x * wf, y * wf + 3, z * wf);
+    const l = Math.sqrt(px * px + py * py + pz * pz); px /= l; py /= l; pz /= l;
+    return S.lakeLevel(px, py, pz, this._lk || (this._lk = { L: 0, own: false, q: 0 }));
   }
 
   // the sim's surfaces: the exposed rock in its own colour (soil over it where gentle),
@@ -603,16 +622,17 @@ export class TerrainGenerator {
   shadeSnap(s, slope, col, mat) {
     const p = this.p, P = p.palette, S = this.snap;
     const x = s[S_DX], y = s[S_DY], z = s[S_DZ], h = s[S_H];
-    if (h < 0 && p.liquid && this.contThreshold > -1e8) return this.shadeNoise(s, slope, col, mat);
     for (let i = 0; i < 7; i++) mat[i] = 0;
     const Tc = s[S_TEMP] - 273.15;
-    const lake = this._lakeAt(x, y, z);
-    if (lake != null && h <= lake + 0.5) {
-      const k = 0.5;
-      col[0] = P.waterShallow[0] + (P.waterDeep[0] - P.waterShallow[0]) * k;
-      col[1] = P.waterShallow[1] + (P.waterDeep[1] - P.waterShallow[1]) * k;
-      col[2] = P.waterShallow[2] + (P.waterDeep[2] - P.waterShallow[2]) * k;
-      mat[4] = 10;
+    // lakes and rivers: water over the ground, tinted by its depth (frozen when cold); the sea
+    const wd = s[S_WDEPTH];
+    if (!(wd > 0.05) && h < 0 && p.liquid && this.contThreshold > -1e8) return this.shadeNoise(s, slope, col, mat);
+    if (wd > 0.05) {
+      const k = dm.smoothstep(0, 60, wd), dim = wd < 3 ? 0.8 + 0.2 * k : 1;
+      col[0] = (P.waterShallow[0] + (P.waterDeep[0] - P.waterShallow[0]) * k) * dim;
+      col[1] = (P.waterShallow[1] + (P.waterDeep[1] - P.waterShallow[1]) * k) * dim;
+      col[2] = (P.waterShallow[2] + (P.waterDeep[2] - P.waterShallow[2]) * k) * dim;
+      mat[4] = wd;
       if (Tc < -2) { col[0] = P.snow[0] * 0.92; col[1] = P.snow[1] * 0.95; col[2] = P.snow[2]; mat[1] = 1; mat[4] = 0; }
       return;
     }
@@ -639,12 +659,8 @@ export class TerrainGenerator {
         mat[0] = vegW;
       }
     }
-    // rivers: water in the channel, wet darker ground on the floodplain
+    // rivers: wet darker ground on the floodplain (the water itself is above)
     const rl = this._riverAt(x, y, z);
-    if (rl && rl.dist < rl.w * 0.5 && Tc > -1) {
-      col[0] = P.waterShallow[0] * 0.8; col[1] = P.waterShallow[1] * 0.8; col[2] = P.waterShallow[2] * 0.8;
-      mat[4] = rl.depth; return;
-    }
     if (rl && rl.dist < rl.w * 2.5) { const k = 0.3 * dm.smoothstep(rl.w * 2.5, rl.w * 0.6, rl.dist); r *= 1 - k; g *= 1 - k * 0.8; b *= 1 - k * 0.6; mat[6] = Math.max(mat[6], k); }
     // snow where it's cold
     const snow = dm.smoothstep(-2, -10, Tc) * (1 - 0.5 * rockW);
@@ -789,4 +805,18 @@ export class TerrainGenerator {
 // Sea-level clamped surface height: what physics and rendering treat as "ground"
 export function surfaceHeight(gen, h) {
   return (gen.p.liquid && gen.contThreshold > -1e8 && h < 0) ? 0 : h;
+}
+
+// the top of whatever is here, from a sample: the sea's surface, a lake's or river's, or the
+// ground (what the mesh draws and what you stand or float on)
+export function surfaceOf(gen, s) {
+  const h = s[S_H];
+  if (s[S_WDEPTH] > 0) return h + s[S_WDEPTH];
+  return (gen.p.liquid && gen.contThreshold > -1e8 && h < 0) ? 0 : h;
+}
+
+// how deep the liquid is here (the sea's, a lake's or a river's), 0 on dry ground
+export function liquidDepthOf(gen, s) {
+  if (s[S_WDEPTH] > 0) return s[S_WDEPTH];
+  return (gen.p.liquid && gen.contThreshold > -1e8 && s[S_H] < 0) ? -s[S_H] : 0;
 }
