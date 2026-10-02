@@ -246,7 +246,7 @@ void main() {
       vec3 Ts = exp(-ext * dt);
       L += T * (S - S * Ts) / max(ext, vec3(1e-12));
       if (uGlow > 0.0 && h < -20000.0) Lth += T * thermalGlow(h) * (vec3(1.0) - Ts);
-      Lth += T * airLight(p, r) * dt;   // (aurora and airglow: the air's own light)
+      Lth += T * airLight(p, r) * dt;   // (airglow: the air's own light; the aurora is drawn after)
       T *= Ts;
       if (max(T.x, max(T.y, T.z)) < 0.003) { T = vec3(0.0); break; }
     }
@@ -256,7 +256,9 @@ void main() {
     vec3 pe = (t1 - tca) * D - perp;
     Lth += T * thermalGlow(length(pe) - uRadius);
   }
-  outL = vec4(L * uSunE + Lth, 1.0);
+  vec3 aNear, aFar;
+  auroraRay(D, tca, perp, min(hit.y, sceneDist), jitter, aNear, aFar);
+  outL = vec4(L * uSunE + Lth + aNear + T * aFar, 1.0);
   outT = vec4(T, 1.0);
 }
 `;

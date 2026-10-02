@@ -208,11 +208,14 @@ void main() {
 
 // ---------------------------------------------------------------- composite pass
 
-// the air's own light (bodies.js airGlow), for the atmosphere pass and the volumetric one:
-// aurora curtains in the upper air along each magnetic pole's oval (a faint glow all over
-// without a field), green low and red at their tops for oxygen; airglow, a thin layer below
-// them. Per unit of the shell's thickness, so their strengths are vertical radiances. Needs
-// uRadius, uTop, uToFixed, uTime and tNoise declared before it
+// the air's own light (bodies.js airGlow), for the atmosphere pass and the volumetric one.
+// Airglow: a thin layer, marched with the sky (airLight). Aurora: thin arcs along each
+// magnetic pole's oval, their latitude wandering with longitude and drifting, fine rays along
+// them, a sharp lower edge and a glow fading up (green low and red high for oxygen); a faint
+// glow all over without a field. It's drawn as a stack of thin shells, each read exactly where
+// the ray crosses it (auroraRay), so the arcs stay sharp and the rays stand vertical. Strengths
+// are vertical radiances per unit of the shell's thickness. Needs uRadius, uTop, uToFixed,
+// uTime and tNoise declared before it
 export const GLSL_AIRLIGHT = `
 uniform vec4 uAurora;      // aurora strength, oval latitude, oval width (rad); airglow strength
 uniform vec3 uAuroraLo;
@@ -220,21 +223,64 @@ uniform vec3 uAuroraHi;
 uniform vec3 uAirglowCol;
 uniform vec3 uMagAxis;     // in the body's frame
 vec3 airLight(vec3 p, float r) {
-  if (uAurora.x + uAurora.w <= 0.0) return vec3(0.0);
+  if (uAurora.w <= 0.0) return vec3(0.0);
   float hgt = (r - uRadius) / (uTop - uRadius);
-  vec3 em = vec3(0.0);
-  if (uAurora.x > 0.0 && hgt > 0.5) {
-    vec3 pf = uToFixed * (p / r);
-    float ml = asin(clamp(dot(pf, uMagAxis), -1.0, 1.0));
-    float band = uAurora.y > 0.0 ? exp(-pow((abs(ml) - uAurora.y) / uAurora.z, 2.0)) : 0.3;
-    float layer = smoothstep(0.55, 0.66, hgt) * (1.0 - smoothstep(0.72, 1.0, hgt));
-    float folds = texture(tNoise, pf * 7.0 + vec3(0.0, 0.0, uTime * 0.003)).r;
-    float rays = texture(tNoise, vec3(pf.x * 55.0, pf.z * 55.0, pf.y * 8.0 + uTime * 0.02)).r;
-    float curtain = uAurora.y > 0.0 ? smoothstep(0.5, 0.7, folds) * (0.25 + 1.5 * rays * rays) : 0.5 + 0.5 * folds;
-    em += uAurora.x * band * layer * curtain * mix(uAuroraLo, uAuroraHi, smoothstep(0.66, 0.9, hgt));
+  return uAurora.w * exp(-pow((hgt - 0.6) / 0.03, 2.0)) * uAirglowCol / (uTop - uRadius);
+}
+// the aurora's brightness at a body-fixed direction
+float auroraArcs(vec3 pf) {
+  float ml = asin(clamp(dot(pf, uMagAxis), -1.0, 1.0)), aml = abs(ml);
+  if (uAurora.y < 0.0) return 0.3 * texture(tNoise, pf * 3.0 + vec3(0.0, 0.0, uTime * 0.002)).r;
+  float band = exp(-pow((aml - uAurora.y) / uAurora.z, 2.0));
+  if (band < 0.02) return 0.0;
+  vec3 e1 = normalize(cross(uMagAxis, abs(uMagAxis.z) < 0.9 ? vec3(0.0, 0.0, 1.0) : vec3(1.0, 0.0, 0.0)));
+  vec3 e2 = cross(uMagAxis, e1);
+  float mlon = atan(dot(pf, e2), dot(pf, e1));
+  vec2 cs = vec2(cos(mlon), sin(mlon));
+  float side = ml > 0.0 ? 0.0 : 5.3;
+  float b = 0.0;
+  for (int j = 0; j < 2; j++) {
+    float fj = float(j);
+    float wig = texture(tNoise, vec3(cs * 0.6, side + fj * 2.7 + uTime * 0.0015)).r - 0.5;
+    wig += 0.45 * (texture(tNoise, vec3(cs * 2.3, side + fj * 1.3 + uTime * 0.004)).r - 0.5);
+    float lineLat = uAurora.y + (fj - 0.5) * uAurora.z * 0.9 + wig * uAurora.z * 2.2;
+    float d = (aml - lineLat) / (uAurora.z * 0.035);
+    float arc = exp(-d * d);
+    if (arc < 0.01) continue;
+    float rays = texture(tNoise, vec3(cs * 5.0, side + fj * 0.61 + uTime * 0.02)).r;
+    b += arc * (0.25 + 1.8 * rays * rays);
   }
-  if (uAurora.w > 0.0) em += uAurora.w * exp(-pow((hgt - 0.6) / 0.03, 2.0)) * uAirglowCol;
-  return em / (uTop - uRadius);
+  return b * band;
+}
+// the aurora along a ray (p = (t - tca) D - perp from the planet's centre), up to tMax: near,
+// where the ray crosses the shells coming in (the air between is thin), and far, beyond its
+// lowest point (the caller dims it by what lies between)
+void auroraRay(vec3 D, float tca, vec3 perp, float tMax, float jitter, out vec3 near, out vec3 far) {
+  near = vec3(0.0); far = vec3(0.0);
+  if (uAurora.x <= 0.0) return;
+  float H = uTop - uRadius, aLo = uRadius + 0.55 * H, aHi = uRadius + 0.98 * H;
+  float pp = dot(perp, perp);
+  if (pp >= aHi * aHi) return;
+  const int K = 28;
+  float slab = (aHi - aLo) / float(K);
+  for (int i = 0; i < K; i++) {
+    float x = (float(i) + jitter) / float(K);
+    float a = mix(aLo, aHi, x);
+    if (pp >= a * a) continue;
+    float s = sqrt(a * a - pp);
+    float prof = smoothstep(0.0, 0.04, x) * exp(-2.5 * x);
+    vec3 col = mix(uAuroraLo, uAuroraHi, smoothstep(0.3, 0.85, x)) * prof * uAurora.x / H;
+    for (int k = 0; k < 2; k++) {
+      float t = k == 0 ? tca - s : tca + s;
+      if (t <= 0.0 || t >= tMax) continue;
+      vec3 p = (t - tca) * D - perp;
+      float mu = (t - tca) / a;
+      float b = auroraArcs(uToFixed * (p / a));
+      if (b <= 0.0) continue;
+      vec3 e = col * b * slab / max(abs(mu), 0.04);
+      if (k == 0) near += e; else far += e;
+    }
+  }
 }
 `;
 
@@ -347,9 +393,11 @@ void main() {
       if (cand > t0 && cand < t1) tc = cand;
     }
   }
+  vec3 aNear, aFar;
+  auroraRay(D, tca, perp, min(hit.y, sceneDist), jitter, aNear, aFar);
   if (tc < 0.0) {
     march(t0, t1, D, tca, perp, cosTheta, jitter, L, T, steps);
-    outL = vec4(L * uSunE + gEm, 1.0); outT = vec4(T, 1.0);
+    outL = vec4(L * uSunE + gEm + aNear + T * aFar, 1.0); outT = vec4(T, 1.0);
     return;
   }
   // segment before the cloud
@@ -377,7 +425,7 @@ void main() {
   }
   // final = scene * T*(1-a)*T2 + L + T*((1-a)*L2 + a*cl)
   outT = vec4(T * (1.0 - alpha) * T2, 1.0);
-  outL = vec4((L + T * ((1.0 - alpha) * L2 + alpha * cl)) * uSunE + em1 + T * (1.0 - alpha) * gEm, 1.0);
+  outL = vec4((L + T * ((1.0 - alpha) * L2 + alpha * cl)) * uSunE + em1 + T * (1.0 - alpha) * gEm + aNear + T * (1.0 - alpha) * T2 * aFar, 1.0);
 }
 `;
 

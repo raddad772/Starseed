@@ -320,7 +320,7 @@ function airGlow(b, star, h, atm, S) {
     ovalLat: field > 0.05 ? dm.clamp(67 + 4 * Math.log2(Math.max(field, 0.05)) - 4 * Math.log2(wind), 45, 82) * Math.PI / 180 : -1,
     ovalWidth: (3 + 2 * Math.min(2, wind)) * Math.PI / 180,
     colorLow: lo, colorHigh: hi,
-    airglow: 4e-4 * thin * (O > 0.01 ? 1 : 0.35),
+    airglow: 1.2e-4 * thin * (O > 0.01 ? 1 : 0.35),
     airglowColor: O > 0.01 ? [0.45, 1.0, 0.35] : [1.0, 0.55, 0.25],
     magAxis: [Math.sin(tilt), Math.cos(tilt), 0],
   };
