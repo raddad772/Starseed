@@ -631,16 +631,36 @@ export class Game {
     if (this.opts.testSpot) this.goTestSpot(this.opts.testSpot, this.startToken);
   }
 
-  // testing launch spots (?test=): 'cliffs' starts on the start world's steepest hard-rock
+  // the biggest river on a world's land below 1.5 km and free of ice (the world sim's: a
+  // channel and its water at walking scale), at a point in its water: a direction, or null
+  findBigRiver(b) {
+    const gen = b.terrain, S = gen && gen.snap;
+    if (!S) return null;
+    const s = S.s, G = S.G, cd = [0, 0, 0];
+    let best = -1;
+    for (let c = 0; c < s.h.length; c++) if (s.h[c] > 5 && s.h[c] < 1500 && s.ice[c] === 0 && s.river[c] >= 200 && S.rcvOf(c) >= 0 && (best < 0 || s.river[c] > s.river[best])) best = c;
+    if (best < 0) return null;
+    // (the channel meanders off the cells' line: find water near the cell's centre)
+    G.centre(best, cd);
+    const c0 = new THREE.Vector3(cd[0], cd[1], cd[2]), e = new THREE.Vector3(0, 1, 0).cross(c0).normalize(), n = c0.clone().cross(e);
+    for (let r = 0; r < 6000; r += 50) for (let a = 0; a < 16; a++) {
+      const th = a / 16 * Math.PI * 2, q = c0.clone().addScaledVector(e, r * Math.cos(th) / b.R).addScaledVector(n, r * Math.sin(th) / b.R).normalize();
+      if (b.liquidDepthAt(q) > 2 && b.groundHeight(q) > 3) return [q.x, q.y, q.z];
+    }
+    return [cd[0], cd[1], cd[2]];
+  }
+
+  // testing launch spots (?test=): 'river' beside the start world's biggest river;
+  // 'cliffs' starts on the start world's steepest hard-rock
   // country below 2.5 km (gen/volume.js: cliffs, overhangs, caves), in the morning, beside the
   // ship; once that world's sim is in (from the cache at once, else when it's done)
   async goTestSpot(kind, token) {
     const b = this.startBody;
-    if (!b || !b.solid || kind !== 'cliffs') return;
+    if (!b || !b.solid || (kind !== 'cliffs' && kind !== 'river')) return;
     const id = b.data.id;
     if (this.worldSims) while (!['ready', 'failed'].includes(this.worldSims.status.get(id))) await new Promise((r) => setTimeout(r, 300));
     if (token !== this.startToken) return;   // (another start since: that one goes there instead)
-    const d = findCliffCountry(b.terrain);
+    const d = kind === 'river' ? this.findBigRiver(b) : findCliffCountry(b.terrain);
     if (!d) return;
     // (the ship down on the nearest gentle ground, the cliffs in sight)
     const site = gentleNear(b.terrain, d) || d;
