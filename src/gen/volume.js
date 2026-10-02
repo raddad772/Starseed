@@ -224,6 +224,29 @@ export function cliffWeightAt(gen, d, s) {
   return smooth(0.28, 0.65, Math.sqrt(sx * sx + sz * sz)) * hard;
 }
 
+// a gentle place to set a ship down within `range` m of direction d (nearest first): a
+// direction, or null
+export function gentleNear(gen, d, range = 600) {
+  const s = new Float64Array(S_LEN), R = gen.R;
+  const ref = Math.abs(d[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
+  let e = [ref[1] * d[2] - ref[2] * d[1], ref[2] * d[0] - ref[0] * d[2], ref[0] * d[1] - ref[1] * d[0]];
+  const el = Math.hypot(e[0], e[1], e[2]); e = [e[0] / el, e[1] / el, e[2] / el];
+  const n = [d[1] * e[2] - d[2] * e[1], d[2] * e[0] - d[0] * e[2], d[0] * e[1] - d[1] * e[0]];
+  for (let r = 40; r <= range; r += 20) {
+    for (let a = 0; a < 24; a++) {
+      const th = a / 24 * 2 * Math.PI, u = r * Math.cos(th) / R, v = r * Math.sin(th) / R;
+      let q = [d[0] + u * e[0] + v * n[0], d[1] + u * e[1] + v * n[1], d[2] + u * e[2] + v * n[2]];
+      const l = Math.hypot(q[0], q[1], q[2]); q = [q[0] / l, q[1] / l, q[2] / l];
+      const h = gen.sample(q[0], q[1], q[2], MINW, s)[S_H];
+      if (h < 5 || s[S_WDEPTH] > 0) continue;
+      if (cliffWeightAt(gen, q, s) > 0.01) continue;
+      const k = 6 / R, hh = (uu, vv) => gen.sample(q[0] + k * (uu * e[0] + vv * n[0]), q[1] + k * (uu * e[1] + vv * n[1]), q[2] + k * (uu * e[2] + vv * n[2]), MINW, s)[S_H];
+      if (Math.hypot(hh(1, 0) - hh(-1, 0), hh(0, 1) - hh(0, -1)) / 12 < 0.12) return q;
+    }
+  }
+  return null;
+}
+
 // the steepest hard-rock country on a world (a testing launch spot: the volume's cliffs,
 // overhangs and caves): the lowest place below maxH with the highest cliff weight. A direction
 export function findCliffCountry(gen, maxH = 2500) {

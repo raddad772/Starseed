@@ -892,7 +892,7 @@ export class Ship {
       // cheap reject: far above any terrain
       const relief = b.data.terrain ? b.data.terrain.relief * 1.6 + 200 : 200;
       if (r - b.R > relief) { minAgl = Math.min(minAgl, r - b.R - relief); return 0; }
-      const gh = b.groundHeight(pf);
+      const gh = b.floorAt(pf, 1.5);   // (the volume's ground in the near field)
       const depth = b.R + gh - r;
       minAgl = Math.min(minAgl, -depth);
       if (depth <= 0) return 0;
@@ -915,7 +915,7 @@ export class Ship {
         const pad = this.legAttach[i];
         const pw = _v3.copy(pad).applyQuaternion(qShip).add(center);
         const pf = _v4.copy(pw).applyQuaternion(qInvBody);
-        const r = pf.length(), gh = b.groundHeight(pf);
+        const r = pf.length(), gh = b.floorAt(pf, 1.5);
         minAgl = Math.min(minAgl, r - b.R - gh);
         b.groundNormal(pf, _gn, gh).applyQuaternion(b.q);
         const pv = pointVel(pad, _att).sub(surfaceVel(pw, this._sv || (this._sv = new THREE.Vector3())));

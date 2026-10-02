@@ -194,21 +194,32 @@ export function buildShip(name = 'SS-01') {
   const root = new THREE.Group();
   root.name = 'ship';
   const hullMap = hullTexture(name);
-  const hullMat = new THREE.MeshStandardMaterial({ map: hullMap, metalness: 0.55, roughness: 0.48 });
-  const darkMat = new THREE.MeshStandardMaterial({ color: 0x2a2e33, metalness: 0.6, roughness: 0.55 });
-  const shieldMat = new THREE.MeshStandardMaterial({ color: 0x1b1c1e, metalness: 0.1, roughness: 0.85 });
+  // (the hull's shells two-sided: their inner faces show through the openings, and no piece
+  // vanishes for facing the wrong way)
+  const hullMat = new THREE.MeshStandardMaterial({ map: hullMap, metalness: 0.55, roughness: 0.48, side: THREE.DoubleSide });
+  const darkMat = new THREE.MeshStandardMaterial({ color: 0x2a2e33, metalness: 0.6, roughness: 0.55, side: THREE.DoubleSide });
+  const shieldMat = new THREE.MeshStandardMaterial({ color: 0x1b1c1e, metalness: 0.1, roughness: 0.85, side: THREE.DoubleSide });
   const radMat = new THREE.MeshStandardMaterial({ color: 0xd9d4c8, metalness: 0.3, roughness: 0.35 });
   // glass reflects specularly and scatters almost nothing diffusely: a dark
   // base colour keeps a sunlit canopy from glowing as a grey haze
   const glassMat = new THREE.MeshPhysicalMaterial({ color: 0x141a1e, metalness: 0, roughness: 0.04, transmission: 0, transparent: true, opacity: 0.14, depthWrite: false, side: THREE.DoubleSide });
+  // ...and like glass, clear looked through square on (the pilot's view) but more and more a
+  // sheen at a slant (Fresnel), so from outside the canopy reads as glass, not a hole
+  glassMat.onBeforeCompile = (sh) => {
+    sh.fragmentShader = sh.fragmentShader.replace('#include <opaque_fragment>', `#include <opaque_fragment>
+      float fresK = pow(1.0 - abs(dot(normalize(normal), normalize(vViewPosition))), 2.5);
+      gl_FragColor.a = mix(0.16, 0.85, fresK);
+      gl_FragColor.rgb += vec3(0.05, 0.07, 0.09) * fresK;`);
+  };
   const frameMat = new THREE.MeshStandardMaterial({ color: 0x34393f, metalness: 0.7, roughness: 0.4 });
   const nozzleMat = new THREE.MeshStandardMaterial({ color: 0x4a3d33, metalness: 0.9, roughness: 0.3 });
-  const wallMat = new THREE.MeshStandardMaterial({ map: interiorTexture(), metalness: 0.2, roughness: 0.7 });
+  // (the cabin two-sided too: solid seen from outside, through the canopy and the bay)
+  const wallMat = new THREE.MeshStandardMaterial({ map: interiorTexture(), metalness: 0.2, roughness: 0.7, side: THREE.DoubleSide });
   const floorMap = floorTexture();
   floorMap.repeat.set(2, 6);
-  const floorMat = new THREE.MeshStandardMaterial({ map: floorMap, metalness: 0.5, roughness: 0.6 });
-  const consoleMat = new THREE.MeshStandardMaterial({ color: 0x23282d, metalness: 0.4, roughness: 0.5 });
-  const seatMat = new THREE.MeshStandardMaterial({ color: 0x5a2f22, metalness: 0.05, roughness: 0.9 });
+  const floorMat = new THREE.MeshStandardMaterial({ map: floorMap, metalness: 0.5, roughness: 0.6, side: THREE.DoubleSide });
+  const consoleMat = new THREE.MeshStandardMaterial({ color: 0x23282d, metalness: 0.4, roughness: 0.5, side: THREE.DoubleSide });
+  const seatMat = new THREE.MeshStandardMaterial({ color: 0x5a2f22, metalness: 0.05, roughness: 0.9, side: THREE.DoubleSide });
   // light levels in scene units (1.0 ~ full sunlight illuminance)
   const lightMat = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xfff1d6, emissiveIntensity: 0.06 });
 
@@ -265,7 +276,8 @@ export function buildShip(name = 'SS-01') {
   }
   // bulkhead caps at the bow and stern
   const stern = new THREE.Mesh(capLoft(12.9, 0, 2 * PI, 32, 0, true), darkMat);
-  exterior.add(stern);
+  const bow = new THREE.Mesh(capLoft(-13.2, 0, 2 * PI, 32, 0, false), darkMat);
+  exterior.add(stern, bow);
 
   // ---- engines: twin fusion drive bells in a housing above the ramp
   const engines = [];

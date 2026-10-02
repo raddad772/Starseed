@@ -8,7 +8,7 @@
 
 import { WorldSims } from './sim/worldSims.js';
 import { NearGround } from './sim/nearGround.js';
-import { findCliffCountry } from './gen/volume.js';
+import { findCliffCountry, gentleNear } from './gen/volume.js';
 import * as THREE from 'three';
 import { generateSystem } from './gen/system.js';
 import { S_LEN, S_H, S_WDEPTH } from './gen/terrain.js';
@@ -642,7 +642,9 @@ export class Game {
     if (token !== this.startToken) return;   // (another start since: that one goes there instead)
     const d = findCliffCountry(b.terrain);
     if (!d) return;
-    this.startOnSurface(b, new THREE.Vector3(d[0], d[1], d[2]));
+    // (the ship down on the nearest gentle ground, the cliffs in sight)
+    const site = gentleNear(b.terrain, d) || d;
+    this.startOnSurface(b, new THREE.Vector3(site[0], site[1], site[2]));
     console.log(`test spot (${kind}): ${b.data.name} at ${(Math.asin(d[1]) * 180 / Math.PI).toFixed(2)}, ${(Math.atan2(d[2], d[0]) * 180 / Math.PI).toFixed(2)}`);
   }
 
@@ -1151,9 +1153,11 @@ export class Game {
     const nrm = new THREE.Vector3();
     const R = b.R;
     const pts = [];
+    // (the ground: the near field's volume where it's built, from above it, else the heightfield)
+    const floor = (dir) => b.floorAt(dir.clone().multiplyScalar(R + b.groundHeight(dir) + 25), 0);
     for (const [x, z] of samples) {
       const p = up.clone().multiplyScalar(R).addScaledVector(right, x).addScaledVector(fwd, -z);
-      const h = b.groundHeight(p.normalize());
+      const h = floor(p.normalize());
       pts.push(p.clone().multiplyScalar(R + h));
       hs = Math.max(hs, h);
     }
@@ -1165,7 +1169,7 @@ export class Game {
     const rightS = fwdS.clone().cross(upS).normalize();
     const m = new THREE.Matrix4().makeBasis(rightS, upS, fwdS.clone().negate());
     const quatF = new THREE.Quaternion().setFromRotationMatrix(m);
-    const ground = b.groundHeight(up);
+    const ground = floor(up);
     // its centre over the ground as it rests on its legs (2.35 m: the shuttle)
     const rest = s.type.legAttach && s.type.key !== 'shuttle' ? restHeight(s.type, s.mass) : 2.35;
     const posF = up.clone().multiplyScalar(R + Math.max(ground, hs) + rest);
@@ -1542,9 +1546,43 @@ export class Game {
     }
   }
 
+  // the near field (sim/nearGround.js): round the first player on a world, its ground a volume
+  updateNearField() {
+    const p = this.players[0], v = p.vessel, b = v ? v.body : p.body;
+    if (!b || !b.solid || !b.terrain || (v && v.parent)) return;
+    const pos = this._nearPos || (this._nearPos = new THREE.Vector3());
+    if (p.mode === 'surface') pos.copy(p.fPos);
+    else if (v) pos.copy(v.pos).applyQuaternion(b.qInv);
+    else pos.copy(p.ePos).applyQuaternion(b.qInv);
+    const ng = b.near || (b.near = new NearGround(b));
+    const was = ng.ready;
+    ng.update(pos);
+    for (const o of this.universe.bodies) if (o !== b && o.near) o.near.active = false;
+    // the volume just took over: craft landed in it set down again on its ground (they landed
+    // on the heightfield, which can be metres off it)
+    if (ng.ready && !was) {
+      for (const v of this.vessels) {
+        if (!v.landed || v.parent || v.dead || v.body !== b || v.big) continue;
+        const pf = v.landedPosF;
+        if (!ng.within(pf)) continue;
+        const head = new THREE.Vector3(0, 0, -1).applyQuaternion(v.landedQuatF);
+        this.landShipAt(b, pf.clone().normalize(), head, v);
+      }
+    }
+  }
+
+  // how much of the near field's ground is built (the rings out to 400 m: the descent waits for
+  // them, so the ground doesn't change round you as you arrive); 1 when there's none to build
+  nearBuilt(terr) {
+    const b = this.player.currentBody(), ng = b && b.near;
+    if (!terr || !ng || !ng.active || !terr.ringShown) return ng && ng.active ? 0 : 1;
+    return ((terr.ringShown[0] ? 1 : 0) + (terr.ringShown[1] ? 1 : 0)) / 2;
+  }
+
   updateLoading(dt) {
     this.loadTimer += dt;
     this.universe.update(this.t);
+    if (this.loadMode !== 'space') this.updateNearField();
     if (!this.respawnInfo || this.loadHold) { // surveying: no measure yet, creep toward 10%
       this.loadProgress = 0.1 * (1 - Math.exp(-this.loadTimer / 2));
       this.screenHud.setLoading(this.loadText, this.loadProgress);
@@ -1554,17 +1592,18 @@ export class Game {
     const space = this.loadMode === 'space';
     const terr = this.world.terrainOf(this.player.currentBody().id);
     const deepEnough = space || !terr || terr.deepest >= terr.maxLevel - 1;
-    if (pending === 0 && deepEnough) this.settleTime += dt; else this.settleTime = 0;
+    const near = space ? 1 : this.nearBuilt(terr);
+    if (pending === 0 && deepEnough && near >= 1) this.settleTime += dt; else this.settleTime = 0;
     // progress: on the surface the terrain refines level by level under you
     // (later levels take longer: cubed to keep pace with the clock), then the
     // last tiles drain; in space only the tiles in view drain; then a settle
     const levels = space || !terr ? 1 : Math.min(1, terr.deepest / (terr.maxLevel - 1)) ** 3;
     if (deepEnough) this.loadPeak = Math.max(this.loadPeak, pending);
     const drain = !deepEnough ? 0 : (this.loadPeak ? 1 - pending / this.loadPeak : (this.loadTimer > 0.5 ? 1 : 0));
-    const f = space || !terr ? 0.1 + 0.8 * drain : 0.1 + 0.5 * levels + 0.3 * drain;
+    const f = space || !terr ? 0.1 + 0.8 * drain : 0.1 + 0.4 * levels + 0.2 * drain + 0.2 * near;
     this.loadProgress = Math.max(this.loadProgress, Math.min(0.99, f + 0.1 * Math.min(1, this.settleTime / 0.4)));
     this.screenHud.setLoading(this.loadText, this.loadProgress);
-    if ((this.settleTime > 0.4 && this.loadTimer > 1) || this.loadTimer > (space ? 10 : 25)) {
+    if ((this.settleTime > 0.4 && this.loadTimer > 1) || this.loadTimer > (space ? 10 : 40)) {
       this.state = 'playing';
       this.screenHud.setLoading(null);
       this.engine.adaptReset = true;
@@ -1593,18 +1632,7 @@ export class Game {
       }
     }
     this.setCur(null);
-    // the near field (sim/nearGround.js): round the first player on a world, its ground a volume
-    {
-      const p = this.players[0], v = p.vessel, b = v ? v.body : p.body;
-      if (b && b.solid && b.terrain && !(v && v.parent)) {
-        const pos = this._nearPos || (this._nearPos = new THREE.Vector3());
-        if (p.mode === 'surface') pos.copy(p.fPos);
-        else if (v) pos.copy(v.pos).applyQuaternion(b.qInv);
-        else pos.copy(p.ePos).applyQuaternion(b.qInv);
-        (b.near || (b.near = new NearGround(b))).update(pos);
-        for (const o of this.universe.bodies) if (o !== b && o.near) o.near.active = false;
-      }
-    }
+    this.updateNearField();
     for (const v of this.vessels) v.nav.update(dtReal);
     // warp guard: thrust input or atmosphere drops rails warp
     if (warp > 4) {

@@ -111,6 +111,15 @@ export class BodyRuntime {
     return num / den - this.R;
   }
 
+  // the ground under body-fixed point p (m above datum): the near field's volume where it's
+  // built (sim/nearGround.js: a ledge, a cave's floor, rock under an overhang), searching down
+  // from `step` above p; else the heightfield's
+  floorAt(p, step = 0.6) {
+    const ng = this.near;
+    if (ng && ng.within(p)) { const f = ng.floorBelow(p, step); if (f != null) return f; }
+    return this.groundHeight(p);
+  }
+
   // Ground height + normal (body-fixed) by sampling a small cross
   groundNormal(dirFixed, out, h0) {
     const up = this._up || (this._up = new THREE.Vector3());

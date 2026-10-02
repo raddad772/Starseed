@@ -22,6 +22,7 @@ const RADIUS = 0.3;
 const WALK = 4.2, SPRINT = 8.5, SWIM = 1.8;
 const JET_ACCEL_SURF = 1.55; // multiples of local g available to the jetpack, min 6 m/s^2
 const JET_TIME = 4.5;        // seconds of full burn
+const JET_UNLIMITED = true;   // (testing: the jetpack never runs dry)
 const EVA_ACCEL = 1.6;
 const PLATING_G = 9.81;
 const EVA_AGL = 4000;        // m above the ground: spacewalk physics above, on-foot falling below
@@ -325,7 +326,7 @@ export class Player {
       const a = Math.max(6, PLATING_G * JET_ACCEL_SURF);
       this.sVel.y += a * dt;
       if (wish.lengthSq() > 0) this.sVel.addScaledVector(_v1.copy(wish).normalize(), a * 0.6 * dt);
-      this.jetFuel = Math.max(0, this.jetFuel - dt / JET_TIME);
+      if (!JET_UNLIMITED) this.jetFuel = Math.max(0, this.jetFuel - dt / JET_TIME);
       this.jetOn = true;
     }
     const prevY = this.sPos.y;
@@ -457,11 +458,7 @@ export class Player {
   // the ground under body-fixed point p (m above datum): in the near field the volume's floor
   // under it (gen/volume.js: a cave's floor, a ledge, the foot of an overhang), else the
   // heightfield's
-  groundAt(b, p) {
-    const ng = b.near;
-    if (ng && ng.within(p)) { const f = ng.floorBelow(p); if (f != null) return f; }
-    return b.groundHeight(p);
-  }
+  groundAt(b, p) { return b.floorAt(p); }
 
   groundNormalAt(b, up, gh, out) {
     const ng = b.near, p = _v5.copy(up).multiplyScalar(b.R + gh - 0.05);
@@ -557,7 +554,7 @@ export class Player {
       const a = Math.max(6, g * JET_ACCEL_SURF);
       this.fVel.addScaledVector(up, a * dt);
       if (mv.lengthSq() > 0) this.fVel.addScaledVector(mv.clone().normalize(), a * 0.6 * dt);
-      this.jetFuel = Math.max(0, this.jetFuel - dt / JET_TIME);
+      if (!JET_UNLIMITED) this.jetFuel = Math.max(0, this.jetFuel - dt / JET_TIME);
       this.jetOn = true;
     }
     this.fPos.addScaledVector(this.fVel, dt);
@@ -777,7 +774,7 @@ export class Player {
     if (t.lengthSq() > 0 && this.jetFuel > 0) {
       t.normalize().multiplyScalar(EVA_ACCEL * (input.down('ShiftLeft') ? 2.5 : 1) * dt).applyQuaternion(this.evaQuat);
       this.eVel.add(t);
-      this.jetFuel = Math.max(0, this.jetFuel - dt / (JET_TIME * 6));
+      if (!JET_UNLIMITED) this.jetFuel = Math.max(0, this.jetFuel - dt / (JET_TIME * 6));
       this.jetOn = true;
     }
     // stabiliser: hold X to null velocity relative to the nearest vessel

@@ -359,7 +359,8 @@ export class PlanetTerrain {
           want.add(key);
           let ch = this.near.get(key);
           if (!ch) { ch = { key, level: lv, ring: ri, ci, cj, ck, mesh: null, job: null, state: 0 }; this.near.set(key, ch); }
-          const pr = 0.5 + ri * 2 + dist / (40 * S);
+          // (ring by ring: the two nearest before the heightfield's tiles, the far ones after)
+          const pr = (ri < 2 ? 0.5 + ri * 4 : 20 + ri * 4) + Math.min(3.5, dist / (40 * S));
           if (ch.state === 0) this.requestNear(ch, ng, pr);
           else if (ch.state === 1) this.pool.reprioritize(ch.job, pr);
           if (ch.state !== 2) pending++;
