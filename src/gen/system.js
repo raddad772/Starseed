@@ -342,15 +342,38 @@ function startScore(b, bodies) {
 // disk, its planets' orbits and make-up, their names, and whether one of them
 // is exceptional. generateSystem builds everything else on top of exactly this,
 // so a summary (summarizeSystem) always agrees with the full system.
+// The seed SOL: the Sun and its eight planets as they are (orbits, masses, make-up), everything
+// else (their air and history, surfaces, moons) the same physics as any system's
+const SOL = {
+  star: { mass: 1, age: 4.6, metallicity: 0, name: 'Sun', catalog: 'Sol' },
+  planets: [
+    { name: 'Mercury', aAU: 0.387, massEarth: 0.0553, iron: 0.68, water: 1e-5 },
+    { name: 'Venus', aAU: 0.723, massEarth: 0.815, iron: 0.31, water: 2e-4 },
+    { name: 'Earth', aAU: 1.0, massEarth: 1.0, iron: 0.32, water: 5e-4 },
+    { name: 'Mars', aAU: 1.524, massEarth: 0.107, iron: 0.24, water: 4e-4 },
+    { name: 'Jupiter', aAU: 5.2, massEarth: 317.8, envelope: 0.9 },
+    { name: 'Saturn', aAU: 9.58, massEarth: 95.2, envelope: 0.8 },
+    { name: 'Uranus', aAU: 19.2, massEarth: 14.5, envelope: 0.15 },
+    { name: 'Neptune', aAU: 30.1, massEarth: 17.1, envelope: 0.15 },
+  ],
+};
+function solProtos(disk) {
+  return SOL.planets.map((p, i) => ({
+    aAU: p.aAU, slot: i, formedBeyond: p.aAU > disk.snow, massEarth: p.massEarth,
+    comp: p.envelope ? { iron: 0.1, rock: 0.3, water: 0.6, envelope: p.envelope } : { iron: p.iron, rock: 1 - p.iron - p.water, water: p.water, envelope: 0 },
+  }));
+}
+
 function systemHead(seedInput) {
   const seed = String(seedInput);
   const root = Rng.fromString(`starseed/v${GENERATOR_VERSION}/${seed}`);
-  const star = generateStar(root.fork('star'));
+  const sol = seed === 'SOL';
+  const star = generateStar(root.fork('star'), sol ? SOL.star : null);
   const disk = makeDisk(root.fork('disk'), star);
-  const protos = formPlanets(root.fork('formation'), star, disk);
-  const exception = pickException(root.fork('exception'), protos, star);
+  const protos = sol ? solProtos(disk) : formPlanets(root.fork('formation'), star, disk);
+  const exception = sol ? null : pickException(root.fork('exception'), protos, star);
   const planetRng = root.fork('planets');
-  const names = protos.map((proto) => makeName(planetRng.fork('p' + proto.slot).fork('name'), 2, 3));
+  const names = sol ? SOL.planets.map((p) => p.name) : protos.map((proto) => makeName(planetRng.fork('p' + proto.slot).fork('name'), 2, 3));
   const debris = systemDebris(root.fork('debris'), protos, disk);
   return { seed, root, star, disk, protos, exception, planetRng, names, debris };
 }

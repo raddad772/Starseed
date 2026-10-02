@@ -49,20 +49,22 @@ function lumMS(m) {
   return 1.4 * dm.pow(m, 3.5);
 }
 
-export function generateStar(rng) {
+// fix (optional): a given star's mass (M_sun), age (Gyr), metallicity ([Fe/H]) and names, in
+// place of the draws (the Sun, for the SOL system)
+export function generateStar(rng, fix = null) {
   // Mass from the stellar initial mass function (Kroupa 2001: dN/dM ~ M^-1.3
   // below 0.5 M_sun, M^-2.3 above), 0.08-3 M_sun: about three stars in four
   // are red dwarfs, one in eight an orange K dwarf, a few Sun-like G, F and
   // the odd A star. Their habitable zones move with them.
-  const mass = rng.next() < IMF_LOW_SHARE ? rng.powerLaw(0.08, 0.5, -1.3) : rng.powerLaw(0.5, 3, -2.3);
+  const mass = fix ? fix.mass : rng.next() < IMF_LOW_SHARE ? rng.powerLaw(0.08, 0.5, -1.3) : rng.powerLaw(0.5, 3, -2.3);
   const tauMS = 10 * dm.pow(mass, -2.5); // Gyr on the main sequence
   // ages across the galaxy's history (short-lived stars younger): now and then a
   // young system, its planets still hot and fiery (rarer than this in life, but
   // worth seeing), and up to the oldest stars, whose worlds are mostly dead
   const maxAge = Math.min(12.5, 0.9 * tauMS);
-  const age = rng.next() < 0.08 ? Math.min(maxAge, rng.logUniform(0.02, 0.4)) : rng.range(Math.min(0.4, maxAge * 0.5), maxAge);
+  const age = fix ? fix.age : rng.next() < 0.08 ? Math.min(maxAge, rng.logUniform(0.02, 0.4)) : rng.range(Math.min(0.4, maxAge * 0.5), maxAge);
   // older stars formed from less-enriched gas (fewer heavy elements: fewer planets, fewer giants)
-  const metallicity = dm.clamp(rng.normal(0.12 - 0.035 * age, 0.17), -0.8, 0.45); // [Fe/H]
+  const metallicity = fix ? fix.metallicity : dm.clamp(rng.normal(0.12 - 0.035 * age, 0.17), -0.8, 0.45); // [Fe/H]
   const frac = age / tauMS;
 
   const lZams = 0.75 * lumMS(mass);
@@ -77,8 +79,8 @@ export function generateStar(rng) {
   const activeGyr = mass < 0.6 ? dm.clamp(1 + 7 * (0.6 - mass) / 0.5, 1, 8) : dm.clamp(0.1 * dm.pow(mass, -2), 0.05, 1);
   const xuv = dm.clamp(dm.pow(mass, -1.5), 1, 30);
   const color = blackbodyRGB(teff);
-  const name = makeName(rng.fork('name'), 2, 3);
-  const catalog = catalogName(rng.fork('catalog'));
+  const name = fix ? fix.name : makeName(rng.fork('name'), 2, 3);
+  const catalog = fix ? fix.catalog : catalogName(rng.fork('catalog'));
 
   const hz = {
     optimisticInner: dm.sqrt(luminosity / hzSeff('recentVenus', teff)),

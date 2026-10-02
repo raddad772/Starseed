@@ -118,6 +118,30 @@ surveying many worlds; bit-exact across runs and clients, not across revisions):
   and the lattice's alike. A stagnant-lid overturn now resets the crater record of the highlands
   it leaves standing too (crumpled, as Venus's tesserae: they keep 150 Myr more than the plains);
   they kept the whole 4.5 Gyr record, so Moadeal's highlands were saturated with craters.
+- **The Solar System (seed `SOL`) and atmospheric physics fixed by it (SIM 23):** `?seed=SOL` is
+  the Sun and its eight planets as they are (orbits, masses, make-up: system.js `SOL`), all else
+  the same physics as any system (moons generated). Its Mars came out 0.54 bar, Venus 14, so the
+  history model (evolve.js) was wrong; Dave: fix the physics, don't pin. Now:
+  - escape is a flux (bar/Gyr, shared by the air's make-up), not a fraction of the air: a thick
+    air loses little of itself, a thin one all of it; CO2 frozen in caps is drawn up to be lost;
+  - heavy-gas escape fades with the star's X-rays/UV (t^-1.2, ~100x at 0.1 Gyr; no floor), and
+    past r = S XUV / Scrit ~ 0.4 rises steeply (the upper air flows off: Tian 2009, early Mars);
+  - a world too small for plates has a stagnant lid from the start; lid outgassing is the
+    mantle's own carbon (0.25 of plates'), falling as heat^2 once it cools;
+  - the polar cold trap is a share of the mean temperature (9% in a bar, 30% at a few mbar):
+    CO2 and N2 freeze out of thin airs (Mars' caps; Pluto's and Triton's thin N2);
+  - snowballs need air to carry water (end below 10 mbar, start above 30);
+  - greenhouse lines broaden with pressure (x P^0.35: Mars' 6 mbar a few K, Venus' 92 bar 737 K);
+  - weathered carbon is kept as carbonate rock and baked back out on a hot surface (Venus);
+  - a magma ocean breathes out a third of the carbon at once (was capped at 4 bar);
+  - cold dry or frozen regolith holds CO2 in step with the air (Mars' ~0.04 bar).
+  SOL now: Venus 51 bar 794 K, Earth 0.7 bar 286 K, Mars 3.9 mbar 221 K (`mars` air, cold
+  desert). Over 60 draws: Venus 28-97 bar (median 58), Earth 0.55-2.2, Mars microbar to 16 mbar
+  (Mars-like in ~a third: it's on the shoreline). Population (1120 worlds): habitable-temperature
+  N2 airs 39 -> 78, cold icy worlds' thin N2 frozen out, greenhouse worlds hotter (median 795 ->
+  1167 K). Moadeal (Dave's start world): 57 bar 612 K -> 190 bar 1184 K (its surface would glow).
+  Venus is ~60 K hot for its pressure; next: the other known rocky worlds (the Moon, Galilean
+  moons, Titan, Triton, Pluto) as presets to check against.
 - **Glaciers are a surface (S_ICE):** the ice was paint on the bed (every valley under an ice
   cap showing, its edge a smooth curve across the land). Now the ice fills the ground's lows to a
   level as much as it holds (`terrain.js`, after everything else): thin ice lies in the valleys
