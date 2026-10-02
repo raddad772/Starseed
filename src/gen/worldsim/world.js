@@ -132,7 +132,7 @@ export function worldSim(body, star, opts = {}) {
   const steps = opts.steps ?? 60, dt = opts.dt ?? 2.5e5;
   const hb = new Float64Array(G.n);
   const ice = new Glaciers(G, p.climate, scale);
-  const sea2 = new Coasts(G, { corals: H.life && H.life.complex != null && H.life.extinct == null, warm: 0.5 });
+  const sea2 = new Coasts(G, { corals: H.life && H.life.animals != null && H.lifeStage >= 6, warm: 0.5 });
   const hMax = 9000 * Math.sqrt(9.81 / body.gravity);
   let iceMax = 0;
   for (let k = 0; k < steps; k++) {

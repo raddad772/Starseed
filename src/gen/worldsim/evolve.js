@@ -20,8 +20,21 @@
 //               water is lost
 //   carbon      with liquid water, weathering holds CO2 near the thermostat's level;
 //               without it, CO2 piles up (all of it, on a Venus)
-//   life        arises at a rate while habitable (or never); photosynthesis, oxygen,
-//               complex life, plants; wiped out if the world is sterilised
+//   life        arises at a rate while habitable (or never), then climbs stages on an
+//               innovation clock (WORLDSIM.md 15): photosynthesis, oxygen, complex
+//               cells, soft-bodied sea life, sea animals, land plants, land animals.
+//               The clock runs on light reaching the surface (the star's usable
+//               photons: a red dwarf's far-red light barely drives oxygen-making
+//               photosynthesis), warmth, chemical energy, mutation (UV, no ozone) and
+//               oxygen (big animals breathe it). Diversity grows toward what each
+//               stage supports
+//   extinctions big impacts (drawn at the Moon's crater rates, the system's debris)
+//               darken the sky with dust and soot: each kind of life dies by how long
+//               it can go without light (plankton first, seeds last, microbes shrug);
+//               flood-basalt eruptions warm it fast; snowballs freeze the light out;
+//               the worst lose whole stages, and a giant one sterilises the surface
+//               (deep microbes may reseed it). After each, life radiates: new forms
+//               come faster into the emptied world
 //
 // Deterministic (dmath, Rng).
 
@@ -30,6 +43,25 @@ import { hzSeff } from '../star.js';
 import { equilibriumTemp } from '../bodies.js';
 
 const LEVELS = ['none', 'microbial mats', 'vascular flora', 'complex biosphere'];
+// life's stages, and the key each one's time goes under in `life`
+export const STAGES = ['none', 'single cells', 'photosynthesis', 'oxygen', 'complex cells', 'soft-bodied sea life', 'sea animals', 'land plants', 'land animals'];
+const STAGE_KEYS = [null, 'origin', 'photo', 'goe', 'euk', 'complex', 'animals', 'plants', 'landAnimals'];
+// each stage's difficulty: Gyr on the innovation clock at an Earth's pace (Earth: oxygen
+// photosynthesis ~1 Gyr after life, the oxidation ~0.4 later, complex cells ~0.5, the
+// "boring billion" to many-celled life, then animals, plants and land animals in ~0.2)
+const DIFFICULTY = [0, 0, 0.9, 0.35, 0.45, 0.9, 0.06, 0.08, 0.07];
+// the diversity each stage supports (Earth today = 1)
+const DIV_CAP = [0, 0.02, 0.04, 0.05, 0.08, 0.15, 0.4, 0.65, 1];
+// how kinds of life fare in the dark: years each can last (seed banks, resting cysts, a
+// food web's stores), and their share of the diversity at each stage (microbes,
+// plankton, sea animals, land plants, land animals)
+const GUILD_RESERVE = [30, 0.8, 1.5, 4, 1.0];
+const GUILD_FLOOR = [0.5, 0.05, 0.02, 0.01, 0.005];   // refugia: some always come through
+const GUILD_W = [
+  [1, 0, 0, 0, 0], [1, 0, 0, 0, 0], [0.8, 0.2, 0, 0, 0], [0.7, 0.3, 0, 0, 0], [0.5, 0.5, 0, 0, 0],
+  [0.3, 0.4, 0.3, 0, 0], [0.1, 0.35, 0.55, 0, 0], [0.07, 0.25, 0.4, 0.28, 0], [0.05, 0.2, 0.3, 0.2, 0.25],
+];
+const SUN_TEFF = 5772;
 export const ACTIVITY_NAMES = ['quiet', 'Earth-like', 'busy', 'over-active'];
 const T_SNOW_IN = 255, T_SNOW_OUT = 245, SNOW_ALBEDO = 0.62;
 const PCO2_EARTH = 2.8e-4;
@@ -79,14 +111,78 @@ export function evolveWorld(ctx) {
   const titanish = teqBare < 125 && water0 > 0.08 && massE > 0.008 && rng.next() < (ctx.kind === 'planet' ? 0.6 : 0.28);
   // life's luck: the rate it arises while habitable (per Gyr; some worlds never)
   const lifeRate = rng.next() < 0.25 ? 0 : rng.lognormal(2.5, 1.2);
-  const delays = { photo: rng.range(0.2, 1.0), goe: rng.range(0.2, 0.8), complex: rng.range(0.8, 1.6), plants: rng.range(0.05, 0.4) };
+  // the life clock's luck: each stage's difficulty for this world
+  const lr = rng.fork('life-stages');
+  const difficulty = DIFFICULTY.map((d) => d * lr.lognormal(1, 0.4));
+  // usable light: photons in the 400-750 nm band oxygen-making photosynthesis can use,
+  // vs the Sun's at Earth (per unit of sunlight a cool star sends more, redder photons)
+  const parK = parPhotons(star.teff || SUN_TEFF) / parPhotons(SUN_TEFF);
+  // big impacts and flood basalts through time (their own draws)
+  const er = rng.fork('life-events');
+  const g = ctx.gravity || 9.81, Rkm = (ctx.radiusM || 6.371e6) / 1000;
+  const debris = star.debris ? star.debris.level : 1, spike = star.debris ? star.debris.spike : null;
+  const sizeK = dm.pow(1.62 / g, 0.17), areaKm2 = 4 * dm.PI * Rkm * Rkm;
+  const impactRate = (D, tG) => {   // craters >= D km per Myr (impacts.js's law)
+    const tau = Math.max(0, 4.3 - tG);
+    let n1 = 5.44e-14 * 6.93 * dm.exp(6.93 * tau) + 8.38e-4;
+    if (spike) { const u = (tG - spike.atGyr) / spike.widthGyr; n1 += 8.38e-4 * spike.strength * 40 * dm.exp(-0.5 * u * u); }
+    const Dm = D / sizeK;
+    return n1 / (Dm * Dm) * areaKm2 * 1e-3 * debris;
+  };
 
   // ---- state
   let oceans = oceans0, pCO2 = Math.min(carbon, 4), pO2 = 0, snow = false, runaway = false;
   let regime = 'mobile', dynamo = true, tStop = null, tDyn = null;
-  let life = { origin: null, photo: null, goe: null, complex: null, plants: null, extinct: null };
+  let life = { origin: null, photo: null, goe: null, euk: null, complex: null, animals: null, plants: null, landAnimals: null, extinct: null };
+  let stage = 0, div = 0, everLife = false, lastSterile = null;
+  const regained = new Uint8Array(9);   // stages once evolved and lost (relatives remain: easier again)
+  const extinctions = [], bigImpacts = [], lips = [];
+  const radiations = [];        // [t, loss]: the emptied world's boost to new forms
+  let lipNow = null;            // a flood-basalt eruption under way
+  const record = (t, loss, cause, text) => {
+    extinctions.push({ t, ago: age - t, cause, loss, text });
+    radiations.push([t, loss]);
+    if (loss >= 0.1) ev(t, 'extinction', `${text}: ${Math.round(loss * 100)}% of living kinds are lost`);
+  };
+  // a die-off of `loss` of the kinds living (diversity falls; the emptied world radiates)
+  const die = (t, loss, cause, text) => { div *= 1 - loss; record(t, loss, cause, text); };
+  // years without light (below ~1% of daylight): each kind of life by its reserves; the
+  // worst lose the top stage (and again, if the next kind down is gone too)
+  const darken = (t, years, cause, text) => {
+    const surv = GUILD_RESERVE.map((R, k) => Math.max(GUILD_FLOOR[k], dm.exp(-years / R)));
+    const w = GUILD_W[stage];
+    let loss = 0;
+    for (let k = 0; k < 5; k++) loss += w[k] * (1 - surv[k]);
+    die(t, loss, cause, text);
+    const top = (st) => (st >= 8 ? 4 : st === 7 ? 3 : st >= 5 ? 2 : st >= 2 ? 1 : 0);
+    for (let k = 0; k < 2 && stage >= 5; k++) {
+      const gk = top(stage);
+      if (surv[gk] > GUILD_FLOOR[gk] * 1.01 || er.next() > 0.5) break;
+      ev(t, 'lost', `${STAGES[stage]} die out`);
+      life[STAGE_KEYS[stage]] = null; regained[stage] = 1; stage--;
+    }
+  };
+  // the surface sterilised: deep microbes may come back up (else the world is dead, and
+  // life may arise again)
+  const sterilise = (t, text, deep) => {
+    const back = deep && er.next() < deep;
+    record(t, 1, 'sterilised', text);
+    for (let k = 2; k <= 8; k++) life[STAGE_KEYS[k]] = null;
+    if (back) { stage = 1; div = 0.003; ev(t, 'reseeded', 'microbes deep in the crust survive it, and come back up'); }
+    else { stage = 0; div = 0; life.origin = null; lastSterile = t; }
+  };
+  // a big impact (crater D km): dust and soot over the sky, by its energy (vs Chicxulub's
+  // ~180 km on an Earth), spread over the world's area, held longer in thick air
+  const strike = (t, D, P) => {
+    if (D >= 0.3 * Rkm) { sterilise(t, `a ${Math.round(D)} km impact boils the ${D >= 0.5 * Rkm ? 'seas' : 'surface'}`, D >= 0.5 * Rkm ? 0.25 : 0.6); return; }
+    const De = D * dm.pow(1.62 / 9.81, 0.17) / sizeK;
+    const tau0 = 40 * dm.pow(De / 180, 3.4) * (6371 / Rkm) * (6371 / Rkm) * (P < 0.01 ? 0.1 : 1);
+    const te = dm.clamp(dm.pow(Math.max(P, 0.01), 0.3), 0.5, 3);
+    const years = tau0 > 4.6 ? te * dm.log(tau0 / 4.6) : 0;
+    if (years > 0.02) darken(t, years, 'impact', `a ${Math.round(D)} km impact darkens the sky for ${years >= 1 ? years.toFixed(1) + ' years' : Math.round(years * 12) + ' months'}`);
+  };
   let T = 0, A = 0.3, ice = 0;
-  const series = { t: [], T: [], P: [], pCO2: [], pO2: [], oceans: [], ice: [], heat: [], snowball: [], mobile: [], rain: [] };
+  const series = { t: [], T: [], P: [], pCO2: [], pO2: [], oceans: [], ice: [], heat: [], snowball: [], mobile: [], rain: [], stage: [], div: [], light: [] };
   const events = [];
   const ev = (t, kind, text) => events.push({ t, ago: age - t, kind, text });
   const landAt = (t) => dm.clamp(0.3 * (1 - dm.exp(-t / 1.0)), 0.02, 0.6);
@@ -135,7 +231,11 @@ export function evolveWorld(ctx) {
     if (dynamo && t > dynamoEnd * (regime === 'stagnant' ? 0.6 : 1)) { dynamo = false; tDyn = t; ev(t, 'dynamo', 'the core cools and the magnetic field dies'); }
     // outgassing: carbon and a little nitrogen with the heat (much less through a stagnant lid)
     const lidK = regime === 'mobile' ? 1 : 0.25;
-    const V = V_EARTH * H * lidK * heatK * pK;
+    // a flood-basalt eruption: its CO2 on top (all in the step it starts: steps are longer
+    // than eruptions)
+    if (lipNow && t > lipNow.t + lipNow.dur) lipNow = null;
+    const V = V_EARTH * H * lidK * heatK * pK + (lipNow && !lipNow.spent ? lipNow.co2 / (dt * 1000) : 0);
+    if (lipNow) lipNow.spent = true;
     N2 += 0.00002 * H * lidK * dt * 1000 * pK;
     if (frozenOut && !titanish) { N2 = Math.min(N2, 1e-5); pCO2 = Math.min(pCO2, 1e-6); }
     // escape: thin the air (CO2 heavier, so a little slower); water from a moist upper air
@@ -183,23 +283,126 @@ export function evolveWorld(ctx) {
     T = Tn; A = An;
     ice = snow ? 1 : dm.clamp((278 - T) / 30, 0, 1);
     // life
-    const habitable = liquid && T > 273 && T < 330;
-    if (life.origin == null && habitable && lifeRate > 0 && rng.next() < 1 - dm.exp(-lifeRate * dt)) { life.origin = t; ev(t, 'life', 'life arises in the sea'); }
-    if (life.origin != null && life.extinct == null) {
-      if (life.photo == null && t > life.origin + delays.photo) { life.photo = t; ev(t, 'photosynthesis', 'microbes learn to split water for light'); }
-      if (life.photo != null && life.goe == null && t > life.photo + delays.goe) { life.goe = t; ev(t, 'oxygenation', 'oxygen builds in the air; the methane greenhouse fades'); }
-      if (life.goe != null && life.complex == null && landAt(t) > 0.05 && t > life.goe + delays.complex) { life.complex = t; ev(t, 'complex', 'complex, many-celled life'); }
-      if (life.complex != null && life.plants == null && t > life.complex + delays.plants) { life.plants = t; ev(t, 'plants', 'plants cover the land'); }
-      if (runaway || oceans < 0.001 || (snow && T < 220)) { life.extinct = t; ev(t, 'extinction', runaway ? 'the boiling seas end all life' : oceans < 0.001 ? 'the last water goes, and life with it' : 'the deep freeze ends all life'); }
-      // oxygen after the great oxidation, rising again with complex life
-      if (life.goe != null && life.extinct == null) pO2 = Math.min(0.3 * N2 + 0.05, (life.complex != null ? 0.21 : 0.02) * Math.max(N2, 0.2) * Math.min(1, (t - (life.complex ?? life.goe)) / 0.1 + 0.1));
-      else if (life.extinct != null) pO2 *= dm.exp(-dt / 0.05);
+    // liquid water's range here: salty seas freeze at ~271 K; it boils at Tboil(P) (Mars'
+    // thin air: barely above freezing); microbes live to ~395 K in liquid water,
+    // complex cells to ~330, animals a little less
+    const tBoil = boilingPoint(P);
+    const habitable = liquid && T > 271 && T < Math.min(tBoil - 5, 395);
+    if (stage >= 4 && T > (stage >= 6 ? 322 : 332)) {
+      const keep = T > 332 ? 3 : 5;
+      die(t, 1 - DIV_CAP[keep] / Math.max(DIV_CAP[stage], 1e-3), 'heat', `the world grows too hot (${Math.round(T - 273)} C) for ${STAGES[stage]}`);
+      for (let k = keep + 1; k <= stage; k++) { life[STAGE_KEYS[k]] = null; regained[k] = 1; }
+      stage = Math.min(stage, keep);
     }
+    // light at the surface (x Earth's usable photons): the star, thick air, the ice
+    const lightNow = parK * S(t) * dm.exp(-0.04 * Math.max(0, P - 1)) * (snow ? 0.02 : 1) * (lipNow ? 0.75 : 1);
+    // life's start: chemistry's chance, more with energy to drive it (vents' heat, tides,
+    // shores drying and wetting)
+    const chem = dm.clamp(0.5 + 0.5 * dm.sqrt(Math.max(H, 0)), 0.3, 2) * (landAt(t) > 0.02 ? 1.2 : 1);
+    if (stage === 0 && habitable && lifeRate > 0 && rng.next() < 1 - dm.exp(-lifeRate * chem * dt)) {
+      stage = 1; div = 0.005; everLife = true; life.origin = t; life.extinct = null;
+      ev(t, 'life', lastSterile != null ? 'life arises again in the sea' : 'life arises in the sea');
+    }
+    // big impacts this step: the largest one's dust and soot
+    {
+      const lam = impactRate(60, t) * dt * 1000;
+      if (lam > 1e-6 && er.next() < 1 - dm.exp(-lam)) {
+        const Dmax = 0.6 * Rkm;
+        let D = 0;
+        for (let k = 0; k < 20 && !(D > 0 && D <= Dmax); k++) D = 60 * Math.sqrt(lam / Math.max(1e-12, -dm.log(Math.max(1e-300, er.next()))));
+        D = Math.min(D, Dmax);
+        if (D >= 150) bigImpacts.push({ t, ago: age - t, D });
+        if (stage > 0) strike(t, D, P);
+      }
+    }
+    // flood basalts: a plume's head reaching the surface (more on hot, busy worlds)
+    if (!lipNow && er.next() < 1 - dm.exp(-0.04 * dm.pow(Math.max(H, 0), 1.5) * [0.5, 1, 1.6, 2.5][tier] * (regime === 'mobile' ? 1 : 0.7) * dt * 1000)) {
+      const co2 = 0.0008 * er.lognormal(1, 1.1) * pK, durMyr = er.range(0.3, 2);
+      // (it starts somewhere in this step: whether it's still going now depends on where)
+      const t0 = t + er.next() * dt;
+      lipNow = { t: t0, dur: durMyr / 1000, co2, spent: false };
+      const warm = tempOf(t, P + co2, pCO2 + co2, false, snow)[0] - tempOf(t, P, pCO2, false, snow)[0];
+      lips.push({ t: t0, ago: age - t0, durMyr, co2, warm });
+      if (stage > 0) {
+        const loss = (1 - dm.exp(-(warm / 12) * (warm / 12) * Math.sqrt(0.5 / durMyr))) * 0.95;
+        if (loss > 0.02) die(t, loss, 'eruption', `flood basalts pour out for ${Math.round(durMyr * 1000)} kyr: the world warms ${Math.round(warm)} K`);
+      }
+    }
+    if (stage > 0) {
+      // the snowball: the light under the ice is a fiftieth; most life starves (refugia)
+      if (snow && series.snowball.length && !series.snowball[series.snowball.length - 1]) darken(t, 1e6, 'snowball', 'the ice closes over the seas');
+      // the end of all life: boiling, drying, or a freeze down to vents gone cold
+      if (runaway || oceans < 0.001 || (snow && T < 220 && H < 0.3)) {
+        sterilise(t, runaway ? 'the boiling seas end all life' : oceans < 0.001 ? 'the last water goes, and life with it' : 'the deep freeze ends all life', false);
+      }
+    }
+    if (stage > 0) {
+      // the response curves (none of them straight lines):
+      // warmth: chemistry quickens ~2x per 10 K toward an optimum, then falls away to the
+      // stage's heat limit (microbes ~395 K, complex cells ~332, animals ~322)
+      const tTop = stage >= 5 ? 322 : stage >= 4 ? 332 : Math.min(tBoil - 5, 395);
+      const warmth = !habitable ? 0.05 : dm.clamp(dm.pow(2, (Math.min(T, tTop - 12) - 288) / 10), 0.2, 3) * dm.clamp((tTop - T) / 12, 0, 1);
+      // light: photosynthesis saturates (more light, less and less gain)
+      const prod = 1.5 * lightNow / (lightNow + 0.5);
+      // radiation at the surface (x Earth's today): the star's UV and particles, cut by
+      // the ozone (from oxygen), the magnetic field and the air; water shields sea life.
+      // Some quickens mutation; too much kills (microbes take ~500x, complex sea life
+      // ~50x, land plants ~20x, land animals ~10x)
+      const ozone = pO2 > 0 ? 1 - dm.exp(-pO2 / 0.005) : 0;
+      const dose = xuvAt(t) / 0.32 * (1 - 0.95 * ozone) / 0.05 * (dynamo ? 1 : 2.5) * dm.exp(-(P - 1) / 2);
+      const doseSea = 0.02 * dose + 0.2;
+      const radCurve = (R, kill) => (1 + 0.6 * R / (R + 2)) * dm.exp(-(R / kill) * (R / kill));
+      // oxygen: animals need some; a lot is toxic and burns (oxidative stress, wildfire)
+      const oxCurve = dm.smoothstep(0.03, 0.12, pO2) * (1 - 0.7 * dm.smoothstep(0.4, 1.0, pO2));
+      let boost = 1;
+      for (const [tk, lk] of radiations) boost += 4 * lk * dm.exp(-(t - tk) / 0.015);
+      // each step a small chance of the next leap: higher where there's more energy to
+      // use (light, warmth, the interior's chemistry, oxygen once there is some) and where
+      // life is already rich (a full, diverse biosphere makes more tries)
+      const next = stage + 1;
+      const grad = (1 + 0.3 * Math.min(H, 3)) * (pO2 > 0.01 ? 1.3 : 1);
+      let rate = 0;
+      if (next === 2) rate = warmth * radCurve(doseSea, 500) * dm.pow(dm.clamp(parK * S(t), 0, 2), 0.7) * (lightNow > 0.005 ? 1 : 0);
+      else if (next === 3) rate = warmth * prod / (0.4 + 0.6 * H);
+      else if (next === 4) rate = warmth * prod * radCurve(doseSea, 500) * (pO2 > 0 ? 1 : 0);
+      else if (next === 5) rate = warmth * prod * radCurve(doseSea, 50) * Math.min(1, pO2 / 0.01);
+      else if (next === 6) rate = warmth * prod * radCurve(doseSea, 50) * oxCurve;
+      else if (next === 7) rate = warmth * prod * radCurve(dose, 20) * (landAt(t) > 0.05 ? 1 : 0);
+      else if (next === 8) rate = warmth * prod * radCurve(dose, 10) * oxCurve;
+      // life already on land under a sky turned deadly (the field dies, the ozone thins, the
+      // star flares) withers back to the sea
+      if (stage >= 7 && dose > 60) {
+        const keep = 6;
+        die(t, 1 - DIV_CAP[keep] / DIV_CAP[stage], 'radiation', `radiation strips the land of life (${Math.round(dose)}x Earth's)`);
+        for (let k = keep + 1; k <= stage; k++) { life[STAGE_KEYS[k]] = null; regained[k] = 1; }
+        stage = keep;
+      }
+      if (next <= 8 && rate > 0) {
+        const fill = dm.clamp(div / Math.max(DIV_CAP[stage], 1e-4), 0.05, 1.5);
+        const hz = rate * grad * boost * dm.sqrt(fill) * (regained[next] ? 2 : 1) * dt / difficulty[next];
+        if (lr.next() < 1 - dm.exp(-hz)) {
+          stage = next; life[STAGE_KEYS[next]] = t;
+          ev(t, STAGE_KEYS[next] === 'goe' ? 'oxygenation' : STAGE_KEYS[next] === 'photo' ? 'photosynthesis' : STAGE_KEYS[next], STAGE_TEXT[next]);
+        }
+      }
+      // diversity toward what the stage and the light support (faster after an extinction)
+      // (logistic, solved exactly over the step: recoveries take ~5-20 Myr)
+      const cap = Math.max(1e-4, DIV_CAP[stage] * dm.clamp(prod * warmth, 0.15, 1.5));
+      div = dm.clamp(cap / (1 + (cap / Math.max(div, 1e-4) - 1) * dm.exp(-40 * boost * dt)), 0.001, 2);
+      // oxygen: a little after the oxidation; a second rise with many-celled life (more
+      // buried carbon), more with land plants; less where light is poor
+      if (stage >= 3) {
+        const want = (stage >= 5 ? 0.21 : 0.02) * Math.max(N2, 0.2) * (stage >= 7 ? 1.15 : 1) * dm.clamp(dm.pow(parK * S(t), 0.4), 0.15, 1.2);
+        pO2 += (want - pO2) * (1 - dm.exp(-dt / 0.05));
+      }
+    } else if (pO2 > 0) pO2 *= dm.exp(-dt / 0.05);
     if (t - lastOut >= 0.005 || dt === steps[steps.length - 1]) {
       lastOut = t;
       series.t.push(t); series.T.push(T); series.P.push(N2 * 1.01 + pCO2 + pO2); series.pCO2.push(pCO2); series.pO2.push(pO2);
       series.oceans.push(oceans); series.ice.push(ice); series.heat.push(H); series.snowball.push(snow ? 1 : 0); series.mobile.push(regime === 'mobile' ? 1 : 0);
       series.rain.push(liquid ? dm.exp(0.07 * (T - 288)) : 0);
+      series.stage.push(stage); series.div.push(stage > 0 ? div : 0);
+      series.light.push(parK * S(t) * (snow ? 0.02 : 1));
     }
     t += dt; i++;
   }
@@ -208,13 +411,18 @@ export function evolveWorld(ctx) {
   // ---- the present
   if (impT != null) { const since = age - impT; T = Math.max(T, 400 + 900 * dm.exp(-since / 0.008)); }
   const P = N2 * 1.01 + pCO2 + pO2;
-  const level = life.origin == null || life.extinct != null ? 0 : life.plants != null ? (life.complex != null && rng.next() < 0.5 ? 3 : 2) : 1;
+  if (stage === 0 && everLife) life.extinct = lastSterile ?? extinctions.length ? extinctions[extinctions.length - 1].t : age;
+  const level = stage === 0 ? 0 : stage >= 8 ? 3 : stage === 7 ? 2 : 1;
+  // the present's passing states: an eruption under way, a world recovering from a die-off
+  const eruption = lipNow && age >= lipNow.t && age < lipNow.t + lipNow.dur ? { sinceKyr: (age - lipNow.t) * 1e6, warm: lips[lips.length - 1].warm } : null;
+  const lastBig = extinctions.filter((e) => e.loss >= 0.3).pop();
+  const recovering = lastBig && stage > 0 && age - lastBig.t < 0.02 ? { agoMyr: (age - lastBig.t) * 1000, cause: lastBig.cause, loss: lastBig.loss } : null;
   const young = age < 0.15;
   // how long land plants have had (Dave: their age decides how big and complex the
   // flora is): ground cover, then shrubs and ferns, then forests (Earth's first trees
   // came ~85 Myr after its first land plants), then diverse forests and grasslands;
   // the tallest trees on Earth reach ~115 m, scaled here by gravity (taller where weaker)
-  const plantsMyr = life.plants != null && life.extinct == null ? (age - life.plants) * 1000 : 0;
+  const plantsMyr = life.plants != null && stage >= 7 ? (age - life.plants) * 1000 : 0;
   const floraStage = plantsMyr <= 0 ? (level >= 1 ? 0 : -1) : plantsMyr < 50 ? 1 : plantsMyr < 90 ? 2 : plantsMyr < 300 ? 3 : 4;
   const maxTreeM = floraStage >= 3 ? Math.min(250, (floraStage === 3 ? 30 + 60 * (plantsMyr - 90) / 210 : 110) * dm.pow(9.81 / Math.max(ctx.gravity, 1), 0.5)) : floraStage === 2 ? 4 : floraStage === 1 ? 0.3 : 0;
   const out = {
@@ -223,7 +431,9 @@ export function evolveWorld(ctx) {
     oceans, oceans0, snowball: snow, runaway, titanish,
     regime, dynamo, tPlatesStop: tStop, tDynamo: tDyn,
     heatNow: heat(age), young,
-    life, lifeLevel: LEVELS[level], lifeEver: life.origin != null, lifeLuck: lifeRate,
+    life, lifeLevel: LEVELS[level], lifeEver: everLife, lifeLuck: lifeRate,
+    lifeStage: stage, lifeStageName: STAGES[stage], diversity: stage > 0 ? div : 0, usableLight: parK,
+    extinctions, bigImpacts, floodBasalts: lips, eruption, recovering,
     plantsMyr, floraStage, floraName: ['bare', 'microbial crusts', 'ground cover', 'shrubs and ferns', 'forests', 'diverse forests and grasslands'][floraStage + 1], maxTreeM,
     series, events, carbon,
     exception: exc,
@@ -243,6 +453,18 @@ export function evolveWorld(ctx) {
 }
 
 function teqBareOf(S) { return equilibriumTemp(S, 0.3); }
+// water's boiling point (K) at P bar (Clausius-Clapeyron, L = 40.7 kJ/mol)
+function boilingPoint(P) { return 1 / (1 / 373.15 - 8.314 / 40700 * dm.log(Math.max(P, 1e-4) / 1.013)); }
+// photons in the 400-750 nm band per unit of a blackbody's light at teff (relative units)
+function parPhotons(teff) {
+  const a = 14388 / teff; // um: hc/kT
+  let band = 0;
+  for (let i = 0; i < 70; i++) { const l = 0.4 + (i + 0.5) * 0.005; band += 0.005 / (l * l * l * l * (dm.exp(a / l) - 1)); }
+  return band / (dm.PI * dm.PI * dm.PI * dm.PI / (15 * a * a * a * a));
+}
+const STAGE_TEXT = ['', 'life arises in the sea', 'microbes learn to split water for light', 'oxygen builds in the air; the methane greenhouse fades',
+  'complex cells, with inner workings of their own', 'soft-bodied, many-celled life spreads through the seas', 'an explosion of sea animals: shells, eyes, reefs',
+  'plants take to the land', 'animals follow the plants onto land'];
 // CO2's vapour pressure (bar) at T: 1 bar at 195 K, ~0.01 bar at 150 K
 function co2Sat(T) { return dm.exp(16.1 - 3138 / Math.max(T, 60)); }
 
