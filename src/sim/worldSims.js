@@ -23,6 +23,15 @@ function openDB() {
     } catch { resolve(null); }
   });
 }
+// snapshots from other sim versions can't be used again: drop them (they're MBs each)
+function dbPrune(db) {
+  if (!db) return;
+  try {
+    const keep = `|v${SIM_VERSION}|`;
+    const q = db.transaction(STORE, 'readwrite').objectStore(STORE).openKeyCursor();
+    q.onsuccess = () => { const c = q.result; if (!c) return; if (!String(c.key).includes(keep)) c.source.delete(c.key); c.continue(); };
+  } catch { /* (best effort) */ }
+}
 function dbGet(db, key) {
   return new Promise((resolve) => {
     if (!db) return resolve(null);
@@ -52,6 +61,7 @@ export class WorldSims {
     this.queue = [];           // { id, N }
     this.busy = false;
     this.dbP = openDB();
+    this.dbP.then(dbPrune);
     this.worker = new Worker(new URL('../workers/worldsimWorker.js', import.meta.url), { type: 'module' });
     this.worker.onmessage = (e) => this._onMessage(e.data);
     this.worker.onerror = (e) => { console.error('world-sim worker error', e.message || e); this.busy = false; this._next(); };
