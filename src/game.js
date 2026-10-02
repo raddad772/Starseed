@@ -628,17 +628,18 @@ export class Game {
       const id = key && key.startsWith('orbit:') ? +key.slice(6) : key && key.startsWith('site:') ? +key.split(':')[1] : (this.ship && this.ship.body && this.ship.body.data ? this.ship.body.data.id : null);
       this.worldSims.requestAll(id);
     }
-    if (this.opts.testSpot && !this._testSpotDone) { this._testSpotDone = true; this.goTestSpot(this.opts.testSpot); }
+    if (this.opts.testSpot) this.goTestSpot(this.opts.testSpot, this.startToken);
   }
 
   // testing launch spots (?test=): 'cliffs' starts on the start world's steepest hard-rock
   // country below 2.5 km (gen/volume.js: cliffs, overhangs, caves), in the morning, beside the
   // ship; once that world's sim is in (from the cache at once, else when it's done)
-  async goTestSpot(kind) {
-    const b = this.ship && this.ship.body;
+  async goTestSpot(kind, token) {
+    const b = this.startBody;
     if (!b || !b.solid || kind !== 'cliffs') return;
     const id = b.data.id;
     if (this.worldSims) while (!['ready', 'failed'].includes(this.worldSims.status.get(id))) await new Promise((r) => setTimeout(r, 300));
+    if (token !== this.startToken) return;   // (another start since: that one goes there instead)
     const d = findCliffCountry(b.terrain);
     if (!d) return;
     this.startOnSurface(b, new THREE.Vector3(d[0], d[1], d[2]));
