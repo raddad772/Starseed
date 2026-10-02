@@ -34,6 +34,13 @@ self.onmessage = (e) => {
       if (p) { params.set(m.id, { ...p, snapshot: m.snapshot }); gens.delete(m.id); }
       return;
     }
+    if (m.type === 'refine') {
+      // its refinement (worldsim/refine.js, shared memory): read from now on
+      const p = params.get(m.id);
+      if (p) { params.set(m.id, { ...p, refine: m.refine }); gens.delete(m.id); }
+      for (const k of [...fields.keys()]) if (k.startsWith(m.id + '|')) fields.delete(k);
+      return;
+    }
     if (m.type === 'chunk') {
       const r = buildChunk(gen(m.body), m.face, m.level, m.ix, m.iy, m.N);
       r.type = 'chunk'; r.job = m.job;

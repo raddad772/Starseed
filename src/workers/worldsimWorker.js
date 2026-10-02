@@ -8,14 +8,28 @@ import { packSnapshot, snapshotBuffers } from '../gen/worldsim/snapshot.js';
 import { findFeatures } from '../gen/worldsim/features.js';
 import { nameLandmarks, landmarks } from '../gen/worldsim/landmarks.js';
 import { ROCKS } from '../gen/worldsim/lithology.js';
+import { TerrainGenerator } from '../gen/terrain.js';
+import { runTile, refineLevel } from '../gen/localsim.js';
+import { packTile } from '../gen/worldsim/refine.js';
 
 let sys = null, sysSeed = null;
 
 self.onmessage = (e) => {
   const m = e.data;
   try {
-    if (m.type !== 'sim') return;
     if (sysSeed !== m.seed) { sys = generateSystem(m.seed); sysSeed = m.seed; }
+    if (m.type === 'refine') {
+      // one face of a world's refinement (localsim.js 'refine' tiles), each tile posted as done
+      const b = sys.bodies[m.body], gen = new TerrainGenerator({ ...b.terrain, snapshot: m.snap });
+      const n = 1 << refineLevel(gen);
+      for (let tj = 0; tj < n; tj++) for (let ti = 0; ti < n; ti++) {
+        const p = packTile(runTile(gen, m.face, ti, tj, { kind: 'refine' }));
+        self.postMessage({ type: 'tile', job: m.job, body: m.body, tile: p }, [p.h.buffer, p.rw.buffer]);
+      }
+      self.postMessage({ type: 'refined', job: m.job, body: m.body, face: m.face });
+      return;
+    }
+    if (m.type !== 'sim') return;
     const b = sys.bodies[m.body];
     const t0 = performance.now();
     const W = worldSim(b, sys.bodies[0], { N: m.N, myr: m.myr, steps: m.steps, ...simOptsFor(b, sys), log: (msg) => self.postMessage({ type: 'log', job: m.job, body: m.body, msg }) });

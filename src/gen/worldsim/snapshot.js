@@ -15,6 +15,8 @@
 // Versioned: a cache keyed by seed, body and SIM_VERSION drops stale ones.
 
 import { GridLite } from './grid.js';
+import { RefineReader } from './refine.js';
+import { MT } from '../tileshape.js';
 import * as dm from '../../core/dmath.js';
 import { Noise3 } from '../../core/noise.js';
 
@@ -87,6 +89,7 @@ export function snapshotBuffers(s) {
 export class SnapshotSampler {
   constructor(s) {
     this.s = s;
+    this.ref = null; this.refCell = 0; this._hs = 1;
     this.G = new GridLite(s.N, s.R);
     this.Gc = s.Nc ? new GridLite(s.Nc, s.R) : null;
     this.nb = new Int32Array(8);
@@ -133,6 +136,11 @@ export class SnapshotSampler {
     }
   }
   _d(x, y, z) { const d = this.d; d[0] = x; d[1] = y; d[2] = z; return d; }
+  // the world's refinement (refine.js), or null: its cells (m) a few times finer than the grid's
+  attachRefine(R) {
+    this.ref = R ? new RefineReader(R) : null;
+    this.refCell = R ? (Math.PI / 2) * this.s.R / (R.n * MT) : 0;
+  }
   // smooth (bilinear) fields
   h(x, y, z) { return this.G.sample(this.s.h, this._d(x, y, z), this.uv); }
   relief(x, y, z) { return this.G.sample(this.s.relief, this._d(x, y, z), this.uv); }
@@ -160,6 +168,7 @@ export class SnapshotSampler {
   // grade into each other over a few hundred metres; where the ground does, it's sharp.
   // Returns the rock; this.rock2 the other one there and this.rockMix its share (0..0.5)
   rockAt(x, y, z, h) {
+    if (this.ref && this.ref.sample(this._d(x, y, z))) return this.ref.rockAt(h * this._hs, this);
     const s = this.s, c = this._rc || (this._rc = new Int32Array(4)), w = this._rw || (this._rw = new Float64Array(4));
     this.G.corners(this._d(x, y, z), c, w, this.uv);
     const r0 = s.rock[c[0]];

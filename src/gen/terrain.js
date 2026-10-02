@@ -57,11 +57,14 @@ export class TerrainGenerator {
     this.R = p.R;
     // a simulated world (worldsim/snapshot.js): its heights and surfaces instead of noise
     this.snap = p.snapshot ? new SnapshotSampler(p.snapshot) : null;
+    // its refinement (worldsim/refine.js): the surface its water cut, the sea's reach, the rock
+    if (this.snap && p.refine) this.snap.attachRefine(p.refine);
     // heights are real on worlds drawn at a tenth of their size, which makes a small body's real
     // relief a blob: it's held to ~6% of the drawn radius (no change for an Earth's or a Moon's)
     let rel = p.relief || 3000;
     if (p.snapshot) { rel = 0; for (const v of p.snapshot.h) { const a = Math.abs(v); if (a > rel) rel = a; } }
     this.hScale = Math.min(1, RELIEF_MAX * this.R / Math.max(1, rel));
+    if (this.snap) this.snap._hs = this.hScale;   // (a refinement's heights are as drawn)
     // whether rivers and lakes hold anything now: a world too hot or cold for a surface liquid
     // keeps the valleys and basins its wetter past carved (dry channels, playas), empty
     this.wetNow = !!p.liquid && p.liquid !== 'lava';
@@ -509,15 +512,18 @@ export class TerrainGenerator {
     const p = this.p, S = this.snap, R = this.R;
     for (let i = 0; i < S_LEN; i++) out[i] = 0;
     out[S_DX] = x; out[S_DY] = y; out[S_DZ] = z;
-    let h = S.h(x, y, z);
+    // (the world's refinement where it has one: the world sim's surface with what its water cut)
+    const ref = S.ref && S.ref.sample(S._d(x, y, z)) ? S.ref : null;
+    let h = ref ? ref.h / this.hScale : S.h(x, y, z);
     const h0 = h;
     const rel = S.relief(x, y, z);
     const mMask = dm.smoothstep(400, 2500, rel);
     out[S_MOUNT] = mMask;
     const amp = dm.clamp(rel * 0.3, 12, 900);
-    // hills from the grid's spacing down (derivative-damped: eroded-looking)
+    // hills from the grid's spacing down (derivative-damped: eroded-looking); with a
+    // refinement, only those finer than it resolves
     {
-      const lam0 = S.G.spacing;
+      const lam0 = S.G.spacing, lamCut = ref ? 2 * S.refCell : 1e30;
       const hf = R / lam0;
       let fx = x * hf, fy = y * hf, fz = z * hf, nxs = x, nys = y, nzs = z;
       let sum = 0, a = 1, dx = 0, dy = 0, dz = 0, lam = lam0;
@@ -527,7 +533,7 @@ export class TerrainGenerator {
         this.nHill.noised(fx, fy, fz, tmp4);
         const dr = tmp4[1] * nxs + tmp4[2] * nys + tmp4[3] * nzs;
         dx += tmp4[1] - dr * nxs; dy += tmp4[2] - dr * nys; dz += tmp4[3] - dr * nzs;
-        sum += a * tmp4[0] * fade / (1 + 1.6 * (dx * dx + dy * dy + dz * dz));
+        if (lam < lamCut) sum += a * tmp4[0] * fade / (1 + 1.6 * (dx * dx + dy * dy + dz * dz));
         a *= 0.5; lam *= 0.5;
         const nx = ROT[0] * fx + ROT[1] * fy + ROT[2] * fz, ny = ROT[3] * fx + ROT[4] * fy + ROT[5] * fz, nz = ROT[6] * fx + ROT[7] * fy + ROT[8] * fz;
         fx = nx * 2.0 + 1.3; fy = ny * 2.0 + 2.9; fz = nz * 2.0 - 4.1;
@@ -582,7 +588,7 @@ export class TerrainGenerator {
     // the sea's own cells, where the sim's surface is low enough for the ground's dips to reach
     // the datum (the shore then the ground's own contour, not the cells'); a dip below the
     // datum beyond that is dry land
-    else if (!lk && h < 0 && wl < -1e8 && (h0 > 1.5 * amp || S.seaDist(x, y, z) > 1.5)) h = 0.5 - 0.02 * h;
+    else if (!lk && h < 0 && wl < -1e8 && (ref ? ref.sea < 0.02 : (h0 > 1.5 * amp || S.seaDist(x, y, z) > 1.5))) h = 0.5 - 0.02 * h;
     // tuyas: a flat lava cap where the ice's surface was (a small cone on it), flanks at ~35
     // degrees of glassy rubble down to the ground round it
     if (S.tuyaAt) {

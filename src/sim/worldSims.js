@@ -7,8 +7,15 @@
 // Two sims run at once on a machine with 8+ cores (each takes ~0.5-0.65 GB), else one.
 // Opt-in for now: ?worldsim=1 (?simN= the grid for an Earth-sized world, default 288;
 // ?simWorkers= how many at once).
+// Then each world's refinement (worldsim/refine.js: what its water cut at a few times the
+// grid's resolution, its drowned coasts, its rock), a face at a time on the same workers (the
+// start world's ahead of the other worlds' sims), cached the same way and shared with the
+// terrain workers (one copy: SharedArrayBuffers).
 
 import { SIM_VERSION, simNFor } from '../gen/worldsim/snapshot.js';
+import { TILE_VERSION } from '../gen/tileshape.js';
+import { refineLevelN } from '../gen/localsim.js';
+import { newRefine, putTile, complete, toStorable, fromStorable } from '../gen/worldsim/refine.js';
 
 const DB = 'starseed-worldsim', STORE = 'snap';
 
@@ -26,9 +33,14 @@ function openDB() {
 function dbPrune(db) {
   if (!db) return;
   try {
-    const keep = `|v${SIM_VERSION}|`;
+    const keep = `|v${SIM_VERSION}|`, keepR = `|r${TILE_VERSION}`;
     const q = db.transaction(STORE, 'readwrite').objectStore(STORE).openKeyCursor();
-    q.onsuccess = () => { const c = q.result; if (!c) return; if (!String(c.key).includes(keep)) c.source.delete(c.key); c.continue(); };
+    q.onsuccess = () => {
+      const c = q.result; if (!c) return;
+      const k = String(c.key);
+      if (!k.includes(keep) || (k.includes('|r') && !k.endsWith(keepR))) c.source.delete(c.key);
+      c.continue();
+    };
   } catch { /* (best effort) */ }
 }
 function dbGet(db, key) {
@@ -53,7 +65,8 @@ export class WorldSims {
     this.myr = opts.myr || 150;
     this.steps = opts.steps || 40;
     this.status = new Map();   // body id -> 'queued' | 'running' | 'ready' | 'failed'
-    this.queue = [];           // { id, N }
+    this.queue = [];           // { kind: 'sim', id, N } | { kind: 'refine', id, face, snap }
+    this.refine = new Map();   // body id -> { R (refine.js), faces done, status }
     this.phase = new Map();    // body id -> the running sim's stage
     this.dbP = openDB();
     this.dbP.then(dbPrune);
@@ -81,7 +94,8 @@ export class WorldSims {
     const all = [...this.status.values()], ready = all.filter((v) => v === 'ready' || v === 'failed').length;
     const name = (id) => this.game.system.bodies[id].name;
     const running = [...this.status].filter(([, v]) => v === 'running').map(([id]) => `${name(id)}: ${this.phase.get(id) || 'starting'}…`);
-    if (ready >= all.length) { this.el.textContent = `Simulated worlds ready (${ready})`; this.el.style.opacity = '0'; return; }
+    for (const [id, st] of this.refine) if (st.status === 'running') running.push(`${name(id)}: coasts and valleys, ${st.faces} of 6`);
+    if (ready >= all.length && !running.length) { this.el.textContent = `Simulated worlds ready (${ready})`; this.el.style.opacity = '0'; return; }
     this.el.style.opacity = '0.75';
     this.el.textContent = `Simulating worlds: ${ready} of ${all.length} ready${running.length ? ' · ' + running.join(' · ') : ''}`;
   }
@@ -89,6 +103,7 @@ export class WorldSims {
   // a world's grid (its size's: simNFor) and cache key
   nFor(id) { return simNFor(this.game.system.bodies[id], this.N); }
   key(id) { return `${this.seed}|${id}|v${SIM_VERSION}|N${this.nFor(id)}`; }
+  refKey(id) { return `${this.key(id)}|r${TILE_VERSION}`; }
 
   // every solid body with terrain, nearest to `near` (a body id) first
   requestAll(nearId = null) {
@@ -102,7 +117,21 @@ export class WorldSims {
     this.status.set(id, 'queued');
     const cached = await dbGet(await this.dbP, this.key(id));
     if (cached) { this._apply(id, cached, true); return; }
-    this.queue.push({ id, N: this.nFor(id) });
+    this.queue.push({ kind: 'sim', id, N: this.nFor(id) });
+    this._next();
+  }
+
+  // a world's refinement: from the cache, or its six faces queued (the start world's first)
+  async requestRefine(id, snap) {
+    if (this.refine.has(id)) return;
+    const st = { R: null, faces: 0, status: 'queued' };
+    this.refine.set(id, st);
+    const cached = await dbGet(await this.dbP, this.refKey(id));
+    if (cached && cached.version === TILE_VERSION) { st.R = fromStorable(cached); this._applyRefine(id, st, true); return; }
+    st.R = newRefine(refineLevelN(snap.N));
+    st.t0 = performance.now();
+    const jobs = [0, 1, 2, 3, 4, 5].map((face) => ({ kind: 'refine', id, face, snap }));
+    if (id === this.game.system.startBodyId) this.queue.unshift(...jobs); else this.queue.push(...jobs);
     this._next();
   }
 
@@ -112,6 +141,11 @@ export class WorldSims {
       if (w.job || !this.queue.length) continue;
       const job = this.queue.shift();
       w.job = job;
+      if (job.kind === 'refine') {
+        this.refine.get(job.id).status = 'running';
+        w.worker.postMessage({ type: 'refine', job: job.id, seed: this.seed, body: job.id, face: job.face, snap: job.snap });
+        continue;
+      }
       this.status.set(job.id, 'running');
       this.phase.delete(job.id);
       w.worker.postMessage({ type: 'sim', job: job.id, seed: this.seed, body: job.id, N: job.N, myr: this.myr, steps: this.steps });
@@ -127,7 +161,24 @@ export class WorldSims {
       if (k) { this.phase.set(m.body, { worldSim: 'deep time', plates: 'the recent epoch', 'lakes after': 'ice and climate', 'climate now': 'soil and water', soil: 'life', life: 'coasts' }[k[1]]); this._progress(); }
       return;
     }
-    if (m.type === 'error') { console.error(`world sim failed for body ${m.body}:`, m.message); this.status.set(m.body, 'failed'); w.job = null; this._next(); return; }
+    if (m.type === 'error') {
+      console.error(`world ${w.job && w.job.kind === 'refine' ? 'refinement' : 'sim'} failed for body ${m.body}:`, m.message);
+      if (w.job && w.job.kind === 'refine') this.refine.get(m.body).status = 'failed'; else this.status.set(m.body, 'failed');
+      w.job = null; this._next(); return;
+    }
+    if (m.type === 'tile') { const st = this.refine.get(m.body); if (st && st.R) putTile(st.R, m.tile); return; }
+    if (m.type === 'refined') {
+      w.job = null;
+      const st = this.refine.get(m.body);
+      st.faces++;
+      if (st.faces === 6 && complete(st.R)) {
+        st.ms = performance.now() - st.t0;
+        dbPut(await this.dbP, this.refKey(m.body), toStorable(st.R));
+        this._applyRefine(m.body, st, false);
+      }
+      this._next();
+      return;
+    }
     if (m.type === 'snapshot') {
       w.job = null;
       dbPut(await this.dbP, this.key(m.body), m.snap);
@@ -146,6 +197,20 @@ export class WorldSims {
     if (g.world.rebuildTerrain) g.world.rebuildTerrain(id);
     console.log(`world sim ${fromCache ? 'from cache' : `done in ${((snap.ms || 0) / 1000).toFixed(1)} s`}: ${b.name} (${snap.path}, N ${snap.N})`);
     if (this.onReady) this.onReady(id, snap);
+    this.requestRefine(id, snap);
+    this._progress();
+  }
+
+  _applyRefine(id, st, fromCache) {
+    st.status = 'ready';
+    const g = this.game, b = g.system.bodies[id];
+    b.terrain.refine = st.R;
+    const ub = g.universe.bodies.find((x) => x.data && x.data.id === id);
+    if (ub) ub._gen = null;
+    g.pool.setRefine(id, st.R);
+    if (g.world.rebuildTerrain) g.world.rebuildTerrain(id);
+    console.log(`world refinement ${fromCache ? 'from cache' : `done in ${((st.ms || 0) / 1000).toFixed(1)} s`}: ${b.name} (${6 * st.R.n * st.R.n} tiles)`);
+    if (this.onRefined) this.onRefined(id);
     this._progress();
   }
 

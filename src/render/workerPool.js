@@ -44,6 +44,14 @@ export class WorkerPool {
     if (this.gens) this.gens.delete(id);
   }
 
+  // a body's refinement (worldsim/refine.js): its arrays are shared, not copied
+  setRefine(id, R) {
+    const b = this.bodies.find((x) => x.id === id);
+    if (b) b.terrain = { ...b.terrain, refine: R };
+    for (const w of this.workers) w.postMessage({ type: 'refine', id, refine: R });
+    if (this.gens) this.gens.delete(id);
+  }
+
   // msg: { type, ... }, priority number. Returns a handle with .promise and .cancel()
   submit(msg, priority) {
     const job = this.nextJob++;
