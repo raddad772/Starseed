@@ -43,7 +43,7 @@ self.onmessage = async (e) => {
       P.fromInts(G ? await G.run(I) : runInt(I));
       const T = P.finish(), p = packTile(T);
       p.riv = tileRivers(T);
-      self.postMessage({ type: 'tile', job: m.job, body: m.body, tile: p }, [p.h.buffer, p.rw.buffer, p.riv.buffer]);
+      self.postMessage({ type: 'tile', job: m.job, body: m.body, tile: p }, [p.h.buffer, p.rw.buffer, p.riv.rec.buffer, p.riv.keys.buffer]);
       self.postMessage({ type: 'refined', job: m.job, body: m.body, face: m.face });
       return;
     }

@@ -61,7 +61,10 @@ export const RIVER_A = 1e8, RIVER_REC = 13;   // (a record: 3 points, 3 heights,
 export function tileRivers(T) {
   const fl = T.fl, rc = T.rcv, H = T.h, s = 2 / (1 << T.L), du = s / MT;
   const u0 = -1 + T.ti * s - KEEP * du, v0 = -1 + T.tj * s - KEEP * du;
-  const thr = Math.max(0, Math.round(255 * dm.log(RIVER_A) / LN_A)), out = [], d = [0, 0, 0];
+  const thr = Math.max(0, Math.round(255 * dm.log(RIVER_A) / LN_A)), out = [], keys = [], d = [0, 0, 0];
+  // (each record's cell and the cell it drains into, by their place in the level's whole grid:
+  // so the rivers' records chain from tile to tile)
+  const gn = (1 << T.L) * MT, gkey = (i, j) => (T.face * gn + (T.tj * MT + j - KEEP)) * gn + (T.ti * MT + i - KEEP);
   const nbI = (k) => { const kk = k >= 4 ? k + 1 : k; return (kk % 3) - 1; }, nbJ = (k) => { const kk = k >= 4 ? k + 1 : k; return ((kk / 3) | 0) - 1; };
   const at = (fi, fj) => { dirFromFaceUV(T.face, u0 + (fi + 0.5) * du, v0 + (fj + 0.5) * du, d); out.push(d[0], d[1], d[2]); };
   for (let j = KEEP; j < KEEP + MT; j++) for (let i = KEEP; i < KEEP + MT; i++) {
@@ -76,17 +79,18 @@ export function tileRivers(T) {
     }
     at((ui + i) / 2, (uj + j) / 2); at(i, j); at((i + ri) / 2, (j + rj) / 2);
     out.push((H[uj * K + ui] + H[o]) / 2, H[o], (H[o] + H[rj * K + ri]) / 2, dm.exp(fl[o] / 255 * LN_A));
+    keys.push(gkey(i, j), gkey(ri, rj));
   }
-  return Float32Array.from(out);
+  return { rec: Float32Array.from(out), keys: Float64Array.from(keys) };
 }
 // the tiles' rivers gathered and indexed by the world sim's cells (N a face, world radius Rw):
 // { rec, start, idx } (the records of cell c: idx[start[c] .. start[c + 1]])
 export function riverIndex(parts, N, Rw) {
   let total = 0;
-  for (const p of parts) total += p.length;
-  const rec = new Float32Array(total);
-  let o = 0;
-  for (const p of parts) { rec.set(p, o); o += p.length; }
+  for (const p of parts) total += p.rec.length;
+  const rec = new Float32Array(total), keys = new Float64Array(2 * total / RIVER_REC);
+  let o = 0, ok = 0;
+  for (const p of parts) { rec.set(p.rec, o); o += p.rec.length; keys.set(p.keys, ok); ok += p.keys.length; }
   const G = new GridLite(N, Rw), m = total / RIVER_REC, cellOf = new Int32Array(m), start = new Int32Array(G.n + 1);
   for (let r = 0; r < m; r++) { const b = r * RIVER_REC + 3; cellOf[r] = G.cellAt(rec[b], rec[b + 1], rec[b + 2]); start[cellOf[r] + 1]++; }
   for (let c = 0; c < G.n; c++) start[c + 1] += start[c];
@@ -100,7 +104,28 @@ export function riverIndex(parts, N, Rw) {
     half[r] = 0.5 + 0.9 * dm.exp(0.45 * (la - dm.log(6e4)));
     size[r] = Math.max(0, Math.min(1, (la - lo) / span));
   }
-  return { rec, start, idx, half, size };
+  // (how far up its river each record lies, in its channel's widths from where the river ends:
+  // the meanders' phase, continuous down the river whatever its width does; refine.js's readers
+  // and terrain.js lay the meander trace along it)
+  const byKey = new Map();
+  for (let r = 0; r < m; r++) byKey.set(keys[2 * r], r);
+  const phase = new Float32Array(m).fill(NaN), stack = [];
+  for (let r0 = 0; r0 < m; r0++) {
+    if (phase[r0] === phase[r0]) continue;
+    // (down the river to a record whose phase is known, or to its end)
+    let r = r0;
+    stack.length = 0;
+    while (r >= 0 && phase[r] !== phase[r]) { stack.push(r); const dn = byKey.get(keys[2 * r + 1]); r = dn === undefined || stack.length > 1e6 ? -1 : dn; if (r >= 0 && stack.includes(r)) r = -1; }
+    let ph = r >= 0 ? phase[r] : 0, prev = r;
+    for (let k = stack.length - 1; k >= 0; k--) {
+      const q = stack[k], b = q * RIVER_REC + 3;
+      let len = 0;
+      if (prev >= 0) { const c = prev * RIVER_REC + 3, dx = rec[b] - rec[c], dy = rec[b + 1] - rec[c + 1], dz = rec[b + 2] - rec[c + 2]; len = Math.sqrt(dx * dx + dy * dy + dz * dz) * Rw; }
+      ph += len / (2 * half[q]);
+      phase[q] = ph; prev = q;
+    }
+  }
+  return { rec, start, idx, half, size, phase };
 }
 
 // cubic weights at t in [0, 1] for the four samples round it: B-spline (smooth, for a

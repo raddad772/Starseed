@@ -26,6 +26,7 @@ import { CraterField } from './craters.js';
 import { craterFloor, TILE_CELLS } from './worldsim/impacts.js';
 import { SnapshotSampler } from './worldsim/snapshot.js';
 import { RIVER_REC } from './worldsim/refine.js';
+import { meanderField, meanderNear } from './meanders.js';
 import { ROCKS, R as ROCK } from './worldsim/lithology.js';
 import { hexToLinear } from './color.js';
 
@@ -520,6 +521,7 @@ export class TerrainGenerator {
   // surfaces; the climate from the sim's (else the generator's)
   sampleSnap(x, y, z, minWavelength, out) {
     const p = this.p, S = this.snap, R = this.R;
+    this._minW = minWavelength;   // (the rivers' meanders: only where they can be seen)
     for (let i = 0; i < S_LEN; i++) out[i] = 0;
     out[S_DX] = x; out[S_DY] = y; out[S_DZ] = z;
     // (the world's refinement where it has one: the world sim's surface with what its water cut)
@@ -595,6 +597,18 @@ export class TerrainGenerator {
     // below them) follow the sim's heights along the line, so the water only runs downhill
     let wl = -1e9;
     const rv = this._riverAt(x, y, z);
+    if (rv && rv.belt > 0 && rv.axis < 1.3 * rv.belt) {
+      // (a meandering river's floodplain: the belt it has swung across, laid level near its banks;
+      // and the loops it cut off, lakes while young, swales once filled)
+      const bank0 = Math.max(rv.hs, 0) + 1 + 0.05 * rv.depth;
+      h += (bank0 + 0.5 - h) * 0.85 * dm.smoothstep(1.3 * rv.belt, 0.85 * rv.belt, rv.axis);
+      const oh = 0.5 * rv.w;
+      if (rv.ox < oh && rv.oxAge < 0.8) {
+        const q = 1 - (rv.ox / oh) * (rv.ox / oh), dep = rv.depth * 0.6 * (1 - rv.oxAge);
+        h = Math.min(h, bank0 - dep * q);
+        if (this.wetNow && rv.oxAge < 0.5) wl = Math.max(wl, bank0 - 0.8 - 0.3 * dep);
+      }
+    }
     if (rv) {
       const half = rv.w * 0.5, flank = half * 3 + S.G.spacing * (0.02 + 0.12 * rv.k);
       if (rv.dist < flank) {
@@ -840,13 +854,50 @@ export class TerrainGenerator {
         if (dist - w < bs) {
           bs = dist - w;
           const a0 = (1 - bt) * (1 - bt), a1 = 2 * bt * (1 - bt), a2 = bt * bt, k = Rv.size[r];
-          best = this._rv || (this._rv = { dist: 0, w: 0, depth: 0, k: 0, hs: 0 });
+          best = this._rv || (this._rv = { dist: 0, w: 0, depth: 0, k: 0, hs: 0, r: 0, t: 0, axis: 0, belt: 0, ox: 1e9, oxAge: 1 });
           best.dist = dist; best.w = w; best.k = k; best.depth = 3 + 25 * k;
           best.hs = (a0 * rec[b + 9] + a1 * rec[b + 10] + a2 * rec[b + 11]) / this.hScale;
+          best.r = r; best.t = bt;
         }
       }
     }
+    if (best && Rv.phase) this._meander(best, x, y, z);
     return best;
+  }
+
+  // a river on a gentle floodplain winds through its belt (meanders.js: a simulated meander
+  // trace laid along it by its phase, scaled to its width; the oxbows it cut off beside it):
+  // rv.dist becomes the distance to the winding channel, rv.axis the distance to the valley's
+  // line and rv.belt the belt's half width (0 where the river runs straight)
+  _meander(rv, x, y, z) {
+    const Rv = this.snap.riv, rec = Rv.rec, R = this.R, b = rv.r * RIVER_REC, w = rv.w;
+    rv.axis = rv.dist; rv.belt = 0; rv.ox = 1e9;
+    const F = this._mf || (this._mf = meanderField());
+    // (how far it may swing: on a gentle slope fully, its belt kept within reach of the valley's
+    // line; a steep or great river keeps nearer it)
+    const len = Math.sqrt((rec[b + 6] - rec[b]) ** 2 + (rec[b + 7] - rec[b + 1]) ** 2 + (rec[b + 8] - rec[b + 2]) ** 2) * R;
+    const slope = len > 0 ? (rec[b + 9] - rec[b + 11]) / len : 0;
+    // (and only where the ground is sampled finely enough to show its loops: from afar it runs
+    // along its valley's line)
+    const A = Math.min(1 - dm.smoothstep(3e-4, 2e-3, slope), 1800 / (w * F.half)) * dm.smoothstep(6 * w, 2 * w, this._minW || 0);
+    if (A < 0.35) return;
+    // (the nearest point of its curve, more finely)
+    const P = (t, o) => { const a0 = (1 - t) * (1 - t), a1 = 2 * t * (1 - t), a2 = t * t; o[0] = a0 * rec[b] + a1 * rec[b + 3] + a2 * rec[b + 6]; o[1] = a0 * rec[b + 1] + a1 * rec[b + 4] + a2 * rec[b + 7]; o[2] = a0 * rec[b + 2] + a1 * rec[b + 5] + a2 * rec[b + 8]; return o; };
+    const pa = this._ma || (this._ma = [0, 0, 0]), pb = this._mb || (this._mb = [0, 0, 0]);
+    const d2 = (t) => { P(t, pa); return (pa[0] - x) ** 2 + (pa[1] - y) ** 2 + (pa[2] - z) ** 2; };
+    let lo = Math.max(0, rv.t - 0.125), hi = Math.min(1, rv.t + 0.125);
+    for (let it = 0; it < 12; it++) { const m1 = lo + (hi - lo) / 3, m2 = hi - (hi - lo) / 3; if (d2(m1) < d2(m2)) hi = m2; else lo = m1; }
+    const t = 0.5 * (lo + hi);
+    P(t, pa);
+    // (which side: the curve's direction there against the way to the point, about up)
+    const a0 = 1 - t, tx = 2 * a0 * (rec[b + 3] - rec[b]) + 2 * t * (rec[b + 6] - rec[b + 3]), ty = 2 * a0 * (rec[b + 4] - rec[b + 1]) + 2 * t * (rec[b + 7] - rec[b + 4]), tz = 2 * a0 * (rec[b + 5] - rec[b + 2]) + 2 * t * (rec[b + 8] - rec[b + 5]);
+    const qx = x - pa[0], qy = y - pa[1], qz = z - pa[2], side = (ty * qz - tz * qy) * x + (tz * qx - tx * qz) * y + (tx * qy - ty * qx) * z;
+    const across = Math.sqrt(qx * qx + qy * qy + qz * qz) * R * (side < 0 ? -1 : 1);
+    // (its phase there: up the river, in widths, from the record's cell)
+    const ph = Rv.phase[rv.r] + (0.5 - t) * len / w;
+    const mn = meanderNear(F, ph, across / (w * A), this._mn || (this._mn = { d: 0, ox: 0, oxAge: 0 }));
+    rv.dist = mn.d * w * A; rv.belt = A * F.half * w;
+    rv.ox = mn.ox * w * A; rv.oxAge = mn.oxAge;
   }
 
   // the simulated lake level here ({ L, own } or null: SnapshotSampler.lakeLevel), looked
