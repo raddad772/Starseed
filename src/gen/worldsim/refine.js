@@ -12,7 +12,7 @@ import { FACES } from '../cubesphere.js';
 import { MT, KEEP, TILE_VERSION } from '../tileshape.js';
 import * as dm from '../../core/dmath.js';
 
-const K = MT + 2 * KEEP, KK = K * K, QPI = Math.PI / 4;
+const K = MT + 2 * KEEP, KK = K * K, QPI = Math.PI / 4, LN_A = 25.328436022934504;   // (ln 1e11: the drainage's scale)
 const canShare = typeof SharedArrayBuffer !== 'undefined' && (typeof crossOriginIsolated === 'undefined' || crossOriginIsolated);
 
 function alloc(Type, n, shared) {
@@ -115,7 +115,8 @@ export class RefineReader {
         if (fi < 1 || fi > K - 3) continue;
         const T = (f * n + tj) * n + ti;
         let H, RW, off;
-        if (this.sparse) { const t = R.tiles.get(T); if (!t) continue; H = t.h; RW = t.rw; off = 0; }
+        let tile = null;
+        if (this.sparse) { tile = R.tiles.get(T); if (!tile) continue; H = tile.h; RW = tile.rw; off = 0; }
         else { if (R.done && !R.done[T]) continue; H = R.h; RW = R.rw; off = T * KK; }
         // (each tile weighs least at the edge of its kept square, fully a margin's width in)
         const w = Math.min(1, (Math.min(fi, K - 1 - fi) - 1) / (2 * KEEP)) * Math.min(1, (Math.min(fj, K - 1 - fj) - 1) / (2 * KEEP));
@@ -132,9 +133,45 @@ export class RefineReader {
           }
         }
         this._ws += w; this._hs += w * hh; this._ss += w * sea; this._ls += w * lake;
-        if (w > this._wb) { this._wb = w; this.tH = H; this.tRW = RW; this.tOff = off; this.ri = i; this.rj = j; this.rbx.set(bx); this.rby.set(by); }
+        if (w > this._wb) { this._wb = w; this.tH = H; this.tRW = RW; this.tOff = off; this.ri = i; this.rj = j; this.rbx.set(bx); this.rby.set(by); this.tTile = tile; this.tfi = fi; this.tfj = fj; }
       }
     }
+  }
+
+  // the nearest creek to the last sample: this level's drainage (its cells with at least
+  // Acut m^2 of rain-weighted water, each a line to the cell it drains into, centre to centre)
+  // within two cells: sets cd (distance, in cells), cA (its water, m^2), ch (the ground along it
+  // there, m), and returns whether there's one
+  creekAt(Acut) {
+    const t = this.tTile;
+    if (!t || !t.fl || !t.rcv) return false;
+    const fi = this.tfi, fj = this.tfj, i0 = Math.floor(fi), j0 = Math.floor(fj);
+    const thr = Math.max(0, Math.round(255 * dm.log(Acut) / LN_A)), fl = t.fl, rc = t.rcv, H = t.h;
+    // (a cell's neighbour by its slot 0..7: di, dj = -1..1 row by row, skipping itself)
+    const nbI = (k) => { const kk = k >= 4 ? k + 1 : k; return (kk % 3) - 1; }, nbJ = (k) => { const kk = k >= 4 ? k + 1 : k; return ((kk / 3) | 0) - 1; };
+    let bd = 2, found = false;
+    for (let j = j0 - 1; j <= j0 + 2; j++) for (let i = i0 - 1; i <= i0 + 2; i++) {
+      if (i < 2 || j < 2 || i >= K - 2 || j >= K - 2) continue;
+      const o = j * K + i, k = rc[o];
+      if (fl[o] < thr || k === 255) continue;
+      // the line through it, smoothly: from halfway to its main inflow (the neighbour draining
+      // into it with the most water), round it, to halfway to the cell it drains into
+      const ri = i + nbI(k), rj = j + nbJ(k);
+      let ui = i, uj = j, uf = -1;
+      for (let q = 0; q < 8; q++) {
+        const ni = i + nbI(q), nj = j + nbJ(q), no = nj * K + ni, nk = rc[no];
+        if (nk === 255 || ni + nbI(nk) !== i || nj + nbJ(nk) !== j || fl[no] < thr) continue;
+        if (fl[no] > uf) { uf = fl[no]; ui = ni; uj = nj; }
+      }
+      const x0 = (ui + i) / 2, y0 = (uj + j) / 2, x2 = (i + ri) / 2, y2 = (j + rj) / 2;
+      const h0 = (H[uj * K + ui] + H[o]) / 2, h2 = (H[o] + H[rj * K + ri]) / 2;
+      for (let q = 0; q <= 8; q++) {
+        const s2 = q / 8, a0 = (1 - s2) * (1 - s2), a1 = 2 * s2 * (1 - s2), a2 = s2 * s2;
+        const dx = a0 * x0 + a1 * i + a2 * x2 - fi, dy = a0 * y0 + a1 * j + a2 * y2 - fj, d = Math.sqrt(dx * dx + dy * dy);
+        if (d < bd) { bd = d; found = true; this.cd = d; this.cA = dm.exp(fl[o] / 255 * LN_A); this.ch = a0 * h0 + a1 * H[o] + a2 * h2; }
+      }
+    }
+    return found;
   }
 
   // the rock at the last sample, for ground standing at h (m): each rock among the cells round

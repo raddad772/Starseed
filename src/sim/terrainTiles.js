@@ -89,7 +89,7 @@ export class TerrainTiles {
       const id = b.data.id, face = uv.face;
       ws.requestPyr(id, t.L, face, t.ti, t.tj, parents).then((tile) => {
         this.pending.delete(key);
-        this.arrive(b, t.L, face, t.ti, t.tj, { h: share(tile.h), rw: share(tile.rw) });
+        this.arrive(b, t.L, face, t.ti, t.tj, { h: share(tile.h), rw: share(tile.rw), fl: share(tile.fl), rcv: share(tile.rcv) });
       }, (err) => { this.pending.delete(key); console.warn('terrain tile failed', key, err && err.message); });
     }
     this.prune(b, uv);

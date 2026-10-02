@@ -55,7 +55,7 @@ self.onmessage = async (e) => {
       P.fromInts(G ? await G.run(I) : runInt(I));
       const T = P.finish(), rw = new Uint8Array(T.rockC.length);
       for (let o = 0; o < rw.length; o++) rw[o] = (T.rockC[o] & 31) | (T.water[o] << 5);
-      self.postMessage({ type: 'ptile', job: m.job, body: m.body, L: m.L, face: m.face, ti: m.ti, tj: m.tj, h: T.h, rw }, [T.h.buffer, rw.buffer]);
+      self.postMessage({ type: 'ptile', job: m.job, body: m.body, L: m.L, face: m.face, ti: m.ti, tj: m.tj, h: T.h, rw, fl: T.fl, rcv: T.rcv }, [T.h.buffer, rw.buffer, T.fl.buffer, T.rcv.buffer]);
       return;
     }
     if (m.type !== 'sim') return;

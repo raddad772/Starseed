@@ -205,7 +205,7 @@ export class WorldSims {
       else if (job && job.kind === 'refine') this.refine.get(m.body).status = 'failed'; else this.status.set(m.body, 'failed');
       w.job = null; this._next(); return;
     }
-    if (m.type === 'ptile') { const job = w.job; w.job = null; job.resolve({ h: m.h, rw: m.rw }); this._next(); return; }
+    if (m.type === 'ptile') { const job = w.job; w.job = null; job.resolve({ h: m.h, rw: m.rw, fl: m.fl, rcv: m.rcv }); this._next(); return; }
     if (m.type === 'tile') { const st = this.refine.get(m.body); if (st && st.R) putTile(st.R, m.tile); return; }
     if (m.type === 'refined') {
       w.job = null;

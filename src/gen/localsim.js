@@ -575,15 +575,17 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
         if (parent.sampleUV(face, U[c], V[c]) || parent.sample(dd)) rockC[c] = parent.rockAt(h[c], rkOut, dm.clamp(hl[c] / (1.5 * Math.sqrt(rl[c]) + 0.05), -1, 1), DEP);
       }
       else {
-      const cc = new Int32Array(4), ww = new Float64Array(4), uv = { face: 0, u: 0, v: 0 }, dd = [0, 0, 0], sr = S.s.rock, sh = S.s.h;
-      const rk = new Int32Array(4), Wr = new Float64Array(4), Hr = new Float64Array(4);
+      const cc = new Int32Array(16), ww = new Float64Array(16), uv = { face: 0, u: 0, v: 0 }, dd = [0, 0, 0], sr = S.s.rock, sh = S.s.h;
+      const rk = new Int32Array(16), Wr = new Float64Array(16), Hr = new Float64Array(16);
       for (let c = 0; c < n; c++) {
         dd[0] = G.dir[c * 3]; dd[1] = G.dir[c * 3 + 1]; dd[2] = G.dir[c * 3 + 2];
-        S.G.corners(dd, cc, ww, uv);
+        S.G.corners16(dd, cc, ww, uv);
         const r0 = sr[cc[0]];
-        if (r0 === sr[cc[1]] && r0 === sr[cc[2]] && r0 === sr[cc[3]]) { rockC[c] = r0; continue; }
+        let same = true;
+        for (let k = 1; k < 16 && same; k++) if (sr[cc[k]] !== r0) same = false;
+        if (same) { rockC[c] = r0; continue; }
         let hb = 0, lo = 1e9, hi = -1e9, nr = 0;
-        for (let k = 0; k < 4; k++) {
+        for (let k = 0; k < 16; k++) {
           const hk = sh[cc[k]], r = sr[cc[k]];
           hb += ww[k] * hk; lo = Math.min(lo, hk); hi = Math.max(hi, hk);
           let q = 0;
@@ -651,7 +653,8 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
   const K = MT + 2 * KEEP, off = MARGIN - KEEP;
   const out = { ...out0, face, ti, tj, L, MT, KEEP, kind, region, cell, version: TILE_VERSION, suite: col.suite, rock: ST.rock, belt: ST.belt, faults: faults.length,
     h: new Float32Array(K * K), hard: new Uint8Array(K * K), talus: new Uint8Array(K * K), flow: new Uint8Array(K * K), rcv: new Uint8Array(K * K) };
-  if (rf) { out.rockC = new Uint8Array(K * K); out.water = new Uint8Array(K * K); }
+  if (rf) { out.rockC = new Uint8Array(K * K); out.water = new Uint8Array(K * K); out.fl = new Uint8Array(K * K); }
+  const lA = dm.log(1e11);
   const amax = dm.log(1e7 * (cell / 4) * (cell / 4));
   for (let j = 0; j < K; j++) for (let i = 0; i < K; i++) {
     const c = (j + off) * NG + (i + off), o = j * K + i;
@@ -660,6 +663,8 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
     if (rf) { out.rockC[o] = rockC[c]; out.water[o] = water[c]; }
     out.talus[o] = Math.min(255, Math.round(talus[c] * 25));
     out.flow[o] = Math.round(255 * Math.max(0, Math.min(1, dm.log(Math.max(1, E.A[c])) / amax)));
+    // (the water through it on one scale for every level: log of its rain-weighted area, m^2, to 1e11)
+    if (rf) out.fl[o] = Math.round(255 * Math.max(0, Math.min(1, dm.log(Math.max(1, E.A[c])) / lA)));
     // (the way down: which of the 8 neighbours, 0..7 as di, dj = -1..1 row by row; 255 none)
     const r = E.rcv[c];
     if (r < 0) out.rcv[o] = 255;

@@ -184,21 +184,29 @@ export class SnapshotSampler {
     const P = this.pyrReaders();
     for (let i = P.length - 1; i >= 0; i--) if (P[i].sample(this._d(x, y, z)) && P[i].w > 0.5) return P[i].rockAt(h * this._hs, this);
     if (this.ref && this.ref.sample(this._d(x, y, z))) return this.ref.rockAt(h * this._hs, this);
-    const s = this.s, c = this._rc || (this._rc = new Int32Array(4)), w = this._rw || (this._rw = new Float64Array(4));
-    this.G.corners(this._d(x, y, z), c, w, this.uv);
+    const s = this.s, c = this._rc || (this._rc = new Int32Array(16)), w = this._rw || (this._rw = new Float64Array(16));
+    this.G.corners16(this._d(x, y, z), c, w, this.uv);
     const r0 = s.rock[c[0]];
     this.rock2 = r0; this.rockMix = 0;
-    if (r0 === s.rock[c[1]] && r0 === s.rock[c[2]] && r0 === s.rock[c[3]]) return r0;
+    let same = true;
+    for (let k = 1; k < 16 && same; k++) if (s.rock[c[k]] !== r0) same = false;
+    if (same) return r0;
     let hb = 0, lo = 1e9, hi = -1e9;
-    for (let k = 0; k < 4; k++) { const hk = s.h[c[k]]; hb += w[k] * hk; lo = Math.min(lo, hk); hi = Math.max(hi, hk); }
+    for (let k = 0; k < 16; k++) { const hk = s.h[c[k]]; hb += w[k] * hk; lo = Math.min(lo, hk); hi = Math.max(hi, hk); }
     const span = Math.max(60, hi - lo), e = (h - hb) / span;
     // each rock: its share of the blend, raised where the ground stands on its side of the stack
     let best = -1, bs = -1e9, sec = -1, ss = -1e9;
-    for (let k = 0; k < 4; k++) {
+    const seen = this._seenR || (this._seenR = new Int32Array(16));
+    let ns = 0;
+    for (let k = 0; k < 16; k++) {
       const r = s.rock[c[k]];
-      if (r === best || r === sec) continue;
+      let dup = false;
+      for (let q = 0; q < ns; q++) if (seen[q] === r) { dup = true; break; }
+      if (dup) continue;
+      seen[ns++] = r;
       let W = 0, H = 0;
-      for (let q = 0; q < 4; q++) if (s.rock[c[q]] === r) { W += w[q]; H += w[q] * s.h[c[q]]; }
+      for (let q = 0; q < 16; q++) if (s.rock[c[q]] === r) { W += w[q]; H += w[q] * s.h[c[q]]; }
+      if (W < 1e-9) continue;
       const score = W + 1.5 * e * (H / W - hb) / span;
       if (score > bs) { sec = best; ss = bs; bs = score; best = r; } else if (score > ss) { ss = score; sec = r; }
     }

@@ -7,12 +7,14 @@
 <script type="module">
 // Dev test: the integer tile sim (src/gpu/itile.js) on the GPU (itileGPU.js) against the CPU
 // reference, bit for bit, and timed. ?seed= (a seed whose start world's sim the game has cached
-// in this origin), ?face= ?ti= ?tj= the refinement tile, ?check= steps to compare (0: none)
+// in this origin), ?face= ?ti= ?tj= the refinement tile, ?check= steps to compare (0: none);
+// ?fill= ?accum= ?jump= ?collapse= passes a step and ?steps=: try cheaper settings (the result's
+// roughness, H by lag, is printed to compare)
 import { generateSystem } from '../src/gen/system.js';
 import { SIM_VERSION, simNFor } from '../src/gen/worldsim/snapshot.js';
 import { TerrainGenerator } from '../src/gen/terrain.js';
 import { prepareTile, MT, KEEP } from '../src/gen/localsim.js';
-import { runInt } from '../src/gpu/itile.js';
+import { runInt, PASSES } from '../src/gpu/itile.js';
 import { ITileGPU } from '../src/gpu/itileGPU.js';
 import { ROCKS } from '../src/gen/worldsim/lithology.js';
 import { hexToLinear } from '../src/gen/color.js';
@@ -30,7 +32,8 @@ try {
   const gen = new TerrainGenerator({ ...b.terrain, snapshot: snap });
   const face = +(q.get('face') ?? 1), ti = +(q.get('ti') ?? 1), tj = +(q.get('tj') ?? 0);
   let t0 = performance.now();
-  const P = prepareTile(gen, face, ti, tj, { kind: 'refine', K0: 3, kd0: 0.25 });
+  for (const k of ['fill', 'accum', 'jump', 'collapse']) if (q.get(k)) PASSES[k] = +q.get(k);
+  const P = prepareTile(gen, face, ti, tj, { kind: 'refine', steps: q.get('steps') ? +q.get('steps') : undefined });
   const I = P.ints();
   log(`${b.name} refinement tile ${face},${ti},${tj}: ${I.NG}² cells, set up in ${((performance.now() - t0) / 1000).toFixed(1)} s`);
   const gpu = await ITileGPU.create();
@@ -51,7 +54,17 @@ try {
   P.fromInts(r);
   t0 = performance.now();
   const T = P.finish();
-  log(`finish (water, rock, the kept square) on the CPU: ${((performance.now() - t0) / 1000).toFixed(2)} s`);
+  log(`finish (water, rock, the kept square) on the CPU: ${((performance.now() - t0) / 1000).toFixed(2)} s; passes ${JSON.stringify(PASSES)}, steps ${I.steps}`);
+  // its roughness: H by lag (the variogram's slope), on land
+  {
+    const K = MT + 2 * KEEP, lags = [1, 2, 4, 8, 16, 32], g = [];
+    for (const L of lags) {
+      let sm = 0, nn = 0;
+      for (let j = KEEP; j < K - KEEP; j += 2) for (let i = KEEP; i < K - KEEP - L; i += 2) { const o = j * K + i; if (T.water[o] || T.water[o + L]) continue; const d = T.h[o + L] - T.h[o]; sm += d * d; nn++; }
+      g.push(sm / nn);
+    }
+    log('H by lag: ' + lags.slice(1).map((L, k) => `${Math.round(Math.sqrt(L * lags[k]) * T.cell)}m ${(0.5 * Math.log(g[k + 1] / g[k]) / Math.log(2)).toFixed(2)}`).join(', '));
+  }
   // draw it: rock colours, hillshade, water
   const K = MT + 2 * KEEP, cv = document.getElementById('cv'), cx = cv.getContext('2d'), img = cx.createImageData(K, K), col = ROCKS.map((x) => hexToLinear(x.color));
   const g = (v) => Math.round(255 * Math.min(1, Math.pow(Math.max(0, v), 1 / 2.2)));

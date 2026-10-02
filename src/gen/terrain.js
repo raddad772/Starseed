@@ -43,6 +43,10 @@ export const S_DX = 13, S_DY = 14, S_DZ = 15; // sample direction
 export const S_WDEPTH = 16;  // lake or river water over the ground here (m; its surface is S_H + this)
 export const S_LEN = 17;
 
+// creeks from the terrain tiles' drainage: a channel from this much rain-weighted water (m^2),
+// water in it from this much
+const CREEK_A = 6e4, CREEK_WET = 2.5e5;
+
 // a small body's relief is held to this share of its drawn radius (TerrainGenerator.hScale)
 export const RELIEF_MAX = 0.06;
 
@@ -518,12 +522,12 @@ export class TerrainGenerator {
     let h = ref ? ref.h / this.hScale : S.h(x, y, z);
     // (and the finer levels of the terrain's tiles where there are any, each blended in by how
     // fully it covers the point: they fade into the coarser at the edges of what's been made)
-    let sea = ref ? ref.sea : -1, finest = ref ? S.refCell : 0;
+    let sea = ref ? ref.sea : -1, finest = ref ? S.refCell : 0, finRd = null;
     if (S.pyr) for (const rd of S.pyrReaders()) {
       if (!rd.sample(S._d(x, y, z))) continue;
       h += (rd.h / this.hScale - h) * rd.w;
       sea = sea < 0 ? rd.sea : sea + (rd.sea - sea) * rd.w;
-      if (rd.w > 0.5) finest = rd.cell;
+      if (rd.w > 0.5) { finest = rd.cell; finRd = rd; }
     }
     const h0 = h;
     const rel = S.relief(x, y, z);
@@ -590,6 +594,23 @@ export class TerrainGenerator {
         if (rv.dist < half) {
           h = Math.min(h, bank - rv.depth * (1 - (rv.dist / half) * (rv.dist / half)));
           if (this.wetNow) wl = Math.max(bank - 0.6 - 0.03 * rv.depth, 0.3);
+        }
+      }
+    }
+    // creeks: where the finest level of the terrain's tiles gathers its own water (finer than the
+    // world sim's rivers): a channel along each of its drainage lines, as wide and deep as its
+    // water (a creek of ~0.1 km^2 a metre wide, a stream of tens of km^2 ten or more), its banks
+    // the ground along the line (the valley the tile's water cut), water in it where it lasts
+    if (finRd && finest <= 60 && !(rv && rv.dist < rv.w * 1.5) && finRd.creekAt(CREEK_A)) {
+      const A = finRd.cA, k = dm.log(A / CREEK_A);
+      const half = Math.min(0.45 * finest, 0.5 + 0.9 * dm.exp(0.45 * k)), dep = Math.min(3, 0.25 + 0.3 * dm.exp(0.3 * k));
+      const dist = finRd.cd * finest, flank = half * 3;
+      if (dist < flank) {
+        const bank = finRd.ch / this.hScale + 0.2;
+        h += (bank - h) * dm.smoothstep(flank, half * 1.2, dist);
+        if (dist < half) {
+          h = Math.min(h, bank - dep * (1 - (dist / half) * (dist / half)));
+          if (this.wetNow && A > CREEK_WET) wl = Math.max(wl, bank - 0.25 - 0.1 * dep);
         }
       }
     }

@@ -141,6 +141,20 @@ export class SimGrid {
     c[0] = b; c[1] = b + 1; c[2] = b + N; c[3] = b + N + 1;
     w[0] = (1 - fx) * (1 - fy); w[1] = fx * (1 - fy); w[2] = (1 - fx) * fy; w[3] = fx * fy;
   }
+  // the 16 cells round d (4 x 4 on its face, clamped at the face's edges) and their cubic
+  // B-spline weights: a smooth blend (a field read this way has no corners where cells meet)
+  corners16(d, c, w, uv = { face: 0, u: 0, v: 0 }) {
+    const N = this.N;
+    faceUVFromDir(d, uv);
+    const x = (uv.u + 1) / 2 * N - 0.5, y = (uv.v + 1) / 2 * N - 0.5;
+    const i0 = Math.floor(x), j0 = Math.floor(y), fx = x - i0, fy = y - j0, base = uv.face * N * N;
+    const bx = this._bx || (this._bx = new Float64Array(4)), by = this._by || (this._by = new Float64Array(4));
+    for (const [t, o] of [[fx, bx], [fy, by]]) { const u = 1 - t, t2 = t * t, t3 = t2 * t; o[0] = u * u * u / 6; o[1] = (3 * t3 - 6 * t2 + 4) / 6; o[2] = (-3 * t3 + 3 * t2 + 3 * t + 1) / 6; o[3] = t3 / 6; }
+    for (let q = 0; q < 4; q++) {
+      const jj = Math.min(N - 1, Math.max(0, j0 - 1 + q));
+      for (let p = 0; p < 4; p++) { const ii = Math.min(N - 1, Math.max(0, i0 - 1 + p)); c[q * 4 + p] = base + jj * N + ii; w[q * 4 + p] = bx[p] * by[q]; }
+    }
+  }
 }
 
 // The same grid for reading a finished simulation (the game's samplers, one per body in
@@ -192,6 +206,7 @@ GridLite.prototype._edge = SimGrid.prototype._edge;
 GridLite.prototype.cellOf = SimGrid.prototype.cellOf;
 GridLite.prototype.sample = SimGrid.prototype.sample;
 GridLite.prototype.corners = SimGrid.prototype.corners;
+GridLite.prototype.corners16 = SimGrid.prototype.corners16;
 
 function triArea(a, b, c) {
   const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
