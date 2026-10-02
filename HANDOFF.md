@@ -130,11 +130,18 @@ Open:
   cell shares (RefineReader.rockAt) and the pyramid's suites: polygons at ~60 km remain.
 - **Venus-like worlds:** after an overturn, lava flows (from vents, running to the lowest ground
   until spent: lobes and ponds) and coronae now; small shield fields and tesserae still wanted.
-- **Meanders:** big rivers wind only at the refinement's cell scale; a lateral-migration history
-  (or a simulated meander trace laid along each river) would give real meander belts. A first
-  Howard-Knutson trace draft (scratchpad meanders-draft.js) ran away to sub-width wiggles; the
-  sine-generated curve (Langbein & Leopold, Kinoshita) is the robust alternative. Either needs
-  each river record's distance from its mouth (riverIndex: follow the receivers).
+- **Meanders (done, `src/gen/meanders.js`):** a Howard-Knutson channel simulated once (each
+  centreline point moves toward its outer bank by its own and its upstream curvature; necks under
+  1.6 widths cut through, leaving oxbows), baked into meanders.data.js; drift removed, loops
+  pressed to a ~17-width half belt. The river index gives each record its phase (widths up its
+  river, via the receivers' keys). Rivers under 250 m wide: the sampler lays the trace by phase
+  as it samples (belt kept within ~1.8 km, faded where the loops can't be resolved). Wider: their
+  channels are built along whole stems in `bigChannels` (line smoothed over two wavelengths,
+  slope from smoothed heights), as indexed segments. Young oxbows are lakes, old ones swales.
+  (The first draft's "runaway into tiny wiggles" was a sign error: points moved toward the inner
+  bank.) The index build is ~12 ms a tile on the main thread (a world: ~0.3 s once): could move
+  to a worker. A river switches from the sampler's meanders to a built channel at 250 m wide:
+  its belt widens there in a step.
 - **Near-field loading:** the volume rings make the descent slow with few workers.
 - **Near-field seam:** fixed: the heightfield reaches 3% in under the volume's last ring, 0.4 m
   low (terrainMaterial.js NEAR_OVERLAP), so the dotted crack where they met is covered.
