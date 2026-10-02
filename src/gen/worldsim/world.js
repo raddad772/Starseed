@@ -165,6 +165,13 @@ export function worldSim(body, star, opts = {}) {
   const sea2 = new Coasts(G, { corals: H.life && H.life.animals != null && H.lifeStage >= 6, warm: 0.5, pH });
   const hMax = 9000 * Math.sqrt(9.81 / body.gravity);
   let iceMax = 0;
+  // ice ages (the tilt and orbit's slow cycles, with the ice's own feedback): in the epoch's
+  // last ~40% the steps alternate glacial and interglacial, ending in an interglacial (now);
+  // strongest on cold worlds, and without a big moon to steady the tilt (Mars' wanders)
+  const wetWorld = sea && pressure > 0.01;
+  const iceAgeK = wetWorld ? 4 * dm.smoothstep(293, 281, H.T) * (opts.bigMoon === false ? 1.8 : 1) : 0;
+  const lowRiver = new Uint8Array(G.n);   // river channels on ground the sea gave back at a glacial low
+  let maxDrop = 0;
   // (the fine grid's cells on the plates' grid, for the isostasy's regional averaging)
   const fineToT = new Int32Array(G.n), fineReg = new Float64Array(Gt.n), coarseN = new Uint32Array(Gt.n), isoDh = new Float64Array(G.n);
   const lifted = new Float64Array(G.n);   // the uplift (and isostatic rise) each cell got: the rest of its change was wear or fill
@@ -185,7 +192,8 @@ export function worldSim(body, star, opts = {}) {
     E.step(dt);
     // the ice, where it's cold enough then (the history's climate vs today's)
     const ago = (steps - k) * dt / 1e6;
-    const dTnow = (H.at(ago, 'T') ?? H.T) - H.T;
+    const glacial = iceAgeK > 0.3 && k >= steps * 0.6 && (steps - 1 - k) % 2 === 1;
+    const dTnow = (H.at(ago, 'T') ?? H.T) - H.T - (glacial ? iceAgeK : 0);
     iceMax = Math.max(iceMax, ice.step(h, E, snow, dt, dTnow));
     sea2.sst = sst; sea2.dT = dTnow;
     // the sea's edge: waves, sand, reefs (warm seas reach further from the equator in a warm climate)
@@ -227,7 +235,19 @@ export function worldSim(body, star, opts = {}) {
       const sl = (lo + hi) / 2;
       if (Math.abs(sl) > 0.01) for (let c = 0; c < G.n; c++) h[c] -= sl;
     }
+    // a glacial: the ice on land is water out of the sea (Earth's last: ~120 m)
+    if (glacial) {
+      let vol = 0;
+      for (let c = 0; c < G.n; c++) if (h[c] >= 0 && ice.ice[c] > 0) vol += ice.ice[c] * G.area[c];
+      const drop = Math.min(250, 0.917 * vol / (oceanShare * totalArea));
+      maxDrop = Math.max(maxDrop, drop);
+      for (let c = 0; c < G.n; c++) h[c] += drop;
+      let amax = 0;
+      for (let c = 0; c < G.n; c++) if (!E.base[c] && E.A[c] > amax) amax = E.A[c];
+      for (let c = 0; c < G.n; c++) if (h[c] >= 0 && h[c] < drop && E.A[c] > amax * 0.03) lowRiver[c] = 1;
+    }
   }
+  if (iceAgeK > 0.3) log(`ice ages: swings of ${iceAgeK.toFixed(1)} K; the sea fell up to ${Math.round(maxDrop)} m at the glacials`);
   E.findBase(); E.route(); E.lakes(); E.drain();
   log(`lakes after the fine epoch: ${lakeShare(E, h)}% of the land below the basins' brims`);
   {
@@ -292,7 +312,11 @@ export function worldSim(body, star, opts = {}) {
     log(`life: land ${(S.landCover * 100).toFixed(0)}% covered (forest ${(S.forest * 100).toFixed(0)}%, open ${(S.open * 100).toFixed(0)}%), sea life ${(S.seaLife * 100).toFixed(0)}%, ${S.realms} realms`);
   }
   out.life = life;
-  return Object.assign(out, { h, h0, E, Gt, ht, tect: T, impacts: Ef, craters: T.impacts.events.concat(Ef.events), volcanoes, lith, rock, glaciers: ice, veg: E.veg, coasts: sea2, dunes, mesas, soil });
+  // drowned river valleys: channels cut across shelves the glacial sea left dry, flooded since
+  // (rias, estuaries)
+  const drowned = new Uint8Array(G.n);
+  for (let c = 0; c < G.n; c++) if (lowRiver[c] && h[c] < 0) drowned[c] = 1;
+  return Object.assign(out, { h, h0, E, Gt, ht, tect: T, impacts: Ef, craters: T.impacts.events.concat(Ef.events), volcanoes, lith, rock, glaciers: ice, veg: E.veg, coasts: sea2, dunes, mesas, soil, drowned });
 }
 
 // Each fine cell's layers from the plates' record there: the basement (granite

@@ -57,7 +57,9 @@ if (args.includes('--history')) process.exit(0);
 let t0 = performance.now();
 if (init === 'auto') {
   const host = body.parentId > 0 ? sys.bodies[body.parentId] : null;
-  const Wd = worldSim(body, sys.bodies[0], { N: +flag('N', 256), Nt, myr: +flag('myr', 300), steps: +flag('steps', 60), dt: +flag('dt', 2.5e5), host, log: (m) => console.log(m) });
+  // (a big moon steadies the tilt: milder ice ages)
+  const bigMoon = (body.moons || []).some((id) => sys.bodies[id].massEarth / body.massEarth > 0.005);
+  const Wd = worldSim(body, sys.bodies[0], { N: +flag('N', 256), Nt, myr: +flag('myr', 300), steps: +flag('steps', 60), dt: +flag('dt', 2.5e5), host, bigMoon, log: (m) => console.log(m) });
   console.log(`in ${ms(t0)}${Wd.stats ? ' ' + JSON.stringify(Wd.stats) : ''}${Wd.riverStyle ? ', rivers ' + Wd.riverStyle : ''}`);
   const name = `${body.name}-auto-${Wd.path}`;
   let rgb;
@@ -65,7 +67,7 @@ if (init === 'auto') {
   else if (Wd.path === 'stagnant') rgb = renderBarren(Wd.G, { h: Wd.h, mare: Wd.volc, fresh: new Float32Array(Wd.G.n), river: Wd.river }, W_, [1.0, 0.72, 0.52]);
   else rgb = renderBarren(Wd.G, Wd, W_, p.icy ? [0.92, 0.97, 1.05] : [1, 0.98, 0.95]);
   // what a surveyor would name first
-  const F = findFeatures(Wd.G, Wd.h, { E: Wd.E, scale: body.R / body.radiusM, craters: Wd.craters || [], volcanoes: Wd.volcanoes, glaciers: Wd.glaciers, coasts: Wd.coasts, rock: Wd.rock, rockNames: ROCKS.map((r) => r.name), climate: Wd.climate, Gc: Wd.Gc, dunes: Wd.dunes, mesas: Wd.mesas, soil: Wd.soil, top: 5 });
+  const F = findFeatures(Wd.G, Wd.h, { E: Wd.E, scale: body.R / body.radiusM, craters: Wd.craters || [], volcanoes: Wd.volcanoes, glaciers: Wd.glaciers, coasts: Wd.coasts, rock: Wd.rock, rockNames: ROCKS.map((r) => r.name), climate: Wd.climate, Gc: Wd.Gc, dunes: Wd.dunes, mesas: Wd.mesas, soil: Wd.soil, drowned: Wd.drowned, top: 5 });
   if (Wd.glaciers) paintIce(rgb, W_, Wd.G, Wd.glaciers.ice);
   const ll = (f) => `${f.lat.toFixed(0)},${f.lon.toFixed(0)}`;
   console.log('features:');
@@ -78,6 +80,7 @@ if (init === 'auto') {
   if (F.deserts.length) console.log('  deserts:  ' + F.deserts.map((f) => `${f.kind} ${Math.round(f.areaKm2 / 1000)}k km2 @${ll(f)}`).join('; '));
   if (F.duneSeas && F.duneSeas.length) console.log('  dune seas: ' + F.duneSeas.map((f) => `${Math.round(f.areaKm2 / 1000)}k km2 @${ll(f)}`).join('; '));
   if (F.mesaCountry && F.mesaCountry.length) console.log('  mesa country: ' + F.mesaCountry.map((f) => `${Math.round(f.areaKm2 / 1000)}k km2 @${ll(f)}`).join('; '));
+  if (F.drownedValleys && F.drownedValleys.length) console.log('  drowned valleys (rias, estuaries): ' + F.drownedValleys.map((f) => `${Math.round(f.areaKm2 / 1000)}k km2 @${ll(f)}`).join('; '));
   if (F.wetlands && F.wetlands.length) console.log('  wetlands: ' + F.wetlands.map((f) => `${Math.round(f.areaKm2 / 1000)}k km2 @${ll(f)}`).join('; '));
   if (F.forests.length) console.log('  forests:  ' + F.forests.map((f) => `${f.kind} ${Math.round(f.areaKm2 / 1000)}k km2 @${ll(f)}`).join('; '));
   if (F.trenches.length) console.log('  trenches: ' + F.trenches.map((f) => `${Math.round(f.depth)} m @${ll(f)}`).join('; '));

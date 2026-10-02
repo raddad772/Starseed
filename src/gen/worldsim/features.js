@@ -353,6 +353,7 @@ export function findFeatures(G, h, opts = {}) {
   if (opts.dunes) out.duneSeas = regionsOf(opts.dunes, 'dune sea');
   if (opts.mesas) out.mesaCountry = regionsOf(opts.mesas, 'mesa country');
   if (opts.soil) out.wetlands = regionsOf(opts.soil.wet, 'wetland');
+  if (opts.drowned) out.drownedValleys = regionsOf(opts.drowned, 'drowned valley');
   // ---- deserts and forests: connected regions of the climate's Köppen map
   if (opts.climate && opts.Gc) {
     const Gc = opts.Gc, K = opts.climate.koppen, m = Gc.n;
