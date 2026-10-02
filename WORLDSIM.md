@@ -432,7 +432,7 @@ The order agreed: work down this list; keep the statuses current.
 | 5 | Climate in history -> rain -> erosion | partial: rain ~ exp(0.07 (T - 288)); plants speed weathering |
 | 6 | **Feature finder:** peaks by prominence, ranges, rivers, gorges and canyons, lakes, trenches, deepest wet and dry spots, continents, islands, archipelagos and chains, waterfall sites, cliffs, plateaus, craters, volcanoes | done v1 (`worldsim/features.js` `findFeatures`; the lab prints and marks them). Still to do: names, deltas, fjords and mesas once they exist, deserts and forests (climate), "largest crater lake"; the catalog and game use (step 10) |
 | 7 | **Rock layers of different hardness:** basement granite, oceanic and hotspot basalt, stratified sediments, chalk and limestone from warm living seas; erosion cuts the exposed layer | done v1, global (see below) |
-| 8 | **Glaciers:** ice flow and erosion off peaks and in cold epochs; ice-age sea-level swings | todo |
+| 8 | **Glaciers:** ice flow and erosion off peaks and in cold epochs; ice-age sea-level swings | done v1: glaciers and ice sheets, U-valleys, fjords (see below); ice-age cycles and sea-level swings still to do |
 | 9 | **Coasts:** wave erosion (cliffs, platforms, stacks), reefs (fringing, barrier, atolls), beaches and spits | todo |
 | 10 | **Life's effect on erosion:** plant cover holds soil (less hillslope wash), meandering vs braided rivers; atmosphere changes (O2 and others) through rain and temperature | todo |
 | 11 | **Climate model:** seasons from tilt, wind belts, rain shadows, Köppen biomes; rain for every path | todo (step 3 below) |
@@ -464,6 +464,25 @@ Notes:
       layers);
     - carry the exposed rock and the stacks into the snapshot and the terrain shading (Dave: rock
       colours in the final render).
+- **Item 8 v1 (`worldsim/glaciers.js`):**
+  - **Mass balance:** per-cell annual temperature (the generator's latitude law, lapse with height, plus
+    the history's T then vs now). Accumulation up to 1.5 m/yr below 268 K (scaled by snowfall); melt
+    0.6 m/yr per K above.
+  - **Flow:** ice flux summed down the river routing tree. Thickness 60 (real flux / 1e6)^0.35, capped
+    at 3.5 km. Erosion 8e-9 flux^0.6 (game flux), 35% of it off the valley walls (U-shape); troughs
+    capped at 1.2 km below their start; no sea-level limit, so tidewater glaciers dig fjords.
+  - **Features:** `iceFields` (ice sheet vs cap) and `fjords` (ice-cut ground now under a sea).
+  - **Height limit:** the fine epoch's uplift fades out near 9 km x sqrt(9.81/g) (crustal strength).
+  - **Checked:**
+    - Ishiodreill: two polar sheets of 12-14 M km2, ~3 km thick, fjords ~1.4 km, top peak 8.3 km;
+    - Heludriom (tidally locked): a 33 M km2 night-side sheet, 3.5 km thick.
+  - **To do:**
+    - ice-age cycles (the history has no Milankovitch rhythm, so ice is steady through the epoch);
+    - sea-level swings with ice volume;
+    - moraines and till (the ice's debris is dropped);
+    - cirques, aretes and horns at local-detail scale;
+    - glaciers in the deep-time coarse epoch and on stagnant worlds;
+    - ice as a rock layer on icy worlds.
 - **The feature finder caught two bugs (fixed):**
   - the plate sim's uplift rate was a fading sum without averaging (8.5x too high), which raised
     33 km peaks; U is now x(1 - fade) and capped at 10 mm/yr, giving a 9.6 km top peak and 4-5 km

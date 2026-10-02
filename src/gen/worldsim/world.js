@@ -26,6 +26,7 @@ import { Impacts } from './impacts.js';
 import { barrenWorld } from './barren.js';
 import { stagnantWorld } from './stagnant.js';
 import { Lithology, R as ROCK, marineRock } from './lithology.js';
+import { Glaciers } from './glaciers.js';
 
 // which process path the history calls for
 export function choosePath(body) {
@@ -118,15 +119,23 @@ export function worldSim(body, star, opts = {}) {
   const Ef = new Impacts(G, { rng: rng.fork('impacts-fine'), g: body.gravity, pressure, rate, scale });
   const steps = opts.steps ?? 60, dt = opts.dt ?? 2.5e5;
   const hb = new Float64Array(G.n);
+  const ice = new Glaciers(G, p.climate, scale);
+  const hMax = 9000 * Math.sqrt(9.81 / body.gravity);
+  let iceMax = 0;
   for (let k = 0; k < steps; k++) {
     Ef.step(dt / 1e6, 6 * G.spacing / 1000, (c, dh) => { h[c] += h[c] < 0 ? dh * 0.5 : dh; if (dh < 0) lith.erode(c, -dh); else lith.deposit(c, dh, ROCK.regolith); }, k * dt / 1e6);
     E.rainK = H.at((steps - k) * dt / 1e6, 'rain') || 0.05;
     lith.kField(1e-5, E.K);               // each place wears as its exposed rock does
+    // (crust can't hold mountains past ~9 km on an Earth: uplift fades out near the limit)
+    for (let c = 0; c < G.n; c++) E.U[c] = U[c] * Math.max(0, Math.min(1, (hMax - h[c]) / (0.15 * hMax)));
     hb.set(h);
     E.step(dt);
+    // the ice, where it's cold enough then (the history's climate vs today's)
+    const ago = (steps - k) * dt / 1e6;
+    iceMax = Math.max(iceMax, ice.step(h, E, rain, dt, (H.at(ago, 'T') ?? H.T) - H.T));
     // what was cut comes off the layers; what settled goes on as new rock
     for (let c = 0; c < G.n; c++) {
-      const dz = h[c] - (hb[c] + U[c] * dt);
+      const dz = h[c] - (hb[c] + E.U[c] * dt);
       if (dz < -0.01) lith.erode(c, -dz);
       else if (dz > 0.01) {
         if (h[c] >= 0) lith.deposit(c, dz, ROCK.alluvium);
@@ -136,7 +145,8 @@ export function worldSim(body, star, opts = {}) {
   }
   E.findBase(); E.route(); E.drain();
   const volcanoes = T.hot.map((v) => ({ ...latLonOf(v.at), hotspot: true }));
-  return Object.assign(out, { h, h0, E, Gt, ht, tect: T, impacts: Ef, craters: T.impacts.events.concat(Ef.events), volcanoes, lith, rock: lith.exposed() });
+  log(`ice: up to ${iceMax} cells covered; ${ice.everIce.reduce((a, b) => a + b, 0)} cells ever glaciated`);
+  return Object.assign(out, { h, h0, E, Gt, ht, tect: T, impacts: Ef, craters: T.impacts.events.concat(Ef.events), volcanoes, lith, rock: lith.exposed(), glaciers: ice });
 }
 
 // Each fine cell's layers from the plates' record there: the basement (granite

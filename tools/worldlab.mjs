@@ -65,7 +65,8 @@ if (init === 'auto') {
   else if (Wd.path === 'stagnant') rgb = renderBarren(Wd.G, { h: Wd.h, mare: Wd.volc, fresh: new Float32Array(Wd.G.n), river: Wd.river }, W_, [1.0, 0.72, 0.52]);
   else rgb = renderBarren(Wd.G, Wd, W_, p.icy ? [0.92, 0.97, 1.05] : [1, 0.98, 0.95]);
   // what a surveyor would name first
-  const F = findFeatures(Wd.G, Wd.h, { E: Wd.E, scale: body.R / body.radiusM, craters: Wd.craters || [], volcanoes: Wd.volcanoes, top: 5 });
+  const F = findFeatures(Wd.G, Wd.h, { E: Wd.E, scale: body.R / body.radiusM, craters: Wd.craters || [], volcanoes: Wd.volcanoes, glaciers: Wd.glaciers, top: 5 });
+  if (Wd.glaciers) paintIce(rgb, W_, Wd.G, Wd.glaciers.ice);
   const ll = (f) => `${f.lat.toFixed(0)},${f.lon.toFixed(0)}`;
   console.log('features:');
   console.log('  peaks:    ' + F.peaks.map((f) => `${Math.round(f.height)} m (prominence ${Math.round(f.prominence)}) @${ll(f)}`).join('; '));
@@ -84,6 +85,8 @@ if (init === 'auto') {
   if (F.waterfalls.length) console.log('  waterfall sites (steepest river drops): ' + F.waterfalls.map((f) => `${Math.round(f.drop)} m @${ll(f)}`).join('; '));
   if (F.cliffs.length) console.log('  cliffs:   ' + F.cliffs.map((f) => `${Math.round(f.drop)} m @${ll(f)}`).join('; '));
   if (F.plateaus.length) console.log('  plateaus: ' + F.plateaus.map((f) => `${Math.round(f.areaKm2 / 1000)}k km2 at ${Math.round(f.height)} m`).join('; '));
+  if (F.iceFields && F.iceFields.length) console.log('  ice:      ' + F.iceFields.map((f) => `${f.kind} ${Math.round(f.areaKm2 / 1000)}k km2, ${Math.round(f.thickness)} m thick`).join('; '));
+  if (F.fjords && F.fjords.length) console.log('  fjords:   ' + F.fjords.map((f) => `cut ${Math.round(f.depthCut)} m @${ll(f)}`).join('; '));
   if (F.volcanoes && F.volcanoes.length) console.log('  volcanoes: ' + F.volcanoes.map((f) => (f.heightM ? `${Math.round(f.heightM)} m shield` : 'hotspot') + ` @${ll(f)}`).join('; '));
   markFeatures(rgb, W_, F);
   writePNG(`${out}/${name}-map.png`, W_, W_ / 2, rgb);
@@ -333,6 +336,17 @@ function renderBarren(G, Wd, w, tint = [1, 0.98, 0.95]) {
     rgb[i * 3] = Math.min(255, g * shade * tint[0]); rgb[i * 3 + 1] = Math.min(255, g * shade * tint[1]); rgb[i * 3 + 2] = Math.min(255, g * shade * tint[2]);
   }
   return rgb;
+}
+// glacier ice over an equirectangular map
+function paintIce(rgb, w, G, ice) {
+  const hh = w / 2, d = [0, 0, 0];
+  for (let y = 0; y < hh; y++) for (let x = 0; x < w; x++) {
+    const lat = Math.PI / 2 - (y + 0.5) / hh * Math.PI, lon = (x + 0.5) / w * 2 * Math.PI;
+    const c = G.cellAt(Math.cos(lat) * Math.cos(lon), Math.sin(lat), Math.cos(lat) * Math.sin(lon));
+    if (ice[c] <= 0) continue;
+    const i = (y * w + x) * 3, k = Math.min(0.85, 0.45 + ice[c] / 2000);
+    rgb[i] += (235 - rgb[i]) * k; rgb[i + 1] += (243 - rgb[i + 1]) * k; rgb[i + 2] += (250 - rgb[i + 2]) * k;
+  }
 }
 // marks on an equirectangular map: peaks white triangles, river mouths cyan, gorges orange, trenches violet
 function markFeatures(rgb, w, F) {

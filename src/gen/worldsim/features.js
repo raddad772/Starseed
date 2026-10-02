@@ -18,6 +18,8 @@
 //              local detail will put the actual falls)
 //   cliffs     the tallest drops between neighbouring ground
 //   plateaus   high, flat country (high ground that's gentle across)
+//   glaciers   ice fields and the longest glaciers (from glaciers.js)
+//   fjords     glacier-cut troughs the sea has flooded
 //   craters, volcanoes: passed in from the processes that made them
 //
 // Lengths and areas are given for the real world (the game draws it at `scale`).
@@ -255,6 +257,25 @@ export function findFeatures(G, h, opts = {}) {
   }
   out.plateaus.sort((a, b) => b.areaKm2 - a.areaKm2);
   out.plateaus = out.plateaus.slice(0, top);
+  // ---- ice: fields (connected ice) and fjords (ice-cut ground now under the sea, joined to it)
+  const Gl = opts.glaciers;
+  out.iceFields = []; out.fjords = [];
+  if (Gl) {
+    const seenI = new Uint8Array(n);
+    for (let c0 = 0; c0 < n; c0++) {
+      if (seenI[c0] || Gl.ice[c0] <= 0) continue;
+      const cells = [], q = [c0]; seenI[c0] = 1;
+      while (q.length) { const c = q.pop(); cells.push(c); for (let e = G.nStart[c]; e < G.nStart[c + 1]; e++) { const o = G.nbr[e]; if (!seenI[o] && Gl.ice[o] > 0) { seenI[o] = 1; q.push(o); } } }
+      let area = 0, thick = 0, maxFlux = cells[0];
+      for (const c of cells) { area += G.area[c]; thick = Math.max(thick, Gl.ice[c]); if (Gl.flux[c] > Gl.flux[maxFlux]) maxFlux = c; }
+      out.iceFields.push({ areaKm2: area * toReal * toReal / 1e6, thickness: thick, kind: area * toReal * toReal / 1e6 > 1e5 ? 'ice sheet' : 'ice cap / glaciers', ...where(maxFlux) });
+    }
+    out.iceFields.sort((a, b) => b.areaKm2 - a.areaKm2);
+    out.iceFields = out.iceFields.slice(0, top);
+    const fj = [];
+    for (let c = 0; c < n; c++) if (Gl.everIce[c] && h[c] < 0 && Gl.cut[c] > 200 && ocean[c]) fj.push({ cell: c, drop: Gl.cut[c] });
+    out.fjords = spread(fj, 6).map((f) => ({ depthCut: f.drop, lat: f.lat, lon: f.lon }));
+  }
   if (opts.craters) out.craters = opts.craters.slice().sort((a, b) => b.D - a.D).slice(0, top).map((k) => ({ diameterKm: k.D, ...latLonDir(k.at), when: k.t }));
   if (opts.volcanoes) out.volcanoes = opts.volcanoes.slice(0, top);
   return out;
