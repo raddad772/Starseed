@@ -431,7 +431,7 @@ The order agreed: work down this list; keep the statuses current.
 | 4 | History: atmosphere, CO2 thermostat, snowballs, runaway, life, escape, dynamo, ages, exceptional worlds | done |
 | 5 | Climate in history -> rain -> erosion | partial: rain ~ exp(0.07 (T - 288)); plants speed weathering |
 | 6 | **Feature finder:** peaks by prominence, ranges, rivers, gorges and canyons, lakes, trenches, deepest wet and dry spots, continents, islands, archipelagos and chains, waterfall sites, cliffs, plateaus, craters, volcanoes | done v1 (`worldsim/features.js` `findFeatures`; the lab prints and marks them). Still to do: names, deltas, fjords and mesas once they exist, deserts and forests (climate), "largest crater lake"; the catalog and game use (step 10) |
-| 7 | **Rock layers of different hardness:** basement granite, oceanic and hotspot basalt, stratified sediments, chalk and limestone from warm living seas; erosion cuts the exposed layer | todo |
+| 7 | **Rock layers of different hardness:** basement granite, oceanic and hotspot basalt, stratified sediments, chalk and limestone from warm living seas; erosion cuts the exposed layer | done v1, global (see below) |
 | 8 | **Glaciers:** ice flow and erosion off peaks and in cold epochs; ice-age sea-level swings | todo |
 | 9 | **Coasts:** wave erosion (cliffs, platforms, stacks), reefs (fringing, barrier, atolls), beaches and spits | todo |
 | 10 | **Life's effect on erosion:** plant cover holds soil (less hillslope wash), meandering vs braided rivers; atmosphere changes (O2 and others) through rain and temperature | todo |
@@ -440,6 +440,30 @@ The order agreed: work down this list; keep the statuses current.
 | 13 | Regime changes within one run; Venus resurfacing; icy shells; Titan methane rain | todo |
 
 Notes:
+- **Item 7 v1 (`worldsim/lithology.js`):**
+  - **Rock types:** 11 (granite, basalt, andesite, sandstone, shale, limestone, chalk, alluvium, salt,
+    regolith, ice), each with an erodibility multiplier, a colour and a standing angle (for future
+    cliffs).
+  - **`Lithology`:** a per-cell layer stack over a basement, with `erode`, `deposit`, `kField` and
+    `exposed`.
+  - **Deep time:** each plate carries `sed` (sediment cover, m) and `carb` (limestone or chalk laid
+    on warm (|lat| < ~33 deg), shallow (< 300 m), living shelves); sediment is stripped first where it
+    wears. Deep-time erodibility is x2 on sediment, x0.45 on granite and x0.6 on basalt.
+  - **Fine epoch (`buildRock`):** the basement, the plates' sediment as laterally continuous beds (24
+    bed definitions waving gently across the world: shale or sandstone, carbonate among the upper
+    ones), and volcanic caps (andesite on continents, basalt at sea). Erosion uses the exposed layer's
+    K; cut material comes off the stack; deposits go on as alluvium (land), chalk or limestone (warm,
+    living, shallow sea; chalk where clear) or shale; impacts lay regolith.
+  - **Lab:** `<body>-auto-plates-rock.png` (a geology map) and the exposed-rock shares (Ishiodreill:
+    basalt 30%, granite 23%, alluvium 20%, shale 14%, andesite 8%, limestone 4%, chalk 1%).
+  - **To do:**
+    - cliff retreat with rock strength (`stand`): mesas, buttes and chalk cliffs are 1-10 km features,
+      so they come with the local detail (step 7), which reads these stacks;
+    - salt in drying basins (climate);
+    - ice rock on icy worlds; rock on the stagnant and barren paths (basalt plains, regolith, wet-era
+      layers);
+    - carry the exposed rock and the stacks into the snapshot and the terrain shading (Dave: rock
+      colours in the final render).
 - **The feature finder caught two bugs (fixed):**
   - the plate sim's uplift rate was a fading sum without averaging (8.5x too high), which raised
     33 km peaks; U is now x(1 - fade) and capped at 10 mm/yr, giving a 9.6 km top peak and 4-5 km

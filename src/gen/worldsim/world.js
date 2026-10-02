@@ -25,6 +25,7 @@ import { Tectonics } from './tectonics.js';
 import { Impacts } from './impacts.js';
 import { barrenWorld } from './barren.js';
 import { stagnantWorld } from './stagnant.js';
+import { Lithology, R as ROCK, marineRock } from './lithology.js';
 
 // which process path the history calls for
 export function choosePath(body) {
@@ -88,7 +89,7 @@ export function worldSim(body, star, opts = {}) {
     rainT[c] = Math.max(0.05, s[S_MOIST]) * (s[S_TEMP] > 263 ? 1 : 0.3);
   }
   const pressure = body.atmosphere ? body.atmosphere.pressure || 0 : 0;
-  const T = new Tectonics(Gt, { rng: rng.fork('tectonics'), plates: p.plates, cont, relief, ocean: p.ocean, volcanism: p.volcanism, activity: H.tier });
+  const T = new Tectonics(Gt, { rng: rng.fork('tectonics'), plates: p.plates, cont, relief, ocean: p.ocean, volcanism: p.volcanism, activity: H.tier, life: H.lifeEver });
   T.impacts = new Impacts(Gt, { rng: rng.fork('impacts'), g: body.gravity, pressure, rate, scale });
   const ht = new Float64Array(Gt.n), ut = new Float64Array(Gt.n);
   T.heights(ht, null);
@@ -110,19 +111,72 @@ export function worldSim(body, star, opts = {}) {
     if (h[c] > 0) h[c] += (hashJitter(c) - 0.5) * 5;
   }
   const h0 = Float64Array.from(h);
+  // the rock: each place's layers, from what the plates carried there
+  const lith = buildRock(G, Gt, T, rng.fork('rock'));
   const E = new Erosion(G, h, { sea, K: 1e-5, rain, m: 0.45, kd: 1 });
   E.U.set(U);
   const Ef = new Impacts(G, { rng: rng.fork('impacts-fine'), g: body.gravity, pressure, rate, scale });
   const steps = opts.steps ?? 60, dt = opts.dt ?? 2.5e5;
+  const hb = new Float64Array(G.n);
   for (let k = 0; k < steps; k++) {
-    Ef.step(dt / 1e6, 6 * G.spacing / 1000, (c, dh) => { h[c] += h[c] < 0 ? dh * 0.5 : dh; }, k * dt / 1e6);
+    Ef.step(dt / 1e6, 6 * G.spacing / 1000, (c, dh) => { h[c] += h[c] < 0 ? dh * 0.5 : dh; if (dh < 0) lith.erode(c, -dh); else lith.deposit(c, dh, ROCK.regolith); }, k * dt / 1e6);
     E.rainK = H.at((steps - k) * dt / 1e6, 'rain') || 0.05;
+    lith.kField(1e-5, E.K);               // each place wears as its exposed rock does
+    hb.set(h);
     E.step(dt);
+    // what was cut comes off the layers; what settled goes on as new rock
+    for (let c = 0; c < G.n; c++) {
+      const dz = h[c] - (hb[c] + U[c] * dt);
+      if (dz < -0.01) lith.erode(c, -dz);
+      else if (dz > 0.01) {
+        if (h[c] >= 0) lith.deposit(c, dz, ROCK.alluvium);
+        else lith.deposit(c, dz, marineRock(-h[c], Math.abs(G.dir[c * 3 + 1]) < 0.55, H.lifeEver, dz > 5));
+      }
+    }
   }
   E.findBase(); E.route(); E.drain();
   const volcanoes = T.hot.map((v) => ({ ...latLonOf(v.at), hotspot: true }));
-  return Object.assign(out, { h, h0, E, Gt, ht, tect: T, impacts: Ef, craters: T.impacts.events.concat(Ef.events), volcanoes });
+  return Object.assign(out, { h, h0, E, Gt, ht, tect: T, impacts: Ef, craters: T.impacts.events.concat(Ef.events), volcanoes, lith, rock: lith.exposed() });
 }
+
+// Each fine cell's layers from the plates' record there: the basement (granite
+// under continents, basalt under the sea floor), the sediment cover split into
+// beds of sandstone and shale (and limestone and chalk where shelves built
+// them), and volcanic rock on top where hotspots and arcs piled it. Beds run
+// on for hundreds of km, thickening and thinning gently, so outcrops follow
+// the land's contours as on a geological map.
+function buildRock(G, Gt, T, rng) {
+  const lith = new Lithology(G.n, 10);
+  // the plates' record gathered onto the coarse grid, then blended between its cells
+  const sedW = new Float64Array(Gt.n), carbW = new Float64Array(Gt.n), contW = new Float64Array(Gt.n), volW = new Float64Array(Gt.n);
+  for (let c = 0; c < Gt.n; c++) {
+    const P = T.plates[T.owner[c]], q = T.src[c];
+    sedW[c] = Math.min(P.sed[q], 8000); carbW[c] = Math.min(P.carb[q], P.sed[q]); contW[c] = P.cont[q]; volW[c] = P.relief[q];
+  }
+  const beds = [];
+  for (let i = 0; i < 24; i++) beds.push({ v: rng.unitVector(), k: rng.range(2, 6), ph: rng.range(0, 6.283), base: rng.range(150, 450), amp: rng.range(80, 400), type: rng.next() < 0.5 ? 'shale' : 'sandstone', carb: rng.next() < 0.5 ? 'limestone' : 'chalk' });
+  const d = [0, 0, 0], uv = { face: 0, u: 0, v: 0 };
+  for (let c = 0; c < G.n; c++) {
+    d[0] = G.dir[c * 3]; d[1] = G.dir[c * 3 + 1]; d[2] = G.dir[c * 3 + 2];
+    lith.base[c] = Gt.sample(contW, d, uv) > 0.5 ? ROCK.granite : ROCK.basalt;
+    let sed = Gt.sample(sedW, d, uv), carb = Math.min(Gt.sample(carbW, d, uv), sed);
+    // oldest first: each bed's thickness waves gently across the world
+    for (let i = 0; i < beds.length && sed > 1; i++) {
+      const B = beds[i];
+      const bed = Math.min(sed, B.base + B.amp * Math.sin((d[0] * B.v[0] + d[1] * B.v[1] + d[2] * B.v[2]) * B.k + B.ph));
+      if (bed <= 0) continue;
+      const carbHere = carb > 0 && sed - bed < carb * 1.5;
+      lith.deposit(c, bed, carbHere ? ROCK[B.carb] : ROCK[B.type]);
+      if (carbHere) carb -= bed;
+      sed -= bed;
+    }
+    const vol = Gt.sample(volW, d, uv);
+    if (vol > 150) lith.deposit(c, vol, lith.base[c] === ROCK.granite ? ROCK.andesite : ROCK.basalt);
+  }
+  return lith;
+}
+
+function hash(a, b) { let x = Math.imul(a ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul(b, 0xc2b2ae35); x ^= x >>> 13; x = Math.imul(x, 0x27d4eb2f); x ^= x >>> 16; return (x >>> 0) / 4294967296; }
 
 function latLonOf(d) { return { lat: Math.asin(Math.max(-1, Math.min(1, d[1]))) * 180 / Math.PI, lon: Math.atan2(d[2], d[0]) * 180 / Math.PI }; }
 

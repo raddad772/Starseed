@@ -88,6 +88,7 @@ export class Tectonics {
     const n = G.n, rng = this.rng = opts.rng;
     this.sinceRift = 0;
     this.collapse = 1;
+    this.life = !!opts.life; // (shell-building life: limestone and chalk on warm shelves)
     this.oceanFrac = opts.ocean ?? 0.6;
     this.t = 0;
     const np = this.np = opts.plates;
@@ -153,6 +154,7 @@ export class Tectonics {
         own: new Uint8Array(n), thick: new Float32Array(n), cont: new Float32Array(n),
         age: new Float32Array(n), rate: new Float32Array(n), // rate: thickening (km/Myr), smoothed
         relief: new Float32Array(n),                         // volcanoes, craters (m, carried, not floated)
+        sed: new Float32Array(n), carb: new Float32Array(n), // sediment cover (m), and of it, limestone and chalk
         area: 0,
       };
       for (let c = 0; c < n; c++) {
@@ -291,7 +293,7 @@ export class Tectonics {
       const P = plates[p], s = this.frameCell(P, c);
       if (!P.own[s]) {
         P.own[s] = 1; P.area++;
-        P.thick[s] = OCEAN_KM; P.cont[s] = 0; P.age[s] = 0; P.rate[s] = 0; P.relief[s] = 0;
+        P.thick[s] = OCEAN_KM; P.cont[s] = 0; P.age[s] = 0; P.rate[s] = 0; P.relief[s] = 0; P.sed[s] = 0; P.carb[s] = 0;
       }
       newOwner[c] = p; src[c] = s;
     }
@@ -466,7 +468,7 @@ export class Tectonics {
       if (fromB[sa] && B.cont[sb] <= A.cont[sa]) return; // (two of B's cells here: keep the continent)
       if (!A.own[sa]) A.area++;
       A.own[sa] = 1; fromB[sa] = 1;
-      A.thick[sa] = B.thick[sb]; A.cont[sa] = B.cont[sb]; A.age[sa] = B.age[sb]; A.rate[sa] = B.rate[sb]; A.relief[sa] = B.relief[sb];
+      A.thick[sa] = B.thick[sb]; A.cont[sa] = B.cont[sb]; A.age[sa] = B.age[sb]; A.rate[sa] = B.rate[sb]; A.relief[sa] = B.relief[sb]; A.sed[sa] = B.sed[sb]; A.carb[sa] = B.carb[sb];
     };
     for (let sb = 0; sb < n; sb++) {
       if (!B.own[sb]) continue;
@@ -521,7 +523,7 @@ export class Tectonics {
     const side = (s) => d[s * 3] * nrm[0] + d[s * 3 + 1] * nrm[1] + d[s * 3 + 2] * nrm[2] + (this.wobble[s] - 0.5) * 1.0 + (this.wobble2[s] - 0.5) * 0.25;
     const B = {
       id: plates.length, M: Float64Array.from(A.M), w: [0, 0, 0],
-      own: new Uint8Array(n), thick: new Float32Array(n), cont: new Float32Array(n), age: new Float32Array(n), rate: new Float32Array(n), relief: new Float32Array(n), area: 0,
+      own: new Uint8Array(n), thick: new Float32Array(n), cont: new Float32Array(n), age: new Float32Array(n), rate: new Float32Array(n), relief: new Float32Array(n), sed: new Float32Array(n), carb: new Float32Array(n), area: 0,
     };
     let plus = 0;
     for (let s = 0; s < n; s++) if (A.own[s] && side(s) > 0) plus++;
@@ -533,7 +535,7 @@ export class Tectonics {
       const x = side(s);
       if (Math.abs(x) < near && A.cont[s] > 0.5) A.thick[s] = Math.max(OCEAN_KM * 2, A.thick[s] * 0.82); // stretched thin
       if (x <= 0) continue;
-      B.own[s] = 1; B.thick[s] = A.thick[s]; B.cont[s] = A.cont[s]; B.age[s] = A.age[s]; B.relief[s] = A.relief[s];
+      B.own[s] = 1; B.thick[s] = A.thick[s]; B.cont[s] = A.cont[s]; B.age[s] = A.age[s]; B.relief[s] = A.relief[s]; B.sed[s] = A.sed[s]; B.carb[s] = A.carb[s];
       A.own[s] = 0; A.area--; B.area++;
     }
     // they turn apart about an axis in the rift's plane (the line's own pole)
@@ -631,17 +633,34 @@ export class Tectonics {
     const h0 = this._h0 || (this._h0 = new Float64Array(n));
     h0.set(E.h);
     E.U.fill(0); // the uplift is already in the crust
+    // how easily each place wears: loose sediment fast, granite and basalt slowly
+    if (this._K0 == null) this._K0 = E.K[0];
+    for (let c = 0; c < n; c++) {
+      const P = plates[owner[c]], s = src[c];
+      E.K[c] = this._K0 * (P.sed[s] > 150 ? 2.0 : P.cont[s] > 0.5 ? 0.45 : 0.6);
+    }
     E.step(dt * 1e6);
     this._dbg('pre');
     // back into the crust: the mean change of each frame cell
     const self = this;
     const sum = this._sum || (this._sum = new Float64Array(n)), cnt = this._cnt || (this._cnt = new Uint16Array(n));
+    const sumH = this._sumH || (this._sumH = new Float64Array(n)), sumY = this._sumY || (this._sumY = new Float64Array(n));
     for (const P of plates) {
-      sum.fill(0); cnt.fill(0);
-      for (let c = 0; c < n; c++) if (owner[c] === P.id) { sum[src[c]] += E.h[c] - h0[c]; cnt[src[c]]++; }
+      sum.fill(0); cnt.fill(0); sumH.fill(0); sumY.fill(0);
+      for (let c = 0; c < n; c++) if (owner[c] === P.id) { const q = src[c]; sum[q] += E.h[c] - h0[c]; cnt[q]++; sumH[q] += h0[c]; sumY[q] += Math.abs(G.dir[c * 3 + 1]); }
       for (let s = 0; s < n; s++) {
         if (!cnt[s] || !P.own[s]) continue;
         let dh = sum[s] / cnt[s];
+        // the sediment record: laid down where it builds (limestone and chalk on warm,
+        // shallow, living shelves), stripped first where it wears
+        if (dh > 0) {
+          P.sed[s] += dh;
+          const depth = -sumH[s] / cnt[s];
+          if (this.life && depth > 0 && depth < 300 && sumY[s] / cnt[s] < 0.55) P.carb[s] += dh;
+        } else if (dh < 0 && P.sed[s] > 0) {
+          const r = Math.min(P.sed[s], -dh);
+          P.carb[s] -= r * (P.carb[s] / P.sed[s]); P.sed[s] -= r;
+        }
         // volcanoes wear down first; craters fill first
         if (dh < 0 && P.relief[s] > 0) { const a = Math.min(P.relief[s], -dh); P.relief[s] -= a; dh += a; }
         else if (dh > 0 && P.relief[s] < 0) { const a = Math.min(-P.relief[s], dh); P.relief[s] += a; dh -= a; }

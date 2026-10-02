@@ -19,6 +19,7 @@ import { barrenWorld } from '../src/gen/worldsim/barren.js';
 import { stagnantWorld } from '../src/gen/worldsim/stagnant.js';
 import { worldSim } from '../src/gen/worldsim/world.js';
 import { findFeatures } from '../src/gen/worldsim/features.js';
+import { ROCKS } from '../src/gen/worldsim/lithology.js';
 import { Rng } from '../src/core/rng.js';
 import { writePNG } from './png.mjs';
 import fs from 'node:fs';
@@ -86,6 +87,11 @@ if (init === 'auto') {
   if (F.volcanoes && F.volcanoes.length) console.log('  volcanoes: ' + F.volcanoes.map((f) => (f.heightM ? `${Math.round(f.heightM)} m shield` : 'hotspot') + ` @${ll(f)}`).join('; '));
   markFeatures(rgb, W_, F);
   writePNG(`${out}/${name}-map.png`, W_, W_ / 2, rgb);
+  if (Wd.rock) {
+    writePNG(`${out}/${name}-rock.png`, W_, W_ / 2, renderRock(Wd.G, Wd.h, Wd.rock, W_));
+    const counts = {}; for (const r of Wd.rock) { if (true) counts[ROCKS[r].name] = (counts[ROCKS[r].name] || 0) + 1; }
+    console.log('  exposed rock: ' + Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${(v / Wd.G.n * 100).toFixed(0)}%`).join(', '));
+  }
   console.log(`wrote ${out}/${name}-map.png`);
   process.exit(0);
 }
@@ -344,6 +350,28 @@ function markFeatures(rgb, w, F) {
   F.gorges.forEach((f) => dot(f, [255, 150, 40], 3));
   F.rivers.forEach((f) => dot(f, [60, 230, 255], 3));
   F.peaks.forEach((f, i) => dot(f, i === 0 ? [255, 40, 40] : [255, 255, 255], i === 0 ? 5 : 3));
+}
+// the exposed rock's colour, shaded by the relief (the sea a flat dark blue over its floor's rock)
+function renderRock(G, h, rock, w) {
+  const hh = w / 2, rgb = new Uint8Array(w * hh * 3), Z = new Float64Array(w * hh);
+  const cols = ROCKS.map((r) => [parseInt(r.color.slice(1, 3), 16), parseInt(r.color.slice(3, 5), 16), parseInt(r.color.slice(5, 7), 16)]);
+  const d = [0, 0, 0], uv = { face: 0, u: 0, v: 0 }, cellOf = new Int32Array(w * hh);
+  for (let y = 0; y < hh; y++) for (let x = 0; x < w; x++) {
+    const lat = Math.PI / 2 - (y + 0.5) / hh * Math.PI, lon = (x + 0.5) / w * 2 * Math.PI;
+    d[0] = Math.cos(lat) * Math.cos(lon); d[1] = Math.sin(lat); d[2] = Math.cos(lat) * Math.sin(lon);
+    Z[y * w + x] = G.sample(h, d, uv); cellOf[y * w + x] = G.cellAt(d[0], d[1], d[2]);
+  }
+  for (let y = 0; y < hh; y++) for (let x = 0; x < w; x++) {
+    const i = y * w + x, lat = Math.PI / 2 - (y + 0.5) / hh * Math.PI;
+    const mx = Math.max(0.05, Math.cos(lat)) * 2 * Math.PI * G.R / w, my = Math.PI * G.R / hh;
+    const zx = (Z[y * w + Math.min(w - 1, x + 1)] - Z[y * w + Math.max(0, x - 1)]) / (2 * mx) * 3;
+    const zy = (Z[Math.min(hh - 1, y + 1) * w + x] - Z[Math.max(0, y - 1) * w + x]) / (2 * my) * 3;
+    const shade = Math.max(0.35, Math.min(1.3, (zx * 0.6 + zy * 0.6 + 0.85) / Math.sqrt(zx * zx + zy * zy + 1) / 0.85));
+    let c = cols[rock[cellOf[i]]];
+    if (Z[i] < 0) c = c.map((v, k) => v * 0.35 + [20, 50, 90][k] * 0.65);
+    rgb[i * 3] = Math.min(255, c[0] * (Z[i] < 0 ? 1 : shade)); rgb[i * 3 + 1] = Math.min(255, c[1] * (Z[i] < 0 ? 1 : shade)); rgb[i * 3 + 2] = Math.min(255, c[2] * (Z[i] < 0 ? 1 : shade));
+  }
+  return rgb;
 }
 function min(a) { let m = Infinity; for (const x of a) if (x < m) m = x; return m; }
 // a tectonics frame: heights, each plate tinted, boundaries dark, trenches red
