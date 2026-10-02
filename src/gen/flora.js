@@ -40,6 +40,18 @@ export function floraSpecies(terrain) {
   // how much flat ground opens into meadows (from the seed after the rest: the
   // older fields keep their values)
   sp.meadows = meadowAmount(sp);
+  // how mature the land plants are (the world's history): no trees until forests have
+  // evolved, no shrubs before shrubs, only crusts where no plants reached land; trees
+  // no taller than the age and the gravity allow
+  const st = terrain.floraStage;
+  if (st != null && st >= -1) {
+    if (st < 3) sp.densityTree = 0;
+    if (st < 2) sp.densityShrub = 0;
+    if (st < 1) sp.plantScarce = true;
+    if (st >= 3 && terrain.maxTree > 0) sp.treeHeight = Math.min(sp.treeHeight * (st >= 4 ? 1.6 : 1), terrain.maxTree * 0.6);
+    if (st === 2) sp.shrubHeight = Math.min(sp.shrubHeight * 1.4, Math.max(1, terrain.maxTree));
+    sp.stage = st;
+  }
   return sp;
 }
 
@@ -180,7 +192,7 @@ export function scatterFlora(gen, face, level, ix, iy, maxLevel, species) {
     if (species.life > 0 && slope < 0.55 && snow < 0.5) {
       const pTree = veg * veg * species.densityTree * (Tc > -2 && Tc < 42 ? 1 : 0.2) * 0.5 * (1 - meadow);
       const pShrub = veg * species.densityShrub * 0.45 * (1 - 0.75 * meadow);
-      const pPlant = veg * 0.9 * (1 + 0.4 * meadow);
+      const pPlant = veg * 0.9 * (1 + 0.4 * meadow) * (species.plantScarce ? 0.08 : 1); // (crusts only, where no plants reached land)
       if (roll < pTree) { out.tree.push(px, py, pz, rng.range(0.6, 1.25), rot, tint, slope, 0); continue; }
       if (roll < pTree + pShrub * 0.6) { out.shrub.push(px, py, pz, rng.range(0.6, 1.4), rot, tint, slope, 1); continue; }
       if (roll < pTree + pShrub * 0.6 + pPlant * 0.6) { out.plant.push(px, py, pz, rng.range(0.6, 1.5), rot, tint, slope, 2); continue; }

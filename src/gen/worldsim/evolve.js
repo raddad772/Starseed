@@ -210,6 +210,13 @@ export function evolveWorld(ctx) {
   const P = N2 * 1.01 + pCO2 + pO2;
   const level = life.origin == null || life.extinct != null ? 0 : life.plants != null ? (life.complex != null && rng.next() < 0.5 ? 3 : 2) : 1;
   const young = age < 0.15;
+  // how long land plants have had (Dave: their age decides how big and complex the
+  // flora is): ground cover, then shrubs and ferns, then forests (Earth's first trees
+  // came ~85 Myr after its first land plants), then diverse forests and grasslands;
+  // the tallest trees on Earth reach ~115 m, scaled here by gravity (taller where weaker)
+  const plantsMyr = life.plants != null && life.extinct == null ? (age - life.plants) * 1000 : 0;
+  const floraStage = plantsMyr <= 0 ? (level >= 1 ? 0 : -1) : plantsMyr < 50 ? 1 : plantsMyr < 90 ? 2 : plantsMyr < 300 ? 3 : 4;
+  const maxTreeM = floraStage >= 3 ? Math.min(250, (floraStage === 3 ? 30 + 60 * (plantsMyr - 90) / 210 : 110) * dm.pow(9.81 / Math.max(ctx.gravity, 1), 0.5)) : floraStage === 2 ? 4 : floraStage === 1 ? 0.3 : 0;
   const out = {
     age, tier, activity: ACTIVITY_NAMES[tier],
     T, albedo: A, P, pCO2, pO2, N2,
@@ -217,6 +224,7 @@ export function evolveWorld(ctx) {
     regime, dynamo, tPlatesStop: tStop, tDynamo: tDyn,
     heatNow: heat(age), young,
     life, lifeLevel: LEVELS[level], lifeEver: life.origin != null, lifeLuck: lifeRate,
+    plantsMyr, floraStage, floraName: ['bare', 'microbial crusts', 'ground cover', 'shrubs and ferns', 'forests', 'diverse forests and grasslands'][floraStage + 1], maxTreeM,
     series, events, carbon,
     exception: exc,
   };

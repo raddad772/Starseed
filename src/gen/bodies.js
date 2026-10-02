@@ -599,6 +599,9 @@ function terrainParams(rng, b, star, minerals, tidalHeating, proto) {
     palette,
     life: b.life ? b.life.density : 0,
     lifeLevel: b.life ? b.life.level : null,
+    // (how mature its land plants are, from its history: flora.js's stages and tree heights)
+    floraStage: b.history && b.life ? b.history.floraStage : -1,
+    maxTree: b.history && b.life ? b.history.maxTreeM : 0,
   };
 }
 
