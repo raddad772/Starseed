@@ -263,7 +263,7 @@ function smin(a, b, k) {
 export class CraterField {
   // S: the snapshot's sampler, K its crater scales, seed the world's, R its radius
   // baseAt(at): the ground (m) at a crater's centre without the field's craters (its floor's level)
-  constructor(S, K, seed, R, baseAt) { this.S = S; this.K = K; this.seed = seed; this.R = R; this.baseAt = baseAt; this.cache = new Map(); this.Dmax = 0; this.bands = []; this.hits = []; this.depth = 0; }
+  constructor(S, K, seed, R, baseAt) { this.S = S; this.K = K; this.seed = seed; this.R = R; this.baseAt = baseAt; this.cache = new Map(); this.Dmax = 0; this.bands = []; this.hits = []; this.ords = []; this.depth = 0; }
   // the octaves below Dmax (m), down to 16 m (or the smallest the air lets through)
   setTop(Dmax) {
     if (Dmax === this.Dmax) return;
@@ -292,42 +292,35 @@ export class CraterField {
   // first, excavates (its floor level at the ground at its centre as the bigger craters left
   // it) and builds its rim and ejecta on what's there
   heightAt(x, y, z, minW, h0, nb = this.bands.length) {
-    const hit = this.hits[this.depth] || (this.hits[this.depth] = []);
+    const dp = this.depth, hit = this.hits[dp] || (this.hits[dp] = []);
     hit.length = 0;
-    if (!this.depth) this.ray = 0;   // (and how bright young craters' ejecta make it: ray, 0..1)
-    for (let b = 0; b < nb; b++) {
-      const B = this.bands[b], amp = dm.smoothstep(4 * minW, 8 * minW, B.D0);
-      if (amp <= 0) break;     // (finer octaves are finer still)
-      const sL = 2 / B.nL;
-      for (let f = 0; f < 6; f++) {
-        const Fc = FACES[f], dn = x * Fc.N[0] + y * Fc.N[1] + z * Fc.N[2];
-        if (dn < 0.5) continue;
-        const u = dm.atan((x * Fc.U[0] + y * Fc.U[1] + z * Fc.U[2]) / dn) / QPI, v = dm.atan((x * Fc.V[0] + y * Fc.V[1] + z * Fc.V[2]) / dn) / QPI;
-        const i0 = Math.floor((u + 1) / sL), j0 = Math.floor((v + 1) / sL);
-        for (let j = j0 - 1; j <= j0 + 1; j++) {
-          if (j < 0 || j >= B.nL) continue;
-          for (let i = i0 - 1; i <= i0 + 1; i++) {
-            if (i < 0 || i >= B.nL) continue;
-            for (const c of this._cell(b, B, f, i, j)) {
-              const ax = x - c.at[0], ay = y - c.at[1], az = z - c.at[2], dist = Math.sqrt(ax * ax + ay * ay + az * az) * this.R;
-              if (dist >= c.reach) continue;
-              if (c.F.rays) { const rb = amp * rayAt(c.F, dist, x * c.e[0] + y * c.e[1] + z * c.e[2], x * c.n[0] + y * c.n[1] + z * c.n[2]); if (rb > this.ray) this.ray = rb; }
-              if (dist >= REACH * (c.F.R) * c.F.reach) continue;
-              hit.push(c, dist, amp);
-            }
-          }
+    if (!dp) this.ray = 0;   // (and how bright young craters' ejecta make it: ray, 0..1)
+    for (let f = 0; f < 6; f++) {
+      const Fc = FACES[f], dn = x * Fc.N[0] + y * Fc.N[1] + z * Fc.N[2];
+      if (dn < 0.5) continue;
+      const u = dm.atan((x * Fc.U[0] + y * Fc.U[1] + z * Fc.U[2]) / dn) / QPI, v = dm.atan((x * Fc.V[0] + y * Fc.V[1] + z * Fc.V[2]) / dn) / QPI;
+      for (let b = 0; b < nb; b++) {
+        const B = this.bands[b], amp = dm.smoothstep(4 * minW, 8 * minW, B.D0);
+        if (amp <= 0) break;     // (finer octaves are finer still)
+        const sL = 2 / B.nL, i0 = Math.floor((u + 1) / sL), j0 = Math.floor((v + 1) / sL);
+        for (const c of this._near(b, B, f, i0, j0)) {
+          const ax = x - c.at[0], ay = y - c.at[1], az = z - c.at[2], dist = Math.sqrt(ax * ax + ay * ay + az * az) * this.R;
+          if (dist >= c.reach) continue;
+          if (c.F.rays) { const rb = amp * rayAt(c.F, dist, x * c.e[0] + y * c.e[1] + z * c.e[2], x * c.n[0] + y * c.n[1] + z * c.n[2]); if (rb > this.ray) this.ray = rb; }
+          if (dist >= REACH * c.F.R * c.F.reach) continue;
+          hit.push(c, dist, amp);
         }
       }
     }
     if (!hit.length) return h0;
     // (oldest first)
-    const m = hit.length / 3, ord = [];
-    for (let k = 0; k < m; k++) ord.push(k);
+    const m = hit.length / 3, ord = this.ords[dp] || (this.ords[dp] = []);
+    ord.length = m;
+    for (let k = 0; k < m; k++) ord[k] = k;
     if (m > 1) ord.sort((p, q) => hit[q * 3].age - hit[p * 3].age || hit[q * 3].key - hit[p * 3].key);
-    const H = hit.slice();
     let h = h0;
     for (let k = 0; k < m; k++) {
-      const c = H[ord[k] * 3], dist = H[ord[k] * 3 + 1], amp = H[ord[k] * 3 + 2];
+      const c = hit[ord[k] * 3], dist = hit[ord[k] * 3 + 1], amp = hit[ord[k] * 3 + 2];
       if (c.base !== c.base) {
         // (its floor's level: the ground at its centre with the coarser octaves' craters on it)
         this.depth++;
@@ -337,6 +330,22 @@ export class CraterField {
       h += amp * (c.wear * craterDh(c.F, dist, x * c.e[0] + y * c.e[1] + z * c.e[2], x * c.n[0] + y * c.n[1] + z * c.n[2]) + excavation(c.F, dist) * (c.base - h));
     }
     return h;
+  }
+  // the craters of lattice cell (i0, j0)'s neighbourhood (3 x 3) in octave b on face f (each
+  // octave keeps the last few asked for, by depth: neighbouring samples ask for the same)
+  _near(b, B, f, i0, j0) {
+    const key = (f * (B.nL + 2) + j0 + 1) * (B.nL + 2) + i0 + 1, last = B.last || (B.last = []), slot = this.depth & 3;
+    if (last[slot] && last[slot].key === key) return last[slot].list;
+    const list = [];
+    for (let j = j0 - 1; j <= j0 + 1; j++) {
+      if (j < 0 || j >= B.nL) continue;
+      for (let i = i0 - 1; i <= i0 + 1; i++) {
+        if (i < 0 || i >= B.nL) continue;
+        for (const c of this._cell(b, B, f, i, j)) list.push(c);
+      }
+    }
+    last[slot] = { key, list };
+    return list;
   }
 }
 
