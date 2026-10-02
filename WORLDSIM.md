@@ -788,8 +788,27 @@ nearest river line among a cell's and its neighbours' segments (the point wiggle
 scale: meanders), channel width 40 m to ~1.8 km and depth 3-28 m by discharge, a flattened
 floodplain to 4 half-widths, water in the channel core (shadeSnap), wet ground beside it.
 Opast transect across a big river: water over ~1.4 km, the bed 30-40 m under the banks.
-To do next: lake and river water as real water surfaces (not solid ground), loading progress in
-the UI, making it the default (Dave decides), N 256-384 for visited worlds.
+**Lakes and rivers as real water** (2026-10-02):
+- The sample carries the water over the ground (`S_WDEPTH`). The mesh and physics stand on its
+  surface (`surfaceOf`, `liquidDepthOf`) with the bed below, so the shader tints by depth and you
+  swim.
+- A lake fills its basin to the contour of its level (`SnapshotSampler.lakeLevel`: its own cell,
+  or a neighbour's lake within a spacing), inside a rim where the ground rises above it before the
+  basin ends (no water walls). Its own cells keep the bed under the surface (shallow lakes stay one
+  sheet).
+- Dips below the datum in cells with no sea beside them stay dry (`inland`). They had shown as sea
+  strips beside deep lake beds.
+- River banks and water follow the sim's heights along the river line (`hs`), so water only runs
+  downhill. The valley levels toward the banks over a flank that grows with the river.
+- Swimming: you float in water deeper than 1.1 m and wade in shallower. Your eyes are now just
+  above the surface; they had been ~1 m under it, the sea's too.
+- Browser check on Opast: walk in, wade, swim; the shore trees stop at the water. Rivers are
+  700-900 m wide and up to 13 m deep.
+
+**Loading progress**: a corner line shows worlds ready and the running world's stage (from its
+log lines).
+
+To do next: making it the default (Dave decides), N 256-384 for visited worlds.
 
 - **Snapshot format per body:**
   - heights; top rock layer and its stack;
