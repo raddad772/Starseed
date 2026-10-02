@@ -189,6 +189,7 @@ function boot(s) {
       workers: params.get('workers') ? +params.get('workers') : undefined,
       worldsim: params.get('worldsim') === '1', simN: params.get('simN') ? +params.get('simN') : undefined,
       simHiN: params.get('simHiN') != null ? +params.get('simHiN') : undefined,
+      simWorkers: params.get('simWorkers') ? +params.get('simWorkers') : undefined,
       renderScale: params.get('scale') ? +params.get('scale') : settings.scale,
       reversedDepth: params.get('logdepth') ? false : undefined,
     });

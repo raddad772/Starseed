@@ -6,8 +6,9 @@
 // coasts and lakes). It is a different run of the same history, so it waits until nobody is
 // on or near that world (the land doesn't change under anyone's feet), and is used from the
 // cache from then on.
+// Two sims run at once on a machine with 8+ cores (each takes ~0.4 GB), else one.
 // Opt-in for now: ?worldsim=1 (grid size ?simN=, default 192; the finer ?simHiN=, default
-// 288, 0 for none).
+// 288, 0 for none; ?simWorkers= how many at once).
 
 import { SIM_VERSION } from '../gen/worldsim/snapshot.js';
 
@@ -46,7 +47,7 @@ function dbPut(db, key, val) {
 }
 
 export class WorldSims {
-  // game: the Game; opts: { N, myr, steps }
+  // game: the Game; opts: { N, hiN, myr, steps, workers }
   constructor(game, opts = {}) {
     this.game = game;
     this.seed = game.seed;
@@ -59,12 +60,18 @@ export class WorldSims {
     this.pending = new Map();  // body id -> a finer snapshot waiting for everyone to leave
     this.near = new Set();     // bodies a player is on or near (tick)
     this.queue = [];           // { id, N }
-    this.busy = false;
+    this.phase = new Map();    // body id -> the running sim's stage
     this.dbP = openDB();
     this.dbP.then(dbPrune);
-    this.worker = new Worker(new URL('../workers/worldsimWorker.js', import.meta.url), { type: 'module' });
-    this.worker.onmessage = (e) => this._onMessage(e.data);
-    this.worker.onerror = (e) => { console.error('world-sim worker error', e.message || e); this.busy = false; this._next(); };
+    const cores = (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 4;
+    const nw = Math.max(1, Math.min(4, opts.workers || (cores >= 8 ? 2 : 1)));
+    this.workers = [];
+    for (let i = 0; i < nw; i++) {
+      const w = { worker: new Worker(new URL('../workers/worldsimWorker.js', import.meta.url), { type: 'module' }), job: null };
+      w.worker.onmessage = (e) => this._onMessage(w, e.data);
+      w.worker.onerror = (e) => { console.error('world-sim worker error', e.message || e); if (w.job) this._failed(w.job); w.job = null; this._next(); };
+      this.workers.push(w);
+    }
     this.onReady = null;   // (bodyId, snap) => void
     // a quiet progress line in a corner while worlds are being simulated
     this.el = null;
@@ -78,11 +85,12 @@ export class WorldSims {
   _progress() {
     if (!this.el) return;
     const all = [...this.status.values()], ready = all.filter((v) => v === 'ready' || v === 'failed').length;
-    const running = [...this.status].find(([, v]) => v === 'running');
+    const name = (id) => this.game.system.bodies[id].name;
+    const running = [...this.status].filter(([, v]) => v === 'running').map(([id]) => `${name(id)}: ${this.phase.get(id) || 'starting'}…`);
     const fine = [...this.hi].find(([, v]) => v === 'running');
     if (fine && ready >= all.length) {
       this.el.style.opacity = '0.75';
-      this.el.textContent = `Refining ${this.game.system.bodies[fine[0]].name} (finer rivers and coasts): ${this.phase || 'starting'}…`;
+      this.el.textContent = `Refining ${name(fine[0])} (finer rivers and coasts): ${this.phase.get(fine[0]) || 'starting'}…`;
       return;
     }
     if (ready >= all.length) {
@@ -96,7 +104,7 @@ export class WorldSims {
       this.el.textContent = `Simulated worlds ready (${ready})`; this.el.style.opacity = '0'; return;
     }
     this.el.style.opacity = '0.75';
-    this.el.textContent = `Simulating worlds: ${ready} of ${all.length} ready${running ? ` · ${this.game.system.bodies[running[0]].name}: ${this.phase || 'starting'}…` : ''}`;
+    this.el.textContent = `Simulating worlds: ${ready} of ${all.length} ready${running.length ? ' · ' + running.join(' · ') : ''}`;
   }
 
   key(id, N = this.N) { return `${this.seed}|${id}|v${SIM_VERSION}|N${N}`; }
@@ -147,31 +155,34 @@ export class WorldSims {
     if (this.near.has(id)) this.pending.set(id, snap); else this._apply(id, snap, false);
   }
 
+  // start queued sims on any free workers (every world's first sim before any finer one)
   _next() {
-    if (this.busy || !this.queue.length) return;
-    // (every world's first sim before any finer one)
-    let k = this.queue.findIndex((q) => q.N === this.N);
-    if (k < 0) k = 0;
-    const { id, N } = this.queue.splice(k, 1)[0];
-    this.busy = true;
-    (N === this.N ? this.status : this.hi).set(id, 'running');
-    this.phase = null;
-    this.runningN = N;
+    for (const w of this.workers) {
+      if (w.job || !this.queue.length) continue;
+      let k = this.queue.findIndex((q) => q.N === this.N);
+      if (k < 0) k = 0;
+      const job = this.queue.splice(k, 1)[0];
+      w.job = job;
+      (job.N === this.N ? this.status : this.hi).set(job.id, 'running');
+      this.phase.delete(job.id);
+      w.worker.postMessage({ type: 'sim', job: job.id, seed: this.seed, body: job.id, N: job.N, myr: this.myr, steps: this.steps });
+    }
     this._progress();
-    this.worker.postMessage({ type: 'sim', job: id, seed: this.seed, body: id, N, myr: this.myr, steps: this.steps });
   }
 
-  async _onMessage(m) {
+  _failed(job) { (job.N === this.N ? this.status : this.hi).set(job.id, 'failed'); }
+
+  async _onMessage(w, m) {
     if (m.type === 'log') {
       if (this.verbose) console.log(`[worldsim ${m.body}] ${m.msg}`);
       // the sim's stages, from its log lines (deep time, the plates, the recent epoch, life)
       const k = /^(worldSim|plates|lakes after|climate now|soil|life)/.exec(m.msg);
-      if (k) { this.phase = { worldSim: 'deep time', plates: 'the recent epoch', 'lakes after': 'ice and climate', 'climate now': 'soil and water', soil: 'life', life: 'coasts' }[k[1]]; this._progress(); }
+      if (k) { this.phase.set(m.body, { worldSim: 'deep time', plates: 'the recent epoch', 'lakes after': 'ice and climate', 'climate now': 'soil and water', soil: 'life', life: 'coasts' }[k[1]]); this._progress(); }
       return;
     }
-    if (m.type === 'error') { console.error(`world sim failed for body ${m.body}:`, m.message); (this.runningN === this.N ? this.status : this.hi).set(m.body, 'failed'); this.busy = false; this._next(); return; }
+    if (m.type === 'error') { console.error(`world sim failed for body ${m.body}:`, m.message); if (w.job) this._failed(w.job); w.job = null; this._next(); return; }
     if (m.type === 'snapshot') {
-      this.busy = false;
+      w.job = null;
       const fine = m.snap.N !== this.N;
       dbPut(await this.dbP, this.key(m.body, m.snap.N), m.snap);
       if (fine) { this.hi.set(m.body, 'ready'); this._fineReady(m.body, m.snap); }
@@ -196,5 +207,5 @@ export class WorldSims {
     this._progress();
   }
 
-  dispose() { this.worker.terminate(); clearTimeout(this._fade); if (this.el) this.el.remove(); }
+  dispose() { for (const w of this.workers) w.worker.terminate(); clearTimeout(this._fade); if (this.el) this.el.remove(); }
 }

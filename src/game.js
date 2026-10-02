@@ -66,7 +66,7 @@ export class Game {
     this.cloudNoise = makeCloudNoise(64);
     this.world = new WorldRenderer(this.engine, this.universe, this.pool, this.detailTex, this.cloudNoise);
     // simulated worlds (WORLDSIM.md step 7; opt-in for now: ?worldsim=1)
-    if (opts.worldsim) { this.worldSims = new WorldSims(this, { N: opts.simN || 192, hiN: opts.simHiN }); }
+    if (opts.worldsim) { this.worldSims = new WorldSims(this, { N: opts.simN || 192, hiN: opts.simHiN, workers: opts.simWorkers }); }
     this.lights = new LightRig(this.engine);
     this.t = 0;
     this.warpIndex = 0;
