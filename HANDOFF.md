@@ -128,6 +128,13 @@ surveying many worlds; bit-exact across runs and clients, not across revisions):
   along its flow lines, a ridge on each otherwise) and capped near its edge by Nye's plastic
   profile (H^2 = 2 tau/(rho g) x; it was 3.5 km thick at the ice front). Checked on Opast's
   sheet (71N 102E) and a mountain ice field (-45, -107).
+- **Shield fields (SIM 17):** after a stagnant-lid overturn, a third of the lava flows' vents
+  and most coronae feed a field of small shield volcanoes (`stagnant.js shieldField`: its own
+  rng stream, the world otherwise unchanged; snapshot `shieldFields`). The sampler draws them
+  (`terrain.js _shieldsAt`): a hashed lattice on each field's plane sized to its biggest shields
+  (~5-16 km real), most cells holding one in the field's middle, low domes (flanks of a few
+  degrees, exaggerated as the craters), half with a summit pit, faded in by resolution. Moadeal
+  has 29 fields (e.g. 52.85N 21.5E). Venus's tesserae are still to draw.
 - **Rivers from afar:** a river narrower than the sampling's spacing is drawn as wide as that
   spacing (its true width near), so far terrain shows it as a line of water, not as the few
   vertices that happen to land in it (dotted water, or none).

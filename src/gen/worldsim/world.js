@@ -128,7 +128,7 @@ export function worldSim(body, star, opts = {}) {
     // its rock: the old crust, and lava where the volcanoes and floods laid it
     const rock = new Uint8Array(G.n), BAS = ROCK.basalt;
     for (let c = 0; c < G.n; c++) rock[c] = S.volc[c] > 0.5 ? BAS : 0;
-    return Object.assign(out, { h: S.h, volc: S.volc, river: S.river, stats: S.stats, wet, seaFrac, craters: survivors(G, S.impacts.events, resurfaceAt, S.volc), volcanoes, melt, crater, rock });
+    return Object.assign(out, { h: S.h, volc: S.volc, river: S.river, stats: S.stats, wet, seaFrac, craters: survivors(G, S.impacts.events, resurfaceAt, S.volc), volcanoes, melt, crater, rock, shieldFields: S.shieldFields });
   }
 
   // ---- plates: the generator's continents as the starting crust

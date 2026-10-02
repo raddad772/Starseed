@@ -67,6 +67,9 @@ export function stagnantWorld(G, opts) {
   const stats = { craters: 0, shields: nShield, wetSteps: 0, canyon: !!canyon, dichotomy: !!dich };
   // (the volcanism after an overturn: how many flows and coronae its time since makes)
   const vrng = rng.fork('afterOverturn'), heap = new Heap(n);
+  // (and the fields of small shield volcanoes the same magma fed, round many of the flows'
+  // vents and most coronae: drawn by the finer levels, shieldField)
+  const srng = rng.fork('shieldFields'), shieldFields = [];
   const nFlows = Math.round(vrng.range(60, 160) * (1 + tier) / 2), nCoronae = Math.round(vrng.range(4, 14));
   for (let t = 0; t < age; t += DT_MYR / 1000) {
     stats.craters += imp.step(DT_MYR, dMin, (c, dh) => { h[c] += dh; }, t * 1000, t, h).length;
@@ -97,8 +100,14 @@ export function stagnantWorld(G, opts) {
     // fields from vents, ponding in the lows) and plumes push up coronae (Venus's)
     if (stats.resurfaced && t < age) {
       const span = Math.max(0.05, age - opts.resurfaceAt), kf = DT_MYR / 1000 / span;
-      for (let k = poissonDraw(vrng, nFlows * kf); k > 0; k--) { lavaFlow(G, h, volc, vrng, scale, heap, since, t); stats.flows = (stats.flows || 0) + 1; }
-      for (let k = poissonDraw(vrng, nCoronae * kf); k > 0; k--) { corona(G, h, vrng, scale); stats.coronae = (stats.coronae || 0) + 1; }
+      for (let k = poissonDraw(vrng, nFlows * kf); k > 0; k--) {
+        const v = lavaFlow(G, h, volc, vrng, scale, heap, since, t); stats.flows = (stats.flows || 0) + 1;
+        if (srng.next() < 0.35) shieldFields.push(shieldField(srng, [G.dir[v * 3], G.dir[v * 3 + 1], G.dir[v * 3 + 2]], G.R, scale, 0.6));
+      }
+      for (let k = poissonDraw(vrng, nCoronae * kf); k > 0; k--) {
+        const at = corona(G, h, vrng, scale); stats.coronae = (stats.coronae || 0) + 1;
+        if (srng.next() < 0.7) shieldFields.push(shieldField(srng, at, G.R, scale, 1));
+      }
     }
     // rain while there's water: valleys, lakes in craters, a sea in the lows
     if (wet && t >= wet[0] && t < wet[1]) {
@@ -114,7 +123,16 @@ export function stagnantWorld(G, opts) {
   }
   const crat = new Float32Array(n), all = cum[cum.length - 1], dtG = DT_MYR / 1000;
   for (let c = 0; c < n; c++) crat[c] = all - cum[since[c] > 0 ? Math.min(cum.length - 1, Math.round(since[c] / dtG) + 1) : 0];
-  return { h, volc, river, impacts: imp, stats, seaLevelWet: sl, rise, shields, dich, crat, dMin };
+  stats.shieldFields = shieldFields.length;
+  return { h, volc, river, impacts: imp, stats, seaLevelWet: sl, rise, shields, dich, crat, dMin, shieldFields };
+}
+
+// a field of small shield volcanoes round `at` (a unit direction): low lava shields ~1-15 km
+// across (real), tens to a couple of hundred of them over 50-300 km (Venus's shield fields);
+// R: its reach (radians), n: how many, k: how big the biggest are (0..1 of the most)
+function shieldField(rng, at, R0, scale, big) {
+  const reach = rng.range(25e3, 150e3) * big;
+  return { at, R: reach * scale / R0, n: Math.round(rng.range(20, 200) * big), k: rng.range(0.5, 1) };
 }
 
 // a lava flow: from a vent (on the higher ground, mostly), the lava runs to the lowest ground
@@ -131,6 +149,7 @@ function lavaFlow(G, h, volc, rng, scale, heap, since, t) {
     h[c] += thick * (1 - 0.6 * k / cells); volc[c] = 1; since[c] = t;
     for (let e = G.nStart[c]; e < G.nStart[c + 1]; e++) { const o = G.nbr[e]; if (!done.has(o)) { done.add(o); heap.push(h[o], o); } }
   }
+  return c0;
 }
 
 // a corona: a plume's head under the lid pushing up a ring (a dome inside, or a sag where it
@@ -145,6 +164,7 @@ function corona(G, h, rng, scale) {
     const ring = dm.exp(-((r - 0.85) / 0.12) * ((r - 0.85) / 0.12)), moat = -0.35 * dm.exp(-((r - 1.12) / 0.12) * ((r - 1.12) / 0.12)), mid = dome * (1 - dm.smoothstep(0, 0.75, r));
     h[c] += H * (ring + moat + mid);
   }
+  return at;
 }
 
 function poissonDraw(rng, lam) {

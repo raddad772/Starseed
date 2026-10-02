@@ -22,7 +22,7 @@ import { Rng, hash3i } from '../core/rng.js';
 import * as dm from '../core/dmath.js';
 import { fibonacciSphere, faceUVFromDir, FACES } from './cubesphere.js';
 import { patchAt } from './dunes.js';
-import { CraterField } from './craters.js';
+import { CraterField, VEXAG } from './craters.js';
 import { craterFloor, TILE_CELLS } from './worldsim/impacts.js';
 import { SnapshotSampler } from './worldsim/snapshot.js';
 import { RIVER_REC, BIG_REC } from './worldsim/refine.js';
@@ -720,6 +720,7 @@ export class TerrainGenerator {
     // chaos: where an icy shell broke over a warm spot, rafts of the old ridged plains standing
     // tilted in a refrozen matrix (Europa's Conamara), each raft its own block
     if (S.s.chaos) h += this._chaosAt(x, y, z, minWavelength) / this.hScale;
+    if (S.s.shieldFields) h += this._shieldsAt(x, y, z, minWavelength) / this.hScale;
     // the cracks' stains (Europa's lineae: salts and organics the ridges' warm ice brought up),
     // a band ~1 km wide along each arc, what shows of them from orbit
     if (S.s.lineae) {
@@ -857,6 +858,55 @@ export class TerrainGenerator {
   // a chaos region's rafts at (x, y, z) (m): the shell's fragments ~600 m across (as drawn: ~6
   // km real), each a block from a hashed seed (its own height and tilt), the refrozen matrix low
   // between them; fading in where the sampling resolves them, out at the region's edge
+  // small shield volcanoes (Venus's shield fields: the world sim's shieldFields): low lava
+  // shields ~1-15 km across (real), half of them with a pit at the summit, thickest in the
+  // field's middle; each from a hashed lattice on the field's own plane (the same for every
+  // sample and machine), faded in where the sampling resolves it
+  _shieldsAt(x, y, z, minW) {
+    const S = this.snap, sc = (S.s.crater && S.s.crater.scale) || 0.1;
+    let dh = 0, fi = 0;
+    for (const F of S.s.shieldFields) {
+      fi++;
+      // (a lattice cell: room for the field's biggest, ~5-16 km real; they stand packed close)
+      const L = 16e3 * sc * (0.35 + 0.65 * F.k);
+      if (minW > L) continue;
+      const at = F.at, cosA = x * at[0] + y * at[1] + z * at[2];
+      if (cosA < dm.cos(1.1 * F.R)) continue;
+      const fall = 1 - dm.smoothstep(0.3, 1.1, dm.acos(Math.min(1, cosA)) / F.R);
+      // (the field's plane: east and north at its middle, in lattice cells)
+      if (!F._e) {
+        const ref = Math.abs(at[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
+        const e = [ref[1] * at[2] - ref[2] * at[1], ref[2] * at[0] - ref[0] * at[2], ref[0] * at[1] - ref[1] * at[0]], el = Math.sqrt(e[0] * e[0] + e[1] * e[1] + e[2] * e[2]);
+        F._e = [e[0] / el, e[1] / el, e[2] / el];
+        F._n = [at[1] * F._e[2] - at[2] * F._e[1], at[2] * F._e[0] - at[0] * F._e[2], at[0] * F._e[1] - at[1] * F._e[0]];
+      }
+      const px = (x * F._e[0] + y * F._e[1] + z * F._e[2]) * this.R / L, py = (x * F._n[0] + y * F._n[1] + z * F._n[2]) * this.R / L;
+      // (how likely a cell holds one: most do in the field's middle, fewer toward its edge)
+      const pc = 0.85 * fall * dm.clamp(F.n / 100, 0.35, 1);
+      const i0 = Math.floor(px), j0 = Math.floor(py);
+      for (let j = j0 - 1; j <= j0 + 1; j++) for (let i = i0 - 1; i <= i0 + 1; i++) {
+        const hv = hash3i(i, j, 0x5e1d + fi, 11);
+        if ((hv & 0xffff) / 65536 >= pc) continue;
+        // (mostly small ones)
+        const u = ((hv >>> 16) & 0xff) / 255, D = L * (0.2 + 0.7 * u * u);
+        const amp = dm.smoothstep(D, D / 4, minW);
+        if (amp <= 0) continue;
+        const h2 = hash3i(i, j, 0x5e1e + fi, 12), slack = 1 - D / L;
+        const cx = i + 0.5 + slack * ((h2 & 0xff) / 255 - 0.5), cy = j + 0.5 + slack * (((h2 >>> 8) & 0xff) / 255 - 0.5);
+        const dx = px - cx, dy = py - cy, r = Math.sqrt(dx * dx + dy * dy) * 2 * L / D;
+        if (r >= 1) continue;
+        // (a low cone, its flanks a few degrees (as the craters, a little exaggerated), its
+        // foot flaring out onto the plain)
+        const H = D * 0.02 * VEXAG * (0.6 + 0.8 * ((h2 >>> 16) & 0xff) / 255), q = 1 - r;
+        let v = H * q * q * (1 + 2 * r);
+        if ((h2 >>> 24) & 1 && r < 0.14) v -= 0.4 * H * (1 - (r / 0.14) * (r / 0.14));
+        v *= amp;
+        if (v > dh) dh = v;
+      }
+    }
+    return dh;
+  }
+
   _chaosAt(x, y, z, minW) {
     const L = 600, amp = dm.smoothstep(L, L / 4, minW);
     if (amp <= 0) return 0;
