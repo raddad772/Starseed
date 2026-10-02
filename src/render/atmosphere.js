@@ -25,15 +25,21 @@ uniform vec3 uAbs;
 uniform float uAbsCenter;
 uniform float uAbsWidth;
 uniform float uAbsExp;
+// ground haze (bodies.js atmosphereRender): x scattering at the datum (1/m), y its scale height
+// (m), z its absorption as a share of that. Thin, so it hardly touches the sky straight up but
+// fades the far ground (the game draws worlds at a tenth of their size with air of real
+// density and height: without it a ridge that looks 50 km off has only 5 km of air before it)
+uniform vec4 uHaze;
 const float PI_A = 3.14159265358979;
 void mediumAt(float r, out vec3 scatR, out vec3 scatM, out vec3 ext) {
   float h = r - uRadius;
   float dR = exp(-h / uRayleighH);
   float dM = exp(-h / uMieH);
   float dA = uAbsExp > 0.5 ? dR : max(0.0, 1.0 - abs(h - uAbsCenter) / max(uAbsWidth, 1.0));
+  float dH = uHaze.x * exp(-max(h, 0.0) / max(uHaze.y, 1.0));
   scatR = uRayleigh * dR;
-  scatM = uMie * dM;
-  ext = scatR + scatM + uMieAbs * dM + uAbs * dA;
+  scatM = uMie * dM + vec3(dH);
+  ext = scatR + scatM + uMieAbs * dM + uAbs * dA + vec3(dH * uHaze.z);
 }
 float phaseRayleigh(float c) { return 3.0 / (16.0 * PI_A) * (1.0 + c * c); }
 float phaseMie(float c, float g) {
@@ -496,6 +502,7 @@ export class Atmosphere {
       uMie: { value: v3(a.mie) },
       uMieAbs: { value: v3(a.mieAbs) },
       uMieH: { value: a.mieH },
+      uHaze: { value: new THREE.Vector4(...(a.haze || [0, 1000, 0, 0])) },
       uMieG: { value: a.mieG },
       uAbs: { value: v3(a.ozone) },
       uAbsCenter: { value: a.ozoneCenter || 0 },

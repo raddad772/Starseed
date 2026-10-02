@@ -208,6 +208,11 @@ void main() {
     float wrap = 0.5 + 0.5 * dot(N, up);
     vec3 direct = uSunE * sunT * ndl;
     vec3 ambient = uSunE * skyE * wrap + uAmbientFloor;
+    // far off the ground's small roughness goes unresolved, but its shadows don't: rocks,
+    // furrows and a forest's canopy darken it, the more so with the sun low
+    float farK = smoothstep(1500.0, 12000.0, dist);
+    float hidden = max(clamp(0.25 + 0.55 * rough + 0.35 * rock, 0.0, 1.0) * (1.0 - 0.6 * snow), veg * 0.85);
+    albedo *= 1.0 - farK * hidden * (0.25 + 0.35 * (1.0 - clamp(muS, 0.0, 1.0)));
     color = albedo / PI * (direct + ambient);
     // (under overhangs and in caves: little sky and less sun)
     color *= 1.0 - 0.94 * vOcc;
