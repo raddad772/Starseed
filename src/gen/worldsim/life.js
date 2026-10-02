@@ -161,14 +161,46 @@ export class LifeMap {
     let total = 0;
     for (let c = 0; c < n; c++) total += G.area[c];
     this.realms = [...realmArea.values()].filter((a) => a > total * 0.002).length;
+    // recent catastrophes on the map (the history's events, with where they struck):
+    // diversity knocked back everywhere by each die-off, recovering over ~8 Myr; around the
+    // site, worse, and the forest still regrowing (ferns and scrub first) for ~1 Myr; a
+    // flood-basalt province erupting or freshly cooled is bare lava
+    const Rkm = (H.radiusKm || 6371);
+    const hurt = new Float32Array(n), scar = new Float32Array(n);
+    let global = 1;
+    for (const e of H.extinctions || []) {
+      const agoMyr = e.ago * 1000;
+      if (agoMyr > 40) continue;
+      global *= 1 - e.loss * dm.exp(-agoMyr / 8);
+      if (!e.at || !e.reachKm) continue;
+      const reach = e.reachKm / Rkm, recent = dm.exp(-agoMyr / 1);
+      for (let c = 0; c < n; c++) {
+        const cos = G.dir[c * 3] * e.at[0] + G.dir[c * 3 + 1] * e.at[1] + G.dir[c * 3 + 2] * e.at[2];
+        const ang = dm.acos(dm.clamp(cos, -1, 1)) / reach;
+        if (ang > 3) continue;
+        const k = dm.exp(-ang * ang);
+        hurt[c] = Math.max(hurt[c], k * Math.min(1, 2 * e.loss) * dm.exp(-agoMyr / 8));
+        scar[c] = Math.max(scar[c], k * recent);
+      }
+    }
+    for (const L of H.floodBasalts || []) {
+      if (!L.at || L.ago * 1000 > 0.3) continue;   // (lava fields green over in ~a few hundred kyr)
+      const reach = L.reachKm / Rkm;
+      for (let c = 0; c < n; c++) {
+        const cos = G.dir[c * 3] * L.at[0] + G.dir[c * 3 + 1] * L.at[1] + G.dir[c * 3 + 2] * L.at[2];
+        if (dm.acos(dm.clamp(cos, -1, 1)) < reach) { this.cover[c] *= 0.1; this.forest[c] = 0; this.lava = this.lava || new Uint8Array(n); this.lava[c] = 1; }
+      }
+    }
+    for (let c = 0; c < n; c++) if (scar[c] > 0.05 && env.land[c]) { const f = this.forest[c] * scar[c]; this.forest[c] -= f; this.open[c] = Math.min(1, this.open[c] + f); }
+    this.scar = scar;
     // diversity: time since arrival (saturating over ~100 Myr), productivity, realm size
-    // (species-area, ~A^0.25), and the world's diversity now (its recovery from die-offs)
-    const worldDiv = H.diversity ?? 0;
+    // (species-area, ~A^0.25), the world's diversity now, and the recent die-offs
+    const worldDiv = (H.diversity ?? 0) * (global > 0 ? 1 : 0);
     for (let c = 0; c < n; c++) {
       if (this.landed[c]) {
         const a = realmArea.get(this.realm[c]) || 0;
-        this.div[c] = worldDiv * pot.landPot[c] * (1 - dm.exp(-this.since[c] / 100)) * dm.pow(a / total / 0.1, 0.25);
-      } else if (!env.land[c]) this.div[c] = worldDiv * this.seaLife[c] * 0.8;
+        this.div[c] = worldDiv * pot.landPot[c] * (1 - dm.exp(-this.since[c] / 100)) * dm.pow(a / total / 0.1, 0.25) * (1 - hurt[c]);
+      } else if (!env.land[c]) this.div[c] = worldDiv * this.seaLife[c] * 0.8 * (1 - 0.5 * hurt[c]);
     }
     return this;
   }

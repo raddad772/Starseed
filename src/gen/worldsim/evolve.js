@@ -165,11 +165,12 @@ export function evolveWorld(ctx) {
   let stage = 0, div = 0, everLife = false, lastSterile = null, offFor = 0, snowSince = 0;
   let solvent = null, backbone = null;   // life's chemistry (biochem.js), set when it starts
   const regained = new Uint8Array(9);   // stages once evolved and lost (relatives remain: easier again)
-  const extinctions = [], bigImpacts = [], lips = [];
+  const extinctions = [], bigImpacts = [], lips = [], superEruptions = [];
   const radiations = [];        // [t, loss]: the emptied world's boost to new forms
   let lipNow = null;            // a flood-basalt eruption under way
+  let eventAt = null, eventKm = 0;   // where the event happening now strikes, and its reach (km)
   const record = (t, loss, cause, text) => {
-    extinctions.push({ t, ago: age - t, cause, loss, text });
+    extinctions.push({ t, ago: age - t, cause, loss, text, at: eventAt, reachKm: eventKm });
     radiations.push([t, loss]);
     if (loss >= 0.1) ev(t, 'extinction', `${text}: ${Math.round(loss * 100)}% of living kinds are lost`);
   };
@@ -204,6 +205,7 @@ export function evolveWorld(ctx) {
   // a big impact (crater D km): dust and soot over the sky, by its energy (vs Chicxulub's
   // ~180 km on an Earth), spread over the world's area, held longer in thick air
   const strike = (t, D, P) => {
+    eventAt = er.unitVector(); eventKm = 3 * D;   // (the fireball, ejecta and fires: a few crater widths)
     // once there's life it's hard to kill: a surface-sterilising impact spares the deep
     // sea and its vents; boiling the seas spares the microbes in the crust; only melting
     // the crust itself (a magma ocean) is nearly always the end
@@ -270,6 +272,9 @@ export function evolveWorld(ctx) {
     if (regime === 'mobile' && !canPlates && t > 0.2) { regime = 'stagnant'; tStop = t; ev(t, 'plates stop', H < 0.45 ? 'the interior cools; the plates lock into one shell' : 'without water the plates seize into one shell'); }
     if (dynamo && t > dynamoEnd * (regime === 'stagnant' ? 0.6 : 1)) { dynamo = false; tDyn = t; ev(t, 'dynamo', 'the core cools and the magnetic field dies'); }
     const field = fieldAt(t, dynamo, regime === 'stagnant' ? 0.6 : 1), shield = shieldOf(field);
+    // the core's heat: plumes rise off the core-mantle boundary (hotspots, flood basalts):
+    // more off a big core, fewer once it has cooled past keeping its dynamo going
+    const coreK = dm.pow(iron / 0.32, 0.5) * (dynamo ? 1 : 0.5);
     // outgassing: carbon and a little nitrogen with the heat (much less through a stagnant lid)
     const lidK = regime === 'mobile' ? 1 : 0.25;
     // a flood-basalt eruption: its CO2 on top (all in the step it starts: steps are longer
@@ -408,22 +413,47 @@ export function evolveWorld(ctx) {
         let D = 0;
         for (let k = 0; k < 20 && !(D > 0 && D <= Dmax); k++) D = 60 * Math.sqrt(lam / Math.max(1e-12, -dm.log(Math.max(1e-300, er.next()))));
         D = Math.min(D, Dmax);
-        if (D >= 150) bigImpacts.push({ t, ago: age - t, D });
-        if (stage > 0) strike(t, D, P);
+        if (stage > 0) strike(t, D, P); else { eventAt = er.unitVector(); }
+        if (D >= 150) bigImpacts.push({ t, ago: age - t, D, at: eventAt });
+        eventAt = null; eventKm = 0;
+      }
+    }
+    // supervolcanoes: explosive caldera eruptions (Toba's, Yellowstone's) at ~1 per Myr on a
+    // busy Earth, more where subduction feeds them, few under a stagnant lid. Their sulfate
+    // haze scatters rather than absorbs: it dims the sky to perhaps a third and chills it
+    // a few K for a few years, not the black of an impact's soot. Most do no lasting harm;
+    // only the rare giants (tens of thousands of km^3) cost a tithe of life
+    {
+      // (arcs need plates; the hotspot kind needs plumes, which rise off a hot core)
+      const lam = 1.2 * dt * 1000 * dm.clamp(H, 0, 2) * [0.6, 1, 1.4, 2][tier] * ((regime === 'mobile' ? 0.6 : 0) + 0.4 * coreK);
+      if (lam > 0) {
+        const k = lam > 30 ? Math.round(lam) : poissonDraw(er, lam);
+        if (k > 0) {
+          const V = 1000 * dm.pow(Math.max(1e-12, 1 - dm.pow(er.next(), 1 / k)), -1 / 1.5);   // km^3, the largest of k
+          eventAt = er.unitVector(); eventKm = 400 * dm.pow(V / 1000, 0.33);   // (the ash fall's reach)
+          if (age - t < 0.002) superEruptions.push({ t, ago: age - t, km3: V, at: eventAt });
+          if (stage > 0) {
+            const loss = 0.25 * (1 - dm.exp(-(V / 40000) * (V / 40000))) * (stage >= 5 ? 1 : 0.2);
+            if (loss > 0.03) die(t, loss, 'supervolcano', `a supervolcano throws out ${Math.round(V / 1000)}k km3: years of dim, cold skies`);
+          }
+          eventAt = null; eventKm = 0;
+        }
       }
     }
     // flood basalts: a plume's head reaching the surface (more on hot, busy worlds)
-    if (!lipNow && er.next() < 1 - dm.exp(-0.04 * dm.clamp(H, 0, 3) * [0.5, 1, 1.6, 2.5][tier] * (regime === 'mobile' ? 1 : 0.7) * dt * 1000)) {
+    if (!lipNow && er.next() < 1 - dm.exp(-0.04 * dm.clamp(H, 0, 3) * [0.5, 1, 1.6, 2.5][tier] * (regime === 'mobile' ? 1 : 0.7) * coreK * dt * 1000)) {
       const co2 = 0.0004 * er.lognormal(1, 1.1) * pK, durMyr = er.range(0.3, 2);
       // (it starts somewhere in this step: whether it's still going now depends on where)
       const t0 = t + er.next() * dt;
       lipNow = { t: t0, dur: durMyr / 1000, co2, spent: false };
       const warm = tempOf(t, P + co2, pCO2 + co2, false, snow)[0] - tempOf(t, P, pCO2, false, snow)[0];
-      lips.push({ t: t0, ago: age - t0, durMyr, co2, warm });
+      eventAt = er.unitVector(); eventKm = 600 + 400 * er.next();   // (a province ~1000 km across)
+      lips.push({ t: t0, ago: age - t0, durMyr, co2, warm, at: eventAt, reachKm: eventKm });
       if (stage > 0) {
         const loss = (1 - dm.exp(-(warm / 15) * (warm / 15) * Math.sqrt(0.5 / durMyr))) * 0.95;
         if (loss > 0.02) die(t, loss, 'eruption', `flood basalts pour out for ${Math.round(durMyr * 1000)} kyr: the world warms ${Math.round(warm)} K`);
       }
+      eventAt = null; eventKm = 0;
     }
     // too cold or hot for liquid water at the surface for long: life retreats to an ocean
     // under the ice (if heat keeps one: Europa's), or to warm rock deep down (Mars'
@@ -592,7 +622,7 @@ export function evolveWorld(ctx) {
     seaPH: oceans > 0.001 ? seaPH(pCO2, pSO2) : null,
     solvent: stage > 0 ? solvent : null, backbone: stage > 0 ? backbone : null,
     metabolisms: stage > 0 ? energyOf({ air, P, solvent, oceans, redox }).pairs.map((p) => p[0]) : [],
-    extinctions, bigImpacts, floodBasalts: lips, eruption, recovering,
+    extinctions, bigImpacts, floodBasalts: lips, superEruptions, eruption, recovering, radiusKm: Rkm,
     plantsMyr, floraStage, floraName: ['bare', 'microbial crusts', 'ground cover', 'shrubs and ferns', 'forests', 'diverse forests and grasslands'][floraStage + 1], maxTreeM,
     series, events, carbon,
     exception: exc,
@@ -612,6 +642,7 @@ export function evolveWorld(ctx) {
 }
 
 function teqBareOf(S) { return equilibriumTemp(S, 0.3); }
+function poissonDraw(rng, lam) { let k = 0, p = dm.exp(-lam), s = p; const u = rng.next(); while (u > s && k < 200) { k++; p *= lam / k; s += p; } return k; }
 // a broad name for an air by what dominates it and what marks it
 export function airTypeOf(air, P, h) {
   if (P < 0.003) return 'none';
