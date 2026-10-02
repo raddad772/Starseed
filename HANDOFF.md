@@ -79,7 +79,10 @@ surveying many worlds; bit-exact across runs and clients, not across revisions):
   finer octave is drawn by the sampler (`CraterField`, the same hashed lattice, cached per
   worker, each octave faded in where the sampling resolves it: no square of extra craters where
   the pyramid's tiles end; a crater's floor sits on the ground as bigger craters left it). Young
-  craters (~12% of the record) throw bright ejecta and rays (S_RAY), each crater's own.
+  craters (~12% of the record) throw bright ejecta and rays (S_RAY), each crater's own, where
+  the air is thin (< ~0.05 bar). Ejecta blankets mute the older relief round a young crater out
+  to ~2 radii, draped on the ground's slope (`excavate`, `groundPlane`). Craters 15+ km (real)
+  throw secondaries: chains and clusters 2-5 radii out, small and shallow, worn by their size.
 - **Airless worlds:** no climate means no rain: the tile sim runs no streams there (CPU and GPU
   skip routing and stream power, bit-identical; ~2x faster) and no fractal hold.
 - **Dry worlds:** with no liquid there is no sea (snapshot `sea: false`): ground below the datum
@@ -114,12 +117,13 @@ Open:
   migration history) would be the next step.
 - **Drainage pattern:** D8-straight parallel gullies on even slopes (MFD routing would help).
 - **Chaos terrain:** icy chaos is a flat matrix; its rafts should be drawn by the finer levels.
-- **Rock contacts on even ground:** cell-shaped polygons at the refinement (Touveatar's plains);
-  being tried: contacts decided by the tile's own lows and rises (basement in valleys, cover
-  strata and lava on rises).
-- **Venus-like worlds (Moadeal):** resurfaced plains are featureless; shield fields, coronae,
-  lava flows wanted.
-- **Secondary craters, ejecta muting older relief:** not yet.
+- **Rock contacts on even ground:** the refinement's now follow the tile's own lows and rises
+  (basement in valleys, cover strata and lava on rises); the finer levels still read them by
+  cell shares (RefineReader.rockAt) and the pyramid's suites: polygons at ~60 km remain.
+- **Venus-like worlds:** after an overturn, lava flows (from vents, running to the lowest ground
+  until spent: lobes and ponds) and coronae now; small shield fields and tesserae still wanted.
+- **Meanders:** big rivers wind only at the refinement's cell scale; a lateral-migration history
+  (or a simulated meander trace laid along each river) would give real meander belts.
 - **Near-field loading:** the volume rings make the descent slow with few workers.
 - **Near-field seam:** fixed: the heightfield reaches 3% in under the volume's last ring, 0.4 m
   low (terrainMaterial.js NEAR_OVERLAP), so the dotted crack where they met is covered.
