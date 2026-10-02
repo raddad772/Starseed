@@ -11,7 +11,7 @@
 //
 // Versioned: a cache keyed by seed, body and SIM_VERSION drops stale ones.
 
-import { SimGrid } from './grid.js';
+import { GridLite } from './grid.js';
 
 export const SIM_VERSION = 3;
 
@@ -58,17 +58,25 @@ export function snapshotBuffers(s) {
 export class SnapshotSampler {
   constructor(s) {
     this.s = s;
-    this.G = new SimGrid(s.N, s.R);
-    this.Gc = s.Nc ? new SimGrid(s.Nc, s.R) : null;
+    this.G = new GridLite(s.N, s.R);
+    this.Gc = s.Nc ? new GridLite(s.Nc, s.R) : null;
+    this.nb = new Int32Array(8);
+    this.cd = [0, 0, 0];
     this.uv = { face: 0, u: 0, v: 0 };
     this.d = [0, 0, 0];
     // land cells with no sea beside them (where a dip below the datum is still dry land)
-    const G = this.G, n = G.n;
+    const G = this.G, n = G.n, nb = this.nb, N = s.N;
     this.inland = new Uint8Array(n);
     for (let c = 0; c < n; c++) {
       if (s.h[c] < 0 && !(s.water[c] > -1e8)) continue;
       let sea = false;
-      for (let e = G.nStart[c]; e < G.nStart[c + 1]; e++) { const q = G.nbr[e]; if (s.h[q] < 0 && !(s.water[q] > -1e8)) { sea = true; break; } }
+      const i = c % N, j = Math.floor(c / N) % N;
+      if (i > 0 && j > 0 && i < N - 1 && j < N - 1) {   // (inside a face: the 8 round it)
+        for (let dj = -N; dj <= N && !sea; dj += N) for (let di = -1; di <= 1; di++) { const q = c + dj + di; if (s.h[q] < 0 && !(s.water[q] > -1e8)) { sea = true; break; } }
+      } else {
+        const k = G.nbrs(c, nb);
+        for (let e = 0; e < k; e++) { const q = nb[e]; if (s.h[q] < 0 && !(s.water[q] > -1e8)) { sea = true; break; } }
+      }
       if (!sea) this.inland[c] = 1;
     }
   }
@@ -91,11 +99,12 @@ export class SnapshotSampler {
     const G = this.G, s = this.s, c0 = G.cellAt(x, y, z);
     if (s.water[c0] > -1e8) { out.L = s.water[c0]; out.own = true; out.q = 0; return out; }
     let L = -1e9, q2 = 1;
-    const lim = G.spacing / G.R, lim2 = lim * lim;
-    for (let e = G.nStart[c0]; e < G.nStart[c0 + 1]; e++) {
-      const q = G.nbr[e], w = s.water[q];
+    const lim = G.spacing / G.R, lim2 = lim * lim, nb = this.nb, cd = this.cd, k = G.nbrs(c0, nb);
+    for (let e = 0; e < k; e++) {
+      const q = nb[e], w = s.water[q];
       if (!(w > L)) continue;
-      const dx = x - G.dir[q * 3], dy = y - G.dir[q * 3 + 1], dz = z - G.dir[q * 3 + 2], d2 = dx * dx + dy * dy + dz * dz;
+      G.centre(q, cd);
+      const dx = x - cd[0], dy = y - cd[1], dz = z - cd[2], d2 = dx * dx + dy * dy + dz * dz;
       if (d2 < lim2) { L = w; q2 = d2 / lim2; }
     }
     if (L < -1e8) return null;
@@ -112,7 +121,7 @@ export class SnapshotSampler {
 // the cloud cover as an equirectangular map (w x w/2, RGBA bytes: R = cover) for the render
 export function cloudMapPixels(s, w = 256) {
   if (!s.cloud || !s.Nc) return null;
-  const Gc = new SimGrid(s.Nc, s.R), hh = w / 2, px = new Uint8Array(w * hh * 4), d = [0, 0, 0], uv = { face: 0, u: 0, v: 0 };
+  const Gc = new GridLite(s.Nc, s.R), hh = w / 2, px = new Uint8Array(w * hh * 4), d = [0, 0, 0], uv = { face: 0, u: 0, v: 0 };
   for (let y = 0; y < hh; y++) for (let x = 0; x < w; x++) {
     const lat = (y + 0.5) / hh * Math.PI - Math.PI / 2, lon = (x + 0.5) / w * 2 * Math.PI - Math.PI;
     d[0] = Math.cos(lat) * Math.cos(lon); d[1] = Math.sin(lat); d[2] = Math.cos(lat) * Math.sin(lon);

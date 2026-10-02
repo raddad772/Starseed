@@ -127,6 +127,55 @@ export class SimGrid {
   }
 }
 
+// The same grid for reading a finished simulation (the game's samplers, one per body in
+// every terrain worker): the same cells, mapping and sampling, with each cell's centre and
+// neighbours worked out when asked instead of stored (a SimGrid holds ~130 bytes a cell).
+export class GridLite {
+  constructor(N, R) {
+    this.N = N;
+    this.R = R;
+    this.n = 6 * N * N;
+    this.spacing = Math.sqrt(4 * Math.PI * R * R / this.n);
+    const te = this.tanEdges = new Float64Array(N + 1);
+    for (let k = 0; k <= N; k++) te[k] = dm.tan((-1 + 2 * k / N) * dm.PI / 4);
+    const tc = this.tanCentres = new Float64Array(N);
+    for (let k = 0; k < N; k++) tc[k] = dm.tan((-1 + (k + 0.5) * 2 / N) * dm.PI / 4);
+    this._d = [0, 0, 0];
+    this._uv = { face: 0, u: 0, v: 0 };
+  }
+  // cell c's centre direction into out (as dirFromFaceUV, from the centres' tangents)
+  centre(c, out) {
+    const N = this.N, f = Math.floor(c / (N * N)), r = c - f * N * N, j = Math.floor(r / N), i = r - j * N;
+    const F = FACES[f], a = this.tanCentres[i], b = this.tanCentres[j];
+    const x = F.N[0] + a * F.U[0] + b * F.V[0], y = F.N[1] + a * F.U[1] + b * F.V[1], z = F.N[2] + a * F.U[2] + b * F.V[2];
+    const l = Math.sqrt(x * x + y * y + z * z);
+    out[0] = x / l; out[1] = y / l; out[2] = z / l;
+    return out;
+  }
+  // cell c's neighbours (up to 8; across face edges by stepping past the edge, none
+  // diagonally past a cube corner) into out; returns how many
+  nbrs(c, out) {
+    const N = this.N, f = Math.floor(c / (N * N)), r = c - f * N * N, j = Math.floor(r / N), i = r - j * N, s = 2 / N;
+    let k = 0;
+    for (let dj = -1; dj <= 1; dj++) {
+      for (let di = -1; di <= 1; di++) {
+        if (!di && !dj) continue;
+        const ii = i + di, jj = j + dj;
+        if (ii >= 0 && ii < N && jj >= 0 && jj < N) { out[k++] = (f * N + jj) * N + ii; continue; }
+        if ((ii < 0 || ii >= N) && (jj < 0 || jj >= N)) continue;
+        dirFromFaceUV(f, -1 + (ii + 0.5) * s, -1 + (jj + 0.5) * s, this._d);
+        const o = this.cellOf(this._d, this._uv);
+        if (o !== c) out[k++] = o;
+      }
+    }
+    return k;
+  }
+}
+GridLite.prototype.cellAt = SimGrid.prototype.cellAt;
+GridLite.prototype._edge = SimGrid.prototype._edge;
+GridLite.prototype.cellOf = SimGrid.prototype.cellOf;
+GridLite.prototype.sample = SimGrid.prototype.sample;
+
 function triArea(a, b, c) {
   const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
   const vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];

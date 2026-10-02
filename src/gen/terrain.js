@@ -588,11 +588,13 @@ export class TerrainGenerator {
     const mf = R / 6000, mk = 2500 / R;
     const px = x + mk * this.nMisc.noise(x * mf + 11, y * mf, z * mf), py = y + mk * this.nMisc.noise(x * mf, y * mf + 13, z * mf), pz = z + mk * this.nMisc.noise(x * mf, y * mf, z * mf + 17);
     let best = null;
+    const A = this._ra || (this._ra = [0, 0, 0]), B = this._rb || (this._rb = [0, 0, 0]);
     const test = (c) => {
       const r = s.river[c], to = s.rcv[c];
       if (r < 0.55 || to < 0 || s.h[c] < 0) return;
-      const ax = G.dir[c * 3], ay = G.dir[c * 3 + 1], az = G.dir[c * 3 + 2];
-      const bx = G.dir[to * 3] - ax, by = G.dir[to * 3 + 1] - ay, bz = G.dir[to * 3 + 2] - az;
+      G.centre(c, A); G.centre(to, B);
+      const ax = A[0], ay = A[1], az = A[2];
+      const bx = B[0] - ax, by = B[1] - ay, bz = B[2] - az;
       const L2 = bx * bx + by * by + bz * bz;
       const t = L2 > 0 ? Math.max(0, Math.min(1, ((px - ax) * bx + (py - ay) * by + (pz - az) * bz) / L2)) : 0;
       const dx = px - (ax + bx * t), dy = py - (ay + by * t), dz = pz - (az + bz * t);
@@ -602,7 +604,8 @@ export class TerrainGenerator {
       if (!best || dist - w < best.dist - best.w) best = { dist, w, depth, k, hs: s.h[c] + (s.h[to] - s.h[c]) * t };
     };
     test(c0);
-    for (let e = G.nStart[c0]; e < G.nStart[c0 + 1]; e++) test(G.nbr[e]);
+    const nb = S.nb, k = G.nbrs(c0, nb);
+    for (let e = 0; e < k; e++) test(nb[e]);
     return best;
   }
 
