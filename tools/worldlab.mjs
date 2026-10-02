@@ -82,6 +82,7 @@ if (init === 'auto') {
   if (F.drownedValleys && F.drownedValleys.length) console.log('  drowned valleys (rias, estuaries): ' + F.drownedValleys.map((f) => `${Math.round(f.areaKm2 / 1000)}k km2 @${ll(f)}`).join('; '));
   if (F.bigTides && F.bigTides.length) console.log('  biggest tides: ' + F.bigTides.map((f) => `${f.rangeM.toFixed(1)} m @${ll(f)}`).join('; '));
   if (F.tidalFlats && F.tidalFlats.length) console.log('  tidal-flat coasts: ' + F.tidalFlats.map((f) => `${f.kind} along ${Math.round(f.lengthKm)} km @${ll(f)}`).join('; '));
+  if (F.barrierCoasts && F.barrierCoasts.length) console.log('  barrier-island coasts: ' + F.barrierCoasts.map((f) => `${Math.round(f.lengthKm)} km @${ll(f)}`).join('; ') + `; spits: ${F.spits}`);
   if (F.wetlands && F.wetlands.length) console.log('  wetlands: ' + F.wetlands.map((f) => `${Math.round(f.areaKm2 / 1000)}k km2 @${ll(f)}`).join('; '));
   if (F.forests.length) console.log('  forests:  ' + F.forests.map((f) => `${f.kind} ${Math.round(f.areaKm2 / 1000)}k km2 @${ll(f)}`).join('; '));
   if (F.trenches.length) console.log('  trenches: ' + F.trenches.map((f) => `${Math.round(f.depth)} m @${ll(f)}`).join('; '));

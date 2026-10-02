@@ -357,6 +357,8 @@ export function findFeatures(G, h, opts = {}) {
   if (opts.coasts && opts.coasts.tide) {
     const Co = opts.coasts;
     out.tidalFlats = regionsOf(Co.flat, 'tidal flats');
+    out.barrierCoasts = regionsOf(Co.barrier, 'barrier islands');
+    let spits = 0; for (let c = 0; c < n; c++) spits += Co.spit[c]; out.spits = spits;
     for (const f of out.tidalFlats) { const c = G.cellAt(...dirFromLatLon(f.lat, f.lon)); f.kind = Co.flat[c] === 2 ? 'mangroves' : 'salt marsh and tidal flats'; }
     // the biggest tides: coastal cells by range, spaced apart
     const idx = []; for (let c = 0; c < n; c++) if (Co.tide[c] > 0 && Co.coast[c] === 2) idx.push(c);

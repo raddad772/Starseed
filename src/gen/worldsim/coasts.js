@@ -10,6 +10,7 @@
 //              sandstone
 //   tides      the range from the moons and the star, amplified on broad shelves and in
 //              funnelling bays; big tides on sheltered muddy shores make tidal flats
+//   drift      barrier islands on sandy, shelving, microtidal coasts; spits off headlands
 //   reefs      where there's complex life, coral builds up to the surface in warm,
 //              clear, shallow water: fringing reefs along coasts, and atolls round
 //              volcanic islands that sank away under them
@@ -125,6 +126,7 @@ export class Coasts {
   tides(h, open, sst) {
     const { G, coast } = this, n = G.n;
     this.tide = new Float32Array(n); this.flat = new Uint8Array(n);
+    this.barrier = new Uint8Array(n); this.spit = new Uint8Array(n);
     for (let c = 0; c < n; c++) {
       if (!coast[c]) continue;
       // the shelf: shallow sea within ~4 cells; the funnel: how enclosed the water is
@@ -142,6 +144,14 @@ export class Coasts {
       const amp = 1 + 4 * shelf * shelf + 6 * Math.max(0, enclosed - 0.4) * shelf;
       this.tide[c] = 2 * open * amp;   // (range: twice the amplitude)
       if (coast[c] === 1 && this.mud[c] > 2 && this.tide[c] > 2) this.flat[c] = sst && sst[c] > 293 ? 2 : 1;
+      // longshore drift's work (sub-cell: flagged for the local detail): barrier islands on
+      // sandy coasts with a broad shallow shelf, modest tides and moderate waves (the
+      // Carolinas'); spits where sand trails off a headland jutting into the sea
+      if (coast[c] === 1 && this.beach[c] > 2) {
+        if (shelf > 0.6 && this.tide[c] < 4 && this.energy[c] > 0.3 && this.energy[c] < 0.85) this.barrier[c] = 1;
+        let land = 0; for (let e = G.nStart[c]; e < G.nStart[c + 1]; e++) if (h[G.nbr[e]] >= 0) land++;
+        if (land <= 3) this.spit[c] = 1;
+      }
     }
   }
 
