@@ -120,7 +120,10 @@ export function evolveWorld(ctx) {
   // big impacts and flood basalts through time (their own draws)
   const er = rng.fork('life-events');
   const g = ctx.gravity || 9.81, Rkm = (ctx.radiusM || 6.371e6) / 1000;
-  const debris = star.debris ? star.debris.level : 1, spike = star.debris ? star.debris.spike : null;
+  // (the system's clutter; a giant host's gravity pulls more onto its moons: as world.js)
+  const host = ctx.host || null;
+  const focus = host && !host.solid && host.massEarth > 10 ? 1 + 2 * Math.sqrt(Math.min(host.massEarth / 317.8, 4)) : 1;
+  const debris = (star.debris ? star.debris.level : 1) * focus, spike = star.debris ? star.debris.spike : null;
   const sizeK = dm.pow(1.62 / g, 0.17), areaKm2 = 4 * dm.PI * Rkm * Rkm;
   const impactRate = (D, tG) => {   // craters >= D km per Myr (impacts.js's law)
     const tau = Math.max(0, 4.3 - tG);
