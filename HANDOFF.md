@@ -132,8 +132,8 @@ surveying many worlds; bit-exact across runs and clients, not across revisions):
   a cell (0.5 km^2 on Iahahound) was bigger than a real channel head (~0.03 km^2), so every cell
   cut: rills one cell apart combing every slope (the dimple lattice). Now a level cuts only where
   at least three of its cells' water gathers (`AcC`); the finer levels cut the rills between.
-  Opast's valleys keep their courses. The finer tile's straight double ridge on Iahahound's
-  volcano is a fault (faults are ruler-straight lines with a worn zone): to bend/segment later.
+  Opast's valleys keep their courses. Faults' traces (the straight double ridge on Iahahound's
+  volcano) now bow gently and wander a little along their length (TILE 21; hashed per fault).
 - **Ragged contacts below the grid's scale:** the world's rock cells are read a little off true
   (`SnapshotSampler.rockWarp`: up to ~0.9 cell, three octaves from ~4 cells), by the sampler's
   grid-level read and the refinement's rock rule alike, so a contact the cells would draw

@@ -255,9 +255,15 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
   faults.forEach((f, k) => {
     const fs = fside[k];
     for (let c = 0; c < n; c++) {
-      const x = X[c] - f.x, y = Y[c] - f.y, along = x * f.tx + y * f.ty, across = -x * f.ty + y * f.tx;
+      const x = X[c] - f.x, y = Y[c] - f.y, along = x * f.tx + y * f.ty;
+      // (its trace not ruled straight: bowed gently along its length and wandering a little,
+      // as a fault's does through the rock it breaks; from a hash of where it is, the same in
+      // every tile)
       const taper = 1 - dm.smoothstep(f.len * 0.35, f.len * 0.5, Math.abs(along));
       if (taper <= 0) continue;
+      const fk = f._k ?? (f._k = (hashInts(Math.round(f.x), Math.round(f.y), 0xfa17) >>> 0) / 4294967296);
+      const across = -x * f.ty + y * f.tx - (fk - 0.5) * 0.24 * along * along / f.len
+        - f.len * (0.008 * dm.sin(dm.TWO_PI * along / (0.53 * f.len) + 6.283 * fk) + 0.002 * dm.sin(dm.TWO_PI * along / (0.19 * f.len) + 12.6 * fk));
       fs[c] = taper * dm.smoothstep(-cell, cell, across) * 2 - taper;
       const zone = 1 - Math.abs(across) / Math.max(f.w, cell);
       if (zone > 0) weak[c] = Math.max(weak[c], zone * taper);
