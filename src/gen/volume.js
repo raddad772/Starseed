@@ -365,7 +365,7 @@ export function buildVolumeChunk(field, ci, cj, ck, level = 0) {
   // to body-fixed axes, relative to the chunk's corner; colour and occlusion per vertex
   const ox = a.o[0] + S * (i0 * a.e[0] + j0 * a.u[0] + k0 * a.n[0]), oy = a.o[1] + S * (i0 * a.e[1] + j0 * a.u[1] + k0 * a.n[1]), oz = a.o[2] + S * (i0 * a.e[2] + j0 * a.u[2] + k0 * a.n[2]);
   const position = new Float32Array(nv * 3), nrm = new Int8Array(nv * 4), col = new Uint8Array(nv * 4), mat = new Uint8Array(nv * 4), ext = new Uint8Array(nv * 4), occ = new Uint8Array(nv);
-  const s = new Float64Array(S_LEN), cc = [0, 0, 0], mm = new Float64Array(8);
+  const s = new Float64Array(S_LEN), cc = [0, 0, 0], mm = new Float64Array(8), nrmV = [0, 0, 0];
   let minR = Infinity, maxR = -Infinity;
   for (let v = 0; v < nv; v++) {
     const lx = P[v * 3] * S, ly = P[v * 3 + 1] * S, lz = P[v * 3 + 2] * S;
@@ -383,7 +383,8 @@ export function buildVolumeChunk(field, ci, cj, ck, level = 0) {
     gen.sample(ux, uy, uz, MINW, s);
     s[S_H] = Math.max(r, 1); s[S_WDEPTH] = 0;
     const slope = Math.max(0, Math.min(1, 1 - (nx * ux + ny * uy + nz * uz)));
-    gen.shade(s, slope, cc, mm);
+    nrmV[0] = nx; nrmV[1] = ny; nrmV[2] = nz;
+    gen.shade(s, slope, cc, mm, nrmV);
     // rock faces banded by their beds
     const colm = field.colAt(Math.round(i0 * S + lx), Math.round(k0 * S + lz));
     if (mm[2] > 0.15 && colm.wc > 0.05) {

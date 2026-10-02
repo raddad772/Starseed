@@ -111,6 +111,10 @@ surveying many worlds; bit-exact across runs and clients, not across revisions):
   fifth in a step at 3 m deep, so a lake near 3 m deep showed every small change of its bed as a
   hard edge (a pyramid tile's bed sits ~1.4 m off its parent's: talus off the shores; and the
   bed's own fine relief, as sharp blotches). Now the dimming fades in over 0-3 m.
+- **Snow by aspect:** a slope facing the pole (away from the star on a locked world) shades as
+  up to 8 C colder, one facing the sun as warmer (none at the equator): the snowline runs down
+  the shady sides of ridges and pulls back from the sunny ones. The chunk and volume builders
+  pass each vertex's normal to `shade()` (optional 5th argument).
 - **GPU check still to rerun** on a fluvial tile (the hidden pane throttles the GPU too hard to
   finish one): the integer sim's code is unchanged on that path since its last check; the
   airless path (streams skipped) was checked bit-identical (Idaull).

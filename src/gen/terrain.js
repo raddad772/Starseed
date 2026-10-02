@@ -510,9 +510,10 @@ export class TerrainGenerator {
   // Surface colour and material weights from a sample and the local slope.
   // slope: 1 - dot(normal, up) (0 flat .. 1 vertical). Writes to col (rgb) and mat:
   // mat[0]=vegetation, mat[1]=snow/ice, mat[2]=rock, mat[3]=sand, mat[4]=water depth (m, >0 = liquid),
-  // mat[5]=emissive (lava), mat[6]=wetness/specular
-  shade(s, slope, col, mat) {
-    if (this.snap) return this.shadeSnap(s, slope, col, mat);
+  // mat[5]=emissive (lava), mat[6]=wetness/specular. nrm (optional): the surface's normal (body
+  // axes), for which way it faces
+  shade(s, slope, col, mat, nrm) {
+    if (this.snap) return this.shadeSnap(s, slope, col, mat, nrm);
     return this.shadeNoise(s, slope, col, mat);
   }
 
@@ -939,7 +940,7 @@ export class TerrainGenerator {
   // the sim's surfaces: the exposed rock in its own colour (soil over it where gentle),
   // beach sands, ice, lakes, plant cover from the life map (forest in the world's
   // foliage colour, open country drier), wet ground along rivers, a glowing melt sheet
-  shadeSnap(s, slope, col, mat) {
+  shadeSnap(s, slope, col, mat, nrm) {
     const p = this.p, P = p.palette, S = this.snap;
     const x = s[S_DX], y = s[S_DY], z = s[S_DZ], h = s[S_H];
     for (let i = 0; i < 7; i++) mat[i] = 0;
@@ -997,7 +998,10 @@ export class TerrainGenerator {
     // snow where it's cold, if there's water to fall as snow (a water cycle, or an ice inventory);
     // thin frost on an icy moon; an airless rock stays bare
     const waterCycle = p.liquid === 'water' || (p.frozenOcean && p.climate.wet === 0 && p.iceCover > 0.55 && !p.icy);
-    let snow = waterCycle || (p.iceCover > 0 && S.Gc) ? dm.smoothstep(-2, -10, Tc) * (1 - 0.5 * rockW) : 0;
+    // (a slope facing the pole, or away from the star on a world locked to it, gets less sun:
+    // colder, its snow lasting; one facing the sun, warmer, bare sooner)
+    const Ta = nrm && slope > 0.005 ? Tc - 8 * this._shadeAspect(x, y, z, nrm) : Tc;
+    let snow = waterCycle || (p.iceCover > 0 && S.Gc) ? dm.smoothstep(-2, -10, Ta) * (1 - 0.5 * rockW) : 0;
     if (p.icy) snow = Math.max(snow, 0.3 * (0.5 + 0.5 * s[S_VARIANT]) * (1 - 0.5 * dm.smoothstep(0.3, 0.6, slope)) * (1 - s[S_LINEAE]));
     if (p.iceCover > 0 && !p.icy && !S.Gc) snow = Math.max(snow, dm.smoothstep(this.iceCapCut - 0.03, this.iceCapCut + 0.03, this.iceCapMetric(s)));
     snow = dm.clamp(snow, 0, 1);
@@ -1008,6 +1012,23 @@ export class TerrainGenerator {
     // a fresh melt sheet glows (blackbody by how hot: the render's job; here, how much)
     const melt = s[S_LAVA];
     if (melt > 0.05) { col[0] *= 1 - melt; col[1] *= 1 - melt; col[2] *= 1 - melt; mat[5] = melt; }
+  }
+
+  // how far a surface (normal n) faces away from the sun's mean path at (x, y, z): its normal's
+  // part along the ground toward the pole (none at the equator, where the sun passes overhead),
+  // or away from the star on a locked world; -1 .. 1
+  _shadeAspect(x, y, z, n) {
+    const cl = this.p.climate, dn = n[0] * x + n[1] * y + n[2] * z;
+    if (cl && cl.locked && cl.substellar) {
+      const ss = cl.substellar, k = ss[0] * x + ss[1] * y + ss[2] * z;
+      const ax = ss[0] - k * x, ay = ss[1] - k * y, az = ss[2] - k * z, al = Math.sqrt(ax * ax + ay * ay + az * az);
+      return al > 1e-6 ? -((n[0] - dn * x) * ax + (n[1] - dn * y) * ay + (n[2] - dn * z) * az) / al : 0;
+    }
+    const cl2 = 1 - y * y;
+    if (cl2 < 1e-6) return 0;
+    // (the ground's northward direction is (0, 1, 0) less its part along up, length cos(lat))
+    const north = (n[1] - dn * y) / Math.sqrt(cl2);
+    return (y >= 0 ? 1 : -1) * north * Math.min(1, 2 * Math.abs(y));
   }
 
   shadeNoise(s, slope, col, mat) {

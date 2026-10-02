@@ -128,7 +128,7 @@ export function buildChunk(gen, face, level, ix, iy, N = CHUNK_N) {
   }
 
   // ---- coarse (parent-level) grid
-  const hasParent = level > 0;
+  const hasParent = level > 0, nv = [0, 0, 0];
   if (hasParent) {
     const cdu = du * 2;
     for (let j = 0; j < CV; j++) {
@@ -161,7 +161,8 @@ export function buildChunk(gen, face, level, ix, iy, N = CHUNK_N) {
         const o = (j * CVi + i) * 3;
         coarseNrm[o] = nx; coarseNrm[o + 1] = ny; coarseNrm[o + 2] = nz;
         const s = coarseS.subarray(c * S_LEN, c * S_LEN + S_LEN);
-        gen.shade(s, 1 - up, col, mat);
+        nv[0] = nx; nv[1] = ny; nv[2] = nz;
+        gen.shade(s, 1 - up, col, mat, nv);
         const oc = (j * CVi + i) * 4;
         coarseCol[oc] = col[0]; coarseCol[oc + 1] = col[1]; coarseCol[oc + 2] = col[2]; coarseCol[oc + 3] = mat[4];
       }
@@ -198,7 +199,8 @@ export function buildChunk(gen, face, level, ix, iy, N = CHUNK_N) {
       const nx = fineNrm[no], ny = fineNrm[no + 1], nz = fineNrm[no + 2];
       const pl = Math.sqrt(px * px + py * py + pz * pz);
       const up = (nx * px + ny * py + nz * pz) / pl;
-      gen.shade(s, 1 - up, col, mat);
+      nv[0] = nx; nv[1] = ny; nv[2] = nz;
+      gen.shade(s, 1 - up, col, mat, nv);
       nrm[vi * 4] = Math.round(nx * 127); nrm[vi * 4 + 1] = Math.round(ny * 127); nrm[vi * 4 + 2] = Math.round(nz * 127);
       colA[vi * 4] = encodeColor(col[0]); colA[vi * 4 + 1] = encodeColor(col[1]); colA[vi * 4 + 2] = encodeColor(col[2]);
       colA[vi * 4 + 3] = encodeWater(mat[4]);
