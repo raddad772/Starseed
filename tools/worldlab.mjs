@@ -65,7 +65,7 @@ if (init === 'auto') {
   else if (Wd.path === 'stagnant') rgb = renderBarren(Wd.G, { h: Wd.h, mare: Wd.volc, fresh: new Float32Array(Wd.G.n), river: Wd.river }, W_, [1.0, 0.72, 0.52]);
   else rgb = renderBarren(Wd.G, Wd, W_, p.icy ? [0.92, 0.97, 1.05] : [1, 0.98, 0.95]);
   // what a surveyor would name first
-  const F = findFeatures(Wd.G, Wd.h, { E: Wd.E, scale: body.R / body.radiusM, craters: Wd.craters || [], volcanoes: Wd.volcanoes, glaciers: Wd.glaciers, coasts: Wd.coasts, rock: Wd.rock, rockNames: ROCKS.map((r) => r.name), climate: Wd.climate, Gc: Wd.Gc, dunes: Wd.dunes, mesas: Wd.mesas, top: 5 });
+  const F = findFeatures(Wd.G, Wd.h, { E: Wd.E, scale: body.R / body.radiusM, craters: Wd.craters || [], volcanoes: Wd.volcanoes, glaciers: Wd.glaciers, coasts: Wd.coasts, rock: Wd.rock, rockNames: ROCKS.map((r) => r.name), climate: Wd.climate, Gc: Wd.Gc, dunes: Wd.dunes, mesas: Wd.mesas, soil: Wd.soil, top: 5 });
   if (Wd.glaciers) paintIce(rgb, W_, Wd.G, Wd.glaciers.ice);
   const ll = (f) => `${f.lat.toFixed(0)},${f.lon.toFixed(0)}`;
   console.log('features:');
@@ -78,6 +78,7 @@ if (init === 'auto') {
   if (F.deserts.length) console.log('  deserts:  ' + F.deserts.map((f) => `${f.kind} ${Math.round(f.areaKm2 / 1000)}k km2 @${ll(f)}`).join('; '));
   if (F.duneSeas && F.duneSeas.length) console.log('  dune seas: ' + F.duneSeas.map((f) => `${Math.round(f.areaKm2 / 1000)}k km2 @${ll(f)}`).join('; '));
   if (F.mesaCountry && F.mesaCountry.length) console.log('  mesa country: ' + F.mesaCountry.map((f) => `${Math.round(f.areaKm2 / 1000)}k km2 @${ll(f)}`).join('; '));
+  if (F.wetlands && F.wetlands.length) console.log('  wetlands: ' + F.wetlands.map((f) => `${Math.round(f.areaKm2 / 1000)}k km2 @${ll(f)}`).join('; '));
   if (F.forests.length) console.log('  forests:  ' + F.forests.map((f) => `${f.kind} ${Math.round(f.areaKm2 / 1000)}k km2 @${ll(f)}`).join('; '));
   if (F.trenches.length) console.log('  trenches: ' + F.trenches.map((f) => `${Math.round(f.depth)} m @${ll(f)}`).join('; '));
   if (F.craters.length) console.log('  craters:  ' + F.craters.map((f) => `${Math.round(f.diameterKm)} km`).join('; '));
@@ -100,6 +101,7 @@ if (init === 'auto') {
   markFeatures(rgb, W_, F);
   writePNG(`${out}/${name}-map.png`, W_, W_ / 2, rgb);
   if (Wd.climate) writePNG(`${out}/${name}-climate.png`, W_, W_ / 2, renderKoppen(Wd.Gc, Wd.h, Wd.G, Wd.climate, W_));
+  if (Wd.life) writePNG(`${out}/${name}-life.png`, W_, W_ / 2, renderLife(Wd.Gc, Wd.h, Wd.G, Wd.life, body.life ? body.life.vegColor : null, W_));
   if (Wd.rock) {
     writePNG(`${out}/${name}-rock.png`, W_, W_ / 2, renderRock(Wd.G, Wd.h, Wd.rock, W_));
     const counts = {}; for (const r of Wd.rock) { if (true) counts[ROCKS[r].name] = (counts[ROCKS[r].name] || 0) + 1; }
@@ -348,6 +350,30 @@ function renderBarren(G, Wd, w, tint = [1, 0.98, 0.95]) {
   return rgb;
 }
 // Köppen climates in their standard colours (Peel et al. 2007), shaded by the relief
+// life on the map (life.js): land by plant cover (forest in the world's own foliage colour,
+// open country lighter and drier, bare ground tan), the sea by its life (plankton greens)
+function renderLife(Gc, h, G, L, veg, w) {
+  const hh = w / 2, rgb = new Uint8Array(w * hh * 3), d = [0, 0, 0], uv = { face: 0, u: 0, v: 0 };
+  const lin2s = (x) => Math.round(255 * Math.pow(Math.max(0, Math.min(1, x)), 1 / 2.2));
+  const leaf = veg ? veg.map(lin2s) : [52, 110, 40];
+  const dry = [196, 182, 120], bare = [170, 150, 118], ice = [235, 240, 245];
+  for (let y = 0; y < hh; y++) for (let x = 0; x < w; x++) {
+    const lat = Math.PI / 2 - (y + 0.5) / hh * Math.PI, lon = (x + 0.5) / w * 2 * Math.PI;
+    d[0] = Math.cos(lat) * Math.cos(lon); d[1] = Math.sin(lat); d[2] = Math.cos(lat) * Math.sin(lon);
+    const z = G.sample(h, d, uv), q = Gc.cellAt(d[0], d[1], d[2]), i = (y * w + x) * 3;
+    let c;
+    if (z < 0 || !L.env.land[q]) { const k = L.seaLife[q]; c = [20 + 20 * k, 45 + 70 * k, 90 + 30 * k]; }
+    else {
+      const cov = L.cover[q], f = L.forest[q], o = L.open[q];
+      const veg2 = [0, 1, 2].map((j) => leaf[j] * f + dry[j] * o + bare[j] * Math.max(0, 1 - f - o));
+      c = [0, 1, 2].map((j) => bare[j] + (veg2[j] - bare[j]) * Math.min(1, cov * 1.3));
+      if (L.env.T[q] < 263 && cov < 0.05) c = ice;
+    }
+    rgb[i] = c[0]; rgb[i + 1] = c[1]; rgb[i + 2] = c[2];
+  }
+  return rgb;
+}
+
 function renderKoppen(Gc, h, G, clim, w) {
   const KOPPEN_COLORS = { Af: '#0000ff', Am: '#0078ff', Aw: '#46aafa', BWh: '#ff0000', BWk: '#ff9696', BSh: '#f5a500', BSk: '#ffdc64', Csa: '#ffff00', Csb: '#c8c800', Csc: '#969600', Cwa: '#96ff96', Cwb: '#64c864', Cwc: '#329632', Cfa: '#c8ff50', Cfb: '#64ff50', Cfc: '#32c800', Dsa: '#ff00ff', Dsb: '#c800c8', Dsc: '#963296', Dsd: '#966496', Dwa: '#aaafff', Dwb: '#5a78dc', Dwc: '#4b50b4', Dwd: '#320087', Dfa: '#00ffff', Dfb: '#37c8ff', Dfc: '#007d7d', Dfd: '#00465f', ET: '#b2b2b2', EF: '#686868' };
   const hh = w / 2, rgb = new Uint8Array(w * hh * 3), d = [0, 0, 0], uv = { face: 0, u: 0, v: 0 };

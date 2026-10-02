@@ -30,6 +30,8 @@ import { Lithology, R as ROCK, marineRock } from './lithology.js';
 import { Glaciers } from './glaciers.js';
 import { Coasts } from './coasts.js';
 import { climate, biomeOfKoppen } from './climate.js';
+import { soilAndWater } from './soil.js';
+import { LifeMap } from './life.js';
 
 // river erosion (stream power) constants, deep time and the fine epoch: real K ~1e-6
 // m^0.1/yr for m = 0.45, x ~0.8 at the game's 1/10 scale (areas and lengths shrink)
@@ -115,6 +117,11 @@ export function worldSim(body, star, opts = {}) {
   const Gc = new SimGrid(opts.Nc ?? 40, body.R);
   const climOpts = climateOpts(body, star);
   let clim = climateOn(Gc, Gt, ht, climOpts);
+  // life on the map (life.js), and the climate again with its plant cover (forests darken
+  // the land, plants hand rain on inland): the cover then holds the fine epoch's soil
+  let life0 = lifeOn(Gc, clim, H, rng.fork('life0'), null);
+  clim = climateOn(Gc, Gt, ht, climOpts, null, life0);
+  life0 = lifeOn(Gc, clim, H, rng.fork('life0'), null);
   log(`climate: ${summarizeKoppen(clim)}`);
   log(`plates: ${myr} Myr, ${T.plates.filter((q) => !q.dead).length} plates, ${T.hot.length} hotspots (${T.activity.name}), ${(T.events || []).length} rifts/welds, ${T.impacts.events.length} impacts`);
   // the finer epoch: the plates' surface and uplift, rivers cutting it finer
@@ -128,7 +135,7 @@ export function worldSim(body, star, opts = {}) {
     tSea[c] = clim.Tann[c] + up;
     let mn = 1e9; for (let m = 0; m < 12; m++) { mn = Math.min(mn, clim.Tm[m * Gc.n + c]); tmSea[m * Gc.n + c] = clim.Tm[m * Gc.n + c] + up; } tCold[c] = mn;
   }
-  const Tsl = new Float32Array(G.n), snow = new Float32Array(G.n), sst = new Float32Array(G.n), TmSL = new Float32Array(12 * G.n);
+  const Tsl = new Float32Array(G.n), snow = new Float32Array(G.n), sst = new Float32Array(G.n), TmSL = new Float32Array(12 * G.n), plantCover = new Float32Array(G.n);
   const monthSlice = Array.from({ length: 12 }, (_, m) => tmSea.subarray(m * Gc.n, (m + 1) * Gc.n));
   const d = [0, 0, 0];
   for (let c = 0; c < G.n; c++) {
@@ -137,6 +144,7 @@ export function worldSim(body, star, opts = {}) {
     rain[c] = Math.max(0.03, Gc.sample(clim.Pann, d) / 1000); // (rain in m/yr, from the climate)
     pet[c] = petOf(Gc.sample(clim.Tann, d), rain[c]);
     Tsl[c] = Gc.sample(tSea, d); snow[c] = rain[c]; sst[c] = Gc.sample(tCold, d);
+    plantCover[c] = Gc.sample(life0.plantCover, d);
     for (let m = 0; m < 12; m++) TmSL[m * G.n + c] = Gc.sample(monthSlice[m], d);
     if (h[c] > 0) h[c] += (hashJitter(c) - 0.5) * 5;
   }
@@ -159,6 +167,7 @@ export function worldSim(body, star, opts = {}) {
   let iceMax = 0;
   // (the fine grid's cells on the plates' grid, for the isostasy's regional averaging)
   const fineToT = new Int32Array(G.n), fineReg = new Float64Array(Gt.n), coarseN = new Uint32Array(Gt.n), isoDh = new Float64Array(G.n);
+  const lifted = new Float64Array(G.n);   // the uplift (and isostatic rise) each cell got: the rest of its change was wear or fill
   for (let c = 0; c < G.n; c++) fineToT[c] = Gt.cellAt(G.dir[c * 3], G.dir[c * 3 + 1], G.dir[c * 3 + 2]);
   let totalArea = 0, wetArea = 0;
   for (let c = 0; c < G.n; c++) { totalArea += G.area[c]; if (h[c] < 0) wetArea += G.area[c]; }
@@ -168,7 +177,7 @@ export function worldSim(body, star, opts = {}) {
     E.rainK = H.at((steps - k) * dt / 1e6, 'rain') || 0.05;
     E.petK = dm.exp(0.06 * ((H.at((steps - k) * dt / 1e6, 'T') ?? H.T) - H.T)); // (warmer then: more evaporation)
     E.bare = !plantsAt(H, (steps - k) * dt / 1e6);
-    E.veg = E.bare ? null : vegFrom(rain, E.rainK, E.veg);
+    E.veg = E.bare ? null : plantCover;   // (life.js: the plants' cover holds the slopes)
     lith.kField(KF, E.K);                 // each place wears as its exposed rock does
     // (crust can't hold mountains past ~9 km on an Earth: uplift fades out near the limit)
     for (let c = 0; c < G.n; c++) E.U[c] = U[c] * Math.max(0, Math.min(1, (hMax - h[c]) / (0.15 * hMax)));
@@ -204,7 +213,7 @@ export function worldSim(body, star, opts = {}) {
       }
       if (salt > 0) lith.deposit(c, salt, ROCK.salt);
     }
-    for (let c = 0; c < G.n; c++) h[c] += isoDh[c];
+    for (let c = 0; c < G.n; c++) { h[c] += isoDh[c]; lifted[c] += isoDh[c] + E.U[c] * dt; }
     // sea level holds the world's ocean share (as the plates' epoch does): wear moves land
     // into the sea, and low coasts would otherwise slip under it
     {
@@ -234,7 +243,7 @@ export function worldSim(body, star, opts = {}) {
   // the climate now, on the finished surface: biomes for the game
   // (open water for the climate: the sea and the lakes)
   const wetMask = Uint8Array.from(E.base, (b, c) => b || E.water[c] - h[c] >= 1 ? 1 : 0);
-  clim = climateOn(Gc, G, h, climOpts, wetMask);
+  clim = climateOn(Gc, G, h, climOpts, wetMask, life0);
   log(`climate now: ${summarizeKoppen(clim)}`);
   out.climate = clim; out.Gc = Gc;
   // the beaches' sand shows as the surface rock there
@@ -259,7 +268,31 @@ export function worldSim(body, star, opts = {}) {
     for (let i = 1; i < lith.count[c]; i++) if (lith.type[c * lith.L + i] === ROCK.shale) softBelow = true;
     if (cap && softBelow && steep > 150 && steep < 1500) mesas[c] = 1;
   }
-  return Object.assign(out, { h, h0, E, Gt, ht, tect: T, impacts: Ef, craters: T.impacts.events.concat(Ef.events), volcanoes, lith, rock, glaciers: ice, veg: E.veg, coasts: sea2, dunes, mesas });
+  // soil and groundwater (soil.js): dust for loess from the deserts and the ice's edges
+  const dust = new Uint8Array(G.n), net = new Float64Array(G.n), tNow = new Float64Array(G.n);
+  for (let c = 0; c < G.n; c++) {
+    net[c] = h[c] - h0[c] - lifted[c];
+    tNow[c] = Tsl[c] - lapse * Math.max(h[c], 0);
+    if (h[c] < 0) continue;
+    d[0] = G.dir[c * 3]; d[1] = G.dir[c * 3 + 1]; d[2] = G.dir[c * 3 + 2];
+    const k = clim.koppen[Gc.cellAt(d[0], d[1], d[2])];
+    if (k && k.startsWith('BW')) dust[c] = 1;
+    else if (ice.ice[c] > 0) for (let e = G.nStart[c]; e < G.nStart[c + 1]; e++) if (ice.ice[G.nbr[e]] <= 0 && h[G.nbr[e]] >= 0) { dust[c] = 1; break; }
+  }
+  const soil = soilAndWater(G, h, { E, years: steps * dt, net, T: tNow, P: rain, pet, rock, ice: ice.ice, everIce: ice.everIce, plants: E.veg, dust });
+  {
+    let la = 0, deep = 0, thin = 0, wetA = 0, loessA = 0;
+    for (let c = 0; c < G.n; c++) { if (h[c] < 0 || E.base[c] || ice.ice[c] > 0) continue; la += G.area[c]; if (soil.depth[c] > 2) deep += G.area[c]; if (soil.depth[c] < 0.3) thin += G.area[c]; if (soil.wet[c]) wetA += G.area[c]; if (soil.loess[c] > 5) loessA += G.area[c]; }
+    log(`soil: ${(deep / la * 100).toFixed(0)}% of ice-free land deeper than 2 m, ${(thin / la * 100).toFixed(0)}% thinner than 0.3 m; wetlands ${(wetA / la * 100).toFixed(1)}%; loess ${(loessA / la * 100).toFixed(1)}%`);
+  }
+  // life on the map now, with the soil and groundwater (and rivers' nutrients at the coasts)
+  const life = lifeOn(Gc, clim, H, rng.fork('life'), { G, soil, E, h });
+  {
+    const S = life.summary(life.env);
+    log(`life: land ${(S.landCover * 100).toFixed(0)}% covered (forest ${(S.forest * 100).toFixed(0)}%, open ${(S.open * 100).toFixed(0)}%), sea life ${(S.seaLife * 100).toFixed(0)}%, ${S.realms} realms`);
+  }
+  out.life = life;
+  return Object.assign(out, { h, h0, E, Gt, ht, tect: T, impacts: Ef, craters: T.impacts.events.concat(Ef.events), volcanoes, lith, rock, glaciers: ice, veg: E.veg, coasts: sea2, dunes, mesas, soil });
 }
 
 // Each fine cell's layers from the plates' record there: the basement (granite
@@ -312,17 +345,41 @@ function climateOpts(body, star) {
   };
 }
 // run it on heights from another grid (seaSrc: which source cells are sea, else below sea level)
-function climateOn(Gc, Gsrc, hsrc, o, seaSrc) {
+function climateOn(Gc, Gsrc, hsrc, o, seaSrc, veg) {
   const hc = new Float64Array(Gc.n), d = [0, 0, 0], uv = { face: 0, u: 0, v: 0 };
   const sea = seaSrc ? new Uint8Array(Gc.n) : null;
   for (let c = 0; c < Gc.n; c++) {
     d[0] = Gc.dir[c * 3]; d[1] = Gc.dir[c * 3 + 1]; d[2] = Gc.dir[c * 3 + 2]; hc[c] = Gsrc.sample(hsrc, d, uv);
     if (sea) sea[c] = seaSrc[Gsrc.cellAt(d[0], d[1], d[2])];
   }
-  const out = climate(Gc, { ...o, h: hc, sea });
+  const out = climate(Gc, { ...o, h: hc, sea, cover: veg ? veg.cover : null, forest: veg ? veg.forest : null });
   out.h = hc;
   return out;
 }
+// the life map on the climate grid; fine: { G, soil, E, h } to bring the fine epoch's soil,
+// groundwater and river nutrients up to it (else soil 1 m and groundwater deep)
+function lifeOn(Gc, clim, H, rng, fine) {
+  const n = Gc.n;
+  const env = { land: new Uint8Array(n), T: clim.Tann, Tm: clim.Tm, P: clim.Pann, Pm: clim.Pm, pet: new Float64Array(n), soil: new Float64Array(n).fill(1), wtd: new Float64Array(n).fill(30), upwell: clim.upwell, coastNutr: new Float64Array(n) };
+  for (let c = 0; c < n; c++) { env.land[c] = clim.sea[c] ? 0 : 1; env.pet[c] = petOf(clim.Tann[c], clim.Pann[c] / 1000); }
+  if (fine) {
+    const { G, soil, E, h } = fine, sum = new Float64Array(n), wsum = new Float64Array(n), cnt = new Float64Array(n), nut = new Float64Array(n);
+    let nmax = 0;
+    for (let c = 0; c < G.n; c++) {
+      const q = Gc.cellAt(G.dir[c * 3], G.dir[c * 3 + 1], G.dir[c * 3 + 2]);
+      if (h[c] >= 0) { sum[q] += soil.depth[c]; wsum[q] += soil.wtd[c]; cnt[q]++; }
+      else if (E.qs) { nut[q] += E.qs[c]; }
+    }
+    for (let q = 0; q < n; q++) { if (cnt[q]) { env.soil[q] = sum[q] / cnt[q]; env.wtd[q] = wsum[q] / cnt[q]; } nmax = Math.max(nmax, nut[q]); }
+    for (let q = 0; q < n; q++) env.coastNutr[q] = nmax > 0 ? Math.min(1, 10 * nut[q] / nmax) : 0;
+  }
+  const L = new LifeMap(Gc, H, rng).run(env, 20, 0.5);
+  L.env = env;
+  L.plantCover = new Float32Array(n);
+  for (let c = 0; c < n; c++) L.plantCover[c] = env.land[c] ? L.cover[c] : 0;
+  return L;
+}
+
 // potential evaporation (m/yr) from the yearly mean temperature (K) and rain (m/yr):
 // ~0.7 m/yr in a mild wet climate, 2-3 in a hot desert (its dry air drinks more), little
 // in the cold (where frozen ground sheds what falls: the tundra's countless lakes)

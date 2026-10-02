@@ -110,9 +110,12 @@ export function climate(G, opts) {
   // a locked water world's day side wears a thick cloud deck (a big part of why it stays mild)
   const cloud = new Float64Array(n);
   if (opts.locked && wet > 0.02 * n) { const ss = opts.substellar || [1, 0, 0]; for (let c = 0; c < n; c++) cloud[c] = 0.25 * Math.min(1, P) * Math.max(0, d[c * 3] * ss[0] + d[c * 3 + 1] * ss[1] + d[c * 3 + 2] * ss[2]); }
+  // (life's cover, if given: forests darken the land; snow on a forest still shows dark)
+  const vegCover = opts.cover || null, vegForest = opts.forest || null;
   const albedoOf = (c, Tc) => {
-    const base = (sea[c] ? 0.1 : 0.16) + cloud[c]; // (clouds even out land and sea, seen from space)
-    const ice = Tc < 261 ? 1 : Tc < 271 ? (271 - Tc) / 10 : 0;
+    const darken = vegCover && !sea[c] ? 0.05 * vegCover[c] * (0.4 + 0.6 * (vegForest ? vegForest[c] : 0)) : 0;
+    const base = (sea[c] ? 0.1 : 0.16 - darken) + cloud[c]; // (clouds even out land and sea, seen from space)
+    const ice = (Tc < 261 ? 1 : Tc < 271 ? (271 - Tc) / 10 : 0) * (vegForest && !sea[c] ? 1 - 0.5 * vegForest[c] * (vegCover ? vegCover[c] : 1) : 1);
     return Math.min(0.8, base + (0.6 - base) * ice + (opts.albedo ?? 0.3) - 0.22);
   };
   // the poleward diffusion of band means in x = sin(lat): d/dx (D (1 - x^2) dT/dx), implicit (tridiagonal)
@@ -199,7 +202,7 @@ export function climate(G, opts) {
       stab[c] = dm.clamp(1 + (Tmm[c] + lift - Tb[bandOf[c]]) / 8, 0.2, 2) * (1 - 0.8 * coolCoast[c]);
     }
     const wind = windField(G, lat, itcz, nH, opts.locked ? opts.substellar : null, spin);
-    rainMonth(G, geo, h, sea, Tmm, Tair, stab, wind, itcz, lat, Pm.subarray(m * n, (m + 1) * n), opts.locked);
+    rainMonth(G, geo, h, sea, Tmm, Tair, stab, wind, itcz, lat, Pm.subarray(m * n, (m + 1) * n), opts.locked, vegCover);
   }
   // global scale: ~1000 mm/yr on an Earth, rising ~2.5%/K, with the sea's share
   let ocean = 0, tot = 0;
@@ -219,7 +222,7 @@ export function climate(G, opts) {
     Tann[c] = tS / MONTHS; Pann[c] = pS; snow[c] = sn;
     koppen[c] = sea[c] ? 'sea' : koppenOf(c, n, Tm, Pm, lat[c] >= 0);
   }
-  return { Tm, Pm, Tann, Pann, snow, koppen, sea };
+  return { Tm, Pm, Tann, Pann, snow, koppen, sea, upwell: cur.cold };
 }
 
 // each neighbour link's direction as (east, north) unit components: from the
@@ -304,7 +307,7 @@ function windField(G, lat, itcz, nH, substellar, spin = 1) {
 // a month's rain: evaporation, carried downwind, rained out where air rises or cools.
 // T: the ground's temperature (evaporation); Tair: the air's (what it can hold);
 // stab: how readily the air rises off this ground this month (warm ground, unstable)
-function rainMonth(G, geo, h, sea, T, Tair, stab, wind, itcz, lat, out, locked) {
+function rainMonth(G, geo, h, sea, T, Tair, stab, wind, itcz, lat, out, locked, cover) {
   const n = G.n;
   const qs = (t) => dm.exp(0.0687 * (t - 273)); // water the air can hold (relative, Clausius-Clapeyron)
   // (a cell's evaporation fills only a small part of what the air holds: air crossing a
@@ -341,7 +344,10 @@ function rainMonth(G, geo, h, sea, T, Tair, stab, wind, itcz, lat, out, locked) 
         const along = geo.inE[k] * wind.u[o] + geo.inN[k] * wind.v[o];
         if (along > 0) { inflow += along * q[o]; wsum += along; }
       }
-      const E = sea[c] ? Es[c] : Math.min(0.6 * Es[c], 0.6 * prev[c]);
+      // (land hands back what rained on it: bare ground ~20%, plant cover up to ~70%:
+      // forests carry the rain far inland, the Amazon's way)
+      const back = cover ? 0.2 + 0.5 * cover[c] : 0.6;
+      const E = sea[c] ? Es[c] : Math.min(back * Es[c], back * prev[c]);
       const held = E + (wsum > 0 ? inflow / wsum * 0.99 : 0);
       // too much for the air to hold (cold): it comes out
       const cap = qs(Tair[c]) * 1.2;

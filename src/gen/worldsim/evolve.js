@@ -43,6 +43,7 @@ import { hzSeff } from '../star.js';
 import { equilibriumTemp } from '../bodies.js';
 import { surfaceLiquids, mainLiquid, pSat } from './liquids.js';
 import { seaPH } from './materials.js';
+import { SOLVENTS, energyOf, backboneOf } from './biochem.js';
 
 const LEVELS = ['none', 'microbial mats', 'vascular flora', 'complex biosphere'];
 // life's stages, and the key each one's time goes under in `life`
@@ -162,6 +163,7 @@ export function evolveWorld(ctx) {
   let regime = 'mobile', dynamo = true, tStop = null, tDyn = null;
   let life = { origin: null, photo: null, goe: null, euk: null, complex: null, animals: null, plants: null, landAnimals: null, extinct: null };
   let stage = 0, div = 0, everLife = false, lastSterile = null, offFor = 0, snowSince = 0;
+  let solvent = null, backbone = null;   // life's chemistry (biochem.js), set when it starts
   const regained = new Uint8Array(9);   // stages once evolved and lost (relatives remain: easier again)
   const extinctions = [], bigImpacts = [], lips = [];
   const radiations = [];        // [t, loss]: the emptied world's boost to new forms
@@ -365,7 +367,20 @@ export function evolveWorld(ctx) {
     // thin air: barely above freezing); microbes live to ~395 K in liquid water,
     // complex cells to ~330, animals a little less
     const tBoil = boilingPoint(P);
-    const habitable = liquid && T > 271 && T < Math.min(tBoil - 5, 395);
+    const waterOK = liquid && T > 271 && T < Math.min(tBoil - 5, 395);
+    // other places life could work (biochem.js): water under ice kept liquid by the
+    // interior's heat (at the vents: no light), ammonia-water seas below water's freezing,
+    // a Titan's methane and ethane
+    // (a liquid ocean under the ice needs strong tides, Europa's and Enceladus', or a big
+    // body with real internal heat, Ganymede's and Titan's)
+    const iceOK = !waterOK && oceans > 0.001 && T < 271 && water0 > 0.01 && (tidal > 0.3 || (massE > 0.01 && H > 0.5));
+    const amwOK = !waterOK && water0 > 0.05 && oceans > 0.001 && T >= 240 && T < 273;
+    const hcOK = titanish && T > 90 && T < 185 && P > 0.12;
+    const solventNow = waterOK ? 'water' : amwOK ? 'ammonia-water' : iceOK ? 'under ice' : hcOK ? 'hydrocarbon' : null;
+    // (life keeps working where its solvent still is; water life carries on in ammonia-water
+    // or under the ice, and ammonia-water life in water)
+    const fits = (sv) => sv === solventNow || (sv === 'water' && (solventNow === 'ammonia-water' || solventNow === 'under ice')) || (sv === 'ammonia-water' && (solventNow === 'water' || solventNow === 'under ice')) || (sv === 'under ice' && solventNow === 'water');
+    const habitable = stage === 0 ? solventNow != null : solvent != null && fits(solvent);
     if (stage >= 4 && T > (stage >= 6 ? 322 : 332)) {
       const keep = T > 332 ? 3 : 5;
       die(t, 1 - DIV_CAP[keep] / Math.max(DIV_CAP[stage], 1e-3), 'heat', `the world grows too hot (${Math.round(T - 273)} C) for ${STAGES[stage]}`);
@@ -377,8 +392,12 @@ export function evolveWorld(ctx) {
     // life's start: chemistry's chance, more with energy to drive it (vents' heat, tides,
     // shores drying and wetting)
     const chem = dm.clamp(0.5 + 0.5 * dm.sqrt(Math.max(H, 0)), 0.3, 2) * (landAt(t) > 0.02 ? 1.2 : 1);
-    if (stage === 0 && habitable && lifeRate > 0 && rng.next() < 1 - dm.exp(-lifeRate * chem * dt)) {
+    // (starting in the dark under ice, without shores drying and wetting, is much harder)
+    const startK = { water: 1, 'ammonia-water': 0.3, 'under ice': 0.004, hydrocarbon: 0.01 }[solventNow] ?? 0;
+    if (stage === 0 && habitable && lifeRate > 0 && rng.next() < 1 - dm.exp(-lifeRate * chem * startK * dt)) {
       stage = 1; div = 0.005; everLife = true; life.origin = t; life.extinct = null;
+      solvent = solventNow;
+      backbone = backboneOf({ solvent: solvent === 'hydrocarbon' ? 'hydrocarbon' : solvent, air: { O2: pO2 } }, CO, lr);
       ev(t, 'life', lastSterile != null ? 'life arises again in the sea' : 'life arises in the sea');
     }
     // big impacts this step: the largest one's dust and soot
@@ -435,7 +454,10 @@ export function evolveWorld(ctx) {
       // warmth: chemistry quickens ~2x per 10 K toward an optimum, then falls away to the
       // stage's heat limit (microbes ~395 K, complex cells ~332, animals ~322)
       const tTop = stage >= 5 ? 322 : stage >= 4 ? 332 : Math.min(tBoil - 5, 395);
-      const warmth = !habitable ? 0.05 : dm.clamp(dm.pow(2, (Math.min(T, tTop - 12) - 288) / 10), 0.2, 3) * dm.clamp((tTop - T) / 12, 0, 1);
+      // (in a colder solvent, chemistry on its own scale: slower, but not frozen solid)
+      const warmth = !habitable ? 0.05 : solvent === 'water' || solvent === 'under ice'
+        ? dm.clamp(dm.pow(2, (Math.min(T, tTop - 12) - 288) / 10), 0.2, 3) * dm.clamp((tTop - T) / 12, 0, 1)
+        : dm.clamp(dm.pow(2, (T - 288) / 25), 0.002, 1) * (SOLVENTS[solvent === 'hydrocarbon' ? 'hydrocarbon' : 'ammonia-water'] || SOLVENTS.water).pace;
       // light: photosynthesis saturates (more light, less and less gain)
       const prod = 1.5 * lightNow / (lightNow + 0.5);
       // radiation at the surface (x Earth's today): the star's UV and particles, cut by
@@ -459,6 +481,11 @@ export function evolveWorld(ctx) {
       const next = stage + 1;
       const grad = (1 + 0.3 * Math.min(H, 3)) * (pO2 > 0.01 ? 1.3 : 1);
       let rate = 0;
+      // how far life's chemistry lets it climb: in the dark under ice, no further than
+      // microbes at the vents; without water in the open, no oxygen-making photosynthesis
+      // (stage 3 needs it) so no further than light-eating microbes; and the best energy
+      // the air offers caps the rest (without free oxygen, no animals)
+      const reach = solventNow === 'under ice' ? 1 : solvent !== 'water' && solvent !== 'under ice' ? 2 : 8;
       if (next === 2) rate = warmth * seaRad(500) * dm.pow(dm.clamp(parK * S(t), 0, 2), 0.7) * (lightNow > 0.005 ? 1 : 0);
       else if (next === 3) rate = warmth * prod / (0.4 + 0.6 * H) * dm.smoothstep(-2, 2, redox) * (pH2 / P < 0.01 ? 1 : 0); // (a reduced mantle's gases, or hydrogen air, mop up the oxygen)
       else if (next === 4) rate = warmth * prod * seaRad(500) * (pO2 > 0 ? 1 : 0);
@@ -474,6 +501,7 @@ export function evolveWorld(ctx) {
         for (let k = keep + 1; k <= stage; k++) { life[STAGE_KEYS[k]] = null; regained[k] = 1; }
         stage = keep;
       }
+      if (next > reach) rate = 0;
       if (next <= 8 && rate > 0) {
         const fill = dm.clamp(div / Math.max(DIV_CAP[stage], 1e-4), 0.05, 1.5);
         const hz = rate * grad * boost * dm.sqrt(fill) * (regained[next] ? 2 : 1) * dt / difficulty[next];
@@ -562,6 +590,8 @@ export function evolveWorld(ctx) {
     air, airType: airTypeOf(air, P, { titanish, runaway, oceans, T }), redox, CO, field: fieldAt(age, dynamo, regime === 'stagnant' ? 0.6 : 1),
     liquids, mainLiquid: main ? main.name : null, mainLiquidDepth: main ? main.depthM : 0,
     seaPH: oceans > 0.001 ? seaPH(pCO2, pSO2) : null,
+    solvent: stage > 0 ? solvent : null, backbone: stage > 0 ? backbone : null,
+    metabolisms: stage > 0 ? energyOf({ air, P, solvent, oceans, redox }).pairs.map((p) => p[0]) : [],
     extinctions, bigImpacts, floodBasalts: lips, eruption, recovering,
     plantsMyr, floraStage, floraName: ['bare', 'microbial crusts', 'ground cover', 'shrubs and ferns', 'forests', 'diverse forests and grasslands'][floraStage + 1], maxTreeM,
     series, events, carbon,
