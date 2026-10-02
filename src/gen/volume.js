@@ -83,7 +83,7 @@ export class VolumeField {
     g.sample(x, y, z, MINW, s);
     let hard, cave;
     if (g.snap) {
-      const rt = g.snap.rock(x, y, z);
+      const rt = g.snap.rockAt(x, y, z, s[S_H] / g.hScale);
       hard = ROCK_HARD[rt] ?? 0.6; cave = ROCK_CAVE[rt] ?? 0.05;
       if (g.snap.ice(x, y, z) > 10) { hard *= 0.25; cave = 0; }
     } else {

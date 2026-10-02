@@ -130,6 +130,17 @@ export class SimGrid {
     const a00 = field[b], a10 = field[b + 1], a01 = field[b + N], a11 = field[b + N + 1];
     return (a00 * (1 - fx) + a10 * fx) * (1 - fy) + (a01 * (1 - fx) + a11 * fx) * fy;
   }
+  // the four cells sample() blends at d and their weights: cells into c, weights into w
+  corners(d, c, w, uv = { face: 0, u: 0, v: 0 }) {
+    const N = this.N;
+    faceUVFromDir(d, uv);
+    const x = Math.min(N - 1, Math.max(0, (uv.u + 1) / 2 * N - 0.5));
+    const y = Math.min(N - 1, Math.max(0, (uv.v + 1) / 2 * N - 0.5));
+    const i0 = Math.min(N - 2, Math.floor(x)), j0 = Math.min(N - 2, Math.floor(y));
+    const fx = x - i0, fy = y - j0, b = uv.face * N * N + j0 * N + i0;
+    c[0] = b; c[1] = b + 1; c[2] = b + N; c[3] = b + N + 1;
+    w[0] = (1 - fx) * (1 - fy); w[1] = fx * (1 - fy); w[2] = (1 - fx) * fy; w[3] = fx * fy;
+  }
 }
 
 // The same grid for reading a finished simulation (the game's samplers, one per body in
@@ -180,6 +191,7 @@ GridLite.prototype.cellAt = SimGrid.prototype.cellAt;
 GridLite.prototype._edge = SimGrid.prototype._edge;
 GridLite.prototype.cellOf = SimGrid.prototype.cellOf;
 GridLite.prototype.sample = SimGrid.prototype.sample;
+GridLite.prototype.corners = SimGrid.prototype.corners;
 
 function triArea(a, b, c) {
   const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];

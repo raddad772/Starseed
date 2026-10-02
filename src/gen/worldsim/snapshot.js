@@ -15,6 +15,7 @@
 // Versioned: a cache keyed by seed, body and SIM_VERSION drops stale ones.
 
 import { GridLite } from './grid.js';
+import * as dm from '../../core/dmath.js';
 import { Noise3 } from '../../core/noise.js';
 
 export const SIM_VERSION = 5;
@@ -119,6 +120,17 @@ export class SnapshotSampler {
       }
       if (!sea) this.inland[c] = 1;
     }
+    // how many cells from the sea's own cells each cell is (0 in the sea, capped at 8)
+    this.seaHops = new Uint8Array(n).fill(8);
+    const q = new Int32Array(n);
+    let qn = 0;
+    for (let c = 0; c < n; c++) if (s.h[c] < 0 && !(s.water[c] > -1e8)) { this.seaHops[c] = 0; q[qn++] = c; }
+    for (let i = 0; i < qn; i++) {
+      const c = q[i], d = this.seaHops[c] + 1;
+      if (d >= 8) continue;
+      const k = G.nbrs(c, nb);
+      for (let e = 0; e < k; e++) { const o = nb[e]; if (this.seaHops[o] > d) { this.seaHops[o] = d; q[qn++] = o; } }
+    }
   }
   _d(x, y, z) { const d = this.d; d[0] = x; d[1] = y; d[2] = z; return d; }
   // smooth (bilinear) fields
@@ -127,6 +139,7 @@ export class SnapshotSampler {
   ice(x, y, z) { return this.G.sample(this.s.ice, this._d(x, y, z), this.uv); }
   river(x, y, z) { return this.G.sample(this.s.river, this._d(x, y, z), this.uv) / 255; }
   melt(x, y, z) { return this.G.sample(this.s.melt, this._d(x, y, z), this.uv) / 255; }
+  seaDist(x, y, z) { return this.G.sample(this.seaHops, this._d(x, y, z), this.uv); }   // (in cells)
   // the cell cell c drains into (-1 none)
   rcvOf(c) {
     const slot = this.s.rcv[c];
@@ -137,6 +150,37 @@ export class SnapshotSampler {
   // the nearest cell's (categories, and lakes: a lake's surface is level)
   cell(x, y, z) { return this.G.cellAt(x, y, z); }
   rock(x, y, z) { return this.s.rock[this.G.cellAt(x, y, z)]; }
+  // the rock showing at a point whose ground stands at h (m, the sim's heights): the cells
+  // round it, where they hold different rock, read as a stack, the rock of the higher cells
+  // over that of the lower. Where the ground stands above the cells' blend the upper rock
+  // shows, where a valley cuts below it the lower; on even ground, the nearer cells'. So a
+  // contact runs along the ground's own contours (up the valleys, round the spurs, along a
+  // plain's low rises), as on a geological map, not along the grid. Weathered rock and soil
+  // creep and wash across a contact, so where nothing much decides it (even ground) the two
+  // grade into each other over a few hundred metres; where the ground does, it's sharp.
+  // Returns the rock; this.rock2 the other one there and this.rockMix its share (0..0.5)
+  rockAt(x, y, z, h) {
+    const s = this.s, c = this._rc || (this._rc = new Int32Array(4)), w = this._rw || (this._rw = new Float64Array(4));
+    this.G.corners(this._d(x, y, z), c, w, this.uv);
+    const r0 = s.rock[c[0]];
+    this.rock2 = r0; this.rockMix = 0;
+    if (r0 === s.rock[c[1]] && r0 === s.rock[c[2]] && r0 === s.rock[c[3]]) return r0;
+    let hb = 0, lo = 1e9, hi = -1e9;
+    for (let k = 0; k < 4; k++) { const hk = s.h[c[k]]; hb += w[k] * hk; lo = Math.min(lo, hk); hi = Math.max(hi, hk); }
+    const span = Math.max(60, hi - lo), e = (h - hb) / span;
+    // each rock: its share of the blend, raised where the ground stands on its side of the stack
+    let best = -1, bs = -1e9, sec = -1, ss = -1e9;
+    for (let k = 0; k < 4; k++) {
+      const r = s.rock[c[k]];
+      if (r === best || r === sec) continue;
+      let W = 0, H = 0;
+      for (let q = 0; q < 4; q++) if (s.rock[c[q]] === r) { W += w[q]; H += w[q] * s.h[c[q]]; }
+      const score = W + 1.5 * e * (H / W - hb) / span;
+      if (score > bs) { sec = best; ss = bs; bs = score; best = r; } else if (score > ss) { ss = score; sec = r; }
+    }
+    if (sec >= 0) { this.rock2 = sec; this.rockMix = 0.5 * (1 - dm.smoothstep(0, 0.12, bs - ss)); }
+    return best;
+  }
   lake(x, y, z) { const w = this.s.water[this.G.cellAt(x, y, z)]; return w > -1e8 ? w : null; }
   // the lake level here: the cell's own lake (own), or a neighbouring cell's lake whose
   // centre is within a cell's spacing (it fills its basin out to where the ground rises
