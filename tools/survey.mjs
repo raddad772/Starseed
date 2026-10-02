@@ -21,6 +21,7 @@ import { TerrainGenerator, S_H, S_LEN } from '../src/gen/terrain.js';
 import { runTile, refineLevel, tileAt } from '../src/gen/localsim.js';
 import { newRefine, packTile, putTile, toStorable, fromStorable, TileSet, RefineReader } from '../src/gen/worldsim/refine.js';
 import { TILE_VERSION } from '../src/gen/tileshape.js';
+import { dunePatches } from '../src/gen/dunes.js';
 import { faceUVFromDir } from '../src/gen/cubesphere.js';
 import { writePNG } from './png.mjs';
 
@@ -28,7 +29,7 @@ const args = process.argv.slice(2), opt = {}, worlds = [];
 for (let i = 0; i < args.length; i++) { if (args[i].startsWith('--')) opt[args[i].slice(2)] = args[++i]; else worlds.push(args[i]); }
 const OUT = opt.out || 'survey', CACHE = opt.cache || OUT, W = +(opt.W || 1200), MARKS = +(opt.marks || 6);
 fs.mkdirSync(OUT, { recursive: true }); fs.mkdirSync(CACHE, { recursive: true });
-const TY = { h: Float32Array, water: Float32Array, rock: Uint8Array, ice: Uint16Array, river: Uint8Array, melt: Uint8Array, relief: Uint16Array, rcv: Uint8Array, Tsea: Float32Array, P: Float32Array, cover: Float32Array, forest: Float32Array, open: Float32Array, cloud: Float32Array, cloudPx: Uint8Array, crat: Uint8Array };
+const TY = { h: Float32Array, water: Float32Array, rock: Uint8Array, ice: Uint16Array, river: Uint8Array, melt: Uint8Array, relief: Uint16Array, rcv: Uint8Array, Tsea: Float32Array, P: Float32Array, cover: Float32Array, forest: Float32Array, open: Float32Array, cloud: Float32Array, cloudPx: Uint8Array, crat: Uint8Array, dunes: Uint8Array };
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
 const list = fs.existsSync(path.join(OUT, 'survey.json')) ? JSON.parse(fs.readFileSync(path.join(OUT, 'survey.json'))) : {};
 
@@ -41,7 +42,7 @@ for (const w of worlds) {
   // the world sim (and its landmarks), cached
   const sf = path.join(CACHE, `snap-${seed}-${b.id}-N${N}-v${SIM_VERSION}.json`);
   let snap;
-  if (fs.existsSync(sf)) { snap = JSON.parse(fs.readFileSync(sf)); for (const k in TY) if (snap[k]) snap[k] = TY[k].from(snap[k]); }
+  if (fs.existsSync(sf)) { snap = JSON.parse(fs.readFileSync(sf)); for (const k in TY) if (snap[k]) snap[k] = TY[k].from(snap[k]); if (snap.dunes) snap.dunePatch = dunePatches(); }
   else {
     const t0 = performance.now();
     const Wd = worldSim(b, sys.bodies[0], { N, myr: 150, steps: 40, ...simOptsFor(b, sys), log: () => {} });
@@ -51,7 +52,7 @@ for (const w of worlds) {
       const dry = !b.terrain.liquid || b.terrain.liquid === 'lava';
       snap.landmarks = landmarks(nameLandmarks(F, `${seed}|${b.id}`, dry), dry);
     } catch (e) { snap.landmarks = []; }
-    const o = {}; for (const k in snap) o[k] = ArrayBuffer.isView(snap[k]) ? Array.from(snap[k]) : snap[k];
+    const o = {}; for (const k in snap) if (k !== 'dunePatch') o[k] = ArrayBuffer.isView(snap[k]) ? Array.from(snap[k]) : snap[k];
     fs.writeFileSync(sf, JSON.stringify(o));
     log(`  world sim in ${((performance.now() - t0) / 1000).toFixed(0)} s`);
   }
