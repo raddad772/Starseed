@@ -362,7 +362,9 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
   const drop = opts.drop ?? (region ? dm.clamp(ST.rel * 0.3, 5, 700) : 0);
   // (a refinement's sea stood lower through the ice ages, by lowstand m: its rivers ran out
   // across the shelf and cut their valleys down to it; then it rose, and drowned them)
-  const lowstand = rf ? (opts.lowstand ?? 100) : 0, rise = Math.floor(steps * 0.85);
+  // (one sea-level history: the refinement cuts its valleys; a finer level, on what it cut,
+  // only what its own scale adds, the low sea's fall shrinking with the cells as relief does)
+  const lowstand = rf ? (opts.lowstand ?? 100) * (pyr ? dm.pow(Math.min(1, 4 * cell / S.G.spacing), 0.7) : 1) : 0, rise = Math.floor(steps * 0.85);
   for (let c = 0; c < n; c++) {
     const out = edge(c) && !wet[c] && E.A[c] >= 0.08 * aOut;
     E.base[c] = (wet[c] === 1 && B[c] < -lowstand) || wet[c] === 2 || out ? 1 : 0;
@@ -372,7 +374,16 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
   // refinement), a few hundred metres to a few km): uplift keeping pace with the wearing down,
   // as the world sim had it
   const sig = rf ? 4 : Math.round(NG / (region ? 10 : 20)), mean = new Float64Array(n), btmp = new Float64Array(NG);
-  const K0 = opts.K0 ?? (rf ? 3 : region ? 0.3 : 1.2e-2), kd0 = opts.kd0 ?? (rf ? 0.25 : region ? 0.15 : 0.06);
+  // (stream power's rate by the cell: each level runs the same number of steps, and finer
+  // features form proportionally faster; so each level adds about the relief its scale holds)
+  const K0 = opts.K0 ?? (rf ? 1.6 * dm.pow(cell / 1000, 0.85) : region ? 0.3 : 1.2e-2), kd0 = opts.kd0 ?? (rf ? 0.25 : region ? 0.15 : 0.06);
+  // channel heads: water cuts only where enough of it gathers (m^2 of rain-weighted drainage);
+  // below that the ground is hillslope, shaped by creep and collapse: smooth between valleys,
+  // where real terrain stops being rough at every scale
+  const Ac = opts.Ac ?? 3e4;
+  // (the land's mean held to the starting surface's through the run, or let wear and put back at
+  // the end: the restore)
+  const holdMean = opts.restore ? false : true;
   if (rf) readRock();
   const talus = new Float32Array(n), hd = new Float64Array(n), tmp = new Float64Array(n);
   const { nStart, nbr, nDist, area } = G;
@@ -387,7 +398,7 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
       const fs = fside[k];
       for (let c = 0; c < n; c++) if (fs[c] && !E.base[c]) { const dz = 0.5 * f.dz * fs[c]; h[c] += dz; bedOff[c] -= dz; }
     });
-    if (st % 2 === 1) {
+    if (st % 2 === 1 && holdMean) {
       for (let c = 0; c < n; c++) mean[c] = h[c] - B[c];
       blur(mean, sig, btmp);
       for (let c = 0; c < n; c++) if (!E.base[c]) h[c] -= 0.3 * mean[c];
@@ -402,7 +413,7 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
       const c = order[k];
       if (E.base[c]) continue;
       const r = rcv[c];
-      if (r < 0 || fill[c] - h[c] > 0.5) continue;              // (a pond: nothing cut)
+      if (r < 0 || fill[c] - h[c] > 0.5 || A[c] < Ac) continue;  // (a pond, or hillslope: nothing cut)
       const hr = h[r];
       if (h[c] <= hr) continue;
       const soft = 1 - hd[c];
@@ -446,10 +457,56 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
       hdI[c] = Math.round(255 * hardAt(c, h[c]));
       h0[c] = Math.round(h[c] * 4096); BI[c] = Math.round(B[c] * 4096);
     }
-    return { NG, n, steps, rise: lowstand ? rise : -1, sz, flags, a, hd: hdI, h0, B: BI, aref, K0, kd0, sig, salt: jk };
+    return { NG, n, steps, rise: lowstand ? rise : -1, sz, flags, a, hd: hdI, h0, B: BI, aref, K0, kd0, sig, salt: jk, Ac: Math.max(1, Math.round(Ac / (aref / 16))) };
   };
+  const out0 = {};
   const fromInts = (r) => { for (let c = 0; c < n; c++) { h[c] = r.h[c] / 4096; talus[c] = r.talus[c] / 4096; } };
+  // the relief this level added, held to the terrain's fractal scaling: what it added below its
+  // parent's cell (the history's shapes, all of them) scaled so its roughness over 2 cells is
+  // the parent's over 4 (one of its cells) times 2^-2H: each level 4^-H the relief of the one
+  // above at a quarter the scale (H = 3 - D, the surface's fractal dimension: ~0.7-0.8 for
+  // mountains, smoother for old worn land). Slopes made too steep for their rock then collapse
+  const holdFractal = () => {
+    const H = opts.H ?? 0.75, lagP = 4, lag = 2;
+    let gB = 0, gBl = 0, gD = 0, cBD = 0, nP = 0, nl = 0;
+    for (let j = MARGIN; j < NG - MARGIN; j += 2) for (let i = MARGIN; i < NG - MARGIN; i += 2) {
+      const c = j * NG + i;
+      if (wet[c] || h[c] < 0) continue;
+      for (const o of [c + lagP, c + lagP * NG]) { const d = B[o] - B[c]; gB += d * d; nP++; }
+      for (const o of [c + lag, c + lag * NG]) {
+        const db = B[o] - B[c], dd2 = (h[o] - B[o]) - (h[c] - B[c]);
+        gBl += db * db; gD += dd2 * dd2; cBD += db * dd2; nl++;
+      }
+    }
+    if (nP < 200 || gD <= 0) return 1;
+    gB /= nP; gBl /= nl; gD /= nl; cBD /= nl;
+    // (gBl + 2 f cBD + f^2 gD = target)
+    const target = gB * Math.pow(lag / lagP, 2 * H), disc = cBD * cBD - gD * (gBl - target);
+    let f = disc > 0 ? (-cBD + Math.sqrt(disc)) / gD : 0.2;
+    f = Math.max(0.02, Math.min(3, f));
+    for (let c = 0; c < n; c++) if (!E.base[c] && !wet[c]) h[c] = B[c] + f * (h[c] - B[c]);
+    if (f > 1) for (let pass = 0; pass < 8; pass++) for (let c = 0; c < n; c++) {
+      if (E.base[c]) continue;
+      const sc = 0.65 + 3.4 * hardAt(c, h[c]) ** 2;
+      for (let e = nStart[c]; e < nStart[c + 1]; e++) {
+        const o = nbr[e], dz = h[c] - h[o] - sc * nDist[e];
+        if (dz <= 0.01) continue;
+        const mv = dz * 0.5 * area[o] / (area[c] + area[o]);
+        h[c] -= mv; h[o] += mv * area[c] / area[o]; talus[o] += mv;
+      }
+    }
+    return f;
+  };
   const finish = () => {
+  // (the land's mean put back where the run let it wear: the difference over a cell of the level
+  // above, smoothly, as the crust rises back under land worn down)
+  if (!holdMean) {
+    const dm2 = new Float64Array(n);
+    for (let c = 0; c < n; c++) dm2[c] = B[c] - h[c];
+    blur(dm2, sig, btmp);
+    for (let c = 0; c < n; c++) if (!E.base[c] && !wet[c]) h[c] += dm2[c];
+  }
+  if (rf && opts.H !== 0) out0.fractal = holdFractal();
   E.nStep = steps; E.route(); E.drain();
   // a refinement's water: the sea where it reaches (below the datum and joined to the world
   // sim's sea through ground below it), its lakes; and its rock, with the alluvium laid down
@@ -513,13 +570,13 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
     // since the sea rose, its waves: a thin point of soft rock out in the water is cut away,
     // a shallow cove all but closed in by land fills with sand (beaches, bay bars): the fine
     // fringe of the drowned land wears to a coast; hard headlands stand
-    const SAND = ROCKS.findIndex((r) => r.name === 'quartz sand');
+    const SAND = ROCKS.findIndex((r) => r.name === 'quartz sand'), waveH = dm.pow(Math.min(1, cell / 900), 0.5);   // (what waves cut: less on a finer grid's smaller points)
     for (let it = 0; it < (opts.waves ?? (pyr ? 3 : 6)); it++) {
       for (let c = 0; c < n; c++) {
         if (edge(c) || wet[c] === 2) continue;
         let ns = 0;
         for (let e = nStart[c]; e < nStart[c + 1]; e++) if (water[nbr[e]] === 1) ns++;
-        if (!water[c] && ns >= 5 && h[c] < 10 + 60 * (1 - hardAt(c))) { water[c] = 1; h[c] = Math.min(h[c], -2); }
+        if (!water[c] && ns >= 5 && h[c] < waveH * (10 + 60 * (1 - hardAt(c)))) { water[c] = 1; h[c] = Math.min(h[c], -2); }
         else if (water[c] === 1 && ns <= 2 && h[c] > -25) { water[c] = 0; h[c] = 1; rockC[c] = SAND; }
       }
     }
@@ -534,7 +591,7 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
   }
   // the kept square
   const K = MT + 2 * KEEP, off = MARGIN - KEEP;
-  const out = { face, ti, tj, L, MT, KEEP, kind, region, cell, version: TILE_VERSION, suite: col.suite, rock: ST.rock, belt: ST.belt, faults: faults.length,
+  const out = { ...out0, face, ti, tj, L, MT, KEEP, kind, region, cell, version: TILE_VERSION, suite: col.suite, rock: ST.rock, belt: ST.belt, faults: faults.length,
     h: new Float32Array(K * K), hard: new Uint8Array(K * K), talus: new Uint8Array(K * K), flow: new Uint8Array(K * K), rcv: new Uint8Array(K * K) };
   if (rf) { out.rockC = new Uint8Array(K * K); out.water = new Uint8Array(K * K); }
   const amax = dm.log(1e7 * (cell / 4) * (cell / 4));

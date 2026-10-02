@@ -76,7 +76,14 @@ export class WorldSims {
     for (let i = 0; i < nw; i++) {
       const w = { worker: new Worker(new URL('../workers/worldsimWorker.js', import.meta.url), { type: 'module' }), job: null };
       w.worker.onmessage = (e) => this._onMessage(w, e.data);
-      w.worker.onerror = (e) => { console.error('world-sim worker error', e.message || e); if (w.job) this.status.set(w.job.id, 'failed'); w.job = null; this._next(); };
+      w.worker.onerror = (e) => {
+        console.error('world-sim worker error', e.message || e);
+        const job = w.job;
+        if (job && job.kind === 'pyr') job.reject(new Error(e.message || 'worker error'));
+        else if (job && job.kind === 'refine') this.refine.get(job.id).status = 'failed';
+        else if (job) this.status.set(job.id, 'failed');
+        w.job = null; this._next();
+      };
       this.workers.push(w);
     }
     this.onReady = null;   // (bodyId, snap) => void
@@ -121,6 +128,17 @@ export class WorldSims {
     this._next();
   }
 
+  // a tile of a world's terrain pyramid (gen/terrainTiles.js) on a free worker, ahead of the
+  // sims and refinements queued: resolves to { h, rw } (or rejects)
+  requestPyr(id, L, face, ti, tj, parents) {
+    const snap = this.game.system.bodies[id].terrain.snapshot, refine = this.refine.get(id) && this.refine.get(id).R;
+    if (!snap || !refine) return Promise.reject(new Error('no refinement yet'));
+    return new Promise((resolve, reject) => {
+      this.queue.unshift({ kind: 'pyr', id, L, face, ti, tj, parents, snap, refine, resolve, reject });
+      this._next();
+    });
+  }
+
   // a world's refinement: from the cache, or its six faces queued (the start world's first)
   async requestRefine(id, snap) {
     if (this.refine.has(id)) return;
@@ -141,6 +159,10 @@ export class WorldSims {
       if (w.job || !this.queue.length) continue;
       const job = this.queue.shift();
       w.job = job;
+      if (job.kind === 'pyr') {
+        w.worker.postMessage({ type: 'pyr', job: job.id, seed: this.seed, body: job.id, L: job.L, face: job.face, ti: job.ti, tj: job.tj, snap: job.snap, refine: job.refine, parents: job.parents });
+        continue;
+      }
       if (job.kind === 'refine') {
         this.refine.get(job.id).status = 'running';
         w.worker.postMessage({ type: 'refine', job: job.id, seed: this.seed, body: job.id, face: job.face, snap: job.snap });
@@ -162,10 +184,13 @@ export class WorldSims {
       return;
     }
     if (m.type === 'error') {
-      console.error(`world ${w.job && w.job.kind === 'refine' ? 'refinement' : 'sim'} failed for body ${m.body}:`, m.message);
-      if (w.job && w.job.kind === 'refine') this.refine.get(m.body).status = 'failed'; else this.status.set(m.body, 'failed');
+      const job = w.job;
+      console.error(`world ${job && job.kind !== 'sim' ? job.kind : 'sim'} failed for body ${m.body}:`, m.message);
+      if (job && job.kind === 'pyr') job.reject(new Error(m.message));
+      else if (job && job.kind === 'refine') this.refine.get(m.body).status = 'failed'; else this.status.set(m.body, 'failed');
       w.job = null; this._next(); return;
     }
+    if (m.type === 'ptile') { const job = w.job; w.job = null; job.resolve({ h: m.h, rw: m.rw }); this._next(); return; }
     if (m.type === 'tile') { const st = this.refine.get(m.body); if (st && st.R) putTile(st.R, m.tile); return; }
     if (m.type === 'refined') {
       w.job = null;

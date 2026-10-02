@@ -7,15 +7,18 @@ import { analyzeSettlements } from '../gen/settlements.js';
 import { scatterFlora, floraSpecies, FLORA_KINDS } from '../gen/flora.js';
 import { terrainPortrait } from '../gen/portrait.js';
 import { VolumeField, buildVolumeChunk, volumeTransferables } from '../gen/volume.js';
+import { TileSet } from '../gen/worldsim/refine.js';
 
 const params = new Map();
 const gens = new Map();
 const fields = new Map();   // body|anchor -> VolumeField
+const pyrs = new Map();     // body -> its terrain pyramid's levels (L -> TileSet: sim/terrainTiles.js)
 
 function gen(id) {
   let g = gens.get(id);
   if (!g) {
     g = new TerrainGenerator(params.get(id));
+    if (g.snap && pyrs.has(id)) g.snap.attachPyr(pyrs.get(id));
     gens.set(id, g);
   }
   return g;
@@ -32,6 +35,18 @@ self.onmessage = (e) => {
       // a simulated world arrived (worldsim/snapshot.js): its generator reads it from now on
       const p = params.get(m.id);
       if (p) { params.set(m.id, { ...p, snapshot: m.snapshot }); gens.delete(m.id); }
+      return;
+    }
+    if (m.type === 'ptile' || m.type === 'ptileDrop') {
+      // a tile of its terrain pyramid (shared memory) in, or gone: the generator reads it at once
+      let P = pyrs.get(m.id);
+      if (!P) { P = new Map(); pyrs.set(m.id, P); }
+      let set = P.get(m.L);
+      if (!set) { set = new TileSet(m.L); P.set(m.L, set); }
+      if (m.type === 'ptile') set.put(m.face, m.ti, m.tj, m.tile); else set.tiles.delete(m.T);
+      const g = gens.get(m.id);
+      if (g && g.snap && g.snap.pyr !== P) g.snap.attachPyr(P);
+      for (const k of [...fields.keys()]) if (k.startsWith(m.id + '|')) fields.delete(k);
       return;
     }
     if (m.type === 'refine') {

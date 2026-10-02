@@ -162,10 +162,49 @@ export class PlanetTerrain {
         if (node.near) { this.pendingNear--; node.near = false; }
         if (gen !== this.generation || node.state !== 1) return;
         this.buildMesh(node, data);
+        // (made from the ground as it was before a tile arrived: made again)
+        if (node.restale) { node.restale = false; node.stale = true; }
       }, () => { this.pendingCount--; if (node.near) { this.pendingNear--; node.near = false; } node.state = 0; });
     } else if (node.state === 1 && node.job) {
       this.pool.reprioritize(node.job, this.priority(node, dist));
     }
+  }
+
+  // the ground changed in a patch of a face (u0..u1, v0..v1: a terrain tile arrived): the chunks
+  // over it are built again, each drawn as it was until its new mesh is in (and its plants
+  // scattered again on the new ground)
+  invalidate(face, u0, v0, u1, v1) {
+    const walk = (node) => {
+      const s = 2 / (1 << node.level), nu = -1 + node.ix * s, nv = -1 + node.iy * s;
+      if (node.face !== face || nu > u1 || nu + s < u0 || nv > v1 || nv + s < v0) return;
+      if (node.state === 2) node.stale = true;
+      else if (node.state === 1) node.restale = true;
+      if (node.children) for (const c of node.children) walk(c);
+    };
+    for (const r of this.roots) walk(r);
+  }
+
+  refresh(node, dist) {
+    node.stale = false;
+    const gen = this.generation;
+    node.refreshJob = this.pool.submit({
+      type: 'chunk', body: this.body.id, face: node.face, level: node.level, ix: node.ix, iy: node.iy, N: CHUNK_N,
+    }, this.priority(node, dist) + 1);
+    this.pendingCount++;
+    node.refreshJob.promise.then((data) => {
+      this.pendingCount--;
+      node.refreshJob = null;
+      if (gen !== this.generation || node.state !== 2 || !node.mesh) return;
+      const old = node.mesh, shown = old.visible;
+      this.group.remove(old); old.geometry.dispose(); old.material.dispose(); this.meshCount--;
+      this.buildMesh(node, data);
+      node.mesh.visible = shown;
+      if (node.flora) {
+        this.group.remove(node.flora); this.floraCount -= node.flora.userData.count;
+        for (const m of node.flora.children) m.dispose();
+        node.flora = null; node.floraJob = null;
+      }
+    }, () => { this.pendingCount--; node.refreshJob = null; node.stale = true; });
   }
 
   // the flora set, its clearings the body's own (shared with the world's flora field)
@@ -234,6 +273,7 @@ export class PlanetTerrain {
 
   show(node, dist) {
     if (dist < 50 && node.level > this.deepest) this.deepest = node.level;
+    if (node.stale && !node.refreshJob) this.refresh(node, dist);
     const m = node.mesh;
     m.visible = true;
     node.visible = true;
@@ -273,6 +313,8 @@ export class PlanetTerrain {
     if (node.job && node.state === 1) {
       if (this.pool.cancel(node.job)) { this.pendingCount--; if (node.near) { this.pendingNear--; node.near = false; } }
     }
+    if (node.refreshJob) { if (this.pool.cancel(node.refreshJob)) this.pendingCount--; node.refreshJob = null; }
+    node.stale = node.restale = false;
     if (node.mesh) {
       this.group.remove(node.mesh);
       node.mesh.geometry.dispose();

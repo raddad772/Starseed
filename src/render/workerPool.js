@@ -52,6 +52,14 @@ export class WorkerPool {
     if (this.gens) this.gens.delete(id);
   }
 
+  // a tile of a body's terrain pyramid (sim/terrainTiles.js), shared: in, or dropped
+  setPyrTile(id, L, face, ti, tj, tile) {
+    for (const w of this.workers) w.postMessage({ type: 'ptile', id, L, face, ti, tj, tile });
+  }
+  dropPyrTile(id, L, T) {
+    for (const w of this.workers) w.postMessage({ type: 'ptileDrop', id, L, T });
+  }
+
   // msg: { type, ... }, priority number. Returns a handle with .promise and .cancel()
   submit(msg, priority) {
     const job = this.nextJob++;

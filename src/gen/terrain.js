@@ -59,6 +59,7 @@ export class TerrainGenerator {
     this.snap = p.snapshot ? new SnapshotSampler(p.snapshot) : null;
     // its refinement (worldsim/refine.js): the surface its water cut, the sea's reach, the rock
     if (this.snap && p.refine) this.snap.attachRefine(p.refine);
+    if (this.snap && p.pyr) this.snap.attachPyr(p.pyr);
     // heights are real on worlds drawn at a tenth of their size, which makes a small body's real
     // relief a blob: it's held to ~6% of the drawn radius (no change for an Earth's or a Moon's)
     let rel = p.relief || 3000;
@@ -515,6 +516,15 @@ export class TerrainGenerator {
     // (the world's refinement where it has one: the world sim's surface with what its water cut)
     const ref = S.ref && S.ref.sample(S._d(x, y, z)) ? S.ref : null;
     let h = ref ? ref.h / this.hScale : S.h(x, y, z);
+    // (and the finer levels of the terrain's tiles where there are any, each blended in by how
+    // fully it covers the point: they fade into the coarser at the edges of what's been made)
+    let sea = ref ? ref.sea : -1, finest = ref ? S.refCell : 0;
+    if (S.pyr) for (const rd of S.pyrReaders()) {
+      if (!rd.sample(S._d(x, y, z))) continue;
+      h += (rd.h / this.hScale - h) * rd.w;
+      sea = sea < 0 ? rd.sea : sea + (rd.sea - sea) * rd.w;
+      if (rd.w > 0.5) finest = rd.cell;
+    }
     const h0 = h;
     const rel = S.relief(x, y, z);
     const mMask = dm.smoothstep(400, 2500, rel);
@@ -523,7 +533,7 @@ export class TerrainGenerator {
     // hills from the grid's spacing down (derivative-damped: eroded-looking); with a
     // refinement, only those finer than it resolves
     {
-      const lam0 = S.G.spacing, lamCut = ref ? 2 * S.refCell : 1e30;
+      const lam0 = S.G.spacing, lamCut = finest ? 2 * finest : 1e30;
       const hf = R / lam0;
       let fx = x * hf, fy = y * hf, fz = z * hf, nxs = x, nys = y, nzs = z;
       let sum = 0, a = 1, dx = 0, dy = 0, dz = 0, lam = lam0;
@@ -588,7 +598,7 @@ export class TerrainGenerator {
     // the sea's own cells, where the sim's surface is low enough for the ground's dips to reach
     // the datum (the shore then the ground's own contour, not the cells'); a dip below the
     // datum beyond that is dry land
-    else if (!lk && h < 0 && wl < -1e8 && (ref ? ref.sea < 0.02 : (h0 > 1.5 * amp || S.seaDist(x, y, z) > 1.5))) h = 0.5 - 0.02 * h;
+    else if (!lk && h < 0 && wl < -1e8 && (sea >= 0 ? sea < 0.02 : (h0 > 1.5 * amp || S.seaDist(x, y, z) > 1.5))) h = 0.5 - 0.02 * h;
     // tuyas: a flat lava cap where the ice's surface was (a small cone on it), flanks at ~35
     // degrees of glassy rubble down to the ground round it
     if (S.tuyaAt) {

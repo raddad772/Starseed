@@ -42,6 +42,7 @@ import { ItemVisuals } from './render/itemVisuals.js';
 import { MapView } from './ui/map.js';
 import { AudioEngine } from './audio.js';
 import * as U from './core/units.js';
+import { TerrainTiles } from './sim/terrainTiles.js';
 
 export const WARP_LEVELS = [1, 2, 4, 10, 50, 100, 1000, 10000, 100000];
 const PHYS_DT = 1 / 120;
@@ -68,7 +69,7 @@ export class Game {
     this.cloudNoise = makeCloudNoise(64);
     this.world = new WorldRenderer(this.engine, this.universe, this.pool, this.detailTex, this.cloudNoise);
     // simulated worlds (WORLDSIM.md step 7; ?worldsim=0 for the noise worlds, to compare)
-    if (opts.worldsim) { this.worldSims = new WorldSims(this, { N: opts.simN, workers: opts.simWorkers }); }
+    if (opts.worldsim) { this.worldSims = new WorldSims(this, { N: opts.simN, workers: opts.simWorkers }); this.tiles = new TerrainTiles(this); }
     this.lights = new LightRig(this.engine);
     this.t = 0;
     this.warpIndex = 0;
@@ -1496,6 +1497,7 @@ export class Game {
       this.players.forEach((p, i) => this.renderView(p, i === 0, dtReal));
     }
     this.setCur(null);
+    if (this.tiles) this.tiles.update(dtReal);   // (the terrain pyramid round the camera: sim/terrainTiles.js)
     this.pool.pump();
     this.setCur(this.players[0]); // (the sound is player 1's)
     this.audio.update(dtReal);
@@ -1623,7 +1625,9 @@ export class Game {
     const deepest = terr ? terr.deepest || 0 : 0;
     const deepEnough = space || !terr || deepest >= terr.maxLevel - 1;
     const near = space ? 1 : this.nearBuilt(terr);
-    if (pending === 0 && deepEnough && near >= 1) this.settleTime += dt; else this.settleTime = 0;
+    // (the terrain pyramid's tiles under the landing spot, made before the ground's drawn)
+    const tilesIn = !this.tiles || this.tiles.missing === 0 || this.loadTimer > 30;
+    if (pending === 0 && deepEnough && near >= 1 && tilesIn) this.settleTime += dt; else this.settleTime = 0;
     // progress: on the surface the terrain refines level by level under you
     // (later levels take longer: cubed to keep pace with the clock), then the
     // last tiles drain; in space only the tiles in view drain; then a settle

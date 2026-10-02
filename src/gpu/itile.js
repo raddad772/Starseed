@@ -178,7 +178,7 @@ export function runInt(T) {
       al[c] = h[c]; be[c] = 0; pt[c] = c;
       if (flags[c] & 1) continue;
       const k = rcv[c];
-      if (k === 8 || F[c] - h[c] > PONDQ) continue;
+      if (k === 8 || F[c] - h[c] > PONDQ || A[c] < T.Ac) continue;
       const r = nb(c, k);
       if (h[c] - h[r] <= 0) continue;
       const X = KH[hd[c]] * AP[apowIndex(A[c])], t = DIAG[k], e = CE[c * 2 + t];

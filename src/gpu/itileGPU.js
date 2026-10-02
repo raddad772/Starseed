@@ -7,7 +7,7 @@ import { hashInts } from '../core/rng.js';
 import { gridTables, hardTables, apowTable, PASSES } from './itile.js';
 
 const WGSL = /* wgsl */`
-struct Params { NG: u32, n: u32, salt: u32, PB: u32, NB: u32, RB: i32, axis: u32, pad: u32 };
+struct Params { NG: u32, n: u32, salt: u32, PB: u32, NB: u32, RB: i32, axis: u32, Ac: u32 };
 @group(0) @binding(0) var<uniform> P: Params;
 @group(0) @binding(1) var<storage, read> hIn: array<i32>;
 @group(0) @binding(2) var<storage, read_write> hOut: array<i32>;
@@ -140,7 +140,7 @@ fn floordiv(x: i32, m: i32) -> i32 { return select((x - (m - 1)) / m, x / m, x >
   alOut[c] = hIn[c]; beOut[c] = 0u; ptOut[c] = i32(c);
   if ((info[c] & 1u) != 0u) { return; }
   let k = rcv[c];
-  if (k == 8u || FIn[c] - hIn[c] > PONDQ) { return; }
+  if (k == 8u || FIn[c] - hIn[c] > PONDQ || AIn[c] < P.Ac) { return; }
   let r = nb(c, k);
   if (hIn[c] - hIn[r] <= 0) { return; }
   let hd = (info[c] >> 8u) & 255u;
@@ -262,7 +262,7 @@ export class ITileGPU {
     const wgN = Math.ceil(n / 256), wgB = Math.ceil(NB * NB / 64);
     for (let st = 0; st < T.steps; st++) {
       const salt = hashInts(st, T.salt) >>> 0;
-      for (const ax of [0, 1]) { pdata.set([NG, n, salt | 0, PB, NB, RB, ax, 0]); dev.queue.writeBuffer(params[ax], 0, pdata); }
+      for (const ax of [0, 1]) { pdata.set([NG, n, salt | 0, PB, NB, RB, ax, T.Ac | 0]); dev.queue.writeBuffer(params[ax], 0, pdata); }
       // (one compute pass a step: its dispatches run in order, each seeing the last one's writes)
       const enc = dev.createCommandEncoder(), cp = enc.beginComputePass();
       const pass = (entry, binds, wg, P = params[0]) => {
