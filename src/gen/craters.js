@@ -62,7 +62,11 @@ export function latticeCraters(f, i, j, D0, D1, nL, S, seed, R, Dair = 0) {
 // stamps the craters D in [Dlo, Dhi) (m across as drawn) onto B: heights on a tile's grid G
 // (localsim.js tileGrid) on face `face`. S: the snapshot's sampler; K: its craters' scales
 // ({ g, scale }); seed: the world's; R: its radius (m). Returns how many it drew.
-export function stampCraters(B, G, face, S, Dlo, Dhi, K, seed, R) {
+// (where a crater's ground is read for its plane: its middle and two rings, in its radii)
+const GP = [0, 0];
+for (let k = 0; k < 6; k++) GP.push(0.5 * dm.cos(k * dm.PI / 3), 0.5 * dm.sin(k * dm.PI / 3), dm.cos((k + 0.5) * dm.PI / 3), dm.sin((k + 0.5) * dm.PI / 3));
+const gd = [0, 0, 0];
+export function stampCraters(B, G, face, S, Dlo, Dhi, K, seed, R, hs = 1) {
   const NG = G.N, du = G.du, list = [];
   const d = [0, 0, 0], uv = { face: 0, u: 0, v: 0 };
   const uvM = QPI * R * 0.7;      // (metres per unit of a face's u, v at the least: near its corners)
@@ -107,21 +111,23 @@ export function stampCraters(B, G, face, S, Dlo, Dhi, K, seed, R) {
     let ex = ref[1] * at[2] - ref[2] * at[1], ey = ref[2] * at[0] - ref[0] * at[2], ez = ref[0] * at[1] - ref[1] * at[0];
     const el = Math.sqrt(ex * ex + ey * ey + ez * ez); ex /= el; ey /= el; ez /= el;
     const nx = at[1] * ez - at[2] * ey, ny = at[2] * ex - at[0] * ez, nz = at[0] * ey - at[1] * ex;
-    // (the ground's level and slope over its cavity: where its floor settles, what its ejecta drape)
+    // (the ground's level and slope over its cavity: where its floor settles, what its ejecta
+    // drape; from the world's smooth surface at the same points round it for every tile, so a
+    // crater a tile's edge cuts through settles alike on both sides)
     let ws = 0, sh = 0, sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0, sxh = 0, syh = 0;
-    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
-      const c = j * NG + i, dx = dir[c * 3], dy = dir[c * 3 + 1], dz = dir[c * 3 + 2], x = dx - at[0], y = dy - at[1], z = dz - at[2];
-      if (Math.sqrt(x * x + y * y + z * z) * R >= 0.8 * Rc) continue;
-      const px = (dx * ex + dy * ey + dz * ez) * R, py = (dx * nx + dy * ny + dz * nz) * R, hh = B[c];
+    for (let k = 0; k < GP.length; k += 2) {
+      const px = GP[k] * 0.75 * Rc, py = GP[k + 1] * 0.75 * Rc;
+      gd[0] = at[0] + (px * ex + py * nx) / R; gd[1] = at[1] + (px * ey + py * ny) / R; gd[2] = at[2] + (px * ez + py * nz) / R;
+      const gl = Math.sqrt(gd[0] * gd[0] + gd[1] * gd[1] + gd[2] * gd[2]), hh = S.hSmooth(gd[0] / gl, gd[1] / gl, gd[2] / gl) * hs;
       ws++; sh += hh; sx += px; sy += py; sxx += px * px; syy += py * py; sxy += px * py; sxh += px * hh; syh += py * hh;
     }
-    const P = ws ? groundPlane(ws, sh, sx, sy, sxx, syy, sxy, sxh, syh) : null;
+    const P = groundPlane(ws, sh, sx, sy, sxx, syy, sxy, sxh, syh);
     for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
       const c = j * NG + i, dx = dir[c * 3], dy = dir[c * 3 + 1], dz = dir[c * 3 + 2], x = dx - at[0], y = dy - at[1], z = dz - at[2];
       const dist = Math.sqrt(x * x + y * y + z * z) * R;
       if (dist >= REACH * Rc * Fm.reach) continue;
       const tx = dx * ex + dy * ey + dz * ez, ty = dx * nx + dy * ny + dz * nz;
-      B[c] += wear * craterDh(Fm, dist, tx, ty) + (P ? excavate(Fm, dist, B[c], P.mean, P.mean + P.gx * (tx * R - P.mx) + P.gy * (ty * R - P.my)) : 0);
+      B[c] += wear * craterDh(Fm, dist, tx, ty) + excavate(Fm, dist, B[c], P.mean, P.mean + P.gx * (tx * R - P.mx) + P.gy * (ty * R - P.my));
     }
   }
   return list.length;
@@ -292,8 +298,13 @@ export function groundPlane(n, sh, sx, sy, sxx, syy, sxy, sxh, syh) {
   const mx = sx / n, my = sy / n, mean = sh / n;
   const cxx = sxx / n - mx * mx, cyy = syy / n - my * my, cxy = sxy / n - mx * my, cxh = sxh / n - mx * mean, cyh = syh / n - my * mean;
   const det = cxx * cyy - cxy * cxy;
-  if (!(det > 1e-9 * (cxx + cyy) * (cxx + cyy))) return { mean, gx: 0, gy: 0, mx, my };
-  return { mean, gx: (cxh * cyy - cyh * cxy) / det, gy: (cyh * cxx - cxh * cxy) / det, mx, my };
+  // (points too few, or strung out near a line, fit no plane: its slope across would be wild)
+  if (n < 5 || !(det > 0.01 * (cxx + cyy) * (cxx + cyy))) return { mean, gx: 0, gy: 0, mx, my };
+  let gx = (cxh * cyy - cyh * cxy) / det, gy = (cyh * cxx - cxh * cxy) / det;
+  // (and no steeper than the ground ever stands, ~35 degrees)
+  const g = Math.sqrt(gx * gx + gy * gy);
+  if (g > 0.7) { gx *= 0.7 / g; gy *= 0.7 / g; }
+  return { mean, gx, gy, mx, my };
 }
 
 // (a table round the circle read between entries k and k + 1 by a Catmull-Rom cubic: no creases)

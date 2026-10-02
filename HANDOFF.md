@@ -128,6 +128,18 @@ surveying many worlds; bit-exact across runs and clients, not across revisions):
   along its flow lines, a ridge on each otherwise) and capped near its edge by Nye's plastic
   profile (H^2 = 2 tau/(rho g) x; it was 3.5 km thick at the ice front). Checked on Opast's
   sheet (71N 102E) and a mountain ice field (-45, -107).
+- **Crater planes blew up refinement tiles (fixed, SIM 19, TILE 18):** a crater's ground plane
+  (its floor level and the slope its ejecta drape) was fit to the tile's own cells under it; a
+  crater a tile's edge cut left a thin strip of cells, the fit ill-conditioned, and its slope
+  across the crater made relief of hundreds of km (Quaelyn LAB-5 11: a tile at 32767 m, bars
+  and slabs on its map; tiles disagreeing at seams generally). Now the plane comes from the
+  world's smooth surface at 13 fixed points round the crater (the same for every tile), and
+  `groundPlane` refuses near-collinear points and caps the slope at 0.7.
+- **Cell-scale rills on steep dry slopes:** Iahahound's (LAB-6 2) 12.7 km volcano: the
+  refinement combs its flanks with rills one cell apart (and some axis-aligned blocks), read
+  smoothly as a lattice of dimples; the finer tile smooths them, so its edge shows as a straight
+  double ridge. The known D8 parallel-gully problem; wants channel spacing of several cells
+  (MFD routing, or channel heads by cell size).
 - **Lakes by contour, not cells (TILE 17):** the refinement copied the world sim's lake cells
   (bed forced under the level in each, the whole square a lake) and every finer level inherited
   the squares (Dradriokae's Lake Vuzeksys, Heludriom's salt lake). Now its lake is wherever its

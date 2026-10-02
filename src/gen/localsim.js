@@ -227,7 +227,7 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
   if (refine && S && S.s.crat && S.s.crater) {
     const K = S.s.crater, cellL = chunkArcSize(L, R) / MT;
     const Dhi = K.Dw, Dlo = Math.max(craterFloor(cellL, TILE_CELLS), K.Dair);
-    if (Dlo < Dhi) stampCraters(B, G, face, S, Dlo, Dhi, K, (gen.p.seed && gen.p.seed[0]) | 0, R);
+    if (Dlo < Dhi) stampCraters(B, G, face, S, Dlo, Dhi, K, (gen.p.seed && gen.p.seed[0]) | 0, R, hs);
   }
   // (an icy shell's ridges: as wide as they are, or as this level's cells hold, less the level above's)
   if (rf && S && S.s.lineae) {
