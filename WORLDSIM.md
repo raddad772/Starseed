@@ -419,6 +419,30 @@ Life tunes its light-harvesting pigments to the star:
 - **Where it plugs in:** `vegetationColor(lr, star.teff)` in `bodies.js`. Store the bands on
   `b.life.pigment` for the catalog ("absorbs 540-610 nm: magenta-blue foliage").
 
+### DEEP-TIME CHECKLIST (Dave asked 2026-10-01: "have you implemented ALL the things we discussed?")
+
+The order agreed: work down this list; keep the statuses current.
+
+| # | Item | Status |
+|---|---|---|
+| 1 | Plates: collisions, rifts, welds, slab pull, spreading, hotspot island chains, arc volcanoes, activity tiers | done |
+| 2 | River erosion coupled to the plates; lakes, shelves, deltas; creep | done |
+| 3 | Impacts: real rates, early bombardment, system debris, giant focusing, late spike | done |
+| 4 | History: atmosphere, CO2 thermostat, snowballs, runaway, life, escape, dynamo, ages, exceptional worlds | done |
+| 5 | Climate in history -> rain -> erosion | partial: rain ~ exp(0.07 (T - 288)); plants speed weathering |
+| 6 | **Feature finder:** tallest peaks by prominence, ranges, longest rivers, deepest valleys and canyons, largest lakes, biggest craters, volcanoes, trenches | todo (next) |
+| 7 | **Rock layers of different hardness:** basement granite, oceanic and hotspot basalt, stratified sediments, chalk and limestone from warm living seas; erosion cuts the exposed layer | todo |
+| 8 | **Glaciers:** ice flow and erosion off peaks and in cold epochs; ice-age sea-level swings | todo |
+| 9 | **Coasts:** wave erosion (cliffs, platforms, stacks), reefs (fringing, barrier, atolls), beaches and spits | todo |
+| 10 | **Life's effect on erosion:** plant cover holds soil (less hillslope wash), meandering vs braided rivers; atmosphere changes (O2 and others) through rain and temperature | todo |
+| 11 | **Climate model:** seasons from tilt, wind belts, rain shadows, Köppen biomes; rain for every path | todo (step 3 below) |
+| 12 | Soil depth: meadows vs forests | todo, later |
+| 13 | Regime changes within one run; Venus resurfacing; icy shells; Titan methane rain | todo |
+
+Notes:
+- Item 7 makes the mesas (caprock), canyon ledges and Dover-like chalk cliffs, the last with item 9.
+- Fjords need items 7, 8 and the sea-level swings.
+
 ### 2. World kinds: each body gets the deep-time sim that fits it
 
 Progress (2026-10-01):
