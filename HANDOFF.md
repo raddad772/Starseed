@@ -139,8 +139,8 @@ Open:
   channels are built along whole stems in `bigChannels` (line smoothed over two wavelengths,
   slope from smoothed heights), as indexed segments. Young oxbows are lakes, old ones swales.
   (The first draft's "runaway into tiny wiggles" was a sign error: points moved toward the inner
-  bank.) The index build is ~12 ms a tile on the main thread (a world: ~0.3 s once): could move
-  to a worker. A river switches from the sampler's meanders to a built channel at 250 m wide:
+  bank.) The index is built in a worker of its own when a refinement completes
+  (workers/riverIndexWorker.js; ~12 ms a tile). A river switches from the sampler's meanders to a built channel at 250 m wide:
   its belt widens there in a step.
 - **Near-field loading:** the volume rings make the descent slow with few workers.
 - **Near-field seam:** fixed: the heightfield reaches 3% in under the volume's last ring, 0.4 m

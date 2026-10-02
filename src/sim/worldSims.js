@@ -15,7 +15,17 @@
 import { SIM_VERSION, simNFor } from '../gen/worldsim/snapshot.js';
 import { TILE_VERSION } from '../gen/tileshape.js';
 import { refineLevelN } from '../gen/localsim.js';
-import { newRefine, putTile, complete, toStorable, fromStorable, riverIndex } from '../gen/worldsim/refine.js';
+import { newRefine, putTile, complete, toStorable, fromStorable } from '../gen/worldsim/refine.js';
+
+// a refinement's rivers indexed in a worker of their own (workers/riverIndexWorker.js)
+function indexRivers(parts, N, R) {
+  return new Promise((resolve) => {
+    const w = new Worker(new URL('../workers/riverIndexWorker.js', import.meta.url), { type: 'module' });
+    w.onmessage = (e) => { w.terminate(); if (e.data.error) { console.error('river index failed:', e.data.error); resolve(null); } else resolve(e.data.riv); };
+    w.onerror = (e) => { w.terminate(); console.error('river index worker:', e.message); resolve(null); };
+    w.postMessage({ parts, N, R }, parts.flatMap((p) => [p.rec.buffer, p.keys.buffer]));
+  });
+}
 
 const DB = 'starseed-worldsim', STORE = 'snap';
 
@@ -220,13 +230,15 @@ export class WorldSims {
     if (m.type === 'tile') { const st = this.refine.get(m.body); if (st && st.R) { putTile(st.R, m.tile); if (m.tile.riv) (st.riv || (st.riv = [])).push(m.tile.riv); } return; }
     if (m.type === 'refined') {
       w.job = null;
+      this._next();   // (the worker's free while the last tile's rivers are indexed)
       const st = this.refine.get(m.body);
       st.done++;
       if (st.done === st.total && complete(st.R)) {
         st.ms = performance.now() - st.t0;
-        // (its rivers, indexed by the world sim's cells)
+        // (its rivers, indexed by the world sim's cells: in a worker of their own, a few hundred ms)
         const snap = this.game.system.bodies[m.body].terrain.snapshot;
-        if (st.riv && snap) { st.R.riv = riverIndex(st.riv, snap.N, snap.R); st.riv = null; }
+        if (st.riv && snap) st.R.riv = await indexRivers(st.riv, snap.N, snap.R);
+        st.riv = null;
         dbPut(await this.dbP, this.refKey(m.body), toStorable(st.R));
         this._applyRefine(m.body, st, false);
       }
