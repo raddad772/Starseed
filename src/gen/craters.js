@@ -212,6 +212,28 @@ export function craterDh(F, dist, tx, ty) {
   return v;
 }
 
+// ---- a big crater's secondaries: blocks it threw out, striking two to five radii away in
+// clusters and chains along a few rays, each a few percent of its size and shallow (a slow
+// block's crater); worn as their own size wears them, so only a young crater's field shows
+const SEC_MIN = 15, SEC_REACH = 5.5;   // (craters at least 15 km across, real, throw them)
+function secondaries(cr, e, n, K, R, Dref) {
+  const rng = new Rng([cr.key >>> 0, 0x5ec0, 0xda7, 0x11]), out = [], Rc = cr.D / 2;
+  const nRay = 4 + Math.floor(5 * rng.next());
+  for (let k = 0; k < nRay; k++) {
+    const th = dm.TWO_PI * rng.next(), m = 3 + Math.floor(8 * rng.next());
+    for (let q = 0; q < m; q++) {
+      const r = Rc * (2 + 3 * rng.next()), a = th + 0.15 * (rng.next() - 0.5), tx = r * dm.cos(a) / R, ty = r * dm.sin(a) / R;
+      const px = cr.at[0] + tx * e[0] + ty * n[0], py = cr.at[1] + tx * e[1] + ty * n[1], pz = cr.at[2] + tx * e[2] + ty * n[2], l = Math.sqrt(px * px + py * py + pz * pz);
+      const D = cr.D * (0.015 + 0.04 * rng.next() * rng.next()), F = craterForm(D, K, rng.u32());
+      F.depth *= 0.45; F.rim *= 0.45; F.rimMean *= 0.45; F.peak = 0; F.knobs = [];
+      const kap = 12 * cr.age * (Dref / D) * (Dref / D), wear = 1 / (1 + kap);
+      F.ks = (0.08 + 0.5 * (1 - wear)) * (F.depth + F.rim);
+      if (wear > 0.03) out.push({ at: [px / l, py / l, pz / l], F, wear, tx, ty });
+    }
+  }
+  return out.length ? out : null;
+}
+
 // ---- a young crater's bright ejecta (the Moon's rays: fresh rock thrown out, darkened by the
 // solar wind over ~a Gyr): a blanket round its rim and streaks running out from it, each crater's
 // own (from its impact's hash), thinning with distance; brighter the younger (fresh 0..1)
@@ -303,7 +325,9 @@ export class CraterField {
       const at = cr.at, ref = Math.abs(at[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
       let ex = ref[1] * at[2] - ref[2] * at[1], ey = ref[2] * at[0] - ref[0] * at[2], ez = ref[0] * at[1] - ref[1] * at[0];
       const el = Math.sqrt(ex * ex + ey * ey + ez * ez); ex /= el; ey /= el; ez /= el;
-      return { at, F, wear, band: b, age: cr.age, key: cr.key, base: NaN, reach: (F.rays ? RAY_REACH : REACH) * (cr.D / 2) * F.reach, e: [ex, ey, ez], n: [at[1] * ez - at[2] * ey, at[2] * ex - at[0] * ez, at[0] * ey - at[1] * ex] };
+      const e = [ex, ey, ez], n = [at[1] * ez - at[2] * ey, at[2] * ex - at[0] * ez, at[0] * ey - at[1] * ex];
+      const sec = cr.D >= SEC_MIN * 1000 * this.K.scale ? secondaries(cr, e, n, this.K, this.R, Dref) : null;
+      return { at, F, wear, band: b, age: cr.age, key: cr.key, base: NaN, sec, reach: (sec ? SEC_REACH : F.rays ? RAY_REACH : REACH) * (cr.D / 2) * F.reach, e, n };
     });
     this.cache.set(key, list);
     return list;
@@ -316,6 +340,7 @@ export class CraterField {
     const dp = this.depth, hit = this.hits[dp] || (this.hits[dp] = []);
     hit.length = 0;
     if (!dp) this.ray = 0;   // (and how bright young craters' ejecta make it: ray, 0..1)
+    let secDh = 0;           // (the secondaries' dents: shallow, on what's there)
     for (let f = 0; f < 6; f++) {
       const Fc = FACES[f], dn = x * Fc.N[0] + y * Fc.N[1] + z * Fc.N[2];
       if (dn < 0.5) continue;
@@ -327,13 +352,17 @@ export class CraterField {
         for (const c of this._near(b, B, f, i0, j0)) {
           const ax = x - c.at[0], ay = y - c.at[1], az = z - c.at[2], dist = Math.sqrt(ax * ax + ay * ay + az * az) * this.R;
           if (dist >= c.reach) continue;
+          if (c.sec) for (const sc of c.sec) {
+            const bx = x - sc.at[0], by = y - sc.at[1], bz = z - sc.at[2], sd = Math.sqrt(bx * bx + by * by + bz * bz) * this.R;
+            if (sd < REACH * sc.F.R) secDh += dm.smoothstep(4 * minW, 8 * minW, 2 * sc.F.R) * sc.wear * craterDh(sc.F, sd, x * c.e[0] + y * c.e[1] + z * c.e[2] - sc.tx, x * c.n[0] + y * c.n[1] + z * c.n[2] - sc.ty);
+          }
           if (c.F.rays) { const rb = amp * rayAt(c.F, dist, x * c.e[0] + y * c.e[1] + z * c.e[2], x * c.n[0] + y * c.n[1] + z * c.n[2]); if (rb > this.ray) this.ray = rb; }
           if (dist >= REACH * c.F.R * c.F.reach) continue;
           hit.push(c, dist, amp);
         }
       }
     }
-    if (!hit.length) return h0;
+    if (!hit.length) return h0 + secDh;
     // (oldest first)
     const m = hit.length / 3, ord = this.ords[dp] || (this.ords[dp] = []);
     ord.length = m;
@@ -356,7 +385,7 @@ export class CraterField {
       const tx = x * c.e[0] + y * c.e[1] + z * c.e[2], ty = x * c.n[0] + y * c.n[1] + z * c.n[2];
       h += amp * (c.wear * craterDh(c.F, dist, tx, ty) + excavate(c.F, dist, h, c.base, c.base + (c.gx * tx + c.gy * ty) * this.R));
     }
-    return h;
+    return h + secDh;
   }
   // the craters of lattice cell (i0, j0)'s neighbourhood (3 x 3) in octave b on face f (each
   // octave keeps the last few asked for, by depth: neighbouring samples ask for the same)
