@@ -27,6 +27,7 @@ import { barrenWorld } from './barren.js';
 import { stagnantWorld } from './stagnant.js';
 import { Lithology, R as ROCK, marineRock } from './lithology.js';
 import { Glaciers } from './glaciers.js';
+import { Coasts } from './coasts.js';
 
 // which process path the history calls for
 export function choosePath(body) {
@@ -122,6 +123,7 @@ export function worldSim(body, star, opts = {}) {
   const steps = opts.steps ?? 60, dt = opts.dt ?? 2.5e5;
   const hb = new Float64Array(G.n);
   const ice = new Glaciers(G, p.climate, scale);
+  const sea2 = new Coasts(G, { corals: H.life && H.life.complex != null && H.life.extinct == null, warm: 0.5 });
   const hMax = 9000 * Math.sqrt(9.81 / body.gravity);
   let iceMax = 0;
   for (let k = 0; k < steps; k++) {
@@ -137,6 +139,8 @@ export function worldSim(body, star, opts = {}) {
     // the ice, where it's cold enough then (the history's climate vs today's)
     const ago = (steps - k) * dt / 1e6;
     iceMax = Math.max(iceMax, ice.step(h, E, rain, dt, (H.at(ago, 'T') ?? H.T) - H.T));
+    // the sea's edge: waves, sand, reefs (warm seas reach further from the equator in a warm climate)
+    sea2.step(h, lith, E, dt, 1 + ((H.at(ago, 'T') ?? H.T) - 288) / 40);
     // what was cut comes off the layers; what settled goes on as new rock
     for (let c = 0; c < G.n; c++) {
       const dz = h[c] - (hb[c] + E.U[c] * dt);
@@ -152,7 +156,10 @@ export function worldSim(body, star, opts = {}) {
   log(`ice: up to ${iceMax} cells covered; ${ice.everIce.reduce((a, b) => a + b, 0)} cells ever glaciated`);
   // how rivers run now: meandering where plants hold the banks, braided on bare ground
   out.riverStyle = plantsAt(H, 0) ? 'meandering' : 'braided';
-  return Object.assign(out, { h, h0, E, Gt, ht, tect: T, impacts: Ef, craters: T.impacts.events.concat(Ef.events), volcanoes, lith, rock: lith.exposed(), glaciers: ice, veg: E.veg });
+  // the beaches' sand shows as the surface rock there
+  const rock = lith.exposed();
+  for (let c = 0; c < G.n; c++) if (sea2.beach[c] > 2 && h[c] >= 0) rock[c] = sea2.sand[c];
+  return Object.assign(out, { h, h0, E, Gt, ht, tect: T, impacts: Ef, craters: T.impacts.events.concat(Ef.events), volcanoes, lith, rock, glaciers: ice, veg: E.veg, coasts: sea2 });
 }
 
 // Each fine cell's layers from the plates' record there: the basement (granite

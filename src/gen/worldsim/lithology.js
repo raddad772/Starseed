@@ -24,6 +24,9 @@ export const ROCKS = [
   { name: 'salt',      k: 4.0,  color: '#e8dfd8', stand: 35 },  // evaporites in drying basins
   { name: 'regolith',  k: 2.2,  color: '#77746e', stand: 30 },  // impact rubble
   { name: 'ice',       k: 1.2,  color: '#e4eef5', stand: 40 },  // icy worlds' crust
+  { name: 'quartz sand', k: 3.0, color: '#d9c08a', stand: 20 },  // beaches off granite and sandstone
+  { name: 'coral sand',  k: 3.0, color: '#f2ece0', stand: 20 },  // white beaches by the reefs
+  { name: 'black sand',  k: 3.0, color: '#2b2a2a', stand: 20 },  // volcanic islands' beaches
 ];
 export const R = Object.fromEntries(ROCKS.map((r, i) => [r.name, i]));
 const KMULT = Float32Array.from(ROCKS.map((r) => r.k));

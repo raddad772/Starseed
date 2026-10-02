@@ -18,6 +18,9 @@
 //              local detail will put the actual falls)
 //   cliffs     the tallest drops between neighbouring ground
 //   plateaus   high, flat country (high ground that's gentle across)
+//   beaches    the longest stretches of sandy shore, by sand (white coral, black, golden)
+//   sea cliffs the tallest, by rock (chalk cliffs: Dover's)
+//   reefs      coral reefs, and atolls (a reef ring round a sunken island, lagoon inside)
 //   glaciers   ice fields and the longest glaciers (from glaciers.js)
 //   fjords     glacier-cut troughs the sea has flooded
 //   craters, volcanoes: passed in from the processes that made them
@@ -276,9 +279,57 @@ export function findFeatures(G, h, opts = {}) {
     for (let c = 0; c < n; c++) if (Gl.everIce[c] && h[c] < 0 && Gl.cut[c] > 200 && ocean[c]) fj.push({ cell: c, drop: Gl.cut[c] });
     out.fjords = spread(fj, 6).map((f) => ({ depthCut: f.drop, lat: f.lat, lon: f.lon }));
   }
+  // ---- coasts (coasts.js): beaches by stretch, sea cliffs, reefs and atolls
+  const Co = opts.coasts;
+  out.beaches = []; out.seaCliffs = []; out.mountainCoasts = []; out.reefs = []; out.atolls = [];
+  if (Co) {
+    const names = opts.rockNames || [];
+    const seenB = new Uint8Array(n);
+    for (let c0 = 0; c0 < n; c0++) {
+      if (seenB[c0] || Co.beach[c0] <= 2 || h[c0] < 0) continue;
+      const cells = [], q = [c0]; seenB[c0] = 1;
+      while (q.length) { const c = q.pop(); cells.push(c); for (let e = G.nStart[c]; e < G.nStart[c + 1]; e++) { const o = G.nbr[e]; if (!seenB[o] && Co.beach[o] > 2 && h[o] >= 0 && Co.sand[o] === Co.sand[c0]) { seenB[o] = 1; q.push(o); } } }
+      const len = cells.length * G.spacing * toReal / 1000;
+      out.beaches.push({ lengthKm: len, sand: names[Co.sand[c0]] || 'sand', ...where(cells[cells.length >> 1]) });
+    }
+    out.beaches.sort((a, b) => b.lengthKm - a.lengthKm);
+    // keep the best of each sand too, so a short black-sand beach isn't lost behind long golden ones
+    const bySand = new Map();
+    for (const b of out.beaches) if (!bySand.has(b.sand)) bySand.set(b.sand, b);
+    out.beaches = [...new Set([...out.beaches.slice(0, top), ...bySand.values()])];
+    const cliffs = [];
+    for (let c = 0; c < n; c++) if (Co.cliff[c] > 0) cliffs.push({ cell: c, drop: Co.cliff[c] });
+    // (over ~1 km it's a mountain coast rather than a cliff, at these cells' scale)
+    const named = (f) => { const c = G.cellAt(...dirOf(f)); return { height: f.drop, rock: names[opts.rock ? opts.rock[c] : 0] || '', ...f }; };
+    out.seaCliffs = spread(cliffs.filter((x) => x.drop <= 1000), 6).map(named);
+    out.mountainCoasts = spread(cliffs.filter((x) => x.drop > 1000), 6).map(named);
+    // reefs: connected reef; an atoll when its middle holds no land and is lagoon-shallow
+    const seenR = new Uint8Array(n);
+    for (let c0 = 0; c0 < n; c0++) {
+      if (seenR[c0] || Co.reef[c0] < 5) continue;
+      const cells = [], q = [c0]; seenR[c0] = 1;
+      while (q.length) { const c = q.pop(); cells.push(c); for (let e = G.nStart[c]; e < G.nStart[c + 1]; e++) { const o = G.nbr[e]; if (!seenR[o] && Co.reef[o] >= 5) { seenR[o] = 1; q.push(o); } } }
+      let area = 0; for (const c of cells) area += G.area[c];
+      out.reefs.push({ areaKm2: area * toReal * toReal / 1e6, ...where(cells[0]) });
+    }
+    out.reefs.sort((a, b) => b.areaKm2 - a.areaKm2);
+    // atolls: a little ring of reef round sea, with no land inside
+    for (const r of out.reefs) if (r.areaKm2 < 5e4 && isRing(G, h, Co, G.cellAt(...dirFromLatLon(r.lat, r.lon)))) out.atolls.push(r);
+    out.reefs = out.reefs.slice(0, top); out.atolls = out.atolls.slice(0, top);
+  }
   if (opts.craters) out.craters = opts.craters.slice().sort((a, b) => b.D - a.D).slice(0, top).map((k) => ({ diameterKm: k.D, ...latLonDir(k.at), when: k.t }));
   if (opts.volcanoes) out.volcanoes = opts.volcanoes.slice(0, top);
   return out;
+}
+
+function dirFromLatLon(lat, lon) { const a = lat * dm.PI / 180, b = lon * dm.PI / 180; return [dm.cos(a) * dm.cos(b), dm.sin(a), dm.cos(a) * dm.sin(b)]; }
+function dirOf(f) { return dirFromLatLon(f.lat, f.lon); }
+// a reef with sea all round it within a few cells and no land: an atoll's ring
+function isRing(G, h, Co, c) {
+  let land = 0, sea = 0;
+  const seen = new Set([c]); let front = [c];
+  for (let k = 0; k < 3; k++) { const next = []; for (const x of front) for (let e = G.nStart[x]; e < G.nStart[x + 1]; e++) { const o = G.nbr[e]; if (seen.has(o)) continue; seen.add(o); next.push(o); if (h[o] >= 0) land++; else sea++; } front = next; }
+  return land === 0 && sea > 6;
 }
 
 function latLon(G, c) { return latLonDir([G.dir[c * 3], G.dir[c * 3 + 1], G.dir[c * 3 + 2]]); }
