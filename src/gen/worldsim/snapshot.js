@@ -14,7 +14,7 @@
 import { GridLite } from './grid.js';
 import { Noise3 } from '../../core/noise.js';
 
-export const SIM_VERSION = 3;
+export const SIM_VERSION = 4;
 
 // W: worldSim's result; body: the body
 export function packSnapshot(W, body) {
