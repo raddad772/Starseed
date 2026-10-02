@@ -11,6 +11,7 @@
 // Integer arithmetic and hashed randomness only: the same dunes on every machine.
 
 import { hashInts } from '../core/rng.js';
+import { DUNE_DATA } from './dunes.data.js';
 
 // n x n cells, `supply` slabs a cell to start; returns heights in slabs (Int32Array, wrapped)
 export function duneField(n, supply, opts = {}) {
@@ -88,8 +89,11 @@ export const DUNE = { n: 192, cell: 3, supplies: [5, 14], iters: 3000, version: 
 let patches = null;
 export function dunePatches() {
   if (patches) return patches;
+  // (made once by tools/build-dunes.mjs, if it was made with these parameters)
+  const D = DUNE_DATA, same = D && D.n === DUNE.n && D.iters === DUNE.iters && D.version === DUNE.version && D.supplies.join() === DUNE.supplies.join();
+  const decode = (b64) => { const bin = typeof atob === 'function' ? Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)) : Uint8Array.from(Buffer.from(b64, 'base64')); return new Int16Array(bin.buffer, bin.byteOffset, bin.byteLength / 2); };
   const z = DUNE.supplies.map((s, k) => {
-    const f = duneField(DUNE.n, s, { iters: DUNE.iters, seed: 0xd0e5 + k });
+    const f = same ? decode(D.z[k]) : duneField(DUNE.n, s, { iters: DUNE.iters, seed: 0xd0e5 + k });
     let mean = 0;
     for (let c = 0; c < f.length; c++) mean += f[c];
     mean /= f.length;
