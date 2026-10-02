@@ -72,6 +72,8 @@ const hu = (a, b, c, d) => hashInts(a, b, c, d) / 4294967296;    // a hash in [0
 
 // how hard each of the world sim's rocks is (0 soft .. 1 hard), from how fast it wears
 const ROCK_HD = ROCKS.map((r) => dm.clamp(1.25 - 0.4 * r.k, 0, 1));
+// (where a rock stands in a stack, by its kind: cover strata and lava over the old basement)
+const UPK = ROCKS.map((r) => ({ shale: 0.6, sandstone: 0.6, limestone: 0.6, chalk: 0.6, basalt: 0.4, andesite: 0.3, regolith: 0.3, granite: -0.6 })[r.name] ?? 0);
 
 // ---- the rock column: hardness (0 soft .. 1 hard) by height, for the tile's rock
 const SUITE = { sandstone: 'sed', shale: 'sed', limestone: 'sed', chalk: 'sed', salt: 'sed', basalt: 'volc', andesite: 'volc', granite: 'xtal' };
@@ -666,8 +668,12 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
         let best = r0, bs = -1e9;
         for (let q = 0; q < nr; q++) {
           if (Wr[q] < 1e-6) continue;
-          const rel = (Hr[q] / Wr[q] - hb) / span, up = DEP.has(rk[q]) ? -1 : dm.clamp(4 * rel, -1, 1);
-          const score = Wr[q] + 1.5 * e * rel + 0.45 * el * up;
+          // (where it stands in the stack: the rock of the higher cells over the lower's, and by
+          // its kind: cover strata and lava hold the rises, the old basement shows where valleys
+          // cut down to it, what was laid down lies in the lows. So on even ground a contact
+          // follows the land's own swales and rises, not the world sim's cells)
+          const rel = (Hr[q] / Wr[q] - hb) / span, up = DEP.has(rk[q]) ? -1 : dm.clamp(4 * rel + UPK[rk[q]], -1, 1);
+          const score = Wr[q] + 1.5 * e * rel + 0.8 * el * up * Math.min(1, 2.5 * Wr[q]);
           if (score > bs) { bs = score; best = rk[q]; }
         }
         rockC[c] = best;
