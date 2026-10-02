@@ -190,9 +190,13 @@ export function scatterFlora(gen, face, level, ix, iy, maxLevel, species) {
     // an open meadow on flat ground: no trees, few shrubs or boulders, grass and flowers
     const meadow = meadowAt(gen, dir, h, species, s2);
     if (species.life > 0 && slope < 0.55 && snow < 0.5) {
-      const pTree = veg * veg * species.densityTree * (Tc > -2 && Tc < 42 ? 1 : 0.2) * 0.5 * (1 - meadow);
-      const pShrub = veg * species.densityShrub * 0.45 * (1 - 0.75 * meadow);
-      const pPlant = veg * 0.9 * (1 + 0.4 * meadow) * (species.plantScarce ? 0.08 : 1); // (crusts only, where no plants reached land)
+      // (a simulated world's life map: how much of the cover is forest and how much open
+      // country, so trees stand in its forests and shrubs and grass fill its open land)
+      let fk = 1, ok = 1;
+      if (gen.snap) { fk = 0.15 + 1.7 * gen.snap.forest(dir[0], dir[1], dir[2]); ok = 0.6 + 0.8 * gen.snap.open(dir[0], dir[1], dir[2]); }
+      const pTree = veg * veg * species.densityTree * (Tc > -2 && Tc < 42 ? 1 : 0.2) * 0.5 * (1 - meadow) * fk;
+      const pShrub = veg * species.densityShrub * 0.45 * (1 - 0.75 * meadow) * ok;
+      const pPlant = veg * 0.9 * (1 + 0.4 * meadow) * (species.plantScarce ? 0.08 : 1) * ok; // (crusts only, where no plants reached land)
       if (roll < pTree) { out.tree.push(px, py, pz, rng.range(0.6, 1.25), rot, tint, slope, 0); continue; }
       if (roll < pTree + pShrub * 0.6) { out.shrub.push(px, py, pz, rng.range(0.6, 1.4), rot, tint, slope, 1); continue; }
       if (roll < pTree + pShrub * 0.6 + pPlant * 0.6) { out.plant.push(px, py, pz, rng.range(0.6, 1.5), rot, tint, slope, 2); continue; }
