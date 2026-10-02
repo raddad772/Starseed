@@ -259,7 +259,9 @@ export class SnapshotSampler {
   rockAt(x, y, z, h) {
     // (from the finest level of the terrain's tiles that covers the point)
     const P = this.pyrReaders();
+    this.rockPyr = true;
     for (let i = P.length - 1; i >= 0; i--) if (P[i].sample(this._d(x, y, z)) && P[i].w > 0.5) return P[i].rockAt(h * this._hs, this);
+    this.rockPyr = false;
     if (this.ref && this.ref.sample(this._d(x, y, z))) return this.ref.rockAt(h * this._hs, this);
     const s = this.s, c = this._rc || (this._rc = new Int32Array(16)), w = this._rw || (this._rw = new Float64Array(16));
     this.G.corners16(this._d(x, y, z), c, w, this.uv);

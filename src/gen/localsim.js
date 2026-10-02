@@ -43,13 +43,11 @@ import * as dm from '../core/dmath.js';
 import { MT, MARGIN, KEEP, TILE_VERSION } from './tileshape.js';
 import { stampCraters, stampRidges, ridgeWidth, RIDGE } from './craters.js';
 import { craterFloor, worldCell, TILE_CELLS } from './worldsim/impacts.js';
-export { MT, MARGIN, KEEP, TILE_VERSION };
-export const REGION_UP = 2;        // a region tile is 2^REGION_UP local tiles across
+import { REGION_UP, tileLevel, regionLevel, faceMetres, SUITE, SUITES, DEPOSITS, rockColumn, regionStructure, jointAt, worldColumn, bedAt } from './geology.js';
+export { MT, MARGIN, KEEP, TILE_VERSION, REGION_UP, tileLevel, regionLevel };
 const NG = MT + 2 * MARGIN;        // the simulated grid per side
 
 // the tile level for a world: 2^L tiles across a face, each about 2 km; its regions'
-export function tileLevel(R) { return Math.max(REGION_UP, Math.round(Math.log2(chunkArcSize(0, R) / 2000))); }
-export function regionLevel(R) { return tileLevel(R) - REGION_UP; }
 // the world's refinement: tiles a few times finer than its world sim's grid, over the whole
 // world (simulated with the world sim, from orbit down to where the regions take over)
 export function refineLevelN(N) { return Math.max(0, Math.round(Math.log2(N * 4 / MT))); }
@@ -65,142 +63,12 @@ export function tileAt(face, u, v, L, out = {}) {
 }
 export const tileKey = (face, ti, tj, region = false) => (region ? 'r' : '') + face + ',' + ti + ',' + tj;
 
-// metres per unit of a face's u (or v): its arc over its two units (near enough: the
-// gnomonic stretch across a face is no matter to where a fault or a joint runs)
-const faceMetres = (R) => chunkArcSize(0, R) / 2;
 const hu = (a, b, c, d) => hashInts(a, b, c, d) / 4294967296;    // a hash in [0, 1)
 
 // how hard each of the world sim's rocks is (0 soft .. 1 hard), from how fast it wears
 const ROCK_HD = ROCKS.map((r) => dm.clamp(1.25 - 0.4 * r.k, 0, 1));
 // (where a rock stands in a stack, by its kind: cover strata and lava over the old basement)
 const UPK = ROCK_UP;
-
-// ---- the rock column: hardness (0 soft .. 1 hard) by height, for the tile's rock
-const SUITE = { sandstone: 'sed', shale: 'sed', limestone: 'sed', chalk: 'sed', salt: 'sed', basalt: 'volc', andesite: 'volc', granite: 'xtal' };
-
-const RI = Object.fromEntries(ROCKS.map((r, i) => [r.name, i]));
-function rockColumn(rockName, rng) {
-  const suite = SUITE[rockName] || 'loose';
-  const lo = -3000, n = 15000;                       // 1 m steps, -3 km .. 12 km
-  const hard = new Float32Array(n), type = new Uint8Array(n);
-  let z = 0;
-  while (z < n) {
-    let t, hd, ty;
-    if (suite === 'sed') {
-      // (a bed's rock: sandstone or limestone hard, shale soft, now and then a thick hard one)
-      const r = rng.next();
-      if (r < 0.4) { t = rng.range(2, 10); hd = rng.range(0.05, 0.25); ty = RI.shale; }        // shale
-      else if (r < 0.85) { t = rng.range(3, 14); hd = rng.range(0.6, 0.85); ty = RI.sandstone; }   // sandstone
-      else { t = rng.range(10, 28); hd = rng.range(0.8, 0.95); ty = RI.limestone; }            // a massive cap
-    } else if (suite === 'volc') {
-      // a flow: its broken top soft, its core hard
-      const top = rng.range(1, 3), core = rng.range(5, 18);
-      for (let k = 0; k < core && z < n; k++) { type[z] = RI.basalt; hard[z++] = 0.9; }
-      t = top; hd = 0.25; ty = RI.regolith;
-    } else if (suite === 'xtal') { t = rng.range(150, 600); hd = rng.range(0.865, 0.875); ty = RI.granite; }   // (massive: no beds)
-    else { t = rng.range(3, 12); hd = rng.range(0.05, 0.3); ty = RI.alluvium; }
-    for (let k = 0; k < t && z < n; k++) { type[z] = ty; hard[z++] = hd; }
-  }
-  const idx = (h) => { const i = Math.round(h - lo); return i < 0 ? 0 : i >= n ? n - 1 : i; };
-  return { lo, hard, type, suite, at(h) { return hard[idx(h)]; }, typeAt(h) { return type[idx(h)]; } };
-}
-// a column as a grid of cells sees it: each height's layers averaged over the height a cell's
-// slope lays bare (win m, about half a cell): beds thinner than that blur to their mean hardness
-// and show their commonest rock; thicker ones stand out (cliff bands where the cells are fine)
-function smoothColumn(col, win) {
-  const n = col.hard.length, w = Math.max(0, Math.round(win / 2));
-  if (w < 1) return col;
-  const hard = new Float32Array(n), type = new Uint8Array(n), pre = new Float64Array(n + 1);
-  for (let z = 0; z < n; z++) pre[z + 1] = pre[z] + col.hard[z];
-  const cnt = new Int32Array(32);
-  for (let z = -w; z < w && z < n; z++) if (z >= 0) cnt[col.type[z]]++;
-  for (let z = 0; z < n; z++) {
-    const a = Math.max(0, z - w), b = Math.min(n, z + w + 1);
-    hard[z] = (pre[b] - pre[a]) / (b - a);
-    if (z + w < n) cnt[col.type[z + w]]++;
-    if (z - w - 1 >= 0) cnt[col.type[z - w - 1]]--;
-    let best = col.type[z], bc = -1;
-    for (let t = 0; t < 32; t++) if (cnt[t] > bc) { bc = cnt[t]; best = t; }
-    type[z] = best;
-  }
-  const lo = col.lo, idx = (h) => { const i = Math.round(h - lo); return i < 0 ? 0 : i >= n ? n - 1 : i; };
-  return { lo, hard, type, suite: col.suite, at(h) { return hard[idx(h)]; }, typeAt(h) { return type[idx(h)]; } };
-}
-const SUITES = ['sed', 'volc', 'xtal', 'loose'], SUITE_ROCK = { sed: 'sandstone', volc: 'basalt', xtal: 'granite', loose: 'alluvium' };
-const DEPOSITS = new Set(['alluvium', 'salt', 'quartz sand', 'coral sand', 'black sand']);
-
-// ---- a region's structure (in the face's metres): its setting from the world sim there,
-// its beds' tilt and folds, its faults, its joint sets. Deterministic from the region.
-const _d = [0, 0, 0], _s = new Float64Array(S_LEN);
-function worldAt(gen, face, u, v) { dirFromFaceUV(face, u, v, _d); gen.sample(_d[0], _d[1], _d[2], 1e9, _s); return _s[S_H]; }
-
-export function regionStructure(gen, face, ri, rj) {
-  const R = gen.R, Lr = regionLevel(R), Mu = faceMetres(R), s = 2 / (1 << Lr);
-  const uc = -1 + (ri + 0.5) * s, vc = -1 + (rj + 0.5) * s, size = s * Mu;
-  const rng = new Rng([hashInts(face, ri), hashInts(rj, Lr), (gen.p.seed && gen.p.seed[0]) | 0, 0x5717c7]);
-  dirFromFaceUV(face, uc, vc, _d);
-  const rel = (gen.snap ? gen.snap.relief(_d[0], _d[1], _d[2]) : (gen.p.relief || 3000) * 0.3) * gen.hScale;
-  const rockName = gen.snap ? ROCKS[gen.snap.rock(_d[0], _d[1], _d[2])].name : 'granite';
-  const suite = SUITE[rockName] || 'loose';
-  const belt = dm.smoothstep(300, 2000, rel);   // how much of a mountain belt it is
-  // the compression: across the slope of the world's surface (a range's flanks face it);
-  // on level ground, wherever the region's history had it
-  const e = s * 0.6;
-  let cx = worldAt(gen, face, uc + e, vc) - worldAt(gen, face, uc - e, vc), cy = worldAt(gen, face, uc, vc + e) - worldAt(gen, face, uc, vc - e);
-  const cl = Math.sqrt(cx * cx + cy * cy), ca = rng.range(0, dm.TWO_PI);
-  if (cl < 0.5) { cx = dm.cos(ca); cy = dm.sin(ca); } else { cx /= cl; cy /= cl; }
-  // the beds' tilt (a few degrees off a belt, up to ~20 in one) and, in a belt, folds
-  // with their axes across the compression
-  const dipA = dm.atan2(cy, cx) + rng.range(-0.5, 0.5), dip = rng.range(0, 0.03) + belt * rng.range(0.05, 0.35);
-  const fold = belt > 0.15 ? { A: 0, lam: rng.range(700, 2600), ph: rng.range(0, dm.TWO_PI) } : null;
-  if (fold) fold.A = belt * rng.range(0.04, 0.12) * fold.lam;
-  // faults: long, across the compression, each slipping once (its throw: the scarp and the
-  // beds' offset) at its time in the run
-  const faults = [];
-  const nF = belt > 0.2 ? rng.int(1, 1 + Math.round(3 * belt)) : (rng.chance(0.35) ? 1 : 0);
-  for (let k = 0; k < nF; k++) {
-    const a = dm.atan2(cy, cx) + dm.HALF_PI + rng.range(-0.35, 0.35);
-    faults.push({
-      x: (uc + rng.range(-0.45, 0.45) * s) * Mu, y: (vc + rng.range(-0.45, 0.45) * s) * Mu,
-      tx: dm.cos(a), ty: dm.sin(a), len: rng.range(0.5, 1.4) * size,
-      dz: rng.sign() * (rng.range(4, 25) + belt * rng.range(15, 140)), t: rng.range(0.15, 0.75), w: rng.range(5, 14),
-    });
-  }
-  // joints: one set along the compression (its planes hold it: their normals across it), one
-  // across; spaced by the rock, each joint broken into stretches along its strike
-  const sp0 = suite === 'xtal' ? rng.range(18, 45) : suite === 'sed' ? rng.range(8, 24) : suite === 'volc' ? rng.range(10, 25) : 0;
-  const joints = [];
-  if (sp0) for (let k = 0; k < 2; k++) {
-    const a = dm.atan2(cy, cx) + (k ? 0 : dm.HALF_PI) + rng.range(-0.2, 0.2);
-    joints.push({ a, sp: sp0 * (k ? rng.range(1, 1.8) : 1), seg: rng.range(60, 320), on: rng.range(0.3, 0.55), key: rng.int(1, 0x7fffffff) });
-  }
-  return { face, ri, rj, rel, belt, rock: rockName, suite, cx, cy, dipX: dip * dm.cos(dipA), dipY: dip * dm.sin(dipA), fold, faults, joints, x0: uc * Mu, y0: vc * Mu };
-}
-
-// how broken the rock is at (X, Y) (face metres) by the joints at a cell size: 0 .. 1. Joints
-// are irregular: spaced anywhere from a fraction to twice the set's spacing, each a few degrees
-// off the set's strike, broken into stretches along it. Those closer than ~6 cells are the
-// rock's grain, not lines water picks out: at a coarse level only every m-th (the master
-// joints, longer) counts
-function jointAt(J, X, Y, cell) {
-  let w = 0;
-  for (const j of J) {
-    const m = Math.max(1, Math.ceil(6 * cell / j.sp)), sp = j.sp * m, seg = j.seg * m;
-    const nx = j.nx ?? (j.nx = dm.cos(j.a)), ny = j.ny ?? (j.ny = dm.sin(j.a));
-    const q = X * nx + Y * ny, t = -X * ny + Y * nx;
-    const i0 = Math.floor(q / sp);
-    for (let i = i0 - 2; i <= i0 + 2; i++) {
-      // (this joint: where it crosses, its own strike, a few degrees off the set's)
-      const off = (i + 0.5 + 0.9 * (hu(j.key, i, m, 1) - 0.5)) * sp, tw = 0.12 * (hu(j.key, i, m, 4) - 0.5);
-      const dist = Math.abs(q - off - tw * (t - hu(j.key, i, m, 5) * 4000));
-      if (dist >= cell) continue;
-      const tj = t + hu(j.key, i, m, 2) * seg, k = Math.floor(tj / seg);
-      if (hu(j.key, i, k, 3 + m) > j.on) continue;
-      w = Math.max(w, 1 - dist / cell);
-    }
-  }
-  return w;
-}
 
 // ---- the grid: neighbour lists, cell areas and distances (what Erosion needs)
 function tileGrid(face, ti, tj, L, R) {
@@ -365,8 +233,11 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
   // the beds' offset (how far a bed is from where the column has it) and how broken the rock
   // is: joints and the faults' zones
   const bedOff = new Float64Array(n), weak = new Float64Array(n);
-  const fold = ST.fold;
+  // (a pyramid tile's: the regions' structures round each cell, blended (geology.js bedAt), as
+  // the sampler has them where no tile has run; a local tile's: its region's own)
+  const fold = ST.fold, bo = { bed: 0, weak: 0 };
   for (let c = 0; c < n; c++) {
+    if (pyr) { bedAt(gen, face, U[c], V[c], X[c], Y[c], opts.joints === false ? 0 : cell, bo); bedOff[c] = bo.bed; weak[c] = 0.4 * bo.weak; continue; }
     const x = X[c] - ST.x0, y = Y[c] - ST.y0;
     bedOff[c] = ST.dipX * x + ST.dipY * y + (fold ? fold.A * dm.sin(dm.TWO_PI * (x * ST.cx + y * ST.cy) / fold.lam + fold.ph) : 0);
     weak[c] = opts.joints === false ? 0 : 0.4 * jointAt(ST.joints, X[c], Y[c], cell);
@@ -393,9 +264,10 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
       else rockC[c] = S.rockAt(G.dir[c * 3], G.dir[c * 3 + 1], G.dir[c * 3 + 2], h[c] / hs);
     }
   };
-  // (a pyramid tile's: each cell's rock's suite of layers, tilted and folded, read at its height
-  // as it is now, so as valleys cut down through hard and soft beds, cliff bands stand)
-  const suiteC = pyr ? new Uint8Array(n) : null, cols = pyr ? SUITES.map((su) => smoothColumn(rockColumn(SUITE_ROCK[su], new Rng([hashInts(face, rri), hashInts(rrj, 0xc01 + SUITES.indexOf(su)), (gen.p.seed && gen.p.seed[0]) | 0, 0x5eb])), 0.5 * cell)) : null;
+  // (a pyramid tile's: each cell's rock's suite of layers (the world's, geology.js), tilted and
+  // folded, read at its height as it is now, so as valleys cut down through hard and soft beds,
+  // cliff bands stand)
+  const suiteC = pyr ? new Uint8Array(n) : null, cols = pyr ? SUITES.map((su) => worldColumn((gen.p.seed && gen.p.seed[0]) | 0, su, 0.5 * cell)) : null;
   const readSuite = () => { for (let c = 0; c < n; c++) { const nm = ROCKS[rockC[c]].name; suiteC[c] = DEPOSITS.has(nm) ? 3 : Math.max(0, SUITES.indexOf(SUITE[nm] || 'loose')); } };
   const hardAt = refine ? (c) => ROCK_HD[rockC[c]] : pyr ? (c, z = h[c]) => cols[suiteC[c]].at(z + bedOff[c]) * (1 - 0.7 * weak[c]) : (c, z) => col.at(z + bedOff[c]) * (1 - 0.7 * weak[c]);
   // the starting surface, with a few centimetres of jitter (so water has a way to choose)

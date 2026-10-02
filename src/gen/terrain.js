@@ -23,6 +23,7 @@ import * as dm from '../core/dmath.js';
 import { fibonacciSphere, faceUVFromDir, FACES } from './cubesphere.js';
 import { patchAt } from './dunes.js';
 import { CraterField, VEXAG } from './craters.js';
+import { SUITE, DEPOSITS, worldColumn, bedAt, faceMetres } from './geology.js';
 import { craterFloor, TILE_CELLS } from './worldsim/impacts.js';
 import { SnapshotSampler } from './worldsim/snapshot.js';
 import { RIVER_REC, BIG_REC } from './worldsim/refine.js';
@@ -1082,7 +1083,10 @@ export class TerrainGenerator {
     // (a glacier's ice: its surface is the ground here, sampleSnap)
     if (s[S_ICE] > 0.5) { col[0] = P.snow[0]; col[1] = P.snow[1]; col[2] = P.snow[2]; mat[1] = 1; mat[6] = 0.3; return; }
     // the rock (or sand) showing, and across a contact on even ground the other one, mixed
-    const rt = S.rockAt(x, y, z, h / this.hScale), mix = S.rockMix, r2 = S.rock2;
+    let rt = S.rockAt(x, y, z, h / this.hScale), r2 = S.rock2;
+    const mix = S.rockMix;
+    // (where no tile of the terrain's has laid out the beds: the same beds the tiles have)
+    if (!S.rockPyr) { rt = this._bedRock(x, y, z, h, rt); r2 = mix > 0 ? this._bedRock(x, y, z, h, r2) : rt; }
     const c1 = this.rockLin[rt] || P.rock, c2 = this.rockLin[r2] || P.rock, rc = this._rcol || (this._rcol = [0, 0, 0]);
     for (let k = 0; k < 3; k++) rc[k] = c1[k] + (c2[k] - c1[k]) * mix;
     // (a dune sea's sand over it)
@@ -1149,6 +1153,21 @@ export class TerrainGenerator {
     // (the ground's northward direction is (0, 1, 0) less its part along up, length cos(lat))
     const north = (n[1] - dn * y) / Math.sqrt(cl2);
     return (y >= 0 ? 1 : -1) * north * Math.min(1, 2 * Math.abs(y));
+  }
+
+  // the rock at (x, y, z), standing at h, where no tile of the terrain's has laid out the beds:
+  // a rock of a suite (geology.js) shows its column's bed at this height, tilted and folded as
+  // the tiles have it, so a tile's beds carry on past its edge (seen at this sampling's grain);
+  // deposits and loose ground as they are
+  _bedRock(x, y, z, h, rock) {
+    const nm = ROCKS[rock] && ROCKS[rock].name, su = nm && !DEPOSITS.has(nm) ? SUITE[nm] : null;
+    if (!su) return rock;
+    const d = this._bd || (this._bd = [0, 0, 0]), uv = this._buv || (this._buv = { face: 0, u: 0, v: 0 });
+    d[0] = x; d[1] = y; d[2] = z;
+    faceUVFromDir(d, uv);
+    const Mu = this._Mu || (this._Mu = faceMetres(this.R));
+    const o = bedAt(this, uv.face, uv.u, uv.v, uv.u * Mu, uv.v * Mu, 0, this._bo || (this._bo = { bed: 0, weak: 0 }));
+    return worldColumn((this.p.seed && this.p.seed[0]) | 0, su, 0.25 * (this._minW || 0)).typeAt(h + o.bed);
   }
 
   shadeNoise(s, slope, col, mat) {

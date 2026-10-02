@@ -128,6 +128,16 @@ surveying many worlds; bit-exact across runs and clients, not across revisions):
   along its flow lines, a ridge on each otherwise) and capped near its edge by Nye's plastic
   profile (H^2 = 2 tau/(rho g) x; it was 3.5 km thick at the ice front). Checked on Opast's
   sheet (71N 102E) and a mountain ice field (-45, -107).
+- **Rock beds without the jigsaw (`src/gen/geology.js`, new):** a pyramid tile used the one
+  region at its middle (its column, its planar dip) for the whole tile (up to 128 km), and the
+  refinement outside it one rock per cell: each tile showed as a square of stripes, its edges
+  and the regions' straight. Now each suite's column is the world's (`worldColumn`, windows to
+  powers of two), each cell's bed offset and joints are the four regions round it blended
+  smoothly (`bedAt`), and the sampler colours ground no tile covers by the same rule
+  (`terrain.js _bedRock`), so the beds carry on past a tile's edge. Region structure reads the
+  world sim's smooth surface (no nested sampling). Faults still come from the 3x3 regions round
+  a tile's middle. Left: the world sim's own rock map has long straight contacts (Touveatar
+  19N 136E, granite against chalk along a diagonal of cells), straight on even ground.
 - **Shield fields (SIM 17):** after a stagnant-lid overturn, a third of the lava flows' vents
   and most coronae feed a field of small shield volcanoes (`stagnant.js shieldField`: its own
   rng stream, the world otherwise unchanged; snapshot `shieldFields`). The sampler draws them
