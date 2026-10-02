@@ -19,6 +19,7 @@
 
 import * as dm from '../../core/dmath.js';
 import { Rng } from '../../core/rng.js';
+import { Noise3 } from '../../core/noise.js';
 import { TerrainGenerator, S_LEN, S_H, S_MOIST, S_TEMP } from '../terrain.js';
 import { SimGrid } from './grid.js';
 import { Erosion } from './erosion.js';
@@ -447,10 +448,16 @@ function buildRock(G, Gt, T, rng) {
   const beds = [];
   for (let i = 0; i < 24; i++) beds.push({ v: rng.unitVector(), k: rng.range(2, 6), ph: rng.range(0, 6.283), base: rng.range(150, 450), amp: rng.range(80, 400), type: rng.next() < 0.5 ? 'shale' : 'sandstone', carb: rng.next() < 0.5 ? 'limestone' : 'chalk' });
   const d = [0, 0, 0], uv = { face: 0, u: 0, v: 0 };
+  // (how thick the cover is varies at every scale, as the ground it filled did: its hollows and
+  // old channels, bars and banks; read smoothly from the plates' record, an edge where the
+  // cover thins out would run as straight as that record's cells: a few cells of it to a
+  // fraction of one, and the edge of the continents' basement under it as ragged)
+  const nzS = new Noise3(rng.u32()), nzB = new Noise3(rng.u32()), kq = G.N / 12;
   for (let c = 0; c < G.n; c++) {
     d[0] = G.dir[c * 3]; d[1] = G.dir[c * 3 + 1]; d[2] = G.dir[c * 3 + 2];
-    lith.base[c] = Gt.sample(contW, d, uv) > 0.5 ? ROCK.granite : ROCK.basalt;
-    let sed = Gt.sample(sedW, d, uv), carb = Math.min(Gt.sample(carbW, d, uv), sed);
+    lith.base[c] = Gt.sample(contW, d, uv) + 0.15 * nzB.fbm(d[0] * kq, d[1] * kq, d[2] * kq, 5, 2, 0.6) > 0.5 ? ROCK.granite : ROCK.basalt;
+    const vary = Math.max(0, 1 + 0.8 * nzS.fbm(d[0] * kq, d[1] * kq, d[2] * kq, 5, 2, 0.6));
+    let sed = Gt.sample(sedW, d, uv) * vary, carb = Math.min(Gt.sample(carbW, d, uv) * vary, sed);
     // oldest first: each bed's thickness waves gently across the world
     for (let i = 0; i < beds.length && sed > 1; i++) {
       const B = beds[i];

@@ -175,7 +175,7 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
   const wet = new Uint8Array(n), relC = new Float64Array(n), hs = gen.hScale;
   // (the relief over a cell of the level above, from the world sim's: relief grows with scale
   // about as its 0.7th power)
-  const relK = rf ? dm.pow(Math.min(1, (pyr ? 4 * cell : S.G.spacing) / S.G.spacing), 0.7) : 1, dd = [0, 0, 0];
+  const relK = rf ? dm.pow(Math.min(1, (pyr ? 4 * cell : S.G.spacing) / S.G.spacing), 0.7) : 1, dd = [0, 0, 0], ctr = [0, 0, 0];
   for (let j = 0; j < NG; j++) for (let i = 0; i < NG; i++) {
     const c = j * NG + i, u = G.u0 + (i + 0.5) * G.du, v = G.v0 + (j + 0.5) * G.du;
     X[c] = u * Mu; Y[c] = v * Mu; U[c] = u; V[c] = v;
@@ -197,8 +197,16 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
       // (its rivers' courses, a cell or so wide, for the water here to find)
       const rv = gen._riverAt(dx, dy, dz);
       if (rv && rv.dist < 1.5 * cell) hb = Math.min(hb, (Math.max(rv.hs, 0) + 1 - 0.5 * rv.depth) * hs);
+      // (a lake: its water wherever this surface lies below its level, in its cells and those
+      // round them, so its shore is that surface's contour, not its cells' squares; held under
+      // the water round each of its cells' middles, so even a one-cell lake stays)
       const lk = gen._lakeAt(dx, dy, dz);
-      if (lk && lk.own) { hb = Math.min(hb, (lk.L - 0.5) * hs); wet[c] = 2; }
+      if (lk && lk.own) {
+        const c0 = S.G.cellAt(dx, dy, dz), m = S.G.centre(c0, ctr), ex = dx - m[0], ey = dy - m[1], ez = dz - m[2];
+        const r = Math.sqrt(ex * ex + ey * ey + ez * ez) * R / S.G.spacing;
+        hb += (Math.min(hb, (lk.L - 0.5) * hs) - hb) * (1 - dm.smoothstep(0.25, 0.5, r));
+      }
+      if (lk && hb < lk.L * hs) wet[c] = 2;
       else if (hb < 0 && S.seaDist(dx, dy, dz) < 1) wet[c] = 1;
       B[c] = hb; relC[c] = S.relief(dx, dy, dz) * hs;
     } else {

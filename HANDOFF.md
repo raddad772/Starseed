@@ -128,6 +128,19 @@ surveying many worlds; bit-exact across runs and clients, not across revisions):
   along its flow lines, a ridge on each otherwise) and capped near its edge by Nye's plastic
   profile (H^2 = 2 tau/(rho g) x; it was 3.5 km thick at the ice front). Checked on Opast's
   sheet (71N 102E) and a mountain ice field (-45, -107).
+- **Lakes by contour, not cells (TILE 17):** the refinement copied the world sim's lake cells
+  (bed forced under the level in each, the whole square a lake) and every finer level inherited
+  the squares (Dradriokae's Lake Vuzeksys, Heludriom's salt lake). Now its lake is wherever its
+  smooth starting surface lies under the level, in the lake's cells and round them (held under
+  round each lake cell's middle, so a one-cell lake stays); the sampler keeps a lake cell's bed
+  under the water only where the tiles have the lake (their lake share). Natural shores now.
+- **Contacts on even ground (SIM 18):** the sampler's refinement- and grid-level rock choice
+  now weighs where the fine ground stands against the smooth surface (cover on the rises,
+  basement in the hollows), as the tiles' did; and the starting cover's thickness varies at
+  every scale (`world.js buildRock`), so where it thins out its edge is ragged. The long straight
+  contact on Touveatar (19N 136E) is neither: a 45-degree staircase of cells in the world sim's
+  exposed rock, set somewhere in its deposit/erosion history (an old shoreline or a deposition
+  front along the grid's diagonal?). Still open.
 - **Rock beds without the jigsaw (`src/gen/geology.js`, new):** a pyramid tile used the one
   region at its middle (its column, its planar dip) for the whole tile (up to 128 km), and the
   refinement outside it one rock per cell: each tile showed as a square of stripes, its edges

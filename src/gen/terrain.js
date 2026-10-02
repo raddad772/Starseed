@@ -572,11 +572,12 @@ export class TerrainGenerator {
     let h = ref ? ref.h / this.hScale : S.h(x, y, z);
     // (and the finer levels of the terrain's tiles where there are any, each blended in by how
     // fully it covers the point: they fade into the coarser at the edges of what's been made)
-    let sea = ref ? ref.sea : -1, finest = ref ? S.refCell : 0, finRd = null;
+    let sea = ref ? ref.sea : -1, lakeF = ref ? ref.lake : -1, finest = ref ? S.refCell : 0, finRd = null;
     if (S.pyr) for (const rd of S.pyrReaders()) {
       if (!rd.sample(S._d(x, y, z))) continue;
       h += (rd.h / this.hScale - h) * rd.w;
       sea = sea < 0 ? rd.sea : sea + (rd.sea - sea) * rd.w;
+      lakeF = lakeF < 0 ? rd.lake : lakeF + (rd.lake - lakeF) * rd.w;
       if (rd.w > 0.5) { finest = rd.cell; finRd = rd; }
     }
     const h0 = h;
@@ -633,7 +634,9 @@ export class TerrainGenerator {
     const it = S.hasIce ? S.iceTop(x, y, z) : null, iceH = it ? it.H : 0, itHb = it ? it.hb : 0;
     const lk = iceH > 30 ? null : this._lakeAt(x, y, z);
     if (lk) {
-      if (lk.own) h = Math.min(h, lk.L - 0.5);
+      // (in its own cells kept under the water where the terrain's tiles have the lake too: its
+      // shore their outline and the ground's contour, not the world sim's cell)
+      if (lk.own) h += (Math.min(h, lk.L - 0.5) - h) * (lakeF < 0 ? 1 : dm.smoothstep(0.3, 0.7, lakeF));
       else h += Math.max(0, lk.L + 2 - h) * dm.smoothstep(0.55, 0.95, lk.q);
     }
     const flooded = lk && h < lk.L;

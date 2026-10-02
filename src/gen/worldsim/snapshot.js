@@ -20,8 +20,9 @@ import { MT } from '../tileshape.js';
 import * as dm from '../../core/dmath.js';
 import { Noise3 } from '../../core/noise.js';
 import { dunePatches } from '../dunes.js';
+import { ROCK_UP } from './lithology.js';
 
-export const SIM_VERSION = 17;
+export const SIM_VERSION = 18;
 
 // a world's grid size: maxN for an Earth-sized one, finer cells don't help a small one
 // (N ~ sqrt(radius): Mars ~210, the Moon ~150, a moonlet 64)
@@ -262,7 +263,7 @@ export class SnapshotSampler {
     this.rockPyr = true;
     for (let i = P.length - 1; i >= 0; i--) if (P[i].sample(this._d(x, y, z)) && P[i].w > 0.5) return P[i].rockAt(h * this._hs, this);
     this.rockPyr = false;
-    if (this.ref && this.ref.sample(this._d(x, y, z))) return this.ref.rockAt(h * this._hs, this);
+    if (this.ref && this.ref.sample(this._d(x, y, z))) return this.ref.rockAt(h * this._hs, this, NaN);
     const s = this.s, c = this._rc || (this._rc = new Int32Array(16)), w = this._rw || (this._rw = new Float64Array(16));
     this.G.corners16(this._d(x, y, z), c, w, this.uv);
     const r0 = s.rock[c[0]];
@@ -286,7 +287,9 @@ export class SnapshotSampler {
       let W = 0, H = 0;
       for (let q = 0; q < 16; q++) if (s.rock[c[q]] === r) { W += w[q]; H += w[q] * s.h[c[q]]; }
       if (W < 1e-9) continue;
-      const score = W + 1.5 * e * (H / W - hb) / span;
+      // (and on even ground by its rises and hollows: cover holds the rises, the basement shows in
+      // the hollows, so a contact snakes along them rather than the cells' blend)
+      const score = W + 1.5 * e * (H / W - hb) / span + 0.8 * dm.clamp(2 * e, -1, 1) * ROCK_UP[r] * Math.min(1, 2.5 * W);
       if (score > bs) { sec = best; ss = bs; bs = score; best = r; } else if (score > ss) { ss = score; sec = r; }
     }
     if (sec >= 0) { this.rock2 = sec; this.rockMix = 0.5 * (1 - dm.smoothstep(0, 0.12, bs - ss)); }

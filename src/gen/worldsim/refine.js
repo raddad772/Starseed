@@ -370,6 +370,9 @@ export class RefineReader {
     out.rock2 = rk[0]; out.rockMix = 0;
     if (nr === 1) return rk[0];
     const span = Math.max(20, hi - lo), e = (h - hb) / span;
+    // (el NaN: from where the ground stands against this level's smooth surface, the finer
+    // relief the sampler adds: a contact on even ground snakes along its rises and hollows)
+    if (el !== el) el = dm.clamp(2 * e, -1, 1);
     let best = -1, bs = -1e9, sec = -1, ss = -1e9;
     for (let k = 0; k < nr; k++) {
       if (W[k] < 1e-6) continue;
