@@ -140,10 +140,19 @@ export function meanderField() {
   if (field) return field;
   const D = MEANDER_DATA, same = D && D.P === MEANDER.P && D.iters === MEANDER.iters && D.seed === MEANDER.seed && D.version === MEANDER.version;
   const T = same ? D : meanderTrace({ P: MEANDER.P, iters: MEANDER.iters, seed: MEANDER.seed });
-  const P = T.P, lines = [{ x: Array.from(T.x), y: Array.from(T.y), closed: true, age: 0 }];
+  // (the channel's slow drift across its valley taken out, the loops kept: the belt centred on
+  // the valley's line, ~10 widths each side, as a river's belt is)
+  const P = T.P, NB = 120, bin = new Float64Array(NB), cnt = new Float64Array(NB);
+  for (let k = 0; k < T.x.length; k++) { const i = Math.floor(T.x[k] / P * NB) % NB; bin[i] += T.y[k]; cnt[i]++; }
+  const mean = new Float64Array(NB);
+  for (let i = 0; i < NB; i++) { let sm = 0, sw = 0; for (let j = -10; j <= 10; j++) { const q = (i + j + NB) % NB; sm += bin[q]; sw += cnt[q]; } mean[i] = sw ? sm / sw : 0; }
+  const drift = (x) => { const f = ((x % P) + P) % P / P * NB, i = Math.floor(f) % NB, t = f - Math.floor(f); return mean[i] * (1 - t) + mean[(i + 1) % NB] * t; };
+  // (and its loops pressed a little flatter across: the model's grow ~twice as tall as a river's)
+  const SQ = 0.6;
+  const lines = [{ x: Array.from(T.x), y: Array.from(T.y, (v, k) => SQ * (v - drift(T.x[k]))), closed: true, age: 0 }];
   // (the oxbows: the more recent kept, as lakes; the rest filled to swales)
   const nOx = T.oxbows.length;
-  T.oxbows.forEach((o, k) => lines.push({ x: Array.from(o.x), y: Array.from(o.y), closed: false, age: (nOx - k) / Math.max(1, nOx) }));
+  T.oxbows.forEach((o, k) => lines.push({ x: Array.from(o.x), y: Array.from(o.y, (v, q) => SQ * (v - drift(o.x[q]))), closed: false, age: (nOx - k) / Math.max(1, nOx) }));
   // segments bucketed by the cells (a width a side) they pass through
   const segs = [], grid = new Map(), key = (i, j) => ((((i % P) + P) % P) * 4099) + j + 2048;
   let ymin = 1e9, ymax = -1e9;
@@ -160,9 +169,11 @@ export function meanderField() {
       for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) { const kk = key(i, j); let l = grid.get(kk); if (!l) grid.set(kk, l = []); l.push(s); }
     }
   });
-  // (the belt's middle: the trace swings about it)
-  const mid = 0.5 * (ymin + ymax);
-  field = { P, segs, grid, key, mid, half: 0.5 * (ymax - ymin) };
+  // (the belt's middle and half width: the main channel's swing)
+  let my0 = 1e9, my1 = -1e9;
+  for (const v of lines[0].y) { my0 = Math.min(my0, v); my1 = Math.max(my1, v); }
+  const mid = 0.5 * (my0 + my1); ymin = my0; ymax = my1;
+  field = { P, segs, grid, key, mid, half: 0.5 * (ymax - ymin), lines };
   return field;
 }
 // the nearest channel and oxbow to (X, Y) (widths along the valley, wrapped, and across it from

@@ -25,7 +25,7 @@ import { patchAt } from './dunes.js';
 import { CraterField } from './craters.js';
 import { craterFloor, TILE_CELLS } from './worldsim/impacts.js';
 import { SnapshotSampler } from './worldsim/snapshot.js';
-import { RIVER_REC } from './worldsim/refine.js';
+import { RIVER_REC, BIG_REC } from './worldsim/refine.js';
 import { meanderField, meanderNear } from './meanders.js';
 import { ROCKS, R as ROCK } from './worldsim/lithology.js';
 import { hexToLinear } from './color.js';
@@ -597,12 +597,12 @@ export class TerrainGenerator {
     // below them) follow the sim's heights along the line, so the water only runs downhill
     let wl = -1e9;
     const rv = this._riverAt(x, y, z);
-    if (rv && rv.belt > 0 && rv.axis < 1.3 * rv.belt) {
+    if (rv) {
       // (a meandering river's floodplain: the belt it has swung across, laid level near its banks;
       // and the loops it cut off, lakes while young, swales once filled)
       const bank0 = Math.max(rv.hs, 0) + 1 + 0.05 * rv.depth;
-      h += (bank0 + 0.5 - h) * 0.85 * dm.smoothstep(1.3 * rv.belt, 0.85 * rv.belt, rv.axis);
-      const oh = 0.5 * rv.w;
+      if (rv.belt > 0 && rv.axis < 1.3 * rv.belt) h += (bank0 + 0.5 - h) * 0.85 * dm.smoothstep(1.3 * rv.belt, 0.85 * rv.belt, rv.axis);
+      const oh = 0.5 * (rv.oxW || rv.w);
       if (rv.ox < oh && rv.oxAge < 0.8) {
         const q = 1 - (rv.ox / oh) * (rv.ox / oh), dep = rv.depth * 0.6 * (1 - rv.oxAge);
         h = Math.min(h, bank0 - dep * q);
@@ -842,6 +842,7 @@ export class TerrainGenerator {
       const c = q < 0 ? c0 : nb[q];
       for (let e = Rv.start[c]; e < Rv.start[c + 1]; e++) {
         const r = Rv.idx[e], b = r * RIVER_REC, half = Rv.half[r];
+        if (Rv.big && Rv.big.has[r]) continue;   // (a great river's own winding channel, below)
         // (its curve: from halfway to its main inflow, through its cell, to halfway on)
         let bd = 1e30, bt = 0;
         for (let k = 0; k <= 8; k++) {
@@ -862,6 +863,31 @@ export class TerrainGenerator {
       }
     }
     if (best && Rv.phase) this._meander(best, x, y, z);
+    // (the great rivers' channels, built winding: refine.js bigChannels)
+    const Bg = Rv.big;
+    let oxD = 1e9, oxA = 1, oxW = 0;
+    if (Bg) for (let q = -1; q < nn; q++) {
+      const c = q < 0 ? c0 : nb[q];
+      for (let e = Bg.start[c]; e < Bg.start[c + 1]; e++) {
+        const sb = Bg.idx[e] * BIG_REC, sg = Bg.seg;
+        const ax = sg[sb + 3] - sg[sb], ay = sg[sb + 4] - sg[sb + 1], az = sg[sb + 5] - sg[sb + 2], qx = x - sg[sb], qy = y - sg[sb + 1], qz = z - sg[sb + 2];
+        const L2 = ax * ax + ay * ay + az * az, t = L2 > 0 ? Math.max(0, Math.min(1, (qx * ax + qy * ay + qz * az) / L2)) : 0;
+        const dx = qx - t * ax, dy = qy - t * ay, dz = qz - t * az, dist = Math.sqrt(dx * dx + dy * dy + dz * dz) * R, half = sg[sb + 6];
+        if (sg[sb + 9] > 0) {
+          // (an oxbow: a lake while young, a swale once filled)
+          if (dist < oxD) { oxD = dist; oxA = sg[sb + 10]; oxW = 2 * half; }
+          continue;
+        }
+        if (dist - 2 * half < bs) {
+          bs = dist - 2 * half;
+          const k = sg[sb + 7];
+          best = this._rv || (this._rv = { dist: 0, w: 0, depth: 0, k: 0, hs: 0, r: 0, t: 0, axis: 0, belt: 0, ox: 1e9, oxAge: 1 });
+          best.dist = dist; best.w = 2 * half; best.k = k; best.depth = 3 + 25 * k; best.hs = sg[sb + 8] / this.hScale;
+          best.axis = dist; best.belt = 0; best.ox = 1e9; best.oxW = 0;
+        }
+      }
+    }
+    if (best && oxD < (best.ox ?? 1e9)) { best.ox = oxD; best.oxAge = oxA; best.oxW = oxW; }
     return best;
   }
 
@@ -871,7 +897,7 @@ export class TerrainGenerator {
   // line and rv.belt the belt's half width (0 where the river runs straight)
   _meander(rv, x, y, z) {
     const Rv = this.snap.riv, rec = Rv.rec, R = this.R, b = rv.r * RIVER_REC, w = rv.w;
-    rv.axis = rv.dist; rv.belt = 0; rv.ox = 1e9;
+    rv.axis = rv.dist; rv.belt = 0; rv.ox = 1e9; rv.oxW = 0;
     const F = this._mf || (this._mf = meanderField());
     // (how far it may swing: on a gentle slope fully, its belt kept within reach of the valley's
     // line; a steep or great river keeps nearer it)

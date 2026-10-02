@@ -11,6 +11,7 @@
 import { FACES, dirFromFaceUV } from '../cubesphere.js';
 import { GridLite } from './grid.js';
 import { ROCK_UP } from './lithology.js';
+import { meanderField } from '../meanders.js';
 import { MT, KEEP, TILE_VERSION } from '../tileshape.js';
 import * as dm from '../../core/dmath.js';
 
@@ -125,7 +126,100 @@ export function riverIndex(parts, N, Rw) {
       phase[q] = ph; prev = q;
     }
   }
-  return { rec, start, idx, half, size, phase };
+  // (each record's next down its river, and its main inflow: the one bringing the most water)
+  const dn = new Int32Array(m).fill(-1), up = new Int32Array(m).fill(-1);
+  for (let r = 0; r < m; r++) { const d = byKey.get(keys[2 * r + 1]); if (d !== undefined && d !== r) dn[r] = d; }
+  for (let r = 0; r < m; r++) { const d = dn[r]; if (d >= 0 && (up[d] < 0 || size[r] > size[up[d]])) up[d] = r; }
+  return { rec, start, idx, half, size, phase, big: bigChannels(rec, half, size, phase, dn, up, G, Rw) };
+}
+
+// ---- the great rivers' winding channels: a river too wide for its meander belt to be found
+// round its valley's line (terrain.js lays smaller ones' meanders as it samples) has its
+// channel built here: the meander trace (meanders.js) laid along its records by their phase,
+// offset across by its width, as short segments indexed by the world sim's cells. Each segment:
+// its ends (directions), the river's half width, size and bank height there; and its kind
+// (0 the channel, 1 an oxbow) and the oxbow's age
+export const BIG_W = 250, BIG_REC = 11;
+function bigChannels(rec, half, size, phase, dn, up, G, Rw) {
+  const F = meanderField(), m = half.length, segs = [], P = F.P, has = new Uint8Array(m);
+  // (the channel, every other point of it: a segment about a width long; and its younger oxbows)
+  const thin = (L) => ({ ...L, x: L.x.filter((v, k) => k % 2 === 0), y: L.y.filter((v, k) => k % 2 === 0) });
+  const lines = [thin(F.lines[0]), ...F.lines.slice(1).filter((L) => L.age < 0.5).map(thin)];
+  const isBig = (r) => r >= 0 && 2 * half[r] >= BIG_W;
+  // (the river's line smoothed over two meander wavelengths along its main stem: the belt
+  // follows the valley at its own scale, not every turn of the cells)
+  const S = new Float64Array(3 * m), Sok = new Uint8Array(m), W = 2 * 18;
+  for (let r = 0; r < m; r++) {
+    if (!isBig(r)) continue;
+    let sx = 0, sy = 0, sz = 0, sw = 0;
+    for (const dir of [dn, up]) {
+      let q = dir === dn ? r : up[r];
+      while (q >= 0 && Math.abs(phase[q] - phase[r]) <= W / 2) {
+        const b = q * RIVER_REC + 3, wt = 1 - Math.abs(phase[q] - phase[r]) / (W / 2 + 1e-9);
+        sx += wt * rec[b]; sy += wt * rec[b + 1]; sz += wt * rec[b + 2]; sw += wt;
+        q = dir[q];
+      }
+    }
+    if (sw > 0) { const l = Math.sqrt(sx * sx + sy * sy + sz * sz); S[3 * r] = sx / l; S[3 * r + 1] = sy / l; S[3 * r + 2] = sz / l; Sok[r] = 1; }
+  }
+  // each stem (a chain of great records from where the river grows great down to its end, or to a
+  // stem already laid: a tributary meets its trunk), the trace laid along it whole: one channel
+  const visited = new Uint8Array(m), tmp = [0, 0, 0];
+  for (let r0 = 0; r0 < m; r0++) {
+    if (!Sok[r0] || visited[r0] || isBig(up[r0]) && Sok[up[r0]]) continue;
+    const nodes = [];
+    for (let q = r0; q >= 0 && Sok[q]; q = dn[q]) { nodes.push(q); if (visited[q]) break; visited[q] = 1; }
+    if (nodes.length < 2) continue;
+    const n = nodes.length, ph = nodes.map((q) => phase[q]);
+    // (its heights smoothed along it, so its slope reads the valley's, not the cells')
+    const H = nodes.map((q, i) => { let sh = 0, sw = 0; for (let j = Math.max(0, i - 6); j <= Math.min(n - 1, i + 6); j++) { sh += rec[nodes[j] * RIVER_REC + 10]; sw++; } return sh / sw; });
+    const Amp = nodes.map((q, i) => {
+      const a = nodes[Math.max(0, i - 4)], b = nodes[Math.min(n - 1, i + 4)], ia = 3 * a, ib = 3 * b;
+      const dist = Math.sqrt((S[ia] - S[ib]) ** 2 + (S[ia + 1] - S[ib + 1]) ** 2 + (S[ia + 2] - S[ib + 2]) ** 2) * Rw;
+      const sl = dist > 0 ? Math.abs(H[Math.max(0, i - 4)] - H[Math.min(n - 1, i + 4)]) / dist : 0;
+      return 1 - dm.smoothstep(3e-4, 2e-3, sl);
+    });
+    for (const q of nodes) has[q] = 1;
+    // (the stem's point at a phase: between the nodes whose phases hold it, up the stem)
+    const at = (p, o) => {
+      let lo = 0, hi = n - 1;   // (phases fall down the stem: ph[0] the highest)
+      if (p >= ph[0]) hi = 1; else if (p <= ph[n - 1]) lo = n - 2;
+      else { while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (ph[mid] >= p) lo = mid; else hi = mid; } }
+      const iu = lo, id = hi, f = ph[iu] > ph[id] ? (p - ph[id]) / (ph[iu] - ph[id]) : 0;
+      const u = 3 * nodes[iu], d = 3 * nodes[id];
+      o.x = S[d] + f * (S[u] - S[d]); o.y = S[d + 1] + f * (S[u + 1] - S[d + 1]); o.z = S[d + 2] + f * (S[u + 2] - S[d + 2]);
+      o.tx = S[u] - S[d]; o.ty = S[u + 1] - S[d + 1]; o.tz = S[u + 2] - S[d + 2];
+      o.w = 2 * (half[nodes[id]] + f * (half[nodes[iu]] - half[nodes[id]])); o.k = size[nodes[id]] + f * (size[nodes[iu]] - size[nodes[id]]);
+      o.h = H[id] + f * (H[iu] - H[id]); o.A = Amp[id] + f * (Amp[iu] - Amp[id]);
+      return o;
+    };
+    const p0 = ph[n - 1], p1 = ph[0], o = {};
+    lines.forEach((L, li) => {
+      const nl = L.x.length;
+      let prev = null;
+      for (let per = Math.floor(p0 / P) - (li ? 1 : 0); per <= Math.floor(p1 / P); per++) for (let k = 0; k < nl; k++) {
+        if (li && k === 0) prev = null;   // (an oxbow is a piece of channel, not a loop round the period)
+        const pk = per * P + L.x[k];
+        if (pk < p0 || pk > p1) { prev = null; continue; }
+        at(pk, o);
+        const cl = Math.sqrt(o.x * o.x + o.y * o.y + o.z * o.z), cx = o.x / cl, cy = o.y / cl, cz = o.z / cl;
+        const ux = cy * o.tz - cz * o.ty, uy = cz * o.tx - cx * o.tz, uz = cx * o.ty - cy * o.tx, ul = Math.sqrt(ux * ux + uy * uy + uz * uz) || 1;
+        const off = o.A * o.w * (L.y[k] - F.mid) / Rw;
+        let px = cx + off * ux / ul, py = cy + off * uy / ul, pz = cz + off * uz / ul;
+        const pl = Math.sqrt(px * px + py * py + pz * pz); px /= pl; py /= pl; pz /= pl;
+        if (prev) segs.push(prev[0], prev[1], prev[2], px, py, pz, o.w / 2, o.k, o.h, li ? 1 : 0, L.age);
+        prev = [px, py, pz];
+      }
+    });
+  }
+  const seg = Float32Array.from(segs), ns = seg.length / BIG_REC;
+  if (!ns) return null;
+  const cellOf = new Int32Array(ns), start = new Int32Array(G.n + 1);
+  for (let q = 0; q < ns; q++) { const b = q * BIG_REC; cellOf[q] = G.cellAt((seg[b] + seg[b + 3]) / 2, (seg[b + 1] + seg[b + 4]) / 2, (seg[b + 2] + seg[b + 5]) / 2); start[cellOf[q] + 1]++; }
+  for (let c = 0; c < G.n; c++) start[c + 1] += start[c];
+  const fill = start.slice(0, G.n), idx = new Int32Array(ns);
+  for (let q = 0; q < ns; q++) idx[fill[cellOf[q]]++] = q;
+  return { seg, start, idx, has };
 }
 
 // cubic weights at t in [0, 1] for the four samples round it: B-spline (smooth, for a
