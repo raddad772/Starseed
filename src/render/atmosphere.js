@@ -486,7 +486,7 @@ export class Atmosphere {
     const d = body.data;
     const giant = !!body.giant;
     const R = body.R;
-    const relief = d.terrain ? d.terrain.relief : 0;
+    const relief = body.relief || 0;
     const hasSea = d.terrain && d.terrain.ocean > 0 && d.terrain.liquid;
     this.radius = R;
     this.ground = giant ? R - Math.min(a.depth || 0, R * 0.2) : R + (hasSea ? 0 : -relief * 0.4);

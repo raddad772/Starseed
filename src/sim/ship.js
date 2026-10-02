@@ -295,7 +295,7 @@ export class Ship {
   // present descent (at half power, net of gravity)
   safeAltitude() {
     const b = this.body;
-    const clear = b.data.terrain ? b.data.terrain.relief * 1.6 + 2000 : 2000;
+    const clear = b.relief * 1.6 + 2000;
     if (!b.solid) return clear + (this.big ? this.type.radius : 0);
     const vDown = Math.max(0, -this.surfaceVel(_sa1).dot(_sa2.copy(this.pos).normalize()));
     const aStop = Math.max(0.5, 0.5 * this.maxUpAccel());
@@ -423,7 +423,7 @@ export class Ship {
     env.temperature = st.temperature;
     env.dynPressure = 0; env.airspeed = 0;
     this.heatGlow *= 0.9;
-    const relief = b.data.terrain ? b.data.terrain.relief : 0;
+    const relief = b.relief;
     this.agl = alt - relief;
     this.legState.fill(0);
     this.accel.set(0, 0, 0);
@@ -655,7 +655,7 @@ export class Ship {
       let minUp = -Math.max(1.2, vProf), terrainLimited = false;
       // terrain ahead: climb to clear what the ground track is about to
       // cross, and slow down when even that climb would come too late
-      const band = b.data.terrain ? b.data.terrain.relief * 1.6 + 2200 : 2200; // above the highest peaks
+      const band = b.relief * 1.6 + 2200; // above the highest peaks
       if (this.pos.length() - b.R < band) {
         const ah = this.terrainAhead(this.surfaceVel(_vs), guardUp, aStop);
         if (ah.need > minUp) { minUp = ah.need; terrainLimited = true; }
@@ -867,7 +867,7 @@ export class Ship {
     let minAgl = Infinity;
     const center = this.pos;
     // high above any terrain: one ground sample under the ship, no probes
-    const reliefTop = (b.data.terrain ? b.data.terrain.relief * 1.6 + 200 : 200) + (this.big ? this.type.radius : 0);
+    const reliefTop = (b.relief * 1.6 + 200) + (this.big ? this.type.radius : 0);
     const alt0 = center.length() - b.R;
     if (alt0 > reliefTop + 60) {
       const pf0 = _v4.copy(center).applyQuaternion(qInvBody).normalize();
@@ -890,7 +890,7 @@ export class Ship {
       const pf = _v4.copy(pw).applyQuaternion(qInvBody);                   // body-fixed
       const r = pf.length();
       // cheap reject: far above any terrain
-      const relief = b.data.terrain ? b.data.terrain.relief * 1.6 + 200 : 200;
+      const relief = b.relief * 1.6 + 200;
       if (r - b.R > relief) { minAgl = Math.min(minAgl, r - b.R - relief); return 0; }
       const gh = b.floorAt(pf, 1.5);   // (the volume's ground in the near field)
       const depth = b.R + gh - r;

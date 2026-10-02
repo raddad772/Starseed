@@ -816,7 +816,7 @@ export class Player {
     for (const c of b.children) if (this.ePos.clone().sub(c.relPos).length() < c.soi) { this.changeBody(c); break; }
     // drop back to surface physics near the ground
     const bb = this.body;
-    const relief = bb.data.terrain ? bb.data.terrain.relief * 1.6 : 0;
+    const relief = bb.relief * 1.6;
     if (bb.solid && this.ePos.length() - bb.R < relief + EVA_AGL && this.heightOverGround(bb, this.ePos) < EVA_AGL) {
       this.fPos.copy(this.ePos).applyQuaternion(bb.qInv);
       this.fVel.copy(this.eVel).sub(_v1.copy(bb.omega).cross(this.ePos)).applyQuaternion(bb.qInv);

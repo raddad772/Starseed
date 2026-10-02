@@ -5,7 +5,7 @@
 
 import * as THREE from 'three';
 import { orbitState } from '../core/kepler.js';
-import { TerrainGenerator, S_LEN, surfaceOf, liquidDepthOf } from '../gen/terrain.js';
+import { TerrainGenerator, S_LEN, RELIEF_MAX, surfaceOf, liquidDepthOf } from '../gen/terrain.js';
 import { dirFromFaceUV, faceUVFromDir, chunkArcSize } from '../gen/cubesphere.js';
 import { CHUNK_N } from '../gen/chunkbuilder.js';
 import * as U from '../core/units.js';
@@ -48,6 +48,9 @@ export class BodyRuntime {
     if (!this._gen && this.data.terrain) this._gen = new TerrainGenerator(this.data.terrain);
     return this._gen;
   }
+
+  // its terrain's relief as drawn (m): a small body's is held to its size (TerrainGenerator.hScale)
+  get relief() { const t = this.data.terrain; return t ? Math.min(t.relief, RELIEF_MAX * this.R) : 0; }
 
   // Orientation at an arbitrary time
   orientationAt(t, out) {

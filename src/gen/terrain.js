@@ -43,6 +43,9 @@ export const S_DX = 13, S_DY = 14, S_DZ = 15; // sample direction
 export const S_WDEPTH = 16;  // lake or river water over the ground here (m; its surface is S_H + this)
 export const S_LEN = 17;
 
+// a small body's relief is held to this share of its drawn radius (TerrainGenerator.hScale)
+export const RELIEF_MAX = 0.06;
+
 const tmp4 = new Float64Array(4);
 
 function smin(a, b, k) { const h = dm.clamp(0.5 + 0.5 * (b - a) / k, 0, 1); return b + (a - b) * h - k * h * (1 - h); }
@@ -58,7 +61,7 @@ export class TerrainGenerator {
     // relief a blob: it's held to ~6% of the drawn radius (no change for an Earth's or a Moon's)
     let rel = p.relief || 3000;
     if (p.snapshot) { rel = 0; for (const v of p.snapshot.h) { const a = Math.abs(v); if (a > rel) rel = a; } }
-    this.hScale = Math.min(1, 0.06 * this.R / Math.max(1, rel));
+    this.hScale = Math.min(1, RELIEF_MAX * this.R / Math.max(1, rel));
     this.rockLin = ROCKS.map((r) => hexToLinear(r.color));
     const rng = new Rng(p.seed);
     this.nWarp = new Noise3(rng.seed32('warp'));

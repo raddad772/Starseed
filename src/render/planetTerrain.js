@@ -70,7 +70,7 @@ export class PlanetTerrain {
     this.generation = 0;
     this.camLocal = new THREE.Vector3();
     this.hasSea = !!(body.data.terrain && body.data.terrain.ocean > 0 && body.data.terrain.liquid);
-    const relief = body.data.terrain ? body.data.terrain.relief : 10000;
+    const relief = body.data.terrain ? body.relief : 10000;
     this.minSurface = this.R + (this.hasSea ? 0 : -relief * 1.2);
     this.debug = false;
     this.floraLevel = Math.max(2, this.maxLevel - 3);
@@ -115,7 +115,7 @@ export class PlanetTerrain {
     const cosA = node.dir.x * this.camDir.x + node.dir.y * this.camDir.y + node.dir.z * this.camDir.z;
     const ang = Math.acos(Math.max(-1, Math.min(1, cosA)));
     const top = this.R + Math.max(node.maxH, 0);
-    const extra = top > this.minSurface ? Math.acos(Math.min(1, this.minSurface / top)) : 0;
+    const extra = top > this.minSurface ? Math.acos(Math.max(-1, Math.min(1, this.minSurface / top))) : 0;
     return ang - node.ang <= this.horizonAng + extra;
   }
 
