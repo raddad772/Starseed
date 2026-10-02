@@ -21,7 +21,7 @@ import * as dm from '../../core/dmath.js';
 import { Noise3 } from '../../core/noise.js';
 import { dunePatches } from '../dunes.js';
 
-export const SIM_VERSION = 13;
+export const SIM_VERSION = 14;
 
 // a world's grid size: maxN for an Earth-sized one, finer cells don't help a small one
 // (N ~ sqrt(radius): Mars ~210, the Moon ~150, a moonlet 64)
@@ -79,6 +79,8 @@ export function packSnapshot(W, body) {
   // sand seas (world.js: truly dry, sand to hand, gentle ground) and the dunes the wind builds
   // in them (dunes.js: the same patches for every world, made once)
   if (W.dunes && W.dunes.some((v) => v)) { out.dunes = Uint8Array.from(W.dunes); out.dunePatch = dunePatches(); }
+  // the maria's lava levels (barren.js floodBasin; m, -32768 none): their edges follow them
+  if (W.mareLv) { out.mareLv = new Int16Array(n); for (let c = 0; c < n; c++) out.mareLv[c] = W.mareLv[c] === W.mareLv[c] ? Math.max(-32767, Math.min(32767, Math.round(W.mareLv[c]))) : -32768; }
   // an icy shell's cracks (barren.js crackShell): arcs, for each level to draw its ridges
   if (W.lineae) out.lineae = W.lineae.map((a) => ({ pole: a.pole.slice(), u: a.u.slice(), v: a.v.slice(), start: a.start, len: a.len, H: a.H }));
   // and where it broke into rafts over warm spots (chaos: the rafts drawn where the ground is seen)
@@ -102,7 +104,7 @@ export function packSnapshot(W, body) {
 
 // the arrays a snapshot carries (for transfer lists and caching)
 export function snapshotBuffers(s) {
-  return ['h', 'water', 'rock', 'ice', 'river', 'melt', 'relief', 'rcv', 'Tsea', 'P', 'cover', 'forest', 'open', 'cloud', 'cloudPx', 'crat', 'dunes', 'ocean'].filter((k) => s[k]).map((k) => s[k].buffer);
+  return ['h', 'water', 'rock', 'ice', 'river', 'melt', 'relief', 'rcv', 'Tsea', 'P', 'cover', 'forest', 'open', 'cloud', 'cloudPx', 'crat', 'dunes', 'ocean', 'mareLv'].filter((k) => s[k]).map((k) => s[k].buffer);
 }
 
 // reads a snapshot at any direction

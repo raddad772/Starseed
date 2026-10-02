@@ -46,6 +46,8 @@ export function barrenWorld(G, opts) {
   // or resurfaced then), and the craters the bombardment left after each step (for the finer
   // levels' craters, crat: N(>= D) per m^2 is crat / D^2, D in m as drawn)
   const since = new Float32Array(n), cum = [0];
+  // (the level each mare's lava reached: where it ends, the ground rose above it)
+  const mareLv = new Float32Array(n).fill(NaN);
   const basalt = !(body.terrain && body.terrain.icy); // (icy worlds don't make dark lava seas)
   const volcEnd = opts.volcEnd ?? 0;
   const flood = []; // basins waiting for lava: { t, at, R (m, drawn), depth }
@@ -72,7 +74,7 @@ export function barrenWorld(G, opts) {
     }
     for (let i = flood.length - 1; i >= 0; i--) {
       if (flood[i].t > t) continue;
-      floodBasin(G, h, mare, fresh, flood[i], since, t);
+      floodBasin(G, h, mare, fresh, flood[i], since, t, mareLv);
       stats.flooded++;
       flood.splice(i, 1);
     }
@@ -89,11 +91,11 @@ export function barrenWorld(G, opts) {
   const crat = new Float32Array(n), all = cum[cum.length - 1], dtG = DT_MYR / 1000;
   // (a flood at a step's time buries that step's craters too)
   for (let c = 0; c < n; c++) crat[c] = all - cum[since[c] > 0 ? Math.min(cum.length - 1, Math.round(since[c] / dtG) + 1) : 0];
-  return { h, fresh, mare, plains, impacts: imp, stats, crat, dMin, lineae: cracks ? cracks.arcs : null, chaos: cracks ? cracks.chaos : null };
+  return { h, fresh, mare, plains, impacts: imp, stats, crat, dMin, lineae: cracks ? cracks.arcs : null, chaos: cracks ? cracks.chaos : null, mareLv: stats.flooded ? mareLv : null };
 }
 
 // lava fills a basin's floor up to about half its depth: flat dark plains
-function floodBasin(G, h, mare, fresh, B, since, t) {
+function floodBasin(G, h, mare, fresh, B, since, t, mareLv) {
   const reach = 0.95 * B.R / G.R;
   const c0 = G.cellAt(B.at[0], B.at[1], B.at[2]);
   const cells = [];
@@ -107,7 +109,7 @@ function floodBasin(G, h, mare, fresh, B, since, t) {
     for (let e = G.nStart[c]; e < G.nStart[c + 1]; e++) { const o = G.nbr[e]; if (!seen.has(o)) { seen.add(o); q.push(o); } }
   }
   const level = lo + B.depth * 0.55;
-  for (const c of cells) if (h[c] < level) { h[c] = level; mare[c] = 1; fresh[c] = 0; if (since) since[c] = t; }
+  for (const c of cells) if (h[c] < level) { h[c] = level; mare[c] = 1; fresh[c] = 0; if (since) since[c] = t; if (mareLv) mareLv[c] = level; }
 }
 
 // a resurfacing: everything below the share's height floods (lava, or slush on an icy

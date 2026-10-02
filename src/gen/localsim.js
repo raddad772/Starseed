@@ -647,6 +647,7 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
       }
       else {
       const cc = new Int32Array(16), ww = new Float64Array(16), uv = { face: 0, u: 0, v: 0 }, dd = [0, 0, 0], sr = S.s.rock, sh = S.s.h;
+      const mLv = S.s.mareLv || null, BAS = ROCKS.findIndex((r) => r.name === 'basalt');
       const rk = new Int32Array(16), Wr = new Float64Array(16), Hr = new Float64Array(16);
       for (let c = 0; c < n; c++) {
         dd[0] = G.dir[c * 3]; dd[1] = G.dir[c * 3 + 1]; dd[2] = G.dir[c * 3 + 2];
@@ -655,7 +656,8 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
         let same = true;
         for (let k = 1; k < 16 && same; k++) if (sr[cc[k]] !== r0) same = false;
         if (same) { rockC[c] = r0; continue; }
-        let hb = 0, lo = 1e9, hi = -1e9, nr = 0;
+        let hb = 0, lo = 1e9, hi = -1e9, nr = 0, mw = 0;
+        if (mLv) for (let k = 0; k < 16; k++) if (mLv[cc[k]] !== -32768) mw += ww[k];
         for (let k = 0; k < 16; k++) {
           const hk = sh[cc[k]], r = sr[cc[k]];
           hb += ww[k] * hk; lo = Math.min(lo, hk); hi = Math.max(hi, hk);
@@ -672,7 +674,8 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
           // its kind: cover strata and lava hold the rises, the old basement shows where valleys
           // cut down to it, what was laid down lies in the lows. So on even ground a contact
           // follows the land's own swales and rises, not the world sim's cells)
-          const rel = (Hr[q] / Wr[q] - hb) / span, up = DEP.has(rk[q]) ? -1 : dm.clamp(4 * rel + UPK[rk[q]], -1, 1);
+          // (a mare's lava filled the lows of its basin: it lies in them, embaying what stood up)
+          const rel = (Hr[q] / Wr[q] - hb) / span, up = DEP.has(rk[q]) || (rk[q] === BAS && mw > 0.02) ? -1 : dm.clamp(4 * rel + UPK[rk[q]], -1, 1);
           const score = Wr[q] + 1.5 * e * rel + 0.8 * el * up * Math.min(1, 2.5 * Wr[q]);
           if (score > bs) { bs = score; best = rk[q]; }
         }
