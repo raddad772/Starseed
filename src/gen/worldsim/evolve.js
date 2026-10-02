@@ -622,7 +622,7 @@ export function evolveWorld(ctx) {
     seaPH: oceans > 0.001 ? seaPH(pCO2, pSO2) : null,
     solvent: stage > 0 ? solvent : null, backbone: stage > 0 ? backbone : null,
     metabolisms: stage > 0 ? energyOf({ air, P, solvent, oceans, redox }).pairs.map((p) => p[0]) : [],
-    extinctions, bigImpacts, floodBasalts: lips, superEruptions, eruption, recovering, radiusKm: Rkm,
+    extinctions, bigImpacts, floodBasalts: lips, superEruptions, eruption, recovering, radiusKm: Rkm, tidal,
     plantsMyr, floraStage, floraName: ['bare', 'microbial crusts', 'ground cover', 'shrubs and ferns', 'forests', 'diverse forests and grasslands'][floraStage + 1], maxTreeM,
     series, events, carbon,
     exception: exc,

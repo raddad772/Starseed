@@ -29,7 +29,7 @@ export function barrenWorld(G, opts) {
   const age = opts.age;
   // a primordial crust: broad, gentle swells (and sometimes a lopsided
   // hemisphere: the near and far sides of a moon)
-  const h = new Float64Array(n), fresh = new Float32Array(n), mare = new Float32Array(n);
+  const h = new Float64Array(n), fresh = new Float32Array(n), mare = new Float32Array(n), plains = new Float32Array(n);
   const lump = new Float64Array(n);
   for (let c = 0; c < n; c++) lump[c] = (hashInts(c, rng.u32()) >>> 0) / 4294967296;
   smoothField(G, lump, Math.round(G.N / 5));
@@ -70,8 +70,12 @@ export function barrenWorld(G, opts) {
       flood.splice(i, 1);
     }
     for (let c = 0; c < n; c++) fresh[c] *= decay;
+    // a whole-world resurfacing (a Venus's overturn, or an icy shell renewing): the lows
+    // flood, their craters gone; what came after is all that's cratered there
+    if (opts.resurfaceAt != null && !stats.resurfaced && t >= opts.resurfaceAt) { resurface(G, h, opts.resurfaceShare ?? 0.75, basalt ? mare : plains, fresh); stats.resurfaced = true; }
   }
-  return { h, fresh, mare, impacts: imp, stats };
+  if (opts.crack) crackShell(G, h, rng.fork('cracks'), opts.crack, opts.scale ?? 0.1, plains);
+  return { h, fresh, mare, plains, impacts: imp, stats };
 }
 
 // lava fills a basin's floor up to about half its depth: flat dark plains
@@ -90,4 +94,45 @@ function floodBasin(G, h, mare, fresh, B) {
   }
   const level = lo + B.depth * 0.55;
   for (const c of cells) if (h[c] < level) { h[c] = level; mare[c] = 1; fresh[c] = 0; }
+}
+
+// a resurfacing: everything below the share's height floods (lava, or slush on an icy
+// world) to a near-level plain, keeping a little of the old slope; marks the plains
+export function resurface(G, h, share, marks, fresh) {
+  const sorted = Float64Array.from(h).sort();
+  const level = sorted[Math.min(G.n - 1, Math.floor(G.n * share))];
+  for (let c = 0; c < G.n; c++) if (h[c] < level) { h[c] = level - (level - h[c]) * 0.12; marks[c] = 1; if (fresh) fresh[c] = 0; }
+  return level;
+}
+
+// an icy shell's cracking under the tides (Europa's lineae, Enceladus' stripes): ridges
+// along great-circle arcs (paired ridges a few hundred metres high, drawn at the game's
+// scale), and chaos where the shell broke into rafts over a warm spot. tidal: 0..1
+export function crackShell(G, h, rng, tidal, scale, marks) {
+  const nCracks = Math.round(20 + 120 * tidal), nChaos = Math.round(3 + 10 * tidal);
+  const ridgeH = 300 * scale * 2.5, width = 2.5 * G.spacing;
+  for (let k = 0; k < nCracks; k++) {
+    // an arc: a pole (the great circle's axis) and a stretch of it
+    const pole = rng.unitVector(), len = rng.range(0.3, 2.0), start = rng.range(0, 6.283);
+    const a0 = Math.abs(pole[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
+    let u = [pole[1] * a0[2] - pole[2] * a0[1], pole[2] * a0[0] - pole[0] * a0[2], pole[0] * a0[1] - pole[1] * a0[0]];
+    const ul = Math.hypot(u[0], u[1], u[2]); u = u.map((x) => x / ul);
+    const v = [pole[1] * u[2] - pole[2] * u[1], pole[2] * u[0] - pole[0] * u[2], pole[0] * u[1] - pole[1] * u[0]];
+    const steps = Math.ceil(len * G.R / G.spacing);
+    for (let i = 0; i <= steps; i++) {
+      const th = start + len * i / steps, cs = dm.cos(th), sn = dm.sin(th);
+      const p = [u[0] * cs + v[0] * sn, u[1] * cs + v[1] * sn, u[2] * cs + v[2] * sn];
+      const c = G.cellAt(p[0], p[1], p[2]);
+      h[c] += ridgeH;
+      for (let e = G.nStart[c]; e < G.nStart[c + 1]; e++) h[G.nbr[e]] += ridgeH * 0.35;
+    }
+  }
+  for (let k = 0; k < nChaos; k++) {
+    const at = rng.unitVector(), R = rng.range(40e3, 150e3) * scale / G.R;
+    for (let c = 0; c < G.n; c++) {
+      const cosA = G.dir[c * 3] * at[0] + G.dir[c * 3 + 1] * at[1] + G.dir[c * 3 + 2] * at[2];
+      if (cosA < dm.cos(R)) continue;
+      h[c] = h[c] * 0.3 - ridgeH * (0.5 + rng.next()); marks[c] = 1;   // (rafts tilted in refrozen slush)
+    }
+  }
 }

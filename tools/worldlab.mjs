@@ -359,7 +359,8 @@ function renderBarren(G, Wd, w, tint = [1, 0.98, 0.95]) {
     const shade = Math.max(0.2, Math.min(1.5, (zx * 0.6 + zy * 0.6 + 0.85) / nl / 0.85));
     let g = 120 + 50 * (Z[i] - lo) / Math.max(1, hi - lo);
     g = g * (1 - 0.45 * M[i]) + 90 * F[i];
-    if (rmax > 0 && RV[i] > rmax * 0.003) g *= 0.6 + 0.4 * (1 - Math.min(1, Math.log(RV[i] / (rmax * 0.003)) / 4)); // old valleys
+    // old valleys (where the ground slopes: flow across flats and filled lakes isn't a channel)
+    if (rmax > 0 && RV[i] > rmax * 0.01 && Math.hypot(zx, zy) > 0.004) g *= 0.6 + 0.4 * (1 - Math.min(1, Math.log(RV[i] / (rmax * 0.01)) / 4));
     rgb[i * 3] = Math.min(255, g * shade * tint[0]); rgb[i * 3 + 1] = Math.min(255, g * shade * tint[1]); rgb[i * 3 + 2] = Math.min(255, g * shade * tint[2]);
   }
   return rgb;

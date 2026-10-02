@@ -42,7 +42,9 @@ export function choosePath(body) {
   const H = body.history;
   if (!H) return 'barren';
   if (H.regime === 'mobile' && body.hydrosphere && body.hydrosphere.water === 'liquid') return 'plates';
-  if (H.regime === 'stagnant' && (wetWindow(H) || (body.atmosphere && body.atmosphere.pressure > 0.05))) return 'stagnant';
+  // (with air but no liquid water now: a stagnant lid's processes, a Titan's methane rain
+  // among them; plates without water at the surface don't build our continents)
+  if (wetWindow(H) || H.titanish || (body.atmosphere && body.atmosphere.pressure > 0.05)) return 'stagnant';
   return 'barren';
 }
 
@@ -73,17 +75,29 @@ export function worldSim(body, star, opts = {}) {
   log(`worldSim: ${path} (impact rate x${rate.toFixed(2)}${spike ? ', late bombardment' : ''})`);
   const out = { path, G, rate, spike };
 
+  // whole-world resurfacing: a hothouse with a stagnant lid and a hot interior overturns
+  // (Venus' ~0.5 Gyr ago); a tide-heated icy shell renews itself (the stronger the tides,
+  // the younger: Europa's ~60 Myr) and cracks
+  const tidal = H ? H.tidal || 0 : 0, icy = !!(p.icy);
+  let resurfaceAt = null, resurfaceShare = 0.75, crack = 0;
+  if (H && H.regime === 'stagnant' && H.runaway && H.heatNow > 0.3) resurfaceAt = age - rng.fork('resurface').range(0.3, 0.8);
+  if (icy && tidal > 0.2) { resurfaceAt = age - dm.clamp(0.06 / (tidal * tidal), 0.01, 2); resurfaceShare = 0.97; crack = tidal; }
+  if (resurfaceAt != null) log(`resurfaced ${Math.round((age - resurfaceAt) * 1000)} Myr ago${crack ? ' (an icy shell, cracking under the tides)' : ''}`);
   if (path === 'barren') {
-    const W = barrenWorld(G, { rng: rng.fork('barren'), body, age, scale, volcEnd: 1 + 15 * dm.pow(body.massEarth, 0.6), rate, spike });
-    return Object.assign(out, { h: W.h, mare: W.mare, fresh: W.fresh, stats: W.stats, craters: W.impacts.events });
+    const W = barrenWorld(G, { rng: rng.fork('barren'), body, age, scale, volcEnd: 1 + 15 * dm.pow(body.massEarth, 0.6), rate, spike, resurfaceAt, resurfaceShare, crack });
+    return Object.assign(out, { h: W.h, mare: W.mare, fresh: W.fresh, stats: W.stats, craters: survivors(G, W.impacts.events, resurfaceAt, W.plains, W.mare) });
   }
   if (path === 'stagnant') {
-    const wet = wetWindow(H);
+    let wet = wetWindow(H);
     const oceanAt = wet ? Math.max(...Array.from(H.series.oceans)) : 0;
-    const seaFrac = wet ? Math.min(0.4, Math.max(0, (Math.log10(Math.max(oceanAt * 2.3e-4, 1e-9)) + 5.5) / 3.2) * 0.45) : 0;
-    const S = stagnantWorld(G, { rng: rng.fork('stagnant'), body, age, scale, wet, seaFrac, tier: H.tier, volcEnd: 1 + 15 * dm.pow(body.massEarth, 0.6), rate, spike });
+    let seaFrac = wet ? Math.min(0.4, Math.max(0, (Math.log10(Math.max(oceanAt * 2.3e-4, 1e-9)) + 5.5) / 3.2) * 0.45) : 0;
+    // a Titan: methane rain (a trickle on average, in rare storms) carving channels, lakes
+    // at the poles from its hydrocarbon seas (liquids.js)
+    let rainK0 = 1;
+    if (!wet && H.titanish && (H.mainLiquid === 'methane' || H.mainLiquid === 'ethane')) { wet = [Math.max(0, age - 1), age]; rainK0 = 0.005; seaFrac = Math.min(0.05, (H.mainLiquidDepth || 0) / ((H.mainLiquidDepth || 0) + 100)); log('methane rain: channels and polar lakes'); }
+    const S = stagnantWorld(G, { rng: rng.fork('stagnant'), body, age, scale, wet, seaFrac, rainK0, tier: H.tier, volcEnd: 1 + 15 * dm.pow(body.massEarth, 0.6), rate, spike, resurfaceAt, resurfaceShare });
     const volcanoes = S.shields.map((v) => ({ ...latLonOf(v.at), heightM: v.H }));
-    return Object.assign(out, { h: S.h, volc: S.volc, river: S.river, stats: S.stats, wet, seaFrac, craters: S.impacts.events, volcanoes });
+    return Object.assign(out, { h: S.h, volc: S.volc, river: S.river, stats: S.stats, wet, seaFrac, craters: survivors(G, S.impacts.events, resurfaceAt, S.volc), volcanoes });
   }
 
   // ---- plates: the generator's continents as the starting crust
@@ -364,6 +378,17 @@ function buildRock(G, Gt, T, rng) {
 }
 
 function hash(a, b) { let x = Math.imul(a ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul(b, 0xc2b2ae35); x ^= x >>> 13; x = Math.imul(x, 0x27d4eb2f); x ^= x >>> 16; return (x >>> 0) / 4294967296; }
+
+// the craters still to be seen after a resurfacing: the younger ones, and older ones on the
+// highlands it didn't reach
+function survivors(G, events, resurfaceAt, ...marks) {
+  if (resurfaceAt == null) return events;
+  return events.filter((e) => {
+    if (e.t >= resurfaceAt * 1000) return true;
+    const c = G.cellAt(e.at[0], e.at[1], e.at[2]);
+    return !marks.some((m) => m && m[c] > 0.5);
+  });
+}
 
 // the climate's inputs from the body and its star
 function climateOpts(body, star, host) {

@@ -15,6 +15,7 @@
 import * as dm from '../../core/dmath.js';
 import { hashInts } from '../../core/rng.js';
 import { Impacts } from './impacts.js';
+import { resurface } from './barren.js';
 import { Erosion } from './erosion.js';
 import { smoothField } from './tectonics.js';
 
@@ -76,12 +77,13 @@ export function stagnantWorld(G, opts) {
       }
     }
     if (canyon && t > canyon.t && !canyon.done) { carveCanyon(G, h, canyon); canyon.done = true; }
+    if (opts.resurfaceAt != null && !stats.resurfaced && t >= opts.resurfaceAt) { resurface(G, h, opts.resurfaceShare ?? 0.75, volc); stats.resurfaced = true; }
     // rain while there's water: valleys, lakes in craters, a sea in the lows
     if (wet && t >= wet[0] && t < wet[1]) {
-      if (!E) E = new Erosion(G, hs, { sea: opts.seaFrac > 0.02, K: 3e-6, rain: 1, m: 0.45, kd: 1 });
+      if (!E) E = new Erosion(G, hs, { sea: opts.seaFrac > 0.02, K: 8e-7, rain: 1, m: 0.45, kd: 1 });
       sl = opts.seaFrac > 0.02 ? quantile(h, opts.seaFrac) : 0;
       for (let c = 0; c < n; c++) hs[c] = h[c] - sl;
-      E.rainK = Math.min(1, (wet[1] - t) / 0.15); // drying out toward the end
+      E.rainK = (opts.rainK0 ?? 1) * Math.min(1, (wet[1] - t) / 0.15); // drying out toward the end (a methane world's rain is a trickle, in storms)
       E.step(DT_MYR * 1e6);
       for (let c = 0; c < n; c++) { h[c] = hs[c] + sl; if (!E.base[c]) river[c] = Math.max(river[c], E.A[c]); }
       stats.wetSteps++;
