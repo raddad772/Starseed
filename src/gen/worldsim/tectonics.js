@@ -22,7 +22,8 @@
 //                                 collision that goes on welds them into one
 //                                 plate (a suture).
 //   always                        plates diving into trenches are pulled
-//                                 along by their sinking slab (fast ocean
+//                                 along by their sinking slab, and steered toward their
+//                                 trenches (fast ocean
 //                                 plates); plates without one slow down
 //   now and then                  a big plate carrying continent splits along
 //                                 a wandering line (a rift: the crust thins
@@ -223,6 +224,10 @@ export class Tectonics {
     pair.fill(0);
     const sub = this._sub && this._sub.length >= plates.length ? this._sub : (this._sub = new Float64Array(MAX_PLATES));
     sub.fill(0);
+    // each plate's middle (for slab pull's steering: the pull turns it toward its trenches)
+    const cent = this._cent || (this._cent = new Float64Array(MAX_PLATES * 3)), tor = this._tor || (this._tor = new Float64Array(MAX_PLATES * 3));
+    cent.fill(0); tor.fill(0);
+    for (let c = 0; c < n; c++) { const q = owner[c] * 3; cent[q] += G.dir[c * 3]; cent[q + 1] += G.dir[c * 3 + 1]; cent[q + 2] += G.dir[c * 3 + 2]; }
     const st = this.stats || (this.stats = { collide: 0, gapCont: 0, subCont: 0, spreadGain: 0, arcGain: 0, sedGain: 0, mergeLoss: 0 });
     const wasCont = this._wasCont || (this._wasCont = new Uint8Array(n));
     for (let c = 0; c < n; c++) wasCont[c] = plates[owner[c]].cont[src[c]] > 0.5 ? 1 : 0;
@@ -276,6 +281,9 @@ export class Tectonics {
           // ocean floor dives under: a trench here, an arc on the plate above
           trench[c] = 1;
           sub[B.id]++;
+          // the pull: the rotation carrying B's middle toward this trench (middle x here)
+          { const q = B.id * 3, gx = cent[q], gy = cent[q + 1], gz = cent[q + 2], x = G.dir[c * 3], y = G.dir[c * 3 + 1], z = G.dir[c * 3 + 2];
+            tor[q] += gy * z - gz * y; tor[q + 1] += gz * x - gx * z; tor[q + 2] += gx * y - gy * x; }
           if (this.rng.next() < ARC_P * this.activity.arcs) this.arcs.push(c, O.id);
           thicken(G, O, so, 0.9, dt);
           if (O.cont[so] < 0.5) { O.cont[so] = Math.min(1, O.cont[so] + 0.02); if (O.cont[so] > 0.5) st.arcGain++; } // island arcs grow new continent
@@ -325,9 +333,20 @@ export class Tectonics {
     for (const P of plates) {
       const w = P.w, sp = Math.sqrt(w[0] * w[0] + w[1] * w[1] + w[2] * w[2]);
       if (sp < 1e-9) continue;
-      const target = (SLOW + (FAST - SLOW) * Math.min(1, sub[P.id] / dt / (G.N * 0.12))) * dm.PI / 180;
+      const share = Math.min(1, sub[P.id] / dt / (G.N * 0.12));
+      const target = (SLOW + (FAST - SLOW) * share) * dm.PI / 180;
       const k = 1 + (target / sp - 1) * Math.min(1, dt / 20);
       w[0] *= k; w[1] *= k; w[2] *= k;
+      // and the direction: the axis turns toward the sum of its slabs' pulls over ~30 Myr
+      // (more strongly the more of its edge is sinking: a plate ringed by trenches heads
+      // for them, the Pacific's way)
+      const q = P.id * 3, tl = Math.sqrt(tor[q] * tor[q] + tor[q + 1] * tor[q + 1] + tor[q + 2] * tor[q + 2]);
+      if (tl > 1e-9 && sub[P.id] > 0) {
+        const s2 = Math.sqrt(w[0] * w[0] + w[1] * w[1] + w[2] * w[2]), f = Math.min(1, dt / 30) * share;
+        let ax = w[0] / s2 + (tor[q] / tl - w[0] / s2) * f, ay = w[1] / s2 + (tor[q + 1] / tl - w[1] / s2) * f, az = w[2] / s2 + (tor[q + 2] / tl - w[2] / s2) * f;
+        const al = Math.sqrt(ax * ax + ay * ay + az * az) || 1;
+        w[0] = ax / al * s2; w[1] = ay / al * s2; w[2] = az / al * s2;
+      }
     }
     // colliding continents lock together: their motions converge, and a
     // collision that goes on welds them into one plate
