@@ -237,6 +237,15 @@ function blur(a, r, tmp) {
 // downhill (neighbour slot); a refinement tile also the rock showing (the world sim's
 // kinds, alluvium where the water lays it down) and the water (1 sea, 2 lake)
 export function runTile(gen, face, ti, tj, opts = {}) {
+  const T = prepareTile(gen, face, ti, tj, opts);
+  T.steps();
+  return T.finish();
+}
+
+// a tile set up to run: steps() runs its history here (floating point), or ints() hands it to
+// the integer sim (gpu/itile.js: here or on a GPU) and fromInts() takes the result back;
+// finish() then reads its water and rock and returns the kept square (as runTile)
+export function prepareTile(gen, face, ti, tj, opts = {}) {
   const kind = opts.kind || (opts.region ? 'region' : 'local'), region = kind === 'region', refine = kind === 'refine';
   const R = gen.R, Mu = faceMetres(R), S = gen.snap;
   const L = refine ? refineLevel(gen) : region ? regionLevel(R) : tileLevel(R);
@@ -349,6 +358,7 @@ export function runTile(gen, face, ti, tj, opts = {}) {
   const talus = new Float32Array(n), hd = new Float64Array(n), tmp = new Float64Array(n);
   const { nStart, nbr, nDist, area } = G;
   const fDone = new Uint8Array(faults.length);
+  const stepsFloat = () => {
   for (let st = 0; st < steps; st++) {
     const t = st / steps;
     // a fault slips: the ground and its beds on one side drop (or rise) by its throw
@@ -401,6 +411,26 @@ export function runTile(gen, face, ti, tj, opts = {}) {
       }
     }
   }
+  };
+  // the integer sim's inputs (gpu/itile.js): the grid's cell sizes, the starting surface, which
+  // cells are base level (and which join it when the sea rises), the water each cell sheds, how
+  // hard its rock is (as it stands at the start), and the parameters
+  const ints = () => {
+    const sz = new Uint32Array(n), flags = new Uint8Array(n), a = new Uint32Array(n), hdI = new Uint8Array(n), h0 = new Int32Array(n), BI = new Int32Array(n);
+    let aref = 0;
+    for (let c = 0; c < n; c++) aref += area[c];
+    aref /= n;
+    for (let c = 0; c < n; c++) {
+      sz[c] = Math.round(Math.sqrt(area[c]) * 1000);
+      flags[c] = (E.base[c] ? 1 : 0) | (lowstand && wet[c] === 1 && !E.base[c] ? 2 : 0);
+      a[c] = Math.max(1, Math.round(area[c] / aref * rain[c] * 16));
+      hdI[c] = Math.round(255 * hardAt(c, h[c]));
+      h0[c] = Math.round(h[c] * 4096); BI[c] = Math.round(B[c] * 4096);
+    }
+    return { NG, n, steps, rise: lowstand ? rise : -1, sz, flags, a, hd: hdI, h0, B: BI, aref, K0, kd0, sig, salt: jk };
+  };
+  const fromInts = (r) => { for (let c = 0; c < n; c++) { h[c] = r.h[c] / 4096; talus[c] = r.talus[c] / 4096; } };
+  const finish = () => {
   E.nStep = steps; E.route(); E.drain();
   // a refinement's water: the sea where it reaches (below the datum and joined to the world
   // sim's sea through ground below it), its lakes; and its rock, with the alluvium laid down
@@ -496,6 +526,8 @@ export function runTile(gen, face, ti, tj, opts = {}) {
     else { const di = (r % NG) - (c % NG), dj = Math.floor(r / NG) - Math.floor(c / NG); const k = (dj + 1) * 3 + (di + 1); out.rcv[o] = k > 4 ? k - 1 : k; }
   }
   return out;
+  };
+  return { steps: stepsFloat, ints, fromInts, finish };
 }
 
 export function tileTransferables(t) { return [t.h.buffer, t.hard.buffer, t.talus.buffer, t.flow.buffer, t.rcv.buffer, ...(t.rockC ? [t.rockC.buffer, t.water.buffer] : [])]; }

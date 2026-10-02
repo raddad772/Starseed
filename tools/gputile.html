@@ -1,0 +1,68 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>GPU tile sim</title>
+<style>body{background:#111;color:#cde;font:13px monospace;margin:12px} canvas{image-rendering:pixelated;border:1px solid #333;margin-right:8px}</style></head>
+<body>
+<pre id="log">loading…</pre>
+<canvas id="cv" width="560" height="560"></canvas>
+<script type="module">
+// Dev test: the integer tile sim (src/gpu/itile.js) on the GPU (itileGPU.js) against the CPU
+// reference, bit for bit, and timed. ?seed= (a seed whose start world's sim the game has cached
+// in this origin), ?face= ?ti= ?tj= the refinement tile, ?check= steps to compare (0: none)
+import { generateSystem } from '../src/gen/system.js';
+import { SIM_VERSION, simNFor } from '../src/gen/worldsim/snapshot.js';
+import { TerrainGenerator } from '../src/gen/terrain.js';
+import { prepareTile, MT, KEEP } from '../src/gen/localsim.js';
+import { runInt } from '../src/gpu/itile.js';
+import { ITileGPU } from '../src/gpu/itileGPU.js';
+import { ROCKS } from '../src/gen/worldsim/lithology.js';
+import { hexToLinear } from '../src/gen/color.js';
+
+const q = new URLSearchParams(location.search);
+const logEl = document.getElementById('log');
+const log = (s) => { logEl.textContent += '\n' + s; console.log(s); };
+logEl.textContent = '';
+window.done = false;
+try {
+  const seed = q.get('seed') || 'DONALTRUMP', sys = generateSystem(seed), b = sys.bodies[sys.startBodyId];
+  const key = `${seed}|${b.id}|v${SIM_VERSION}|N${simNFor(b)}`;
+  const snap = await new Promise((res, rej) => { const r = indexedDB.open('starseed-worldsim', 1); r.onsuccess = () => { const g = r.result.transaction('snap').objectStore('snap').get(key); g.onsuccess = () => res(g.result); g.onerror = rej; }; r.onerror = rej; });
+  if (!snap) throw new Error('no cached sim for ' + key + ' (run the game on this seed first)');
+  const gen = new TerrainGenerator({ ...b.terrain, snapshot: snap });
+  const face = +(q.get('face') ?? 1), ti = +(q.get('ti') ?? 1), tj = +(q.get('tj') ?? 0);
+  let t0 = performance.now();
+  const P = prepareTile(gen, face, ti, tj, { kind: 'refine', K0: 3, kd0: 0.25 });
+  const I = P.ints();
+  log(`${b.name} refinement tile ${face},${ti},${tj}: ${I.NG}² cells, set up in ${((performance.now() - t0) / 1000).toFixed(1)} s`);
+  const gpu = await ITileGPU.create();
+  if (!gpu) throw new Error('no WebGPU');
+  const check = +(q.get('check') ?? 6);
+  if (check) {
+    const Is = { ...I, steps: check, rise: Math.min(I.rise, check - 2) };
+    t0 = performance.now(); const rc = runInt(Is); const tc = performance.now() - t0;
+    t0 = performance.now(); const rg = await gpu.run(Is); const tg = performance.now() - t0;
+    let dh = 0, dt = 0, first = -1;
+    for (let c = 0; c < I.n; c++) { if (rc.h[c] !== rg.h[c]) { dh++; if (first < 0) first = c; } if (rc.talus[c] !== rg.talus[c]) dt++; }
+    log(`check, ${check} steps: CPU ${tc.toFixed(0)} ms, GPU ${tg.toFixed(0)} ms; heights differing ${dh}, talus differing ${dt}${first >= 0 ? ` (first at ${first}: ${rc.h[first]} vs ${rg.h[first]})` : ''}`);
+  }
+  t0 = performance.now();
+  const r = await gpu.run(I);
+  const tg = performance.now() - t0;
+  log(`full run, ${I.steps} steps on the GPU: ${(tg / 1000).toFixed(2)} s (${(tg / I.steps).toFixed(1)} ms a step)`);
+  P.fromInts(r);
+  const T = P.finish();
+  // draw it: rock colours, hillshade, water
+  const K = MT + 2 * KEEP, cv = document.getElementById('cv'), cx = cv.getContext('2d'), img = cx.createImageData(K, K), col = ROCKS.map((x) => hexToLinear(x.color));
+  const g = (v) => Math.round(255 * Math.min(1, Math.pow(Math.max(0, v), 1 / 2.2)));
+  for (let j = 1; j < K - 1; j++) for (let i = 1; i < K - 1; i++) {
+    const o = j * K + i, gx = (T.h[o + 1] - T.h[o - 1]) / (2 * T.cell), gy = (T.h[o + K] - T.h[o - K]) / (2 * T.cell);
+    const sh = Math.max(0.2, (gx * 0.6 + gy * 0.6 + 0.6) / Math.hypot(gx, gy, 1) / 0.85);
+    let c = col[T.rockC[o]], k = sh * 0.9;
+    if (T.water[o]) { c = T.water[o] === 1 ? [0.02, 0.12, 0.2] : [0.03, 0.18, 0.25]; k = 1; }
+    img.data[o * 4] = g(c[0] * k); img.data[o * 4 + 1] = g(c[1] * k); img.data[o * 4 + 2] = g(c[2] * k); img.data[o * 4 + 3] = 255;
+  }
+  cx.putImageData(img, 0, 0);
+  log('done');
+} catch (e) { log('ERROR ' + (e.stack || e)); }
+window.done = true;
+</script>
+</body></html>
