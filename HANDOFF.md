@@ -107,6 +107,11 @@ surveying many worlds; bit-exact across runs and clients, not across revisions):
   world cell: a frame row shown by two world rows grew twice, a dead straight ridge along a grid
   row (Opast's salt lake). Now shared among the world cells showing each frame cell. Worth a
   look: Dorith (LAB-5 5) has a straight N-S coast near 156E (a young rift margin, or not).
+- **Shallow lakes show the pyramid tiles' edges:** a pyramid tile's lake bed sits ~1.4 m above
+  its parent's (talus collapsing off the shores into the lake: the collapse pass lets base cells
+  take it), and the water's colour goes by its depth, so a few-metre lake shows the tile's edge
+  (Dorith's Iheaxora Water at 60 km). Fix: base cells take no talus (itile.js and the WGSL
+  collapse alike, then the GPU check), or colour the water by a level-independent depth.
 - **GPU check still to rerun** on a fluvial tile (the hidden pane throttles the GPU too hard to
   finish one): the integer sim's code is unchanged on that path since its last check; the
   airless path (streams skipped) was checked bit-identical (Idaull).
