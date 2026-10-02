@@ -653,6 +653,7 @@ export class TerrainGenerator {
       }));
       cf.setTop(S.ref ? Math.max(craterFloor(S.refCell, TILE_CELLS), S.s.crater.Dair) : S.s.crater.Dw);
       h = cf.heightAt(x, y, z, minWavelength, h * this.hScale) / this.hScale;
+      out[S_RAY] = cf.ray;
     }
     // dunes: a sand sea's, the wind's own work (dunes.js), turned to the wind there; barchans
     // at its thin edges, transverse ridges where the sand is deep; only where they can be seen
@@ -865,6 +866,8 @@ export class TerrainGenerator {
     snow = dm.clamp(snow, 0, 1);
     if (snow > 0) { r += (P.snow[0] - r) * snow; g += (P.snow[1] - g) * snow; b += (P.snow[2] - b) * snow; mat[1] = snow; }
     col[0] = r; col[1] = g; col[2] = b;
+    // young craters' ejecta and rays: fresh rock, not yet darkened by the sun's wind
+    if (s[S_RAY] > 0) { const k = 0.6 * s[S_RAY]; col[0] += (Math.min(1, col[0] * 1.9 + 0.05) - col[0]) * k; col[1] += (Math.min(1, col[1] * 1.9 + 0.05) - col[1]) * k; col[2] += (Math.min(1, col[2] * 1.9 + 0.05) - col[2]) * k; }
     // a fresh melt sheet glows (blackbody by how hot: the render's job; here, how much)
     const melt = s[S_LAVA];
     if (melt > 0.05) { col[0] *= 1 - melt; col[1] *= 1 - melt; col[2] *= 1 - melt; mat[5] = melt; }

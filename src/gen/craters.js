@@ -209,6 +209,33 @@ export function craterDh(F, dist, tx, ty) {
   return v;
 }
 
+// ---- a young crater's bright ejecta (the Moon's rays: fresh rock thrown out, darkened by the
+// solar wind over ~a Gyr): a blanket round its rim and streaks running out from it, each crater's
+// own (from its impact's hash), thinning with distance; brighter the younger (fresh 0..1)
+const RAY_AGE = 0.12, RAY_REACH = 4.5;
+export function craterRays(F, key, fresh) {
+  const rng = new Rng([key >>> 0, 0x7a95, 0x1ce, 0xb7]), nr = 7 + Math.floor(10 * rng.next()), T = new Float64Array(NA);
+  const ang = [], wid = [], str = [];
+  for (let k = 0; k < nr; k++) { ang.push(dm.TWO_PI * rng.next()); wid.push(0.04 + 0.1 * rng.next()); str.push(0.5 + 0.5 * rng.next()); }
+  for (let k = 0; k < NA; k++) {
+    const p = 4 * k / NA, qd = Math.min(3, Math.floor(p)), t = p - qd, th = qd * dm.HALF_PI + dm.atan2(t, 1 - t);
+    let v = 0;
+    for (let r = 0; r < nr; r++) { let d = th - ang[r]; d -= dm.TWO_PI * Math.floor(d / dm.TWO_PI + 0.5); const q = d / wid[r]; v = Math.max(v, str[r] * dm.exp(-q * q)); }
+    T[k] = v;
+  }
+  F.rays = T; F.fresh = fresh;
+}
+export function rayAt(F, dist, tx, ty) {
+  const r = dist / F.R;
+  if (r >= RAY_REACH) return 0;
+  const ax = Math.abs(tx), ay = Math.abs(ty), s = ax + ay;
+  const p = s > 0 ? (ty >= 0 ? (tx >= 0 ? ty / s : 2 - ty / s) : (tx < 0 ? 2 + ay / s : 4 - ay / s)) : 0;
+  const q = p * (NA / 4), k = Math.min(NA - 1, Math.floor(q)), f = q - k, ray = Math.max(0, cubic(F.rays, k, f));
+  // (the blanket to ~1.6 radii, the rays beyond, both thinning out)
+  const blanket = 1 - dm.smoothstep(1.1, 1.8, r), out = r > 1 ? ray * (1 - dm.smoothstep(1.5, RAY_REACH, r)) : 0;
+  return F.fresh * Math.max(r < 1 ? 0.7 : blanket, out);
+}
+
 // how fully a crater replaces the ground at dist m from its centre (0..1): all of it inside its
 // cavity (what stood there is thrown out; the floor level at the ground's mean), less up its
 // walls, none from its rim out (built on the ground, as its ejecta are)
@@ -251,10 +278,11 @@ export class CraterField {
     list = latticeCraters(f, i, j, B.D0, B.D1, B.nL, this.S, this.seed, this.R).map((cr) => {
       const F = craterForm(cr.D, this.K, cr.key), Dref = 1000 * this.K.scale, kap = 12 * cr.age * (Dref / cr.D) * (Dref / cr.D), wear = 1 / (1 + kap);
       F.ks = (0.08 + 0.5 * (1 - wear)) * (F.depth + F.rim);
+      if (cr.age < RAY_AGE) craterRays(F, cr.key, 1 - cr.age / RAY_AGE);
       const at = cr.at, ref = Math.abs(at[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
       let ex = ref[1] * at[2] - ref[2] * at[1], ey = ref[2] * at[0] - ref[0] * at[2], ez = ref[0] * at[1] - ref[1] * at[0];
       const el = Math.sqrt(ex * ex + ey * ey + ez * ez); ex /= el; ey /= el; ez /= el;
-      return { at, F, wear, band: b, age: cr.age, key: cr.key, base: NaN, reach: REACH * (cr.D / 2) * F.reach, e: [ex, ey, ez], n: [at[1] * ez - at[2] * ey, at[2] * ex - at[0] * ez, at[0] * ey - at[1] * ex] };
+      return { at, F, wear, band: b, age: cr.age, key: cr.key, base: NaN, reach: (F.rays ? RAY_REACH : REACH) * (cr.D / 2) * F.reach, e: [ex, ey, ez], n: [at[1] * ez - at[2] * ey, at[2] * ex - at[0] * ez, at[0] * ey - at[1] * ex] };
     });
     this.cache.set(key, list);
     return list;
@@ -266,6 +294,7 @@ export class CraterField {
   heightAt(x, y, z, minW, h0, nb = this.bands.length) {
     const hit = this.hits[this.depth] || (this.hits[this.depth] = []);
     hit.length = 0;
+    if (!this.depth) this.ray = 0;   // (and how bright young craters' ejecta make it: ray, 0..1)
     for (let b = 0; b < nb; b++) {
       const B = this.bands[b], amp = dm.smoothstep(4 * minW, 8 * minW, B.D0);
       if (amp <= 0) break;     // (finer octaves are finer still)
@@ -282,6 +311,8 @@ export class CraterField {
             for (const c of this._cell(b, B, f, i, j)) {
               const ax = x - c.at[0], ay = y - c.at[1], az = z - c.at[2], dist = Math.sqrt(ax * ax + ay * ay + az * az) * this.R;
               if (dist >= c.reach) continue;
+              if (c.F.rays) { const rb = amp * rayAt(c.F, dist, x * c.e[0] + y * c.e[1] + z * c.e[2], x * c.n[0] + y * c.n[1] + z * c.n[2]); if (rb > this.ray) this.ray = rb; }
+              if (dist >= REACH * (c.F.R) * c.F.reach) continue;
               hit.push(c, dist, amp);
             }
           }
