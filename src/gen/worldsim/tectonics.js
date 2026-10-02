@@ -213,6 +213,7 @@ export class Tectonics {
   }
 
   step(dt) {
+    this.lastDt = dt;
     const { G, plates, owner, src, cP, cS, cN, newOwner, trench, pair } = this;
     const n = G.n;
     this._dbg('pre');
@@ -661,7 +662,9 @@ export class Tectonics {
       const land = (th - 31) * M_PER_KM;
       const sea = -seafloorDepth(P.age[s]) + Math.max(0, th - OCEAN_KM) * M_PER_KM;
       h[c] = k * land + (1 - k) * sea - trench[c] * 2500;
-      if (U) U[c] = Math.max(0, P.rate[s]) * M_PER_KM / 1e6;
+      // (rate holds the thickening summed with a fading memory: times (1 - fade) for the
+      // average rate; capped at the fastest real ranges, ~10 mm/yr)
+      if (U) U[c] = Math.min(0.01, Math.max(0, P.rate[s]) * (1 - dm.exp(-(this.lastDt || 0.5) / 4)) * M_PER_KM / 1e6);
     }
     // continental margins: a slope, not a step (the crust's part only)
     smoothRaw(G, h, 2);

@@ -18,6 +18,7 @@ import { planetHistory } from '../src/gen/worldsim/history.js';
 import { barrenWorld } from '../src/gen/worldsim/barren.js';
 import { stagnantWorld } from '../src/gen/worldsim/stagnant.js';
 import { worldSim } from '../src/gen/worldsim/world.js';
+import { findFeatures } from '../src/gen/worldsim/features.js';
 import { Rng } from '../src/core/rng.js';
 import { writePNG } from './png.mjs';
 import fs from 'node:fs';
@@ -62,6 +63,28 @@ if (init === 'auto') {
   if (Wd.path === 'plates') rgb = render(Wd.G, Wd.h, Wd.E, W_);
   else if (Wd.path === 'stagnant') rgb = renderBarren(Wd.G, { h: Wd.h, mare: Wd.volc, fresh: new Float32Array(Wd.G.n), river: Wd.river }, W_, [1.0, 0.72, 0.52]);
   else rgb = renderBarren(Wd.G, Wd, W_, p.icy ? [0.92, 0.97, 1.05] : [1, 0.98, 0.95]);
+  // what a surveyor would name first
+  const F = findFeatures(Wd.G, Wd.h, { E: Wd.E, scale: body.R / body.radiusM, craters: Wd.craters || [], volcanoes: Wd.volcanoes, top: 5 });
+  const ll = (f) => `${f.lat.toFixed(0)},${f.lon.toFixed(0)}`;
+  console.log('features:');
+  console.log('  peaks:    ' + F.peaks.map((f) => `${Math.round(f.height)} m (prominence ${Math.round(f.prominence)}) @${ll(f)}`).join('; '));
+  console.log('  ranges:   ' + F.ranges.map((f) => `${Math.round(f.lengthKm)} km long, ${Math.round(f.areaKm2 / 1000)}k km2, top ${Math.round(f.peak)} m`).join('; '));
+  if (F.rivers.length) console.log('  rivers:   ' + F.rivers.map((f) => `${Math.round(f.lengthKm)} km to the sea @${ll(f)}`).join('; '));
+  if (F.gorges.length) console.log('  gorges:   ' + F.gorges.map((f) => `${f.kind} ${Math.round(f.depth)} m deep @${ll(f)}`).join('; '));
+  if (F.lakes.length) console.log('  lakes:    ' + F.lakes.map((f) => `${Math.round(f.areaKm2)} km2, ${Math.round(f.depth)} m deep`).join('; '));
+  if (F.trenches.length) console.log('  trenches: ' + F.trenches.map((f) => `${Math.round(f.depth)} m @${ll(f)}`).join('; '));
+  if (F.craters.length) console.log('  craters:  ' + F.craters.map((f) => `${Math.round(f.diameterKm)} km`).join('; '));
+  if (F.highest) console.log(`  highest:  ${Math.round(F.highest.height)} m @${ll(F.highest)}`);
+  if (F.deepestWet) console.log(`  deepest wet spot: ${Math.round(F.deepestWet.depth)} m below sea level @${ll(F.deepestWet)}`);
+  if (F.lowestDry) console.log(`  deepest dry spot: ${Math.round(-F.lowestDry.height)} m below sea level @${ll(F.lowestDry)}`);
+  if (F.continents.length) console.log('  continents: ' + F.continents.map((f) => `${Math.round(f.areaKm2 / 1e6 * 10) / 10}M km2`).join('; '));
+  if (F.islands.length) console.log('  islands:  ' + F.islands.map((f) => `${Math.round(f.areaKm2 / 1000)}k km2`).join('; '));
+  if (F.archipelagos.length) console.log('  groups:   ' + F.archipelagos.map((f) => `${f.kind} of ${f.islands} over ${Math.round(f.spanKm)} km @${ll(f)}`).join('; '));
+  if (F.waterfalls.length) console.log('  waterfall sites (steepest river drops): ' + F.waterfalls.map((f) => `${Math.round(f.drop)} m @${ll(f)}`).join('; '));
+  if (F.cliffs.length) console.log('  cliffs:   ' + F.cliffs.map((f) => `${Math.round(f.drop)} m @${ll(f)}`).join('; '));
+  if (F.plateaus.length) console.log('  plateaus: ' + F.plateaus.map((f) => `${Math.round(f.areaKm2 / 1000)}k km2 at ${Math.round(f.height)} m`).join('; '));
+  if (F.volcanoes && F.volcanoes.length) console.log('  volcanoes: ' + F.volcanoes.map((f) => (f.heightM ? `${Math.round(f.heightM)} m shield` : 'hotspot') + ` @${ll(f)}`).join('; '));
+  markFeatures(rgb, W_, F);
   writePNG(`${out}/${name}-map.png`, W_, W_ / 2, rgb);
   console.log(`wrote ${out}/${name}-map.png`);
   process.exit(0);
@@ -304,6 +327,23 @@ function renderBarren(G, Wd, w, tint = [1, 0.98, 0.95]) {
     rgb[i * 3] = Math.min(255, g * shade * tint[0]); rgb[i * 3 + 1] = Math.min(255, g * shade * tint[1]); rgb[i * 3 + 2] = Math.min(255, g * shade * tint[2]);
   }
   return rgb;
+}
+// marks on an equirectangular map: peaks white triangles, river mouths cyan, gorges orange, trenches violet
+function markFeatures(rgb, w, F) {
+  const hh = w / 2;
+  const dot = (f, col, r) => {
+    const x = Math.round(((f.lon + 360) % 360) / 360 * w), y = Math.round((90 - f.lat) / 180 * hh);
+    for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+      if (Math.abs(dx) + Math.abs(dy) > r + 1) continue;
+      const X = (x + dx + w) % w, Y = y + dy;
+      if (Y < 0 || Y >= hh) continue;
+      const i = (Y * w + X) * 3; rgb[i] = col[0]; rgb[i + 1] = col[1]; rgb[i + 2] = col[2];
+    }
+  };
+  F.trenches.forEach((f) => dot(f, [170, 90, 230], 3));
+  F.gorges.forEach((f) => dot(f, [255, 150, 40], 3));
+  F.rivers.forEach((f) => dot(f, [60, 230, 255], 3));
+  F.peaks.forEach((f, i) => dot(f, i === 0 ? [255, 40, 40] : [255, 255, 255], i === 0 ? 5 : 3));
 }
 function min(a) { let m = Infinity; for (const x of a) if (x < m) m = x; return m; }
 // a tectonics frame: heights, each plate tinted, boundaries dark, trenches red

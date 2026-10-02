@@ -430,7 +430,7 @@ The order agreed: work down this list; keep the statuses current.
 | 3 | Impacts: real rates, early bombardment, system debris, giant focusing, late spike | done |
 | 4 | History: atmosphere, CO2 thermostat, snowballs, runaway, life, escape, dynamo, ages, exceptional worlds | done |
 | 5 | Climate in history -> rain -> erosion | partial: rain ~ exp(0.07 (T - 288)); plants speed weathering |
-| 6 | **Feature finder:** tallest peaks by prominence, ranges, longest rivers, deepest valleys and canyons, largest lakes, biggest craters, volcanoes, trenches | todo (next) |
+| 6 | **Feature finder:** peaks by prominence, ranges, rivers, gorges and canyons, lakes, trenches, deepest wet and dry spots, continents, islands, archipelagos and chains, waterfall sites, cliffs, plateaus, craters, volcanoes | done v1 (`worldsim/features.js` `findFeatures`; the lab prints and marks them). Still to do: names, deltas, fjords and mesas once they exist, deserts and forests (climate), "largest crater lake"; the catalog and game use (step 10) |
 | 7 | **Rock layers of different hardness:** basement granite, oceanic and hotspot basalt, stratified sediments, chalk and limestone from warm living seas; erosion cuts the exposed layer | todo |
 | 8 | **Glaciers:** ice flow and erosion off peaks and in cold epochs; ice-age sea-level swings | todo |
 | 9 | **Coasts:** wave erosion (cliffs, platforms, stacks), reefs (fringing, barrier, atolls), beaches and spits | todo |
@@ -440,7 +440,27 @@ The order agreed: work down this list; keep the statuses current.
 | 13 | Regime changes within one run; Venus resurfacing; icy shells; Titan methane rain | todo |
 
 Notes:
+- **The feature finder caught two bugs (fixed):**
+  - the plate sim's uplift rate was a fading sum without averaging (8.5x too high), which raised
+    33 km peaks; U is now x(1 - fade) and capped at 10 mm/yr, giving a 9.6 km top peak and 4-5 km
+    canyons on Ishiodreill;
+  - oversize impacts were clamped to the cap (piles of identical basins); they are now redrawn.
+- **Big closed-basin lakes** (up to ~2M km2 real) stay full because erosion fills every basin to
+  its spill point. Real ones overflow and cut their outlets (wet) or dry to salt flats (arid): this
+  needs the climate (item 11), a lake water balance of rain against evaporation.
+- **The erosion sim treats all ground below sea level as sea,** even inland hollows. The feature
+  finder treats only connected regions over 0.2% of the planet as seas. Align the sim later
+  (endorheic basins).
 - Item 7 makes the mesas (caprock), canyon ledges and Dover-like chalk cliffs, the last with item 9.
+- **Rock colour and material (Dave):** layers aren't just hardness. Each rock type has a colour and
+  material when exposed: white chalk, red sandstone, grey granite, dark basalt, banded shale, pale
+  limestone, black lava, ice.
+  - The sim records the exposed rock type per cell, plus the layer stack and depths so canyon walls
+    can show their bands.
+  - The snapshot (step 7) stores it.
+  - The game's terrain shading should colour by it: today `bodies.js` picks one minerals palette per
+    world (rock / rock2 / regolith / sand), so this becomes a per-cell rock type with a per-world
+    palette for each type. Carry it through to the final render.
 - Fjords need items 7, 8 and the sea-level swings.
 
 ### 2. World kinds: each body gets the deep-time sim that fits it

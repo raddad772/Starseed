@@ -64,14 +64,15 @@ export function worldSim(body, star, opts = {}) {
 
   if (path === 'barren') {
     const W = barrenWorld(G, { rng: rng.fork('barren'), body, age, scale, volcEnd: 1 + 15 * Math.pow(body.massEarth, 0.6), rate, spike });
-    return Object.assign(out, { h: W.h, mare: W.mare, fresh: W.fresh, stats: W.stats });
+    return Object.assign(out, { h: W.h, mare: W.mare, fresh: W.fresh, stats: W.stats, craters: W.impacts.events });
   }
   if (path === 'stagnant') {
     const wet = wetWindow(H);
     const oceanAt = wet ? Math.max(...Array.from(H.series.oceans)) : 0;
     const seaFrac = wet ? Math.min(0.4, Math.max(0, (Math.log10(Math.max(oceanAt * 2.3e-4, 1e-9)) + 5.5) / 3.2) * 0.45) : 0;
     const S = stagnantWorld(G, { rng: rng.fork('stagnant'), body, age, scale, wet, seaFrac, tier: H.tier, volcEnd: 1 + 15 * Math.pow(body.massEarth, 0.6), rate, spike });
-    return Object.assign(out, { h: S.h, volc: S.volc, river: S.river, stats: S.stats, wet, seaFrac });
+    const volcanoes = S.shields.map((v) => ({ ...latLonOf(v.at), heightM: v.H }));
+    return Object.assign(out, { h: S.h, volc: S.volc, river: S.river, stats: S.stats, wet, seaFrac, craters: S.impacts.events, volcanoes });
   }
 
   // ---- plates: the generator's continents as the starting crust
@@ -119,7 +120,10 @@ export function worldSim(body, star, opts = {}) {
     E.step(dt);
   }
   E.findBase(); E.route(); E.drain();
-  return Object.assign(out, { h, h0, E, Gt, ht, tect: T, impacts: Ef });
+  const volcanoes = T.hot.map((v) => ({ ...latLonOf(v.at), hotspot: true }));
+  return Object.assign(out, { h, h0, E, Gt, ht, tect: T, impacts: Ef, craters: T.impacts.events.concat(Ef.events), volcanoes });
 }
+
+function latLonOf(d) { return { lat: Math.asin(Math.max(-1, Math.min(1, d[1]))) * 180 / Math.PI, lon: Math.atan2(d[2], d[0]) * 180 / Math.PI }; }
 
 function hashJitter(c) { let x = Math.imul(c ^ 0x9e3779b9, 0x85ebca6b); x ^= x >>> 13; x = Math.imul(x, 0xc2b2ae35); x ^= x >>> 16; return (x >>> 0) / 4294967296; }

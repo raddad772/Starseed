@@ -39,6 +39,7 @@ export class Impacts {
     const Rreal = G.R / this.scale / 1000;                  // km
     this.areaKm2 = 4 * dm.PI * Rreal * Rreal;
     this.events = [];
+    this._rejects = 0;
   }
 
   // the bombardment through time (Neukum's lunar chronology): craters >= 1 km
@@ -67,7 +68,10 @@ export class Impacts {
     const made = [];
     let k = poisson(this.rng, lam);
     while (k-- > 0) {
-      const D = Math.min(D0 / Math.sqrt(1 - this.rng.next()), this.G.R / this.scale / 1000 * 0.6);
+      // (sizes past the largest a world can take are drawn again, not piled at the limit)
+      const Dmax = this.G.R / this.scale / 1000 * 0.6;
+      let D = D0 / Math.sqrt(1 - this.rng.next());
+      if (D > Dmax) { k++; if (++this._rejects > 1e6) break; continue; }
       const at = this.rng.unitVector();
       this.stamp(at, D, apply);
       const e = { t, D, at };
