@@ -33,9 +33,33 @@ function planck(lnm, T) { const l = lnm * 1e-9; return 1 / (l * l * l * l * l * 
 // where the star's photon flux peaks (nm): ~3670 um K / T
 export function photonPeakNm(teff) { return 3.67e6 / teff; }
 
-// a world's pigments, drawn around its star's photon peak
-export function drawPigments(rng, teff) {
-  const peak = photonPeakNm(teff);
+// the photon peak of the light that reaches the ground (WORLDSIM.md 19): the star's
+// photons through the air: Rayleigh scattering (Earth's ~0.1 at 550 nm per bar, ~l^-4,
+// by the gas mix and the column, more on weak gravity), ozone (from oxygen: the UV, a
+// broad band round 600 nm), methane's red and near-infrared bands (725, 890 nm), water
+// vapour's (940 nm). Life tunes its pigments to this, not to the star's raw light.
+// air: bar by gas (evolve.js); rel: the mix's Rayleigh vs nitrogen's
+export function surfacePhotonPeakNm(teff, air, P, g, rel = 1) {
+  if (!air || !(P > 0.001)) return photonPeakNm(teff);
+  const a = 14388 / teff, col = P * 9.81 / Math.max(g, 0.5);
+  const o3 = (air.O2 || 0) / 0.21, ch4 = (air.CH4 || 0) / Math.max(P, 1e-9) * col, h2o = (air.H2O || 0) / Math.max(P, 1e-9) * col;
+  let best = photonPeakNm(teff), bestN = -1;
+  for (let l = 350; l <= 1100; l += 10) {
+    const um = l / 1000, n = 1 / (um * um * um * um * (dm.exp(a / um) - 1));
+    let tau = 0.0975 * col * rel * dm.pow(550 / l, 4);
+    tau += o3 * (l < 320 ? 3 : 0.03 * dm.exp(-0.5 * ((l - 600) / 60) * ((l - 600) / 60)));
+    tau += ch4 * (40 * dm.exp(-0.5 * ((l - 725) / 12) * ((l - 725) / 12)) + 120 * dm.exp(-0.5 * ((l - 890) / 15) * ((l - 890) / 15)));
+    tau += h2o * 30 * dm.exp(-0.5 * ((l - 940) / 25) * ((l - 940) / 25));
+    const v = n * dm.exp(-1.5 * Math.min(tau, 50));
+    if (v > bestN) { bestN = v; best = l; }
+  }
+  return best;
+}
+
+// a world's pigments, drawn around the photon peak of its light (the star's, or what
+// reaches the ground: surfacePhotonPeakNm)
+export function drawPigments(rng, teff, peakNm = null) {
+  const peak = peakNm ?? photonPeakNm(teff);
   const bands = [];
   // the main band: near the peak where that's light plants can use (up to ~1050 nm)
   const c1 = dm.clamp(peak * rng.range(0.78, 1.12), 420, 1050);

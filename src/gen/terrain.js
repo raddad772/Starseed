@@ -532,8 +532,9 @@ export class TerrainGenerator {
       }
       h += sum * (h < 0 ? 0.5 : 1);
     }
-    // a lake's surface is level
-    const lake = S.lake(x, y, z);
+    // a lake's surface is level (looked up a little off true, so shores wander rather than
+    // follow the sim's cells)
+    const lake = this._lakeAt(x, y, z);
     if (lake != null && lake > h) h = lake;
     out[S_H] = h;
     out[S_INLAND] = h > 0 ? 1 : 0;
@@ -549,6 +550,13 @@ export class TerrainGenerator {
     return out;
   }
 
+  // the simulated lake surface here, looked up a little off true (wandering shores)
+  _lakeAt(x, y, z) {
+    const S = this.snap, R = this.R;
+    const wk = 0.6 * S.G.spacing / R, wf = R / (S.G.spacing * 1.5);
+    return S.lake(x + wk * this.nMisc.noise(x * wf, y * wf, z * wf), y + wk * this.nMisc.noise(x * wf + 7, y * wf, z * wf), z + wk * this.nMisc.noise(x * wf, y * wf + 3, z * wf));
+  }
+
   // the sim's surfaces: the exposed rock in its own colour (soil over it where gentle),
   // beach sands, ice, lakes, plant cover from the life map (forest in the world's
   // foliage colour, open country drier), wet ground along rivers, a glowing melt sheet
@@ -558,7 +566,7 @@ export class TerrainGenerator {
     if (h < 0 && p.liquid && this.contThreshold > -1e8) return this.shadeNoise(s, slope, col, mat);
     for (let i = 0; i < 7; i++) mat[i] = 0;
     const Tc = s[S_TEMP] - 273.15;
-    const lake = S.lake(x, y, z);
+    const lake = this._lakeAt(x, y, z);
     if (lake != null && h <= lake + 0.5) {
       const k = 0.5;
       col[0] = P.waterShallow[0] + (P.waterDeep[0] - P.waterShallow[0]) * k;
@@ -568,7 +576,9 @@ export class TerrainGenerator {
       if (Tc < -2) { col[0] = P.snow[0] * 0.92; col[1] = P.snow[1] * 0.95; col[2] = P.snow[2]; mat[1] = 1; mat[4] = 0; }
       return;
     }
-    if (S.ice(x, y, z) > 5) { col[0] = P.snow[0]; col[1] = P.snow[1]; col[2] = P.snow[2]; mat[1] = 1; mat[6] = 0.3; return; }
+    // (the ice's edge ragged at the fine scale, not the sim grid's lines)
+    const iceEdge = 5 + 120 * (1 + this.nDetail.noise(x * this.R / 6000, y * this.R / 6000, z * this.R / 6000));
+    if (S.ice(x, y, z) > iceEdge) { col[0] = P.snow[0]; col[1] = P.snow[1]; col[2] = P.snow[2]; mat[1] = 1; mat[6] = 0.3; return; }
     const rt = S.rock(x, y, z), rc = this.rockLin[rt] || P.rock;
     const sandy = rt >= 11; // quartz, coral, black sand (lithology.js)
     // bare rock on steep ground; soil (or regolith) on gentle

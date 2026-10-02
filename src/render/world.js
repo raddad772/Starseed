@@ -65,7 +65,7 @@ export class WorldRenderer {
       uCloud: { value: a ? a.material.uniforms.uCloud.value : new THREE.Vector4() },
       uCloudOn: { value: a ? a.material.uniforms.uCloudOn.value : 0 },
       uCloudOpacity: { value: a ? a.material.uniforms.uCloudColor.value.w : 0 },
-      uLavaColor: { value: new THREE.Vector3(3.2, 0.75, 0.12) },
+      uLavaColor: { value: b.data.terrain && b.data.terrain.palette && b.data.terrain.palette.lava ? new THREE.Vector3(...b.data.terrain.palette.lava) : new THREE.Vector3(3.2, 0.75, 0.12) },   // (the body's own glow: blackbody at its melt's temperature)
       uAmbientFloor: { value: new THREE.Vector3(0.0004, 0.0004, 0.0005) },
       uDebug: { value: 0 },
       tNoise: { value: this.cloudNoise },

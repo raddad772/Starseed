@@ -15,7 +15,8 @@ import { normalizeSeed, randomSeedString } from '../core/rng.js';
 
 const TABS = [['map', 'Map'], ['planets', 'Planets'], ['settings', 'Settings'], ['controls', 'Controls']];
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
-const GAS = { N2: 'N₂', O2: 'O₂', CO2: 'CO₂', CH4: 'CH₄', H2: 'H₂', He: 'He', Ar: 'Ar', H2O: 'H₂O', SO2: 'SO₂', NH3: 'NH₃', Ne: 'Ne', CO: 'CO' };
+const GAS = { N2: 'N₂', O2: 'O₂', CO2: 'CO₂', CH4: 'CH₄', H2: 'H₂', He: 'He', Ar: 'Ar', H2O: 'H₂O', SO2: 'SO₂', NH3: 'NH₃', Ne: 'Ne', CO: 'CO', H2S: 'H₂S' };
+const agoText = (gyr) => gyr >= 1 ? `${gyr.toFixed(1)} Gyr ago` : gyr >= 0.001 ? `${Math.round(gyr * 1000)} Myr ago` : gyr >= 1e-6 ? `${Math.round(gyr * 1e6)} kyr ago` : `${Math.max(1, Math.round(gyr * 1e9))} yr ago`;
 
 // where a world sits around its star: the habitable zone (conservative and
 // optimistic edges) and the formation-era snow line
@@ -186,7 +187,22 @@ export class PauseScreen {
       row('Air', `${a.pressure < 0.01 ? a.pressure.toExponential(1) : a.pressure.toFixed(2)} bar${gases ? ' · ' + gases : ''}`);
     } else if (!a && b.solid) row('Air', 'none');
     if (b.terrain && b.terrain.ocean > 0.01 && b.terrain.liquid) row('Seas', `${Math.round(b.terrain.ocean * 100)}% ${b.terrain.liquid}`);
-    if (b.life) row('Life', esc(b.life.level));
+    // life and history (worldsim/evolve.js: stages, chemistry, extinctions, what's under way now)
+    const H = b.history;
+    if (H && H.lifeStage > 0) {
+      const chem = H.solvent && H.solvent !== 'water' ? ` · in ${H.solvent}` : '';
+      row('Life', `${esc(H.lifeStageName)}${chem}${H.diversity > 0.02 ? ` · diversity ${Math.round(H.diversity * 100)}% of Earth's` : ''}`);
+    } else if (H && H.lifeEver) {
+      const last = (H.extinctions || []).filter((e) => e.loss >= 0.99).pop();
+      row('Life', `none now${last ? ` (ended ${agoText(last.ago)})` : ''}`);
+    } else if (b.life) row('Life', esc(b.life.level));
+    if (H && b.solid && H.airType && H.airType !== 'none') row('Sky', esc(H.airType) + (H.seaPH != null ? ` · seas pH ${H.seaPH.toFixed(1)}` : ''));
+    if (H && b.solid) row('Field', H.field > 0.05 ? `${H.field.toFixed(1)}× Earth's` : 'none');
+    const now = [];
+    if (H && H.fresh) now.push(H.fresh.kind === 'just-boiled' ? `struck ${agoText(H.fresh.agoYears / 1e9)}: ${H.fresh.phase}` : `struck ${agoText(H.fresh.agoYears / 1e9)}: impact winter, ${Math.round(H.fresh.light * 100)}% daylight`);
+    if (H && H.eruption) now.push('flood basalts erupting');
+    if (H && H.recovering) now.push(`recovering from a die-off ${Math.round(H.recovering.agoMyr)} Myr ago`);
+    if (now.length) row('Now', esc(now.join(' · ')));
     if (b.moons && b.moons.length) row('Moons', `${b.moons.length}${b.rings ? ' · rings' : ''}`);
     else if (b.rings) row('Rings', 'yes');
     if (b.esi > 0.3) row('ESI', b.esi.toFixed(2));

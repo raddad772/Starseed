@@ -9,10 +9,10 @@
 import * as dm from '../core/dmath.js';
 import * as U from '../core/units.js';
 import { hzSeff } from './star.js';
-import { drawPigments, albedoRGB } from './pigments.js';
+import { drawPigments, albedoRGB, surfacePhotonPeakNm, photonPeakNm } from './pigments.js';
 import { SUBSTANCES } from './worldsim/liquids.js';
 import { evolveWorld } from './worldsim/evolve.js';
-import { hsv, mixRGB, scaleRGB, hexToLinear, jitterColor } from './color.js';
+import { hsv, mixRGB, scaleRGB, hexToLinear, jitterColor, blackbodyRGB } from './color.js';
 
 const LOG10 = (x) => dm.log10(x);
 
@@ -191,6 +191,13 @@ function atmosphereNow(rng, h, S) {
     a.tau = a.tauK * dm.pow(p, 0.9); a.mu = meanMolar(a.comp);
     return a;
   }
+  // just struck (exceptional.js): a sky of steam from the boiled seas (rock vapour in the
+  // first centuries), over a magma ocean
+  if (h.fresh && h.fresh.kind === 'just-boiled' && (h.fresh.steamBar > 0.01 || h.fresh.agoYears < 1500)) {
+    const steam = Math.max(h.fresh.steamBar || 0, h.fresh.agoYears < 1500 ? 5 : 0), P = steam + h.P;
+    const comp = { H2O: steam / P * 0.9, CO2: Math.max(0.05, (h.pCO2 || 0) / P), N2: Math.max(0.01, (h.N2 || 0) / P) };
+    return { type: 'venus', pressure: P, comp, albedo: 0.6, tau: 20, life: false, snowball: false, mu: meanMolar(comp) };
+  }
   if (h.P < 0.003) return null;
   const P = h.P, co2 = h.pCO2 / P, o2 = h.pO2 / P;
   // the history's air by gas (evolve.js): fractions, the traces dropped
@@ -208,69 +215,103 @@ function atmosphereNow(rng, h, S) {
 }
 
 // Optical parameters for the scattering shader (game units = metres)
+// a glowing surface's colour and brightness at T K (blackbody; ~3.2 at basalt's 1400 K,
+// the old fixed lava colour's brightness)
+function glowRGB(T) {
+  const c = blackbodyRGB(T), k = 3.2 * dm.pow(T / 1400, 4) / Math.max(c[0], 1e-6) * 1;
+  return [c[0] * k, c[1] * k, c[2] * k].map((x) => Math.min(x, 40));
+}
+
+// The sky's optics from what's in the air (WORLDSIM.md 19: one way for every world, no
+// world-type buckets): Rayleigh scattering from the gas mix; ozone from oxygen; and the
+// aerosols the world's state makes, summed, each with its own scattering, absorption
+// (colour), height and forward-scattering:
+//   dust      mineral dust off dry ground, more in thin air (Mars' butterscotch), its
+//             colour the world's own regolith
+//   sulfate   sulfuric-acid droplets from SO2 and water vapour (Venus' yellow decks), and
+//             from an eruption under way
+//   organic   tholin haze where methane outweighs ~a fifth of the CO2 (Titan's orange)
+//   salt      sea-salt and water haze over seas (the faint white of Earth's horizon)
+//   soot      an impact winter's black (exceptional.js)
 function atmosphereRender(rng, b, atm, Tsurf, dustColor) {
-  const g = b.gravity;
+  const g = b.gravity, h = b.history || {};
   const Tcol = Math.max(60, Tsurf * 0.88);
   const H = U.K_B * Tcol / (atm.mu * U.AMU * g);
   const n = atm.pressure * 1e5 / (U.K_B * Tsurf);
   const rel = rayleighRel(atm.comp) * (n / N0);
   const rayleigh = EARTH_RAYLEIGH.map((x) => x * rel);
-  let mie = [0, 0, 0], mieAbs = [0, 0, 0], mieH = 1200, mieG = 0.78;
-  let ozone = [0, 0, 0];
-  const t = atm.type;
-  if (t === 'temperate') {
-    const k = dm.clamp(atm.pressure, 0.3, 3) * rng.range(0.6, 1.6);
-    mie = [3.996e-6 * k, 3.996e-6 * k, 3.996e-6 * k];
-    mieAbs = [0.444e-6 * k, 0.444e-6 * k, 0.444e-6 * k];
-    mieH = 1200 * (9.81 / g);
-    if (atm.comp.O2) ozone = [0.650e-6, 1.881e-6, 0.085e-6].map((x) => x * atm.comp.O2 / 0.21);
-  } else if (t === 'mars') {
-    // Suspended iron-oxide dust absorbs blue: butterscotch skies
-    const k = rng.range(0.6, 1.6) * dm.sqrt(atm.pressure / 0.006);
+  const P = atm.pressure, air = h.air || {};
+  const seas = b.hydrosphere ? b.hydrosphere.oceanFraction : 0;
+  const wet = b.hydrosphere && b.hydrosphere.liquid === 'water' ? 1 : 0;
+  const pops = [];
+  // dust: dry ground and wind lift it; thin air holds it long (Mars), thick air settles it
+  const dry = wet ? Math.max(0, 0.5 - seas) * 0.3 : 1;
+  if (dry > 0.01 && !(atm.type === 'titan')) {
+    const k = dry * rng.range(0.6, 1.6) * Math.min(4, dm.sqrt(P / 0.006)) * (P > 2 ? 2 / P : 1);
     const d = dustColor;
-    mie = [1.8e-5 * k * (0.6 + d[0]), 1.4e-5 * k * (0.6 + d[1]), 1.0e-5 * k * (0.6 + d[2])];
-    mieAbs = [2e-6 * k, 5e-6 * k, 1.1e-5 * k];
-    mieH = 11000 * (3.71 / g);
-    mieG = 0.65;
-  } else if (t === 'titan') {
-    // Tholin haze: thick, orange, strongly blue-absorbing
-    const k = dm.pow(atm.pressure / 1.5, 0.8);
-    mie = [3.2e-5 * k, 2.2e-5 * k, 1.0e-5 * k];
-    mieAbs = [0.6e-5 * k, 1.6e-5 * k, 3.5e-5 * k];
-    mieH = 40000 * (1.35 / g);
-    mieG = 0.7;
-  } else if (t === 'venus') {
-    // Sulphuric-acid haze above the cloud deck
-    const k = dm.pow(atm.pressure / 90, 0.5);
-    mie = [2.0e-5 * k, 1.9e-5 * k, 1.6e-5 * k];
-    mieAbs = [0.1e-6, 0.4e-6, 1.6e-6].map((x) => x * k);
-    mieH = 6000 * (8.87 / g);
-    mieG = 0.72;
-  } else if (t === 'coldco2') {
-    const k = rng.range(0.4, 1.2) * dm.pow(atm.pressure, 0.4);
-    mie = [4e-6 * k, 4e-6 * k, 4e-6 * k];
-    mieAbs = [0.3e-6 * k, 0.3e-6 * k, 0.3e-6 * k];
-    mieH = 3000 * (9.81 / g);
+    pops.push({ k, sca: [1.8e-5 * (0.6 + d[0]), 1.4e-5 * (0.6 + d[1]), 1.0e-5 * (0.6 + d[2])], abs: [2e-6, 5e-6, 1.1e-5], H: 11000 * (3.71 / g), g: 0.65 });
   }
+  // sulfate: SO2 with water vapour (or a hothouse's acid deck), and an eruption's
+  const so2 = (air.SO2 || 0) + (air.H2S || 0) * 0.5;
+  if (so2 > 1e-7 || h.eruption || (h.runaway && P > 3)) {
+    const k = Math.min(3, (h.runaway ? dm.pow(P / 90, 0.5) : 0) + dm.sqrt(so2 / 1.5e-5) * 0.3 + (h.eruption ? 0.4 : 0));
+    pops.push({ k, sca: [2.0e-5, 1.9e-5, 1.6e-5], abs: [0.1e-6, 0.4e-6, 1.6e-6], H: 6000 * (8.87 / g), g: 0.72 });
+  }
+  // organic haze: methane photolysis products, when methane rivals the CO2
+  const ch4 = air.CH4 || 0, co2 = air.CO2 || 0;
+  if ((ch4 > 1e-4 && ch4 > 0.2 * co2) || atm.type === 'titan') {
+    const k = Math.min(3, dm.pow(Math.max(P, 0.05) / 1.5, 0.8) * (atm.type === 'titan' ? 1 : dm.clamp(ch4 / 1e-3, 0.2, 1)));
+    pops.push({ k, sca: [3.2e-5, 2.2e-5, 1.0e-5], abs: [0.6e-5, 1.6e-5, 3.5e-5], H: 40000 * (1.35 / g), g: 0.7 });
+  }
+  // salt and water haze: over seas, in moist air
+  if (wet) {
+    const k = dm.clamp(P, 0.3, 3) * rng.range(0.6, 1.6) * (0.4 + seas);
+    pops.push({ k, sca: [3.996e-6, 3.996e-6, 3.996e-6], abs: [0.444e-6, 0.444e-6, 0.444e-6], H: 1200 * (9.81 / g), g: 0.78 });
+  }
+  // soot: an impact winter
+  if (h.fresh && h.fresh.kind === 'impact-winter' && h.fresh.sootTau > 0.05) {
+    const k = Math.min(30, h.fresh.sootTau) / 3;
+    pops.push({ k, sca: [0.5e-5, 0.5e-5, 0.5e-5], abs: [3e-5, 3e-5, 3e-5], H: 15000 * (9.81 / g), g: 0.6 });
+  }
+  // a faint high haze on any air with nothing else (CO2 ice crystals, a little dust)
+  if (!pops.length) pops.push({ k: rng.range(0.4, 1.2) * dm.pow(P, 0.4), sca: [4e-6, 4e-6, 4e-6], abs: [0.3e-6, 0.3e-6, 0.3e-6], H: 3000 * (9.81 / g), g: 0.76 });
+  // summed: extinction-weighted height and asymmetry
+  const mie = [0, 0, 0], mieAbs = [0, 0, 0];
+  let wsum = 0, Hm = 0, gm = 0;
+  for (const q of pops) {
+    for (let i = 0; i < 3; i++) { mie[i] += q.sca[i] * q.k; mieAbs[i] += q.abs[i] * q.k; }
+    const w = q.k * (q.sca[1] + q.abs[1]);
+    wsum += w; Hm += w * q.H; gm += w * q.g;
+  }
+  const mieH = wsum > 0 ? Hm / wsum : 1200, mieG = wsum > 0 ? gm / wsum : 0.78;
+  const ozone = air.O2 || atm.comp.O2 ? [0.650e-6, 1.881e-6, 0.085e-6].map((x) => x * (atm.comp.O2 || 0) / 0.21) : [0, 0, 0];
   // Atmosphere extends until density ~ e^-12 of the surface value
   const scaleMax = Math.max(H, mieH * 0.6);
   return {
     rayleigh, rayleighH: H, mie, mieAbs, mieH, mieG,
     ozone, ozoneCenter: 25000 * (H / 8500), ozoneWidth: 15000 * (H / 8500), absorptionExp: false,
     height: Math.min(12.5 * scaleMax, 0.35 * b.R + 5 * H),
+    aerosols: pops.length,
   };
 }
 
+// Clouds by what condenses (no buckets): water where there's liquid water and air enough;
+// sulfuric acid in a hothouse's deck; CO2 ice in cold CO2 air; a steam deck over a world
+// still boiling (exceptional.js); methane clouds on a Titan (thin, high, sparse)
 function cloudLayer(rng, atm, hydro, Tsurf, H) {
-  const t = atm.type;
-  if (t === 'venus') return { type: 'sulfuric', cover: 1.0, altitude: 52000 * (H / 15000), thickness: 18000, color: hexToLinear('#e9dcae'), opacity: 1.0, scale: rng.range(0.8, 1.4) };
-  if (t === 'titan') return null; // haze only
-  if (t === 'temperate' && hydro.water !== 'none') {
+  const P = atm.pressure;
+  const co2 = atm.comp.CO2 || 0;
+  if (Tsurf > 600 && hydro.liquid === 'lava' && P > 1) return { type: 'sulfuric', cover: 1.0, altitude: 30000 * (H / 15000), thickness: 20000, color: hexToLinear('#d8d4cc'), opacity: 1.0, scale: rng.range(0.8, 1.4) };
+  if (P > 3 && Tsurf > 400 && co2 > 0.5) return { type: 'sulfuric', cover: 1.0, altitude: 52000 * (H / 15000), thickness: 18000, color: hexToLinear('#e9dcae'), opacity: 1.0, scale: rng.range(0.8, 1.4) };
+  if (hydro.water === 'liquid' || (hydro.liquid === 'water')) {
     const cover = dm.clamp(rng.range(0.38, 0.7) + (hydro.oceanFraction - 0.6) * 0.3, 0.15, 0.9);
     return { type: 'water', cover, altitude: rng.range(1900, 3400), thickness: rng.range(1000, 2600), color: [0.95, 0.96, 0.98], opacity: 1.0, scale: rng.range(0.7, 1.5) };
   }
-  if (t === 'mars') return rng.chance(0.5) ? { type: 'waterice', cover: rng.range(0.03, 0.12), altitude: rng.range(15000, 30000), thickness: 2000, color: [0.92, 0.93, 0.95], opacity: 0.5, scale: 1.0 } : null;
-  if (t === 'coldco2') return { type: 'co2ice', cover: rng.range(0.15, 0.45), altitude: rng.range(8000, 25000), thickness: 5000, color: [0.95, 0.95, 0.96], opacity: 0.8, scale: rng.range(0.8, 1.3) };
+  if (atm.comp.CH4 > 0.01 && Tsurf < 200) return rng.chance(0.6) ? { type: 'methane', cover: rng.range(0.02, 0.1), altitude: rng.range(15000, 30000), thickness: 3000, color: [0.95, 0.93, 0.88], opacity: 0.6, scale: 1.0 } : null;
+  if (co2 > 0.5 && Tsurf < 255) {
+    if (P < 0.1) return rng.chance(0.5) ? { type: 'waterice', cover: rng.range(0.03, 0.12), altitude: rng.range(15000, 30000), thickness: 2000, color: [0.92, 0.93, 0.95], opacity: 0.5, scale: 1.0 } : null;
+    return { type: 'co2ice', cover: rng.range(0.15, 0.45), altitude: rng.range(8000, 25000), thickness: 5000, color: [0.95, 0.95, 0.96], opacity: 0.8, scale: rng.range(0.8, 1.3) };
+  }
   return null;
 }
 
@@ -480,7 +521,9 @@ export function buildBody(rng, proto, star, host) {
   } else if (b.comp.water > 0.15) hydro = { water: 'frozen', liquid: null, oceanFraction: 0, iceCover: 1 };
   else if (Tsurf < 240 && b.comp.water > 1e-5) hydro = { water: 'frozen', liquid: null, oceanFraction: 0, iceCover: dm.clamp(0.08 + coverage * 0.3, 0, 0.45) };
   // a young world: its magma ocean still crusting over
-  if (hist.age < 0.05 && !volcanicMoon) hydro = { water: 'none', liquid: 'lava', oceanFraction: dm.clamp(0.9 - hist.age * 14, 0.15, 0.9) * hydroRng.range(0.8, 1), iceCover: 0 };
+  // (a rocky world big enough stays molten for a while: ~50 Myr for an Earth, much less for a
+  // Moon; icy bodies freeze over at once)
+  if (hist.age < 0.05 * Math.min(1, dm.sqrt(b.massEarth)) && !volcanicMoon && b.comp.water < 0.1 && b.massEarth > 0.01) hydro = { water: 'none', liquid: 'lava', oceanFraction: dm.clamp(0.9 - hist.age * 14, 0.15, 0.9) * hydroRng.range(0.8, 1), iceCover: 0 };
   // exceptional lava worlds: tide-heated (lava lakes and seas), or freshly struck (a magma sea)
   if (exc && exc.kind === 'tidal-lava') hydro = { water: 'none', liquid: 'lava', oceanFraction: exc.lavaFrac, iceCover: 0 };
   if (exc && exc.kind === 'impact-melt') hydro = { water: 'none', liquid: 'lava', oceanFraction: dm.clamp(0.9 - exc.ago * 30, 0.2, 0.9), iceCover: 0 };
@@ -506,7 +549,8 @@ export function buildBody(rng, proto, star, host) {
   if (hist.lifeLevel !== 'none' && hydro.water === 'liquid') {
     const lr = rng.fork('life');
     // its pigments, tuned to its star's light: the foliage colour follows
-    const pigment = drawPigments(lr.fork('pigment'), star.teff);
+    // (tuned to the light that reaches the ground, the star's through this air)
+    const pigment = drawPigments(lr.fork('pigment'), star.teff, atm ? surfacePhotonPeakNm(star.teff, hist.air, atm.pressure, b.gravity, rayleighRel(atm.comp) / 1.02) : null);
     life = {
       level: hist.lifeLevel,
       pigment,
@@ -585,7 +629,9 @@ function terrainParams(rng, b, star, minerals, tidalHeating, proto) {
     snow: icy && rng.chance(0.35) ? mixRGB([0.9, 0.92, 0.95], minerals.rock, 0.3) : [0.92, 0.94, 0.97],
     waterDeep: hydro.liquid && hydro.liquid !== 'water' && SUBSTANCES[hydro.liquid] ? hexToLinear(SUBSTANCES[hydro.liquid].deep) : jitterColor(rng, hexToLinear(rng.chance(0.8) ? '#0b2a4a' : '#0d3b36'), 0.15),
     waterShallow: hydro.liquid && hydro.liquid !== 'water' && SUBSTANCES[hydro.liquid] ? hexToLinear(SUBSTANCES[hydro.liquid].shallow) : jitterColor(rng, hexToLinear(rng.chance(0.75) ? '#1f7f8f' : '#2f8a6a'), 0.15),
-    lava: [3.5, 0.9, 0.12],
+    // (molten rock glows as a blackbody at its temperature: basalt lava ~1400 K a dull
+    // orange; a magma ocean just after a giant impact far hotter, whiter, brighter)
+    lava: glowRGB(b.history && b.history.fresh && b.history.fresh.kind === 'just-boiled' ? Math.max(1300, b.history.fresh.T) : 1400),
   };
   return {
     seed: [rng.u32(), rng.u32(), rng.u32(), rng.u32()],

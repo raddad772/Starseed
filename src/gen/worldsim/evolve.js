@@ -573,7 +573,7 @@ export function evolveWorld(ctx) {
     const y = exc.agoYears;
     const Tnow = T + (2400 - T) * dm.exp(-y / 4e4);
     const phase = y < 1500 ? 'rock-vapour sky' : Tnow > 900 ? 'steam over a magma ocean' : Tnow > 600 ? 'a fresh crust, glowing through its cracks' : Tnow > 273 && oceans0 > 0.001 ? 'the first rains: seas coming back' : 'cooled: the new crust freezing over';
-    fresh = { kind: 'just-boiled', agoYears: y, at: exc.at, T: Tnow, phase, lavaFrac: dm.clamp((Tnow - 900) / 1500, 0, 0.95), steamBar: Tnow > 600 ? oceans0 * 270 : 0 };
+    fresh = { kind: 'just-boiled', agoYears: y, at: exc.at, T: Tnow, phase, lavaFrac: dm.clamp((Tnow - 900) / 1500, 0, 0.95), steamBar: Tnow > 600 ? Math.min(2000, oceans0 * 270) : 0 };   // (a water world keeps the rest as a hot supercritical ocean)
     T = Math.max(T, Tnow);
   }
   if (exc && exc.kind === 'impact-winter') {

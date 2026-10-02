@@ -1,13 +1,19 @@
-# Starseed Infinite handoff (2026-10-01, session 68fc2903, updated by session 0f13fab4)
+# Starseed Infinite handoff (2026-10-01, session 68fc2903, updated by sessions 0f13fab4 and 109eda38)
 
 Dave is play-testing and giving feedback in short bursts.
 
-## NOW: simulated worlds (world lab), session 0f13fab4, uncommitted
+## NOW: simulated worlds (session 109eda38, 2026-10-01), committed as it went
 
-**The plan to act on is `WORLDSIM.md`** (ground rules, state, ordered steps). Work through it in order
-and keep it current. Next up: its ARCHITECTURE section, U1 to U4. One unified, authoritative forward
-history for every rocky body, which replaces bodies.js's present-state rules; one terrain driver; and
-system impact "busyness". Then climate (step 3).
+**The plan to act on is `WORLDSIM.md`**: its DEEP-TIME CHECKLIST table has every item with its status
+(items 1-19, most at v1) and step 7 (the game) has the in-game state. In one line: worlds come from a
+forward history (evolve.js: star, chemistry, air by gas, liquids, life's stages, extinctions) and a
+world sim (plates, erosion with isostasy, climate, glaciers with ice ages, coasts and tides, soil and
+groundwater, a life map), all deterministic; `tools/worldlab.mjs <seed> <body>` runs one and draws its
+maps (relief, Köppen, rock, life). **In the game the simulated worlds are opt-in: `?worldsim=1`**
+(`&simN=128..384`): a background worker runs each solid body's sim, caches it in IndexedDB, and the
+terrain generator draws from the snapshot. Making it the default is Dave's call. Erosion had a
+long-standing bug (fixed: refill of freshly cut cells) and K is now real-world; see WORLDSIM.md's
+notes before re-tuning anything.
 
 Direction from Dave:
 - **Worlds:** worlds made by simulation, not noise: plate tectonics, weathering and erosion carving
