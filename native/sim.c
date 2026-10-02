@@ -85,13 +85,14 @@ static inline i32 hpop(void) {
 
 // ---- erosion.js route(): the priority flood from the base level (filling every pit
 // with a faint gradient, EPS a cell) and each cell's receiver down the filled surface
-// (the steepest, or with wander a slope-weighted draw where the slope is real)
+// (the steepest, or with wander a slope-weighted draw where the slope is real; wander 2 on
+// the flats too: water finds its own way across a filled plain, not the grid's lines)
 #define EPS 1e-4
 __attribute__((export_name("route"))) i32 route(
     i32 n, const i32 *nStart, const i32 *nbr, const double *nDist,
     const double *h, const u8 *base,
     double *fill, i32 *rcv, double *rcvD, i32 *order,
-    u8 *done, double *heapK, i32 *heapV, i32 wander, u32 salt) {
+    u8 *done, double *heapK, i32 *heapV, i32 wander, u32 salt, double flatK) {
   hk = heapK; hv = heapV; hsize = 0;
   for (i32 c = 0; c < n; c++) done[c] = 0;
   for (i32 c = 0; c < n; c++) if (base[c]) { fill[c] = h[c]; hpush(h[c], c); done[c] = 1; }
@@ -104,7 +105,10 @@ __attribute__((export_name("route"))) i32 route(
       i32 o = nbr[e];
       if (done[o]) continue;
       done[o] = 1;
-      fill[o] = h[o] > z + EPS ? h[o] : z + EPS;
+      // (the fill's faint gradient by the step's length when flatK is given: a distance across
+      // the flat, not a count of steps, so it has no favoured directions)
+      double ep = flatK > 0 ? EPS * nDist[e] * flatK : EPS;
+      fill[o] = h[o] > z + ep ? h[o] : z + ep;
       hpush(fill[o], o);
     }
   }
@@ -119,7 +123,7 @@ __attribute__((export_name("route"))) i32 route(
       if (s > 0) sum += s;
       if (s > bs) { bs = s; best = o; bd = nDist[e]; }
     }
-    if (wander && bs > 1e-5) {
+    if ((wander == 1 && bs > 1e-5) || (wander == 2 && bs > 0)) {
       double x = (double)hash_ints((u32)c, salt, 0, 0) / 4294967296.0 * sum;
       for (i32 e = nStart[c]; e < nStart[c + 1]; e++) {
         double s = (fc - fill[nbr[e]]) / nDist[e];

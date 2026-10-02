@@ -23,6 +23,7 @@ import * as dm from '../core/dmath.js';
 import { fibonacciSphere, faceUVFromDir, FACES } from './cubesphere.js';
 import { patchAt } from './dunes.js';
 import { SnapshotSampler } from './worldsim/snapshot.js';
+import { RIVER_REC } from './worldsim/refine.js';
 import { ROCKS, R as ROCK } from './worldsim/lithology.js';
 import { hexToLinear } from './color.js';
 
@@ -713,6 +714,7 @@ export class TerrainGenerator {
 
   _riverAt(x, y, z) {
     const S = this.snap, s = S.s;
+    if (S.riv) return this._refRiverAt(x, y, z);
     if (!s.rcv) return null;
     const G = S.G, R = this.R, c0 = G.cellAt(x, y, z);
     // (meanders: the point pushed about on a few-km scale)
@@ -739,6 +741,37 @@ export class TerrainGenerator {
     test(c0);
     const nb = S.nb, k = G.nbrs(c0, nb);
     for (let e = 0; e < k; e++) test(nb[e]);
+    return best;
+  }
+
+  // the nearest river of the world's refinement (its own drainage: refine.js tileRivers), among
+  // the world sim's cell here and its neighbours': { dist (m), w, depth, k, hs } as _riverAt's
+  _refRiverAt(x, y, z) {
+    const S = this.snap, Rv = S.riv, rec = Rv.rec, G = S.G, R = this.R, nb = S.nb;
+    const c0 = G.cellAt(x, y, z), nn = G.nbrs(c0, nb);
+    let best = null, bs = 1e30;
+    for (let q = -1; q < nn; q++) {
+      const c = q < 0 ? c0 : nb[q];
+      for (let e = Rv.start[c]; e < Rv.start[c + 1]; e++) {
+        const r = Rv.idx[e], b = r * RIVER_REC, half = Rv.half[r];
+        // (its curve: from halfway to its main inflow, through its cell, to halfway on)
+        let bd = 1e30, bt = 0;
+        for (let k = 0; k <= 8; k++) {
+          const t = k / 8, a0 = (1 - t) * (1 - t), a1 = 2 * t * (1 - t), a2 = t * t;
+          const dx = a0 * rec[b] + a1 * rec[b + 3] + a2 * rec[b + 6] - x, dy = a0 * rec[b + 1] + a1 * rec[b + 4] + a2 * rec[b + 7] - y, dz = a0 * rec[b + 2] + a1 * rec[b + 5] + a2 * rec[b + 8] - z;
+          const d2 = dx * dx + dy * dy + dz * dz;
+          if (d2 < bd) { bd = d2; bt = t; }
+        }
+        const dist = Math.sqrt(bd) * R, w = 2 * half;
+        if (dist - w < bs) {
+          bs = dist - w;
+          const a0 = (1 - bt) * (1 - bt), a1 = 2 * bt * (1 - bt), a2 = bt * bt, k = Rv.size[r];
+          best = this._rv || (this._rv = { dist: 0, w: 0, depth: 0, k: 0, hs: 0 });
+          best.dist = dist; best.w = w; best.k = k; best.depth = 3 + 25 * k;
+          best.hs = (a0 * rec[b + 9] + a1 * rec[b + 10] + a2 * rec[b + 11]) / this.hScale;
+        }
+      }
+    }
     return best;
   }
 

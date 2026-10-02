@@ -19,7 +19,8 @@ import { nameLandmarks, landmarks } from '../src/gen/worldsim/landmarks.js';
 import { ROCKS } from '../src/gen/worldsim/lithology.js';
 import { TerrainGenerator, S_H, S_LEN } from '../src/gen/terrain.js';
 import { runTile, refineLevel, tileAt } from '../src/gen/localsim.js';
-import { newRefine, packTile, putTile, toStorable, fromStorable, TileSet, RefineReader } from '../src/gen/worldsim/refine.js';
+import { newRefine, packTile, putTile, toStorable, fromStorable, TileSet, RefineReader, tileRivers, riverIndex } from '../src/gen/worldsim/refine.js';
+import v8 from 'v8';
 import { TILE_VERSION } from '../src/gen/tileshape.js';
 import { dunePatches } from '../src/gen/dunes.js';
 import { faceUVFromDir } from '../src/gen/cubesphere.js';
@@ -63,10 +64,14 @@ for (const w of worlds) {
   if (fs.existsSync(rf + '.h')) {
     const meta = JSON.parse(fs.readFileSync(rf + '.json')), hb = fs.readFileSync(rf + '.h'), rb = fs.readFileSync(rf + '.rw');
     R = fromStorable({ ...meta, h: new Int16Array(hb.buffer, hb.byteOffset, hb.length / 2), rw: new Uint8Array(rb.buffer, rb.byteOffset, rb.length) });
+    if (fs.existsSync(rf + '.riv')) R.riv = v8.deserialize(fs.readFileSync(rf + '.riv'));
   } else {
     const t0 = performance.now(), L = refineLevel(gen), n = 1 << L;
     R = newRefine(L, false);
-    for (let f = 0; f < 6; f++) for (let tj = 0; tj < n; tj++) for (let ti = 0; ti < n; ti++) putTile(R, packTile(runTile(gen, f, ti, tj, { kind: 'refine' })));
+    const parts = [];
+    for (let f = 0; f < 6; f++) for (let tj = 0; tj < n; tj++) for (let ti = 0; ti < n; ti++) { const T = runTile(gen, f, ti, tj, { kind: 'refine' }); putTile(R, packTile(T)); parts.push(tileRivers(T)); }
+    R.riv = riverIndex(parts, snap.N, snap.R);
+    fs.writeFileSync(rf + '.riv', v8.serialize(R.riv));
     const o = toStorable(R);
     fs.writeFileSync(rf + '.json', JSON.stringify({ L: o.L, n: o.n, K: o.K, version: o.version }));
     fs.writeFileSync(rf + '.h', Buffer.from(o.h.buffer)); fs.writeFileSync(rf + '.rw', Buffer.from(o.rw.buffer));

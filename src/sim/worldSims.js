@@ -15,7 +15,7 @@
 import { SIM_VERSION, simNFor } from '../gen/worldsim/snapshot.js';
 import { TILE_VERSION } from '../gen/tileshape.js';
 import { refineLevelN } from '../gen/localsim.js';
-import { newRefine, putTile, complete, toStorable, fromStorable } from '../gen/worldsim/refine.js';
+import { newRefine, putTile, complete, toStorable, fromStorable, riverIndex } from '../gen/worldsim/refine.js';
 
 const DB = 'starseed-worldsim', STORE = 'snap';
 
@@ -216,13 +216,16 @@ export class WorldSims {
       w.job = null; this._next(); return;
     }
     if (m.type === 'ptile') { const job = w.job; w.job = null; job.resolve({ h: m.h, rw: m.rw, fl: m.fl, rcv: m.rcv }); this._next(); return; }
-    if (m.type === 'tile') { const st = this.refine.get(m.body); if (st && st.R) putTile(st.R, m.tile); return; }
+    if (m.type === 'tile') { const st = this.refine.get(m.body); if (st && st.R) { putTile(st.R, m.tile); if (m.tile.riv) (st.riv || (st.riv = [])).push(m.tile.riv); } return; }
     if (m.type === 'refined') {
       w.job = null;
       const st = this.refine.get(m.body);
       st.done++;
       if (st.done === st.total && complete(st.R)) {
         st.ms = performance.now() - st.t0;
+        // (its rivers, indexed by the world sim's cells)
+        const snap = this.game.system.bodies[m.body].terrain.snapshot;
+        if (st.riv && snap) { st.R.riv = riverIndex(st.riv, snap.N, snap.R); st.riv = null; }
         dbPut(await this.dbP, this.refKey(m.body), toStorable(st.R));
         this._applyRefine(m.body, st, false);
       }

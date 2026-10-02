@@ -8,7 +8,8 @@
 //   h   heights (m, Int16), per tile its kept square (MT + 2 KEEP a side)
 //   rw  rock (the world sim's kinds, lithology.js: the low 5 bits) | water << 5 (1 sea, 2 lake)
 
-import { FACES } from '../cubesphere.js';
+import { FACES, dirFromFaceUV } from '../cubesphere.js';
+import { GridLite } from './grid.js';
 import { MT, KEEP, TILE_VERSION } from '../tileshape.js';
 import * as dm from '../../core/dmath.js';
 
@@ -43,11 +44,62 @@ export function putTile(R, p) {
 export const complete = (R) => R.done.every((x) => x);
 
 // for IndexedDB (a SharedArrayBuffer can't be stored): plain copies, and back
-export function toStorable(R) { return { version: R.version, L: R.L, n: R.n, K: R.K, h: Int16Array.from(R.h), rw: Uint8Array.from(R.rw) }; }
+export function toStorable(R) { return { version: R.version, L: R.L, n: R.n, K: R.K, h: Int16Array.from(R.h), rw: Uint8Array.from(R.rw), riv: R.riv || null }; }
 export function fromStorable(o) {
   const R = newRefine(o.L);
   R.h.set(o.h); R.rw.set(o.rw); R.done.fill(1);
+  R.riv = o.riv || null;
   return R;
+}
+
+// ---- the refinement's rivers: where its own water gathers (at least RIVER_A m^2, rain-weighted:
+// a stream ~50 m wide; the creeks finer down are the pyramid's), each river cell a smooth curve
+// from halfway to its main inflow, through it, to halfway to the cell it drains into (the
+// valley its water cut, not the world sim's cell lines), with the ground along it and its water
+export const RIVER_A = 1e8, RIVER_REC = 13;   // (a record: 3 points, 3 heights, the water)
+export function tileRivers(T) {
+  const fl = T.fl, rc = T.rcv, H = T.h, s = 2 / (1 << T.L), du = s / MT;
+  const u0 = -1 + T.ti * s - KEEP * du, v0 = -1 + T.tj * s - KEEP * du;
+  const thr = Math.max(0, Math.round(255 * dm.log(RIVER_A) / LN_A)), out = [], d = [0, 0, 0];
+  const nbI = (k) => { const kk = k >= 4 ? k + 1 : k; return (kk % 3) - 1; }, nbJ = (k) => { const kk = k >= 4 ? k + 1 : k; return ((kk / 3) | 0) - 1; };
+  const at = (fi, fj) => { dirFromFaceUV(T.face, u0 + (fi + 0.5) * du, v0 + (fj + 0.5) * du, d); out.push(d[0], d[1], d[2]); };
+  for (let j = KEEP; j < KEEP + MT; j++) for (let i = KEEP; i < KEEP + MT; i++) {
+    const o = j * K + i, k = rc[o];
+    if (fl[o] < thr || k === 255) continue;
+    const ri = i + nbI(k), rj = j + nbJ(k);
+    let ui = i, uj = j, uf = -1;
+    for (let q = 0; q < 8; q++) {
+      const ni = i + nbI(q), nj = j + nbJ(q), no = nj * K + ni, nk = rc[no];
+      if (nk === 255 || ni + nbI(nk) !== i || nj + nbJ(nk) !== j || fl[no] < thr) continue;
+      if (fl[no] > uf) { uf = fl[no]; ui = ni; uj = nj; }
+    }
+    at((ui + i) / 2, (uj + j) / 2); at(i, j); at((i + ri) / 2, (j + rj) / 2);
+    out.push((H[uj * K + ui] + H[o]) / 2, H[o], (H[o] + H[rj * K + ri]) / 2, dm.exp(fl[o] / 255 * LN_A));
+  }
+  return Float32Array.from(out);
+}
+// the tiles' rivers gathered and indexed by the world sim's cells (N a face, world radius Rw):
+// { rec, start, idx } (the records of cell c: idx[start[c] .. start[c + 1]])
+export function riverIndex(parts, N, Rw) {
+  let total = 0;
+  for (const p of parts) total += p.length;
+  const rec = new Float32Array(total);
+  let o = 0;
+  for (const p of parts) { rec.set(p, o); o += p.length; }
+  const G = new GridLite(N, Rw), m = total / RIVER_REC, cellOf = new Int32Array(m), start = new Int32Array(G.n + 1);
+  for (let r = 0; r < m; r++) { const b = r * RIVER_REC + 3; cellOf[r] = G.cellAt(rec[b], rec[b + 1], rec[b + 2]); start[cellOf[r] + 1]++; }
+  for (let c = 0; c < G.n; c++) start[c + 1] += start[c];
+  const fill = start.slice(0, G.n), idx = new Int32Array(m);
+  for (let r = 0; r < m; r++) idx[fill[cellOf[r]]++] = r;
+  // (each one's half width, m, as the creeks': a stream of 1e8 m^2 ~25 m, the greatest ~600 m;
+  // and its size 0..1)
+  const half = new Float32Array(m), size = new Float32Array(m), lo = dm.log(RIVER_A), span = dm.log(1e11) - lo;
+  for (let r = 0; r < m; r++) {
+    const A = rec[r * RIVER_REC + 12], la = dm.log(A);
+    half[r] = 0.5 + 0.9 * dm.exp(0.45 * (la - dm.log(6e4)));
+    size[r] = Math.max(0, Math.min(1, (la - lo) / span));
+  }
+  return { rec, start, idx, half, size };
 }
 
 // cubic weights at t in [0, 1] for the four samples round it: B-spline (smooth, for a

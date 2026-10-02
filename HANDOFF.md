@@ -88,13 +88,23 @@ surveying many worlds; bit-exact across runs and clients, not across revisions):
   `dunes`, smoothed so lone sandy cells stay sheets), turned to the trades / westerlies / the
   substellar wind, shifted cell to cell so the repeat doesn't line up, faded in by resolution.
 - **Bare airless rock:** snow needs water (a water cycle or an ice inventory); maria are basalt.
+- **The sea is the world sim's sea** (snapshot `ocean`): a closed basin below the datum is dry or
+  a lake (Opast's salt pan was drawn as deep ocean).
+- **Rivers from the refinement (`refine.js tileRivers / riverIndex`):** each refinement tile's
+  cells with 1e8+ m^2 of water become smooth curves (halfway to the main inflow, through the
+  cell, halfway on) with the ground along them, indexed by world-sim cell; the sampler draws the
+  nearest (widths continuous with the creeks'). The old world-sim lines left the water in pools
+  where the refinement's valley wandered off them. Tiles route water across flats by a
+  distance-based fill and a slope-weighted draw (`flatK`, wander 2; native/sim.c rebuilt, bit
+  for bit with erosion.js): rivers wind across plains instead of running along the grid's lines.
 - **Survey tool:** `node tools/survey.mjs --out DIR --cache DIR SEED[:body] ...` writes each world's
   map and its landmarks at 400/60/12 km; the GPU check page takes `?seed=&body=` (runs the sim).
 
 Open:
 - **Desert landforms:** dunes are in (below); wadis and mesas (the world sim marks mesa
   country) still to draw.
-- **Big rivers:** drawn from the world sim's lines, not the tiles' drainage; hard to see under snow.
+- **Big rivers:** now drawn from the refinement's own drainage (below); finer meanders (a lateral
+  migration history) would be the next step.
 - **Drainage pattern:** D8-straight parallel gullies on even slopes (MFD routing would help).
 - **Chaos terrain:** icy chaos is a flat matrix; its rafts should be drawn by the finer levels.
 - **Near-field loading:** the volume rings make the descent slow with few workers.

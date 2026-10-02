@@ -79,7 +79,7 @@ export function routeNative(E, wander, salt) {
   const h = alloc(8 * n), b = alloc(n), fill = alloc(8 * n), rcv = alloc(4 * n), rcvD = alloc(8 * n), order = alloc(4 * n), done = alloc(n), hk = alloc(8 * n), hv = alloc(4 * n);
   heap(Float64Array, h, n).set(E.h);
   heap(Uint8Array, b, n).set(E.base);
-  ex.route(n, g.nStart, g.nbr, g.nDist, h, b, fill, rcv, rcvD, order, done, hk, hv, wander ? 1 : 0, salt >>> 0);
+  ex.route(n, g.nStart, g.nbr, g.nDist, h, b, fill, rcv, rcvD, order, done, hk, hv, wander | 0, salt >>> 0, E.flatK || 0);
   E.fill.set(heap(Float64Array, fill, n));
   E.rcv.set(heap(Int32Array, rcv, n));
   E.rcvD.set(heap(Float64Array, rcvD, n));

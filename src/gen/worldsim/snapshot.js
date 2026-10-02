@@ -160,6 +160,7 @@ export class SnapshotSampler {
   // the world's refinement (refine.js), or null: its cells (m) a few times finer than the grid's
   attachRefine(R) {
     this.ref = R ? new RefineReader(R) : null;
+    this.riv = R && R.riv ? R.riv : null;   // (its rivers, refine.js riverIndex)
     this.refCell = R ? (Math.PI / 2) * this.s.R / (R.n * MT) : 0;
   }
   // the terrain pyramid's finer levels near the player (gen/terrainTiles.js): a Map of level ->

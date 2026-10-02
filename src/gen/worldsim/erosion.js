@@ -139,8 +139,10 @@ export class Erosion {
 
   route() {
     // (compiled when it can be: native/sim.c's route() is this, operation for operation)
-    if (routeNative(this, this.wander, this.nStep * 0x9e3779b1)) return;
-    const { G, h, base, fill, rcv, rcvD, order, heap } = this;
+    // (wander: 1 a slope-weighted draw where the slope is real, 2 on the flats too)
+    const wmode = this.wander ? (this.flatWander ? 2 : 1) : 0;
+    if (routeNative(this, wmode, this.nStep * 0x9e3779b1)) return;
+    const { G, h, base, fill, rcv, rcvD, order, heap } = this, flatK = this.flatK || 0;
     const { nStart, nbr, nDist } = G;
     const n = G.n;
     heap.size = 0;
@@ -155,12 +157,15 @@ export class Erosion {
         const o = nbr[e];
         if (done[o]) continue;
         done[o] = 1;
-        fill[o] = h[o] > z + EPS ? h[o] : z + EPS;
+        // (the fill's faint gradient by the step's length when flatK is given: a distance across
+        // the flat, not a count of steps, so it has no favoured directions)
+        const ep = flatK > 0 ? EPS * nDist[e] * flatK : EPS;
+        fill[o] = h[o] > z + ep ? h[o] : z + ep;
         heap.push(fill[o], o);
       }
     }
     // receivers: a way down the filled surface (the steepest, or a slope-weighted draw)
-    const wander = this.wander, salt = this.nStep * 0x9e3779b1;
+    const salt = this.nStep * 0x9e3779b1;
     for (let c = 0; c < n; c++) {
       if (base[c]) { rcv[c] = -1; rcvD[c] = 0; continue; }
       let best = -1, bs = 0, bd = 0, sum = 0;
@@ -171,8 +176,9 @@ export class Erosion {
         if (s > 0) sum += s;
         if (s > bs) { bs = s; best = o; bd = nDist[e]; }
       }
-      // (lakes and flats, where the slope is only the fill's gradient, keep the steepest)
-      if (wander && bs > 1e-5) {
+      // (lakes and flats, where the slope is only the fill's gradient, keep the steepest, unless
+      // water is to find its own way across them)
+      if ((wmode === 1 && bs > 1e-5) || (wmode === 2 && bs > 0)) {
         let x = (hashInts(c, salt) >>> 0) / 4294967296 * sum;
         for (let e = nStart[c]; e < nStart[c + 1]; e++) {
           const s = (fc - fill[nbr[e]]) / nDist[e];

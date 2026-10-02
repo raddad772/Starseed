@@ -411,6 +411,8 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
   // starting surface: the world sim's heights are its cells' means) by about half the relief
   // the world sim has there; a local tile's are its region's channels, as they are
   const E = new Erosion(G, h, { sea: true, K: 1, rain, m: 0.45, kd: 0 });
+  // (water finds its own way across a plain, not the grid's straight lines)
+  E.flatWander = true; E.flatK = 1 / cell;
   E.lakeId.fill(-1); E.lakeList = [];
   E.findBase = () => {};
   const edge = (c) => { const i = c % NG, j = (c - i) / NG; return i === 0 || j === 0 || i === NG - 1 || j === NG - 1; };
