@@ -132,6 +132,23 @@ function formPlanets(rng, star, disk) {
     g.migrated = true;
     for (let i = protos.length - 1; i >= 0; i--) if (protos[i] !== g && protos[i].aAU < 0.7) protos.splice(i, 1);
   }
+  // Warm Jupiter: a giant migrating partway in (~8% of systems with giants, more metal-rich
+  // ones): it clears the rocky protoplanets round its new orbit and brings its icy moons
+  // with it (ocean moons, if it ends up in the habitable zone); now and then it captures
+  // one of the rocky worlds it scattered as a moon (an Earth-class moon)
+  const still = giants.filter((g) => !g.migrated);
+  if (still.length && rng.chance(0.12 * dm.pow(10, star.metallicity) * Math.min(1, star.mass))) {
+    const g = still[0];
+    g.aAU = g.aAU * rng.logUniform(0.04, 0.8);
+    g.migrated = true;
+    let scattered = null;
+    for (let i = protos.length - 1; i >= 0; i--) {
+      const q = protos[i];
+      if (q === g || q.comp.envelope > 0.5) continue;
+      if (q.aAU > g.aAU / 1.6 && q.aAU < g.aAU * 1.6) { if (!scattered || q.massEarth > scattered.massEarth) scattered = q; protos.splice(i, 1); }
+    }
+    if (scattered && scattered.massEarth > 0.05 && rng.chance(0.4)) g.capturedRock = { massEarth: scattered.massEarth, comp: { ...scattered.comp } };
+  }
   protos.sort((x, y) => x.aAU - y.aAU);
 
   // Dynamical stability: resolve the most unstable neighbour pair first.
@@ -220,7 +237,8 @@ function makeMoons(rng, planet, planetProto, star, disk) {
     const n = giant ? rng.weighted([[1, 2], [3, 3], [3, 4], [2, 5]]) : rng.weighted([[2, 1], [3, 2], [2, 3]]);
     const total = Mp * rng.lognormal(giant ? 2.0e-4 : 1.1e-4, 0.45);
     const weights = [];
-    for (let i = 0; i < n; i++) weights.push(rng.lognormal(1, 0.7));
+    // (a super-Jupiter's moons share less evenly: one big one can dominate, Titan-like)
+    for (let i = 0; i < n; i++) weights.push(rng.lognormal(1, Mp > 950 ? 1.1 : 0.7));
     const wsum = weights.reduce((x, y) => x + y, 0);
     let a = Math.max(minA, Rp * rng.range(giant ? 5 : 4.5, giant ? 8 : 7));
     for (let i = 0; i < n; i++) {
@@ -234,6 +252,12 @@ function makeMoons(rng, planet, planetProto, star, disk) {
         e: mr.rayleigh(0.004), i: mr.rayleigh(0.006), captured: false,
       });
       a *= dm.pow(Math.max(mr.lognormal(1.95, 0.15), 1.5), 2 / 3);
+    }
+    // a rocky world the giant captured as it migrated (an Earth-class moon)
+    if (planetProto.capturedRock) {
+      const mr = rng.fork('capturedRock');
+      const ac = Math.min(maxA * 0.5, Rp * mr.range(15, 40));
+      if (ac > minA) moons.push({ kind: 'moon', aReal: ac, massEarth: planetProto.capturedRock.massEarth, comp: planetProto.capturedRock.comp, tidalHeating: mr.range(0.05, 0.3), e: mr.range(0, 0.03), i: mr.range(0, 0.3), captured: true });
     }
     // occasional large captured moon (Triton-like, retrograde)
     if (!giant && rng.chance(0.3)) {

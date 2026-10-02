@@ -115,7 +115,7 @@ export function worldSim(body, star, opts = {}) {
   T.heights(ht, ut);
   // the climate on the plates' surface: the fine epoch's rain and snow come from it
   const Gc = new SimGrid(opts.Nc ?? 40, body.R);
-  const climOpts = climateOpts(body, star);
+  const climOpts = climateOpts(body, star, host);
   let clim = climateOn(Gc, Gt, ht, climOpts);
   // life on the map (life.js), and the climate again with its plant cover (forests darken
   // the land, plants hand rain on inland): the cover then holds the fine epoch's soil
@@ -366,11 +366,12 @@ function buildRock(G, Gt, T, rng) {
 function hash(a, b) { let x = Math.imul(a ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul(b, 0xc2b2ae35); x ^= x >>> 13; x = Math.imul(x, 0x27d4eb2f); x ^= x >>> 16; return (x >>> 0) / 4294967296; }
 
 // the climate's inputs from the body and its star
-function climateOpts(body, star) {
+function climateOpts(body, star, host) {
   const cl = body.terrain.climate, r = body.rotation;
   return {
     S: body.insolation, obliquity: r.obliquity, ecc: body.orbitE || 0, perihelion: (body.orbit ? body.orbit.w : 0) - (r.tiltAzimuth || 0),
-    locked: !!cl.locked, substellar: cl.substellar, rotH: r.locked ? 1e4 : Math.abs(r.periodRealH || 24), retro: !!r.retrograde, hadley: cl.hadley,
+    // (a moon locked to its planet still sees its star rise and set: its day is its orbit)
+    locked: !!cl.locked && body.kind !== 'moon', substellar: cl.substellar, rotH: r.locked ? (body.kind === 'moon' && host && body.orbit && body.orbit.aReal ? 2 * Math.PI * Math.sqrt(body.orbit.aReal ** 3 / (6.674e-11 * host.massEarth * 5.972e24)) / 3600 : 1e4) : Math.abs(r.periodRealH || 24), retro: !!r.retrograde, hadley: cl.hadley,
     pressure: body.atmosphere ? body.atmosphere.pressure : 0, Tmean: body.Tsurf, albedo: body.albedo, lapse: cl.lapse,
     yearDays: 365.25 * Math.sqrt(body.aAU * body.aAU * body.aAU / star.mass),
   };
