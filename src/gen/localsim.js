@@ -230,6 +230,8 @@ function blur(a, r, tmp) {
 
 // ---- run one tile. gen: the TerrainGenerator (with its world sim). opts.kind:
 //   'refine'  the world's refinement (on the world sim's surface, rock by the world sim's)
+//   'pyr'     a finer level of it near the player (level opts.L, on opts.parent: a RefineReader
+//             over the level above), its water and rock from that level's
 //   'region'  a region tile (on the world sim's surface: its refinement's, to come)
 //   'local'   a local tile, on opts.parent (its region tile's result)
 // Returns the kept square (MT + 2 KEEP per side): heights (m), how hard the rock showing is
@@ -246,19 +248,19 @@ export function runTile(gen, face, ti, tj, opts = {}) {
 // the integer sim (gpu/itile.js: here or on a GPU) and fromInts() takes the result back;
 // finish() then reads its water and rock and returns the kept square (as runTile)
 export function prepareTile(gen, face, ti, tj, opts = {}) {
-  const kind = opts.kind || (opts.region ? 'region' : 'local'), region = kind === 'region', refine = kind === 'refine';
+  const kind = opts.kind || (opts.region ? 'region' : 'local'), region = kind === 'region', refine = kind === 'refine', pyr = kind === 'pyr', rf = refine || pyr;
   const R = gen.R, Mu = faceMetres(R), S = gen.snap;
-  const L = refine ? refineLevel(gen) : region ? regionLevel(R) : tileLevel(R);
+  const L = pyr ? opts.L : refine ? refineLevel(gen) : region ? regionLevel(R) : tileLevel(R), parent = pyr ? opts.parent : null;
   const G = tileGrid(face, ti, tj, L, R), n = G.n, cell = G.spacing;
-  const steps = opts.steps ?? (refine ? 120 : region ? 140 : 100);
+  const steps = opts.steps ?? (rf ? 120 : region ? 140 : 100);
   // its region's structure (a local tile's: the region it's in; a refinement's is the world
   // sim's own, its rock by place)
   const rs = 1 << REGION_UP;
-  const ST = refine ? { faults: [], joints: [], fold: null, dipX: 0, dipY: 0, x0: 0, y0: 0, rel: 0, rock: 'granite', ri: 0, rj: 0, belt: 0 }
+  const ST = rf ? { faults: [], joints: [], fold: null, dipX: 0, dipY: 0, x0: 0, y0: 0, rel: 0, rock: 'granite', ri: 0, rj: 0, belt: 0 }
     : opts.structure || regionStructure(gen, face, region ? ti : Math.floor(ti / rs), region ? tj : Math.floor(tj / rs));
   // (faults from the regions round it reach in too)
   const faults = ST.faults.slice();
-  if (!opts.structure && !refine) for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+  if (!opts.structure && !rf) for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
     if (!di && !dj) continue;
     const nr = 1 << regionLevel(R), ri = (region ? ti : Math.floor(ti / rs)) + di, rj = (region ? tj : Math.floor(tj / rs)) + dj;
     if (ri < 0 || rj < 0 || ri >= nr || rj >= nr) continue;
@@ -268,11 +270,23 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
   // world's standing water (the sea, its lakes), which stays where it is
   const B = new Float64Array(n), rain = new Float64Array(n), X = new Float64Array(n), Y = new Float64Array(n);
   const wet = new Uint8Array(n), relC = new Float64Array(n), hs = gen.hScale;
+  // (the relief over a cell of the level above, from the world sim's: relief grows with scale
+  // about as its 0.7th power)
+  const relK = rf ? dm.pow(Math.min(1, (pyr ? 4 * cell : S.G.spacing) / S.G.spacing), 0.7) : 1, dd = [0, 0, 0];
   for (let j = 0; j < NG; j++) for (let i = 0; i < NG; i++) {
     const c = j * NG + i, u = G.u0 + (i + 0.5) * G.du, v = G.v0 + (j + 0.5) * G.du;
     X[c] = u * Mu; Y[c] = v * Mu;
     const dx = G.dir[c * 3], dy = G.dir[c * 3 + 1], dz = G.dir[c * 3 + 2];
-    if (refine) {
+    if (pyr) {
+      // (the level above's surface, its water)
+      dd[0] = dx; dd[1] = dy; dd[2] = dz;
+      let hb;
+      if (parent.sample(dd)) {
+        hb = parent.h;
+        if (parent.lake > 0.5) wet[c] = 2; else if (parent.sea > 0.5 && hb < 0) wet[c] = 1;
+      } else { hb = S.h(dx, dy, dz) * hs; if (hb < 0 && S.seaDist(dx, dy, dz) < 1) wet[c] = 1; }
+      B[c] = hb; relC[c] = S.relief(dx, dy, dz) * hs * relK;
+    } else if (refine) {
       // (the world sim's own surface, its cells' blend: its rivers are for the water here to find)
       let hb = S.h(dx, dy, dz) * hs;
       // (its rivers' courses, a cell or so wide, for the water here to find)
@@ -320,9 +334,14 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
   });
   // (a refinement's rock: the world sim's, read as its cells' stack at each cell's height as it
   // is now: so as valleys cut down, lower rock shows in them)
-  const rockC = refine ? new Uint8Array(n) : null, ROCK_HD = ROCKS.map((r) => dm.clamp(1.25 - 0.4 * r.k, 0, 1));
-  const readRock = () => { for (let c = 0; c < n; c++) rockC[c] = S.rockAt(G.dir[c * 3], G.dir[c * 3 + 1], G.dir[c * 3 + 2], h[c] / hs); };
-  const hardAt = refine ? (c) => ROCK_HD[rockC[c]] : (c, z) => col.at(z + bedOff[c]) * (1 - 0.7 * weak[c]);
+  const rockC = rf ? new Uint8Array(n) : null, ROCK_HD = ROCKS.map((r) => dm.clamp(1.25 - 0.4 * r.k, 0, 1)), rkOut = {};
+  const readRock = () => {
+    for (let c = 0; c < n; c++) {
+      if (pyr) { dd[0] = G.dir[c * 3]; dd[1] = G.dir[c * 3 + 1]; dd[2] = G.dir[c * 3 + 2]; rockC[c] = parent.sample(dd) ? parent.rockAt(h[c], rkOut) : S.rockAt(dd[0], dd[1], dd[2], h[c] / hs); }
+      else rockC[c] = S.rockAt(G.dir[c * 3], G.dir[c * 3 + 1], G.dir[c * 3 + 2], h[c] / hs);
+    }
+  };
+  const hardAt = rf ? (c) => ROCK_HD[rockC[c]] : (c, z) => col.at(z + bedOff[c]) * (1 - 0.7 * weak[c]);
   // the starting surface, with a few centimetres of jitter (so water has a way to choose)
   const h = new Float64Array(n);
   const jk = rng.int(1, 0x7fffffff);
@@ -343,18 +362,18 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
   const drop = opts.drop ?? (region ? dm.clamp(ST.rel * 0.3, 5, 700) : 0);
   // (a refinement's sea stood lower through the ice ages, by lowstand m: its rivers ran out
   // across the shelf and cut their valleys down to it; then it rose, and drowned them)
-  const lowstand = refine ? (opts.lowstand ?? 100) : 0, rise = Math.floor(steps * 0.85);
+  const lowstand = rf ? (opts.lowstand ?? 100) : 0, rise = Math.floor(steps * 0.85);
   for (let c = 0; c < n; c++) {
     const out = edge(c) && !wet[c] && E.A[c] >= 0.08 * aOut;
     E.base[c] = (wet[c] === 1 && B[c] < -lowstand) || wet[c] === 2 || out ? 1 : 0;
-    if (out) h[c] = B[c] - (refine ? dm.clamp(relC[c] * 0.3, 5, 900) : drop);
+    if (out) h[c] = B[c] - (rf ? dm.clamp(relC[c] * 0.3, pyr ? 1 : 5, 900) : drop);
   }
   // the land's mean held to the starting surface's (over a few cells of the world sim's (a
   // refinement), a few hundred metres to a few km): uplift keeping pace with the wearing down,
   // as the world sim had it
-  const sig = refine ? 4 : Math.round(NG / (region ? 10 : 20)), mean = new Float64Array(n), btmp = new Float64Array(NG);
-  const K0 = opts.K0 ?? (refine ? 3 : region ? 0.3 : 1.2e-2), kd0 = opts.kd0 ?? (refine ? 0.25 : region ? 0.15 : 0.06);
-  if (refine) readRock();
+  const sig = rf ? 4 : Math.round(NG / (region ? 10 : 20)), mean = new Float64Array(n), btmp = new Float64Array(NG);
+  const K0 = opts.K0 ?? (rf ? 3 : region ? 0.3 : 1.2e-2), kd0 = opts.kd0 ?? (rf ? 0.25 : region ? 0.15 : 0.06);
+  if (rf) readRock();
   const talus = new Float32Array(n), hd = new Float64Array(n), tmp = new Float64Array(n);
   const { nStart, nbr, nDist, area } = G;
   const fDone = new Uint8Array(faults.length);
@@ -375,7 +394,7 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
     }
     if (lowstand && st === rise) for (let c = 0; c < n; c++) if (wet[c] === 1) E.base[c] = 1;
     if (st % 2 === 0) { E.nStep = st; E.route(); E.drain(); }
-    if (refine && st % 10 === 9) readRock();
+    if (rf && st % 10 === 9) readRock();
     for (let c = 0; c < n; c++) hd[c] = hardAt(c, h[c]);
     // streams: implicit stream power, downstream first, each cell by the rock it's in
     const fill = E.fill, rcv = E.rcv, rcvD = E.rcvD, A = E.A, order = E.order;
@@ -436,7 +455,7 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
   // sim's sea through ground below it), its lakes; and its rock, with the alluvium laid down
   // where big flows slow on gentle ground
   let water = null;
-  if (refine) {
+  if (rf) {
     // the rock showing, as the ground stands now: the world sim's cells round each cell read as
     // a stack (SnapshotSampler.rockAt's rule), and by the ground's own lows and rises here (what
     // its water cut): what was laid down (sand, alluvium, salt) lies in the lows, the upper of
@@ -450,6 +469,11 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
       for (let c = 0; c < n; c++) { hl[c] = h[c] - sm[c]; rl[c] = hl[c] * hl[c]; }
       blur(rl, 6, btmp);
       const DEP = new Set(['alluvium', 'salt', 'quartz sand', 'coral sand', 'black sand'].map((x) => ROCKS.findIndex((r) => r.name === x)));
+      if (pyr) for (let c = 0; c < n; c++) {
+        dd[0] = G.dir[c * 3]; dd[1] = G.dir[c * 3 + 1]; dd[2] = G.dir[c * 3 + 2];
+        if (parent.sample(dd)) rockC[c] = parent.rockAt(h[c], rkOut, dm.clamp(hl[c] / (1.5 * Math.sqrt(rl[c]) + 0.05), -1, 1), DEP);
+      }
+      else {
       const cc = new Int32Array(4), ww = new Float64Array(4), uv = { face: 0, u: 0, v: 0 }, dd = [0, 0, 0], sr = S.s.rock, sh = S.s.h;
       const rk = new Int32Array(4), Wr = new Float64Array(4), Hr = new Float64Array(4);
       for (let c = 0; c < n; c++) {
@@ -476,6 +500,7 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
         }
         rockC[c] = best;
       }
+      }
     }
     water = new Uint8Array(n);
     const q = new Int32Array(n);
@@ -489,7 +514,7 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
     // a shallow cove all but closed in by land fills with sand (beaches, bay bars): the fine
     // fringe of the drowned land wears to a coast; hard headlands stand
     const SAND = ROCKS.findIndex((r) => r.name === 'quartz sand');
-    for (let it = 0; it < (opts.waves ?? 6); it++) {
+    for (let it = 0; it < (opts.waves ?? (pyr ? 3 : 6)); it++) {
       for (let c = 0; c < n; c++) {
         if (edge(c) || wet[c] === 2) continue;
         let ns = 0;
@@ -511,13 +536,13 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
   const K = MT + 2 * KEEP, off = MARGIN - KEEP;
   const out = { face, ti, tj, L, MT, KEEP, kind, region, cell, version: TILE_VERSION, suite: col.suite, rock: ST.rock, belt: ST.belt, faults: faults.length,
     h: new Float32Array(K * K), hard: new Uint8Array(K * K), talus: new Uint8Array(K * K), flow: new Uint8Array(K * K), rcv: new Uint8Array(K * K) };
-  if (refine) { out.rockC = new Uint8Array(K * K); out.water = new Uint8Array(K * K); }
+  if (rf) { out.rockC = new Uint8Array(K * K); out.water = new Uint8Array(K * K); }
   const amax = dm.log(1e7 * (cell / 4) * (cell / 4));
   for (let j = 0; j < K; j++) for (let i = 0; i < K; i++) {
     const c = (j + off) * NG + (i + off), o = j * K + i;
     out.h[o] = h[c];
-    out.hard[o] = Math.round(255 * (refine ? hardAt(c) : col.at(h[c] + bedOff[c])));     // (the rock's: its joints don't show)
-    if (refine) { out.rockC[o] = rockC[c]; out.water[o] = water[c]; }
+    out.hard[o] = Math.round(255 * (rf ? hardAt(c) : col.at(h[c] + bedOff[c])));     // (the rock's: its joints don't show)
+    if (rf) { out.rockC[o] = rockC[c]; out.water[o] = water[c]; }
     out.talus[o] = Math.min(255, Math.round(talus[c] * 25));
     out.flow[o] = Math.round(255 * Math.max(0, Math.min(1, dm.log(Math.max(1, E.A[c])) / amax)));
     // (the way down: which of the 8 neighbours, 0..7 as di, dj = -1..1 row by row; 255 none)

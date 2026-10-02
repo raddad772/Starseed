@@ -56,24 +56,34 @@ export function fromStorable(o) {
 function bspline(t, w) { const u = 1 - t, t2 = t * t, t3 = t2 * t; w[0] = u * u * u / 6; w[1] = (3 * t3 - 6 * t2 + 4) / 6; w[2] = (-3 * t3 + 3 * t2 + 3 * t + 1) / 6; w[3] = t3 / 6; }
 function catrom(t, w) { const t2 = t * t, t3 = t2 * t; w[0] = (-t3 + 2 * t2 - t) / 2; w[1] = (3 * t3 - 5 * t2 + 2) / 2; w[2] = (-3 * t3 + 4 * t2 + t) / 2; w[3] = (t3 - t2) / 2; }
 
-// reads a refinement by place. sample(d) sets: h (m), sea (0..1: how much of it is sea), and
-// what rockAt reads (the tile weighing most there, the cells round the point and their weights).
-// Read as smooth fields, not cells: heights through the cells' values, the sea's and each rock's
-// extent smoothly, so a coast or a contact is a curve, not the cells' outline
+// a level of the terrain's tiles held sparsely (the pyramid's finer levels, near where the
+// player is: gen/terrainTiles.js): tiles by index, each { h (Float32Array, m), rw } of a kept square
+export class TileSet {
+  constructor(L) { this.L = L; this.n = 1 << L; this.tiles = new Map(); }
+  put(face, ti, tj, t) { this.tiles.set((face * this.n + tj) * this.n + ti, t); }
+}
+
+// reads a level by place: the refinement (dense, refine.js) or a TileSet. sample(d) sets: h (m),
+// sea and lake (0..1: how much of it is under each), w (how fully the level covers the point: it
+// fades out at the edges of what's there), and what rockAt reads (the tile weighing most there,
+// the cells round the point and their weights). Read as smooth fields, not cells: heights
+// through the cells' values, the water's and each rock's extent smoothly, so a coast or a
+// contact is a curve, not the cells' outline
 export class RefineReader {
-  constructor(R) {
-    this.R = R;
-    this.s = 2 / R.n;
+  constructor(src) {
+    this.src = src;
+    this.sparse = src instanceof TileSet;
+    this.s = 2 / src.n;
     this.du = this.s / MT;
-    this.h = 0; this.sea = 0; this.tT = -1;
+    this.h = 0; this.sea = 0; this.lake = 0; this.w = 0; this.tH = null; this.tRW = null; this.tOff = 0;
     this.bx = new Float64Array(4); this.by = new Float64Array(4); this.cx = new Float64Array(4); this.cy = new Float64Array(4);
     this.rbx = new Float64Array(4); this.rby = new Float64Array(4); this.ri = 0; this.rj = 0;
   }
 
   sample(d) {
-    const R = this.R, n = R.n, s = this.s, du = this.du, reach = (KEEP + 1) * du;
+    const R = this.src, n = R.n, s = this.s, du = this.du, reach = (KEEP + 1) * du;
     const bx = this.bx, by = this.by, cx = this.cx, cy = this.cy;
-    let wsum = 0, hsum = 0, ssum = 0, wbest = -1;
+    let wsum = 0, hsum = 0, ssum = 0, lsum = 0, wbest = -1;
     for (let f = 0; f < 6; f++) {
       const F = FACES[f], dn = d[0] * F.N[0] + d[1] * F.N[1] + d[2] * F.N[2];
       if (dn < 0.5) continue;
@@ -89,44 +99,51 @@ export class RefineReader {
           if (ti < 0 || ti >= n) continue;
           const fi = (u - (-1 + ti * s - KEEP * du)) / du - 0.5;
           if (fi < 1 || fi > K - 3) continue;
+          const T = (f * n + tj) * n + ti;
+          let H, RW, off;
+          if (this.sparse) { const t = R.tiles.get(T); if (!t) continue; H = t.h; RW = t.rw; off = 0; }
+          else { if (R.done && !R.done[T]) continue; H = R.h; RW = R.rw; off = T * KK; }
           // (each tile weighs least at the edge of its kept square, fully a margin's width in)
           const w = Math.min(1, (Math.min(fi, K - 1 - fi) - 1) / (2 * KEEP)) * Math.min(1, (Math.min(fj, K - 1 - fj) - 1) / (2 * KEEP));
           if (w <= 0) continue;
-          const T = (f * n + tj) * n + ti, i = Math.floor(fi), j = Math.floor(fj);
+          const i = Math.floor(fi), j = Math.floor(fj);
           bspline(fi - i, bx); bspline(fj - j, by); catrom(fi - i, cx); catrom(fj - j, cy);
-          let hh = 0, sea = 0;
+          let hh = 0, sea = 0, lake = 0;
           for (let q = 0; q < 4; q++) {
-            const row = T * KK + (j - 1 + q) * K + i - 1;
+            const row = off + (j - 1 + q) * K + i - 1;
             for (let p = 0; p < 4; p++) {
-              hh += cx[p] * cy[q] * R.h[row + p];
-              if ((R.rw[row + p] >> 5) === 1) sea += bx[p] * by[q];
+              hh += cx[p] * cy[q] * H[row + p];
+              const wt = RW[row + p] >> 5;
+              if (wt === 1) sea += bx[p] * by[q]; else if (wt === 2) lake += bx[p] * by[q];
             }
           }
-          wsum += w; hsum += w * hh; ssum += w * sea;
-          if (w > wbest) { wbest = w; this.tT = T; this.ri = i; this.rj = j; this.rbx.set(bx); this.rby.set(by); }
+          wsum += w; hsum += w * hh; ssum += w * sea; lsum += w * lake;
+          if (w > wbest) { wbest = w; this.tH = H; this.tRW = RW; this.tOff = off; this.ri = i; this.rj = j; this.rbx.set(bx); this.rby.set(by); }
         }
       }
     }
-    if (wsum <= 0) return false;
-    this.h = hsum / wsum; this.sea = ssum / wsum;
+    if (wsum <= 0) { this.w = 0; return false; }
+    this.h = hsum / wsum; this.sea = ssum / wsum; this.lake = lsum / wsum; this.w = Math.min(1, wsum);
     return true;
   }
 
   // the rock at the last sample, for ground standing at h (m): each rock among the cells round
   // it by its smooth share there, raised where the ground stands on its side of the stack (the
-  // higher cells' rock over the lower's: SnapshotSampler.rockAt's rule, here on the refinement's
-  // grid, where valleys are cut). Sets rock2 / rockMix as rockAt does
-  rockAt(h, out) {
-    const R = this.R, bx = this.rbx, by = this.rby, base = this.tT * KK + (this.rj - 1) * K + this.ri - 1;
-    const rk = this._rk || (this._rk = new Int32Array(16)), W = this._W || (this._W = new Float64Array(16)), H = this._H || (this._H = new Float64Array(16));
+  // higher cells' rock over the lower's: SnapshotSampler.rockAt's rule, on this level's grid,
+  // where valleys are cut). el (-1..1): where the ground stands among its own lows and rises at
+  // a finer scale (what was laid down lies in the lows: dep, the rocks that are deposits).
+  // Sets rock2 / rockMix as rockAt does
+  rockAt(h, out, el = 0, dep = null) {
+    const H = this.tH, RW = this.tRW, bx = this.rbx, by = this.rby, base = this.tOff + (this.rj - 1) * K + this.ri - 1;
+    const rk = this._rk || (this._rk = new Int32Array(16)), W = this._W || (this._W = new Float64Array(16)), Hs = this._H || (this._H = new Float64Array(16));
     let nr = 0, hb = 0, lo = 1e9, hi = -1e9;
     for (let q = 0; q < 4; q++) for (let p = 0; p < 4; p++) {
-      const o = base + q * K + p, w = bx[p] * by[q], r = R.rw[o] & 31, hk = R.h[o];
+      const o = base + q * K + p, w = bx[p] * by[q], r = RW[o] & 31, hk = H[o];
       hb += w * hk; lo = Math.min(lo, hk); hi = Math.max(hi, hk);
       let k = 0;
       while (k < nr && rk[k] !== r) k++;
-      if (k === nr) { rk[nr] = r; W[nr] = 0; H[nr] = 0; nr++; }
-      W[k] += w; H[k] += w * hk;
+      if (k === nr) { rk[nr] = r; W[nr] = 0; Hs[nr] = 0; nr++; }
+      W[k] += w; Hs[k] += w * hk;
     }
     out.rock2 = rk[0]; out.rockMix = 0;
     if (nr === 1) return rk[0];
@@ -134,7 +151,9 @@ export class RefineReader {
     let best = -1, bs = -1e9, sec = -1, ss = -1e9;
     for (let k = 0; k < nr; k++) {
       if (W[k] < 1e-6) continue;
-      const score = W[k] + 1.5 * e * (H[k] / W[k] - hb) / span;
+      const rel = (Hs[k] / W[k] - hb) / span;
+      let score = W[k] + 1.5 * e * rel;
+      if (el) score += 0.45 * el * (dep && dep.has(rk[k]) ? -1 : dm.clamp(4 * rel, -1, 1));
       if (score > bs) { sec = best; ss = bs; bs = score; best = rk[k]; } else if (score > ss) { ss = score; sec = rk[k]; }
     }
     if (sec >= 0) { out.rock2 = sec; out.rockMix = 0.5 * (1 - dm.smoothstep(0, 0.12, bs - ss)); }
