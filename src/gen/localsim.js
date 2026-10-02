@@ -68,6 +68,9 @@ export const tileKey = (face, ti, tj, region = false) => (region ? 'r' : '') + f
 const faceMetres = (R) => chunkArcSize(0, R) / 2;
 const hu = (a, b, c, d) => hashInts(a, b, c, d) / 4294967296;    // a hash in [0, 1)
 
+// how hard each of the world sim's rocks is (0 soft .. 1 hard), from how fast it wears
+const ROCK_HD = ROCKS.map((r) => dm.clamp(1.25 - 0.4 * r.k, 0, 1));
+
 // ---- the rock column: hardness (0 soft .. 1 hard) by height, for the tile's rock
 const SUITE = { sandstone: 'sed', shale: 'sed', limestone: 'sed', chalk: 'sed', salt: 'sed', basalt: 'volc', andesite: 'volc', granite: 'xtal' };
 
@@ -334,7 +337,7 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
   });
   // (a refinement's rock: the world sim's, read as its cells' stack at each cell's height as it
   // is now: so as valleys cut down, lower rock shows in them)
-  const rockC = rf ? new Uint8Array(n) : null, ROCK_HD = ROCKS.map((r) => dm.clamp(1.25 - 0.4 * r.k, 0, 1)), rkOut = {};
+  const rockC = rf ? new Uint8Array(n) : null, rkOut = {};
   const readRock = () => {
     for (let c = 0; c < n; c++) {
       if (pyr) { dd[0] = G.dir[c * 3]; dd[1] = G.dir[c * 3 + 1]; dd[2] = G.dir[c * 3 + 2]; rockC[c] = parent.sample(dd) ? parent.rockAt(h[c], rkOut) : S.rockAt(dd[0], dd[1], dd[2], h[c] / hs); }
@@ -380,7 +383,23 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
   // channel heads: water cuts only where enough of it gathers (m^2 of rain-weighted drainage);
   // below that the ground is hillslope, shaped by creep and collapse: smooth between valleys,
   // where real terrain stops being rough at every scale
-  const Ac = opts.Ac ?? 3e4;
+  // ...and that area by place: denser drainage where it's wet and on impermeable rock (shale),
+  // sparse where water sinks in (limestone, chalk, sandstone, lava: dry valleys)
+  const AcC = new Float64Array(n), Hc = new Float32Array(n);
+  {
+    const RF = { shale: 0.3, sandstone: 2, limestone: 4, chalk: 5, basalt: 2, andesite: 1.2, alluvium: 1.5, 'quartz sand': 3, 'coral sand': 3, 'black sand': 3 };
+    const rockF = ROCKS.map((r) => RF[r.name] ?? 1);
+    for (let c = 0; c < n; c++) {
+      const dx = G.dir[c * 3], dy = G.dir[c * 3 + 1], dz = G.dir[c * 3 + 2];
+      const rt = S ? S.s.rock[S.G.cellAt(dx, dy, dz)] : 0, relRaw = S ? S.relief(dx, dy, dz) * hs : 1000;
+      AcC[c] = opts.Ac ?? dm.clamp(3e4 * rockF[rt] * dm.pow(1 / Math.max(0.3, rain[c]), 0.7), 3e3, 1e6);
+      // the ground's roughness (Hurst exponent H; its surface's fractal dimension 3 - H): rough
+      // where mountains are young and high, the rock hard and the climate dry; smoother where
+      // the land is old and worn, soft, and wet enough for soil to creep
+      const hard = ROCK_HD[rt], wetness = dm.smoothstep(0.2, 1.5, rain[c]);
+      Hc[c] = opts.H ?? dm.clamp(0.8 - 0.14 * dm.smoothstep(400, 3000, relRaw) - 0.1 * (hard - 0.6) + 0.08 * (wetness - 0.5), 0.55, 0.92);
+    }
+  }
   // (the land's mean held to the starting surface's through the run, or let wear and put back at
   // the end: the restore)
   const holdMean = opts.restore ? false : true;
@@ -413,7 +432,7 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
       const c = order[k];
       if (E.base[c]) continue;
       const r = rcv[c];
-      if (r < 0 || fill[c] - h[c] > 0.5 || A[c] < Ac) continue;  // (a pond, or hillslope: nothing cut)
+      if (r < 0 || fill[c] - h[c] > 0.5 || A[c] < AcC[c]) continue;  // (a pond, or hillslope: nothing cut)
       const hr = h[r];
       if (h[c] <= hr) continue;
       const soft = 1 - hd[c];
@@ -457,7 +476,9 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
       hdI[c] = Math.round(255 * hardAt(c, h[c]));
       h0[c] = Math.round(h[c] * 4096); BI[c] = Math.round(B[c] * 4096);
     }
-    return { NG, n, steps, rise: lowstand ? rise : -1, sz, flags, a, hd: hdI, h0, B: BI, aref, K0, kd0, sig, salt: jk, Ac: Math.max(1, Math.round(Ac / (aref / 16))) };
+    const Acu = new Uint16Array(n);
+    for (let c = 0; c < n; c++) Acu[c] = Math.max(1, Math.min(65535, Math.round(AcC[c] / (aref / 16))));
+    return { NG, n, steps, rise: lowstand ? rise : -1, sz, flags, a, hd: hdI, h0, B: BI, aref, K0, kd0, sig, salt: jk, Acu };
   };
   const out0 = {};
   const fromInts = (r) => { for (let c = 0; c < n; c++) { h[c] = r.h[c] / 4096; talus[c] = r.talus[c] / 4096; } };
@@ -467,25 +488,43 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
   // above at a quarter the scale (H = 3 - D, the surface's fractal dimension: ~0.7-0.8 for
   // mountains, smoother for old worn land). Slopes made too steep for their rock then collapse
   const holdFractal = () => {
-    const H = opts.H ?? 0.75, lagP = 4, lag = 2;
-    let gB = 0, gBl = 0, gD = 0, cBD = 0, nP = 0, nl = 0;
+    // (block by block, ~64 cells a side, each to its own ground's H; the scale eased between
+    // blocks' centres, so the roughness changes as the ground does, not in steps)
+    const lagP = 4, lag = 2, BS = 64, nb = Math.ceil((NG - 2 * MARGIN) / BS), m = nb * nb;
+    const S6 = Array.from({ length: 7 }, () => new Float64Array(m + 1));   // gB, gBl, gD, cBD, nP, nl, H (block m: all)
     for (let j = MARGIN; j < NG - MARGIN; j += 2) for (let i = MARGIN; i < NG - MARGIN; i += 2) {
       const c = j * NG + i;
       if (wet[c] || h[c] < 0) continue;
-      for (const o of [c + lagP, c + lagP * NG]) { const d = B[o] - B[c]; gB += d * d; nP++; }
+      const b = Math.min(nb - 1, ((j - MARGIN) / BS) | 0) * nb + Math.min(nb - 1, ((i - MARGIN) / BS) | 0);
+      for (const o of [c + lagP, c + lagP * NG]) { const d = B[o] - B[c]; for (const k of [b, m]) { S6[0][k] += d * d; S6[4][k]++; } }
       for (const o of [c + lag, c + lag * NG]) {
         const db = B[o] - B[c], dd2 = (h[o] - B[o]) - (h[c] - B[c]);
-        gBl += db * db; gD += dd2 * dd2; cBD += db * dd2; nl++;
+        for (const k of [b, m]) { S6[1][k] += db * db; S6[2][k] += dd2 * dd2; S6[3][k] += db * dd2; S6[5][k]++; S6[6][k] += Hc[c]; }
       }
     }
-    if (nP < 200 || gD <= 0) return 1;
-    gB /= nP; gBl /= nl; gD /= nl; cBD /= nl;
-    // (gBl + 2 f cBD + f^2 gD = target)
-    const target = gB * Math.pow(lag / lagP, 2 * H), disc = cBD * cBD - gD * (gBl - target);
-    let f = disc > 0 ? (-cBD + Math.sqrt(disc)) / gD : 0.2;
-    f = Math.max(0.02, Math.min(3, f));
-    for (let c = 0; c < n; c++) if (!E.base[c] && !wet[c]) h[c] = B[c] + f * (h[c] - B[c]);
-    if (f > 1) for (let pass = 0; pass < 8; pass++) for (let c = 0; c < n; c++) {
+    const solve = (k) => {
+      if (S6[4][k] < 100 || S6[2][k] <= 0) return -1;
+      const gB = S6[0][k] / S6[4][k], gBl = S6[1][k] / S6[5][k], gD = S6[2][k] / S6[5][k], cBD = S6[3][k] / S6[5][k], H = S6[6][k] / S6[5][k];
+      // (gBl + 2 f cBD + f^2 gD = the target: the parent's roughness over a cell, at half the
+      // scale, times 2^-2H)
+      const target = gB * Math.pow(lag / lagP, 2 * H), disc = cBD * cBD - gD * (gBl - target);
+      return Math.max(0.02, Math.min(3, disc > 0 ? (-cBD + Math.sqrt(disc)) / gD : 0.2));
+    };
+    const fAll = solve(m);
+    if (fAll < 0) return 1;
+    const fB = new Float64Array(m);
+    for (let k = 0; k < m; k++) { const f = solve(k); fB[k] = f < 0 ? fAll : f; }
+    let fmax = 0;
+    for (let j = 0; j < NG; j++) for (let i = 0; i < NG; i++) {
+      const c = j * NG + i;
+      if (E.base[c] || wet[c]) continue;
+      const x = Math.max(0, Math.min(nb - 1, (i - MARGIN) / BS - 0.5)), y = Math.max(0, Math.min(nb - 1, (j - MARGIN) / BS - 0.5));
+      const i0 = Math.min(nb - 2, Math.floor(x)), j0 = Math.min(nb - 2, Math.floor(y)), a = x - i0, bb = y - j0;
+      const f = nb < 2 ? fAll : (fB[j0 * nb + i0] * (1 - a) + fB[j0 * nb + i0 + 1] * a) * (1 - bb) + (fB[(j0 + 1) * nb + i0] * (1 - a) + fB[(j0 + 1) * nb + i0 + 1] * a) * bb;
+      h[c] = B[c] + f * (h[c] - B[c]);
+      if (f > fmax) fmax = f;
+    }
+    if (fmax > 1) for (let pass = 0; pass < 8; pass++) for (let c = 0; c < n; c++) {
       if (E.base[c]) continue;
       const sc = 0.65 + 3.4 * hardAt(c, h[c]) ** 2;
       for (let e = nStart[c]; e < nStart[c + 1]; e++) {
@@ -495,7 +534,7 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
         h[c] -= mv; h[o] += mv * area[c] / area[o]; talus[o] += mv;
       }
     }
-    return f;
+    return fAll;
   };
   const finish = () => {
   // (the land's mean put back where the run let it wear: the difference over a cell of the level
@@ -578,6 +617,20 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
         for (let e = nStart[c]; e < nStart[c + 1]; e++) if (water[nbr[e]] === 1) ns++;
         if (!water[c] && ns >= 5 && h[c] < waveH * (10 + 60 * (1 - hardAt(c)))) { water[c] = 1; h[c] = Math.min(h[c], -2); }
         else if (water[c] === 1 && ns <= 2 && h[c] > -25) { water[c] = 0; h[c] = 1; rockC[c] = SAND; }
+      }
+    }
+    // longshore drift: along a soft or sandy shore the waves carry sand down the coast, building
+    // spits across bays and filling coves, combing it smooth (its fractal dimension near 1);
+    // a hard rock coast keeps its drowned valleys' inlets
+    for (let it = 0; it < 4; it++) {
+      for (let j = 2; j < NG - 2; j++) for (let i = 2; i < NG - 2; i++) {
+        const c = j * NG + i;
+        if (wet[c] === 2 || it >= Math.round(4 * (1 - hardAt(c)))) continue;
+        let land = 0;
+        for (let dj = -2; dj <= 2; dj++) for (let di = -2; di <= 2; di++) if (!water[c + dj * NG + di]) land++;
+        if (land === 0 || land === 25) continue;
+        if (water[c] === 1 && land >= 16 && h[c] > -15 * waveH) { water[c] = 0; h[c] = 1; rockC[c] = SAND; }
+        else if (!water[c] && land <= 9 && h[c] < 8 * waveH) { water[c] = 1; h[c] = Math.min(h[c], -2); }
       }
     }
     // (below the datum and cut off from the sea: a dry basin, its floor just above it)

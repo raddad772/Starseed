@@ -7,7 +7,7 @@ import { hashInts } from '../core/rng.js';
 import { gridTables, hardTables, apowTable, PASSES } from './itile.js';
 
 const WGSL = /* wgsl */`
-struct Params { NG: u32, n: u32, salt: u32, PB: u32, NB: u32, RB: i32, axis: u32, Ac: u32 };
+struct Params { NG: u32, n: u32, salt: u32, PB: u32, NB: u32, RB: i32, axis: u32, pad: u32 };
 @group(0) @binding(0) var<uniform> P: Params;
 @group(0) @binding(1) var<storage, read> hIn: array<i32>;
 @group(0) @binding(2) var<storage, read_write> hOut: array<i32>;
@@ -16,7 +16,7 @@ struct Params { NG: u32, n: u32, salt: u32, PB: u32, NB: u32, RB: i32, axis: u32
 @group(0) @binding(5) var<storage, read> AIn: array<u32>;
 @group(0) @binding(6) var<storage, read_write> AOut: array<u32>;
 @group(0) @binding(7) var<storage, read_write> rcv: array<u32>;
-@group(0) @binding(8) var<storage, read_write> info: array<u32>;      // flags (1 base, 2 joins it when the sea rises) | hardness << 8
+@group(0) @binding(8) var<storage, read_write> info: array<u32>;      // flags (1 base, 2 joins it when the sea rises) | hardness << 8 | channel head's drainage << 16
 @group(0) @binding(9) var<storage, read> wa: array<u32>;              // the water each cell sheds
 @group(0) @binding(10) var<storage, read> Bs: array<i32>;             // the starting surface
 @group(0) @binding(11) var<storage, read> DW: array<u32>;             // per neighbour: distance (mm) | creep weight << 23
@@ -140,7 +140,7 @@ fn floordiv(x: i32, m: i32) -> i32 { return select((x - (m - 1)) / m, x / m, x >
   alOut[c] = hIn[c]; beOut[c] = 0u; ptOut[c] = i32(c);
   if ((info[c] & 1u) != 0u) { return; }
   let k = rcv[c];
-  if (k == 8u || FIn[c] - hIn[c] > PONDQ || AIn[c] < P.Ac) { return; }
+  if (k == 8u || FIn[c] - hIn[c] > PONDQ || AIn[c] < (info[c] >> 16u)) { return; }
   let r = nb(c, k);
   if (hIn[c] - hIn[r] <= 0) { return; }
   let hd = (info[c] >> 8u) & 255u;
@@ -241,7 +241,7 @@ export class ITileGPU {
     const PB = T.sig <= 6 ? 4 : 8, NB = Math.ceil(NG / PB), RB = Math.max(1, Math.round(T.sig / PB));
     const put = (name, arr) => { const b = this._buf(name, arr.byteLength); dev.queue.writeBuffer(b, 0, arr); return b; };
     const info = new Uint32Array(n);
-    for (let c = 0; c < n; c++) info[c] = T.flags[c] | (T.hd[c] << 8);
+    for (let c = 0; c < n; c++) info[c] = (T.flags[c] | (T.hd[c] << 8) | (T.Acu[c] << 16)) >>> 0;
     const dw = new Uint32Array(n * 8);
     for (let i = 0; i < n * 8; i++) dw[i] = (D[i] & 0x7fffff) | (W[i] << 23);
     const cmce = new Int32Array(n * 4);
@@ -262,7 +262,7 @@ export class ITileGPU {
     const wgN = Math.ceil(n / 256), wgB = Math.ceil(NB * NB / 64);
     for (let st = 0; st < T.steps; st++) {
       const salt = hashInts(st, T.salt) >>> 0;
-      for (const ax of [0, 1]) { pdata.set([NG, n, salt | 0, PB, NB, RB, ax, T.Ac | 0]); dev.queue.writeBuffer(params[ax], 0, pdata); }
+      for (const ax of [0, 1]) { pdata.set([NG, n, salt | 0, PB, NB, RB, ax, 0]); dev.queue.writeBuffer(params[ax], 0, pdata); }
       // (one compute pass a step: its dispatches run in order, each seeing the last one's writes)
       const enc = dev.createCommandEncoder(), cp = enc.beginComputePass();
       const pass = (entry, binds, wg, P = params[0]) => {

@@ -73,8 +73,10 @@ export class WorldSims {
     const cores = (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 4;
     const nw = Math.max(1, Math.min(4, opts.workers || (cores >= 8 ? 2 : 1)));
     this.workers = [];
-    for (let i = 0; i < nw; i++) {
-      const w = { worker: new Worker(new URL('../workers/worldsimWorker.js', import.meta.url), { type: 'module' }), job: null };
+    // (the sims' workers, and one for the GPU's tiles: the terrain pyramid near the player and
+    // the refinements, never waiting behind a world's minute-long sim)
+    for (let i = 0; i <= nw; i++) {
+      const w = { worker: new Worker(new URL('../workers/worldsimWorker.js', import.meta.url), { type: 'module' }), job: null, role: i < nw ? 'sim' : 'tile' };
       w.worker.onmessage = (e) => this._onMessage(w, e.data);
       w.worker.onerror = (e) => {
         console.error('world-sim worker error', e.message || e);
@@ -154,10 +156,22 @@ export class WorldSims {
   }
 
   // start queued sims on any free workers
+  // the next job for a worker: the tile worker takes the pyramid's tiles, then refinements; a
+  // sim worker takes sims, then refinements, then tiles
+  _pick(w) {
+    const order = w.role === 'tile' ? ['pyr', 'refine'] : ['sim', 'refine', 'pyr'];
+    for (const kind of order) {
+      const i = this.queue.findIndex((j) => j.kind === kind);
+      if (i >= 0) return this.queue.splice(i, 1)[0];
+    }
+    return null;
+  }
+
   _next() {
     for (const w of this.workers) {
       if (w.job || !this.queue.length) continue;
-      const job = this.queue.shift();
+      const job = this._pick(w);
+      if (!job) continue;
       w.job = job;
       if (job.kind === 'pyr') {
         w.worker.postMessage({ type: 'pyr', job: job.id, seed: this.seed, body: job.id, L: job.L, face: job.face, ti: job.ti, tj: job.tj, snap: job.snap, refine: job.refine, parents: job.parents });
