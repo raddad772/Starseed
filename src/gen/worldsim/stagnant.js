@@ -16,7 +16,7 @@ import * as dm from '../../core/dmath.js';
 import { hashInts } from '../../core/rng.js';
 import { Impacts, craterFloor, worldCell, WORLD_CELLS } from './impacts.js';
 import { resurface } from './barren.js';
-import { Erosion } from './erosion.js';
+import { Erosion, Heap } from './erosion.js';
 import { smoothField } from './tectonics.js';
 
 const DT_MYR = 10;
@@ -65,6 +65,9 @@ export function stagnantWorld(G, opts) {
   let E = null, sl = 0;
   const hs = new Float64Array(n);
   const stats = { craters: 0, shields: nShield, wetSteps: 0, canyon: !!canyon, dichotomy: !!dich };
+  // (the volcanism after an overturn: how many flows and coronae its time since makes)
+  const vrng = rng.fork('afterOverturn'), heap = new Heap(n);
+  const nFlows = Math.round(vrng.range(60, 160) * (1 + tier) / 2), nCoronae = Math.round(vrng.range(4, 14));
   for (let t = 0; t < age; t += DT_MYR / 1000) {
     stats.craters += imp.step(DT_MYR, dMin, (c, dh) => { h[c] += dh; }, t * 1000, t, h).length;
     cum.push(cum[cum.length - 1] + imp.density(DT_MYR, t));
@@ -88,6 +91,13 @@ export function stagnantWorld(G, opts) {
       for (let c = 0; c < n; c++) if (h[c] < level) since[c] = t;
       stats.resurfaced = true;
     }
+    // after an overturn the interior stays hot: lava keeps welling up over the new plains (flow
+    // fields from vents, ponding in the lows) and plumes push up coronae (Venus's)
+    if (stats.resurfaced && t < age) {
+      const span = Math.max(0.05, age - opts.resurfaceAt), kf = DT_MYR / 1000 / span;
+      for (let k = poissonDraw(vrng, nFlows * kf); k > 0; k--) { lavaFlow(G, h, volc, vrng, scale, heap, since, t); stats.flows = (stats.flows || 0) + 1; }
+      for (let k = poissonDraw(vrng, nCoronae * kf); k > 0; k--) { corona(G, h, vrng, scale); stats.coronae = (stats.coronae || 0) + 1; }
+    }
     // rain while there's water: valleys, lakes in craters, a sea in the lows
     if (wet && t >= wet[0] && t < wet[1]) {
       if (!E) E = new Erosion(G, hs, { sea: opts.seaFrac > 0.02, K: 8e-7, rain: 1, m: 0.45, kd: 1 });
@@ -103,6 +113,44 @@ export function stagnantWorld(G, opts) {
   const crat = new Float32Array(n), all = cum[cum.length - 1], dtG = DT_MYR / 1000;
   for (let c = 0; c < n; c++) crat[c] = all - cum[since[c] > 0 ? Math.min(cum.length - 1, Math.round(since[c] / dtG) + 1) : 0];
   return { h, volc, river, impacts: imp, stats, seaLevelWet: sl, rise, shields, dich, crat, dMin };
+}
+
+// a lava flow: from a vent (on the higher ground, mostly), the lava runs to the lowest ground
+// beside what it's covered so far, again and again, until it's spent: lobes down the slopes,
+// ponds in the lows; thinner toward its toe. Basalt (volc) where it lies
+function lavaFlow(G, h, volc, rng, scale, heap, since, t) {
+  let c0 = G.cellAt(...rng.unitVector());
+  for (let k = 0; k < 3; k++) { const c1 = G.cellAt(...rng.unitVector()); if (h[c1] > h[c0]) c0 = c1; }
+  const cells = Math.round(4 + 80 * rng.next() * rng.next()), thick = rng.range(30, 150) * scale * VEXAG;
+  const done = new Set([c0]);
+  heap.size = 0; heap.push(h[c0], c0);
+  for (let k = 0; k < cells && heap.size; k++) {
+    const c = heap.pop();
+    h[c] += thick * (1 - 0.6 * k / cells); volc[c] = 1; since[c] = t;
+    for (let e = G.nStart[c]; e < G.nStart[c + 1]; e++) { const o = G.nbr[e]; if (!done.has(o)) { done.add(o); heap.push(h[o], o); } }
+  }
+}
+
+// a corona: a plume's head under the lid pushing up a ring (a dome inside, or a sag where it
+// has drained), a moat round it, ~100-600 km across (real)
+function corona(G, h, rng, scale) {
+  const at = rng.unitVector(), R = rng.range(50e3, 300e3) * scale, H = rng.range(500, 1500) * scale * VEXAG, dome = rng.next() < 0.5 ? 0.6 : -0.4;
+  const cosR = dm.cos(1.5 * R / G.R);
+  for (let c = 0; c < G.n; c++) {
+    const cosA = G.dir[c * 3] * at[0] + G.dir[c * 3 + 1] * at[1] + G.dir[c * 3 + 2] * at[2];
+    if (cosA < cosR) continue;
+    const r = dm.acos(Math.min(1, cosA)) * G.R / R;
+    const ring = dm.exp(-((r - 0.85) / 0.12) * ((r - 0.85) / 0.12)), moat = -0.35 * dm.exp(-((r - 1.12) / 0.12) * ((r - 1.12) / 0.12)), mid = dome * (1 - dm.smoothstep(0, 0.75, r));
+    h[c] += H * (ring + moat + mid);
+  }
+}
+
+function poissonDraw(rng, lam) {
+  if (lam <= 0) return 0;
+  const L = dm.exp(-lam);
+  let k = 0, p = 1;
+  do { k++; p *= rng.next(); } while (p > L);
+  return k - 1;
 }
 
 function tilt(rng, at, ang) {

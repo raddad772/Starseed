@@ -321,7 +321,8 @@ export class CraterField {
     list = latticeCraters(f, i, j, B.D0, B.D1, B.nL, this.S, this.seed, this.R).map((cr) => {
       const F = craterForm(cr.D, this.K, cr.key), Dref = 1000 * this.K.scale, kap = 12 * cr.age * (Dref / cr.D) * (Dref / cr.D), wear = 1 / (1 + kap);
       F.ks = (0.08 + 0.5 * (1 - wear)) * (F.depth + F.rim);
-      if (cr.age < RAY_AGE) craterRays(F, cr.key, 1 - cr.age / RAY_AGE);
+      // (rays only where the air is too thin to stop what's thrown: under ~0.05 bar)
+      if (cr.age < RAY_AGE && (this.K.Dair || 0) < 1.5 * this.K.scale) craterRays(F, cr.key, 1 - cr.age / RAY_AGE);
       const at = cr.at, ref = Math.abs(at[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
       let ex = ref[1] * at[2] - ref[2] * at[1], ey = ref[2] * at[0] - ref[0] * at[2], ez = ref[0] * at[1] - ref[1] * at[0];
       const el = Math.sqrt(ex * ex + ey * ey + ez * ez); ex /= el; ey /= el; ez /= el;
