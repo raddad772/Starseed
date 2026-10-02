@@ -19,9 +19,20 @@
 // follow terrestrial complex craters (~0.17 D^0.43 km), deeper on weaker gravity.
 
 import * as dm from '../../core/dmath.js';
+import { hashInts } from '../../core/rng.js';
+import { VEXAG, craterForm, craterDh } from '../craters.js';
 
+export { VEXAG };
 const MOON_G = 1.62;
-const VEXAG = 2.5;
+
+// the smallest crater (m across as drawn, a power of two) a grid of cells cellM apart draws
+// round: k of its cells across. The world sim's grid keeps those of WORLD_CELLS and more; each
+// finer level of the terrain adds those of TILE_CELLS of its own cells up to the level above's
+// floor (craters.js): so a crater too small for a grid's cells is drawn by a level that holds it
+export const WORLD_CELLS = 16, TILE_CELLS = 10;
+export function craterFloor(cellM, k) { let D = 1; while (D < k * cellM) D *= 2; return D; }
+// (the world sim's cells, nominally: its faces' arc over N)
+export const worldCell = (R, N) => dm.PI / 2 * R / N;
 
 export class Impacts {
   // G: SimGrid; opts: { rng, g (m/s^2), pressure (bar), rate: multiplier (1 = realistic:
@@ -54,10 +65,18 @@ export class Impacts {
   // world formed (omit for today's rate)
   ratePerMyr(D, tGyr) {
     const Dm = D / this.sizeK; // the lunar crater the same impactors would make
+    return this.n1(tGyr) / (Dm * Dm) * this.areaKm2 * 1e-3 * this.rate;
+  }
+  // (the lunar flux N(D >= 1 km) per km^2 per Gyr then, with the system's spike)
+  n1(tGyr) {
     let n1 = tGyr == null ? 8.38e-4 : Impacts.fluxN1(tGyr);
     if (this.spike && tGyr != null) { const u = (tGyr - this.spike.atGyr) / this.spike.widthGyr; n1 += 8.38e-4 * this.spike.strength * 40 * dm.exp(-0.5 * u * u); }
-    return n1 / (Dm * Dm) * this.areaKm2 * 1e-3 * this.rate;
+    return n1;
   }
+  // the craters a dt Myr at tGyr leave on the ground as drawn: N(>= D) per m^2 is this / D^2
+  // (D in m as drawn; the real count per km^2, n1 sizeK^2 / D(km)^2, is the same number at the
+  // drawn scale, widths and areas shrinking together)
+  density(dt, tGyr) { return this.n1(tGyr) * dt * 1e-3 * this.sizeK * this.sizeK * this.rate; }
 
   // dt Myr of impacts, craters at least dMin km across as drawn (game km);
   // apply(cell, dh) adds relief. tGyr: when, since the world formed (omit:
@@ -80,28 +99,26 @@ export class Impacts {
     return made;
   }
 
-  // a crater of D km (real) at direction `at`: drawn at the scaled width, real depth
+  // a crater of D km (real) at direction `at`: drawn at the scaled width, real depth, in its
+  // own form (craters.js: its impact's angle and heading, its rim's slumps, its peak's knobs)
   stamp(at, D, apply) {
     const G = this.G;
-    const R = D / 2 * 1000 * this.scale;                     // m, as drawn
-    const depth = 170 * dm.pow(D, 0.43) * dm.pow(9.81 / this.g, 0.6) * this.scale * VEXAG;
-    const rim = 0.35 * depth, peak = D > 8 ? 0.3 * depth : 0;
-    const reach = 3 * R / G.R;                               // angle
+    const Dd = D * 1000 * this.scale, key = hashInts(Math.round(at[0] * 1e7), Math.round(at[1] * 1e7), Math.round(at[2] * 1e7), Math.round(D * 1000));
+    const F = craterForm(Dd, { g: this.g, scale: this.scale }, key);
+    const reach = 3 * (Dd / 2) * F.reach / G.R;               // angle
+    // (the tangent frame at its centre: each cell's bearing from it)
+    const ref = Math.abs(at[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
+    let ex = ref[1] * at[2] - ref[2] * at[1], ey = ref[2] * at[0] - ref[0] * at[2], ez = ref[0] * at[1] - ref[1] * at[0];
+    const el = Math.sqrt(ex * ex + ey * ey + ez * ez); ex /= el; ey /= el; ez /= el;
+    const nx = at[1] * ez - at[2] * ey, ny = at[2] * ex - at[0] * ez, nz = at[0] * ey - at[1] * ex;
     const c0 = G.cellAt(at[0], at[1], at[2]);
     // the cells within reach (breadth first from the centre)
-    const seen = new Set([c0]), q = [c0];
+    const seen = new Set([c0]), q = [c0], d = G.dir;
     for (let i = 0; i < q.length; i++) {
-      const c = q[i];
-      const d = G.dir;
-      const cosA = d[c * 3] * at[0] + d[c * 3 + 1] * at[1] + d[c * 3 + 2] * at[2];
-      const ang = dm.acos(Math.min(1, cosA));
+      const c = q[i], dx = d[c * 3], dy = d[c * 3 + 1], dz = d[c * 3 + 2];
+      const ang = dm.acos(Math.min(1, dx * at[0] + dy * at[1] + dz * at[2]));
       if (ang > reach && c !== c0) continue;
-      const r = ang * G.R / R;                               // in crater radii
-      let dh;
-      if (r < 0.55) dh = -depth + peak * dm.exp(-(r / 0.15) * (r / 0.15));
-      else if (r < 1) { const u = (r - 0.55) / 0.45; dh = -depth + (depth + rim) * u * u * (3 - 2 * u); }
-      else dh = rim / (r * r * r);
-      apply(c, dh);
+      apply(c, craterDh(F, ang * G.R, dx * ex + dy * ey + dz * ez, dx * nx + dy * ny + dz * nz));
       for (let e = G.nStart[c]; e < G.nStart[c + 1]; e++) { const o = G.nbr[e]; if (!seen.has(o)) { seen.add(o); q.push(o); } }
     }
   }

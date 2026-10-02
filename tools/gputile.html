@@ -11,7 +11,8 @@
 // ?fill= ?accum= ?jump= ?collapse= passes a step and ?steps=: try cheaper settings (the result's
 // roughness, H by lag, is printed to compare)
 import { generateSystem } from '../src/gen/system.js';
-import { SIM_VERSION, simNFor } from '../src/gen/worldsim/snapshot.js';
+import { SIM_VERSION, simNFor, packSnapshot } from '../src/gen/worldsim/snapshot.js';
+import { worldSim, simOptsFor } from '../src/gen/worldsim/world.js';
 import { TerrainGenerator } from '../src/gen/terrain.js';
 import { prepareTile, tileAt, MT, KEEP } from '../src/gen/localsim.js';
 import { fromStorable, RefineReader } from '../src/gen/worldsim/refine.js';
@@ -29,9 +30,11 @@ const log = (s) => { logEl.textContent += '\n' + s; console.log(s); };
 logEl.textContent = '';
 window.done = false;
 try {
-  const seed = q.get('seed') || 'DONALTRUMP', sys = generateSystem(seed), b = sys.bodies[sys.startBodyId];
+  const seed = q.get('seed') || 'DONALTRUMP', sys = generateSystem(seed), b = sys.bodies[q.get('body') != null ? +q.get('body') : sys.startBodyId];
   const key = `${seed}|${b.id}|v${SIM_VERSION}|N${simNFor(b)}`;
-  const snap = await new Promise((res, rej) => { const r = indexedDB.open('starseed-worldsim', 1); r.onsuccess = () => { const g = r.result.transaction('snap').objectStore('snap').get(key); g.onsuccess = () => res(g.result); g.onerror = rej; }; r.onerror = rej; });
+  let snap = await new Promise((res, rej) => { const r = indexedDB.open('starseed-worldsim', 1); r.onsuccess = () => { const g = r.result.transaction('snap').objectStore('snap').get(key); g.onsuccess = () => res(g.result); g.onerror = rej; }; r.onerror = rej; });
+  // (?body= a world the game hasn't simulated here: its world sim run now)
+  if (!snap && q.get('body') != null && q.get('kind') !== 'pyr') { log(`${b.name}: running its world sim`); snap = packSnapshot(worldSim(b, sys.bodies[0], { N: simNFor(b), myr: 150, steps: 40, ...simOptsFor(b, sys) }), b); }
   if (!snap) throw new Error('no cached sim for ' + key + ' (run the game on this seed first)');
   const gen = new TerrainGenerator({ ...b.terrain, snapshot: snap });
   let face = +(q.get('face') ?? 1), ti = +(q.get('ti') ?? 1), tj = +(q.get('tj') ?? 0);

@@ -20,7 +20,7 @@ import { MT } from '../tileshape.js';
 import * as dm from '../../core/dmath.js';
 import { Noise3 } from '../../core/noise.js';
 
-export const SIM_VERSION = 6;
+export const SIM_VERSION = 7;
 
 // a world's grid size: maxN for an Earth-sized one, finer cells don't help a small one
 // (N ~ sqrt(radius): Mars ~210, the Moon ~150, a moonlet 64)
@@ -43,7 +43,7 @@ export function packSnapshot(W, body) {
   if (W.E && W.E.A) {
     let amax = 0;
     for (let c = 0; c < n; c++) if (!W.E.base[c] && W.E.A[c] > amax) amax = W.E.A[c];
-    for (let c = 0; c < n; c++) if (!W.E.base[c] && amax > 0) river[c] = Math.round(255 * Math.min(1, Math.max(0, Math.log(Math.max(W.E.A[c], 1e-30) / (amax * 1e-4)) / Math.log(1e4))));
+    for (let c = 0; c < n; c++) if (!W.E.base[c] && amax > 0) river[c] = Math.round(255 * Math.min(1, Math.max(0, dm.log(Math.max(W.E.A[c], 1e-30) / (amax * 1e-4)) / dm.log(1e4))));
   }
   const melt = new Uint8Array(n);
   if (W.melt) for (let c = 0; c < n; c++) melt[c] = Math.round(255 * Math.min(1, Math.max(0, W.melt[c])));
@@ -60,9 +60,20 @@ export function packSnapshot(W, body) {
   }
   const relief = new Uint16Array(n);
   for (let c = 0; c < n; c++) { let r = 0; for (let e = G.nStart[c]; e < G.nStart[c + 1]; e++) r = Math.max(r, Math.abs(W.h[c] - W.h[G.nbr[e]])); relief[c] = u16(r); }
-  const out = { version: SIM_VERSION, path: W.path, N: G.N, R: G.R, h, water, rock, ice, river, melt, relief, rcv, Nc: 0 };
+  // (sea: whether the world has a liquid to stand below the datum; without one, its lows are dry)
+  const out = { version: SIM_VERSION, path: W.path, N: G.N, R: G.R, h, water, rock, ice, river, melt, relief, rcv, Nc: 0, sea: !!(body.terrain && body.terrain.liquid) };
   // the flat-topped volcanoes eruptions under ice left (world.js)
   out.tuyas = (W.tuyas || []).map((t) => ({ d: t.d.slice(), top: t.top, r: t.r }));
+  // the crater record below the grid (barren.js): by cell, log-scaled (20 a decade, 0: none),
+  // and the craters' scales (craters.js)
+  if (W.crater) {
+    const { crat, ...k } = W.crater;
+    out.crat = new Uint8Array(n);
+    for (let c = 0; c < n; c++) out.crat[c] = crat[c] > 1e-12 ? Math.max(1, Math.min(255, Math.round((dm.log(crat[c]) / dm.log(10) + 12) * 20))) : 0;
+    out.crater = k;
+  }
+  // an icy shell's cracks (barren.js crackShell): arcs, for each level to draw its ridges
+  if (W.lineae) out.lineae = W.lineae.map((a) => ({ pole: a.pole.slice(), u: a.u.slice(), v: a.v.slice(), start: a.start, len: a.len, H: a.H }));
   if (W.climate && W.Gc) {
     const Gc = W.Gc, m = Gc.n, lapse = body.terrain && body.terrain.climate ? body.terrain.climate.lapse ?? 0.0065 : 0.0065;
     out.Nc = Gc.N;
@@ -82,7 +93,7 @@ export function packSnapshot(W, body) {
 
 // the arrays a snapshot carries (for transfer lists and caching)
 export function snapshotBuffers(s) {
-  return ['h', 'water', 'rock', 'ice', 'river', 'melt', 'relief', 'rcv', 'Tsea', 'P', 'cover', 'forest', 'open', 'cloud', 'cloudPx'].filter((k) => s[k]).map((k) => s[k].buffer);
+  return ['h', 'water', 'rock', 'ice', 'river', 'melt', 'relief', 'rcv', 'Tsea', 'P', 'cover', 'forest', 'open', 'cloud', 'cloudPx', 'crat'].filter((k) => s[k]).map((k) => s[k].buffer);
 }
 
 // reads a snapshot at any direction
@@ -123,11 +134,12 @@ export class SnapshotSampler {
       }
       if (!sea) this.inland[c] = 1;
     }
+    if (s.sea === false) this.inland.fill(1);
     // how many cells from the sea's own cells each cell is (0 in the sea, capped at 8)
     this.seaHops = new Uint8Array(n).fill(8);
     const q = new Int32Array(n);
     let qn = 0;
-    for (let c = 0; c < n; c++) if (s.h[c] < 0 && !(s.water[c] > -1e8)) { this.seaHops[c] = 0; q[qn++] = c; }
+    if (s.sea !== false) for (let c = 0; c < n; c++) if (s.h[c] < 0 && !(s.water[c] > -1e8)) { this.seaHops[c] = 0; q[qn++] = c; }
     for (let i = 0; i < qn; i++) {
       const c = q[i], d = this.seaHops[c] + 1;
       if (d >= 8) continue;
@@ -155,6 +167,14 @@ export class SnapshotSampler {
   }
   // smooth (bilinear) fields
   h(x, y, z) { return this.G.sample(this.s.h, this._d(x, y, z), this.uv); }
+  // (smoothly: the cells' cubic B-spline blend, no corners where cells meet)
+  hSmooth(x, y, z) {
+    const c = this._c16 || (this._c16 = new Int32Array(16)), w = this._w16 || (this._w16 = new Float64Array(16)), h = this.s.h;
+    this.G.corners16(this._d(x, y, z), c, w, this.uv);
+    let s = 0;
+    for (let k = 0; k < 16; k++) s += h[c[k]] * w[k];
+    return s;
+  }
   relief(x, y, z) { return this.G.sample(this.s.relief, this._d(x, y, z), this.uv); }
   ice(x, y, z) { return this.G.sample(this.s.ice, this._d(x, y, z), this.uv); }
   river(x, y, z) { return this.G.sample(this.s.river, this._d(x, y, z), this.uv) / 255; }
@@ -236,6 +256,8 @@ export class SnapshotSampler {
   // the climate grid's
   Tsea(x, y, z) { return this.Gc ? this.Gc.sample(this.s.Tsea, this._d(x, y, z), this.uv) : null; }
   rain(x, y, z) { return this.Gc ? this.Gc.sample(this.s.P, this._d(x, y, z), this.uv) : null; }
+  // the crater record there (craters.js): N(>= D) per m^2 is this / D^2 (D in m as drawn)
+  crat(x, y, z) { const q = this.s.crat ? this.s.crat[this.G.cellAt(x, y, z)] : 0; return q ? dm.pow(10, q / 20 - 12) : 0; }
   cover(x, y, z) { return this.Gc && this.s.cover ? this.Gc.sample(this.s.cover, this._d(x, y, z), this.uv) : 0; }
   forest(x, y, z) { return this.Gc && this.s.forest ? this.Gc.sample(this.s.forest, this._d(x, y, z), this.uv) : 0; }
   open(x, y, z) { return this.Gc && this.s.open ? this.Gc.sample(this.s.open, this._d(x, y, z), this.uv) : 0; }

@@ -117,31 +117,45 @@ export class SimGrid {
     return (uv.face * N + j) * N + i;
   }
 
-  // a field (one value per cell) at a direction: bilinear between cell centres
-  // within the face (clamped at its edges)
+  // a field (one value per cell) at a direction: bilinear between cell centres (across a
+  // face's edges, the next face's cells: no seam where faces meet)
   sample(field, d, uv = { face: 0, u: 0, v: 0 }) {
     const N = this.N;
     faceUVFromDir(d, uv);
-    const x = Math.min(N - 1, Math.max(0, (uv.u + 1) / 2 * N - 0.5));
-    const y = Math.min(N - 1, Math.max(0, (uv.v + 1) / 2 * N - 0.5));
-    const i0 = Math.min(N - 2, Math.floor(x)), j0 = Math.min(N - 2, Math.floor(y));
-    const fx = x - i0, fy = y - j0;
-    const b = uv.face * N * N + j0 * N + i0;
-    const a00 = field[b], a10 = field[b + 1], a01 = field[b + N], a11 = field[b + N + 1];
+    const x = (uv.u + 1) / 2 * N - 0.5, y = (uv.v + 1) / 2 * N - 0.5;
+    const i0 = Math.floor(x), j0 = Math.floor(y), fx = x - i0, fy = y - j0;
+    let a00, a10, a01, a11;
+    if (i0 >= 0 && j0 >= 0 && i0 < N - 1 && j0 < N - 1) {
+      const b = uv.face * N * N + j0 * N + i0;
+      a00 = field[b]; a10 = field[b + 1]; a01 = field[b + N]; a11 = field[b + N + 1];
+    } else {
+      // (within half a cell of its face's edge: the cells past it are the next face's)
+      const f = uv.face;
+      a00 = field[this._at(f, i0, j0)]; a10 = field[this._at(f, i0 + 1, j0)]; a01 = field[this._at(f, i0, j0 + 1)]; a11 = field[this._at(f, i0 + 1, j0 + 1)];
+    }
     return (a00 * (1 - fx) + a10 * fx) * (1 - fy) + (a01 * (1 - fx) + a11 * fx) * fy;
+  }
+  // the cell at column i, row j of face f, those past its edges being the next face's (the cell
+  // the grid's lines carried on past the edge reach); past a cube corner, the nearest on the face
+  _at(f, i, j) {
+    const N = this.N;
+    if (i >= 0 && j >= 0 && i < N && j < N) return (f * N + j) * N + i;
+    if ((i < 0 || i >= N) && (j < 0 || j >= N)) return (f * N + Math.min(N - 1, Math.max(0, j))) * N + Math.min(N - 1, Math.max(0, i));
+    const d = this._ad || (this._ad = [0, 0, 0]), s = 2 / N;
+    dirFromFaceUV(f, -1 + (i + 0.5) * s, -1 + (j + 0.5) * s, d);
+    return this.cellAt(d[0], d[1], d[2]);
   }
   // the four cells sample() blends at d and their weights: cells into c, weights into w
   corners(d, c, w, uv = { face: 0, u: 0, v: 0 }) {
     const N = this.N;
     faceUVFromDir(d, uv);
-    const x = Math.min(N - 1, Math.max(0, (uv.u + 1) / 2 * N - 0.5));
-    const y = Math.min(N - 1, Math.max(0, (uv.v + 1) / 2 * N - 0.5));
-    const i0 = Math.min(N - 2, Math.floor(x)), j0 = Math.min(N - 2, Math.floor(y));
-    const fx = x - i0, fy = y - j0, b = uv.face * N * N + j0 * N + i0;
-    c[0] = b; c[1] = b + 1; c[2] = b + N; c[3] = b + N + 1;
+    const x = (uv.u + 1) / 2 * N - 0.5, y = (uv.v + 1) / 2 * N - 0.5;
+    const i0 = Math.floor(x), j0 = Math.floor(y), fx = x - i0, fy = y - j0, f = uv.face;
+    if (i0 >= 0 && j0 >= 0 && i0 < N - 1 && j0 < N - 1) { const b = f * N * N + j0 * N + i0; c[0] = b; c[1] = b + 1; c[2] = b + N; c[3] = b + N + 1; }
+    else { c[0] = this._at(f, i0, j0); c[1] = this._at(f, i0 + 1, j0); c[2] = this._at(f, i0, j0 + 1); c[3] = this._at(f, i0 + 1, j0 + 1); }
     w[0] = (1 - fx) * (1 - fy); w[1] = fx * (1 - fy); w[2] = (1 - fx) * fy; w[3] = fx * fy;
   }
-  // the 16 cells round d (4 x 4 on its face, clamped at the face's edges) and their cubic
+  // the 16 cells round d (4 x 4, across its face's edges onto the next face's) and their cubic
   // B-spline weights: a smooth blend (a field read this way has no corners where cells meet)
   corners16(d, c, w, uv = { face: 0, u: 0, v: 0 }) {
     const N = this.N;
@@ -150,9 +164,11 @@ export class SimGrid {
     const i0 = Math.floor(x), j0 = Math.floor(y), fx = x - i0, fy = y - j0, base = uv.face * N * N;
     const bx = this._bx || (this._bx = new Float64Array(4)), by = this._by || (this._by = new Float64Array(4));
     for (const [t, o] of [[fx, bx], [fy, by]]) { const u = 1 - t, t2 = t * t, t3 = t2 * t; o[0] = u * u * u / 6; o[1] = (3 * t3 - 6 * t2 + 4) / 6; o[2] = (-3 * t3 + 3 * t2 + 3 * t + 1) / 6; o[3] = t3 / 6; }
-    for (let q = 0; q < 4; q++) {
-      const jj = Math.min(N - 1, Math.max(0, j0 - 1 + q));
-      for (let p = 0; p < 4; p++) { const ii = Math.min(N - 1, Math.max(0, i0 - 1 + p)); c[q * 4 + p] = base + jj * N + ii; w[q * 4 + p] = bx[p] * by[q]; }
+    if (i0 >= 1 && j0 >= 1 && i0 < N - 2 && j0 < N - 2) {
+      for (let q = 0; q < 4; q++) for (let p = 0; p < 4; p++) { c[q * 4 + p] = base + (j0 - 1 + q) * N + i0 - 1 + p; w[q * 4 + p] = bx[p] * by[q]; }
+    } else {
+      // (near its face's edge: the cells past it are the next face's)
+      for (let q = 0; q < 4; q++) for (let p = 0; p < 4; p++) { c[q * 4 + p] = this._at(uv.face, i0 - 1 + p, j0 - 1 + q); w[q * 4 + p] = bx[p] * by[q]; }
     }
   }
 }
@@ -207,6 +223,7 @@ GridLite.prototype.cellOf = SimGrid.prototype.cellOf;
 GridLite.prototype.sample = SimGrid.prototype.sample;
 GridLite.prototype.corners = SimGrid.prototype.corners;
 GridLite.prototype.corners16 = SimGrid.prototype.corners16;
+GridLite.prototype._at = SimGrid.prototype._at;
 
 function triArea(a, b, c) {
   const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];

@@ -529,9 +529,9 @@ export function buildBody(rng, proto, star, host) {
   // pass above and below it near solstice; inclined orbits likewise). Its climate's sunlight
   b.eclipse = 0;
   if (proto.kind === 'moon' && host && host.radiusM && proto.aReal > host.radiusM) {
-    const beta = Math.asin(host.radiusM / proto.aReal);
+    const beta = dm.asin(host.radiusM / proto.aReal);
     const tilt = (host.rotation ? Math.abs(host.rotation.obliquity) : 0) + (proto.i || 0);
-    const inLine = beta >= tilt ? 1 : (2 / Math.PI) * Math.asin(beta / tilt);
+    const inLine = beta >= tilt ? 1 : (2 / Math.PI) * dm.asin(beta / tilt);
     b.eclipse = (beta / Math.PI) * inLine;
   }
   S = S * (1 - b.eclipse);

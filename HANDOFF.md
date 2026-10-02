@@ -54,14 +54,44 @@ What's in:
   - Rock contacts are a stratigraphic stack with blending on even ground.
   - A dry world's rivers and lakes are empty.
 
+**Later the same day (Dave's /goal: "make it better and better yourself. faster, looking better",
+surveying many worlds; bit-exact across runs and clients, not across revisions):**
+- **Geology in the pyramid:** each region's structure (folds, dip, faults, joints) and rock columns
+  per suite, read each step at the cell's height (integer sim too: `geo` tables), so cliff bands
+  stand where hard beds outcrop.
+- **Creeks:** drawn from the finest pyramid level's own drainage (`fl`, `rcv`), as curves.
+- **Speed:** world sim ~34 -> ~23 s (Opast); refinement 222 -> ~30 s; volume chunks 16.8 ->
+  11.3 ms; refinement jobs are one tile each, sim workers take pyramid tiles first, the snapshot
+  goes to each worker once, and a tile's arrival rebuilds its chunks once (debounced).
+- **Craters at every scale (`src/gen/craters.js`):** the world sim's grid keeps only craters 16+
+  of its cells across (`impacts.js craterFloor`); each finer level stamps the band its cells hold
+  (10+ cells) as exact round profiles (bowls; flat floors and peaks when big), worn by age over
+  size squared. Their number is the world's crater record by place (snapshot `crat`: the
+  bombardment since that ground was last flooded or resurfaced), placed by a hashed lattice on
+  the cube faces (the same craters for every tile and client). Barren and stagnant-lid worlds.
+  Each crater's form comes from its impact (`craterForm`, the world sim's too): the angle (P ~ sin
+  2a) and heading give lopsided ejecta and a lower rim uprange (long craters when grazing); rims
+  slumped in scallops, outlines squared by joints, wandering terraces, central peaks as knobs.
+  Dave: "Those big craters are too perfect" (perfect rings before this).
+- **Airless worlds:** no climate means no rain: the tile sim runs no streams there (CPU and GPU
+  skip routing and stream power, bit-identical; ~2x faster) and no fractal hold.
+- **Dry worlds:** with no liquid there is no sea (snapshot `sea: false`): ground below the datum
+  stays as deep as it is (was flattened to the datum and treated as sea, waves and all).
+- **Icy shells:** cracks are kept as arcs (snapshot `lineae`) and drawn as smooth double ridges,
+  each level at the width it holds (`stampRidges`), sharpening to the real width.
+- **Refinement's start:** the world sim's surface read as a cubic B-spline (no bilinear facets, no
+  stair-stepped one-cell valleys); the world grid's samplers read across face edges (no seams).
+- **Determinism sweep:** Math.hypot/exp/sin/log/asin in generation replaced by dmath.
+- **Survey tool:** `node tools/survey.mjs --out DIR --cache DIR SEED[:body] ...` writes each world's
+  map and its landmarks at 400/60/12 km; the GPU check page takes `?seed=&body=` (runs the sim).
+
 Open:
-- **Flat ground:** rock contacts still inherit the world sim's straight cell lines.
-- **Tile speed:** ~5 s a pyramid tile, mostly CPU setup and finish (move to the GPU).
+- **Desert landforms:** dunes, wadis and mesas at tile scales (flat featureless deserts now).
+- **Big rivers:** drawn from the world sim's lines, not the tiles' drainage; hard to see under snow.
+- **Drainage pattern:** D8-straight parallel gullies on even slopes (MFD routing would help).
+- **Chaos terrain:** icy chaos is a flat matrix; its rafts should be drawn by the finer levels.
 - **Near-field loading:** the volume rings make the descent slow with few workers.
-- **Rivers:** still drawn from the world sim's lines, not the tiles' drainage.
 - **Fractal hold:** the measured H runs ~0.1 above the target (calibrate).
-- **Structure:** beds, faults and joints exist only in the headless region/local kinds; they belong
-  at the finer pyramid levels.
 
 Measuring tool (scratchpad `fractal.mjs` pattern): variogram slope (H) and box-counting coast D per
 level.

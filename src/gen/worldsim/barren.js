@@ -16,7 +16,8 @@
 
 import * as dm from '../../core/dmath.js';
 import { hashInts } from '../../core/rng.js';
-import { Impacts } from './impacts.js';
+import { Impacts, craterFloor, worldCell, WORLD_CELLS, VEXAG } from './impacts.js';
+import { RIDGE, ridgeWidth, ridgeAt } from '../craters.js';
 import { smoothField } from './tectonics.js';
 
 const DT_MYR = 5;
@@ -39,7 +40,12 @@ export function barrenWorld(G, opts) {
     if (lop) h[c] += lopAmp * (G.dir[c * 3] * lop[0] + G.dir[c * 3 + 1] * lop[1] + G.dir[c * 3 + 2] * lop[2]);
   }
   const imp = new Impacts(G, { rng: rng.fork('impacts'), g: body.gravity, pressure: body.atmosphere ? body.atmosphere.pressure : 0, rate: opts.rate ?? 1, scale: opts.scale, spike: opts.spike });
-  const dMin = opts.dMin ?? 6 * G.spacing / 1000; // (smaller ones are the local detail's)
+  // (smaller ones are the finer levels' (craters.js): the grid draws only what it draws round)
+  const dMin = opts.dMin ?? craterFloor(worldCell(G.R, G.N), WORLD_CELLS) / 1000;
+  // the crater record each place keeps: since when its ground has kept them (it was flooded
+  // or resurfaced then), and the craters the bombardment left after each step (for the finer
+  // levels' craters, crat: N(>= D) per m^2 is crat / D^2, D in m as drawn)
+  const since = new Float32Array(n), cum = [0];
   const basalt = !(body.terrain && body.terrain.icy); // (icy worlds don't make dark lava seas)
   const volcEnd = opts.volcEnd ?? 0;
   const flood = []; // basins waiting for lava: { t, at, R (m, drawn), depth }
@@ -49,6 +55,7 @@ export function barrenWorld(G, opts) {
   const stats = { craters: 0, basins: 0, flooded: 0, biggest: 0 };
   for (let t = 0; t < age; t += DT_MYR / 1000) {
     const made = imp.step(DT_MYR, dMin, apply, t * 1000, t);
+    cum.push(cum[cum.length - 1] + imp.density(DT_MYR, t));
     for (const e of made) {
       stats.craters++;
       stats.biggest = Math.max(stats.biggest, e.D);
@@ -65,21 +72,28 @@ export function barrenWorld(G, opts) {
     }
     for (let i = flood.length - 1; i >= 0; i--) {
       if (flood[i].t > t) continue;
-      floodBasin(G, h, mare, fresh, flood[i]);
+      floodBasin(G, h, mare, fresh, flood[i], since, t);
       stats.flooded++;
       flood.splice(i, 1);
     }
     for (let c = 0; c < n; c++) fresh[c] *= decay;
     // a whole-world resurfacing (a Venus's overturn, or an icy shell renewing): the lows
     // flood, their craters gone; what came after is all that's cratered there
-    if (opts.resurfaceAt != null && !stats.resurfaced && t >= opts.resurfaceAt) { resurface(G, h, opts.resurfaceShare ?? 0.75, basalt ? mare : plains, fresh); stats.resurfaced = true; }
+    if (opts.resurfaceAt != null && !stats.resurfaced && t >= opts.resurfaceAt) {
+      const level = resurface(G, h, opts.resurfaceShare ?? 0.75, basalt ? mare : plains, fresh);
+      for (let c = 0; c < n; c++) if (h[c] < level) since[c] = t;
+      stats.resurfaced = true;
+    }
   }
-  if (opts.crack) crackShell(G, h, rng.fork('cracks'), opts.crack, opts.scale ?? 0.1, plains);
-  return { h, fresh, mare, plains, impacts: imp, stats };
+  const cracks = opts.crack ? crackShell(G, h, rng.fork('cracks'), opts.crack, opts.scale ?? 0.1, plains, since, age) : null;
+  const crat = new Float32Array(n), all = cum[cum.length - 1], dtG = DT_MYR / 1000;
+  // (a flood at a step's time buries that step's craters too)
+  for (let c = 0; c < n; c++) crat[c] = all - cum[since[c] > 0 ? Math.min(cum.length - 1, Math.round(since[c] / dtG) + 1) : 0];
+  return { h, fresh, mare, plains, impacts: imp, stats, crat, dMin, lineae: cracks ? cracks.arcs : null };
 }
 
 // lava fills a basin's floor up to about half its depth: flat dark plains
-function floodBasin(G, h, mare, fresh, B) {
+function floodBasin(G, h, mare, fresh, B, since, t) {
   const reach = 0.95 * B.R / G.R;
   const c0 = G.cellAt(B.at[0], B.at[1], B.at[2]);
   const cells = [];
@@ -93,7 +107,7 @@ function floodBasin(G, h, mare, fresh, B) {
     for (let e = G.nStart[c]; e < G.nStart[c + 1]; e++) { const o = G.nbr[e]; if (!seen.has(o)) { seen.add(o); q.push(o); } }
   }
   const level = lo + B.depth * 0.55;
-  for (const c of cells) if (h[c] < level) { h[c] = level; mare[c] = 1; fresh[c] = 0; }
+  for (const c of cells) if (h[c] < level) { h[c] = level; mare[c] = 1; fresh[c] = 0; if (since) since[c] = t; }
 }
 
 // a resurfacing: everything below the share's height floods (lava, or slush on an icy
@@ -105,34 +119,46 @@ export function resurface(G, h, share, marks, fresh) {
   return level;
 }
 
-// an icy shell's cracking under the tides (Europa's lineae, Enceladus' stripes): ridges
-// along great-circle arcs (paired ridges a few hundred metres high, drawn at the game's
-// scale), and chaos where the shell broke into rafts over a warm spot. tidal: 0..1
-export function crackShell(G, h, rng, tidal, scale, marks) {
+// an icy shell's cracking under the tides (Europa's lineae, Enceladus' stripes): double ridges
+// along great-circle arcs, and chaos where the shell broke into rafts over a warm spot. tidal:
+// 0..1. The arcs are kept (the snapshot's lineae): each finer level draws its ridges as wide as
+// they really are, or as its cells can hold (craters.js stampRidges); the grid here, smoothly,
+// two of its cells wide
+export function crackShell(G, h, rng, tidal, scale, marks, since, age) {
   const nCracks = Math.round(20 + 120 * tidal), nChaos = Math.round(3 + 10 * tidal);
-  const ridgeH = 300 * scale * 2.5, width = 2.5 * G.spacing;
+  const ridgeH = RIDGE.H * scale * VEXAG, w = ridgeWidth(RIDGE.w * scale, worldCell(G.R, G.N)), arcs = [];
   for (let k = 0; k < nCracks; k++) {
     // an arc: a pole (the great circle's axis) and a stretch of it
     const pole = rng.unitVector(), len = rng.range(0.3, 2.0), start = rng.range(0, 6.283);
     const a0 = Math.abs(pole[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
     let u = [pole[1] * a0[2] - pole[2] * a0[1], pole[2] * a0[0] - pole[0] * a0[2], pole[0] * a0[1] - pole[1] * a0[0]];
-    const ul = Math.hypot(u[0], u[1], u[2]); u = u.map((x) => x / ul);
+    const ul = Math.sqrt(u[0] * u[0] + u[1] * u[1] + u[2] * u[2]); u = u.map((x) => x / ul);
     const v = [pole[1] * u[2] - pole[2] * u[1], pole[2] * u[0] - pole[0] * u[2], pole[0] * u[1] - pole[1] * u[0]];
-    const steps = Math.ceil(len * G.R / G.spacing);
+    const arc = { pole, u, v, start, len, H: ridgeH };
+    arcs.push(arc);
+    // (the cells along it, and two rings round them)
+    const cells = new Set(), steps = Math.ceil(len * G.R / G.spacing);
     for (let i = 0; i <= steps; i++) {
       const th = start + len * i / steps, cs = dm.cos(th), sn = dm.sin(th);
-      const p = [u[0] * cs + v[0] * sn, u[1] * cs + v[1] * sn, u[2] * cs + v[2] * sn];
-      const c = G.cellAt(p[0], p[1], p[2]);
-      h[c] += ridgeH;
-      for (let e = G.nStart[c]; e < G.nStart[c + 1]; e++) h[G.nbr[e]] += ridgeH * 0.35;
+      let ring = [G.cellAt(u[0] * cs + v[0] * sn, u[1] * cs + v[1] * sn, u[2] * cs + v[2] * sn)];
+      for (let r = 0; r < 3; r++) {
+        const next = [];
+        for (const c of ring) { if (cells.has(c)) continue; cells.add(c); for (let e = G.nStart[c]; e < G.nStart[c + 1]; e++) next.push(G.nbr[e]); }
+        ring = next;
+      }
     }
+    for (const c of cells) h[c] += ridgeAt(arc, G.dir[c * 3], G.dir[c * 3 + 1], G.dir[c * 3 + 2], G.R, w);
   }
+  const chaos = [];
   for (let k = 0; k < nChaos; k++) {
     const at = rng.unitVector(), R = rng.range(40e3, 150e3) * scale / G.R;
+    chaos.push({ at, R });
     for (let c = 0; c < G.n; c++) {
       const cosA = G.dir[c * 3] * at[0] + G.dir[c * 3 + 1] * at[1] + G.dir[c * 3 + 2] * at[2];
       if (cosA < dm.cos(R)) continue;
-      h[c] = h[c] * 0.3 - ridgeH * (0.5 + rng.next()); marks[c] = 1;   // (rafts tilted in refrozen slush)
+      h[c] = h[c] * 0.3 - ridgeH; marks[c] = 1;   // (the shell broke and refroze: a low, level matrix)
+      if (since) since[c] = age;
     }
   }
+  return { arcs, chaos };
 }

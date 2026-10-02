@@ -28,7 +28,7 @@ const args = process.argv.slice(2), opt = {}, worlds = [];
 for (let i = 0; i < args.length; i++) { if (args[i].startsWith('--')) opt[args[i].slice(2)] = args[++i]; else worlds.push(args[i]); }
 const OUT = opt.out || 'survey', CACHE = opt.cache || OUT, W = +(opt.W || 1200), MARKS = +(opt.marks || 6);
 fs.mkdirSync(OUT, { recursive: true }); fs.mkdirSync(CACHE, { recursive: true });
-const TY = { h: Float32Array, water: Float32Array, rock: Uint8Array, ice: Uint16Array, river: Uint8Array, melt: Uint8Array, relief: Uint16Array, rcv: Uint8Array, Tsea: Float32Array, P: Float32Array, cover: Float32Array, forest: Float32Array, open: Float32Array, cloud: Float32Array, cloudPx: Uint8Array };
+const TY = { h: Float32Array, water: Float32Array, rock: Uint8Array, ice: Uint16Array, river: Uint8Array, melt: Uint8Array, relief: Uint16Array, rcv: Uint8Array, Tsea: Float32Array, P: Float32Array, cover: Float32Array, forest: Float32Array, open: Float32Array, cloud: Float32Array, cloudPx: Uint8Array, crat: Uint8Array };
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
 const list = fs.existsSync(path.join(OUT, 'survey.json')) ? JSON.parse(fs.readFileSync(path.join(OUT, 'survey.json'))) : {};
 

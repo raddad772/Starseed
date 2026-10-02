@@ -293,6 +293,8 @@ export class ITileGPU {
       }
       if (st === T.rise) pass('rise', { 8: B.info }, wgN);
       if (T.geo) pass('hardness', { 1: hb(), 8: B.info, 23: B.GEO, 24: B.BOFF, 25: B.COLT }, wgN);
+      // (no streams where no water runs: nothing to route)
+      if (T.K0 > 0) {
       for (let p = 0; p < PASSES.fill; p++) { pass('fill', { 1: hb(), 3: B['F' + Fc], 4: B['F' + (1 - Fc)], 8: B.info }, wgN); Fc = 1 - Fc; }
       pass('receivers', { 3: B['F' + Fc], 7: B.rcv, 8: B.info, 11: B.DW }, wgN);
       for (let p = 0; p < PASSES.accum; p++) { pass('accum', { 5: B['A' + Ac], 6: B['A' + (1 - Ac)], 7: B.rcv, 9: B.wa }, wgN); Ac = 1 - Ac; }
@@ -300,6 +302,7 @@ export class ITileGPU {
       let jc = 0;
       for (let p = 0; p < PASSES.jump; p++) { pass('jump', { 14: B['al' + jc], 15: B['al' + (1 - jc)], 16: B['be' + jc], 17: B['be' + (1 - jc)], 18: B['pt' + jc], 19: B['pt' + (1 - jc)] }, wgN); jc = 1 - jc; }
       pass('jumpApply', { 1: hb(), 2: hb2(), 14: B['al' + jc], 16: B['be' + jc], 18: B['pt' + jc] }, wgN); hc = 1 - hc;
+      }
       pass('creep', { 1: hb(), 2: hb2(), 8: B.info, 11: B.DW, 13: B.TB }, wgN); hc = 1 - hc;
       for (let p = 0; p < PASSES.collapse; p++) { pass('collapse', { 1: hb(), 2: hb2(), 8: B.info, 11: B.DW, 13: B.TB, 20: B.talus }, wgN); hc = 1 - hc; }
       cp.end();

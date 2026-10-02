@@ -41,6 +41,8 @@ import { Rng, hashInts } from '../core/rng.js';
 import * as dm from '../core/dmath.js';
 
 import { MT, MARGIN, KEEP, TILE_VERSION } from './tileshape.js';
+import { stampCraters, stampRidges, ridgeWidth, RIDGE } from './craters.js';
+import { craterFloor, worldCell, TILE_CELLS } from './worldsim/impacts.js';
 export { MT, MARGIN, KEEP, TILE_VERSION };
 export const REGION_UP = 2;        // a region tile is 2^REGION_UP local tiles across
 const NG = MT + 2 * MARGIN;        // the simulated grid per side
@@ -143,7 +145,7 @@ export function regionStructure(gen, face, ri, rj) {
   // on level ground, wherever the region's history had it
   const e = s * 0.6;
   let cx = worldAt(gen, face, uc + e, vc) - worldAt(gen, face, uc - e, vc), cy = worldAt(gen, face, uc, vc + e) - worldAt(gen, face, uc, vc - e);
-  const cl = Math.hypot(cx, cy), ca = rng.range(0, dm.TWO_PI);
+  const cl = Math.sqrt(cx * cx + cy * cy), ca = rng.range(0, dm.TWO_PI);
   if (cl < 0.5) { cx = dm.cos(ca); cy = dm.sin(ca); } else { cx /= cl; cy /= cl; }
   // the beds' tilt (a few degrees off a belt, up to ~20 in one) and, in a belt, folds
   // with their axes across the compression
@@ -318,8 +320,10 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
       } else { hb = S.h(dx, dy, dz) * hs; if (hb < 0 && S.seaDist(dx, dy, dz) < 1) wet[c] = 1; }
       B[c] = hb; relC[c] = S.relief(dx, dy, dz) * hs * relK;
     } else if (refine) {
-      // (the world sim's own surface, its cells' blend: its rivers are for the water here to find)
-      let hb = S.h(dx, dy, dz) * hs;
+      // (the world sim's own surface, its cells' smooth blend (a straight-line blend's facets
+      // and a one-cell valley's stairs would stay in the ground here): its rivers are for the
+      // water here to find)
+      let hb = S.hSmooth(dx, dy, dz) * hs;
       // (its rivers' courses, a cell or so wide, for the water here to find)
       const rv = gen._riverAt(dx, dy, dz);
       if (rv && rv.dist < 1.5 * cell) hb = Math.min(hb, (Math.max(rv.hs, 0) + 1 - 0.5 * rv.depth) * hs);
@@ -332,13 +336,27 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
       if (hb == null) { gen.sample(dx, dy, dz, region ? 1e9 : 1000, _s); hb = _s[S_H]; }
       B[c] = hb;
       if (gen.snap) {
-        if (hb < 0) wet[c] = 1;     // (the sea: the generator lifts a dry dip above the datum)
+        if (hb < 0 && gen.p.liquid) wet[c] = 1;     // (the sea: the generator lifts a dry dip above the datum)
         else { const lk = gen._lakeAt(dx, dy, dz); if (lk && lk.own) wet[c] = 2; }
-      } else if (hb < 0) wet[c] = 1;
+      } else if (hb < 0 && gen.p.liquid) wet[c] = 1;
     }
     const P = gen.snap ? gen.snap.rain(dx, dy, dz) : 800;
     rain[c] = Math.max(0.05, Math.min(3, (P || 800) / 1000));
   }
+  // the craters this level's cells draw round and the level above's couldn't (craters.js): on
+  // the ground it starts from, so the run wears them and the mean is held to them
+  if (rf && S && S.s.crat && S.s.crater) {
+    const K = S.s.crater, cellL = chunkArcSize(L, R) / MT;
+    const Dhi = pyr ? craterFloor(4 * cellL, TILE_CELLS) : K.Dw, Dlo = Math.max(craterFloor(cellL, TILE_CELLS), K.Dair);
+    if (Dlo < Dhi) stampCraters(B, G, face, S, Dlo, Dhi, K, (gen.p.seed && gen.p.seed[0]) | 0, R);
+  }
+  // (an icy shell's ridges: as wide as they are, or as this level's cells hold, less the level above's)
+  if (rf && S && S.s.lineae) {
+    const wT = RIDGE.w * (S.s.crater ? S.s.crater.scale : 0.1), cellL = chunkArcSize(L, R) / MT;
+    stampRidges(B, G, S.s.lineae, R, ridgeWidth(wT, cellL), ridgeWidth(wT, pyr ? 4 * cellL : worldCell(R, S.s.N)));
+  }
+  // (a world without air has no rain: nothing but creep and collapse wear it)
+  const fluvial = !S || !!S.Gc;
   const rng = new Rng([hashInts(face, ti), hashInts(tj, region ? 0x7e60 : 0x7e11), (gen.p.seed && gen.p.seed[0]) | 0, 0x10ca1]);
   const col = rockColumn(ST.rock, new Rng([hashInts(face, ST.ri), hashInts(ST.rj, 0xc01), (gen.p.seed && gen.p.seed[0]) | 0, 0x5eb]));
   // the beds' offset (how far a bed is from where the column has it) and how broken the rock
@@ -417,7 +435,7 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
   const sig = rf ? 4 : Math.round(NG / (region ? 10 : 20)), mean = new Float64Array(n), btmp = new Float64Array(NG);
   // (stream power's rate by the cell: each level runs the same number of steps, and finer
   // features form proportionally faster; so each level adds about the relief its scale holds)
-  const K0 = opts.K0 ?? (rf ? 1.6 * dm.pow(cell / 1000, 0.85) : region ? 0.3 : 1.2e-2), kd0 = opts.kd0 ?? (rf ? 0.25 : region ? 0.15 : 0.06);
+  const K0 = opts.K0 ?? (!fluvial ? 0 : rf ? 1.6 * dm.pow(cell / 1000, 0.85) : region ? 0.3 : 1.2e-2), kd0 = opts.kd0 ?? (rf ? 0.25 : region ? 0.15 : 0.06);
   // channel heads: water cuts only where enough of it gathers (m^2 of rain-weighted drainage);
   // below that the ground is hillslope, shaped by creep and collapse: smooth between valleys,
   // where real terrain stops being rough at every scale
@@ -467,12 +485,12 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
       for (let c = 0; c < n; c++) if (!E.base[c]) h[c] -= 0.3 * mean[c];
     }
     if (lowstand && st === rise) for (let c = 0; c < n; c++) if (wet[c] === 1) E.base[c] = 1;
-    if (st % 2 === 0) { E.nStep = st; E.route(); E.drain(); }
+    if (K0 > 0 && st % 2 === 0) { E.nStep = st; E.route(); E.drain(); }
     if (rf && st % 10 === 9) { readRock(); if (pyr) readSuite(); }
     for (let c = 0; c < n; c++) hd[c] = hardAt(c, h[c]);
     // streams: implicit stream power, downstream first, each cell by the rock it's in
     const fill = E.fill, rcv = E.rcv, rcvD = E.rcvD, A = E.A, order = E.order;
-    for (let k = 0; k < n; k++) {
+    if (K0 > 0) for (let k = 0; k < n; k++) {
       const c = order[k];
       if (E.base[c]) continue;
       const r = rcv[c];
@@ -559,7 +577,7 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
       const gB = S6[0][k] / S6[4][k], gBl = S6[1][k] / S6[5][k], gD = S6[2][k] / S6[5][k], cBD = S6[3][k] / S6[5][k], H = S6[6][k] / S6[5][k];
       // (gBl + 2 f cBD + f^2 gD = the target: the parent's roughness over a cell, at half the
       // scale, times 2^-2H)
-      const target = gB * Math.pow(lag / lagP, 2 * H), disc = cBD * cBD - gD * (gBl - target);
+      const target = gB * dm.pow(lag / lagP, 2 * H), disc = cBD * cBD - gD * (gBl - target);
       return Math.max(0.02, Math.min(3, disc > 0 ? (-cBD + Math.sqrt(disc)) / gD : 0.2));
     };
     const fAll = solve(m);
@@ -597,7 +615,8 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
     blur(dm2, sig, btmp);
     for (let c = 0; c < n; c++) if (!E.base[c] && !wet[c]) h[c] += dm2[c];
   }
-  if (rf && opts.H !== 0) out0.fractal = holdFractal();
+  // (where no water runs, the craters are the history at every scale: nothing to hold)
+  if (rf && opts.H !== 0 && K0 > 0) out0.fractal = holdFractal();
   E.nStep = steps; E.route(); E.drain();
   // a refinement's water: the sea where it reaches (below the datum and joined to the world
   // sim's sea through ground below it), its lakes; and its rock, with the alluvium laid down
@@ -692,8 +711,9 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
         else if (!water[c] && land <= 9 && h[c] < 8 * waveH) { water[c] = 1; h[c] = Math.min(h[c], -2); }
       }
     }
-    // (below the datum and cut off from the sea: a dry basin, its floor just above it)
-    for (let c = 0; c < n; c++) if (!water[c] && h[c] < 0.5) h[c] = 0.5 - 0.02 * h[c];
+    // (below the datum and cut off from the sea: a dry basin, its floor just above it; a world
+    // with no liquid has no datum, its craters and basins as deep as they are)
+    if (gen.p.liquid) for (let c = 0; c < n; c++) if (!water[c] && h[c] < 0.5) h[c] = 0.5 - 0.02 * h[c];
     const AL = ROCKS.findIndex((r) => r.name === 'alluvium'), aLay = 4e8 * (cell / 900) * (cell / 900);
     for (let c = 0; c < n; c++) {
       if (water[c] || E.rcv[c] < 0) continue;
@@ -714,7 +734,7 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
     out.hard[o] = Math.round(255 * (rf ? hardAt(c) : col.at(h[c] + bedOff[c])));     // (the rock's: its joints don't show)
     if (rf) { out.rockC[o] = rockC[c]; out.water[o] = water[c]; }
     out.talus[o] = Math.min(255, Math.round(talus[c] * 25));
-    const lgA = dm.log(Math.max(1, E.A[c]));
+    const lgA = K0 > 0 ? dm.log(Math.max(1, E.A[c])) : 0;   // (no water, no creeks)
     out.flow[o] = Math.round(255 * Math.max(0, Math.min(1, lgA / amax)));
     // (the water through it on one scale for every level: log of its rain-weighted area, m^2, to 1e11)
     if (rf) out.fl[o] = Math.round(255 * Math.max(0, Math.min(1, lgA / lA)));

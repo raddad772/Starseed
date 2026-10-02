@@ -21,6 +21,7 @@
 //   caves    tunnels where two noise fields are both near zero: karst in limestone, lava tubes
 //            in basalt, rare in other rock; opening where they meet hillsides and cliffs
 
+import * as dm from '../core/dmath.js';
 import { Noise3 } from '../core/noise.js';
 import { Rng, hashInts } from '../core/rng.js';
 import { S_LEN, S_H, S_WDEPTH, S_MOUNT, S_ROUGH } from './terrain.js';
@@ -40,11 +41,11 @@ const smooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a
 // a local frame on the surface at body-fixed point pos: { o (on the datum sphere), e, u, n },
 // right-handed (e x u = n, as the lattice's x, y, z: the mesh's triangles face out of the rock)
 export function anchorAt(pos, R) {
-  const l = Math.hypot(pos[0], pos[1], pos[2]);
+  const l = Math.sqrt(pos[0] * pos[0] + pos[1] * pos[1] + pos[2] * pos[2]);
   const u = [pos[0] / l, pos[1] / l, pos[2] / l];
   const ref = Math.abs(u[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
   let e = [ref[1] * u[2] - ref[2] * u[1], ref[2] * u[0] - ref[0] * u[2], ref[0] * u[1] - ref[1] * u[0]];
-  const el = Math.hypot(e[0], e[1], e[2]); e = [e[0] / el, e[1] / el, e[2] / el];
+  const el = Math.sqrt(e[0] * e[0] + e[1] * e[1] + e[2] * e[2]); e = [e[0] / el, e[1] / el, e[2] / el];
   const n = [e[1] * u[2] - e[2] * u[1], e[2] * u[0] - e[0] * u[2], e[0] * u[1] - e[1] * u[0]];
   return { o: [u[0] * R, u[1] * R, u[2] * R], e, u, n };
 }
@@ -170,7 +171,7 @@ export class VolumeField {
       const fine = s < 2 ? 0.5 * this.nRub.noise(px / 2.3 + 7.1, py / 2.3, pz / 2.3) : 0;
       const coarse = s < 4 ? this.nRub.noise(px / 4.7, py / 4.7, pz / 4.7) : 0;
       let out = (s < 4 ? 1.5 : 0.75) * this.strata(r, c.dip) + 0.8 * (coarse + fine);
-      if (this.hasSea) out -= 3 * Math.exp(-((r - 0.8) / 1.3) * ((r - 0.8) / 1.3));
+      if (this.hasSea) out -= 3 * dm.exp(-((r - 0.8) / 1.3) * ((r - 0.8) / 1.3));
       out *= c.wc;
       // ...by reading the terraced surface that far up the slope (into the cliff)
       d = this.hcAt(i + out * c.ux, k + out * c.uz) - r;
@@ -219,7 +220,7 @@ export function cliffWeightAt(gen, d, s) {
   const R = gen.R, k = 4 / R;
   const ref = Math.abs(d[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
   let e = [ref[1] * d[2] - ref[2] * d[1], ref[2] * d[0] - ref[0] * d[2], ref[0] * d[1] - ref[1] * d[0]];
-  const el = Math.hypot(e[0], e[1], e[2]); e = [e[0] / el, e[1] / el, e[2] / el];
+  const el = Math.sqrt(e[0] * e[0] + e[1] * e[1] + e[2] * e[2]); e = [e[0] / el, e[1] / el, e[2] / el];
   const n = [d[1] * e[2] - d[2] * e[1], d[2] * e[0] - d[0] * e[2], d[0] * e[1] - d[1] * e[0]];
   const h = (u, v) => gen.sample(d[0] + k * (u * e[0] + v * n[0]), d[1] + k * (u * e[1] + v * n[1]), d[2] + k * (u * e[2] + v * n[2]), MINW, s)[S_H];
   const sx = (h(1, 0) - h(-1, 0)) / 8, sz = (h(0, 1) - h(0, -1)) / 8;
@@ -234,18 +235,18 @@ export function gentleNear(gen, d, range = 600) {
   const s = new Float64Array(S_LEN), R = gen.R;
   const ref = Math.abs(d[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
   let e = [ref[1] * d[2] - ref[2] * d[1], ref[2] * d[0] - ref[0] * d[2], ref[0] * d[1] - ref[1] * d[0]];
-  const el = Math.hypot(e[0], e[1], e[2]); e = [e[0] / el, e[1] / el, e[2] / el];
+  const el = Math.sqrt(e[0] * e[0] + e[1] * e[1] + e[2] * e[2]); e = [e[0] / el, e[1] / el, e[2] / el];
   const n = [d[1] * e[2] - d[2] * e[1], d[2] * e[0] - d[0] * e[2], d[0] * e[1] - d[1] * e[0]];
   for (let r = 40; r <= range; r += 20) {
     for (let a = 0; a < 24; a++) {
-      const th = a / 24 * 2 * Math.PI, u = r * Math.cos(th) / R, v = r * Math.sin(th) / R;
+      const th = a / 24 * 2 * Math.PI, u = r * dm.cos(th) / R, v = r * dm.sin(th) / R;
       let q = [d[0] + u * e[0] + v * n[0], d[1] + u * e[1] + v * n[1], d[2] + u * e[2] + v * n[2]];
-      const l = Math.hypot(q[0], q[1], q[2]); q = [q[0] / l, q[1] / l, q[2] / l];
+      const l = Math.sqrt(q[0] * q[0] + q[1] * q[1] + q[2] * q[2]); q = [q[0] / l, q[1] / l, q[2] / l];
       const h = gen.sample(q[0], q[1], q[2], MINW, s)[S_H];
       if (h < 5 || s[S_WDEPTH] > 0) continue;
       if (cliffWeightAt(gen, q, s) > 0.01) continue;
       const k = 6 / R, hh = (uu, vv) => gen.sample(q[0] + k * (uu * e[0] + vv * n[0]), q[1] + k * (uu * e[1] + vv * n[1]), q[2] + k * (uu * e[2] + vv * n[2]), MINW, s)[S_H];
-      if (Math.hypot(hh(1, 0) - hh(-1, 0), hh(0, 1) - hh(0, -1)) / 12 < 0.12) return q;
+      { const gx = hh(1, 0) - hh(-1, 0), gz = hh(0, 1) - hh(0, -1); if (Math.sqrt(gx * gx + gz * gz) / 12 < 0.12) return q; }
     }
   }
   return null;
@@ -257,7 +258,7 @@ export function findCliffCountry(gen, maxH = 2500) {
   const s = new Float64Array(S_LEN);
   let best = null;
   for (let i = 0; i < 12000; i++) {
-    const z = 1 - (i + 0.5) / 6000, r = Math.sqrt(Math.max(0, 1 - z * z)), th = i * 2.399963, d = [Math.cos(th) * r, z, Math.sin(th) * r];
+    const z = 1 - (i + 0.5) / 6000, r = Math.sqrt(Math.max(0, 1 - z * z)), th = i * 2.399963, d = [dm.cos(th) * r, z, dm.sin(th) * r];
     const h = gen.sample(d[0], d[1], d[2], MINW, s)[S_H];
     if (h < 30 || h > maxH) continue;
     const w = cliffWeightAt(gen, d, s);

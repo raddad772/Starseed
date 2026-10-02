@@ -14,7 +14,7 @@
 
 import * as dm from '../../core/dmath.js';
 import { hashInts } from '../../core/rng.js';
-import { Impacts } from './impacts.js';
+import { Impacts, craterFloor, worldCell, WORLD_CELLS } from './impacts.js';
 import { resurface } from './barren.js';
 import { Erosion } from './erosion.js';
 import { smoothField } from './tectonics.js';
@@ -55,13 +55,19 @@ export function stagnantWorld(G, opts) {
   const canyon = rise && rng.next() < 0.6 ? makeCanyon(rng, rise, scale) : null;
   // ---- the bombardment, the volcanoes, the wet era, through time
   const imp = new Impacts(G, { rng: rng.fork('impacts'), g, pressure: body.atmosphere ? body.atmosphere.pressure : 0, scale, rate: opts.rate ?? 1, spike: opts.spike });
-  const dMin = 6 * G.spacing / 1000;
+  // (smaller ones are the finer levels' (craters.js): the grid draws only what it draws round)
+  const dMin = craterFloor(worldCell(G.R, G.N), WORLD_CELLS) / 1000;
+  // the crater record each place keeps (barren.js): since its ground last kept them (a wet era
+  // wears away the small ones everywhere; lava and resurfacing bury them), and the craters
+  // the bombardment left after each step
+  const since = new Float32Array(n), cum = [0];
   const wet = opts.wet;
   let E = null, sl = 0;
   const hs = new Float64Array(n);
   const stats = { craters: 0, shields: nShield, wetSteps: 0, canyon: !!canyon, dichotomy: !!dich };
   for (let t = 0; t < age; t += DT_MYR / 1000) {
     stats.craters += imp.step(DT_MYR, dMin, (c, dh) => { h[c] += dh; }, t * 1000, t).length;
+    cum.push(cum[cum.length - 1] + imp.density(DT_MYR, t));
     // the rise swells, the shields build, while the interior is hot
     if (rise && t < volcEnd * 0.7) {
       const k = DT_MYR / 1000 / (volcEnd * 0.7);
@@ -73,11 +79,15 @@ export function stagnantWorld(G, opts) {
       const k = DT_MYR / 1000 / (S.t1 - S.t0);
       for (let i = 0; i < S.cells.length; i += 2) {
         const c = S.cells[i], u = S.cells[i + 1] * G.R / S.R;
-        if (u < 1.6) { h[c] += S.H * k * dm.pow(Math.max(0, 1 - u / 1.6), 1.6); volc[c] = 1; }
+        if (u < 1.6) { h[c] += S.H * k * dm.pow(Math.max(0, 1 - u / 1.6), 1.6); volc[c] = 1; since[c] = t; }
       }
     }
     if (canyon && t > canyon.t && !canyon.done) { carveCanyon(G, h, canyon); canyon.done = true; }
-    if (opts.resurfaceAt != null && !stats.resurfaced && t >= opts.resurfaceAt) { resurface(G, h, opts.resurfaceShare ?? 0.75, volc); stats.resurfaced = true; }
+    if (opts.resurfaceAt != null && !stats.resurfaced && t >= opts.resurfaceAt) {
+      const level = resurface(G, h, opts.resurfaceShare ?? 0.75, volc);
+      for (let c = 0; c < n; c++) if (h[c] < level) since[c] = t;
+      stats.resurfaced = true;
+    }
     // rain while there's water: valleys, lakes in craters, a sea in the lows
     if (wet && t >= wet[0] && t < wet[1]) {
       if (!E) E = new Erosion(G, hs, { sea: opts.seaFrac > 0.02, K: 8e-7, rain: 1, m: 0.45, kd: 1 });
@@ -87,16 +97,19 @@ export function stagnantWorld(G, opts) {
       E.step(DT_MYR * 1e6);
       for (let c = 0; c < n; c++) { h[c] = hs[c] + sl; if (!E.base[c]) river[c] = Math.max(river[c], E.A[c]); }
       stats.wetSteps++;
+      since.fill(t);
     }
   }
-  return { h, volc, river, impacts: imp, stats, seaLevelWet: sl, rise, shields, dich };
+  const crat = new Float32Array(n), all = cum[cum.length - 1], dtG = DT_MYR / 1000;
+  for (let c = 0; c < n; c++) crat[c] = all - cum[since[c] > 0 ? Math.min(cum.length - 1, Math.round(since[c] / dtG) + 1) : 0];
+  return { h, volc, river, impacts: imp, stats, seaLevelWet: sl, rise, shields, dich, crat, dMin };
 }
 
 function tilt(rng, at, ang) {
   // a direction ang radians from `at`, in a random direction
   const r = rng.unitVector();
   let p = [r[1] * at[2] - r[2] * at[1], r[2] * at[0] - r[0] * at[2], r[0] * at[1] - r[1] * at[0]];
-  const l = Math.hypot(p[0], p[1], p[2]) || 1; p = p.map((x) => x / l);
+  const l = Math.sqrt(p[0] * p[0] + p[1] * p[1] + p[2] * p[2]) || 1; p = p.map((x) => x / l);
   const c = dm.cos(ang), s = dm.sin(ang);
   return [at[0] * c + p[0] * s, at[1] * c + p[1] * s, at[2] * c + p[2] * s];
 }
@@ -131,7 +144,7 @@ function carveCanyon(G, h, C) {
   let t = [C.away[0], C.away[1], C.away[2]];
   const k = t[0] * s[0] + t[1] * s[1] + t[2] * s[2];
   t = [t[0] - s[0] * k, t[1] - s[1] * k, t[2] - s[2] * k];
-  const l = Math.hypot(t[0], t[1], t[2]) || 1; t = t.map((x) => x / l);
+  const l = Math.sqrt(t[0] * t[0] + t[1] * t[1] + t[2] * t[2]) || 1; t = t.map((x) => x / l);
   const nrm = [s[1] * t[2] - s[2] * t[1], s[2] * t[0] - s[0] * t[2], s[0] * t[1] - s[1] * t[0]]; // the plane's normal
   const halfW = C.width / 2 / G.R;
   for (let c = 0; c < n; c++) {

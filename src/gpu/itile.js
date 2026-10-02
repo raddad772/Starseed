@@ -73,8 +73,8 @@ export function gridTables(T) {
       const r = Math.floor((s * 256) / d);
       W[c * 8 + k] = Math.min(511, (r * r) >> 8);              // (~256 along an axis, ~128 diagonal)
     }
-    // f = K0 kh (A aunit)^0.45 / d(m), kh = KH / 2048, A^0.45 = APOW / 16
-    for (let t = 0; t < 2; t++) {
+    // f = K0 kh (A aunit)^0.45 / d(m), kh = KH / 2048, A^0.45 = APOW / 16 (no streams: 0)
+    if (c0 > 0) for (let t = 0; t < 2; t++) {
       const d = (t ? s * 181 / 256 : s) / 1000;
       let coef = c0 / d;   // f (x65536) per unit of KH APOW
       let e = 0;
@@ -145,6 +145,8 @@ export function runInt(T) {
       z = z < 0 ? 0 : z > 14999 ? 14999 : z;
       hd[c] = (Gx.colHd[Gx.suite[c] * 15000 + z] * (256 - ((Gx.weak[c] * 179) >> 8))) >> 8;
     }
+    // (no streams where no water runs: nothing to route)
+    if (T.K0 > 0) {
     // lakes' surfaces
     for (let p = 0; p < PASSES.fill; p++) {
       for (let c = 0; c < n; c++) {
@@ -208,6 +210,7 @@ export function runInt(T) {
     }
     for (let c = 0; c < n; c++) h2[c] = al[c] + mul16(h[pt[c]], be[c]);
     { const t = h; h = h2; h2 = t; }
+    }
     // soil creeps
     for (let c = 0; c < n; c++) {
       h2[c] = h[c];

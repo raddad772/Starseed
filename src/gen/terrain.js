@@ -619,7 +619,8 @@ export class TerrainGenerator {
     // the sea's own cells, where the sim's surface is low enough for the ground's dips to reach
     // the datum (the shore then the ground's own contour, not the cells'); a dip below the
     // datum beyond that is dry land
-    else if (!lk && h < 0 && wl < -1e8 && (sea >= 0 ? sea < 0.02 : (h0 > 1.5 * amp || S.seaDist(x, y, z) > 1.5))) h = 0.5 - 0.02 * h;
+    // (a world with no liquid has no datum to lift a dip to: its craters and basins stay as deep as they are)
+    else if (!lk && h < 0 && wl < -1e8 && p.liquid && (sea >= 0 ? sea < 0.02 : (h0 > 1.5 * amp || S.seaDist(x, y, z) > 1.5))) h = 0.5 - 0.02 * h;
     // tuyas: a flat lava cap where the ice's surface was (a small cone on it), flanks at ~35
     // degrees of glassy rubble down to the ground round it
     if (S.tuyaAt) {

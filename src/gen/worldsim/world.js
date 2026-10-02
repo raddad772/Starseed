@@ -106,12 +106,14 @@ export function worldSim(body, star, opts = {}) {
   if (path === 'barren') {
     const W = barrenWorld(G, { rng: rng.fork('barren'), body, age, scale, volcEnd: 1 + 15 * dm.pow(body.massEarth, 0.6), rate, spike, resurfaceAt, resurfaceShare, crack });
     const melt = stampFresh(G, W.h, H, body, scale);
-    return Object.assign(out, { h: W.h, mare: W.mare, fresh: W.fresh, stats: W.stats, craters: survivors(G, W.impacts.events, resurfaceAt, W.plains, W.mare), melt });
+    // (the craters below its grid's: their record by place, for the finer levels to draw)
+    const crater = { crat: W.crat, g: body.gravity, scale, Dw: W.dMin * 1000, Dair: 0.03 * (body.atmosphere ? body.atmosphere.pressure : 0) * 1000 * scale };
+    return Object.assign(out, { h: W.h, mare: W.mare, fresh: W.fresh, stats: W.stats, craters: survivors(G, W.impacts.events, resurfaceAt, W.plains, W.mare), melt, crater, lineae: W.lineae });
   }
   if (path === 'stagnant') {
     let wet = wetWindow(H);
     const oceanAt = wet ? Math.max(...Array.from(H.series.oceans)) : 0;
-    let seaFrac = wet ? Math.min(0.4, Math.max(0, (Math.log10(Math.max(oceanAt * 2.3e-4, 1e-9)) + 5.5) / 3.2) * 0.45) : 0;
+    let seaFrac = wet ? Math.min(0.4, Math.max(0, (dm.log10(Math.max(oceanAt * 2.3e-4, 1e-9)) + 5.5) / 3.2) * 0.45) : 0;
     // a Titan: methane rain (a trickle on average, in rare storms) carving channels, lakes
     // at the poles from its hydrocarbon seas (liquids.js)
     let rainK0 = 1;
@@ -119,7 +121,8 @@ export function worldSim(body, star, opts = {}) {
     const S = stagnantWorld(G, { rng: rng.fork('stagnant'), body, age, scale, wet, seaFrac, rainK0, tier: H.tier, volcEnd: 1 + 15 * dm.pow(body.massEarth, 0.6), rate, spike, resurfaceAt, resurfaceShare });
     const volcanoes = S.shields.map((v) => ({ ...latLonOf(v.at), heightM: v.H }));
     const melt = stampFresh(G, S.h, H, body, scale);
-    return Object.assign(out, { h: S.h, volc: S.volc, river: S.river, stats: S.stats, wet, seaFrac, craters: survivors(G, S.impacts.events, resurfaceAt, S.volc), volcanoes, melt });
+    const crater = { crat: S.crat, g: body.gravity, scale, Dw: S.dMin * 1000, Dair: 0.03 * (body.atmosphere ? body.atmosphere.pressure : 0) * 1000 * scale };
+    return Object.assign(out, { h: S.h, volc: S.volc, river: S.river, stats: S.stats, wet, seaFrac, craters: survivors(G, S.impacts.events, resurfaceAt, S.volc), volcanoes, melt, crater });
   }
 
   // ---- plates: the generator's continents as the starting crust
@@ -328,13 +331,13 @@ export function worldSim(body, star, opts = {}) {
       // (a tangent frame at the hotspot)
       const ref = Math.abs(a0[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
       e1[0] = ref[1] * a0[2] - ref[2] * a0[1]; e1[1] = ref[2] * a0[0] - ref[0] * a0[2]; e1[2] = ref[0] * a0[1] - ref[1] * a0[0];
-      const l1 = Math.hypot(e1[0], e1[1], e1[2]); e1[0] /= l1; e1[1] /= l1; e1[2] /= l1;
+      const l1 = Math.sqrt(e1[0] * e1[0] + e1[1] * e1[1] + e1[2] * e1[2]); e1[0] /= l1; e1[1] /= l1; e1[2] /= l1;
       e2[0] = a0[1] * e1[2] - a0[2] * e1[1]; e2[1] = a0[2] * e1[0] - a0[0] * e1[2]; e2[2] = a0[0] * e1[1] - a0[1] * e1[0];
       const want = Math.round(2 + 4 * Math.min(1.5, v.s));
       for (let i = 0, made = 0; i < want * 3 && made < want; i++) {
         const ang = tr.range(0, 2 * Math.PI), rr = Math.sqrt(tr.next()) * 1.2 * G.spacing / G.R;
-        for (let k = 0; k < 3; k++) p[k] = a0[k] + rr * (Math.cos(ang) * e1[k] + Math.sin(ang) * e2[k]);
-        const lp = Math.hypot(p[0], p[1], p[2]);
+        for (let k = 0; k < 3; k++) p[k] = a0[k] + rr * (dm.cos(ang) * e1[k] + dm.sin(ang) * e2[k]);
+        const lp = Math.sqrt(p[0] * p[0] + p[1] * p[1] + p[2] * p[2]);
         const c = G.cellAt(p[0], p[1], p[2]);
         if (iceTop[c] < 300 || h[c] < -50) continue;
         tuyas.push({ d: [p[0] / lp, p[1] / lp, p[2] / lp], base: h[c], top: h[c] + Math.min(1500, iceTop[c]), r: tr.range(700, 2200) });
@@ -438,7 +441,7 @@ function buildRock(G, Gt, T, rng) {
     // oldest first: each bed's thickness waves gently across the world
     for (let i = 0; i < beds.length && sed > 1; i++) {
       const B = beds[i];
-      const bed = Math.min(sed, B.base + B.amp * Math.sin((d[0] * B.v[0] + d[1] * B.v[1] + d[2] * B.v[2]) * B.k + B.ph));
+      const bed = Math.min(sed, B.base + B.amp * dm.sin((d[0] * B.v[0] + d[1] * B.v[1] + d[2] * B.v[2]) * B.k + B.ph));
       if (bed <= 0) continue;
       const carbHere = carb > 0 && sed - bed < carb * 1.5;
       lith.deposit(c, bed, carbHere ? ROCK[B.carb] : ROCK[B.type]);

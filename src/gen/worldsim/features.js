@@ -205,7 +205,7 @@ export function findFeatures(G, h, opts = {}) {
     while (q.length) { const c = q.pop(); for (let e = G.nStart[c]; e < G.nStart[c + 1]; e++) { const o = G.nbr[e]; if (!ocean[o] && landId[o] < 0) { landId[o] = id; q.push(o); cells.push(o); } } }
     let area = 0, pk = cells[0], cx = 0, cy = 0, cz = 0;
     for (const c of cells) { area += G.area[c]; if (h[c] > h[pk]) pk = c; cx += G.dir[c * 3]; cy += G.dir[c * 3 + 1]; cz += G.dir[c * 3 + 2]; }
-    const l = Math.hypot(cx, cy, cz) || 1;
+    const l = Math.sqrt(cx * cx + cy * cy + cz * cz) || 1;
     lands.push({ id, cells: cells.length, areaKm2: area * toReal * toReal / 1e6, peak: h[pk], center: [cx / l, cy / l, cz / l] });
   }
   lands.sort((a, b) => b.areaKm2 - a.areaKm2);
@@ -229,7 +229,7 @@ export function findFeatures(G, h, opts = {}) {
     // long and thin: the span against the spread of the group
     let cx = 0, cy = 0, cz = 0, area = 0;
     for (const L of members) { cx += L.center[0]; cy += L.center[1]; cz += L.center[2]; area += L.areaKm2; }
-    const l = Math.hypot(cx, cy, cz) || 1;
+    const l = Math.sqrt(cx * cx + cy * cy + cz * cz) || 1;
     let span = 0;
     for (const A of members) for (const B of members) span = Math.max(span, dm.acos(Math.min(1, A.center[0] * B.center[0] + A.center[1] * B.center[1] + A.center[2] * B.center[2])));
     const spanKm = span * G.R * toReal / 1000;
