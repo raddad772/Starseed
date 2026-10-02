@@ -338,7 +338,10 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
       const dx = G.dir[c * 3], dy = G.dir[c * 3 + 1], dz = G.dir[c * 3 + 2];
       const rt = S ? S.s.rock[S.G.cellAt(dx, dy, dz)] : 0, relRaw = rf ? relC[c] / relK : S ? S.relief(dx, dy, dz) * hs : 1000;
       const x = (Math.min(3, Math.max(0.3, rain[c])) - 0.3) * 100, k = Math.min(270, Math.floor(x)), rp = RT[k] + (RT[k + 1] - RT[k]) * (x - k);
-      AcC[c] = opts.Ac ?? dm.clamp(3e4 * rockF[rt] * rp, 3e3, 1e6);
+      // (and at least a few cells' worth: where a cell is bigger than a channel head every one of
+      // them would cut, rills one cell apart combing every slope; a level cuts only where its
+      // water gathers, the finer levels' cells the rills between)
+      AcC[c] = opts.Ac ?? Math.max(dm.clamp(3e4 * rockF[rt] * rp, 3e3, 1e6), rf ? 3 * G.area[c] : 0);
       // the ground's roughness (Hurst exponent H; its surface's fractal dimension 3 - H): rough
       // where mountains are young and high, the rock hard and the climate dry; smoother where
       // the land is old and worn, soft, and wet enough for soil to creep
@@ -526,12 +529,12 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
         if (parent.sampleUV(face, U[c], V[c]) || parent.sample(dd)) rockC[c] = parent.rockAt(h[c], rkOut, dm.clamp(hl[c] / (1.5 * Math.sqrt(rl[c]) + 0.05), -1, 1), DEP);
       }
       else {
-      const cc = new Int32Array(16), ww = new Float64Array(16), uv = { face: 0, u: 0, v: 0 }, dd = [0, 0, 0], sr = S.s.rock, sh = S.s.h;
+      const cc = new Int32Array(16), ww = new Float64Array(16), uv = { face: 0, u: 0, v: 0 }, dd = [0, 0, 0], wd = [0, 0, 0], sr = S.s.rock, sh = S.s.h;
       const mLv = S.s.mareLv || null, BAS = ROCKS.findIndex((r) => r.name === 'basalt');
       const rk = new Int32Array(16), Wr = new Float64Array(16), Hr = new Float64Array(16);
       for (let c = 0; c < n; c++) {
         dd[0] = G.dir[c * 3]; dd[1] = G.dir[c * 3 + 1]; dd[2] = G.dir[c * 3 + 2];
-        S.G.corners16(dd, cc, ww, uv);
+        S.G.corners16(S.rockWarp(dd[0], dd[1], dd[2], wd), cc, ww, uv);
         const r0 = sr[cc[0]];
         let same = true;
         for (let k = 1; k < 16 && same; k++) if (sr[cc[k]] !== r0) same = false;

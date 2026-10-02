@@ -695,7 +695,8 @@ export class TerrainGenerator {
     // the datum (the shore then the ground's own contour, not the cells'); a dip below the
     // datum beyond that is dry land
     // (a world with no liquid has no datum to lift a dip to: its craters and basins stay as deep as they are)
-    else if (!lk && h < 0 && wl < -1e8 && p.liquid && (sea >= 0 ? sea < 0.02 : (h0 > 1.5 * amp || S.seaDist(x, y, z) > 1.5))) h = 0.5 - 0.02 * h;
+    const dryDip = () => !lk && wl < -1e8 && p.liquid && (sea >= 0 ? sea < 0.02 : (h0 > 1.5 * amp || S.seaDist(x, y, z) > 1.5));
+    if (!(flooded && this.wetNow && lk.L > wl) && h < 0 && dryDip()) h = 0.5 - 0.02 * h;
     // tuyas: a flat lava cap where the ice's surface was (a small cone on it), flanks at ~35
     // degrees of glassy rubble down to the ground round it
     if (S.tuyaAt) {
@@ -725,6 +726,8 @@ export class TerrainGenerator {
     // tilted in a refrozen matrix (Europa's Conamara), each raft its own block
     if (S.s.chaos) h += this._chaosAt(x, y, z, minWavelength) / this.hScale;
     if (S.s.shieldFields) h += this._shieldsAt(x, y, z, minWavelength) / this.hScale;
+    // (a crater dug below the datum where the sea doesn't reach is as dry as the ground round it)
+    if (S.s.crat && h < 0 && dryDip()) h = 0.5 - 0.02 * h;
     // the cracks' stains (Europa's lineae: salts and organics the ridges' warm ice brought up),
     // a band ~1 km wide along each arc, what shows of them from orbit
     if (S.s.lineae) {

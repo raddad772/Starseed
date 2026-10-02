@@ -128,6 +128,24 @@ surveying many worlds; bit-exact across runs and clients, not across revisions):
   along its flow lines, a ridge on each otherwise) and capped near its edge by Nye's plastic
   profile (H^2 = 2 tau/(rho g) x; it was 3.5 km thick at the ice front). Checked on Opast's
   sheet (71N 102E) and a mountain ice field (-45, -107).
+- **Channel heads at least three cells' worth (TILE 20):** at the refinement and pyramid levels
+  a cell (0.5 km^2 on Iahahound) was bigger than a real channel head (~0.03 km^2), so every cell
+  cut: rills one cell apart combing every slope (the dimple lattice). Now a level cuts only where
+  at least three of its cells' water gathers (`AcC`); the finer levels cut the rills between.
+  Opast's valleys keep their courses. The finer tile's straight double ridge on Iahahound's
+  volcano is a fault (faults are ruler-straight lines with a worn zone): to bend/segment later.
+- **Ragged contacts below the grid's scale:** the world's rock cells are read a little off true
+  (`SnapshotSampler.rockWarp`: up to ~0.9 cell, three octaves from ~4 cells), by the sampler's
+  grid-level read and the refinement's rock rule alike, so a contact the cells would draw
+  straight (a coral-sand beach on Opast against a column of cells) is ragged; and across a
+  tile's margin the two levels' rocks blend by its coverage (`rockAt(.., below)`), so a tile's own
+  deposits don't stop at a straight line.
+- **Titan's seas at its poles (SIM 21):** the stagnant path had no sea mask, so every crater
+  floor below the datum was a methane lake at every latitude. Now a methane/ethane world's datum
+  is the level that holds its liquid share in the basins poleward of ~55 degrees (`ocean` mask in
+  the snapshot), its low latitudes standing ~400 m higher, their basins floored dry. And the
+  sampler's own craters (drawn after its dry-dip rule) no longer dig below the datum where the
+  sea doesn't reach: the rule runs again after them.
 - **Crater planes blew up refinement tiles (fixed, SIM 19, TILE 18):** a crater's ground plane
   (its floor level and the slope its ejecta drape) was fit to the tile's own cells under it; a
   crater a tile's edge cut left a thin strip of cells, the fit ill-conditioned, and its slope
@@ -135,11 +153,6 @@ surveying many worlds; bit-exact across runs and clients, not across revisions):
   and slabs on its map; tiles disagreeing at seams generally). Now the plane comes from the
   world's smooth surface at 13 fixed points round the crater (the same for every tile), and
   `groundPlane` refuses near-collinear points and caps the slope at 0.7.
-- **Cell-scale rills on steep dry slopes:** Iahahound's (LAB-6 2) 12.7 km volcano: the
-  refinement combs its flanks with rills one cell apart (and some axis-aligned blocks), read
-  smoothly as a lattice of dimples; the finer tile smooths them, so its edge shows as a straight
-  double ridge. The known D8 parallel-gully problem; wants channel spacing of several cells
-  (MFD routing, or channel heads by cell size).
 - **Lakes by contour, not cells (TILE 17):** the refinement copied the world sim's lake cells
   (bed forced under the level in each, the whole square a lake) and every finer level inherited
   the squares (Dradriokae's Lake Vuzeksys, Heludriom's salt lake). Now its lake is wherever its

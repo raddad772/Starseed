@@ -22,7 +22,7 @@ import { Noise3 } from '../../core/noise.js';
 import { dunePatches } from '../dunes.js';
 import { ROCK_UP } from './lithology.js';
 
-export const SIM_VERSION = 19;
+export const SIM_VERSION = 21;
 
 // a world's grid size: maxN for an Earth-sized one, finer cells don't help a small one
 // (N ~ sqrt(radius): Mars ~210, the Moon ~150, a moonlet 64)
@@ -95,6 +95,7 @@ export function packSnapshot(W, body) {
   // the sea itself (the erosion's base: water below the datum joined to a body big enough to be
   // a sea): an inland hollow below the datum is a basin, dry or a lake, not sea
   if (W.E && W.E.sea && W.E.base) { out.ocean = new Uint8Array(n); for (let c = 0; c < n; c++) out.ocean[c] = W.E.base[c] && W.h[c] < 0 ? 1 : 0; }
+  else if (W.ocean) out.ocean = Uint8Array.from(W.ocean);
   // the crater record below the grid (barren.js): by cell, log-scaled (20 a decade, 0: none),
   // and the craters' scales (craters.js)
   if (W.crater) {
@@ -257,15 +258,36 @@ export class SnapshotSampler {
   // creep and wash across a contact, so where nothing much decides it (even ground) the two
   // grade into each other over a few hundred metres; where the ground does, it's sharp.
   // Returns the rock; this.rock2 the other one there and this.rockMix its share (0..0.5)
-  rockAt(x, y, z, h) {
-    // (from the finest level of the terrain's tiles that covers the point)
+  // where (x, y, z) reads the world's rock cells: a little off true, up to about a cell, over a
+  // few scales, so a contact the cells would draw straight (along a column of them) is as ragged
+  // as real ones are below the grid's scale; the finer levels' rises and hollows bend it further
+  // (the refinement's rock rule reads through it too, localsim.js). Into out
+  rockWarp(x, y, z, out) {
+    const nz = this._rnz || (this._rnz = new Noise3(0x70c4 ^ (this.s.N * 7919))), f = this.s.N * 0.16, sp = 0.9 * this.G.spacing / this.G.R;
+    out[0] = x + sp * nz.fbm(x * f, y * f, z * f, 3); out[1] = y + sp * nz.fbm(x * f + 31.7, y * f, z * f, 3); out[2] = z + sp * nz.fbm(x * f, y * f + 57.1, z * f, 3);
+    const l = Math.sqrt(out[0] * out[0] + out[1] * out[1] + out[2] * out[2]);
+    out[0] /= l; out[1] /= l; out[2] /= l;
+    return out;
+  }
+  rockAt(x, y, z, h, below = -1) {
+    // (from the finest level of the terrain's tiles that covers the point; in a tile's margin,
+    // where it fades into the level below, the two levels' rocks blended by how far in, so a
+    // tile's own deposits (its beaches, its alluvium) don't stop at a straight line)
     const P = this.pyrReaders();
-    this.rockPyr = true;
-    for (let i = P.length - 1; i >= 0; i--) if (P[i].sample(this._d(x, y, z)) && P[i].w > 0.5) return P[i].rockAt(h * this._hs, this);
+    for (let i = (below < 0 ? P.length : below) - 1; i >= 0; i--) {
+      if (!P[i].sample(this._d(x, y, z)) || P[i].w <= 0.02) continue;
+      const w = P[i].w, fine = P[i].rockAt(h * this._hs, this);
+      if (w >= 0.98) { this.rockPyr = true; return fine; }
+      const fr2 = this.rock2, fmix = this.rockMix, coarse = this.rockAt(x, y, z, h, i);
+      this.rockPyr = w >= 0.5;
+      if (fine === coarse) { this.rock2 = fr2; this.rockMix = fmix; return fine; }
+      this.rock2 = w >= 0.5 ? coarse : fine; this.rockMix = w >= 0.5 ? 1 - w : w;
+      return w >= 0.5 ? fine : coarse;
+    }
     this.rockPyr = false;
     if (this.ref && this.ref.sample(this._d(x, y, z))) return this.ref.rockAt(h * this._hs, this, NaN);
     const s = this.s, c = this._rc || (this._rc = new Int32Array(16)), w = this._rw || (this._rw = new Float64Array(16));
-    this.G.corners16(this._d(x, y, z), c, w, this.uv);
+    this.G.corners16(this.rockWarp(x, y, z, this._wd3 || (this._wd3 = [0, 0, 0])), c, w, this.uv);
     const r0 = s.rock[c[0]];
     this.rock2 = r0; this.rockMix = 0;
     let same = true;

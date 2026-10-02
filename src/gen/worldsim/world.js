@@ -129,7 +129,30 @@ export function worldSim(body, star, opts = {}) {
     // its rock: the old crust, and lava where the volcanoes and floods laid it
     const rock = new Uint8Array(G.n), BAS = ROCK.basalt;
     for (let c = 0; c < G.n; c++) rock[c] = S.volc[c] > 0.5 ? BAS : 0;
-    return Object.assign(out, { h: S.h, volc: S.volc, river: S.river, stats: S.stats, wet, seaFrac, craters: survivors(G, S.impacts.events, resurfaceAt, S.volc), volcanoes, melt, crater, rock, shieldFields: S.shieldFields });
+    // (a Titan's liquid stands in its polar basins: the methane rains out where it's cold and
+    // evaporates from the low latitudes. The datum at the level that holds its share of the
+    // world's area in the basins poleward of ~55 degrees; the low latitudes standing a few
+    // hundred metres higher (as Titan's do), their basins dry, floored with what wind and rain
+    // carried into them, so no crater there reaches down to the liquid's level)
+    let ocean = null;
+    const hydrocarbon = body.terrain && (body.terrain.liquid === 'methane' || body.terrain.liquid === 'ethane');
+    if (hydrocarbon) {
+      const share = seaFrac > 0 ? seaFrac : Math.min(0.15, body.terrain.ocean || 0.05);
+      const pol = [];
+      for (let c = 0; c < G.n; c++) if (Math.abs(G.dir[c * 3 + 1]) > 0.82) pol.push(S.h[c]);
+      pol.sort((a, b) => a - b);
+      const L = pol.length ? pol[Math.min(pol.length - 1, Math.floor(share * G.n))] : 0;
+      ocean = new Uint8Array(G.n);
+      for (let c = 0; c < G.n; c++) {
+        const pw = dm.smoothstep(0.77, 0.88, Math.abs(G.dir[c * 3 + 1]));
+        let hc = S.h[c] - L + 400 * (1 - pw);
+        const floor = 2 + 300 * (1 - pw);
+        if (hc < floor) hc += (floor - hc) * (1 - pw);
+        S.h[c] = hc;
+        if (hc < 0) ocean[c] = 1;
+      }
+    }
+    return Object.assign(out, { h: S.h, volc: S.volc, river: S.river, stats: S.stats, wet, seaFrac, craters: survivors(G, S.impacts.events, resurfaceAt, S.volc), volcanoes, melt, crater, rock, shieldFields: S.shieldFields, ocean });
   }
 
   // ---- plates: the generator's continents as the starting crust
