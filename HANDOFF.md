@@ -100,6 +100,11 @@ surveying many worlds; bit-exact across runs and clients, not across revisions):
 - **Bare airless rock:** snow needs water (a water cycle or an ice inventory); maria are basalt.
 - **The sea is the world sim's sea** (snapshot `ocean`): a closed basin below the datum is dry or
   a lake (Opast's salt pan was drawn as deep ocean).
+- **Maria** fill the lows (snapshot `mareLv`; the contact rule lays their basalt in the lows near
+  a mare, so its edge embays craters instead of tracing cells). No alluvium on airless worlds.
+- **GPU check still to rerun** on a fluvial tile (the hidden pane throttles the GPU too hard to
+  finish one): the integer sim's code is unchanged on that path since its last check; the
+  airless path (streams skipped) was checked bit-identical (Idaull).
 - **Rivers from the refinement (`refine.js tileRivers / riverIndex`):** each refinement tile's
   cells with 1e8+ m^2 of water become smooth curves (halfway to the main inflow, through the
   cell, halfway on) with the ground along them, indexed by world-sim cell; the sampler draws the
