@@ -714,7 +714,15 @@ export class Tectonics {
     // continental margins: a slope, not a step (the crust's part only)
     smoothRaw(G, h, 2);
     for (let c = 0; c < n; c++) h[c] += plates[owner[c]].relief[src[c]] + this.swell[c];
-    // sea level: where the water covers the ocean fraction (area-weighted)
+    // sea level: where the water covers the ocean fraction (area-weighted); a world without
+    // seas measures from its mean surface (a datum, Mars')
+    if (!(this.oceanFrac > 0.005)) {
+      let m = 0, A = 0;
+      for (let c = 0; c < n; c++) { m += h[c] * area[c]; A += area[c]; }
+      this.seaLevel = m / A;
+      for (let c = 0; c < n; c++) h[c] -= this.seaLevel;
+      return h;
+    }
     const idx = this._idx || (this._idx = new Int32Array(n));
     for (let c = 0; c < n; c++) idx[c] = c;
     idx.sort((a, b) => h[a] - h[b] || a - b);

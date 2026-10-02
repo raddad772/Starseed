@@ -177,8 +177,9 @@ export function findFeatures(G, h, opts = {}) {
   const ocean = new Uint8Array(n), seen2 = new Uint8Array(n);
   const planetArea = 4 * dm.PI * G.R * G.R;
   let deepest = -1;
+  const noSea = opts.E && opts.E.sea === false;   // (a dry world: its lows are dry, whatever the datum)
   for (let c0 = 0; c0 < n; c0++) {
-    if (seen2[c0] || h[c0] >= 0) continue;
+    if (noSea || seen2[c0] || h[c0] >= 0) continue;
     const cells = [c0], q = [c0]; seen2[c0] = 1;
     let area = 0;
     while (q.length) { const c = q.pop(); area += G.area[c]; for (let e = G.nStart[c]; e < G.nStart[c + 1]; e++) { const o = G.nbr[e]; if (!seen2[o] && h[o] < 0) { seen2[o] = 1; q.push(o); cells.push(o); } } }

@@ -59,6 +59,9 @@ export function choosePath(body) {
   const H = body.history;
   if (!H) return 'barren';
   if (H.regime === 'mobile' && body.hydrosphere && body.hydrosphere.water === 'liquid') return 'plates';
+  // (a rocky world whose plates ran a long while and then stopped: its continents and old
+  // mountain belts, worn and cratered under the stagnant lid since)
+  if (H.regime === 'stagnant' && H.tPlatesStop > 0.3 && body.comp && body.comp.water < 0.05 && !(body.terrain && body.terrain.icy)) return 'plates';
   // (with air but no liquid water now: a stagnant lid's processes, a Titan's methane rain
   // among them; plates without water at the surface don't build our continents)
   if (wetWindow(H) || H.titanish || (body.atmosphere && body.atmosphere.pressure > 0.05)) return 'stagnant';
@@ -154,13 +157,15 @@ export function worldSim(body, star, opts = {}) {
   // the climate on the plates' surface: the fine epoch's rain and snow come from it
   const Gc = new SimGrid(opts.Nc ?? 40, body.R);
   const climOpts = climateOpts(body, star, host);
-  let clim = climateOn(Gc, Gt, ht, climOpts);
+  // (a world without seas has none in its climate, whatever lies below its datum)
+  const drySea = sea ? null : new Uint8Array(Gt.n);
+  let clim = climateOn(Gc, Gt, ht, climOpts, drySea);
   // life on the map (life.js), and the climate again with its plant cover (forests darken
   // the land, plants hand rain on inland): the cover then holds the fine epoch's soil
   // (the realms the plates' history left, on the climate grid)
   const realmGc = realms.checks ? realms.onGrid(Gc) : null;
   let life0 = lifeOn(Gc, clim, H, rng.fork('life0'), null, realmGc);
-  clim = climateOn(Gc, Gt, ht, climOpts, null, life0);
+  clim = climateOn(Gc, Gt, ht, climOpts, drySea, life0);
   life0 = lifeOn(Gc, clim, H, rng.fork('life0'), null, realmGc);
   log(`climate: ${summarizeKoppen(clim)}`);
   log(`plates: ${myr} Myr, ${T.plates.filter((q) => !q.dead).length} plates, ${T.hot.length} hotspots (${T.activity.name}), ${(T.events || []).length} rifts/welds, ${T.impacts.events.length} impacts`);
@@ -205,6 +210,8 @@ export function worldSim(body, star, opts = {}) {
   const sea2 = new Coasts(G, { corals: H.life && H.life.animals != null && H.lifeStage >= 6, warm: 0.5, pH });
   const hMax = 9000 * Math.sqrt(9.81 / body.gravity);
   let iceMax = 0;
+  const stopped = H.regime === 'stagnant', sinceStop = stopped ? Math.max(0, H.age - (H.tPlatesStop || H.age)) : 0;
+  if (stopped) log(`plates ran until ${H.tPlatesStop.toFixed(2)} Gyr; a stagnant lid since (no uplift in the fine epoch)`);
   // ice ages (the tilt and orbit's slow cycles, with the ice's own feedback): in the epoch's
   // last ~40% the steps alternate glacial and interglacial, ending in an interglacial (now);
   // strongest on cold worlds, and without a big moon to steady the tilt (Mars' wanders)
@@ -227,7 +234,7 @@ export function worldSim(body, star, opts = {}) {
     E.veg = E.bare ? null : plantCover;   // (life.js: the plants' cover holds the slopes)
     lith.kField(KF, E.K);                 // each place wears as its exposed rock does
     // (crust can't hold mountains past ~9 km on an Earth: uplift fades out near the limit)
-    for (let c = 0; c < G.n; c++) E.U[c] = U[c] * Math.max(0, Math.min(1, (hMax - h[c]) / (0.15 * hMax)));
+    for (let c = 0; c < G.n; c++) E.U[c] = stopped ? 0 : U[c] * Math.max(0, Math.min(1, (hMax - h[c]) / (0.15 * hMax)));
     hb.set(h);
     E.step(dt);
     // the ice, where it's cold enough then (the history's climate vs today's)
@@ -288,6 +295,11 @@ export function worldSim(body, star, opts = {}) {
     }
   }
   if (iceAgeK > 0.3) log(`ice ages: swings of ${iceAgeK.toFixed(1)} K; the sea fell up to ${Math.round(maxDrop)} m at the glacials`);
+  // plates stopped long ago: the craters of all the time since, on the worn landscape
+  if (stopped && sinceStop > 0.01) {
+    const made = Ef.step(sinceStop * 1000, 6 * G.spacing / 1000, (c, dh) => { h[c] += dh; if (dh < 0) lith.erode(c, -dh); else lith.deposit(c, dh, ROCK.regolith); }, steps * dt / 1e6);
+    log(`the plates stopped ${Math.round(sinceStop * 1000)} Myr ago: ${made.length} craters since, on the old continents`);
+  }
   E.findBase(); E.route(); E.lakes(); E.drain();
   log(`lakes after the fine epoch: ${lakeShare(E, h)}% of the land below the basins' brims`);
   {
