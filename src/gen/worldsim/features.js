@@ -339,6 +339,9 @@ export function findFeatures(G, h, opts = {}) {
   }
   if (opts.craters) out.craters = opts.craters.slice().sort((a, b) => b.D - a.D).slice(0, top).map((k) => ({ diameterKm: k.D, ...latLonDir(k.at), when: k.t }));
   if (opts.volcanoes) out.volcanoes = opts.volcanoes.slice(0, top);
+  // tuyas (world.js: eruptions under an ice sheet), tallest first; their tops' width as drawn
+  // at walking scale (like the rivers' channels)
+  if (opts.tuyas) out.tuyas = opts.tuyas.slice().sort((a, b) => (b.top - b.base) - (a.top - a.base)).slice(0, top).map((t) => ({ heightM: t.top - t.base, topM: t.top, widthKm: 2 * t.r / 1000, ...latLonDir(t.d) }));
   // ---- dune seas and mesa country (world.js): connected regions
   const regionsOf = (mask, kind) => {
     const seen = new Uint8Array(n), res = [];

@@ -36,6 +36,8 @@ export function packSnapshot(W, body) {
   const relief = new Float32Array(n);
   for (let c = 0; c < n; c++) { let r = 0; for (let e = G.nStart[c]; e < G.nStart[c + 1]; e++) r = Math.max(r, Math.abs(W.h[c] - W.h[G.nbr[e]])); relief[c] = r; }
   const out = { version: SIM_VERSION, path: W.path, N: G.N, R: G.R, h, water, rock, ice, river, melt, relief, rcv, Nc: 0 };
+  // the flat-topped volcanoes eruptions under ice left (world.js)
+  out.tuyas = (W.tuyas || []).map((t) => ({ d: t.d.slice(), top: t.top, r: t.r }));
   if (W.climate && W.Gc) {
     const Gc = W.Gc, m = Gc.n, lapse = body.terrain && body.terrain.climate ? body.terrain.climate.lapse ?? 0.0065 : 0.0065;
     out.Nc = Gc.N;
@@ -66,6 +68,18 @@ export class SnapshotSampler {
     this.Gc = s.Nc ? new GridLite(s.Nc, s.R) : null;
     this.nb = new Int32Array(8);
     this.cd = [0, 0, 0];
+    // tuyas by the cell they stand in (and its neighbours: they reach a few km)
+    this.tuyaAt = null;
+    if (s.tuyas && s.tuyas.length) {
+      this.tuyaAt = new Map();
+      const put = (c, t) => { const l = this.tuyaAt.get(c); if (l) l.push(t); else this.tuyaAt.set(c, [t]); };
+      for (const t of s.tuyas) {
+        const c = this.G.cellAt(t.d[0], t.d[1], t.d[2]);
+        put(c, t);
+        const k = this.G.nbrs(c, this.nb);
+        for (let e = 0; e < k; e++) put(this.nb[e], t);
+      }
+    }
     this.uv = { face: 0, u: 0, v: 0 };
     this.d = [0, 0, 0];
     // land cells with no sea beside them (where a dip below the datum is still dry land)

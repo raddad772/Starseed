@@ -22,7 +22,7 @@ import { Rng, hash3i } from '../core/rng.js';
 import * as dm from '../core/dmath.js';
 import { fibonacciSphere } from './cubesphere.js';
 import { SnapshotSampler } from './worldsim/snapshot.js';
-import { ROCKS } from './worldsim/lithology.js';
+import { ROCKS, R as ROCK } from './worldsim/lithology.js';
 import { hexToLinear } from './color.js';
 
 // Sample record layout
@@ -562,6 +562,17 @@ export class TerrainGenerator {
     }
     if (flooded && lk.L > wl) wl = lk.L;
     else if (!lk && h < 0 && wl < -1e8 && S.inland[S.G.cellAt(x, y, z)]) h = 0.5 - 0.02 * h;
+    // tuyas: a flat lava cap where the ice's surface was (a small cone on it), flanks at ~35
+    // degrees of glassy rubble down to the ground round it
+    if (S.tuyaAt) {
+      const ts = S.tuyaAt.get(S.G.cellAt(x, y, z));
+      if (ts) for (const t of ts) {
+        const dx = x - t.d[0], dy = y - t.d[1], dz = z - t.d[2], dist = Math.sqrt(dx * dx + dy * dy + dz * dz) * R;
+        const edge = t.r * (1 + 0.15 * this.nMisc.noise(x * R / 900, y * R / 900, z * R / 900));
+        const lift = t.top - Math.max(0, dist - edge) * 0.7 + 40 * dm.smoothstep(edge * 0.35, 0, dist);
+        if (lift > h) { h = lift; out[S_VOLC] = Math.max(out[S_VOLC], dist < edge ? 1 : 0.7); }
+      }
+    }
     out[S_H] = h;
     if (wl > h) out[S_WDEPTH] = wl - h;
     out[S_INLAND] = h > 0 ? 1 : 0;
@@ -651,10 +662,13 @@ export class TerrainGenerator {
     let g = ground[1] + (rc[1] - ground[1]) * (sandy ? 1 : 0.35 + 0.65 * rockW);
     let b = ground[2] + (rc[2] - ground[2]) * (sandy ? 1 : 0.35 + 0.65 * rockW);
     if (sandy) mat[3] = 1; else mat[2] = rockW;
+    // fresh volcanic rock (a tuya's lava cap and its rubble flanks): dark basalt, bare
+    const volc = s[S_VOLC];
+    if (volc > 0) { const bc = this.rockLin[ROCK.basalt] || rc; r += (bc[0] * 0.8 - r) * volc; g += (bc[1] * 0.8 - g) * volc; b += (bc[2] * 0.75 - b) * volc; mat[2] = Math.max(mat[2], volc); }
     // plants: the life map's cover, forest in the foliage colour, open country drier
     if (P.veg) {
       const cov = S.cover(x, y, z), fo = S.forest(x, y, z), op = S.open(x, y, z);
-      const vegW = dm.clamp(cov * 1.2, 0, 1) * (1 - rockW) * (sandy ? 0.2 : 1) * dm.smoothstep(-6, 2, Tc);
+      const vegW = dm.clamp(cov * 1.2, 0, 1) * (1 - rockW) * (sandy ? 0.2 : 1) * dm.smoothstep(-6, 2, Tc) * (1 - 0.7 * volc);
       if (vegW > 0) {
         const f = fo / Math.max(1e-3, fo + op), dry = P.vegDry || P.veg;
         const vr = dry[0] + (P.veg[0] - dry[0]) * f, vg = dry[1] + (P.veg[1] - dry[1]) * f, vb = dry[2] + (P.veg[2] - dry[2]) * f;

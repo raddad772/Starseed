@@ -89,10 +89,10 @@ export const carbonateOK = (pH) => dm.smoothstep(7.3, 7.8, pH);
 // as rates at this scale (where each is used is noted)
 export const REACTIONS = [
   { a: 'lava', b: 'water', makes: ['basalt', 'black sand', 'steam'], note: 'quenched: pillow basalt and glassy sand; new land where the lava builds out (coasts.js black sand; tectonics volcanic islands)' },
-  { a: 'lava', b: 'ice', makes: ['water', 'basalt'], note: 'meltwater floods; flat-topped volcanoes where it erupts under an ice sheet (to do)' },
+  { a: 'lava', b: 'ice', makes: ['water', 'basalt'], note: 'flat-topped volcanoes (tuyas) where a hotspot erupted under an ice sheet, as tall as the ice was thick (world.js; terrain stamps them); meltwater floods (to do)' },
   { a: 'acid', b: 'carbonate', makes: ['CO2', 'brine'], note: 'acid seas dissolve shells and limestone: no reefs or chalk below pH ~7.6 (coasts.js, lithology marineRock)' },
   { a: 'water', b: 'salt', makes: ['brine'], note: 'closed basins concentrate salt (erosion.js lakes)' },
   { a: 'ammonia', b: 'water', makes: ['ammonia-water'], note: 'antifreeze: liquid to ~176 K (liquids.js)' },
-  { a: 'fuel', b: 'O2', when: 'O2 > ~17% of the air', makes: ['CO2', 'ash'], note: 'wildfire: keeps grasslands open, limits oxygen (life map, to do)' },
-  { a: 'water', b: 'rock', makes: ['clay', 'soil'], note: 'weathering draws down CO2 (evolve.js thermostat); soil (item 12, to do)' },
+  { a: 'fuel', b: 'O2', when: 'O2 > ~17% of the air', makes: ['CO2', 'ash'], note: 'wildfire: keeps grasslands open, limits oxygen (life.js fire)' },
+  { a: 'water', b: 'rock', makes: ['clay', 'soil'], note: 'weathering draws down CO2 (evolve.js thermostat); soil from it (soil.js)' },
 ];

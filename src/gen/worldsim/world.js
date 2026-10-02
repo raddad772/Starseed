@@ -210,6 +210,7 @@ export function worldSim(body, star, opts = {}) {
   const sea2 = new Coasts(G, { corals: H.life && H.life.animals != null && H.lifeStage >= 6, warm: 0.5, pH });
   const hMax = 9000 * Math.sqrt(9.81 / body.gravity);
   let iceMax = 0;
+  const iceTop = new Float32Array(G.n);   // (the thickest ice each place carried: tuyas)
   const stopped = H.regime === 'stagnant', sinceStop = stopped ? Math.max(0, H.age - (H.tPlatesStop || H.age)) : 0;
   if (stopped) log(`plates ran until ${H.tPlatesStop.toFixed(2)} Gyr; a stagnant lid since (no uplift in the fine epoch)`);
   // ice ages (the tilt and orbit's slow cycles, with the ice's own feedback): in the epoch's
@@ -242,6 +243,7 @@ export function worldSim(body, star, opts = {}) {
     const glacial = iceAgeK > 0.3 && k >= steps * 0.6 && (steps - 1 - k) % 2 === 1;
     const dTnow = (H.at(ago, 'T') ?? H.T) - H.T - (glacial ? iceAgeK : 0);
     iceMax = Math.max(iceMax, ice.step(h, E, snow, dt, dTnow));
+    for (let c = 0; c < G.n; c++) if (ice.ice[c] > iceTop[c]) iceTop[c] = ice.ice[c];
     sea2.sst = sst; sea2.dT = dTnow;
     // the sea's edge: waves, sand, reefs (warm seas reach further from the equator in a warm climate)
     sea2.step(h, lith, E, dt, 1 + ((H.at(ago, 'T') ?? H.T) - 288) / 40);
@@ -309,6 +311,37 @@ export function worldSim(body, star, opts = {}) {
     log('  biggest basins: ' + big.map((l) => `${Math.round(l.area * k2)} km2 ${l.closed ? (l.kind === 2 ? 'salt lake' : 'salt flat') : 'open'} (rain ${(l.P / l.area).toFixed(2)}, evap ${(l.E / l.area).toFixed(2)} m/yr, in/out ${(l.inflow / Math.max(1e-9, l.E - l.P)).toFixed(2)})`).join('; '));
   }
   const volcanoes = T.hot.map((v) => ({ ...latLonOf(v.at), hotspot: true }));
+  // tuyas (lava meeting ice: materials.js REACTIONS): a hotspot erupting under an ice sheet
+  // builds its pile inside the meltwater vault it thaws (pillow lava, glassy rubble) until it
+  // breaks the ice's surface, then caps it with lava: flat-topped, steep-sided mountains as
+  // tall as the ice was thick (Iceland's Herdubreid), in a field round the hotspot. For the
+  // local detail to draw: { d, base, top (m), r (the flat top's radius, m) }
+  const tuyas = [];
+  {
+    const tr = rng.fork('tuyas'), p = [0, 0, 0], e1 = [0, 0, 0], e2 = [0, 0, 0];
+    for (const v of T.hot) {
+      const a0 = v.at, c0 = G.cellAt(a0[0], a0[1], a0[2]);
+      let iced = iceTop[c0] > 300;
+      for (let e = G.nStart[c0]; e < G.nStart[c0 + 1] && !iced; e++) if (iceTop[G.nbr[e]] > 300) iced = true;
+      if (!iced) continue;
+      // (a tangent frame at the hotspot)
+      const ref = Math.abs(a0[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
+      e1[0] = ref[1] * a0[2] - ref[2] * a0[1]; e1[1] = ref[2] * a0[0] - ref[0] * a0[2]; e1[2] = ref[0] * a0[1] - ref[1] * a0[0];
+      const l1 = Math.hypot(e1[0], e1[1], e1[2]); e1[0] /= l1; e1[1] /= l1; e1[2] /= l1;
+      e2[0] = a0[1] * e1[2] - a0[2] * e1[1]; e2[1] = a0[2] * e1[0] - a0[0] * e1[2]; e2[2] = a0[0] * e1[1] - a0[1] * e1[0];
+      const want = Math.round(2 + 4 * Math.min(1.5, v.s));
+      for (let i = 0, made = 0; i < want * 3 && made < want; i++) {
+        const ang = tr.range(0, 2 * Math.PI), rr = Math.sqrt(tr.next()) * 1.2 * G.spacing / G.R;
+        for (let k = 0; k < 3; k++) p[k] = a0[k] + rr * (Math.cos(ang) * e1[k] + Math.sin(ang) * e2[k]);
+        const lp = Math.hypot(p[0], p[1], p[2]);
+        const c = G.cellAt(p[0], p[1], p[2]);
+        if (iceTop[c] < 300 || h[c] < -50) continue;
+        tuyas.push({ d: [p[0] / lp, p[1] / lp, p[2] / lp], base: h[c], top: h[c] + Math.min(1500, iceTop[c]), r: tr.range(700, 2200) });
+        made++;
+      }
+    }
+    if (tuyas.length) log(`tuyas: ${tuyas.length} flat-topped volcanoes where hotspots erupted under the ice`);
+  }
   log(`ice: up to ${iceMax} cells covered; ${ice.everIce.reduce((a, b) => a + b, 0)} cells ever glaciated`);
   // how rivers run now: meandering where plants hold the banks, braided on bare ground
   out.riverStyle = plantsAt(H, 0) ? 'meandering' : 'braided';
@@ -377,7 +410,7 @@ export function worldSim(body, star, opts = {}) {
   const drowned = new Uint8Array(G.n);
   for (let c = 0; c < G.n; c++) if (lowRiver[c] && h[c] < 0) drowned[c] = 1;
   const melt = stampFresh(G, h, H, body, scale);
-  return Object.assign(out, { h, h0, E, Gt, ht, tect: T, impacts: Ef, craters: T.impacts.events.concat(Ef.events), volcanoes, lith, rock, glaciers: ice, veg: E.veg, coasts: sea2, dunes, mesas, soil, drowned, melt });
+  return Object.assign(out, { h, h0, E, Gt, ht, tect: T, impacts: Ef, craters: T.impacts.events.concat(Ef.events), volcanoes, tuyas, lith, rock, glaciers: ice, veg: E.veg, coasts: sea2, dunes, mesas, soil, drowned, melt });
 }
 
 // Each fine cell's layers from the plates' record there: the basement (granite

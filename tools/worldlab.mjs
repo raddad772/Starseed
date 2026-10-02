@@ -66,7 +66,7 @@ if (init === 'auto') {
   else if (Wd.path === 'stagnant') rgb = renderBarren(Wd.G, { h: Wd.h, mare: Wd.volc, fresh: new Float32Array(Wd.G.n), river: Wd.river }, W_, [1.0, 0.72, 0.52]);
   else rgb = renderBarren(Wd.G, Wd, W_, p.icy ? [0.92, 0.97, 1.05] : [1, 0.98, 0.95]);
   // what a surveyor would name first
-  const F = findFeatures(Wd.G, Wd.h, { E: Wd.E, scale: body.R / body.radiusM, craters: Wd.craters || [], volcanoes: Wd.volcanoes, glaciers: Wd.glaciers, coasts: Wd.coasts, rock: Wd.rock, rockNames: ROCKS.map((r) => r.name), climate: Wd.climate, Gc: Wd.Gc, dunes: Wd.dunes, mesas: Wd.mesas, soil: Wd.soil, drowned: Wd.drowned, top: 5 });
+  const F = findFeatures(Wd.G, Wd.h, { E: Wd.E, scale: body.R / body.radiusM, craters: Wd.craters || [], volcanoes: Wd.volcanoes, tuyas: Wd.tuyas, glaciers: Wd.glaciers, coasts: Wd.coasts, rock: Wd.rock, rockNames: ROCKS.map((r) => r.name), climate: Wd.climate, Gc: Wd.Gc, dunes: Wd.dunes, mesas: Wd.mesas, soil: Wd.soil, drowned: Wd.drowned, top: 5 });
   if (Wd.glaciers) paintIce(rgb, W_, Wd.G, Wd.glaciers.ice);
   const ll = (f) => `${f.lat.toFixed(0)},${f.lon.toFixed(0)}`;
   console.log('features:');
@@ -103,6 +103,7 @@ if (init === 'auto') {
   if (F.iceFields && F.iceFields.length) console.log('  ice:      ' + F.iceFields.map((f) => `${f.kind} ${Math.round(f.areaKm2 / 1000)}k km2, ${Math.round(f.thickness)} m thick`).join('; '));
   if (F.fjords && F.fjords.length) console.log('  fjords:   ' + F.fjords.map((f) => `cut ${Math.round(f.depthCut)} m @${ll(f)}`).join('; '));
   if (F.volcanoes && F.volcanoes.length) console.log('  volcanoes: ' + F.volcanoes.map((f) => (f.heightM ? `${Math.round(f.heightM)} m shield` : 'hotspot') + ` @${ll(f)}`).join('; '));
+  if (F.tuyas && F.tuyas.length) console.log('  tuyas (erupted under the ice): ' + F.tuyas.map((f) => `${Math.round(f.heightM)} m tall, top ${Math.round(f.topM)} m, ${f.widthKm.toFixed(1)} km across @${ll(f)}`).join('; '));
   markFeatures(rgb, W_, F);
   writePNG(`${out}/${name}-map.png`, W_, W_ / 2, rgb);
   if (Wd.climate) writePNG(`${out}/${name}-climate.png`, W_, W_ / 2, renderKoppen(Wd.Gc, Wd.h, Wd.G, Wd.climate, W_));
