@@ -593,7 +593,7 @@ export function buildBody(rng, proto, star, host) {
     const lr = rng.fork('life');
     // its pigments, tuned to its star's light: the foliage colour follows
     // (tuned to the light that reaches the ground, the star's through this air)
-    const pigment = drawPigments(lr.fork('pigment'), star.teff, atm ? surfacePhotonPeakNm(star.teff, hist.air, atm.pressure, b.gravity, rayleighRel(atm.comp) / 1.02) : null);
+    const pigment = drawPigments(lr.fork('pigment'), star.teff, atm ? surfacePhotonPeakNm(star.teff, hist.air, atm.pressure, b.gravity, rayleighRel(atm.comp) / 1.02, atm.render) : null);
     life = {
       level: hist.lifeLevel,
       pigment,

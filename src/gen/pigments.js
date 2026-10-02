@@ -39,10 +39,23 @@ export function photonPeakNm(teff) { return 3.67e6 / teff; }
 // broad band round 600 nm), methane's red and near-infrared bands (725, 890 nm), water
 // vapour's (940 nm). Life tunes its pigments to this, not to the star's raw light.
 // air: bar by gas (evolve.js); rel: the mix's Rayleigh vs nitrogen's
-export function surfacePhotonPeakNm(teff, air, P, g, rel = 1) {
+// aer: the render's aerosols (bodies.js atmosphereRender: mie, mieAbs per metre at the
+// ground in r, g, b, and their scale height mieH), so the light the plants grew under is the
+// light the game draws: dust reddens it, organic haze takes the blue
+export function surfacePhotonPeakNm(teff, air, P, g, rel = 1, aer = null) {
   if (!air || !(P > 0.001)) return photonPeakNm(teff);
   const a = 14388 / teff, col = P * 9.81 / Math.max(g, 0.5);
   const o3 = (air.O2 || 0) / 0.21, ch4 = (air.CH4 || 0) / Math.max(P, 1e-9) * col, h2o = (air.H2O || 0) / Math.max(P, 1e-9) * col;
+  // (the aerosols' vertical optical depth for the ground's light at 680, 550 and 440 nm:
+  // what they absorb, and the share of what they scatter that goes back up (most of it goes
+  // on down, forward: hazes scatter forward); as a power law between, never rising to the
+  // red, so the render's reddish dust colours don't become extinction in the near infrared)
+  let aG = 0, aAlpha = 0;
+  if (aer && aer.mie && aer.mieH) {
+    const t = [0, 1, 2].map((i) => ((aer.mieAbs ? aer.mieAbs[i] : 0) + 0.3 * aer.mie[i]) * aer.mieH);
+    aG = t[1];
+    if (t[0] > 0 && t[2] > 0) aAlpha = dm.clamp(dm.log(t[2] / t[0]) / dm.log(680 / 440), 0, 4);
+  }
   let best = photonPeakNm(teff), bestN = -1;
   for (let l = 350; l <= 1100; l += 10) {
     const um = l / 1000, n = 1 / (um * um * um * um * (dm.exp(a / um) - 1));
@@ -50,6 +63,7 @@ export function surfacePhotonPeakNm(teff, air, P, g, rel = 1) {
     tau += o3 * (l < 320 ? 3 : 0.03 * dm.exp(-0.5 * ((l - 600) / 60) * ((l - 600) / 60)));
     tau += ch4 * (40 * dm.exp(-0.5 * ((l - 725) / 12) * ((l - 725) / 12)) + 120 * dm.exp(-0.5 * ((l - 890) / 15) * ((l - 890) / 15)));
     tau += h2o * 30 * dm.exp(-0.5 * ((l - 940) / 25) * ((l - 940) / 25));
+    if (aG > 0) tau += aG * dm.pow(550 / l, aAlpha);
     const v = n * dm.exp(-1.5 * Math.min(tau, 50));
     if (v > bestN) { bestN = v; best = l; }
   }
