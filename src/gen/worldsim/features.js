@@ -13,6 +13,7 @@
 //              they're closed (the climate's evaporation wins: erosion.js)
 //   salt flats closed basins dried to salt (the Bonneville's, the Uyuni's)
 //   deserts, forests  the largest of each, from the climate's Köppen map
+//   dune seas, mesa country  sand seas and stepped dry country (world.js)
 //   trenches   the deepest sea floor (the deepest is the world's deepest wet spot)
 //   lowest dry the lowest ground below sea level not joined to the ocean (a Dead Sea)
 //   lands      continents, the largest islands, and archipelagos and chains (small
@@ -337,6 +338,20 @@ export function findFeatures(G, h, opts = {}) {
   }
   if (opts.craters) out.craters = opts.craters.slice().sort((a, b) => b.D - a.D).slice(0, top).map((k) => ({ diameterKm: k.D, ...latLonDir(k.at), when: k.t }));
   if (opts.volcanoes) out.volcanoes = opts.volcanoes.slice(0, top);
+  // ---- dune seas and mesa country (world.js): connected regions
+  const regionsOf = (mask, kind) => {
+    const seen = new Uint8Array(n), res = [];
+    for (let c0 = 0; c0 < n; c0++) {
+      if (seen[c0] || !mask[c0]) continue;
+      const cells = [], q = [c0]; seen[c0] = 1;
+      while (q.length) { const c = q.pop(); cells.push(c); for (let e = G.nStart[c]; e < G.nStart[c + 1]; e++) { const o = G.nbr[e]; if (!seen[o] && mask[o]) { seen[o] = 1; q.push(o); } } }
+      let area = 0; for (const c of cells) area += G.area[c];
+      res.push({ kind, areaKm2: area * toReal * toReal / 1e6, ...where(cells[(cells.length / 2) | 0]) });
+    }
+    return res.sort((a, b) => b.areaKm2 - a.areaKm2).slice(0, top);
+  };
+  if (opts.dunes) out.duneSeas = regionsOf(opts.dunes, 'dune sea');
+  if (opts.mesas) out.mesaCountry = regionsOf(opts.mesas, 'mesa country');
   // ---- deserts and forests: connected regions of the climate's Köppen map
   if (opts.climate && opts.Gc) {
     const Gc = opts.Gc, K = opts.climate.koppen, m = Gc.n;

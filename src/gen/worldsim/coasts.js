@@ -103,7 +103,8 @@ export class Coasts {
         // coral: warm, clear (little river mud), shallow, building up to the surface, as
         // fringing reefs along the land (within ~2 cells) or barrier reefs on a shelf's edge
         // (over deep water), or where it has already taken hold: not across whole shelves
-        const warm = Math.abs(G.dir[c * 3 + 1]) < this.warm * warmK;
+        // (warm: with the climate model's seas, the coldest month above ~18 C, as corals need)
+        const warm = this.sst ? this.sst[c] + (this.dT || 0) > 291 : Math.abs(G.dir[c * 3 + 1]) < this.warm * warmK;
         const muddy = E && E.qs ? E.qs[c] / G.area[c] > 0.002 * dt / 2.5e5 : false;
         let site = reef[c] > 0 || coast[c] === 2;
         if (!site) for (let e = G.nStart[c]; e < G.nStart[c + 1] && !site; e++) { const o = G.nbr[e]; if (coast[o] === 2 || h[o] < -150) site = true; }

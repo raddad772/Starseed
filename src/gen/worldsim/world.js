@@ -119,12 +119,25 @@ export function worldSim(body, star, opts = {}) {
   log(`plates: ${myr} Myr, ${T.plates.filter((q) => !q.dead).length} plates, ${T.hot.length} hotspots (${T.activity.name}), ${(T.events || []).length} rifts/welds, ${T.impacts.events.length} impacts`);
   // the finer epoch: the plates' surface and uplift, rivers cutting it finer
   const h = new Float64Array(G.n), U = new Float64Array(G.n), rain = new Float64Array(G.n), pet = new Float64Array(G.n);
+  // the climate's temperatures for the ice and the reefs: the yearly mean brought to sea
+  // level (the ice puts its own height back), snowfall, and the sea's coldest month
+  const lapse = climOpts.lapse ?? 0.0065;
+  const tSea = new Float64Array(Gc.n), tCold = new Float64Array(Gc.n), tmSea = new Float64Array(12 * Gc.n);
+  for (let c = 0; c < Gc.n; c++) {
+    const up = clim.sea[c] ? 0 : lapse * Math.max(0, clim.h[c]);
+    tSea[c] = clim.Tann[c] + up;
+    let mn = 1e9; for (let m = 0; m < 12; m++) { mn = Math.min(mn, clim.Tm[m * Gc.n + c]); tmSea[m * Gc.n + c] = clim.Tm[m * Gc.n + c] + up; } tCold[c] = mn;
+  }
+  const Tsl = new Float32Array(G.n), snow = new Float32Array(G.n), sst = new Float32Array(G.n), TmSL = new Float32Array(12 * G.n);
+  const monthSlice = Array.from({ length: 12 }, (_, m) => tmSea.subarray(m * Gc.n, (m + 1) * Gc.n));
   const d = [0, 0, 0];
   for (let c = 0; c < G.n; c++) {
     d[0] = G.dir[c * 3]; d[1] = G.dir[c * 3 + 1]; d[2] = G.dir[c * 3 + 2];
     h[c] = Gt.sample(ht, d); U[c] = Gt.sample(ut, d);
     rain[c] = Math.max(0.03, Gc.sample(clim.Pann, d) / 1000); // (rain in m/yr, from the climate)
     pet[c] = petOf(Gc.sample(clim.Tann, d), rain[c]);
+    Tsl[c] = Gc.sample(tSea, d); snow[c] = rain[c]; sst[c] = Gc.sample(tCold, d);
+    for (let m = 0; m < 12; m++) TmSL[m * G.n + c] = Gc.sample(monthSlice[m], d);
     if (h[c] > 0) h[c] += (hashJitter(c) - 0.5) * 5;
   }
   const h0 = Float64Array.from(h);
@@ -139,6 +152,7 @@ export function worldSim(body, star, opts = {}) {
   const steps = opts.steps ?? 60, dt = opts.dt ?? 2.5e5;
   const hb = new Float64Array(G.n);
   const ice = new Glaciers(G, p.climate, scale);
+  ice.Tsl = Tsl; ice.TmSL = TmSL; ice.lapse = lapse;
   const pH = H.seaPH ?? 8.2;
   const sea2 = new Coasts(G, { corals: H.life && H.life.animals != null && H.lifeStage >= 6, warm: 0.5, pH });
   const hMax = 9000 * Math.sqrt(9.81 / body.gravity);
@@ -162,7 +176,9 @@ export function worldSim(body, star, opts = {}) {
     E.step(dt);
     // the ice, where it's cold enough then (the history's climate vs today's)
     const ago = (steps - k) * dt / 1e6;
-    iceMax = Math.max(iceMax, ice.step(h, E, rain, dt, (H.at(ago, 'T') ?? H.T) - H.T));
+    const dTnow = (H.at(ago, 'T') ?? H.T) - H.T;
+    iceMax = Math.max(iceMax, ice.step(h, E, snow, dt, dTnow));
+    sea2.sst = sst; sea2.dT = dTnow;
     // the sea's edge: waves, sand, reefs (warm seas reach further from the equator in a warm climate)
     sea2.step(h, lith, E, dt, 1 + ((H.at(ago, 'T') ?? H.T) - 288) / 40);
     // isostasy: the regional part of this step's wear and fill (spread over a few hundred
@@ -224,7 +240,26 @@ export function worldSim(body, star, opts = {}) {
   // the beaches' sand shows as the surface rock there
   const rock = lith.exposed();
   for (let c = 0; c < G.n; c++) if (sea2.beach[c] > 2 && h[c] >= 0) rock[c] = sea2.sand[c];
-  return Object.assign(out, { h, h0, E, Gt, ht, tect: T, impacts: Ef, craters: T.impacts.events.concat(Ef.events), volcanoes, lith, rock, glaciers: ice, veg: E.veg, coasts: sea2 });
+  // dune seas and mesa country (for the local detail to draw): sand seas where it's truly
+  // dry, sand to hand (loose river sand, sandstone, beach sand) and the ground gentle;
+  // mesas and buttes where dry country cut into a hard cap over soft rock stands in steps
+  const dunes = new Uint8Array(G.n), mesas = new Uint8Array(G.n);
+  for (let c = 0; c < G.n; c++) {
+    if (h[c] < 0 || E.base[c] || ice.ice[c] > 0) continue;
+    d[0] = G.dir[c * 3]; d[1] = G.dir[c * 3 + 1]; d[2] = G.dir[c * 3 + 2];
+    const k = clim.koppen[Gc.cellAt(d[0], d[1], d[2])];
+    if (!k || k[0] !== 'B') continue;
+    let steep = 0;
+    for (let e = G.nStart[c]; e < G.nStart[c + 1]; e++) steep = Math.max(steep, Math.abs(h[c] - h[G.nbr[e]]));
+    const top = rock[c];
+    const sandy = top === ROCK.alluvium || top === ROCK.sandstone || top === ROCK['quartz sand'];
+    if (k[1] === 'W' && sandy && steep < 150) dunes[c] = 1;
+    const cap = top === ROCK.sandstone || top === ROCK.basalt || top === ROCK.limestone;
+    let softBelow = false;
+    for (let i = 1; i < lith.count[c]; i++) if (lith.type[c * lith.L + i] === ROCK.shale) softBelow = true;
+    if (cap && softBelow && steep > 150 && steep < 1500) mesas[c] = 1;
+  }
+  return Object.assign(out, { h, h0, E, Gt, ht, tect: T, impacts: Ef, craters: T.impacts.events.concat(Ef.events), volcanoes, lith, rock, glaciers: ice, veg: E.veg, coasts: sea2, dunes, mesas });
 }
 
 // Each fine cell's layers from the plates' record there: the basement (granite
@@ -284,7 +319,9 @@ function climateOn(Gc, Gsrc, hsrc, o, seaSrc) {
     d[0] = Gc.dir[c * 3]; d[1] = Gc.dir[c * 3 + 1]; d[2] = Gc.dir[c * 3 + 2]; hc[c] = Gsrc.sample(hsrc, d, uv);
     if (sea) sea[c] = seaSrc[Gsrc.cellAt(d[0], d[1], d[2])];
   }
-  return climate(Gc, { ...o, h: hc, sea });
+  const out = climate(Gc, { ...o, h: hc, sea });
+  out.h = hc;
+  return out;
 }
 // potential evaporation (m/yr) from the yearly mean temperature (K) and rain (m/yr):
 // ~0.7 m/yr in a mild wet climate, 2-3 in a hot desert (its dry air drinks more), little

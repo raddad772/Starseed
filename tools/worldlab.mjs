@@ -65,7 +65,7 @@ if (init === 'auto') {
   else if (Wd.path === 'stagnant') rgb = renderBarren(Wd.G, { h: Wd.h, mare: Wd.volc, fresh: new Float32Array(Wd.G.n), river: Wd.river }, W_, [1.0, 0.72, 0.52]);
   else rgb = renderBarren(Wd.G, Wd, W_, p.icy ? [0.92, 0.97, 1.05] : [1, 0.98, 0.95]);
   // what a surveyor would name first
-  const F = findFeatures(Wd.G, Wd.h, { E: Wd.E, scale: body.R / body.radiusM, craters: Wd.craters || [], volcanoes: Wd.volcanoes, glaciers: Wd.glaciers, coasts: Wd.coasts, rock: Wd.rock, rockNames: ROCKS.map((r) => r.name), climate: Wd.climate, Gc: Wd.Gc, top: 5 });
+  const F = findFeatures(Wd.G, Wd.h, { E: Wd.E, scale: body.R / body.radiusM, craters: Wd.craters || [], volcanoes: Wd.volcanoes, glaciers: Wd.glaciers, coasts: Wd.coasts, rock: Wd.rock, rockNames: ROCKS.map((r) => r.name), climate: Wd.climate, Gc: Wd.Gc, dunes: Wd.dunes, mesas: Wd.mesas, top: 5 });
   if (Wd.glaciers) paintIce(rgb, W_, Wd.G, Wd.glaciers.ice);
   const ll = (f) => `${f.lat.toFixed(0)},${f.lon.toFixed(0)}`;
   console.log('features:');
@@ -76,6 +76,8 @@ if (init === 'auto') {
   if (F.lakes.length) console.log('  lakes:    ' + F.lakes.map((f) => `${f.underIce ? 'under the ice, ' : f.salt ? 'salt ' : ''}${Math.round(f.areaKm2)} km2, ${Math.round(f.depth)} m deep${f.level < 0 ? `, surface ${Math.round(-f.level)} m below sea level` : ''} @${ll(f)}`).join('; '));
   if (F.saltFlats.length) console.log('  salt flats: ' + F.saltFlats.map((f) => `${Math.round(f.areaKm2)} km2${f.height < 0 ? ` at ${Math.round(-f.height)} m below sea level` : ''} @${ll(f)}`).join('; '));
   if (F.deserts.length) console.log('  deserts:  ' + F.deserts.map((f) => `${f.kind} ${Math.round(f.areaKm2 / 1000)}k km2 @${ll(f)}`).join('; '));
+  if (F.duneSeas && F.duneSeas.length) console.log('  dune seas: ' + F.duneSeas.map((f) => `${Math.round(f.areaKm2 / 1000)}k km2 @${ll(f)}`).join('; '));
+  if (F.mesaCountry && F.mesaCountry.length) console.log('  mesa country: ' + F.mesaCountry.map((f) => `${Math.round(f.areaKm2 / 1000)}k km2 @${ll(f)}`).join('; '));
   if (F.forests.length) console.log('  forests:  ' + F.forests.map((f) => `${f.kind} ${Math.round(f.areaKm2 / 1000)}k km2 @${ll(f)}`).join('; '));
   if (F.trenches.length) console.log('  trenches: ' + F.trenches.map((f) => `${Math.round(f.depth)} m @${ll(f)}`).join('; '));
   if (F.craters.length) console.log('  craters:  ' + F.craters.map((f) => `${Math.round(f.diameterKm)} km`).join('; '));

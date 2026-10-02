@@ -39,6 +39,9 @@ export class Glaciers {
   // law), its height (lapse), and the climate then vs now (dT)
   temperatures(h, dT) {
     const { G, cl, T } = this;
+    // (with the climate model's temperatures brought to sea level: those, less the lapse
+    // to each cell's height now)
+    if (this.Tsl) { for (let c = 0; c < G.n; c++) T[c] = this.Tsl[c] - this.lapse * Math.max(h[c], 0) + dT; return T; }
     for (let c = 0; c < G.n; c++) {
       const y = G.dir[c * 3 + 1];
       let rel;
@@ -52,7 +55,7 @@ export class Glaciers {
   }
 
   // one step of dt years over the routed surface E (after E.route/drain this step);
-  // precip: per-cell snowfall weight (the rain field, ~0..1); returns ice-covered cells
+  // precip: per-cell snowfall (m/yr of water; ~1 m/yr is snowy); returns ice-covered cells
   step(h, E, precip, dt, dT) {
     const { G, ice, flux, cut, everIce } = this;
     const n = G.n, area = G.area;
@@ -63,7 +66,16 @@ export class Glaciers {
     for (let k = n - 1; k >= 0; k--) {
       const c = order[k];
       if (base[c] && h[c] < -300) continue; // (open sea: ice shelves don't carve)
-      const b = T[c] < MELT_T ? ACC_MAX * Math.min(1, (MELT_T - T[c]) / 10) * Math.max(0.2, precip[c]) : -Math.min(ABL_MAX, ABL_PER_K * (T[c] - MELT_T));
+      let b;
+      if (this.TmSL) {
+        // with the climate's months: the degree-day model. Snow is what falls in freezing
+        // months; melt ~5 mm of water per degree-day above freezing (Siberia's -10 C year
+        // has +19 C summers that melt it all; a cold summer keeps a cold-winter's snow)
+        const up = this.lapse * Math.max(h[c], 0) - dT;
+        let pdd = 0, frost = 0;
+        for (let m = 0; m < 12; m++) { const t = this.TmSL[m * n + c] - up - 273.15; if (t > 0) pdd += t * 30.4; else frost++; }
+        b = Math.max(-ABL_MAX, Math.min(ACC_MAX, precip[c] * frost / 12 - 0.005 * pdd));
+      } else b = T[c] < MELT_T ? ACC_MAX * Math.min(1, (MELT_T - T[c]) / 10) * Math.min(1, Math.max(0.05, precip[c])) : -Math.min(ABL_MAX, ABL_PER_K * (T[c] - MELT_T));
       flux[c] = Math.max(0, flux[c] + b * area[c]);
       const r = rcv[c];
       if (r >= 0 && flux[c] > 0) flux[r] += flux[c];
