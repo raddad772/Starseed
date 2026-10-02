@@ -128,6 +128,9 @@ surveying many worlds; bit-exact across runs and clients, not across revisions):
   along its flow lines, a ridge on each otherwise) and capped near its edge by Nye's plastic
   profile (H^2 = 2 tau/(rho g) x; it was 3.5 km thick at the ice front). Checked on Opast's
   sheet (71N 102E) and a mountain ice field (-45, -107).
+- **Rivers from afar:** a river narrower than the sampling's spacing is drawn as wide as that
+  spacing (its true width near), so far terrain shows it as a line of water, not as the few
+  vertices that happen to land in it (dotted water, or none).
 - **Sampler speed (bit-identical heights):** `faceUVFromDir` keeps its last answer (a sample
   reads many fields at one point; atan was 12%); `corners16` no longer allocates; the
   refinement's river curves and the great rivers' channel segments (groups of eight) are culled

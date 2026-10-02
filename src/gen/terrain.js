@@ -656,7 +656,9 @@ export class TerrainGenerator {
       }
     }
     if (rv) {
-      const half = rv.w * 0.5, flank = half * 3 + S.G.spacing * (0.02 + 0.12 * rv.k);
+      // (a river narrower than the sampling's spacing drawn as wide as it, so it shows as a line
+      // from afar, not as the few samples that happen to land in it; its own width near)
+      const half = Math.max(rv.w * 0.5, 0.5 * minWavelength), flank = Math.max(rv.w * 1.5 + S.G.spacing * (0.02 + 0.12 * rv.k), 1.25 * half);
       if (rv.dist < flank) {
         const bank = Math.max(rv.hs, 0) + 1 + 0.05 * rv.depth;
         h += (bank - h) * dm.smoothstep(flank, half * 1.2, rv.dist);
