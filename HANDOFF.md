@@ -215,6 +215,13 @@ surveying many worlds; bit-exact across runs and clients, not across revisions):
   map and its landmarks at 400/60/12 km; the GPU check page takes `?seed=&body=` (runs the sim).
 
 Open:
+- **Grand Canyon-style canyons (Dave asked how it formed, 2026-10-02):** a big river holding its
+  course while a plateau of flat-lying layered rock rises under it, in a dry climate: the inner
+  gorge cut down, then widened by side canyons and scarp retreat, hard beds standing as cliffs
+  and soft ones as slopes. The parts exist (rock columns with hard/soft beds and collapse to each
+  rock's angle in the pyramid; river incision in the tile sims; the world sim's mesa country), but
+  nothing makes them meet: uplift under an antecedent river in the world sim, then enough
+  incision at the refinement and pyramid levels (a real canyon is 1-3 km wide at game scale).
 - **Desert landforms:** dunes are in (below); wadis and mesas (the world sim marks mesa
   country) still to draw.
 - **Big rivers:** now drawn from the refinement's own drainage (below); finer meanders (a lateral
