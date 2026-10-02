@@ -112,10 +112,16 @@ export function climate(G, opts) {
   if (opts.locked && wet > 0.02 * n) { const ss = opts.substellar || [1, 0, 0]; for (let c = 0; c < n; c++) cloud[c] = 0.25 * Math.min(1, P) * Math.max(0, d[c * 3] * ss[0] + d[c * 3 + 1] * ss[1] + d[c * 3 + 2] * ss[2]); }
   // (life's cover, if given: forests darken the land; snow on a forest still shows dark)
   const vegCover = opts.cover || null, vegForest = opts.forest || null;
+  // (snow needs air to carry the water to it: in a thin air the vapour freezes out at the
+  // coldest place, the cold trap, which sets its frost point: the ice lies only where the ground
+  // is nearly as cold as that (Mars' caps, and its winter pole's frost), the rest bare however
+  // cold; as the terrain's own snow rule has it)
+  const thinK = 1 - dm.clamp(dm.log10(P) + 2, 0, 1);
+  let iceLo = 261, iceHi = 271;
   const albedoOf = (c, Tc) => {
     const darken = vegCover && !sea[c] ? 0.05 * vegCover[c] * (0.4 + 0.6 * (vegForest ? vegForest[c] : 0)) : 0;
     const base = (sea[c] ? 0.1 : 0.16 - darken) + cloud[c]; // (clouds even out land and sea, seen from space)
-    const ice = (Tc < 261 ? 1 : Tc < 271 ? (271 - Tc) / 10 : 0) * (vegForest && !sea[c] ? 1 - 0.5 * vegForest[c] * (vegCover ? vegCover[c] : 1) : 1);
+    const ice = (Tc < iceLo ? 1 : Tc < iceHi ? (iceHi - Tc) / 10 : 0) * (vegForest && !sea[c] ? 1 - 0.5 * vegForest[c] * (vegCover ? vegCover[c] : 1) : 1);
     return Math.min(0.8, base + (0.6 - base) * ice + (opts.albedo ?? 0.3) - 0.22);
   };
   // the poleward diffusion of band means in x = sin(lat): d/dx (D (1 - x^2) dT/dx), implicit (tridiagonal)
@@ -145,6 +151,7 @@ export function climate(G, opts) {
         for (let b = 0; b < NB; b++) Tb[b] = bandA[b] > 0 ? Tb[b] / bandA[b] : 0;
         diffuse();
         for (let c = 0; c < n; c++) { const b = bandOf[c]; T[c] += (Tb2[b] - Tb[b]) * bandC[b] / (sea[c] ? Cocean : Cland); }
+        if (thinK > 0) { let tmin = 1e9; for (let c = 0; c < n; c++) if (T[c] < tmin) tmin = T[c]; iceLo = 261 + (Math.min(261, tmin + 6) - 261) * thinK; iceHi = iceLo + 10; }
         // each cell: sunlight, the currents, heat to space (linearised about now), and the pull of its band
         for (let c = 0; c < n; c++) {
           const C = sea[c] ? Cocean : Cland, o = A * olr(T[c]), slope = ex * o / T[c];

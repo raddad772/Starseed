@@ -122,7 +122,7 @@ export function worldSim(body, star, opts = {}) {
     // at the poles from its hydrocarbon seas (liquids.js)
     let rainK0 = 1;
     if (!wet && H.titanish && (H.mainLiquid === 'methane' || H.mainLiquid === 'ethane')) { wet = [Math.max(0, age - 1), age]; rainK0 = 0.005; seaFrac = Math.min(0.05, (H.mainLiquidDepth || 0) / ((H.mainLiquidDepth || 0) + 100)); log('methane rain: channels and polar lakes'); }
-    const S = stagnantWorld(G, { rng: rng.fork('stagnant'), body, age, scale, wet, seaFrac, rainK0, tier: H.tier, volcEnd: 1 + 15 * dm.pow(body.massEarth, 0.6), rate, spike, resurfaceAt, resurfaceShare });
+    const S = stagnantWorld(G, { rng: rng.fork('stagnant'), body, age, scale, wet, seaFrac, rainK0, tier: H.tier, volcEnd: 1 + 15 * dm.pow(body.massEarth, 0.6), rate, spike, resurfaceAt, resurfaceShare, known: body.known });
     const volcanoes = S.shields.map((v) => ({ ...latLonOf(v.at), heightM: v.H }));
     const melt = stampFresh(G, S.h, H, body, scale);
     const crater = { crat: S.crat, g: body.gravity, scale, Dw: S.dMin * 1000, Dair: airCut(body.atmosphere ? body.atmosphere.pressure : 0, body.gravity) * 1000 * scale };

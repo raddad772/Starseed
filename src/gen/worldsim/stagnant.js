@@ -34,7 +34,11 @@ export function stagnantWorld(G, opts) {
   const lump = new Float64Array(n), wob = new Float64Array(n);
   for (let c = 0; c < n; c++) { lump[c] = (hashInts(c, rng.u32()) >>> 0) / 4294967296; wob[c] = (hashInts(c, rng.u32()) >>> 0) / 4294967296; }
   smoothField(G, lump, Math.round(G.N / 6)); smoothField(G, wob, Math.round(G.N / 10));
-  const dich = rng.next() < 0.65 ? { pole: rng.unitVector(), drop: rng.range(2500, 6000) * scale * VEXAG * 2 } : null;
+  // (a known world's history (opts.known: the Solar System's) where it has one: its dichotomy,
+  // its volcanic rise's giants, its great canyon; the same draws made either way)
+  const known = opts.known || {};
+  const dichRoll = rng.next();
+  const dich = (known.dichotomy ?? dichRoll < 0.65) ? { pole: rng.unitVector(), drop: rng.range(2500, 6000) * scale * VEXAG * 2 } : null;
   for (let c = 0; c < n; c++) {
     h[c] = (lump[c] - 0.5) * 3000 * scale * VEXAG * 2;
     if (dich) h[c] -= dich.drop * dm.smoothstep(-0.15, 0.2, dot(c, dich.pole) + (wob[c] - 0.5) * 0.5);
@@ -42,7 +46,7 @@ export function stagnantWorld(G, opts) {
   // ---- the volcanic province and its giants
   const tier = opts.tier ?? 1;
   const volcEnd = opts.volcEnd ?? age;
-  const nShield = [rng.range(0, 1.5), rng.range(1, 3.5), rng.range(3, 5.5), rng.range(5, 8.5)][tier] | 0;
+  const nShield = Math.max(known.shields || 0, [rng.range(0, 1.5), rng.range(1, 3.5), rng.range(3, 5.5), rng.range(5, 8.5)][tier] | 0);
   const rise = nShield > 0 ? { at: dich ? tilt(rng, dich.pole, rng.range(1.2, 1.9)) : rng.unitVector(), R: rng.range(0.25, 0.45), H: rng.range(4000, 9000) * scale * VEXAG * 1.5 } : null;
   const shields = [];
   for (let i = 0; i < nShield; i++) {
@@ -52,7 +56,7 @@ export function stagnantWorld(G, opts) {
     const Rreal = (giant ? 300e3 : rng.range(80e3, 220e3)) * dm.clamp(3.7 / g, 0.6, 1.6);
     shields.push({ at, H: Hreal * scale * VEXAG, R: Rreal * scale, t0: rng.range(0.1, 0.6) * volcEnd, t1: volcEnd * rng.range(0.6, 1), cells: null });
   }
-  const canyon = rise && rng.next() < 0.6 ? makeCanyon(rng, rise, scale) : null;
+  const canyonRoll = rise ? rng.next() : 1, canyon = rise && (known.canyon ?? canyonRoll < 0.6) ? makeCanyon(rng, rise, scale) : null;
   // ---- the bombardment, the volcanoes, the wet era, through time
   const imp = new Impacts(G, { rng: rng.fork('impacts'), g, pressure: body.atmosphere ? body.atmosphere.pressure : 0, scale, rate: opts.rate ?? 1, spike: opts.spike });
   // (smaller ones are the finer levels' (craters.js): the grid draws only what it draws round)
@@ -71,6 +75,11 @@ export function stagnantWorld(G, opts) {
   // vents and most coronae: drawn by the finer levels, shieldField)
   const srng = rng.fork('shieldFields'), shieldFields = [];
   const nFlows = Math.round(vrng.range(60, 160) * (1 + tier) / 2), nCoronae = Math.round(vrng.range(4, 14));
+  // (a dichotomy's lowland is a basin: partway through the volcanic era lava and sediment fill
+  // it to a flat floor that embays what stood up, and its crater record starts again (Mars'
+  // northern plains, far younger and smoother than its southern highlands))
+  const fillAt = dich ? rng.fork('lowlandFill').range(0.2, 0.35) * Math.min(age, volcEnd) : null;
+  let filled = false;
   for (let t = 0; t < age; t += DT_MYR / 1000) {
     stats.craters += imp.step(DT_MYR, dMin, (c, dh) => { h[c] += dh; }, t * 1000, t, h).length;
     cum.push(cum[cum.length - 1] + imp.density(DT_MYR, t));
@@ -89,11 +98,21 @@ export function stagnantWorld(G, opts) {
       }
     }
     if (canyon && t > canyon.t && !canyon.done) { carveCanyon(G, h, canyon); canyon.done = true; }
+    if (dich && !filled && t >= fillAt) {
+      filled = true;
+      const low = [];
+      for (let c = 0; c < n; c++) if (dot(c, dich.pole) + (wob[c] - 0.5) * 0.5 > 0.12) low.push(c);
+      if (low.length) {
+        const hs2 = low.map((c) => h[c]).sort((a, b) => a - b), level = hs2[Math.floor(0.45 * (hs2.length - 1))];
+        for (const c of low) if (h[c] < level) { h[c] = level - (level - h[c]) * 0.1; volc[c] = 1; since[c] = t; }
+      }
+      stats.lowlandFilled = Math.round(t * 1000);
+    }
     if (opts.resurfaceAt != null && !stats.resurfaced && t >= opts.resurfaceAt) {
       const level = resurface(G, h, opts.resurfaceShare ?? 0.75, volc);
-      // (the plains flooded; the highlands left standing crumpled in the same upheaval (tesserae),
-      // their old craters wrecked: they keep a little more than the plains, not the whole record)
-      for (let c = 0; c < n; c++) since[c] = h[c] < level ? t : Math.max(since[c], t - 0.15);
+      // (only the plains it flooded start their crater record again; the highlands it left
+      // standing keep theirs)
+      for (let c = 0; c < n; c++) if (h[c] < level) since[c] = t;
       stats.resurfaced = true;
     }
     // after an overturn the interior stays hot: lava keeps welling up over the new plains (flow

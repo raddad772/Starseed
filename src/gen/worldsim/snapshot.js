@@ -22,7 +22,7 @@ import { Noise3 } from '../../core/noise.js';
 import { dunePatches } from '../dunes.js';
 import { ROCK_UP } from './lithology.js';
 
-export const SIM_VERSION = 23;
+export const SIM_VERSION = 28;
 
 // a world's grid size: maxN for an Earth-sized one, finer cells don't help a small one
 // (N ~ sqrt(radius): Mars ~210, the Moon ~150, a moonlet 64)
@@ -352,6 +352,11 @@ export class SnapshotSampler {
     return s;
   }
   Tsea(x, y, z) { return this.Gc ? this._gcRead(this.s.Tsea, x, y, z) : null; }
+  // the world's coldest (sea-level, the year round): where a thin air's water freezes out
+  get TseaMin() {
+    if (this._tmin == null) { let m = 1e9; const f = this.s.Tsea; if (f) for (let c = 0; c < f.length; c++) if (f[c] < m) m = f[c]; this._tmin = m < 1e8 ? m : null; }
+    return this._tmin;
+  }
   rain(x, y, z) { return this.Gc ? this._gcRead(this.s.P, x, y, z) : null; }
   // how much of a sand sea it is there (0..1: its cells blended, so the edges thin out)
   duneMask(x, y, z) {

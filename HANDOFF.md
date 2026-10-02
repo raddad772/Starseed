@@ -115,9 +115,9 @@ surveying many worlds; bit-exact across runs and clients, not across revisions):
   (pressure over gravity: `impacts.js airCut`, ~30 m real under Earth's air, ~1.3 km on Moadeal),
   and above the cut it lets through only a share (`craters.js airKeep`: 1 - exp(-(D/10 Dair)^2),
   ~6% of the craters 3 cuts and up, a third of those 10 cuts and up), in the world sim's draws
-  and the lattice's alike. A stagnant-lid overturn now resets the crater record of the highlands
-  it leaves standing too (crumpled, as Venus's tesserae: they keep 150 Myr more than the plains);
-  they kept the whole 4.5 Gyr record, so Moadeal's highlands were saturated with craters.
+  and the lattice's alike. (An overturn resets only the plains it floods: Dave, "It should only
+  reset the parts it covered"; Moadeal's crowded highlands are its young system's late
+  bombardment.)
 - **The Solar System (seed `SOL`) and atmospheric physics fixed by it (SIM 23):** `?seed=SOL` is
   the Sun and its eight planets as they are (orbits, masses, make-up: system.js `SOL`), all else
   the same physics as any system (moons generated). Its Mars came out 0.54 bar, Venus 14, so the
@@ -142,6 +142,26 @@ surveying many worlds; bit-exact across runs and clients, not across revisions):
   1167 K). Moadeal (Dave's start world): 57 bar 612 K -> 190 bar 1184 K (its surface would glow).
   Venus is ~60 K hot for its pressure; next: the other known rocky worlds (the Moon, Galilean
   moons, Titan, Triton, Pluto) as presets to check against.
+- **SOL's moons and radii (SIM 28):** SOL has its real moons (the Moon, Phobos, Deimos, the
+  Galilean four, Enceladus, Rhea, Titan, Titania, Oberon, Triton: real orbits, masses, make-up;
+  Titan's thick air known, Ganymede's and Callisto's absence of one). They showed: radii 17-46%
+  too big for small worlds (R ~ M^0.27 for all), now uncompressed density from make-up (iron,
+  rock, ice by volume) times self-compression 1 + 0.35 M^0.6: every SOL world within a few % of
+  its real radius; Europa labelled volcanic (icy only past 20% water): icy past 4% water
+  (`ICY_WATER`, a shell tens of km deep), checked before volcanism. Thin-air frozen water covers
+  only its cold traps (Mars' caps, ~5% of the area at 16 mbar, poleward of ~70 degrees). Rays
+  only on worlds with next to no air. On a dusty world exposed rock wears the dust's rind.
+- **Mars looking like Mars (SIM 25):**
+  - a Mars-type world that once had water rusts (ferric/ochre dust, no grey basalt draw);
+  - snow (the terrain's rule and the climate's ice albedo) needs air to carry water: in thin
+    air it lies only where it's nearly as cold as the world's coldest place (the cold trap
+    sets the frost point), the climate's ice albedo likewise (it treated all frozen ground as
+    snow);
+  - on a dusty world (dry, under 0.05 bar) dust blankets all but steep ground;
+  - a known world carries its history (body.known; SOL's Mars: dichotomy, five giant shields,
+    a great canyon), the same draws made either way;
+  - a dichotomy's lowland fills with lava and sediment partway through the volcanic era, to a
+    flat floor embaying what stood up; only the ground it covers starts its craters again.
 - **Glaciers are a surface (S_ICE):** the ice was paint on the bed (every valley under an ice
   cap showing, its edge a smooth curve across the land). Now the ice fills the ground's lows to a
   level as much as it holds (`terrain.js`, after everything else): thin ice lies in the valleys

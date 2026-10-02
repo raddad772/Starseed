@@ -129,7 +129,7 @@ export function evolveWorld(ctx) {
   const frozenOut = teqBareOf(ctx.S) < 125;
   // a moon's frozen methane-and-nitrogen air (Titan) on cold, icy, big-enough worlds
   const teqBare = teqBareOf(ctx.S);
-  const titanish = teqBare < 125 && water0 > 0.08 && massE > 0.008 && rng.next() < (ctx.kind === 'planet' ? 0.6 : 0.28) && teqBare > 65; // (colder: the nitrogen freezes onto the ground)
+  const titanish = teqBare < 125 && water0 > 0.08 && massE > 0.008 && ((ctx.known && ctx.known.titanish) ?? rng.next() < (ctx.kind === 'planet' ? 0.6 : 0.28)) && teqBare > 65; // (colder: the nitrogen freezes onto the ground)
   // ---- what it's made of (WORLDSIM.md 16; broad curves): the mantle's redox (dIW: Earth
   // ~+3.5) from its water and the cloud's carbon (carbon worlds are reduced); it decides
   // what the volcanoes breathe: CO2, water, SO2 when oxidised; CO, H2, CH4, NH3, H2S

@@ -18,23 +18,22 @@ const LOG10 = (x) => dm.log10(x);
 
 // ---------------------------------------------------------------- radius
 
-// Mass-radius relations: rocky worlds R ~ M^0.27 tuned by iron/water content
-// (Zeng-style trends); envelopes inflate cores (sub-Neptunes 2-3.5 R_earth);
-// giants are ~1 R_jup almost independent of mass, inflated when strongly irradiated.
+// Mass-radius relations: a solid world from its make-up, its uncompressed density (iron, rock
+// and ice mixed by volume) squeezed by its own weight (~1.35x at an Earth's mass, a few % at
+// the Moon's: Earth 6371 km, Mars ~3300, the Moon ~1700, Europa ~1550; as R ~ M^0.27 among
+// super-Earths); envelopes inflate cores (sub-Neptunes 2-3.5 R_earth); giants are ~1 R_jup
+// almost independent of mass, inflated when strongly irradiated.
+export const ICY_WATER = 0.04;   // (water's share of a world's mass past which its surface is ice: a shell tens of km deep)
 export function radiusFromMass(massE, comp, insolation) {
-  if (massE < 2e-4) {
-    // small bodies are not self-compressed: radius from bulk density
-    const rho = 3300 - 1900 * Math.min(comp.water * 2, 1);
-    const r = dm.cbrt(3 * massE * U.M_EARTH / (4 * dm.PI * rho));
-    return r / U.R_EARTH;
-  }
   if (comp.envelope > 0.5) { // gas giant
     const mJ = massE / 317.8;
     let rJ = dm.pow(mJ, -0.04) * (mJ < 0.3 ? 0.75 + 0.833 * mJ : 1.0);
     rJ *= 1 + 0.35 * dm.smoothstep(150, 1500, insolation); // hot-Jupiter inflation
     return rJ * 11.21;
   }
-  const rockR = dm.pow(massE, 0.27) * (1 + 0.55 * comp.water - 0.32 * (comp.iron - 0.32));
+  const iron = comp.iron ?? 0.32, water = comp.water ?? 0, rock = Math.max(0, 1 - iron - water - (comp.envelope || 0));
+  const rho = 1 / (iron / 8000 + rock / 3300 + water / 1100) * (1 + 0.35 * dm.pow(Math.max(massE, 0), 0.6));
+  const rockR = dm.cbrt(3 * massE * U.M_EARTH / (4 * dm.PI * rho)) / U.R_EARTH;
   if (comp.envelope > 0.001) {
     // H/He envelope: radius grows ~ sqrt of envelope fraction
     const inflate = 1 + 2.2 * dm.sqrt(comp.envelope) * dm.pow(massE / 5, -0.15);
@@ -98,12 +97,14 @@ const MINERALS = {
   slate: { rock: '#4b5058', rock2: '#646a72', regolith: '#6d6a66', sand: '#8f877c' },
 };
 
-function pickMinerals(rng, kind) {
+function pickMinerals(rng, kind, wetPast = false) {
   let key;
   if (kind === 'organic') key = 'organic';
   else if (kind === 'icy') key = rng.weighted([[5, 'ice'], [2, 'tholin'], [1, 'slate']]);
   else if (kind === 'volcanic') key = rng.weighted([[5, 'sulfur'], [2, 'basalt'], [1, 'ochre']]);
-  else if (kind === 'ferric') key = rng.weighted([[5, 'ferric'], [2, 'ochre'], [1, 'basalt']]);
+  // (a dry world under thin CO2 that once had water has rusted: its iron oxidised by the water
+  // and the sunlight's UV, its dust red or ochre (Mars'); without that past its basalt may show)
+  else if (kind === 'ferric') key = rng.weighted(wetPast ? [[5, 'ferric'], [2, 'ochre'], [0, 'basalt']] : [[5, 'ferric'], [2, 'ochre'], [1, 'basalt']]);
   else if (kind === 'airless') key = rng.weighted([[4, 'anorth'], [3, 'basalt'], [2, 'carbon'], [1, 'slate'], [1, 'ochre']]);
   else key = rng.weighted([[3, 'granite'], [3, 'basalt'], [2, 'ochre'], [2, 'slate'], [1, 'olivine'], [1, 'ferric']]);
   const m = MINERALS[key];
@@ -434,6 +435,7 @@ function giantParams(rng, b, T1bar, S, rotPeriodRealH) {
 export function buildBody(rng, proto, star, host) {
   const b = {
     kind: proto.kind,
+    known: proto.known || null,     // (a known world's history: the Solar System's, system.js)
     massEarth: proto.massEarth,
     comp: proto.comp,
     waterFrac: proto.comp.water,
@@ -535,13 +537,13 @@ export function buildBody(rng, proto, star, host) {
     b.eclipse = (beta / Math.PI) * inLine;
   }
   S = S * (1 - b.eclipse);
-  const hist = evolveWorld({ rng: rng.fork('history'), star, S, massE: b.massEarth, radiusM: b.radiusM, gravity: b.gravity, vEsc: b.vEscReal / 1000, comp: b.comp, kind: proto.kind, tidal: tidalEff, exception: exc, host, aHost: proto.aReal || 0 });
+  const hist = evolveWorld({ rng: rng.fork('history'), star, S, massE: b.massEarth, radiusM: b.radiusM, gravity: b.gravity, vEsc: b.vEscReal / 1000, comp: b.comp, kind: proto.kind, tidal: tidalEff, exception: exc, host, aHost: proto.aReal || 0, known: proto.known });
   if (exc) b.exceptional = { kind: exc.kind, text: exc.text };
   b.history = hist;
   let atm = volcanicMoon ? null : atmosphereNow(rng.fork('atmosphere'), hist, S);
   let albedo;
   if (atm) albedo = atm.albedo;
-  else albedo = b.comp.water > 0.2 ? rng.range(0.45, 0.7) : rng.range(0.08, 0.16);
+  else albedo = b.comp.water > ICY_WATER ? rng.range(0.45, 0.7) : rng.range(0.08, 0.16);
   if (tidalHeating > 0.6 && b.comp.water < 0.15) albedo = rng.range(0.5, 0.65); // sulfur frosts
   let Teq = equilibriumTemp(S, albedo);
   let Tsurf = atm ? Teq * dm.pow(1 + 0.75 * atm.tau, 0.25) : Teq;
@@ -566,7 +568,10 @@ export function buildBody(rng, proto, star, host) {
   } else if (atm && atm.type === 'titan' && hist.titanish) {
     hydro = { water: 'frozen', liquid: 'methane', oceanFraction: hydroRng.range(0.02, 0.12), iceCover: 0 };
   } else if (hist.oceans > 0.001 && pBar > 0.006 && Tsurf < boilingPoint(pBar)) {
-    if (hist.snowball || Tsurf < 255) hydro = { water: 'frozen', liquid: null, oceanFraction: dm.clamp(coverage, 0.05, 1), iceCover: dm.clamp(0.75 + (255 - Tsurf) / 60, 0.75, 1) };
+    // (frozen: in a thin air the ice keeps to the cold traps, Mars' caps and its ground ice,
+    // not a sheet over the world)
+    const thinK = 1 - dm.clamp(LOG10(Math.max(pBar, 1e-6)) + 2, 0, 1);
+    if (hist.snowball || Tsurf < 255) hydro = { water: 'frozen', liquid: null, oceanFraction: dm.clamp(coverage, 0.05, 1) * (1 - 0.9 * thinK), iceCover: dm.clamp(0.75 + (255 - Tsurf) / 60, 0.75, 1) * (1 - thinK) * (1 - thinK) + 0.03 * thinK };
     else {
       hydro = { water: 'liquid', liquid: 'water', oceanFraction: dm.clamp(coverage * hydroRng.range(0.85, 1.1), 0.02, 1.0), iceCover: Tsurf < 273 ? (273 - Tsurf) / 18 * 0.6 : 0 };
       if (waterNow > 0.02) hydro.oceanFraction = 1.0; // global ocean world
@@ -619,9 +624,9 @@ export function buildBody(rng, proto, star, host) {
   // ---- atmosphere render params & clouds
   const minerals = pickMinerals(rng.fork('minerals'),
     atm && atm.type === 'titan' ? 'organic' :
-    b.comp.water > 0.2 && Tsurf < 200 ? 'icy' :
+    b.comp.water > ICY_WATER && Tsurf < 200 ? 'icy' :
       (tidalHeating > 0.6 && b.comp.water < 0.15 ? 'volcanic' :
-        (atm && atm.type === 'mars' ? 'ferric' : (!atm ? 'airless' : 'any'))));
+        (atm && atm.type === 'mars' ? 'ferric' : (!atm ? 'airless' : 'any'))), hist && hist.oceans0 > 0.01);
   if (atm) {
     atm.render = atmosphereRender(rng.fork('optics'), b, atm, Tsurf, minerals.regolith);
     atm.clouds = cloudLayer(rng.fork('clouds'), atm, hydro, Tsurf, atm.render.rayleighH);
@@ -641,7 +646,7 @@ function terrainParams(rng, b, star, minerals, tidalHeating, proto) {
   const atm = b.atmosphere;
   const hydro = b.hydrosphere;
   const P = atm ? atm.pressure : 0;
-  const icy = b.comp.water > 0.2 && b.Tsurf < 200;
+  const icy = b.comp.water > ICY_WATER && b.Tsurf < 200;
   const airless = !atm || P < 0.01;
   const liquidWater = hydro.water === 'liquid';
   const g = b.gravity;
@@ -696,6 +701,7 @@ function terrainParams(rng, b, star, minerals, tidalHeating, proto) {
     liquid: hydro.liquid, // 'water' | 'methane' | 'lava' | null
     iceCover: hydro.iceCover,
     frozenOcean: hydro.water === 'frozen' && hydro.oceanFraction > 0,
+    airP: P,
     tectonics, craters, volcanism, erosion, dunes, canyons, maria, lineae, dichotomy, mesas,
     icy: icy ? 1 : 0,
     continentFreq: rng.range(1.1, 2.4),
@@ -744,9 +750,10 @@ function terrestrialLabel(b) {
     if (atm && atm.type === 'temperate') return b.Teq > 200 ? 'Snowball world' : (moon ? 'Frozen moon' : 'Frozen world');
     return moon ? 'Icy moon' : 'Icy world';
   }
+  // (an ice shell is what shows, however its tides heat what's beneath: Europa's)
+  if (b.comp.water > ICY_WATER && b.Tsurf < 200) return moon ? 'Icy moon' : 'Icy body';
   if (b.terrain && b.terrain.volcanism > 0.75) return moon ? 'Volcanic moon' : 'Volcanic world';
   if (atm && (atm.type === 'mars' || atm.type === 'coldco2')) return size + (b.Tsurf < 240 ? 'cold desert' : 'desert world');
-  if (b.comp.water > 0.2) return moon ? 'Icy moon' : 'Icy body';
   if (moon) return b.radiusM < 200e3 ? 'Captured moonlet' : 'Cratered moon';
   return size + 'barren rock';
 }

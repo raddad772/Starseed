@@ -1102,7 +1102,12 @@ export class TerrainGenerator {
     // bare rock on steep ground; soil (or regolith) on gentle
     const rockW = (1 - sandW) * dm.clamp(dm.smoothstep(0.12, 0.38, slope) + 0.3 * s[S_MOUNT] * dm.smoothstep(0.06, 0.2, slope), 0, 1);
     const ground = P.soil || P.regolith;
-    const show = sandW + (1 - sandW) * (0.35 + 0.65 * rockW);
+    // (on a dusty world (thin dry air: Mars') the dust blankets all but the steep ground, the
+    // rock beneath showing only on cliffs and crater walls)
+    const dusty = !p.liquid && p.airP > 0 ? 1 - dm.smoothstep(0.02, 0.05, p.airP) : 0;
+    // (and what rock shows wears the same weathered rind as the dust: Mars' basalt reddened)
+    if (dusty > 0 && P.rock) for (let k = 0; k < 3; k++) rc[k] += (P.rock[k] - rc[k]) * 0.5 * dusty;
+    const show = sandW + (1 - sandW) * ((0.35 - 0.27 * dusty) + (0.65 + 0.27 * dusty) * rockW);
     let r = ground[0] + (rc[0] - ground[0]) * show;
     let g = ground[1] + (rc[1] - ground[1]) * show;
     let b = ground[2] + (rc[2] - ground[2]) * show;
@@ -1131,7 +1136,12 @@ export class TerrainGenerator {
     // (a slope facing the pole, or away from the star on a world locked to it, gets less sun:
     // colder, its snow lasting; one facing the sun, warmer, bare sooner)
     const Ta = nrm && slope > 0.005 ? Tc - 8 * this._shadeAspect(x, y, z, nrm) : Tc;
-    let snow = waterCycle || (p.iceCover > 0 && S.Gc) ? dm.smoothstep(-2, -10, Ta) * (1 - 0.5 * rockW) : 0;
+    // (snow needs air to carry the water to where it falls: in a thin one it gathers only in the
+    // coldest places, Mars' polar caps; the snow line falls with the air's pressure)
+    // (in thin air: only where it's nearly as cold as the world's coldest, the cold trap)
+    const thinK = 1 - dm.clamp((dm.log10(Math.max(p.airP ?? 1, 1e-6)) + 2) / 1, 0, 1), tMinC = S.TseaMin != null ? S.TseaMin - 273.15 : -90;
+    const sHi = -2 + (Math.min(-2, tMinC + 14) + 2) * thinK, sLo = -10 + (Math.min(-10, tMinC + 6) + 10) * thinK;
+    let snow = waterCycle || (p.iceCover > 0 && S.Gc) ? dm.smoothstep(sHi, sLo, Ta) * (1 - 0.5 * rockW) : 0;
     if (p.icy) snow = Math.max(snow, 0.3 * (0.5 + 0.5 * s[S_VARIANT]) * (1 - 0.5 * dm.smoothstep(0.3, 0.6, slope)) * (1 - s[S_LINEAE]));
     if (p.iceCover > 0 && !p.icy && !S.Gc) snow = Math.max(snow, dm.smoothstep(this.iceCapCut - 0.03, this.iceCapCut + 0.03, this.iceCapMetric(s)));
     snow = dm.clamp(snow, 0, 1);
