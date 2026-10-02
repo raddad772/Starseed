@@ -135,7 +135,18 @@ export function findFeatures(G, h, opts = {}) {
       let area = 0, depth = 0, deep = cells[0], salt = false, iced = 0;
       for (const c of cells) { area += G.area[c]; if (water[c] - h[c] > depth) { depth = water[c] - h[c]; deep = c; } if (kindOf && kindOf[c] === 2) salt = true; if (opts.glaciers && opts.glaciers.ice[c] > 0) iced++; }
       const underIce = iced * 2 > cells.length; // (beneath an ice sheet: Vostok's kind)
-      if (isFlat) { if (!underIce) out.saltFlats.push({ areaKm2: area * toReal * toReal / 1e6, height: h[cells[0]], ...where(cells[0]) }); }
+      if (isFlat) {
+        // (placed well inside the flat: the cell with the most flat ground round it, not at its
+        // edge, where a salt lake's water may lie)
+        let rep = cells[0], best = -1;
+        for (let i = 0; i < cells.length; i += Math.max(1, (cells.length / 400) | 0)) {
+          const c = cells[i];
+          let k = 0;
+          for (let e = G.nStart[c]; e < G.nStart[c + 1]; e++) { const o = G.nbr[e]; if (flat(o)) k++; for (let e2 = G.nStart[o]; e2 < G.nStart[o + 1]; e2++) if (flat(G.nbr[e2])) k++; }
+          if (k > best) { best = k; rep = c; }
+        }
+        if (!underIce) out.saltFlats.push({ areaKm2: area * toReal * toReal / 1e6, height: h[rep], ...where(rep) });
+      }
       else out.lakes.push({ areaKm2: area * toReal * toReal / 1e6, depth, level: water[deep], salt: salt && !underIce, underIce, ...where(deep) });
     }
     out.lakes.sort((a, b) => b.areaKm2 - a.areaKm2);
