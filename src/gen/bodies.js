@@ -97,7 +97,7 @@ const MINERALS = {
   slate: { rock: '#4b5058', rock2: '#646a72', regolith: '#6d6a66', sand: '#8f877c' },
 };
 
-function pickMinerals(rng, kind, wetPast = false) {
+function pickMinerals(rng, kind, wetPast = false, knownKey = null) {
   let key;
   if (kind === 'organic') key = 'organic';
   else if (kind === 'icy') key = rng.weighted([[5, 'ice'], [2, 'tholin'], [1, 'slate']]);
@@ -107,6 +107,7 @@ function pickMinerals(rng, kind, wetPast = false) {
   else if (kind === 'ferric') key = rng.weighted(wetPast ? [[5, 'ferric'], [2, 'ochre'], [0, 'basalt']] : [[5, 'ferric'], [2, 'ochre'], [1, 'basalt']]);
   else if (kind === 'airless') key = rng.weighted([[4, 'anorth'], [3, 'basalt'], [2, 'carbon'], [1, 'slate'], [1, 'ochre']]);
   else key = rng.weighted([[3, 'granite'], [3, 'basalt'], [2, 'ochre'], [2, 'slate'], [1, 'olivine'], [1, 'ferric']]);
+  if (knownKey && MINERALS[knownKey]) key = knownKey;   // (a known world's (the Solar System's), the draw made either way)
   const m = MINERALS[key];
   const out = { family: key };
   for (const k in m) out[k] = jitterColor(rng, hexToLinear(m[k]), 0.12);
@@ -629,7 +630,7 @@ export function buildBody(rng, proto, star, host) {
     atm && atm.type === 'titan' ? 'organic' :
     b.comp.water > ICY_WATER && Tsurf < 200 ? 'icy' :
       (tidalHeating > 0.6 && b.comp.water < 0.15 ? 'volcanic' :
-        (atm && atm.type === 'mars' ? 'ferric' : (!atm ? 'airless' : 'any'))), hist && hist.oceans0 > 0.01);
+        (atm && atm.type === 'mars' ? 'ferric' : (!atm ? 'airless' : 'any'))), hist && hist.oceans0 > 0.01, proto.known && proto.known.minerals);
   if (atm) {
     atm.render = atmosphereRender(rng.fork('optics'), b, atm, Tsurf, minerals.regolith);
     atm.clouds = cloudLayer(rng.fork('clouds'), atm, hydro, Tsurf, atm.render.rayleighH);

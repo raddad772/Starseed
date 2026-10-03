@@ -1101,10 +1101,22 @@ export class TerrainGenerator {
     const sandW = Math.max((rt >= 11 ? 1 - mix : 0) + (r2 >= 11 ? mix : 0), s[S_SAND]);
     // bare rock on steep ground; soil (or regolith) on gentle
     const rockW = (1 - sandW) * dm.clamp(dm.smoothstep(0.12, 0.38, slope) + 0.3 * s[S_MOUNT] * dm.smoothstep(0.06, 0.2, slope), 0, 1);
-    const ground = P.soil || P.regolith;
+    let ground = P.soil || P.regolith;
     // (on a dusty world (thin dry air: Mars') the dust blankets all but the steep ground, the
     // rock beneath showing only on cliffs and crater walls)
     const dusty = !p.liquid && p.airP > 0 ? 1 - dm.smoothstep(0.02, 0.05, p.airP) : 0;
+    // (and not evenly: it settles thickest on high ground, where the thin air's winds are too
+    // weak to lift it again (Tharsis, Arabia), and is swept off the low plains and out of the
+    // hollows, where dark basalt sand gathers in dunes (Syrtis Major, Acidalia, crater floors);
+    // the winds' broad pattern by place)
+    if (dusty > 0) {
+      const hs = S.hSmooth(x, y, z), high = dm.smoothstep(-3000, 3000, hs), hollow = dm.smoothstep(250, 1500, hs - h);
+      const wind = this.nMisc.fbm(x * 1.4 + 3.1, y * 1.4 - 1.7, z * 1.4 + 0.4, 4);
+      const dust = dm.clamp(0.35 + 0.5 * high + 1.1 * wind - 0.3 * hollow, 0, 1);
+      const bc = this.rockLin[ROCK.basalt] || P.rock2, gd = this._gd || (this._gd = [0, 0, 0]);
+      for (let k = 0; k < 3; k++) { const dark = (bc[k] * 0.6 + P.rock[k] * 0.4) * 0.75; gd[k] = ground[k] + (dark + (ground[k] - dark) * dust - ground[k]) * dusty; }
+      ground = gd;
+    }
     // (and what rock shows wears the same weathered rind as the dust: Mars' basalt reddened)
     if (dusty > 0 && P.rock) for (let k = 0; k < 3; k++) rc[k] += (P.rock[k] - rc[k]) * 0.5 * dusty;
     const show = sandW + (1 - sandW) * ((0.35 - 0.27 * dusty) + (0.65 + 0.27 * dusty) * rockW);

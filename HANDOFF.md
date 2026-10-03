@@ -161,8 +161,10 @@ surveying many worlds; bit-exact across runs and clients, not across revisions):
   one; Mars had drawn 37.5 degrees and a 13 h day). Thin-air ice covers its cold traps only
   (~2% of Mars, caps to ~78-80 degrees; was 6%, to 69). The snow rule on a world with no
   climate grid finds its coldest from its own climate at the poles (was a fixed -90 C).
-  Mars at world scale is still one even tan: real Mars' dark regions (dust swept off basalt,
-  Syrtis Major) and bright dusty ones would want dust cover by wind and slope.
+  Dust on a dusty world varies (SIM 35): thickest on high ground (thin air's winds can't lift it
+  again), swept off low plains by the winds' broad pattern, dark basalt sand in deep hollows
+  (crater floors): Mars' dark regions. SOL's Mars carries its ferric palette (`known.minerals`;
+  it had drawn ochre).
 - **SOL's rocky worlds, still to fix (2026-10-02 mosaic):** Mars' caps reach ~60 degrees (real: the seasonal cap to ~55-60 in winter, the residual
   caps far smaller); Io keeps cratered blocks (the 10% its resurfacing leaves: its mountains
   should be uncratered fault blocks); Venus' tesserae/plains are flat-shaded at world scale.
