@@ -34,11 +34,7 @@ export function stagnantWorld(G, opts) {
   const lump = new Float64Array(n), wob = new Float64Array(n);
   for (let c = 0; c < n; c++) { lump[c] = (hashInts(c, rng.u32()) >>> 0) / 4294967296; wob[c] = (hashInts(c, rng.u32()) >>> 0) / 4294967296; }
   smoothField(G, lump, Math.round(G.N / 6)); smoothField(G, wob, Math.round(G.N / 10));
-  // (a known world's history (opts.known: the Solar System's) where it has one: its dichotomy,
-  // its volcanic rise's giants, its great canyon; the same draws made either way)
-  const known = opts.known || {};
-  const dichRoll = rng.next();
-  const dich = (known.dichotomy ?? dichRoll < 0.65) ? { pole: rng.unitVector(), drop: rng.range(2500, 6000) * scale * VEXAG * 2 } : null;
+  const dich = rng.next() < 0.65 ? { pole: rng.unitVector(), drop: rng.range(2500, 6000) * scale * VEXAG * 2 } : null;
   for (let c = 0; c < n; c++) {
     h[c] = (lump[c] - 0.5) * 3000 * scale * VEXAG * 2;
     if (dich) h[c] -= dich.drop * dm.smoothstep(-0.15, 0.2, dot(c, dich.pole) + (wob[c] - 0.5) * 0.5);
@@ -46,7 +42,7 @@ export function stagnantWorld(G, opts) {
   // ---- the volcanic province and its giants
   const tier = opts.tier ?? 1;
   const volcEnd = opts.volcEnd ?? age;
-  const nShield = Math.max(known.shields || 0, [rng.range(0, 1.5), rng.range(1, 3.5), rng.range(3, 5.5), rng.range(5, 8.5)][tier] | 0);
+  const nShield = [rng.range(0, 1.5), rng.range(1, 3.5), rng.range(3, 5.5), rng.range(5, 8.5)][tier] | 0;
   const rise = nShield > 0 ? { at: dich ? tilt(rng, dich.pole, rng.range(1.2, 1.9)) : rng.unitVector(), R: rng.range(0.25, 0.45), H: rng.range(4000, 9000) * scale * VEXAG * 1.5 } : null;
   const shields = [];
   for (let i = 0; i < nShield; i++) {
@@ -56,7 +52,7 @@ export function stagnantWorld(G, opts) {
     const Rreal = (giant ? 300e3 : rng.range(80e3, 220e3)) * dm.clamp(3.7 / g, 0.6, 1.6);
     shields.push({ at, H: Hreal * scale * VEXAG, R: Rreal * scale, t0: rng.range(0.1, 0.6) * volcEnd, t1: volcEnd * rng.range(0.6, 1), cells: null });
   }
-  const canyonRoll = rise ? rng.next() : 1, canyon = rise && (known.canyon ?? canyonRoll < 0.6) ? makeCanyon(rng, rise, scale) : null;
+  const canyon = rise && rng.next() < 0.6 ? makeCanyon(rng, rise, scale) : null;
   // ---- the bombardment, the volcanoes, the wet era, through time
   const imp = new Impacts(G, { rng: rng.fork('impacts'), g, pressure: body.atmosphere ? body.atmosphere.pressure : 0, scale, rate: opts.rate ?? 1, spike: opts.spike });
   // (smaller ones are the finer levels' (craters.js): the grid draws only what it draws round)
@@ -128,16 +124,20 @@ export function stagnantWorld(G, opts) {
         if (srng.next() < 0.7) shieldFields.push(shieldField(srng, at, G.R, scale, 1));
       }
     }
-    // rain while there's water: valleys, lakes in craters, a sea in the lows
-    if (wet && t >= wet[0] && t < wet[1]) {
+    // rain while there's water: valleys, lakes in craters, a sea in the lows; as much as the
+    // world's history has then (opts.rainAt: its rain through time, ~1 an Earth's), so a cold
+    // world's brief warm spells cut a little, now and then
+    const rk = opts.rainAt ? opts.rainAt(t) : 1;
+    if (wet && t >= wet[0] && t < wet[1] && rk > 2e-3) {
       if (!E) E = new Erosion(G, hs, { sea: opts.seaFrac > 0.02, K: 8e-7, rain: 1, m: 0.45, kd: 1 });
       sl = opts.seaFrac > 0.02 ? quantile(h, opts.seaFrac) : 0;
       for (let c = 0; c < n; c++) hs[c] = h[c] - sl;
-      E.rainK = (opts.rainK0 ?? 1) * Math.min(1, (wet[1] - t) / 0.15); // drying out toward the end (a methane world's rain is a trickle, in storms)
+      E.rainK = (opts.rainK0 ?? 1) * Math.min(1, (wet[1] - t) / 0.15) * Math.min(1, rk); // drying out toward the end (a methane world's rain is a trickle, in storms)
       E.step(DT_MYR * 1e6);
       for (let c = 0; c < n; c++) { h[c] = hs[c] + sl; if (!E.base[c]) river[c] = Math.max(river[c], E.A[c]); }
       stats.wetSteps++;
-      since.fill(t);
+      // (lasting rain wears the craters away; brief spells leave them)
+      if (rk > 0.2) since.fill(t);
     }
   }
   const crat = new Float32Array(n), all = cum[cum.length - 1], dtG = DT_MYR / 1000;

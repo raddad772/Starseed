@@ -129,7 +129,7 @@ export function evolveWorld(ctx) {
   const frozenOut = teqBareOf(ctx.S) < 125;
   // a moon's frozen methane-and-nitrogen air (Titan) on cold, icy, big-enough worlds
   const teqBare = teqBareOf(ctx.S);
-  const titanish = teqBare < 125 && water0 > 0.08 && massE > 0.008 && ((ctx.known && ctx.known.titanish) ?? rng.next() < (ctx.kind === 'planet' ? 0.6 : 0.28)) && teqBare > 65; // (colder: the nitrogen freezes onto the ground)
+  const titanish = teqBare < 125 && water0 > 0.08 && massE > 0.008 && rng.next() < (ctx.kind === 'planet' ? 0.6 : 0.28) && teqBare > 65; // (colder: the nitrogen freezes onto the ground)
   // ---- what it's made of (WORLDSIM.md 16; broad curves): the mantle's redox (dIW: Earth
   // ~+3.5) from its water and the cloud's carbon (carbon worlds are reduced); it decides
   // what the volcanoes breathe: CO2, water, SO2 when oxidised; CO, H2, CH4, NH3, H2S
@@ -174,7 +174,7 @@ export function evolveWorld(ctx) {
   // (the magma ocean a world's born with breathes out a good share of its carbon at once: tens
   // of bar on an Earth, drawn down into carbonates within ~100 Myr where seas condense, left in
   // the air where they don't (Venus), stripped from a small world by its young star (Mars))
-  let oceans = oceans0, pCO2 = carbon / 3, pO2 = 0, snow = false, runaway = false;
+  let oceans = oceans0, pCO2 = carbon / 3, pO2 = 0, snow = false, runaway = false, wasLiquid = true;
   // (a world too small for plates (canPlates, below) has a stagnant lid from the start)
   let regime = massE > 0.2 ? 'mobile' : 'stagnant', dynamo = true, tStop = null, tDyn = null;
   let life = { origin: null, photo: null, goe: null, euk: null, complex: null, animals: null, plants: null, landAnimals: null, extinct: null };
@@ -246,6 +246,12 @@ export function evolveWorld(ctx) {
   // (methane warms, but past ~a fifth of the CO2 it makes an orange organic haze that
   // cools (Titan's, the early Earth's); hydrogen warms by collisions, more in thick air;
   // ammonia warms strongly while it lasts)
+  // (a cold world's warm spells: below freezing in the year's mean, but in thin air its warmest
+  // afternoons and summers run ~60 K above that (Mars' tropics reach 20 C today), at a high tilt
+  // more; with air enough to keep melt liquid a while (a few tenths of a bar: in a few mbar it
+  // boils and sublimes away) it flows briefly (Mars' valley networks): a little rain, the share
+  // of the time it's warm enough somewhere times the rain of melt near 0 C)
+  const spellsOf = (Tm, Pm) => !runaway && oceans > 0.001 && Tm > 195 && Tm <= T_SNOW_IN + 5 ? 0.15 * dm.smoothstep(195, 245, Tm) * dm.smoothstep(0.03, 0.3, Pm) * dm.exp(0.07 * (275 - 288)) : 0;
   const tempOf = (t, P, co2, _unused, snowed) => {
     const bg = Math.max(P - co2, 0);
     const haze = pCH4 > 1e-4 && pCH4 > 0.2 * co2;
@@ -296,10 +302,11 @@ export function evolveWorld(ctx) {
     // more off a big core, fewer once it has cooled past keeping its dynamo going
     const coreK = dm.pow(iron / 0.32, 0.5) * (dynamo ? 1 : 0.5);
     // outgassing: carbon and a little nitrogen with the heat. Through a stagnant lid much less
-    // (no plates carry carbonate down to be breathed out again: only the mantle's own carbon),
-    // and falling far faster than the heat once the mantle cools: it melts under the lid only
-    // while it's hot (Mars' had all but stopped in a couple of Gyr; Venus' still flows)
-    const lidK = regime === 'mobile' ? 1 : 0.25 * Math.min(1, H * H);
+    // (no plates carry carbonate down to be breathed out again: only the mantle's own carbon,
+    // ~a tenth of Earth's outgassing), and falling far faster than the heat once the mantle
+    // cools: it melts under the lid only while it's hot (Mars' ~0.25 bar since 4.1 Ga, Grott et
+    // al. 2011, nearly all early; Venus' still flows)
+    const lidK = regime === 'mobile' ? 1 : 0.08 * Math.min(4, H * H);
     // a flood-basalt eruption: its CO2 on top (all in the step it starts: steps are longer
     // than eruptions)
     if (lipNow && t > lipNow.t + lipNow.dur) lipNow = null;
@@ -392,7 +399,17 @@ export function evolveWorld(ctx) {
       pCO2 = Math.max(1e-8, (lo + hi) / 2);
       // (what the weathering took lies in carbonate rock)
       carb = Math.min(carbon, carb + Math.max(0, before - pCO2));
-    } else pCO2 = Math.min(carbon, pCO2 + V * dt * 1000 * (snow ? 1 : (oceans > 0.001 ? 0.3 : 1)));
+    // (else into the air; a share of it into the seas' carbonates where there's liquid water to
+    // take it, none on a world frozen solid)
+    } else {
+      pCO2 = Math.min(carbon, pCO2 + V * dt * 1000 * (snow ? 1 : (oceans > 0.001 && Tn > 260 ? 0.3 : 1)));
+      // (a cold world's warm spells (below) weather its rock too: carbonate where the melt
+      // water ran, as much as their rain allows; Mars' Noachian carbonates)
+      const sp = spellsOf(Tn, Ptot());
+      // (the land weathering law as the liquid branch has it, at the melt's ~275 K, times the
+      // spells' rain against an Earth's)
+      if (sp > 0) { const land = Math.min(landAt(t), 0.9 / (1 + oceans)), take = Math.min(pCO2 * 0.5, W0 * fT(275) * land * sp * dm.sqrt(pCO2 / PCO2_EARTH) * dt * 1000); pCO2 -= take; carb = Math.min(carbon, carb + take); }
+    }
     // a surface hot enough bakes its carbonates back into the air (calcite and quartz to
     // wollastonite and CO2: at Venus' ~740 K that holds ~90 bar of it), over ~100 Myr
     if (carb > 0 && Tn > 450) { const back = carb * (1 - dm.exp(-dt / 0.1)) * dm.smoothstep(450, 650, Tn); carb -= back; pCO2 = Math.min(carbon, pCO2 + back); }
@@ -400,11 +417,13 @@ export function evolveWorld(ctx) {
     // times its air, ~0.04 bar against 6 mbar; Zent & Quinn 1995): as the air thins the ground
     // gives it back, so a thin air outlasts its escape for Gyr
     if ((oceans <= 0.001 || Tn < 250) && Tn < 260 && Tn > 100) {
-      const eq = 0.04 * dm.pow(Math.max(pCO2, 0) / 0.006, 0.33) * (220 / Tn) * (220 / Tn) * Math.min(1, pK / 0.134);
-      const x = (eq - ads) * Math.min(1, dt / 0.01);
-      const xx = x > 0 ? Math.min(x, pCO2) : x;
-      ads += xx; pCO2 -= xx;
-    }
+      // (its share settles in step with the air within a step: the air p where p + held(p) is
+      // all there is between them)
+      const k = 0.04 * (220 / Tn) * (220 / Tn) * Math.min(1, pK / 0.134), held = (p) => k * dm.pow(Math.max(p, 0) / 0.006, 0.33), tot = pCO2 + ads;
+      let lo = 0, hi = tot;
+      for (let it = 0; it < 30; it++) { const m = 0.5 * (lo + hi); if (m + held(m) > tot) hi = m; else lo = m; }
+      pCO2 = lo; ads = tot - lo;
+    } else if (ads > 0) { pCO2 += ads; ads = 0; }
     // CO2 condenses where it's cold enough (polar caps): its vapour pressure caps it
     // CO2 too: past its vapour pressure at the cold poles it freezes there (Mars' caps);
     // the caps give it back as the world warms; no more than the world's carbon
@@ -413,16 +432,26 @@ export function evolveWorld(ctx) {
       if (pCO2 > capC) { CO2ice += pCO2 - capC; pCO2 = capC; }
       else if (CO2ice > 0) { const back = Math.min(CO2ice, capC - pCO2); CO2ice -= back; pCO2 += back; }
       CO2ice = Math.min(CO2ice, Math.max(0, carbon - pCO2));
+      // a planet's tilt wanders (chaotically, with no big moon to steady it: Mars' between ~0
+      // and 60 degrees over Myr): at a high tilt its poles take the most sun and the caps
+      // sublime. If all that air, once up, keeps the poles warmer than its frost point, it
+      // stays: the air thickens for good (until escape thins it past collapsing again)
+      if (CO2ice > 0.01 && ctx.kind === 'planet') {
+        const Pt = Ptot() + CO2ice, Tt = tempOf(t, Pt, pCO2 + CO2ice, 0, snow)[0];
+        const ck = Tt * (0.087 + 0.21 * (1 - dm.clamp((dm.log10(Pt) + 2.2) / 2.2, 0, 1)));
+        if (co2Sat(Tt - ck) > pCO2 + CO2ice) { pCO2 += CO2ice; CO2ice = 0; ev(t, 'caps sublime', 'at a high tilt the polar caps sublime: the air thickens'); }
+      }
     }
     [Tn, An] = tempOf(t, Ptot(), pCO2, 0, snow);
     if (runaway) Tn = Math.max(Tn, 600 + 200 * dm.log(1 + oceans));
     // snowball in and out
-    if (!snow && oceans > 0.001 && !runaway && P > 0.03 && Tn < T_SNOW_IN) { snow = true; ev(t, 'snowball', 'the ice runs to the equator: a snowball'); }
+    // (a snowball is open seas freezing over: from a world with liquid water a step ago)
+    if (!snow && wasLiquid && oceans > 0.001 && !runaway && P > 0.03 && Tn < T_SNOW_IN) { snow = true; ev(t, 'snowball', 'the ice runs to the equator: a snowball'); }
     else if (snow && tempOf(t, Ptot(), pCO2, 0, true)[0] > T_SNOW_OUT) { snow = false; ev(t, 'thaw', 'volcanic CO2 melts the snowball: a hothouse'); }
     // (air too thin to carry water round keeps no world-wide ice: it sublimes and gathers in
     // the cold traps at the poles and under the ground, the dark rock bare between (Mars'))
     else if (snow && Ptot() < 0.01) { snow = false; ev(t, 'ice retreats', 'the air grows too thin to keep a world-wide ice: it retreats to the poles'); }
-    T = Tn; A = An;
+    T = Tn; A = An; wasLiquid = liquid;
     ice = snow ? 1 : dm.clamp((278 - T) / 30, 0, 1);
     // life
     // liquid water's range here: salty seas freeze at ~271 K; it boils at Tboil(P) (Mars'
@@ -613,7 +642,8 @@ export function evolveWorld(ctx) {
       lastOut = t;
       series.t.push(t); series.T.push(T); series.P.push(Ptot()); series.pH2.push(pH2); series.pCH4.push(pCH4); series.pCO2.push(pCO2); series.pO2.push(pO2);
       series.oceans.push(oceans); series.ice.push(ice); series.heat.push(H); series.snowball.push(snow ? 1 : 0); series.mobile.push(regime === 'mobile' ? 1 : 0);
-      series.rain.push(liquid ? dm.exp(0.07 * (T - 288)) : 0);
+      // (and a cold world's warm spells: spellsOf)
+      series.rain.push(liquid ? dm.exp(0.07 * (T - 288)) : spellsOf(T, Ptot()));
       series.stage.push(stage); series.div.push(stage > 0 ? div : 0);
       series.light.push(parK * S(t) * (snow ? 0.02 : 1));
     }

@@ -351,9 +351,7 @@ const SOL = {
     { name: 'Mercury', aAU: 0.387, massEarth: 0.0553, iron: 0.68, water: 1e-5, known: { rotH: 1407.6, obliquityDeg: 0.03 } },
     { name: 'Venus', aAU: 0.723, massEarth: 0.815, iron: 0.31, water: 2e-4, known: { rotH: 5832.5, obliquityDeg: 2.6, retro: true } },
     { name: 'Earth', aAU: 1.0, massEarth: 1.0, iron: 0.32, water: 2.6e-4, known: { rotH: 23.93, obliquityDeg: 23.44 } },
-    // (Mars' history, which no physics here decides: its crustal dichotomy, the Tharsis rise and
-    // its giant shields (Olympus Mons, the Tharsis Montes, Elysium), Valles Marineris)
-    { name: 'Mars', aAU: 1.524, massEarth: 0.107, iron: 0.24, water: 4e-4, known: { dichotomy: true, shields: 5, canyon: true, rotH: 24.62, obliquityDeg: 25.19, minerals: 'ferric' } },
+    { name: 'Mars', aAU: 1.524, massEarth: 0.107, iron: 0.24, water: 1.2e-4, known: { rotH: 24.62, obliquityDeg: 25.19 } },
     { name: 'Jupiter', aAU: 5.2, massEarth: 317.8, envelope: 0.9 },
     { name: 'Saturn', aAU: 9.58, massEarth: 95.2, envelope: 0.8 },
     { name: 'Uranus', aAU: 19.2, massEarth: 14.5, envelope: 0.15 },
@@ -361,7 +359,8 @@ const SOL = {
   ],
 };
 // their moons as they are (a: km from the planet, mass in Earths, water's share; tidal heating
-// 0..1; Titan's thick nitrogen and methane, a coin's toss in the history, known)
+// 0..1). Only what they're made of and where they are: their air, surfaces and histories are
+// the same physics and draws as any world's
 const rk = (water, iron = 0.25) => ({ iron: water < 0.1 ? iron : 0.1, rock: 1 - water - (water < 0.1 ? iron : 0.1), water, envelope: 0 });
 const SOL_MOONS = {
   Earth: [{ name: 'Moon', a: 384400, m: 0.0123, comp: rk(1e-5, 0.08), tidal: 0 }],
@@ -369,13 +368,13 @@ const SOL_MOONS = {
   Jupiter: [
     { name: 'Io', a: 421700, m: 0.015, comp: rk(0, 0.2), tidal: 1 },
     { name: 'Europa', a: 671034, m: 0.008, comp: rk(0.08, 0.15), tidal: 0.5 },
-    { name: 'Ganymede', a: 1070412, m: 0.0248, comp: rk(0.45), tidal: 0.1, known: { titanish: false } },
-    { name: 'Callisto', a: 1882709, m: 0.018, comp: rk(0.5), tidal: 0, known: { titanish: false } },
+    { name: 'Ganymede', a: 1070412, m: 0.0248, comp: rk(0.45), tidal: 0.1 },
+    { name: 'Callisto', a: 1882709, m: 0.018, comp: rk(0.5), tidal: 0 },
   ],
   Saturn: [
     { name: 'Enceladus', a: 237948, m: 1.8e-5, comp: rk(0.5), tidal: 0.4 },
     { name: 'Rhea', a: 527108, m: 3.9e-4, comp: rk(0.6), tidal: 0 },
-    { name: 'Titan', a: 1221870, m: 0.0225, comp: rk(0.45), tidal: 0.02, known: { titanish: true } },
+    { name: 'Titan', a: 1221870, m: 0.0225, comp: rk(0.45), tidal: 0.02 },
   ],
   Uranus: [{ name: 'Titania', a: 436300, m: 5.9e-4, comp: rk(0.5), tidal: 0 }, { name: 'Oberon', a: 583500, m: 5.1e-4, comp: rk(0.5), tidal: 0 }],
   Neptune: [{ name: 'Triton', a: 354759, m: 0.00359, comp: rk(0.25), tidal: 0.1, captured: true, retro: true }],
@@ -383,7 +382,7 @@ const SOL_MOONS = {
 function solMoons(planet) {
   return (SOL_MOONS[planet.name] || []).map((m) => ({
     kind: 'moon', name: m.name, aReal: m.a * 1000, massEarth: m.m, comp: m.comp, tidalHeating: m.tidal,
-    e: 0.002, i: m.retro ? 2.73 : 0.003, captured: !!m.captured, known: m.known,
+    e: 0.002, i: m.retro ? 2.73 : 0.003, captured: !!m.captured,
   }));
 }
 function solProtos(disk) {

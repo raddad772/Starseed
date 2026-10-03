@@ -97,7 +97,7 @@ const MINERALS = {
   slate: { rock: '#4b5058', rock2: '#646a72', regolith: '#6d6a66', sand: '#8f877c' },
 };
 
-function pickMinerals(rng, kind, wetPast = false, knownKey = null) {
+function pickMinerals(rng, kind, wetPast = false) {
   let key;
   if (kind === 'organic') key = 'organic';
   else if (kind === 'icy') key = rng.weighted([[5, 'ice'], [2, 'tholin'], [1, 'slate']]);
@@ -107,7 +107,6 @@ function pickMinerals(rng, kind, wetPast = false, knownKey = null) {
   else if (kind === 'ferric') key = rng.weighted(wetPast ? [[5, 'ferric'], [2, 'ochre'], [0, 'basalt']] : [[5, 'ferric'], [2, 'ochre'], [1, 'basalt']]);
   else if (kind === 'airless') key = rng.weighted([[4, 'anorth'], [3, 'basalt'], [2, 'carbon'], [1, 'slate'], [1, 'ochre']]);
   else key = rng.weighted([[3, 'granite'], [3, 'basalt'], [2, 'ochre'], [2, 'slate'], [1, 'olivine'], [1, 'ferric']]);
-  if (knownKey && MINERALS[knownKey]) key = knownKey;   // (a known world's (the Solar System's), the draw made either way)
   const m = MINERALS[key];
   const out = { family: key };
   for (const k in m) out[k] = jitterColor(rng, hexToLinear(m[k]), 0.12);
@@ -436,7 +435,6 @@ function giantParams(rng, b, T1bar, S, rotPeriodRealH) {
 export function buildBody(rng, proto, star, host) {
   const b = {
     kind: proto.kind,
-    known: proto.known || null,     // (a known world's history: the Solar System's, system.js)
     massEarth: proto.massEarth,
     comp: proto.comp,
     waterFrac: proto.comp.water,
@@ -483,7 +481,8 @@ export function buildBody(rng, proto, star, host) {
     obliquity = r < 0.72 ? Math.abs(rot.normal(0, 0.28)) : (r < 0.95 ? rot.range(0.5, 1.1) : rot.range(1.2, 1.7));
     obliquity = Math.min(obliquity, 1.65);
   }
-  // (a known world's spin (the Solar System's), the same draws made either way)
+  // (a known world's spin (the Solar System's): an input, as its orbit is; the same draws made
+  // either way)
   const kn = proto.known;
   if (kn && kn.rotH) { locked = false; periodRealH = kn.rotH; obliquity = kn.obliquityDeg * dm.PI / 180; retrograde = !!kn.retro; }
   b.rotation = { locked, periodRealH, obliquity, retrograde, phase0: rot.range(0, dm.TWO_PI), tiltAzimuth: rot.range(0, dm.TWO_PI) };
@@ -541,7 +540,7 @@ export function buildBody(rng, proto, star, host) {
     b.eclipse = (beta / Math.PI) * inLine;
   }
   S = S * (1 - b.eclipse);
-  const hist = evolveWorld({ rng: rng.fork('history'), star, S, massE: b.massEarth, radiusM: b.radiusM, gravity: b.gravity, vEsc: b.vEscReal / 1000, comp: b.comp, kind: proto.kind, tidal: tidalEff, exception: exc, host, aHost: proto.aReal || 0, known: proto.known });
+  const hist = evolveWorld({ rng: rng.fork('history'), star, S, massE: b.massEarth, radiusM: b.radiusM, gravity: b.gravity, vEsc: b.vEscReal / 1000, comp: b.comp, kind: proto.kind, tidal: tidalEff, exception: exc, host, aHost: proto.aReal || 0 });
   if (exc) b.exceptional = { kind: exc.kind, text: exc.text };
   b.history = hist;
   let atm = volcanicMoon ? null : atmosphereNow(rng.fork('atmosphere'), hist, S);
@@ -581,7 +580,9 @@ export function buildBody(rng, proto, star, host) {
       if (waterNow > 0.02) hydro.oceanFraction = 1.0; // global ocean world
     }
   } else if (b.comp.water > 0.15) hydro = { water: 'frozen', liquid: null, oceanFraction: 0, iceCover: 1 };
-  else if (Tsurf < 240 && b.comp.water > 1e-5) hydro = { water: 'frozen', liquid: null, oceanFraction: 0, iceCover: dm.clamp(0.08 + coverage * 0.3, 0, 0.45) };
+  // (ground ice: with little or no air to carry the vapour, only the cold traps keep it at the
+  // surface: polar caps, the rest under the ground)
+  else if (Tsurf < 240 && b.comp.water > 1e-5) { const thinK = 1 - dm.clamp(LOG10(Math.max(pBar, 1e-6)) + 2, 0, 1); hydro = { water: 'frozen', liquid: null, oceanFraction: 0, iceCover: dm.clamp(0.08 + coverage * 0.3, 0, 0.45) * (1 - thinK) ** 3 + 0.015 * thinK }; }
   // a young world: its magma ocean still crusting over
   // (a rocky world big enough stays molten for a while: ~50 Myr for an Earth, much less for a
   // Moon; icy bodies freeze over at once)
@@ -630,7 +631,7 @@ export function buildBody(rng, proto, star, host) {
     atm && atm.type === 'titan' ? 'organic' :
     b.comp.water > ICY_WATER && Tsurf < 200 ? 'icy' :
       (tidalHeating > 0.6 && b.comp.water < 0.15 ? 'volcanic' :
-        (atm && atm.type === 'mars' ? 'ferric' : (!atm ? 'airless' : 'any'))), hist && hist.oceans0 > 0.01, proto.known && proto.known.minerals);
+        (atm && atm.type === 'mars' ? 'ferric' : (!atm ? 'airless' : 'any'))), hist && hist.oceans0 > 0.01);
   if (atm) {
     atm.render = atmosphereRender(rng.fork('optics'), b, atm, Tsurf, minerals.regolith);
     atm.clouds = cloudLayer(rng.fork('clouds'), atm, hydro, Tsurf, atm.render.rayleighH);

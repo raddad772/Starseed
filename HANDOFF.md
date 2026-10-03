@@ -156,6 +156,37 @@ surveying many worlds; bit-exact across runs and clients, not across revisions):
   and -47 C at 80S, ice to 50 degrees. Now 0.5 sqrt(P): 33 C, 0 C at 60N, -18 C at 80N (real
   -18), ice poleward of ~65-70 degrees. Every plate world's climate milder toward its poles.
   SOL's Earth's life started late by its own draws (1.4 Gyr ago, no land plants): bare land.
+- **No special-casing (Dave, 2026-10-02: "Don't special-case Mars, make it arise from first
+  principles... you can tune the algorithms... but don't just make up a wet history"):** SOL's
+  worlds carry only inputs (orbits, masses, make-up, spins); their dichotomies, volcanoes,
+  canyons, palettes and airs come from the same physics and draws as any world's. (So SOL's
+  Titan may come out airless and Callisto Titan-like: the "titanish" coin toss is a model gap.)
+- **Early Mars from the physics (SIM 44, TILE 24), evolve.js:**
+  - the young Sun strips a small world's first air (hydrodynamic onset); its volcanoes rebuild
+    one: stagnant-lid outgassing 0.08 x heat^2 (capped at 4x: the young hot mantle) of a plate
+    world's (juvenile carbon only; Mars ~0.25 bar since 4.1 Ga in estimates);
+  - a frozen world's outgassing all goes to the air (the 30% to sea carbonates needs liquid);
+  - a planet's tilt wanders (no big moon to steady it): at high tilt its CO2 caps sublime, and
+    if the air, once up, keeps its poles above frost it stays (collapse hysteresis);
+  - snowballs only from open water a step before (no global ice on an already-frozen world);
+  - warm spells: below freezing in the mean, but a thin air's afternoons and summers run ~60 K
+    above it; with a few tenths of a bar melt lasts and flows: a little rain (the share of time
+    warm enough x melt's rain), and carbonate weathering by the same land law at 275 K;
+  - the regolith's adsorbed CO2 settles in balance with the air each step (it flip-flopped).
+  SOL's Mars now, from all that alone: stripped by 0.05 Gyr, caps release ~0.4 Gyr, 0.2-0.28
+  bar with warm-spell rain 0.4-3 Gyr (Noachian into Hesperian), thinning to 7 mbar, 205 K today
+  (real 6 mbar, 210 K). Over 40 draws: median 3.7 mbar, quartiles 0.04-19 mbar.
+  - world.js: the stagnant sim follows the history's rain through time (`rainAt`), and only
+    lasting rain (> 0.2 of an Earth's) resets the crater record. The snapshot carries the past
+    rain (`wetRain`: how hard while it rained) and its share of the time (`wetFrac`): on a world
+    with no climate grid the tiles route that rain (it was a default 0.8 of Earth's: dry Mars grew
+    an Earth's rivers) and cut at K0 x wetFrac. SOL's Mars: 0.6% of Earth's rain, 71% of its time:
+    valley networks over its highlands (survey mars7). Titan-like methane: its window, rainK0.
+  - refine.js riverIndex: the phase walk marks its path (was `stack.includes`, quadratic: Mars'
+    long flat-ground chains hung the survey) and the smoothing walk is guarded (loops in links).
+  - Mars' channels at world scale are stair-stepped (D8 at the refinement's cells) and drawn
+    as dark strokes; real valley networks are subtler from afar.
+  - Population (1075 worlds over 1500 km): habitable-temperature N2 airs 77 -> 88, others a few.
 - **Known spins; Mars' caps (SIM 34):** SOL's planets carry their real day lengths and axial
   tilts (`known.rotH`, `obliquityDeg`, `retro`: Mercury's 3:2 spin, Venus' slow retrograde
   one; Mars had drawn 37.5 degrees and a 13 h day). Thin-air ice covers its cold traps only

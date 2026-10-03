@@ -124,9 +124,15 @@ export function worldSim(body, star, opts = {}) {
     let seaFrac = wet ? Math.min(0.4, Math.max(0, (dm.log10(Math.max(oceanAt * 2.3e-4, 1e-9)) + 5.5) / 3.2) * 0.45) : 0;
     // a Titan: methane rain (a trickle on average, in rare storms) carving channels, lakes
     // at the poles from its hydrocarbon seas (liquids.js)
-    let rainK0 = 1;
+    // (the rain its history had through time: a cold world's brief warm spells cut less than a
+    // warm one's lasting rain; the mean over each sim step's span)
+    let rainK0 = 1, rainAt = null;
+    if (wet && H.series && H.series.rain && H.series.t.length) {
+      const st = H.series.t, sr = H.series.rain;
+      rainAt = (tg) => { let s = 0, k = 0; for (let i = 0; i < st.length; i++) if (st[i] >= tg - 0.005 && st[i] < tg + 0.01) { s += sr[i]; k++; } return k ? s / k : 0; };
+    }
     if (!wet && H.titanish && (H.mainLiquid === 'methane' || H.mainLiquid === 'ethane')) { wet = [Math.max(0, age - 1), age]; rainK0 = 0.005; seaFrac = Math.min(0.05, (H.mainLiquidDepth || 0) / ((H.mainLiquidDepth || 0) + 100)); log('methane rain: channels and polar lakes'); }
-    const S = stagnantWorld(G, { rng: rng.fork('stagnant'), body, age, scale, wet, seaFrac, rainK0, tier: H.tier, volcEnd: 1 + 15 * dm.pow(body.massEarth, 0.6), rate, spike, resurfaceAt, resurfaceShare, known: body.known });
+    const S = stagnantWorld(G, { rng: rng.fork('stagnant'), body, age, scale, wet, seaFrac, rainK0, tier: H.tier, volcEnd: 1 + 15 * dm.pow(body.massEarth, 0.6), rate, spike, resurfaceAt, resurfaceShare, rainAt: rainK0 === 1 ? rainAt : null });
     const volcanoes = S.shields.map((v) => ({ ...latLonOf(v.at), heightM: v.H }));
     const melt = stampFresh(G, S.h, H, body, scale);
     const crater = { crat: S.crat, g: body.gravity, scale, Dw: S.dMin * 1000, Dair: airCut(body.atmosphere ? body.atmosphere.pressure : 0, body.gravity) * 1000 * scale };
@@ -156,7 +162,18 @@ export function worldSim(body, star, opts = {}) {
         if (hc < 0) ocean[c] = 1;
       }
     }
-    return Object.assign(out, { h: S.h, volc: S.volc, river: S.river, stats: S.stats, wet, seaFrac, craters: survivors(G, S.impacts.events, resurfaceAt, S.volc), volcanoes, melt, crater, rock, shieldFields: S.shieldFields, ocean });
+    // (how much its past rain cut, for the finer levels' valleys: stream power wears as the
+    // water through it to the m = 0.45 (the same as the tiles' own), so a history's rain r for a
+    // share f of its time cuts f r^0.45 of what an Earth's lasting rain does; a Titan's methane
+    // rain its own rate (rainK0) through its window)
+    // (split as the tiles use it: how hard it rained while it rained (wetRain, an Earth's 1: the
+    // rivers' sizes) and for what share of the time (wetFrac: how much they cut))
+    let wetFrac = 0, wetRain = 0;
+    if (rainK0 < 1 && wet) { wetFrac = (wet[1] - wet[0]) / Math.max(age, 0.1); wetRain = rainK0; }
+    else if (H.series && H.series.rain) { const st = H.series.t, sr = H.series.rain; let tw = 0, rw = 0; for (let i = 1; i < st.length; i++) if (sr[i] > 0) { const d = st[i] - st[i - 1]; tw += d; rw += d * sr[i]; } wetFrac = tw / Math.max(age, 0.1); wetRain = tw > 0 ? rw / tw : 0; }
+    wetFrac = dm.clamp(wetFrac, 0, 1); wetRain = dm.clamp(wetRain, 0, 3);
+    const wetK = wetFrac * dm.pow(wetRain, 0.45);
+    return Object.assign(out, { h: S.h, volc: S.volc, river: S.river, stats: S.stats, wet, seaFrac, wetK, wetFrac, wetRain, craters: survivors(G, S.impacts.events, resurfaceAt, S.volc), volcanoes, melt, crater, rock, shieldFields: S.shieldFields, ocean });
   }
 
   // ---- plates: the generator's continents as the starting crust

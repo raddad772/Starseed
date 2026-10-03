@@ -110,13 +110,14 @@ export function riverIndex(parts, N, Rw) {
   // and terrain.js lay the meander trace along it)
   const byKey = new Map();
   for (let r = 0; r < m; r++) byKey.set(keys[2 * r], r);
-  const phase = new Float32Array(m).fill(NaN), stack = [];
+  const phase = new Float32Array(m).fill(NaN), stack = [], onWalk = new Int32Array(m).fill(-1);
   for (let r0 = 0; r0 < m; r0++) {
     if (phase[r0] === phase[r0]) continue;
-    // (down the river to a record whose phase is known, or to its end)
+    // (down the river to a record whose phase is known, or to its end; a loop in the links
+    // (water routed round a flat) ends it too: each walk marks what it's passed)
     let r = r0;
     stack.length = 0;
-    while (r >= 0 && phase[r] !== phase[r]) { stack.push(r); const dn = byKey.get(keys[2 * r + 1]); r = dn === undefined || stack.length > 1e6 ? -1 : dn; if (r >= 0 && stack.includes(r)) r = -1; }
+    while (r >= 0 && phase[r] !== phase[r]) { stack.push(r); onWalk[r] = r0; const dn = byKey.get(keys[2 * r + 1]); r = dn === undefined ? -1 : dn; if (r >= 0 && onWalk[r] === r0) r = -1; }
     let ph = r >= 0 ? phase[r] : 0, prev = r;
     for (let k = stack.length - 1; k >= 0; k--) {
       const q = stack[k], b = q * RIVER_REC + 3;
@@ -153,8 +154,8 @@ function bigChannels(rec, half, size, phase, dn, up, G, Rw) {
     if (!isBig(r)) continue;
     let sx = 0, sy = 0, sz = 0, sw = 0;
     for (const dir of [dn, up]) {
-      let q = dir === dn ? r : up[r];
-      while (q >= 0 && Math.abs(phase[q] - phase[r]) <= W / 2) {
+      let q = dir === dn ? r : up[r], guard = 0;
+      while (q >= 0 && Math.abs(phase[q] - phase[r]) <= W / 2 && guard++ < 400) {
         const b = q * RIVER_REC + 3, wt = 1 - Math.abs(phase[q] - phase[r]) / (W / 2 + 1e-9);
         sx += wt * rec[b]; sy += wt * rec[b + 1]; sz += wt * rec[b + 2]; sw += wt;
         q = dir[q];

@@ -218,8 +218,9 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
         else { const lk = gen._lakeAt(dx, dy, dz); if (lk && lk.own) wet[c] = 2; }
       } else if (hb < 0 && gen.p.liquid) wet[c] = 1;
     }
-    const P = gen.snap ? gen.snap.rain(dx, dy, dz) : 800;
-    rain[c] = Math.max(0.05, Math.min(3, (P || 800) / 1000));
+    // (a world with no climate now: the rain its history had while it rained, below)
+    const P = gen.snap ? (gen.snap.Gc ? gen.snap.rain(dx, dy, dz) : (gen.snap.s.wetRain || 0) * 1000) : 800;
+    rain[c] = Math.max(0.02, Math.min(3, (P ?? 800) / 1000));
   }
   // the craters the refinement's cells draw round and the world sim's couldn't (craters.js): on
   // the ground it starts from, so the run wears them and the mean is held to them (the finer
@@ -235,7 +236,10 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
     stampRidges(B, G, S.s.lineae, R, ridgeWidth(wT, cellL), ridgeWidth(wT, pyr ? 4 * cellL : worldCell(R, S.s.N)));
   }
   // (a world without air has no rain: nothing but creep and collapse wear it)
-  const fluvial = !S || !!S.Gc;
+  // (or a wet past: a world that's dry now but had rain once keeps the valleys it cut: its rivers
+  // as big as its rain was while it rained (snapshot wetRain), cutting for the share of its time
+  // it rained (wetFrac))
+  const wetK = !S || S.Gc ? 1 : (S.s.wetFrac || 0), fluvial = wetK > 0;
   const rng = new Rng([hashInts(face, ti), hashInts(tj, region ? 0x7e60 : 0x7e11), (gen.p.seed && gen.p.seed[0]) | 0, 0x10ca1]);
   const col = rockColumn(ST.rock, new Rng([hashInts(face, ST.ri), hashInts(ST.rj, 0xc01), (gen.p.seed && gen.p.seed[0]) | 0, 0x5eb]));
   // the beds' offset (how far a bed is from where the column has it) and how broken the rock
@@ -326,7 +330,7 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
   const sig = rf ? 4 : Math.round(NG / (region ? 10 : 20)), mean = new Float64Array(n), btmp = new Float64Array(NG);
   // (stream power's rate by the cell: each level runs the same number of steps, and finer
   // features form proportionally faster; so each level adds about the relief its scale holds)
-  const K0 = opts.K0 ?? (!fluvial ? 0 : rf ? 1.6 * dm.pow(cell / 1000, 0.85) : region ? 0.3 : 1.2e-2), kd0 = opts.kd0 ?? (rf ? 0.25 : region ? 0.15 : 0.06);
+  const K0 = opts.K0 ?? (!fluvial ? 0 : (rf ? 1.6 * dm.pow(cell / 1000, 0.85) : region ? 0.3 : 1.2e-2) * wetK), kd0 = opts.kd0 ?? (rf ? 0.25 : region ? 0.15 : 0.06);
   // channel heads: water cuts only where enough of it gathers (m^2 of rain-weighted drainage);
   // below that the ground is hillslope, shaped by creep and collapse: smooth between valleys,
   // where real terrain stops being rough at every scale
