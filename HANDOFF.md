@@ -2,7 +2,89 @@
 
 Dave is play-testing and giving feedback in short bursts.
 
-## NOW: simulated worlds (session 109eda38, 2026-10-01/02), committed as it went
+## NOW: the refit fleet and the turbolift (session 109eda38, 2026-10-02 late), committed
+
+Dave: "Ok fix any inconsistencies and do the work we had talked about. If you don't know what to do;
+import the new models. The carrier has changed especially and has a turbolift I want working", then
+"There's meshes for the turbolift and such now".
+
+**Models.** Dave's refit lives in his open Blender file (~/aackpnt-craft-redesign.blend; never save
+over it).
+- `tools/blender/export_refit.py` writes the Bastion scene to assets/models/bastion.glb, the Craft
+  scene to craft.glb, and a copy of the file to assets/blender/fleet-refit.blend.
+  - Each file takes the active scene only. Before this, craft.glb's default scene was the Bastion
+    one, so no craft would have loaded.
+- glbShip finds the `yacht` and `pod` templates anywhere in the tree (the yacht now hangs under
+  `bastion:dock_yacht`).
+- Re-run these after the model changes (all in Blender, via MCP):
+  - `hull_colliders.py`: the carrier's hull boxes, made by ray-casting the exterior mesh with the
+    bays cut out → `src/sim/layouts/bastion-hull.data.js`.
+  - `yacht_layout.py`: the yacht's deck, seats and hull → `yacht.data.js`.
+  - `craft_layout.py`: every craft's hull from its mesh, plus the dropship's deck → `craft.data.js`.
+
+**The carrier now follows the refit** (`src/sim/layouts/bastion.js`). Every room was diffed
+against the model's room:* meshes.
+- 1250 m long. Bays at x ±102..230, z −220..510, 34 m tall.
+- Galleries and cross passages run out to the bays (pressure doors at ±96 and ±102).
+- Seven pads per bay, at the positions painted on the model's floor: x ±192.35, z −111.65, −36, 28,
+  92, 156, 248.5, 412.7.
+- Hull colliders come from the mesh: 759 boxes. They have an x/z grid index (`boxesNear` in
+  vesselTypes) so tests stay cheap (0.37 µs a query).
+- Engines: six main nozzles of radius 12.5 at z 570; the bays' flattened nozzles at z 553. Radius 730.
+- **Escape pods now launch dorsally** (from a tube top at y 30, up). The refit's hull reaches out to
+  the bays, so the old flank tubes ended inside the hull. *Tell Dave:* the model has no pod hatches
+  in the dorsal plating yet.
+- The yacht boards by the transfer lift at z −235.
+
+**The turbolift** (`src/sim/turbolift.js`, data in `TURBOLIFT` in bastion.js; from the model's
+`bastion:turbolift_system` route, stations and preview rig):
+- **Route and stations.** One car on a guideway at y 22: up to the bridge, aft to engineering, and
+  across to shafts down into both bays. Stations: bridge (deck 1), engineering (deck 4), port bay,
+  starboard bay. The spare car sits in its siding.
+- **How a trip runs.** It's cut into legs at each change of axis, with a stop at each.
+  - At a shaft junction the tongues move while the car stands: horizontal ones slide 3.25 m apart,
+    vertical ones rise 5.2 m. Both are animated from state, as Dave's drivers do.
+  - Before each leg the car reserves that leg's blocks; the spare holds its siding.
+  - Runs are exact trapezoids: 50 m/s at 6 m/s² along, 12 m/s at 4 m/s² up and down (tunable in
+    `TURBOLIFT.run`). Starboard bay to the bridge takes about 44 s.
+- **Doors.** Landing doors open only with the car there, and together with its doors. The doorway is
+  walkable while both are open. They won't close on anyone in the doorway.
+- **Riding.**
+  - Riders are carried (`RoomInterior.carry`) and kept to the car (and its doorway at a stop).
+  - In the bays the shafts are solid. The car's own space is walkable only while it stands there
+    with its doors open.
+  - **F at a landing** calls the car. **F in the car** opens the panel app (src/ui/apps/turbolift.js;
+    keys 1–4).
+  - The car has its own lamp, boxed to its cabin (LightRig extras can now carry a host box).
+  - Wayfinding routes through the turbolift when that's the shorter way.
+- Verified in a test tab: called, walked in, rode starboard bay → bridge, walked out onto the
+  bridge. Engineering and the port bay were served in turn. A Node walk test covers the shaft walls
+  and doorways.
+
+**Refit craft:**
+- **Yacht:** the Jupiter 2-style family yacht.
+  - Its oval main deck is rasterised from the model: one room, with walls and furniture as solids.
+    The cockpit's platform and steps are solids you stand on.
+  - Docked, you come and go by the dorsal hatch over the hub; landed, by the port airlock.
+  - The airlock doors are interlocked, and the outer one stays shut while docked. The garage
+    pressure door is a sliding door too.
+- **Lifter:** the refit cabin (two seats up on the flight deck, berths, galley, WC); rocket pods in
+  its hull.
+- **Dropship:** a 7.4 m bay and a 7.6 m ramp. The tank drives in and Y locks it to the mount at the
+  model's dock point.
+- **Tank:** the wider hull.
+- **Walking:** anything up to 0.36 m high is now a stair you step up onto.
+
+**Not done yet (refit):**
+- The yacht's ramp and garage sequence; deploying its hover runabout.
+- The carrier's transfer-lift and dorsal-hatch animation.
+- The spare car in service, and more cars.
+- Calling a destination from a landing.
+- Tank optional guns (that collection isn't exported).
+- The rigged astronaut as the walking avatar.
+- The lifter's tilting rocket pods (static now).
+
+## Simulated worlds (session 109eda38, 2026-10-01/02), committed as it went
 
 **Latest (2026-10-02):**
 - **Water:** lakes and rivers are real water (you wade and swim; your eyes stay above the water).
