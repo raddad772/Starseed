@@ -469,15 +469,31 @@ surveying many worlds; bit-exact across runs and clients, not across revisions):
   localsim.js, RefineReader.rockAt) the height terms now scale with each rock's share, as the
   lows/rises term did: a rock entering the cells round a point (from weight 0) no longer wins
   at once on height alone along the cells' edges.
-- **Straight N-S coasts (investigated 2026-10-03, still open):** Ishiodreill (LAB-30 4) has a
-  dead straight N-S coast at ~-4E, 10-28N (as Dorith's near 156E). On the equatorial cube faces
-  a grid column is a meridian, so suspect the face grid. Traced (scratchpad platetrace*.mjs,
-  onPlateStep): it's a continental margin carried on one plate since a rift at 52.5 Myr whose
-  halves re-welded at 56.5. Not the rift line's wander (wobble std 0.14, wobble2 0.12, both
-  fine): with wobble2 x6 the world evolves differently and still grows a straight N-S coast.
-  Next suspects: the gap fill (lowest plate id, filled in scan order: row-major on the faces)
-  and frame-cell remaps in merge(). The 60 km rock staircases at Ishiodreill's gorge come from
-  it too (the world's rock along that column).
+- **Straight coasts (SIM 53, 2026-10-03):** Ishiodreill (LAB-30 4) had a dead straight N-S
+  coast at ~-4E, 10-28N; Lycauhaer (LAB-90 4) a straight N-S strait. Three causes in
+  tectonics.js, all fixed (traced with scratchpad platetrace*.mjs / simmap.mjs, onPlateStep):
+  - *Rift lines were great circles.* The wander fields (a cell-scale smoothed field, +-0.14 rad)
+    were far stronger than their scale: they broke the line into blobs either side of the circle,
+    which went as islands, so the margins left were the circle itself. Now fractal noise on the
+    frame (0.8 x fbm, 6 octaves from ~30 degrees): bends about as deep as they are long.
+  - *Welds left holes along straight lines.* merge() pushed each of B's frame cells to its nearest
+    in A's frame; one turned grid onto another skips cells in a moire of straight lines, holes
+    that opened as the plate turned on, as thin straight strips of new sea floor. Now each of A's
+    cells pulls from B.
+  - *Stretching continents grew by whole rings of cells.* The crust a continent frees was shared
+    evenly among its margin cells, so a ring turned continent at once, again and again: a
+    dilation by the grid's 8-neighbour square, which straightens any coast near a grid row or
+    column (a meridian on the equator's faces). Now shared by the old crust's weakness
+    (`weakW`, from wobble2): weak places stretch first.
+  - Dorith (LAB-5 5)'s long straight N-S coast (~80 degrees of latitude, crossing face edges)
+    stays: not the grid (check: a tidally locked world's terminator?).
+- **Great rivers' channels (TILE 30):** bigChannels laid the meander trace along the river's line
+  smoothed over two meander wavelengths (+-18 widths: +-14 km for a 760 m river), which cut across
+  the valley's own bends: straight legs over the hills, kinked where they met (Earth's Ciadairon
+  at 12 km). Now +-5 widths.
+- **Drowned rivers (terrain.js):** a river whose line runs below the sea fades out over its last
+  3 m (`rvK`): its banks were held up to the datum, building levees out across the shelf, drawn
+  as canals in the sea.
 
 Open:
 - **Canyons (SIM 49, TILE 27; Dave asked how the Grand Canyon formed, 2026-10-02):**

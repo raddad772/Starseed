@@ -662,20 +662,25 @@ export class TerrainGenerator {
     // water, in a valley that levels off to its banks; the banks (and the water a little
     // below them) follow the sim's heights along the line, so the water only runs downhill
     let wl = -1e9;
-    const rv = iceH > 30 ? null : this._riverAt(x, y, z);
+    let rv = iceH > 30 ? null : this._riverAt(x, y, z);
+    // (where its line runs below the sea it's drowned: the sea's, its valley already cut through
+    // the low sea's ages (the refinement's). Its banks held up to the datum built levees out
+    // across the shelf, drawn as canals in the sea; it fades out over its last few metres)
+    const rvK = rv && this.wetNow && rv.hs < 0 ? 1 - dm.smoothstep(0, 3, -rv.hs) : 1;
+    if (rvK <= 0) rv = null;
     // (the wet ground along it, for the shading: only where water runs now; a dry world's old
     // channels are valleys in its dust, not dark strokes)
-    if (rv && this.wetNow && rv.dist < rv.w * 2.5) out[S_WET] = dm.smoothstep(rv.w * 2.5, rv.w * 0.6, rv.dist);
+    if (rv && this.wetNow && rv.dist < rv.w * 2.5) out[S_WET] = rvK * dm.smoothstep(rv.w * 2.5, rv.w * 0.6, rv.dist);
     if (rv) {
       // (a meandering river's floodplain: the belt it has swung across, laid level near its banks;
       // and the loops it cut off, lakes while young, swales once filled)
       const bank0 = this._bankOf(rv);
-      if (rv.belt > 0 && rv.axis < 1.3 * rv.belt) h += this._levelled(rv, bank0 + 0.5 - h) * 0.85 * dm.smoothstep(1.3 * rv.belt, 0.85 * rv.belt, rv.axis);
+      if (rv.belt > 0 && rv.axis < 1.3 * rv.belt) h += rvK * this._levelled(rv, bank0 + 0.5 - h) * 0.85 * dm.smoothstep(1.3 * rv.belt, 0.85 * rv.belt, rv.axis);
       const oh = 0.5 * (rv.oxW || rv.w);
       if (rv.ox < oh && rv.oxAge < 0.8) {
         const q = 1 - (rv.ox / oh) * (rv.ox / oh), dep = rv.depth * 0.6 * (1 - rv.oxAge);
-        h = Math.min(h, bank0 - dep * q);
-        if (this.wetNow && rv.oxAge < 0.5) wl = Math.max(wl, bank0 - 0.8 - 0.3 * dep);
+        h += rvK * (Math.min(h, bank0 - dep * q) - h);
+        if (this.wetNow && rv.oxAge < 0.5 && rvK >= 1) wl = Math.max(wl, bank0 - 0.8 - 0.3 * dep);
       }
     }
     if (rv) {
@@ -688,10 +693,10 @@ export class TerrainGenerator {
       const half = this.wetNow ? Math.max(rv.w * 0.5, 0.75 * minWavelength) : rv.w * 0.5, flank = Math.max(rv.w * 1.5 + S.G.spacing * (0.02 + 0.12 * rv.k), 1.25 * half);
       if (rv.dist < flank) {
         const bank = this._bankOf(rv);
-        h += this._levelled(rv, bank - h) * dm.smoothstep(flank, half * 1.2, rv.dist);
+        h += rvK * this._levelled(rv, bank - h) * dm.smoothstep(flank, half * 1.2, rv.dist);
         if (rv.dist < half) {
-          h = Math.min(h, bank - rv.depth * (1 - (rv.dist / half) * (rv.dist / half)));
-          if (this.wetNow) wl = Math.max(bank - 0.6 - 0.03 * rv.depth, 0.3);
+          h += rvK * (Math.min(h, bank - rv.depth * (1 - (rv.dist / half) * (rv.dist / half))) - h);
+          if (this.wetNow && rvK >= 1) wl = Math.max(bank - 0.6 - 0.03 * rv.depth, 0.3);
         }
       }
     }

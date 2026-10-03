@@ -52,6 +52,7 @@ import * as dm from '../../core/dmath.js';
 import { hashInts } from '../../core/rng.js';
 import { Heap } from './erosion.js';
 import { blurNative } from './native.js';
+import { Noise3 } from '../../core/noise.js';
 
 export const CONT_KM = 35, OCEAN_KM = 7, MAX_KM = 85; // (85: a hard limit; spreading keeps most crust well under it)
 const RELAX_MYR = 120; // thick crust spreads and wears down (when no erosion runs alongside)
@@ -176,6 +177,10 @@ export class Tectonics {
     this.wobble2 = new Float64Array(n); // (a finer wander on top)
     for (let c = 0; c < n; c++) this.wobble2[c] = (hashInts(c, rng.u32()) >>> 0) / 4294967296;
     smoothField(G, this.wobble2, Math.round(G.N / 20));
+    // (where old crust is weak: a stretching continent's margin advances there first)
+    this.weakW = new Float32Array(n);
+    { let m = 0, v = 0; for (let c = 0; c < n; c++) { m += this.wobble2[c]; v += this.wobble2[c] * this.wobble2[c]; } m /= n; const sd = Math.sqrt(Math.max(1e-12, v / n - m * m));
+      for (let c = 0; c < n; c++) this.weakW[c] = dm.exp(1.5 * (this.wobble2[c] - m) / sd); }
     this.src = new Int32Array(n);
     for (let c = 0; c < n; c++) this.src[c] = c;
     this.trench = new Float32Array(n);
@@ -533,12 +538,16 @@ export class Tectonics {
       A.own[sa] = 1; fromB[sa] = 1;
       A.thick[sa] = B.thick[sb]; A.cont[sa] = B.cont[sb]; A.age[sa] = B.age[sb]; A.rate[sa] = B.rate[sb]; A.relief[sa] = B.relief[sb]; A.sed[sa] = B.sed[sb]; A.carb[sa] = B.carb[sb];
     };
-    for (let sb = 0; sb < n; sb++) {
-      if (!B.own[sb]) continue;
-      // B's frame -> world -> A's frame
-      const x = d[sb * 3], y = d[sb * 3 + 1], z = d[sb * 3 + 2];
-      const wx = Mb[0] * x + Mb[1] * y + Mb[2] * z, wy = Mb[3] * x + Mb[4] * y + Mb[5] * z, wz = Mb[6] * x + Mb[7] * y + Mb[8] * z;
-      put(G.cellAt(Ma[0] * wx + Ma[3] * wy + Ma[6] * wz, Ma[1] * wx + Ma[4] * wy + Ma[7] * wz, Ma[2] * wx + Ma[5] * wy + Ma[8] * wz), sb);
+    // (each of A's frame cells takes B's crust from its place: A's frame -> world -> B's frame.
+    // Pushed the other way, each of B's cells to its nearest of A's, one turned grid onto the
+    // other skipped cells along straight lines (their moire): holes in the joined crust that
+    // opened as the plate turned on, as thin straight strips of new sea floor)
+    for (let sa = 0; sa < n; sa++) {
+      if (shownA[sa]) continue;
+      const x = d[sa * 3], y = d[sa * 3 + 1], z = d[sa * 3 + 2];
+      const wx = Ma[0] * x + Ma[1] * y + Ma[2] * z, wy = Ma[3] * x + Ma[4] * y + Ma[5] * z, wz = Ma[6] * x + Ma[7] * y + Ma[8] * z;
+      const sb = G.cellAt(Mb[0] * wx + Mb[3] * wy + Mb[6] * wz, Mb[1] * wx + Mb[4] * wy + Mb[7] * wz, Mb[2] * wx + Mb[5] * wy + Mb[8] * wz);
+      if (B.own[sb]) put(sa, sb);
     }
     // the world cells B showed: A's now (filling any A cell the forward map skipped)
     for (let c = 0; c < n; c++) {
@@ -582,8 +591,19 @@ export class Tectonics {
     for (let s = 0; s < n; s++) if (A.own[s] && (A.cont[s] > 0.5 || !hasCont)) { g[0] += d[s * 3]; g[1] += d[s * 3 + 1]; g[2] += d[s * 3 + 2]; }
     norm3(g);
     const r = rng.unitVector(), nrm = norm3([r[1] * g[2] - r[2] * g[1], r[2] * g[0] - r[0] * g[2], r[0] * g[1] - r[1] * g[0]]);
-    // (rifts follow old weaknesses: the line wanders well off a great circle)
-    const side = (s) => d[s * 3] * nrm[0] + d[s * 3 + 1] * nrm[1] + d[s * 3 + 2] * nrm[2] + (this.wobble[s] - 0.5) * 1.0 + (this.wobble2[s] - 0.5) * 0.25;
+    // (rifts follow old weaknesses: the line wanders off its great circle at every scale, its
+    // bends about as deep as they are long (fractal noise on the frame, amplitude by wavelength:
+    // ~30 degrees down to a few cells). A cell-scale field as strong as the wobble fields broke
+    // it into blobs either side of the circle instead, which went as islands: the margins left
+    // were the great circle itself, dead straight across a continent)
+    const nz = this._riftNz || (this._riftNz = new Noise3(this.rng.u32())), o0 = rng.range(-50, 50), o1 = rng.range(-50, 50), o2 = rng.range(-50, 50);
+    const sd = this._side || (this._side = new Float32Array(n));
+    for (let s = 0; s < n; s++) {
+      if (!A.own[s]) continue;
+      const x = d[s * 3], y = d[s * 3 + 1], z = d[s * 3 + 2];
+      sd[s] = x * nrm[0] + y * nrm[1] + z * nrm[2] + 0.8 * nz.fbm(2 * x + o0, 2 * y + o1, 2 * z + o2, 6);
+    }
+    const side = (s) => sd[s];
     const B = {
       id: plates.length, M: Float64Array.from(A.M), w: [0, 0, 0],
       own: new Uint8Array(n), thick: new Float32Array(n), cont: new Float32Array(n), age: new Float32Array(n), rate: new Float32Array(n), relief: new Float32Array(n), sed: new Float32Array(n), carb: new Float32Array(n), area: 0,
@@ -666,8 +686,14 @@ export class Tectonics {
           for (let e = G.nStart[s]; e < G.nStart[s + 1]; e++) { const o = G.nbr[e]; if (own[o] && cont[o] >= 0.5) { margin.push(s); break; } }
         }
         if (margin.length) {
-          const each = freed / margin.length;
-          for (const s of margin) d[s] += each;
+          // (not evenly: where the old crust is weak it stretches first. Shared evenly, a whole
+          // ring of margin turned continent at once, again and again: a dilation by the grid's
+          // square, which fills every bend smaller than how far it grew, so a coast running near
+          // a grid row or column grew dead straight along it (a meridian on the equator's faces))
+          const W = this.weakW;
+          let ws = 0;
+          for (const s of margin) ws += W[s];
+          for (const s of margin) d[s] += freed * W[s] / ws;
         } else {
           // (no ocean beside it on this plate: it stays as it was)
           for (let k = 0; k < m; k++) { const s = L[k]; if (cont[s] >= 0.5 && thick[s] > EQ_KM) d[s] += (thick[s] - EQ_KM) * kx; }

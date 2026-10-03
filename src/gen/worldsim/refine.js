@@ -149,9 +149,11 @@ function bigChannels(rec, half, size, phase, dn, up, G, Rw) {
   const thin = (L) => ({ ...L, x: L.x.filter((v, k) => k % 2 === 0), y: L.y.filter((v, k) => k % 2 === 0) });
   const lines = [thin(F.lines[0]), ...F.lines.slice(1).filter((L) => L.age < 0.5).map(thin)];
   const isBig = (r) => r >= 0 && 2 * half[r] >= BIG_W;
-  // (the river's line smoothed over two meander wavelengths along its main stem: the belt
-  // follows the valley at its own scale, not every turn of the cells)
-  const S = new Float64Array(3 * m), Sok = new Uint8Array(m), W = 2 * 18;
+  // (the river's line smoothed over ~10 widths along its main stem: the belt follows the
+  // valley, not every turn of the cells (each about a width). Over two meander wavelengths, as
+  // it was, it cut across the valley's own bends: the channel ran over the hills in straight
+  // legs, kinked where they met)
+  const S = new Float64Array(3 * m), Sok = new Uint8Array(m), W = 2 * 5;
   for (let r = 0; r < m; r++) {
     if (!isBig(r)) continue;
     let sx = 0, sy = 0, sz = 0, sw = 0;
