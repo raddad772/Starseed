@@ -139,7 +139,7 @@ for (const w of worlds) {
     }
     gen.snap.attachPyr(pyr);
     const mk = { name: lm.name, kind: lm.kind, text: lm.text, lat: lm.lat, lon: lm.lon, maps: [] };
-    for (const km of [400, 60, 12]) {
+    for (const km of (opt.scales ? opt.scales.split(",").map(Number) : [400, 60, 12])) {
       const file = `${tag}-${m}-${lm.kind}-${km}km.png`;
       mapAt(gen, b, d, km * 1000, 320, path.join(OUT, file));
       mk.maps.push({ km, file });

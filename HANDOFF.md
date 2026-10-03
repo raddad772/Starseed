@@ -557,6 +557,27 @@ surveying many worlds; bit-exact across runs and clients, not across revisions):
   - Still: the bright provinces are flat-toned blobs with hard edges; its seas lie between ridges
     now but are small (0.9% of the world: the history's ethane); stampFolds loops each arc over a
     tile's cells (Titan's refinement ~80 s, was ~50).
+- **Cliffs: investigation (2026-10-03, nothing committed but the survey's --scales).** Dave: "cliffs
+  you can land near from space and enjoy, or fly through in the fighter"; "all things should be
+  visible at their proper scale" (true size, each level of detail a correctly filtered view of the
+  same world; nothing widened or exaggerated to show from afar).
+  - Measured (scratchpad slopes.mjs, Thugroadath's sandstone gorge -41.3, -31.2): slopes per level
+    p50 4-15 deg, p99 51 deg at every level (257 m, 64 m, 16 m cells), max ~70; >60 deg in 0.1-0.5%
+    of cells. Game geometry is 10x vertically exaggerated (planets 1/10 size, heights real), so
+    this is gentle ground. The finer levels add detail but never build faces.
+  - Letting a rock stand vertical up to its critical height (4c/(rho g) tan(45 + phi/2)) in the
+    integer sim's collapse changed nothing: the slope limit isn't what's missing; nothing cuts faces.
+  - Tried: stepped slopes from each place's real bed column (hard beds steep, soft gentle: the
+    height mapped through the column, blurred to the sampling), blended across contacts by the
+    suites' smooth shares. Survey views at 12 km show bedding on the walls; in game, terraces read
+    from ~3 km; from 350 m oblique the ground is still smooth rounded swells, and level-of-detail
+    rings seam where the blur differs. Reverted; patch in scratchpad bed-steps-experiment.patch.
+  - The real gap: the km-scale ground is smooth. Cliffs need big steep relief made by processes:
+    canyons cut narrow through caprock, escarpments retreating (mesas, buttes), fault scarps, sea
+    cliffs, glacial walls. Next: those as features defined once from the history (lines with their
+    real profile: vertical up to the critical height, talus below), drawn by every level filtered
+    by its sampling, so nothing pops; and in the tile sims, processes that make faces (caprock
+    undercut and block fall) rather than only rules that allow them.
 - **Wrinkle ridges (barren.js `wrinkleRidges`):** lava plains settle and shrink as they cool:
   ridges 100-350 m high, 4-10 km across, 60-350 km long, about one per 150 km square of plains
   (up to 5000), as folds. On Uthmir's and the Moon's maria. Faint on near-black basalt in the
