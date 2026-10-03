@@ -540,11 +540,27 @@ surveying many worlds; bit-exact across runs and clients, not across revisions):
     small craters, as Titan's 0.2-1 Gyr surface. (The methane rain no longer counts as an
     Earth's lasting rain that reset the record every step: rk is its own rainK0.)
   - its seas: a polar bowl (its poles stand ~120 m low) and liquid only poleward of ~55 degrees.
-  - **Still**: Titan is flat now (relief ~400 m: relaxation, then the rain filling every pit), so
-    its seas are round polar caps and it has no albedo pattern. Real Titan's character is its broad
-    relief (Xanadu's highlands, equatorial mountain chains) and the dark organic dune seas in its
-    equatorial lowlands; a dune belt laid by latitude on flat ground was a straight-edged stripe
-    (dropped; the dark organic sand colour is in terrain.js for when it has ground to lie on).
+  - **Mountains, Xanadus, dunes (SIM 56, TILE 31):** its lid squeezed as its shell thickens
+    (stagnant.js `contractionRidges`, Mitri et al. 2010): fold ridges 10-40 km across, east-west
+    chains near the equator, 3-6 provinces packed with short ones (Xanadu's), scattered others.
+    Kept as arcs (snapshot `folds`) the terrain's levels draw after their own history (craters.js
+    `stampFolds`: the refinement whole, each finer level narrower; drawn into the grid they were a
+    smear its haze buried, and drawn into a tile's starting ground its creep wore them away). The
+    grid keeps where they stand close (`rugged`): bare ice there (bright provinces), regolith
+    elsewhere. Dunes of the haze's organic sand (stagnant.js `sed`: where it washed in thick) in
+    the dry low latitudes, off the provinces, the belt narrowing round them, dark brown.
+  - Fixed on the way: with no sea (Titan's seas are under 2%) the rain era's erosion had no base
+    level and its lakes filled the world level; creep ran at an Earth's whatever the rain (now with
+    the rain: a trickle, hardly); a trickle like Titan's (rainK0 < 0.05) traces its water but cuts
+    nothing a world cell shows; the rain's strength was counted twice; a polar bowl let the dry-
+    basin floor flatten the low latitudes (reverted to the original 400 m lift).
+  - Still: the bright provinces are flat-toned blobs with hard edges; its seas lie between ridges
+    now but are small (0.9% of the world: the history's ethane); stampFolds loops each arc over a
+    tile's cells (Titan's refinement ~80 s, was ~50).
+- **Wrinkle ridges (barren.js `wrinkleRidges`):** lava plains settle and shrink as they cool:
+  ridges 100-350 m high, 4-10 km across, 60-350 km long, about one per 150 km square of plains
+  (up to 5000), as folds. On Uthmir's and the Moon's maria. Faint on near-black basalt in the
+  survey's flat light.
 - **Icy and airless surfaces (terrain.js):** old icy ground warm enough to sublime (over ~90 K)
   grows a dark lag by its crater record (exposure) x warmth: Callisto dark, Ganymede dark with
   bright polar caps, Rhea/Triton/Europa bright. On an airless world the regolith is its own rock

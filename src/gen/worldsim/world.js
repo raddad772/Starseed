@@ -156,7 +156,7 @@ export function worldSim(body, star, opts = {}) {
     // granite without water and plates to make it), the dark lava of the maria
     const rock = new Uint8Array(G.n), BAS = ROCK.basalt, ICE = ROCK.ice, REG = ROCK.regolith;
     for (let c = 0; c < G.n; c++) rock[c] = W.mare[c] > 0.5 ? BAS : icy ? ICE : REG;
-    return Object.assign(out, { h: W.h, mare: W.mare, fresh: W.fresh, stats: W.stats, craters: survivors(G, W.impacts.events, resurfaceAt, W.plains, W.mare), melt, crater, lineae: W.lineae, chaos: W.chaos, mareLv: W.mareLv, rock, shieldFields: W.shieldFields });
+    return Object.assign(out, { h: W.h, mare: W.mare, fresh: W.fresh, stats: W.stats, craters: survivors(G, W.impacts.events, resurfaceAt, W.plains, W.mare), melt, crater, lineae: W.lineae, chaos: W.chaos, mareLv: W.mareLv, rock, shieldFields: W.shieldFields, folds: W.folds });
   }
   if (path === 'stagnant') {
     let wet = wetWindow(H);

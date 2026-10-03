@@ -117,7 +117,40 @@ export function barrenWorld(G, opts) {
   const crat = new Float32Array(n), all = cum[cum.length - 1], dtG = DT_MYR / 1000;
   // (a flood at a step's time buries that step's craters too)
   for (let c = 0; c < n; c++) crat[c] = all - cum[since[c] > 0 ? Math.min(cum.length - 1, Math.round(since[c] / dtG) + 1) : 0];
-  return { h, fresh, mare, plains, impacts: imp, stats, crat, dMin, lineae: cracks ? cracks.arcs : null, chaos: cracks ? cracks.chaos : null, mareLv: stats.flooded ? mareLv : null, shieldFields };
+  const folds = wrinkleRidges(G, rng.fork('wrinkles'), mare, imp.scale);
+  return { h, fresh, mare, plains, impacts: imp, stats, crat, dMin, lineae: cracks ? cracks.arcs : null, chaos: cracks ? cracks.chaos : null, mareLv: stats.flooded ? mareLv : null, shieldFields, folds };
+}
+
+// lava plains settle and shrink as they cool and load the ground under them: wrinkle ridges
+// (the Moon's maria, Mars' Hesperia, Mercury's plains), ~100-300 m high, a few km across, tens to
+// hundreds long, wandering over the plains. As arcs (snapshot folds) the terrain's levels draw
+// (craters.js stampFolds), as many as the plains are wide
+export function wrinkleRidges(G, rng, marks, scale) {
+  const n = G.n, d = G.dir, R = G.R;
+  let m = 0;
+  for (let c = 0; c < n; c++) if (marks[c] > 0.5) m++;
+  if (m < 20) return null;
+  // (one about every 150 x 150 km of plains, real: the Moon's maria, Mars' ridged plains)
+  const areaKm2 = 4 * Math.PI * (R / scale / 1000) * (R / scale / 1000) * m / n;
+  const nR = Math.round(Math.min(5000, areaKm2 / 22500));
+  const out = [];
+  for (let k = 0, tries = 0; k < nR && tries < nR * 20; tries++) {
+    const at = rng.unitVector();
+    if (marks[G.cellAt(at[0], at[1], at[2])] < 0.5) continue;
+    const e0 = Math.abs(at[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
+    let u0 = [at[1] * e0[2] - at[2] * e0[1], at[2] * e0[0] - at[0] * e0[2], at[0] * e0[1] - at[1] * e0[0]];
+    const ul = Math.hypot(...u0); u0 = u0.map((x) => x / ul);
+    const v0 = [at[1] * u0[2] - at[2] * u0[1], at[2] * u0[0] - at[0] * u0[2], at[0] * u0[1] - at[1] * u0[0]];
+    const a = rng.range(0, Math.PI), hd = [u0[0] * Math.cos(a) + v0[0] * Math.sin(a), u0[1] * Math.cos(a) + v0[1] * Math.sin(a), u0[2] * Math.cos(a) + v0[2] * Math.sin(a)];
+    let pole = [at[1] * hd[2] - at[2] * hd[1], at[2] * hd[0] - at[0] * hd[2], at[0] * hd[1] - at[1] * hd[0]];
+    const pl = Math.hypot(...pole); pole = pole.map((x) => x / pl);
+    const L = rng.range(60e3, 350e3) * scale / R, ca = Math.cos(-L / 2), sa = Math.sin(-L / 2);
+    const u = [at[0] * ca + hd[0] * sa, at[1] * ca + hd[1] * sa, at[2] * ca + hd[2] * sa];
+    const v = [pole[1] * u[2] - pole[2] * u[1], pole[2] * u[0] - pole[0] * u[2], pole[0] * u[1] - pole[1] * u[0]];
+    out.push({ pole, u, v, start: 0, len: L, H: rng.range(100, 350) * scale * VEXAG, w: rng.range(4e3, 10e3) * scale, mid: at });
+    k++;
+  }
+  return out.length ? out : null;
 }
 
 // a young world too hot for a rigid lid pipes its heat out through volcanoes (Io's way, and

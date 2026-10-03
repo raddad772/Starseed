@@ -339,11 +339,7 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
     const wT = RIDGE.w * (S.s.crater ? S.s.crater.scale : 0.1), cellL = chunkArcSize(L, R) / MT;
     stampRidges(B, G, S.s.lineae, R, ridgeWidth(wT, cellL), ridgeWidth(wT, pyr ? 4 * cellL : worldCell(R, S.s.N)));
   }
-  // (a squeezed icy lid's folds, likewise: each as narrow as it is or as this level's cells hold)
-  if (rf && S && S.s.folds) {
-    const cellL = chunkArcSize(L, R) / MT;
-    stampFolds(B, G, S.s.folds, R, cellL, pyr ? 4 * cellL : Infinity);
-  }
+
   // (a world without air has no rain: nothing but creep and collapse wear it)
   // (or a wet past: a world that's dry now but had rain once keeps the valleys it cut: its rivers
   // as big as its rain was while it rained (snapshot wetRain), cutting for the share of its time
@@ -666,6 +662,14 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
   }
   // (where no water runs, the craters are the history at every scale: nothing to hold)
   if (rf && opts.H !== 0 && K0 > 0) out0.fractal = holdFractal();
+  // (folds: a squeezed lid's ridges, a lava plain's wrinkle ridges, laid on the ground the run
+  // left (they stand sharp, as the Moon's 3 Gyr-old ones do; the run's creep wore a ridge two
+  // cells wide away): each as narrow as it is or as this level's cells hold, less the level
+  // above's drawing, the refinement drawing them whole)
+  if (rf && S && S.s.folds) {
+    const cellL = chunkArcSize(L, R) / MT;
+    stampFolds(h, G, S.s.folds, R, cellL, pyr ? 4 * cellL : Infinity);
+  }
   E.nStep = steps; E.route(); E.drain();
   // a refinement's water: the sea where it reaches (below the datum and joined to the world
   // sim's sea through ground below it), its lakes; and its rock, with the alluvium laid down
