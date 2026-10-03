@@ -8,7 +8,8 @@
 // (--gorges N: also views at the world's N deepest canyon-country gorges, world.js, first;
 // --gorgeRock a,b: only those cut in these rocks, e.g. sandstone,shale,limestone;
 // --at lat,lon/lat,lon: views at these places too, first; --pyr 0: no pyramid tiles, the
-// refinement alone; --pyrN 3: a 3x3 block of tiles at each level, not one)
+// refinement alone; --pyrN 3: a 3x3 block of tiles at each level, not one; --pyrCache 1: the
+// pyramid's tiles kept in the cache, for views redrawn after changes to the sampler only)
 //
 // Writes DIR/<seed>-<body>-world.png and DIR/<seed>-<body>-<n>-<kind>-<scale>.png, and a
 // DIR/survey.json listing them (for a contact sheet). The refinement and pyramid run the tile
@@ -138,12 +139,18 @@ for (const w of worlds) {
       for (let dj = -hb; dj <= hb; dj++) for (let di = -hb; di <= hb; di++) {
         const ti = t0.ti + di, tj = t0.tj + dj;
         if (ti < 0 || tj < 0 || ti >= n || tj >= n) continue;
+        // (--pyrCache 1: kept on disk by the tile sim's and world sim's versions: they read the
+        // refinement and the snapshot, not the sampler, so a change to terrain.js reuses them)
+        const pf = opt.pyrCache === '1' ? path.join(CACHE, `pyr-${tag}-N${N}-v${SIM_VERSION}-r${TILE_VERSION}${FLOAT ? 'f' : 'i'}${opt.pyrIn === '0' ? '-noin' : ''}-L${L}-${t0.face}-${ti}-${tj}.v8`) : null;
+        if (pf && fs.existsSync(pf)) { set.put(t0.face, ti, tj, v8.deserialize(fs.readFileSync(pf))); continue; }
         const P = prepareTile(gen, t0.face, ti, tj, { kind: 'pyr', L, parent: reader, inflow: opt.pyrIn !== '0' });
         if (FLOAT) P.steps(); else P.fromInts(runInt(P.ints()));
         const T = P.finish();
         const rw = new Uint8Array(T.rockC.length);
         for (let o = 0; o < rw.length; o++) rw[o] = (T.rockC[o] & 31) | (T.water[o] << 5);
-        set.put(t0.face, ti, tj, { h: T.h, rw, fl: T.fl, rcv: T.rcv });
+        const tile = { h: T.h, rw, fl: T.fl, rcv: T.rcv };
+        set.put(t0.face, ti, tj, tile);
+        if (pf) fs.writeFileSync(pf, v8.serialize(tile));
       }
       parent = new RefineReader(set);
     }
