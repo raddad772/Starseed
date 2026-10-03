@@ -1,10 +1,15 @@
-// Bastion-class carrier: the layout, the one source for both the game (rooms
-// you walk, doors, lifts, seats, bays, hull colliders) and the Blender build
-// that makes the model from it (tools/blender/build_carrier.py, fed by
-// tools/export-layout.mjs). Plain data, no three.js, so Node can read it.
+// Bastion-class carrier: the layout the game walks and flies (rooms, doors,
+// lifts, the turbolift, seats, bays, hull colliders). The model is Dave's
+// refit in Blender (assets/blender/fleet-refit.blend, exported by
+// tools/blender/export_refit.py); this file follows it: its rooms are the
+// model's room:* meshes, its hull colliders come from the exterior mesh
+// (tools/blender/hull_colliders.py -> bastion-hull.data.js). (The first model
+// was built from this file by tools/blender/build_carrier.py.) Plain data, no
+// three.js, so Node can read it.
 //
 // Ship frame (metres): x to starboard, y up, z aft (the nose points to -z).
-// y = 0 is the flight deck, level with both bay floors. 900 m long.
+// y = 0 is the flight deck, level with both bay floors. 1250 m long
+// (z -682 .. 572), 470 m across the bays.
 //
 //   Deck 1 +42  bridge, astrogation, ready room           (the island)
 //   Deck 2 +37  briefing, sensors, officers, island lounge (the island)
@@ -16,13 +21,18 @@
 //   Engineering (aft, z 262..340, y -24..+24): the FTL core, catwalks at
 //               decks 3, 4 and 5
 // Lifts: forward (decks 1-5), midship (3-5), aft (3-5), each beside the spine.
+// Turbolift: one car on a guideway at y 22 from the bridge to engineering,
+// with a branch across to both bays (see TURBOLIFT).
 // Launchable craft: the captain's yacht in a ventral recess under the forward
-// hull (boarded from the yacht dock on deck 5) and 16 escape pods in tubes in
-// the hull flanks, two at each of eight pod stations on deck 3.
+// hull (boarded from the yacht dock on deck 5 by the transfer lift) and 16
+// escape pods in tubes up to the dorsal plating, two at each of eight pod
+// stations on deck 3.
 //
 // Rooms are boxes { id, name, deck, type, min, max }; two rooms connect where
 // their boxes overlap (a door is a small box overlapping both). Windows are
 // openings in a room wall, on the hull side.
+
+import { HULL_BOXES } from './bastion-hull.data.js';
 
 const G = 9.81;
 export const DECKS = { 1: 42, 2: 37, 3: 12, 4: 0, 5: -12 };
@@ -132,18 +142,20 @@ function win(roomId, wall, u0, u1, y0, y1) { windows.push({ room: roomId, wall, 
         PODS.push({
           id: `pod-${pod}`, label: `Escape pod ${pod}`,
           hatch: [side * 56, y, z0 + dz],                     // where you board, at the station's outer wall
-          dock: { pos: [side * 59.5, y + 1.6, z0 + dz], axis: [side, 0, 0] }, // the pod in its tube, nose outward
-          launch: { dir: [side, 0, 0], speed: 25 },
+          // the pod at the top of its tube, nose up under the dorsal plating (y 36): the refit's
+          // hull reaches out to the bays, so there's no flank to leave by
+          dock: { pos: [side * 59.5, 30, z0 + dz], axis: [0, 1, 0] },
+          launch: { dir: [0, 1, 0], speed: 25 },
         });
       }
     }
   }
   // bay control galleries, one over each bay
-  room('gallery-pass-p', 'Port gallery passage', 3, 'corridor', [-56, y, -12], [-1.4, y + H, -8]);
-  room('gallery-p', 'Port bay control', 3, 'baycontrol', [-65, y, -20], [-54, y + H, 0]);
+  room('gallery-pass-p', 'Port gallery passage', 3, 'corridor', [-92, y, -12], [-1.4, y + H, -8]);
+  room('gallery-p', 'Port bay control', 3, 'baycontrol', [-101, y, -20], [-90, y + H, 0]);
   win('gallery-p', '-x', -18, -2, y + 1, y + 3.5);
-  room('gallery-pass-s', 'Starboard gallery passage', 3, 'corridor', [1.4, y, -12], [56, y + H, -8]);
-  room('gallery-s', 'Starboard bay control', 3, 'baycontrol', [54, y, -20], [65, y + H, 0]);
+  room('gallery-pass-s', 'Starboard gallery passage', 3, 'corridor', [1.4, y, -12], [92, y + H, -8]);
+  room('gallery-s', 'Starboard bay control', 3, 'baycontrol', [90, y, -20], [101, y + H, 0]);
   win('gallery-s', '+x', -18, -2, y + 1, y + 3.5);
   room('medical', 'Medical bay', 3, 'medical', [-26, y, 80], [-3, y + H, 104]);
   room('recreation', 'Recreation and gym', 3, 'recreation', [3, y, 80], [26, y + H, 104]);
@@ -168,7 +180,7 @@ function win(roomId, wall, u0, u1, y0, y1) { windows.push({ room: roomId, wall, 
   room('cargo-lift', 'Cargo lift', 4, 'cargo', [3, y, 90], [26, y + H, 150]);
   sideDoor(4, -1, 120, 'd4-spine', 'workshop');
   sideDoor(4, 1, 120, 'd4-spine', 'cargo-lift');
-  for (const zc of [-100, 40, 200]) room(`cross-${zc}`, 'Bay passage', 4, 'corridor', [-66.6, y, zc - 2], [66.6, y + H, zc + 2], { pressureDoors: [-60, -66, 60, 66] });
+  for (const zc of [-100, 40, 200]) room(`cross-${zc}`, 'Bay passage', 4, 'corridor', [-102.6, y, zc - 2], [102.6, y + H, zc + 2], { pressureDoors: [-96, -102, 96, 102] });
   solids.push({ room: 'flight-ops', kind: 'console', ...box([-25.5, y, -149], [-23, y + 1.1, -127]) });
   solids.push({ room: 'workshop', kind: 'bench', ...box([-25, y, 95], [-21, y + 1.0, 145]) });
 }
@@ -216,10 +228,12 @@ room('reactor-pass', 'Reactor access', 5, 'corridor', [-1.25, DECKS[5], 312], [1
 solids.push({ room: 'eng-control', kind: 'console', ...box([-10, DECKS[4], 258.5], [10, DECKS[4] + 1.1, 260.5]) });
 
 // ---------------------------------------------------------------- flight bays
-// Open at the forward end (z -150) behind a force field; floors level with
-// deck 4. Seven pads in each, along the outer side; ships park nose to the mouth.
-const BAY = { x0: 67, x1: 133, y0: 0, y1: 25, z0: -150, z1: 321 };
-export const PADS_Z = [-100, -36, 28, 92, 156, 220, 284];
+// Open at the forward end (z -220) behind a force field; floors level with
+// deck 4. Seven pads in each, along the outer side (the ones painted on the
+// model's floor: four of 40 m, three long ones); ships park nose to the mouth.
+const BAY = { x0: 103, x1: 229, y0: 0, y1: 33, z0: -220, z1: 510 };
+const PAD_X = 192.35;
+export const PADS_Z = [-111.65, -36, 28, 92, 156, 248.5, 412.7];
 const bays = [];
 for (const side of [-1, 1]) {
   const id = side < 0 ? 'bay-p' : 'bay-s';
@@ -232,7 +246,7 @@ for (const side of [-1, 1]) {
     gravity: G, pressure: 1,
     // the opening: a face of the box, its outward normal and extent
     mouth: { normal: [0, 0, -1], at: BAY.z0, u: [xa, xb], v: [BAY.y0, BAY.y1] },
-    pads: PADS_Z.map((z) => [side * 114, 0, z]),
+    pads: PADS_Z.map((z) => [side * PAD_X, 0, z]),
   });
 }
 
@@ -242,10 +256,10 @@ for (const side of [-1, 1]) {
 // dropping it clear of the recess.
 export const YACHT = {
   label: "Captain's yacht",
-  recess: box([-11, -28, -254], [11, -21, -200]),     // cut up into the hull
-  dock: { pos: [0, -25.5, -227], heading: [0, 0, -1] }, // nose forward (its belly 2 m below the hull)
-  size: [18, 9, 46],                                  // beam, height, length
-  hatch: [0, DECKS[5], -242],                         // in the yacht dock's floor
+  recess: box([-14, -28, -254], [14, -21, -200]),     // cut up into the hull (the fairing rings it)
+  dock: { pos: [0, -25.5, -227], heading: [0, 0, -1] }, // nose forward (its belly half a metre below the hull)
+  size: [26.4, 6.9, 48.4],                            // beam, height, length
+  hatch: [0, DECKS[5], -235],                         // the transfer lift in the yacht dock's floor, down to its dorsal hatch
   launch: { dir: [0, -1, 0], speed: 6 },
 };
 
@@ -256,47 +270,102 @@ export const LIFTS = [
   { label: 'Aft lift', x: 8.5, z: 240, stops: [3, 4, 5].map((d) => ({ deck: d, y: DECKS[d] })) },
 ];
 
+// ---------------------------------------------------------------- the turbolift
+// Upright ropeless cars on a guideway at y 22, between decks 3 and 2: a
+// shaft up to the bridge, the line aft to engineering, and a branch across
+// both bays to a shaft down into each. A car stops, then transfers axes at a
+// junction (the switch tongues move while it stands); between stops it runs
+// on its linear motors. One car in service, the spare in its siding by
+// engineering. Positions are the car's floor; its doors are at its ends
+// (z -1.55: the -z end, z +1.55: the +z end), two leaves sliding apart.
+// (From the model's bastion:turbolift_system: route, stations and rig.)
+const TL_Y = 22;
+export const TURBOLIFT = {
+  label: 'Turbolift',
+  car: { half: [1.48, 1.48], height: 2.7, door: 1.55, leaf: 1.04 },
+  nodes: {
+    bridge: [12, 42, -266], jb: [12, TL_Y, -266],
+    jh: [12, TL_Y, 193], js: [12, TL_Y, 230], je: [12, TL_Y, 256],
+    e1: [25, TL_Y, 256], engineering: [25, 0, 256], siding: [25, TL_Y, 230],
+    s1: [107, TL_Y, 193], hangar_starboard: [107, 0, 193],
+    p1: [-107, TL_Y, 193], hangar_port: [-107, 0, 193],
+  },
+  edges: [['bridge', 'jb'], ['jb', 'jh'], ['jh', 'js'], ['js', 'je'], ['je', 'e1'], ['e1', 'engineering'], ['js', 'siding'],
+    ['jh', 's1'], ['s1', 'hangar_starboard'], ['jh', 'p1'], ['p1', 'hangar_port']],
+  // the junctions into the shafts: tongues (named in the model) that clear the way for a car
+  // going up or down (horizontal ones slide apart along `axis`; vertical ones rise to the guideway)
+  switches: {
+    jb: { name: 'bridge', axis: 2 },
+    e1: { name: 'engineering', axis: 0, vertical: true },
+    s1: { name: 'starboard', axis: 0, vertical: true },
+    p1: { name: 'port', axis: 0, vertical: true },
+  },
+  // end: the car's door end facing the landing; door: the landing door's plane (its leaves
+  // slide 1.14 m apart); panel: the call panel beside it; landing: the room you wait in
+  stations: [
+    { id: 'bridge', label: 'Bridge', about: 'the bridge, astrogation, the ready room', deck: 1, node: 'bridge', end: -1, door: [12, 42, -267.7], panel: [13.2, 42, -268.85], landing: 'tl-landing-bridge' },
+    { id: 'engineering', label: 'Engineering', about: 'engine control, the FTL core, the catwalks', deck: 4, node: 'engineering', end: 1, door: [25, 0, 257.7], panel: [26.2, 0, 258.85], landing: 'tl-landing-engineering' },
+    { id: 'hangar_port', label: 'Port bay', about: 'the port flight bay, inboard wall', deck: 4, node: 'hangar_port', end: -1, door: [-107, 0, 191.3], panel: [-105.8, 0, 190.15], landing: 'bay-p' },
+    { id: 'hangar_starboard', label: 'Starboard bay', about: 'the starboard flight bay, inboard wall', deck: 4, node: 'hangar_starboard', end: -1, door: [107, 0, 191.3], panel: [108.2, 0, 190.15], landing: 'bay-s' },
+  ],
+  spare: 'siding',
+  start: 'hangar_starboard',
+  // runs (m/s, m/s^2: the cars' plating takes up most of the push), and the pauses
+  run: { h: [50, 6], v: [12, 4] },
+  switchTime: 1.2, doorTime: 1.4, dwell: 6,
+};
+// the landings by the bridge and engineering (the bays are their own), and the doorways:
+// walkable while both the landing's door and the car's are open (see Turbolift)
+room('tl-landing-bridge', 'Turbolift landing', 1, 'lobby', [10.5, DECKS[1], -271.2], [13.5, DECKS[1] + H, -267.6]);
+room('tl-landing-engineering', 'Turbolift landing', 4, 'lobby', [23.5, DECKS[4], 257.6], [26.5, DECKS[4] + H, 263.2]);
+for (const st of TURBOLIFT.stations) {
+  const [x, y, z] = st.door, e = st.end; // (the landing is on the e side of the door's plane, the car on the other)
+  const za = z + e * 1.4, zb = z - e * 1.3;
+  room(`tl-${st.id}`, 'Turbolift door', st.deck, 'door', [x - 1.12, y, Math.min(za, zb)], [x + 1.12, y + 2.5, Math.max(za, zb)], { turbolift: st.id });
+}
+// the shafts standing in the bays: walls for walkers (the car's own space is
+// walkable while it stands there with its doors open: `shaft`; riders pass
+// through it and the guideway's mouth: `ride`), boxes for craft
+const TL_SHAFT_BOXES = [];
+for (const s of [-1, 1]) {
+  const X = (a, b) => [Math.min(s * a, s * b), Math.max(s * a, s * b)];
+  const sb = (xa, xb, y0, y1, z0, z1, extra) => {
+    const [x0, x1] = X(xa, xb);
+    return { ...box([x0, y0, z0], [x1, y1, z1]), ...extra };
+  };
+  const st = s < 0 ? 'hangar_port' : 'hangar_starboard', room_ = s < 0 ? 'bay-p' : 'bay-s';
+  solids.push(
+    sb(103.82, 105.5, 0, 21.17, 189.82, 196.18, { room: room_, kind: 'shaft' }),       // the shaft's inboard wall, under the guideway's mouth
+    sb(108.5, 110.18, 0, 26.03, 189.82, 196.18, { room: room_, kind: 'shaft' }),       // outboard
+    sb(105.5, 108.5, 0, 26.03, 194.6, 196.18, { room: room_, kind: 'shaft' }),         // behind the car
+    sb(105.5, 108.5, 3.2, 26.03, 189.82, 191.3, { room: room_, kind: 'shaft' }),       // over the landing door
+    sb(105.5, 108.5, 0, 26.03, 191.3, 194.6, { room: room_, kind: 'shaft', shaft: st, ride: true }), // the car's own space
+    sb(105.32, 105.5, 0, 3.38, 186, 189.82, { room: room_, kind: 'shaft' }),           // the portal in front of the door
+    sb(108.5, 108.68, 0, 3.38, 186, 189.82, { room: room_, kind: 'shaft' }),
+    sb(105.32, 108.68, 3.2, 3.38, 186, 189.82, { room: room_, kind: 'shaft' }),
+    sb(102, 105.5, 21.17, 26.03, 189.82, 196.18, { room: room_, kind: 'shaft', ride: true }), // the guideway, out to the bay's wall
+  );
+  TL_SHAFT_BOXES.push(sb(103.82, 110.18, -0.83, 26.03, 189.82, 196.18), sb(105.32, 108.68, 0, 3.38, 186, 189.82), sb(102, 103.82, 21.17, 26.03, 189.82, 196.18));
+}
+
 // ---------------------------------------------------------------- seats
 export const SEATS = [
   { pilot: true, pos: [0, DECKS[1], -282], eye: [0, DECKS[1] + 1.35, -282.3], stand: [0, DECKS[1], -279], heading: [0, 0, 1], label: 'Command seat', room: 'bridge' },
 ];
 
 // ---------------------------------------------------------------- the hull (outside)
-// The shapes the Blender build models and small craft collide with. The bays
-// are left hollow (floor, walls, roof, aft wall), the mouth open.
+// The shapes small craft collide with: boxes fitted to the refit's exterior
+// mesh, the bays left hollow (floor, walls, roof, aft wall), their mouths open
+// (bastion-hull.data.js, made by tools/blender/hull_colliders.py); and the
+// turbolift's shafts standing in the bays.
 export const HULL = {
-  // the main hull's section: narrower on top, widest at the shoulders, sides sloping in below
-  core: box([-60, -28, -280], [60, 36, 420]),
-  section: { top: [38, 36], shoulder: [60, 18], bottom: [52, -28] },
-  prow: { tip: -450 },
-  island: { ...box([-30, 36, -300], [30, 50, -100]), frontLean: 8, top: 20, shoulder: [26, 44] }, // the front leans forward 8 m
-  spine: box([-16, 36, -88], [16, 42, 380]), // (its nose slopes up over the first 12 m: clear of the island lounge's aft windows)
-  pods: { x: [60, 140], y: [-6, 28], z: [-150, 330], wall: 6, roof: 2, floor: 6 }, // (roof and walls meet the bays' rooms)
-  podEngines: { x: [84, 116], y: [2, 18], z: [330, 356] },
-  engines: { xs: [-36, 0, 36], ys: [-10, 16], radius: 11, z: [420, 446], block: box([-50, -22, 400], [50, 30, 420]) },
-  keel: box([-16, -36, -200], [16, -28, 100]),
+  // the drives: six main nozzles (three across, two high) and two flattened ones behind each bay
+  engines: { xs: [-57.6, 0, 57.6], ys: [-10, 16], radius: 12.5, z: 570 },
+  podEngines: { xs: [151.7, 180.3], y: 10, radius: 6, z: 553 },
+  yachtFairing: box([-21.4, -28, -254], [21.4, -27.7, -200]),
 };
-const P = HULL.pods;
-const colliders = [
-  box([-60, -28, -280], [60, 18, 420]), box([-46, 18, -280], [46, 36, 420]), // the main hull, its sloped top in two steps
-  box([-46, -24, -340], [46, 28, -280]), box([-30, -18, -400], [30, 20, -340]), box([-16, -10, -450], [16, 10, -400]), // the prow, stepped
-  box([-30, 36, -300], [30, 50, -100]),
-  HULL.spine,
-  HULL.keel,
-  box([-50, -22, 420], [50, 30, 446]),
-];
-for (const s of [-1, 1]) {
-  const xo = s * P.x[1], xi = s * P.x[0];
-  const lo = (a, b) => Math.min(a, b), hi = (a, b) => Math.max(a, b);
-  colliders.push(
-    box([lo(xo - s * P.wall, xo), P.y[0], P.z[0]], [hi(xo - s * P.wall, xo), P.y[1], P.z[1]]),       // outer wall
-    box([lo(xi, xi + s * P.wall), P.y[0], P.z[0]], [hi(xi, xi + s * P.wall), P.y[1], P.z[1]]),       // inner wall
-    box([lo(xi, xo), P.y[0], P.z[0]], [hi(xi, xo), 0, P.z[1]]),                                     // floor (top at deck 4)
-    box([lo(xi, xo), P.y[1] - P.roof, P.z[0]], [hi(xi, xo), P.y[1], P.z[1]]),                         // roof
-    box([lo(xi, xo), P.y[0], BAY.z1], [hi(xi, xo), P.y[1], P.z[1]]),                                // aft wall
-    box([lo(s * 84, s * 116), 4, 330], [hi(s * 84, s * 116), 20, 356]),                             // bay engine
-  );
-}
+const colliders = HULL_BOXES.map(([min, max]) => box(min, max));
+for (const b of TL_SHAFT_BOXES) colliders.push(box(b.min, b.max));
 
 // ---------------------------------------------------------------- lights
 // Ceiling fixtures: one every ~14 m along each room (bays: two rows, brighter)
@@ -319,10 +388,10 @@ for (const r of rooms) {
 
 export const BASTION = {
   name: 'Bastion-class carrier',
-  length: 900,
+  length: 1254,
   decks: DECKS,
   rooms, doors, windows, solids, lights,
-  lifts: LIFTS, seats: SEATS, bays,
+  lifts: LIFTS, turbolift: TURBOLIFT, seats: SEATS, bays,
   yacht: YACHT, pods: PODS,
   hull: HULL, colliders,
   engineHall: ENGINE_HALL, ftlCore: FTL_CORE,

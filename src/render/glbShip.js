@@ -117,12 +117,16 @@ export function buildGlbShip(engine, vessel) {
   };
   loadShipModel(vessel.type.model).then((gltf) => {
     const scene = gltf.scene.clone(true);
+    // small craft carried aboard are models of their own (wherever they hang: the refit's
+    // yacht is under its dock's mount)
+    const carried = [];
+    scene.traverse((o) => { const nm = o.userData.name || o.name; if (nm === 'yacht' || nm === 'pod') carried.push([nm, o]); });
+    for (const [nm, o] of carried) { out.templates[nm] = o; o.parent.remove(o); }
     const nodes = [...scene.children];
     for (const n of nodes) {
       const name = n.userData.name || n.name;
-      // small craft carried aboard are models of their own
-      if (name === 'yacht' || name === 'pod') { out.templates[name] = n; scene.remove(n); continue; }
-      const inside = name.startsWith('room:') || name === 'eng-hall';
+      // (the turbolift runs inside the hull and stands in the bays: lit like the rooms)
+      const inside = name.startsWith('room:') || name === 'eng-hall' || name === 'bastion:turbolift_system';
       n.traverse((o) => {
         if (!o.isMesh) return;
         const mname = o.material && o.material.name;
@@ -136,6 +140,7 @@ export function buildGlbShip(engine, vessel) {
       else if (name === 'eng-hall') { out.hall = n; n.visible = false; }
       else if (name.startsWith('glow:')) out.glows.set(name.slice(5), n);
       else if (name === 'navlights') out.navLights.push(n);
+      else if (name === 'bastion:turbolift_system') { out.turbolift = turboliftParts(n); out.parts[name] = n; }
       else if (name.startsWith('forcefield:')) {
         // the shimmering field, drawn with the transparent pass
         n.traverse((o) => {
@@ -156,6 +161,26 @@ export function buildGlbShip(engine, vessel) {
     if (out.onLoaded) out.onLoaded(out);
   }, (err) => console.error('ship model failed to load', vessel.type.model, err));
   return out;
+}
+
+// The turbolift's moving parts, by their names in the model: the car and its
+// four door leaves (car_door_<end>_<side>: end 1 is the car's -z end), the
+// landing doors' leaves (door_<station>_L / _R), the junctions' tongues
+// (switch_<junction>_negative / _positive, sliding apart; vertical_tongues_
+// <junction>, rising into the guideway). BigShipVisual moves them from the
+// turbolift's state.
+function turboliftParts(root) {
+  const T = { car: null, carDoors: [], landing: [], switches: [], tongues: [] };
+  root.traverse((o) => {
+    const nm = o.userData.name || o.name;
+    let m;
+    if (nm === 'turbolift:car') T.car = o;
+    else if ((m = /^turbolift:car_door_(-?1)_(-?1)$/.exec(nm))) T.carDoors.push({ o, end: -Number(m[1]), side: Number(m[2]), x0: o.position.x });
+    else if ((m = /^turbolift:door_(.+)_([LR])$/.exec(nm))) T.landing.push({ o, st: m[1], side: m[2] === 'L' ? -1 : 1, x0: o.position.x });
+    else if ((m = /^turbolift:switch_(.+)_(negative|positive)$/.exec(nm))) T.switches.push({ o, name: m[1], sign: m[2] === 'negative' ? -1 : 1 });
+    else if ((m = /^turbolift:vertical_tongues_(.+)$/.exec(nm))) T.tongues.push({ o, name: m[1] });
+  });
+  return T;
 }
 
 // ------------------------------------------------------------------ what to draw inside
@@ -213,7 +238,8 @@ export class GlbCraftVisual {
     this.parts = [];
     const cache = {};
     loadShipModel(t.model).then((gltf) => {
-      const src = gltf.scene.children.find((n) => (n.userData.name || n.name) === t.template);
+      let src = null;
+      gltf.scene.traverse((n) => { if (!src && (n.userData.name || n.name) === t.template) src = n; });
       if (!src) return;
       const m = src.clone(true);
       m.position.set(0, 0, 0);

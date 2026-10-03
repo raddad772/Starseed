@@ -105,10 +105,11 @@ export const TENDER = {
 };
 
 // ---------------------------------------------------------------- Bastion-class carrier
-// 900 m, laid out like a naval ship (bridge, astrogation, quarters, medical,
-// engineering...) with two flight bays open at the bow end. Its rooms, doors,
-// lifts, bays and hull all come from src/sim/layouts/bastion.js, the same data
-// the Blender build models it from (assets/models/bastion.glb).
+// 1250 m, laid out like a naval ship (bridge, astrogation, quarters, medical,
+// engineering...) with two flight bays open at the bow end and a turbolift
+// joining the bridge, engineering and both bays. Its rooms, doors, lifts,
+// bays and hull all come from src/sim/layouts/bastion.js, which follows the
+// model (Dave's refit, assets/models/bastion.glb).
 // A doorway's sliding door (Star Trek style): the axis you walk through it
 // along, the plane its two leaves close in (between the two rooms' walls, so
 // they slide into the wall), the opening along the wall and its height
@@ -147,7 +148,7 @@ export const CARRIER = (() => {
     hullRating: 20,
     maxDynPressure: 2500,
     aero: { cd: [5.4e4, 8e4, 1.5e4], wing: 0 },
-    radius: 480,
+    radius: 730,
     colliders: L.colliders,
     zones: L.bays,
     rooms: [...L.rooms, ...doorRooms],
@@ -155,6 +156,7 @@ export const CARRIER = (() => {
     slideDoors: L.doors.map((d) => slideDoor(d, L.rooms)),
     solids: L.solids,
     lifts: L.lifts,
+    turbolift: L.turbolift,
     seats: L.seats,
     lights: L.lights,
     // hatches to the craft it carries: board from inside the carrier
@@ -162,9 +164,10 @@ export const CARRIER = (() => {
       { key: 'yacht', label: L.yacht.label, pos: L.yacht.hatch },
       ...L.pods.map((p) => ({ key: p.id, label: p.label, pos: p.hatch })),
     ],
-    engines: [...e.xs.flatMap((x) => e.ys.map((y) => [x, y, e.z[1], e.radius])),
-      ...[-1, 1].flatMap((s) => [-8, 8].map((dx) => [s * 100 + dx, 10, H.podEngines.z[1] + 8, 5]))],
-    probes: hullCorners(-140, -36, -450, 140, 63, 446),
+    engines: [...e.xs.flatMap((x) => e.ys.map((y) => [x, y, e.z, e.radius])),
+      // (the bays' flattened nozzles, twice as wide as tall: two plumes each)
+      ...[-1, 1].flatMap((s) => H.podEngines.xs.flatMap((x) => [-6, 6].map((dx) => [s * x + dx, H.podEngines.y, H.podEngines.z, H.podEngines.radius])))],
+    probes: hullCorners(-236, -36, -682, 236, 64, 572),
   };
 })();
 
@@ -434,12 +437,46 @@ export function restHeight(type, mass = type.mass) {
 
 // ---------------------------------------------------------------- box helpers (local frames)
 
+// The boxes worth testing near a point (x, z) within r: a long list (a carrier's hull, hundreds of
+// boxes) gets a grid over x/z, built once per list; a short one is tested whole. A hinged box (a
+// door, swinging) is always tested.
+const GRID = 32, _grids = new WeakMap(), _near = [];
+export function boxesNear(boxes, x, z, r = 0) {
+  if (boxes.length < 48) return boxes;
+  let g = _grids.get(boxes);
+  if (!g) {
+    g = { cells: new Map(), always: [] };
+    for (const b of boxes) {
+      if (b.angle !== undefined || b.hinge) { g.always.push(b); continue; }
+      for (let i = Math.floor(b.min[0] / GRID); i <= Math.floor(b.max[0] / GRID); i++)
+        for (let k = Math.floor(b.min[2] / GRID); k <= Math.floor(b.max[2] / GRID); k++) {
+          const key = i * 4096 + k;
+          let c = g.cells.get(key);
+          if (!c) g.cells.set(key, (c = []));
+          c.push(b);
+        }
+    }
+    _grids.set(boxes, g);
+  }
+  _near.length = 0;
+  for (const b of g.always) _near.push(b);
+  const i0 = Math.floor((x - r) / GRID), i1 = Math.floor((x + r) / GRID);
+  const k0 = Math.floor((z - r) / GRID), k1 = Math.floor((z + r) / GRID);
+  const one = i0 === i1 && k0 === k1;
+  for (let i = i0; i <= i1; i++) for (let k = k0; k <= k1; k++) {
+    const c = g.cells.get(i * 4096 + k);
+    if (!c) continue;
+    for (const b of c) if (one || !_near.includes(b)) _near.push(b);
+  }
+  return _near;
+}
+
 // Penetration of a point into the nearest box surface: returns depth (> 0 when
 // inside) and the outward normal of the face it is closest to. A box with an
 // `angle` is swung by it about the x axis through its hinge ([y, z]): a door.
 export function boxPenetration(boxes, p, outN) {
   let best = 0;
-  for (const b of boxes) {
+  for (const b of boxesNear(boxes, p.x, p.z)) {
     const mn = b.min, mx = b.max;
     let px = p.x, py = p.y, pz = p.z, c = 1, s = 0;
     if (b.angle) {
@@ -465,7 +502,7 @@ export function boxPenetration(boxes, p, outN) {
 // Highest box top at or below p (within reach), for radar altitude over decks
 export function deckBelow(boxes, p, reach = 400) {
   let top = -Infinity;
-  for (const b of boxes) {
+  for (const b of boxesNear(boxes, p.x, p.z)) {
     if (p.x < b.min[0] || p.x > b.max[0] || p.z < b.min[2] || p.z > b.max[2]) continue;
     const t = b.max[1];
     if (t <= p.y + 0.05 && t > top && p.y - t < reach) top = t;

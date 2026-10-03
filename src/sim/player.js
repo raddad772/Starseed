@@ -14,7 +14,7 @@
 
 import * as THREE from 'three';
 import { SHIP_INTERIOR, SHIP_HULL_BOXES } from '../render/shipModel.js';
-import { insideBox, pilotSeat } from './vesselTypes.js';
+import { boxesNear, insideBox, pilotSeat } from './vesselTypes.js';
 import { floraOf } from './floraField.js';
 
 const EYE = 1.68;
@@ -300,6 +300,7 @@ export class Player {
     const v = this.vessel;
     const I = v.interior;
     this.body = v.body;
+    if (I.carry) I.carry(this); // (riding a turbolift car: it moved since we looked)
     const up = _v4.set(0, 1, 0);
     this.lookUpdate(up, mouse);
     const fwd = this.heading.clone(), right = fwd.clone().cross(up).normalize();
@@ -363,7 +364,7 @@ export class Player {
     let pushed = false;
     for (const off of [0.4, 1.2]) {
       const cc = local.clone(); cc.y += off;
-      for (const bx of c.interior.hullBoxes) {
+      for (const bx of boxesNear(c.interior.hullBoxes, cc.x, cc.z, RADIUS)) {
         const ex = Math.max(bx.min[0] - RADIUS - cc.x, cc.x - (bx.max[0] + RADIUS), 0);
         const ey = Math.max(bx.min[1] - RADIUS - cc.y, cc.y - (bx.max[1] + RADIUS), 0);
         const ez = Math.max(bx.min[2] - RADIUS - cc.z, cc.z - (bx.max[2] + RADIUS), 0);

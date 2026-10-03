@@ -150,7 +150,9 @@ export class ShuttleInterior {
 export class RoomInterior {
   constructor(vessel, t) {
     this.v = vessel;
-    this.rooms = t.rooms || [];
+    // (a turbolift's cars are rooms of their own, moved with them)
+    this.tl = vessel.turbolift || null;
+    this.rooms = this.tl ? [...(t.rooms || []), ...this.tl.rooms()] : t.rooms || [];
     this.solids = t.solids || [];
     this.lifts = t.lifts || [];
     this.seats = t.seats || [];
@@ -187,10 +189,14 @@ export class RoomInterior {
     return false;
   }
 
-  // room whose footprint holds (x, z) with its floor at or just below y
+  // room whose footprint holds (x, z) with its floor at or just below y (in a
+  // turbolift car: the car, whatever it is passing)
   roomAt(p, below = 0.6) {
+    const car = this.carAt(p, below);
+    if (car) return car.room;
     let best = null;
     for (const r of this.rooms) {
+      if (r.car) continue;
       if (p.x < r.min[0] || p.x > r.max[0] || p.z < r.min[2] || p.z > r.max[2]) continue;
       if (p.y < r.min[1] - below || p.y > r.max[1]) continue;
       if (!best || r.min[1] > best.min[1]) best = r;
@@ -213,6 +219,61 @@ export class RoomInterior {
   }
 
   vacuumAt(p) { const r = this.roomAt(p); return !!(r && r.vacuum); }
+
+  // the turbolift car whose cabin holds p, if any
+  carAt(p, below = 0.6) {
+    if (!this.tl) return null;
+    for (const car of this.tl.cars) {
+      const r = car.room;
+      if (p.x >= r.min[0] && p.x <= r.max[0] && p.z >= r.min[2] && p.z <= r.max[2] && p.y >= r.min[1] - below && p.y <= r.max[1]) return car;
+    }
+    return null;
+  }
+
+  // Riding a turbolift: whoever stood in a car (where it was when they last
+  // looked) moves with it. Per player: each remembers where it saw each car.
+  carry(pl) {
+    if (!this.tl) return;
+    const seen = pl._tlSeen || (pl._tlSeen = new Map());
+    for (const car of this.tl.cars) {
+      const last = seen.get(car);
+      if (last && (last.x !== car.pos.x || last.y !== car.pos.y || last.z !== car.pos.z) && this.tl.inCar(car, pl.sPos, last, 0.35)) {
+        pl.sPos.add(_c.copy(car.pos).sub(last));
+        if (car.pos.y !== last.y) pl.grounded = true;
+      }
+      if (last) last.copy(car.pos); else seen.set(car, car.pos.clone());
+    }
+  }
+
+  // where someone at p may stand: in a car, the car and its doorway (while it stands at a
+  // landing); anywhere else, every room but the cars
+  walkable(p) {
+    if (!this.tl) return this.rooms;
+    const car = this.carAt(p);
+    if (car) {
+      const st = this.tl.stationOf(car);
+      const out = this._inCar || (this._inCar = []);
+      out.length = 0;
+      out.push(car.room);
+      if (st) out.push(this.rooms.find((r) => r.turbolift === st.id));
+      return out;
+    }
+    return this._outside || (this._outside = this.rooms.filter((r) => !r.car));
+  }
+
+  // the solids in your way: riding a car, none of the guideway it runs through (`ride`);
+  // outside one, a car's own space in a shaft only while its doorway is shut
+  solidsFor(p) {
+    if (!this.tl) return this.solids;
+    const inCar = !!this.carAt(p);
+    const out = this._sol || (this._sol = []);
+    out.length = 0;
+    for (const s of this.solids) {
+      if (inCar ? s.ride : s.shaft && this.v.doors[`tl-${s.shaft}`].open > 0.7) continue;
+      out.push(s);
+    }
+    return out;
+  }
 
   ceilingClamp(pl) {
     const r = this.roomAt(pl.sPos);
@@ -247,8 +308,9 @@ export class RoomInterior {
 
   confine(pl) {
     const p = pl.sPos;
+    const rooms = this.walkable(p);
     let ok = false;
-    for (const r of this.rooms) if (this.fits(r, p)) { ok = true; pl._room = r; break; }
+    for (const r of rooms) if (this.fits(r, p)) { ok = true; pl._room = r; break; }
     // walking a lowered ramp, or off its end
     if (!ok && this.ramps.length) {
       if (this.rampAt(p.x, p.z) !== null) { ok = true; pl._room = null; }
@@ -268,7 +330,7 @@ export class RoomInterior {
       }
       // otherwise slide along the nearest wall of a room on this level
       let best = null, bd = Infinity;
-      for (const r of this.rooms) {
+      for (const r of rooms) {
         if (Math.abs(r.min[1] - (prev ? prev.min[1] : p.y)) > 0.7 || this.shut(r)) continue;
         const o = this.openSides(r);
         const x = THREE.MathUtils.clamp(p.x, r.min[0] + (o.includes('-x') ? 0 : RADIUS), r.max[0] - (o.includes('+x') ? 0 : RADIUS));
@@ -283,7 +345,7 @@ export class RoomInterior {
         pl._room = best[2];
       }
     }
-    pushOutOfSolids3D(this.solids, p, pl.sVel);
+    pushOutOfSolids3D(this.solidsFor(p), p, pl.sVel);
     return 'ok';
   }
 
@@ -327,6 +389,28 @@ export class RoomInterior {
       if (Math.hypot(p.x - s.pos[0], p.z - s.pos[2]) < 1.4 && Math.abs(p.y - s.pos[1]) < 1.2) {
         pl.prompt = pl.seatOffer(this.v, i);
         if (pl.prompt.key && input.hit('KeyF')) pl.sitDown(i);
+        return;
+      }
+    }
+    // the turbolift: in a car, its panel picks a stop; at a landing, call one
+    if (this.tl) {
+      const car = this.carAt(p);
+      if (car) {
+        const to = car.dest && this.tl.stations.find((s) => s.id === car.dest);
+        pl.prompt = { key: 'F', text: to ? `${this.tl.spec.label} · to ${to.label.toLowerCase()}` : `${this.tl.spec.label} · choose a stop` };
+        if (input.hit('KeyF')) pl.game.openTurbolift(this.v, car);
+        return;
+      }
+      for (const st of this.tl.stations) {
+        const [dx, dy, dz] = st.door;
+        if (Math.abs(p.y - dy) > 1.5) continue;
+        const out = (p.z - dz) * st.end; // (out from the door onto the landing)
+        if (!((Math.abs(p.x - dx) < 1.8 && out > -0.3 && out < 4.5) || Math.hypot(p.x - st.panel[0], p.z - st.panel[2]) < 1.4)) continue;
+        const c = this.tl.carFor(st.id), here = this.tl.stationOf(c) === st;
+        const eta = !here && c.dest === st.id && this.tl.eta(c);
+        pl.prompt = { key: 'F', text: here ? (c.doors > 0.5 ? `${this.tl.spec.label} · step in` : `Open the ${this.tl.spec.label.toLowerCase()}`)
+          : (c.queue.includes(st.id) ? `${this.tl.spec.label} · on its way${eta ? ` · ${Math.ceil(eta)} s` : ''}` : `Call the ${this.tl.spec.label.toLowerCase()}`) };
+        if (input.hit('KeyF')) { this.tl.call(st.id); pl.game.audio && pl.game.audio.clunk && pl.game.audio.clunk(); }
         return;
       }
     }
@@ -387,7 +471,7 @@ export class RoomInterior {
     const V = (a) => new THREE.Vector3(a[0], a[1], a[2]);
     for (let i = 0; i < R.length; i++) for (let j = i + 1; j < R.length; j++) {
       const a = R[i], b = R[j];
-      if (Math.abs(a.min[1] - b.min[1]) > 0.7) continue;
+      if (a.car || b.car || Math.abs(a.min[1] - b.min[1]) > 0.7) continue; // (a turbolift car moves: its rides are below)
       const x0 = Math.max(a.min[0], b.min[0]), x1 = Math.min(a.max[0], b.max[0]);
       const z0 = Math.max(a.min[2], b.min[2]), z1 = Math.min(a.max[2], b.max[2]);
       if (x0 > x1 || z0 > z1) continue;
@@ -410,6 +494,19 @@ export class RoomInterior {
       if (ia < 0 || ib < 0) continue;
       adj[ia].push({ to: ib, at: V(l.a), kind: 'lift', label: l.label });
       adj[ib].push({ to: ia, at: V(l.b), kind: 'lift', label: l.label });
+    }
+    // the turbolift: a ride from each landing to every other (from in front of its door; a
+    // longer ride counts for more)
+    if (this.tl) {
+      const S = this.tl.stations;
+      const front = (st) => new THREE.Vector3(st.door[0], st.door[1], st.door[2] + st.end * 1.6);
+      for (const a of S) for (const b of S) {
+        if (a === b) continue;
+        const ia = R.findIndex((r) => r.id === a.landing), ib = R.findIndex((r) => r.id === b.landing);
+        if (ia < 0 || ib < 0) continue;
+        const ride = this.tl.nodes[a.node].distanceTo(this.tl.nodes[b.node]) * 0.15;
+        adj[ia].push({ to: ib, at: front(a), exit: front(b), kind: 'lift', label: this.tl.spec.label, station: b.id, cost: ride });
+      }
     }
     return (this._graph = adj);
   }
@@ -434,7 +531,7 @@ export class RoomInterior {
       if (i < 0 || i === to) break;
       done[i] = true;
       for (const e of adj[i]) {
-        const d = dist[i] + pos[i].distanceTo(e.at) + (e.kind === 'lift' ? 30 : 0);
+        const d = dist[i] + pos[i].distanceTo(e.at) + (e.kind === 'lift' ? 30 + (e.cost || 0) : 0);
         if (d < dist[e.to]) { dist[e.to] = d; prev[e.to] = { from: i, e }; pos[e.to] = e.kind === 'lift' ? this.liftExit(e) : e.at; }
       }
     }
@@ -486,7 +583,7 @@ export class RoomInterior {
   }
 }
 
-const _p = new THREE.Vector3();
+const _p = new THREE.Vector3(), _c = new THREE.Vector3();
 
 // ---------------------------------------------------------------- craft you only sit in
 

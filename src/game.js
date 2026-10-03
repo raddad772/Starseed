@@ -35,6 +35,8 @@ import { QuickMenu } from './ui/quickMenu.js';
 import { SuitScreen } from './ui/screens/suit.js';
 import { FleetApp } from './ui/apps/fleet.js';
 import { LiftApp } from './ui/apps/lift.js';
+import { TurboliftApp } from './ui/apps/turbolift.js';
+import { Turbolift } from './sim/turbolift.js';
 import { InventoryApp } from './ui/apps/inventory.js';
 import { PaintApp } from './ui/apps/paint.js';
 import { Items, ITEM_TYPES, STARTER_KIT } from './sim/items.js';
@@ -131,6 +133,7 @@ export class Game {
   get suit() { return this.player.ui.suit; }
   get fleetApp() { return this.player.ui.fleetApp; }
   get liftApp() { return this.player.ui.liftApp; }
+  get turboliftApp() { return this.player.ui.turboliftApp; }
   get inventoryApp() { return this.player.ui.inventoryApp; }
   get paintApp() { return this.player.ui.paintApp; }
   get camPos() { return this.player.camPos; }
@@ -181,6 +184,7 @@ export class Game {
     p.ui.suit = new SuitScreen(this, suitEl);
     p.ui.fleetApp = new FleetApp(this);
     p.ui.liftApp = new LiftApp(this);
+    p.ui.turboliftApp = new TurboliftApp(this);
     p.ui.inventoryApp = new InventoryApp(this);
     p.ui.paintApp = new PaintApp(this);
     // what they carry: kept from when they left, else the starter kit
@@ -373,6 +377,7 @@ export class Game {
     v.body = this.startBody;
     v.ftl = new FTL(this, v);
     v.nav = new NavComputer(this, v);
+    if (v.type.turbolift) v.turbolift = new Turbolift(v, v.type.turbolift);
     v.interior = makeInterior(v);
     v.target = new VesselTarget(v);
     v.visual = v.big ? new BigShipVisual(this.engine, v) : (v.type.template ? new GlbCraftVisual(this.engine, v) : new ShipVisual(this.engine, v));
@@ -419,7 +424,7 @@ export class Game {
       e.camera.position.set(0, 0, 0);
       e.camera.quaternion.copy(p.camQuat);
       this.computeLighting();
-      this.lights.update(this.camPos, this.camQuat, this.lighting, this.vessels, this.items.lights(this.camPos, this._lamps || (this._lamps = [])));
+      this.lights.update(this.camPos, this.camQuat, this.lighting, this.vessels, this.lamps(this.camPos));
       this.updateMeter();
       for (const v of this.vessels) v.visual.update(0, this.camPos, this.lighting);
       this.itemVisuals.update(this.camPos);
@@ -1135,6 +1140,29 @@ export class Game {
     this.suit.show(this.liftApp);
   }
 
+  // extra lamps for the light rig: the ones put down, and each turbolift car's (lighting its cabin alone)
+  lamps(camPos) {
+    const out = this.items.lights(camPos, this._lamps || (this._lamps = []));
+    for (const v of this.vessels) {
+      if (!v.turbolift || v.dead) continue;
+      for (const car of v.turbolift.cars) {
+        const L = car._lamp || (car._lamp = { w: new THREE.Vector3(), color: 0xffe6c8, intensity: 5, range: 6, host: v, box: { min: new THREE.Vector3(), max: new THREE.Vector3() } });
+        v.localToWorld(_v1.set(car.pos.x, car.pos.y + 2.55, car.pos.z), L.w);
+        if (L.w.distanceTo(camPos) > 60) continue;
+        L.box.min.fromArray(car.room.min).subScalar(0.4);
+        L.box.max.fromArray(car.room.max).addScalar(0.4);
+        out.push(L);
+      }
+    }
+    return out;
+  }
+
+  // a turbolift car's panel: pick a stop (F in the car)
+  openTurbolift(vessel, car) {
+    this.turboliftApp.setup(vessel, car);
+    this.suit.show(this.turboliftApp);
+  }
+
   // Alternative start: the shuttle parked in the carrier's hangar, the player
   // on the deck beside it
   startAboard() {
@@ -1517,7 +1545,7 @@ export class Game {
     this.engine.camera.position.set(0, 0, 0);
     this.engine.camera.quaternion.copy(this.camQuat);
     this.computeLighting();
-    this.lights.update(this.camPos, this.camQuat, this.lighting, this.vessels, this.items.lights(this.camPos, this._lamps || (this._lamps = [])));
+    this.lights.update(this.camPos, this.camQuat, this.lighting, this.vessels, this.lamps(this.camPos));
     this.updateMeter();
     for (const v of this.vessels) v.visual.update(dtA, this.camPos, this.lighting);
     this.itemVisuals.update(this.camPos);
@@ -1690,6 +1718,7 @@ export class Game {
       walkers.length = 0;
       for (const p of this.players) if (p.mode === 'ship' && p.vessel === v) walkers.push(p.sPos);
       v.updateSlideDoors(dtReal * Math.min(this.warp, 4), walkers);
+      if (v.turbolift) v.turbolift.update(dtReal * Math.min(this.warp, 4), walkers);
     }
     this.items.update();
     // FTL drives: spool, cruise (moving the whole hierarchy), cooldown

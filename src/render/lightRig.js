@@ -148,8 +148,8 @@ export class LightRig {
     walk(root);
   }
 
-  // extra: lights that aren't a ship's fixtures (a field lamp put down):
-  // [{ w: world position, color, intensity, range }]
+  // extra: lights that aren't a ship's fixtures (a field lamp put down, a
+  // turbolift car's): [{ w: world position, color, intensity, range, host?, box? }]
   update(camWorld, camQuat, lighting, vessels, extra = []) {
     // sun: shadow box centred on the camera, light placed far up-sun
     this.sun.color.copy(lighting.sunColor);
@@ -200,7 +200,8 @@ export class LightRig {
     }
     for (const e of extra) {
       const col = new THREE.Color(e.color);
-      cand.push({ w: e.w, d: e.w.distanceTo(camWorld), f: { intensity: e.intensity, range: e.range }, box: null, col, lum: 0.2126 * col.r + 0.7152 * col.g + 0.0722 * col.b });
+      // (a lamp in the host's frame may be confined to a box there: a turbolift car's)
+      cand.push({ w: e.w, d: e.w.distanceTo(camWorld), f: { intensity: e.intensity, range: e.range }, box: e.box && e.host === host ? e.box : null, col, lum: 0.2126 * col.r + 0.7152 * col.g + 0.0722 * col.b });
     }
     cand.sort((a, b) => a.d - b.d);
     const n = Math.min(MAX_FIX, cand.length);

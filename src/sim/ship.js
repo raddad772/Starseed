@@ -41,7 +41,7 @@
 
 import * as THREE from 'three';
 import { propagate, orbitInfo } from '../core/kepler.js';
-import { SHUTTLE, boxPenetration, deckBelow, insideBox } from './vesselTypes.js';
+import { SHUTTLE, boxPenetration, boxesNear, deckBelow, insideBox } from './vesselTypes.js';
 import { floraOf } from './floraField.js';
 
 const G0 = 9.81;
@@ -983,7 +983,7 @@ export class Ship {
         }
       }
       if (boxes) {
-        for (const bx of boxes) {
+        for (const bx of boxesNear(boxes, base.x, base.z, it.r + (it.kind === 'tree' ? it.h : 0))) {
           let best = 0, bestK = 0;
           const steps = it.kind === 'tree' ? 6 : 1;
           for (let k = 0; k < steps; k++) {

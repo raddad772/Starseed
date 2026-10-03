@@ -80,6 +80,7 @@ export class BigShipVisual {
     if (m.fields) for (const f of m.fields) f.material.uniforms.uTime.value = this.time;
     if (m.rooms && m.loaded) this.showRooms();
     if (this.doorLeaves.length) this.updateDoors();
+    if (m.turbolift && v.turbolift) this.updateTurbolift();
     // strobes
     this.blink = (this.blink + dt) % 2.0;
     const on = this.blink < 0.1 || (this.blink > 0.3 && this.blink < 0.4);
@@ -129,6 +130,33 @@ export class BigShipVisual {
     }
   }
 
+  // The turbolift where its state has it (world state: the visual only reads
+  // it): the car, its doors at the landing it stands at, the landing doors, and
+  // the junctions' tongues (horizontal ones slide 3.25 m apart, vertical ones
+  // rise 5.2 m into the guideway, for a car going up or down a shaft)
+  updateTurbolift() {
+    const T = this.model.turbolift, tl = this.v.turbolift, S = tl.spec;
+    if (!this._sw) {
+      this._sw = {};
+      for (const [k, d] of Object.entries(S.switches || {})) this._sw[d.name] = { k, axis: d.axis, at: tl.nodes[k] };
+    }
+    const car = tl.cars[0], st = tl.stationOf(car);
+    if (T.car) T.car.position.copy(car.pos);
+    for (const d of T.carDoors) d.o.position.x = d.x0 + d.side * S.car.leaf * (st && st.end === d.end ? car.doors : 0);
+    for (const d of T.landing) d.o.position.x = d.x0 + d.side * 1.14 * (tl.landing[d.st] || 0);
+    for (const s of T.switches) {
+      const w = this._sw[s.name];
+      if (!w) continue;
+      const u = tl.sw[w.k].at * 3.25 * (w.axis === 2 ? -s.sign : s.sign);
+      s.o.position.copy(w.at);
+      s.o.position.setComponent(w.axis, w.at.getComponent(w.axis) + u);
+    }
+    for (const g of T.tongues) {
+      const w = this._sw[g.name];
+      if (w) g.o.position.set(w.at.x, w.at.y - 5.2 * (1 - tl.sw[w.k].at), w.at.z);
+    }
+  }
+
   // the interior near you, and lit windows wherever you can't see in
   showRooms() {
     const v = this.v, m = this.model, I = v.interior;
@@ -136,6 +164,11 @@ export class BigShipVisual {
     let room = null;
     if (p.aboard && p.vessel === v) room = I.roomAt(p.mode === 'seat' ? _v.fromArray(v.type.seats[p.seat || 0].pos) : p.sPos, 1.0);
     else if (p.aboard && p.vessel.parent === v) room = I.roomAt(p.vessel.lpos, 3.0);
+    // in a turbolift car: the landing beyond its doors where it stands, else nothing but the car
+    if (room && room.car) {
+      const st = I.tl.stationOf(room.tl);
+      if (st) room = I.rooms.find((r) => r.id === st.landing) || room;
+    }
     const ri = room ? I.rooms.indexOf(room) : -1;
     if (ri === this._ri) return;
     this._ri = ri;

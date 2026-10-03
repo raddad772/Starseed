@@ -43,6 +43,8 @@ def _export(scene, path):
         kw['export_colors'] = True
     if 'export_extras' in props:
         kw['export_extras'] = True        # (the objects' custom properties: doors, roles, turbolift data)
+    if 'use_active_scene' in props:
+        kw['use_active_scene'] = True     # (else every scene goes in, and the file's default one may be another's)
     if 'export_animations' in props:
         kw['export_animations'] = False
     try:
