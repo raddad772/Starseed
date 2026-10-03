@@ -100,15 +100,15 @@ export function worldSim(body, star, opts = {}) {
   // (Venus' ~0.5 Gyr ago); a tide-heated icy shell renews itself (the stronger the tides,
   // the younger: Europa's ~60 Myr) and cracks
   const tidal = H ? H.tidal || 0 : 0, icy = !!(p.icy);
-  let resurfaceAt = null, resurfaceShare = 0.75, crack = 0;
+  let resurfaceAt = null, resurfaceShare = 0.75, crack = 0, paveAll = false;
   if (H && H.regime === 'stagnant' && H.runaway && H.heatNow > 0.3) resurfaceAt = age - rng.fork('resurface').range(0.3, 0.8);
   if (icy && tidal > 0.2) { resurfaceAt = age - dm.clamp(0.06 / (tidal * tidal), 0.01, 2); resurfaceShare = 0.97; crack = tidal; }
   // (a rocky moon its tides melt (Io's) is paved over by its volcanoes every few Myr: no
   // impact crater lasts; its mountains, blocks thrust up through the lava, stand)
-  else if (!icy && tidal > 0.6 && p.liquid === 'lava') { resurfaceAt = age - dm.clamp(0.003 / (tidal * tidal), 0.006, 1); resurfaceShare = 0.9; }
+  else if (!icy && tidal > 0.6 && p.liquid === 'lava') { resurfaceAt = age - dm.clamp(0.003 / (tidal * tidal), 0.006, 1); resurfaceShare = 0.9; paveAll = resurfaceAt > age - 0.05; }
   if (resurfaceAt != null) log(`resurfaced ${Math.round((age - resurfaceAt) * 1000)} Myr ago${crack ? ' (an icy shell, cracking under the tides)' : ''}`);
   if (path === 'barren') {
-    const W = barrenWorld(G, { rng: rng.fork('barren'), body, age, scale, volcEnd: 1 + 15 * dm.pow(body.massEarth, 0.6), rate, spike, resurfaceAt, resurfaceShare, crack });
+    const W = barrenWorld(G, { rng: rng.fork('barren'), body, age, scale, volcEnd: 1 + 15 * dm.pow(body.massEarth, 0.6), rate, spike, resurfaceAt, resurfaceShare, crack, paveAll });
     const melt = stampFresh(G, W.h, H, body, scale);
     // (the craters below its grid's: their record by place, for the finer levels to draw)
     const crater = { crat: W.crat, g: body.gravity, scale, Dw: W.dMin * 1000, Dair: airCut(body.atmosphere ? body.atmosphere.pressure : 0, body.gravity) * 1000 * scale };

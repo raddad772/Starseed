@@ -186,6 +186,11 @@ surveying many worlds; bit-exact across runs and clients, not across revisions):
     long flat-ground chains hung the survey) and the smoothing walk is guarded (loops in links).
   - Mars' channels at world scale are stair-stepped (D8 at the refinement's cells) and drawn
     as dark strokes; real valley networks are subtler from afar.
+- **Survey 14 (14 worlds on SIM 45):** Earth, Opast, Europa, Moon, Ephai, Gliavekseth fine.
+  Iahahound (LAB-6 2, was a Mars-like desert) is now airless (the new escape); Moadeal now
+  190 bar, 1184 K (it glows); SOL's Titan airless and Callisto Titan-like (the coin toss).
+  Io-like moons (SIM 46): repaved every few Myr, the crater record restarts everywhere
+  (`paveAll`), only the lows flooded; their heights keep old basin-rim relief as blocks.
   - Population (1075 worlds over 1500 km): habitable-temperature N2 airs 77 -> 88, others a few.
 - **Known spins; Mars' caps (SIM 34):** SOL's planets carry their real day lengths and axial
   tilts (`known.rotH`, `obliquityDeg`, `retro`: Mercury's 3:2 spin, Venus' slow retrograde

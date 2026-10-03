@@ -83,7 +83,10 @@ export function barrenWorld(G, opts) {
     // flood, their craters gone; what came after is all that's cratered there
     if (opts.resurfaceAt != null && !stats.resurfaced && t >= opts.resurfaceAt) {
       const level = resurface(G, h, opts.resurfaceShare ?? 0.75, basalt ? mare : plains, fresh);
-      for (let c = 0; c < n; c++) if (h[c] < level) since[c] = t;
+      // (only the lows flooded start their record again; but where the volcanoes repave the
+      // world every few Myr (opts.paveAll: a tide-melted moon, Io) the heights' slopes shed as
+      // fast as they're cratered: nothing anywhere keeps an old crater)
+      for (let c = 0; c < n; c++) if (h[c] < level || opts.paveAll) since[c] = t;
       stats.resurfaced = true;
     }
   }
