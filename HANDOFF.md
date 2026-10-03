@@ -2,6 +2,43 @@
 
 Dave is play-testing and giving feedback in short bursts.
 
+## NOW: rivers and canyons (session 109eda38, 2026-10-03), committed at 8bf9fc2
+
+Dave's asks this stretch: cliffs you can land near or fly through, all at true scale (each level of
+detail a filtered view of the same ground, nothing exaggerated, no popping); then "the rivers are
+non-contiguous with obvious seams". Full notes are under Simulated worlds: "Rivers made
+continuous" and "Canyons".
+
+- **Done and verified on survey maps (not yet in game):**
+  - rivers are continuous on Thugroadath (LAB-44:5) and Ishiodreill (LAB-30:4); Earth is unchanged;
+  - canyons appear in dry plateaus: walls from the rock column, volume matched to the coarse
+    levels, tapering at river ends. They're modest now; granite valleys stay V valleys.
+- **Open, in order:**
+  1. **River heads.** Dave: "Should it just like...end like that?" No. A river appears at full
+     width (~50 m) where its catchment passes RIVER_A = 1e8 m², a blunt blob with nothing feeding
+     it; creeks only draw on tiles with cells of 60 m or less. Plan:
+     - taper the width over the first record or two;
+     - extend a thin stream upstream along the refinement's fl/rcv below the threshold;
+     - make sure pyramid creeks join it.
+     See -40.764, -31.155 on LAB-44:5.
+  2. **Canyon leftovers** at the sandstone site (-40.77, -31.18): one stray wall arc, and a dark
+     diagonal seam by the river head.
+  3. **In-game check** of rivers and canyons with the chase camera: test tab, `?workers=2`, message
+     XBox Work first.
+  4. **Earth's great rivers** show angular corners at 12 km: refine.js bigChannels thins its trace
+     to every other point. Great rivers also get no canyons yet; next is entrenched meanders along
+     the big segments.
+  5. Canyon cost is ~+1 µs per sample near dry canyon rivers (3.3 vs 2.3 µs).
+- **Tools:**
+  - survey.mjs `--at lat,lon/...`, `--pyr 0` (refinement only), `--pyrN 3` (3x3 pyramid tiles),
+    `--scales`.
+  - Survey cache (SIM 56, TILE 31) for LAB-44:5, LAB-30:4, SOL:3, SOL:4, SOL:18 is in this
+    session's scratchpad `cache15`, which may not survive; rebuilding a world costs about 1-2
+    minutes with 4 threads. Ask XBox Work before heavy runs, and say "Starseed done" after.
+  - Diagnostics, also in the scratchpad: xsec.mjs (cross-sections), rivmap.mjs (which river the
+    sampler takes), jog.mjs and seam.mjs (trace the channel and record choice), cbench.mjs
+    (sampling cost).
+
 ## NOW: the refit fleet and the turbolift (session 109eda38, 2026-10-02 late), committed
 
 Dave: "Ok fix any inconsistencies and do the work we had talked about. If you don't know what to do;
