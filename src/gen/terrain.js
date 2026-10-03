@@ -50,7 +50,8 @@ export const S_WDEPTH = 16;  // lake or river water over the ground here (m; its
 export const S_SAND = 17;    // wind-blown sand (a dune sea's) 0..1
 export const S_ICE = 18;     // glacier ice over the ground here (m; S_H is its surface)
 export const S_WET = 19;     // a river's wet ground beside it 0..1
-export const S_LEN = 20;
+export const S_RFADE = 20;   // how far a river's water here has faded out, seen from afar 0..1
+export const S_LEN = 21;
 
 // creeks from the terrain tiles' drainage: a channel from this much rain-weighted water (m^2),
 // water in it from this much
@@ -670,7 +671,14 @@ export class TerrainGenerator {
     if (rvK <= 0) rv = null;
     // (the wet ground along it, for the shading: only where water runs now; a dry world's old
     // channels are valleys in its dust, not dark strokes)
-    if (rv && this.wetNow && rv.dist < rv.w * 2.5) out[S_WET] = rvK * dm.smoothstep(rv.w * 2.5, rv.w * 0.6, rv.dist);
+    // (a river narrower than the sampling's spacing is drawn as wide as it, below, so it shows as
+    // a line from afar, not as the few samples that happen to land in it; but one many times
+    // narrower than the line it would make fades out: from orbit the great rivers show, not
+    // every stream on the land as a vein of water)
+    const rvOwn = rv ? rv.w * 0.5 : 0, rvWide = rv && this.wetNow ? Math.max(rvOwn, 0.75 * minWavelength) : rvOwn;
+    const rvFade = rv && this.wetNow ? dm.smoothstep(4, 16, rvWide / Math.max(rvOwn, 1e-3)) : 0;
+    let rvWl = -1e9;
+    if (rv && this.wetNow && rv.dist < rv.w * 2.5) out[S_WET] = rvK * (1 - rvFade) * dm.smoothstep(rv.w * 2.5, rv.w * 0.6, rv.dist);
     if (rv) {
       // (a meandering river's floodplain: the belt it has swung across, laid level near its banks;
       // and the loops it cut off, lakes while young, swales once filled)
@@ -690,13 +698,14 @@ export class TerrainGenerator {
       // not a one-sample trench that shades as a dark stitched line from afar)
       // (0.75 of the spacing each side: a line at any angle has a sample within that of it, where
       // half the spacing leaves a diagonal one dotted)
-      const half = this.wetNow ? Math.max(rv.w * 0.5, 0.75 * minWavelength) : rv.w * 0.5, flank = Math.max(rv.w * 1.5 + S.G.spacing * (0.02 + 0.12 * rv.k), 1.25 * half);
+      // (and fading out from afar: its channel shallower and its water paler, to nothing)
+      const half = rvWide, flank = Math.max(rv.w * 1.5 + S.G.spacing * (0.02 + 0.12 * rv.k), 1.25 * half);
       if (rv.dist < flank) {
         const bank = this._bankOf(rv);
         h += rvK * this._levelled(rv, bank - h) * dm.smoothstep(flank, half * 1.2, rv.dist);
-        if (rv.dist < half) {
-          h += rvK * (Math.min(h, bank - rv.depth * (1 - (rv.dist / half) * (rv.dist / half))) - h);
-          if (this.wetNow && rvK >= 1) wl = Math.max(bank - 0.6 - 0.03 * rv.depth, 0.3);
+        if (rv.dist < half && rvFade < 1) {
+          h += rvK * (1 - rvFade) * (Math.min(h, bank - rv.depth * (1 - (rv.dist / half) * (rv.dist / half))) - h);
+          if (this.wetNow && rvK >= 1) wl = rvWl = Math.max(bank - 0.6 - 0.03 * rv.depth, 0.3);
         }
       }
     }
@@ -812,7 +821,7 @@ export class TerrainGenerator {
       }
     }
     out[S_H] = h;
-    if (wl > h) out[S_WDEPTH] = wl - h;
+    if (wl > h) { out[S_WDEPTH] = wl - h; if (wl === rvWl) out[S_RFADE] = rvFade; }
     out[S_INLAND] = h > 0 ? 1 : 0;
     out[S_VARIANT] = this.nClimate.fbm(x * 6 + 3, y * 6, z * 6, 3);
     const Ts = S.Tsea(x, y, z);
@@ -1117,6 +1126,16 @@ export class TerrainGenerator {
     // lakes and rivers: water over the ground, tinted by its depth (frozen when cold); the sea
     const wd = s[S_WDEPTH];
     if (!(wd > 0.05) && h < 0 && p.liquid && this.contThreshold > -1e8) return this.shadeNoise(s, slope, col, mat);
+    if (wd > 0.05 && s[S_RFADE] > 0) {
+      // (a river faded out from afar: its water over the ground's own colour by how far it's faded)
+      const fd = s[S_RFADE], c2 = this._fc || (this._fc = [0, 0, 0]), m2 = this._fm || (this._fm = new Float64Array(8));
+      s[S_RFADE] = 0; this.shadeSnap(s, slope, c2, m2, nrm);
+      s[S_WDEPTH] = 0; this.shadeSnap(s, slope, col, mat, nrm);
+      s[S_WDEPTH] = wd; s[S_RFADE] = fd;
+      for (let k = 0; k < 3; k++) col[k] = c2[k] + (col[k] - c2[k]) * fd;
+      if (fd < 0.5) for (let k = 0; k < 8; k++) mat[k] = m2[k];
+      return;
+    }
     if (wd > 0.05) {
       const k = dm.smoothstep(0, 60, wd), dim = 0.8 + 0.2 * dm.smoothstep(0, 3, wd);   // (no step at any depth: a lake's bed changing by a metre shows nowhere)
       col[0] = (P.waterShallow[0] + (P.waterDeep[0] - P.waterShallow[0]) * k) * dim;
