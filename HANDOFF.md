@@ -1,6 +1,74 @@
-# Starseed Infinite handoff (2026-10-01, session 68fc2903, updated by sessions 0f13fab4 and 109eda38)
+# Starseed Infinite handoff (2026-10-01, session 68fc2903, updated by sessions 0f13fab4, 109eda38 and 39d69fa8)
 
 Dave is play-testing and giving feedback in short bursts.
+
+## NOW: true scale, the ground layer, life through history (session 39d69fa8, 2026-10-03)
+
+Dave's asks: fix rivers inside canyons ("random noise is not interesting, but simulated history is"),
+optimise generation; then a rethink of the whole pipeline. Decisions, in his words where possible:
+- Keep the deep time (plates, climate, life) as it is; draw its gross features on a smaller planet but
+  simulate everything below its grid at true scale (no 10x height exaggeration). "We want a world to look
+  locally real, and have interesting features, and look convincing from space."
+- "We don't want things looking like moons": fake bigness from orbit (atmosphere squeezed above a knee);
+  "we still want moons nicely visible and sized in skies" (one global LEN_SCALE keeps angular sizes).
+- The integer tile sim is canonical; judge terrain changes with a SOL suite of worlds.
+- Long term: pre-generated compressed world packs, seamless descent, shareable links with notes, a catalogue
+  of the land for later life/civilization sims (memory: world-packs).
+
+**Committed this session:**
+- 802f469 survey `--pyrCache 1` (pyramid tiles kept on disk: redraws after sampler changes in seconds).
+- c4f1f67 (SIM 57) life and climate through the history: the life map advances every 2.5 Myr through the
+  plate stage in the climate of the time (rerun every 25 Myr with the history's T, P and plant cover);
+  erosion takes that time's rain pattern and plants; spread by stage (spores slow over land but far on
+  the wind, seeds, animal-carried, flyers), faster onto richer land; die-offs strike as they happen.
+  Muriogleaks (LAB-95:3, plants 80 Myr old): plants reach 1-2 continents not all (15% cover vs 41%), the
+  bare ones turn desert. Cost ~+20%. Note: erosion couples into the plate sim, which is chaotic: any
+  change to rain/plants rearranges the continents (A/B comparisons are different samples).
+- d7f6976 (SIM 58) the ground layer (src/gen/worldsim/ground.js): per world cell, simulated through both
+  stages: local relief (toward what the wear holds by rock; valley glaciers deepen, ice sheets scour),
+  youth, valley spacing (creep vs channels; plants widen it), grain (belts' trend, ice flow), glaciation.
+  In the snapshot (gLr, gVsp, gYouth, gGx, gGy, gGlac; SnapshotSampler.ground). Youth reads "old" almost
+  everywhere: needs calibrating against each world's own range.
+- 494dde0 survey `--trueScale 0`, `--heads N` (own caches).
+- 76a2c8b tile-sim switches, off by default (history replay, jittered cells, water spread on slopes
+  (ROUTE.mfd), channel heads, creep substeps, seeded roughness, trueScale).
+
+**Uncommitted (in the tree):**
+- True scale as the default (localsim.js `trueScale`, terrain.js sampler detail from the ground layer,
+  gpu/itile.js `hardTables(kd0, scK)`: collapse angles by cell size, bit-identical JS/C/GPU via the shared
+  table; TILE 33). Relief each level adds is held to the ground layer's local relief at real scale (rms
+  over 20 km ~ lr/2, H <= 0.55). On the float sim it gave the first convincing mountains at 12/3/1 km.
+- The integer sim cuts ~3x deeper at its cells' scale than the float sim at every level (1.1 km, 284 m,
+  71 m; measured, not collapse, not the fill), so at true scale its valleys turned into a grid of straight
+  N-S/E-W slots (also faintly present today). `INT_CUT = 0.33` (opts.intCut, survey `--intCut`) brings it
+  in line with the float sim, but the integer sim is canonical: whether that stays is being decided by
+  the SOL suite (running: scratchpad sol_today vs sol_ts; Mercury, Venus, Earth, Mars, Moon, Io, Europa,
+  Titan). Root cause not found (candidates: its water build-up over steps, 8-pass local lake fill, draws).
+- Rivers on explicit channels and canyons cut along them (src/gen/channels.js new; canyon.js rewritten:
+  walls from the rock column worn back by softness x exposure time, volume-fit in closed form, slip-off
+  slopes inside bends; terrain.js `_refRiverAt`, `_canyons` as fine-minus-coarse detail, a lower envelope
+  over records; meanders.js migration rates). Better than 8bf9fc2 (the canyon follows the river, heads
+  taper) but a few straight seams remain; the plan is to write rivers into the tiles instead.
+- Upper atmosphere squeezed (bodies.js `atmoAlt`/`atmoReal`, knee max(12 km, 1.4 H), above it x
+  LEN_SCALE; render/atmosphere.js uKnee/uUpper and cloud altitude; sim/universe.js air density). Earth's
+  air now tops out at ~20 km drawn. Not yet looked at in the browser.
+
+**What didn't work (so nobody retries it blind):** history replay of the world sim's last 10 Myr into
+the refinement (almost no difference); water spread on slopes and jittered cells (little difference at
+the refinement; plates diverge if applied to the world sim); higher channel thresholds and more creep
+(combs become blank slopes); running tiles 10x longer to equilibrium (combs deepen or vanish); starting
+roughness alone (more texture, still parallel). The cause: each level ran on a smooth copy of the level
+above and made features at its own grid scale; true scale plus the ground layer's relief fixed the look.
+
+**Next, in order:** judge the SOL suite and settle INT_CUT (or find the integer sim's root cause); commit
+true scale; check the atmosphere in a test tab (message XBox Work first); same seed at 1/20 drawn size;
+rivers written into the tiles (retires the overlay seams); calibrate the ground layer's youth; a nutrient
+factor for life's origin; run the life map through the last 10 Myr too.
+
+**Tools:** survey flags above; scratchpad scripts (this session's, may not survive): methods.mjs (one tile
+several ways), l5test.mjs (a 71 m tile on cached parents), kcal.mjs (int vs float relief per level),
+step1.mjs (int vs float after N steps), lifehist.mjs (today vs life through history), groundmaps.mjs
+(ground layer maps), replay.mjs, compress.mjs / decodecost.mjs / finecost.mjs (pack size and cost).
 
 ## NOW: rivers and canyons (session 109eda38, 2026-10-03), committed at 8bf9fc2
 
