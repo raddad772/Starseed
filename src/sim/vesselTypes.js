@@ -12,6 +12,7 @@
 import { HULL_PROBES, SHIP_HULL_BOXES, SHIP_INTERIOR } from '../render/shipModel.js';
 import { BASTION } from './layouts/bastion.js';
 import { YACHT_DECK, YACHT_SOLIDS, YACHT_SEATS, YACHT_HULL } from './layouts/yacht.data.js';
+import { CRAFT_HULLS, DROPSHIP_DECK, DROPSHIP_SOLIDS } from './layouts/craft.data.js';
 
 const box = (x0, y0, z0, x1, y1, z1) => ({ min: [x0, y0, z0], max: [x1, y1, z1] });
 const G = 9.81;
@@ -22,6 +23,8 @@ function hullCorners(x0, y0, z0, x1, y1, z1) {
   for (const x of [x0, (x0 + x1) / 2, x1]) for (const y of [y0, y1]) for (const z of [z0, (z0 + z1) / 2, z1]) out.push([x, y, z]);
   return out;
 }
+// a craft's hull as read from its model (tools/blender/craft_layout.py)
+const hull = (k) => CRAFT_HULLS[k].map(([min, max]) => ({ min, max }));
 
 export const SHUTTLE = {
   key: 'shuttle',
@@ -334,9 +337,9 @@ export const TANK = {
   ...springs(22000, 0.5, 0.8),
   aero: { cd: [20, 40, 10], wing: 0 },
   // a wedge (Battlezone): low nose, the body rising to the rear compartment
-  probes: hullCorners(-2.2, -0.5, -4.2, 2.2, 2.0, 4.2),
-  colliders: [box(-2.2, -0.5, -4.2, 2.2, 1.0, -2.5), box(-2.2, -0.5, -2.5, 2.2, 2.0, 4.2)],
-  radius: 5, size: [4.4, 2.5, 8.4],
+  probes: hullCorners(-3.5, -0.5, -4.4, 3.5, 2.0, 4.3),
+  colliders: hull('tank'), // (the refit's: wider, 7.2 m across its sponsons)
+  radius: 6, size: [7.16, 2.5, 8.9],
   // two seats under a canopy that lifts to climb in or out; behind them a
   // compartment for people or cargo, with a ramp at the back and a screen
   // showing outside
@@ -374,10 +377,7 @@ export const LIFTER = {
   ...springs(45000, 0.17),
   aero: { cd: [60, 120, 25], wing: 0 },
   probes: [...hullCorners(-2.2, 1.5, -14.8, 2.2, 5.2, -9), ...hullCorners(-1.8, 2.9, -9, 1.8, 5.0, 11.2), [-8.0, 2.0, -6.3], [8.0, 2.0, -6.3], [-8.0, 2.0, 6.3], [8.0, 2.0, 6.3]],
-  // (the refit: four rocket pods on outriggers, out to 8 m either side)
-  colliders: [box(-2.2, 1.5, -14.8, 2.2, 5.2, -9), box(-1.8, 2.9, -9, 1.8, 5.0, 11.2),
-    box(-4.7, 3.2, -7.0, 4.7, 4.2, -5.6), box(-4.7, 3.2, 5.6, 4.7, 4.2, 7.0),
-    box(-8.1, 1.9, -7.4, -4.6, 6.3, -5.2), box(4.6, 1.9, -7.4, 8.1, 6.3, -5.2), box(-8.1, 1.9, 5.2, -4.6, 6.3, 7.4), box(4.6, 1.9, 5.2, 8.1, 6.3, 7.4)],
+  colliders: hull('lifter'), // (the refit's, four rocket pods on outriggers; the cradle left open for the cargo)
   // the open carry mount (cargo may overhang the sides)
   clamp: { name: 'Cargo cradle', pos: [0, 0, 0], reach: [2.2, 1.8, 3.2], fits: [7.4, 3.67, 9.28] },
   radius: 18, size: [16.2, 7, 26.1],
@@ -401,34 +401,38 @@ export const LIFTER = {
   help: 'Y clamps the cargo under you (or lets it go)',
 };
 
-// Troop bay with a rear ramp (walk-in), cockpit forward
+// Troop bay with a rear ramp (walk-in), cockpit forward. The refit's bay is
+// 7.4 m wide between its benches: the hover-tank drives up the ramp and
+// rides in it, locked to its mount (Y).
 export const DROPSHIP = {
   key: 'dropship', className: 'Cheyenne-class dropship', big: false, seatOnly: true, ftl: false, model: CRAFT_MODEL, template: 'dropship',
   livery: { main: '#5f6a5c', second: '#3c423b', stripe: '#a33a26' },
-  mass: 38000, I: inertia(38000, 16, 6, 26), thrust: { main: 4.0, retro: 1.5, belly: 2.8, down: 0.6, lateral: 1.2 },
+  mass: 42000, I: inertia(42000, 17, 7.7, 28.9), thrust: { main: 4.0, retro: 1.5, belly: 2.8, down: 0.6, lateral: 1.2 },
   alpha: [1.0, 0.8, 1.6], rate: [0.9, 0.7, 1.3],
   hullRating: 90,
   legs: true, legLength: 1.9, legAttach: [[-3.4, -1.0, -7.5], [3.4, -1.0, -7.5], [-3.4, -1.0, 6.5], [3.4, -1.0, 6.5]],
-  ...springs(38000, 0.17),
-  aero: { cd: [40, 90, 12], wing: 30 },
-  probes: [...hullCorners(-2.2, -1.2, -14.5, 2.2, 2.6, 10.3), [-7.5, 0.9, 2], [7.5, 0.9, 2]],
-  colliders: [box(-2.2, -1.2, -14.5, 2.2, 2.6, 10), box(-8.5, 0.4, -2, 8.5, 1.4, 6)],
-  doors: [{ id: 'ramp', label: 'rear ramp', ramp: true, min: [-1.6, -1.2, 10], max: [1.6, 2.2, 10.35], hinge: [-1.2, 10], angle: 2.04, speed: 0.4, panel: [2.3, -0.8, 9.0], panelIn: [1.4, 0.3, 8.6] }], // (down past level onto the ground: a 1.5 m drop)
-  parts: [{ node: 'ramp', door: 'ramp', hinge: [0, -1.2, 10], axis: [1, 0, 0], angle: 2.04 }],
-  // walk-in: up the ramp into the troop bay, forward through the bulkhead to the cockpit
-  rooms: [
-    { id: 'bay', name: 'Troop bay', type: 'bay', min: [-1.6, -1.0, -6], max: [1.6, 2.2, 10], open: ['+z'], gate: { '+z': 'ramp' } },
-    { id: 'cockpit', name: 'Cockpit', type: 'cockpit', min: [-1.3, -0.8, -11], max: [1.3, 1.9, -5.8] },
-    { id: 'cockpit-door', name: 'Doorway', type: 'door', min: [-0.6, -1.0, -6.7], max: [0.6, 1.0, -5.1] }, // (through the bulkhead)
-  ],
-  ramps: [{ door: 'ramp', width: 3.2, hinge: [-1.2, 10], length: 3.4 }],
-  solids: [{ kind: 'bench', ...box(-1.6, -1.0, -4.5, -1.15, -0.55, 8.5) }, { kind: 'bench', ...box(1.15, -1.0, -4.5, 1.6, -0.55, 8.5) },
-    { kind: 'console', ...box(-1.2, -0.8, -11, 1.2, 0.1, -10.5) }],
-  lights: [{ pos: [0, 2.0, 2], color: 0xfff0da, intensity: 4, range: 10 }, { pos: [0, 1.6, -8.5], color: 0xb8dcff, intensity: 3, range: 6 }],
-  radius: 16, size: [17, 6, 25],
-  seats: [{ pilot: true, pos: [-0.6, -0.8, -9.6], eye: [-0.6, 0.45, -10.0], stand: [-0.6, -0.8, -8.3], heading: [0, 0, 1], label: 'Pilot seat' },
-    { pos: [0.6, -0.8, -9.6], eye: [0.6, 0.45, -10.0], stand: [0.6, -0.8, -8.3], heading: [0, 0, 1], label: "Co-pilot's seat" }],
-  help: 'R rear ramp',
+  ...springs(42000, 0.17),
+  aero: { cd: [55, 120, 18], wing: 30 },
+  probes: [...hullCorners(-4.6, -1.95, -14.5, 4.6, 3.4, 14.4), [-8.5, 0.9, 2], [8.5, 0.9, 2]],
+  colliders: hull('dropship'), // (the hull read from the model, tools/blender/craft_layout.py)
+  // inside the bay (the tank in it), every surface a metre thick outward, like a container's hold
+  inner: [box(-4.7, -2.0, -6.9, 4.7, -1.0, 8.0), box(-4.7, 2.6, -6.9, 4.7, 3.6, 8.0),
+    box(-4.7, -2.0, -6.9, -3.7, 3.6, 8.0), box(3.7, -2.0, -6.9, 4.7, 3.6, 8.0), box(-4.7, -2.0, -6.9, 4.7, 3.6, -5.9)],
+  doors: [{ id: 'ramp', label: 'rear ramp', ramp: true, min: [-3.8, -1.2, 8], max: [3.8, 2.6, 8.4], hinge: [-1.2, 8], angle: 2.04, speed: 0.4, panel: [4.4, -1.0, 8.6], panelIn: [3.0, 0.6, 7.2] }], // (down past level onto the ground: a 1.7 m drop)
+  parts: [{ node: 'ramp', door: 'ramp', hinge: [0, -1.2, 8], axis: [1, 0, 0], angle: 2.04 }],
+  zones: [{ name: 'Troop bay', kind: 'hold', min: [-3.7, -1.0, -5.9], max: [3.7, 2.6, 8.0], gravity: 'host', pressure: 0, snug: true, door: 'ramp', exitMargin: 0.5 }],
+  clamp: { name: 'Tank mount', pos: [0, -0.36, 1.2], reach: [1.2, 0.8, 2.0], fits: [7.5, 3.6, 13.9] },
+  egress: [0, -2.9, 12.5],
+  // walk-in: up the ramp into the troop bay, forward through the bulkhead and up a step to
+  // the cockpit (one room read from the model, its benches, seats and steps as solids)
+  rooms: [{ id: 'bay', name: 'Troop bay', type: 'bay', min: DROPSHIP_DECK[0], max: DROPSHIP_DECK[1], open: ['+z'], gate: { '+z': 'ramp' } }],
+  ramps: [{ door: 'ramp', width: 7.6, hinge: [-1.2, 8], length: 3.8 }],
+  solids: DROPSHIP_SOLIDS.map(([min, max]) => ({ kind: max[1] > 0.5 ? 'wall' : 'step', min, max })),
+  lights: [{ pos: [0, 2.4, 2], color: 0xfff0da, intensity: 5, range: 12 }, { pos: [0, 1.6, -8.5], color: 0xb8dcff, intensity: 3, range: 6 }],
+  radius: 17.5, size: [17, 7.7, 28.9],
+  seats: [{ pilot: true, pos: [-0.6, -0.8, -9.5], eye: [-0.6, 0.45, -9.6], stand: [-0.6, -0.8, -8.4], heading: [0, 0, 1], label: 'Pilot seat' },
+    { pos: [0.6, -0.8, -9.5], eye: [0.6, 0.45, -9.6], stand: [0.6, -0.8, -8.4], heading: [0, 0, 1], label: "Co-pilot's seat" }],
+  help: 'R rear ramp · Y locks the tank in the bay (or lets it go)',
 };
 
 export const FIGHTER = {
