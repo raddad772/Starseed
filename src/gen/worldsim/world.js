@@ -428,6 +428,33 @@ export function worldSim(body, star, opts = {}) {
     for (let i = 1; i < lith.count[c]; i++) if (lith.type[c * lith.L + i] === ROCK.shale) softBelow = true;
     if (cap && softBelow && steep > 150 && steep < 1500) mesas[c] = 1;
   }
+  // canyon country: where a great river crosses dry high ground it held its course as the land
+  // rose under it (an antecedent river: the Colorado across its plateau), cutting a gorge a
+  // fraction of a cell wide. Here its cell averages the gorge in with the plateau round it, a
+  // broad dip; the refinement starts from the plateau's level and cuts the gorge itself. Per
+  // river cell: how far it lies below the even high ground either side (m)
+  const gorge = new Uint16Array(G.n);
+  {
+    let amax = 0;
+    for (let c = 0; c < G.n; c++) if (!E.base[c] && E.A[c] > amax) amax = E.A[c];
+    for (let c = 0; c < G.n; c++) {
+      if (h[c] < 0 || E.base[c] || ice.ice[c] > 0 || E.A[c] < 0.015 * amax) continue;
+      d[0] = G.dir[c * 3]; d[1] = G.dir[c * 3 + 1]; d[2] = G.dir[c * 3 + 2];
+      const k = clim.koppen[Gc.cellAt(d[0], d[1], d[2])];
+      if (!k || (k[0] !== 'B' && !(rain[c] < 0.45))) continue;   // (dry: desert or steppe)
+      // the ground either side: the neighbours off the river
+      let s = 0, m = 0, lo = Infinity, hi = -Infinity;
+      for (let e = G.nStart[c]; e < G.nStart[c + 1]; e++) {
+        const o = G.nbr[e];
+        if (E.A[o] > 0.1 * E.A[c] || h[o] < 0) continue;
+        s += h[o]; m++; lo = Math.min(lo, h[o]); hi = Math.max(hi, h[o]);
+      }
+      if (m < 3) continue;
+      const depth = s / m - h[c];
+      // (high ground that's even either side, not a mountain valley's rising flanks)
+      if (depth > 150 && hi - lo < 0.8 * depth + 300) gorge[c] = Math.min(4000, Math.round(depth));
+    }
+  }
   // (a sand sea is wide: its cells' share of the country round them, so a lone sandy cell
   // stays a sand sheet and a sea's edges thin out; 0..255)
   {
@@ -472,7 +499,7 @@ export function worldSim(body, star, opts = {}) {
   const drowned = new Uint8Array(G.n);
   for (let c = 0; c < G.n; c++) if (lowRiver[c] && h[c] < 0) drowned[c] = 1;
   const melt = stampFresh(G, h, H, body, scale);
-  return Object.assign(out, { h, h0, E, Gt, ht, tect: T, impacts: Ef, craters: T.impacts.events.concat(Ef.events), volcanoes, tuyas, lith, rock, glaciers: ice, veg: E.veg, coasts: sea2, dunes, mesas, soil, drowned, melt });
+  return Object.assign(out, { h, h0, E, Gt, ht, tect: T, impacts: Ef, craters: T.impacts.events.concat(Ef.events), volcanoes, tuyas, lith, rock, glaciers: ice, veg: E.veg, coasts: sea2, dunes, mesas, gorge, soil, drowned, melt });
 }
 
 // Each fine cell's layers from the plates' record there: the basement (granite

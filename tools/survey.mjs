@@ -3,7 +3,10 @@
 // refinement's (~400 km across), and two finer levels of the terrain pyramid made there
 // (~60 km and ~12 km). Coloured as the game colours it, lit from the north-west.
 //
-//   node tools/survey.mjs --out DIR [--cache DIR] [--W 1200] [--marks 6] SEED[:bodyId] ...
+//   node tools/survey.mjs --out DIR [--cache DIR] [--W 1200] [--marks 6] [--gorges N] SEED[:bodyId] ...
+//
+// (--gorges N: also views at the world's N deepest canyon-country gorges, world.js, first;
+// --gorgeRock a,b: only those cut in these rocks, e.g. sandstone,shale,limestone)
 //
 // Writes DIR/<seed>-<body>-world.png and DIR/<seed>-<body>-<n>-<kind>-<scale>.png, and a
 // DIR/survey.json listing them (for a contact sheet). The refinement and pyramid here run the
@@ -24,13 +27,14 @@ import v8 from 'v8';
 import { TILE_VERSION } from '../src/gen/tileshape.js';
 import { dunePatches } from '../src/gen/dunes.js';
 import { faceUVFromDir } from '../src/gen/cubesphere.js';
+import { GridLite } from '../src/gen/worldsim/grid.js';
 import { writePNG } from './png.mjs';
 
 const args = process.argv.slice(2), opt = {}, worlds = [];
 for (let i = 0; i < args.length; i++) { if (args[i].startsWith('--')) opt[args[i].slice(2)] = args[++i]; else worlds.push(args[i]); }
 const OUT = opt.out || 'survey', CACHE = opt.cache || OUT, W = +(opt.W || 1200), MARKS = +(opt.marks || 6);
 fs.mkdirSync(OUT, { recursive: true }); fs.mkdirSync(CACHE, { recursive: true });
-const TY = { h: Float32Array, water: Float32Array, rock: Uint8Array, ice: Uint16Array, river: Uint8Array, melt: Uint8Array, relief: Uint16Array, rcv: Uint8Array, Tsea: Float32Array, P: Float32Array, cover: Float32Array, forest: Float32Array, open: Float32Array, cloud: Float32Array, cloudPx: Uint8Array, crat: Uint8Array, dunes: Uint8Array };
+const TY = { h: Float32Array, water: Float32Array, rock: Uint8Array, ice: Uint16Array, river: Uint8Array, melt: Uint8Array, relief: Uint16Array, rcv: Uint8Array, Tsea: Float32Array, P: Float32Array, cover: Float32Array, forest: Float32Array, open: Float32Array, cloud: Float32Array, cloudPx: Uint8Array, crat: Uint8Array, dunes: Uint8Array, gorge: Uint16Array };
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
 const list = fs.existsSync(path.join(OUT, 'survey.json')) ? JSON.parse(fs.readFileSync(path.join(OUT, 'survey.json'))) : {};
 
@@ -99,6 +103,21 @@ for (const w of worlds) {
   }
   // each landmark at three scales
   const marks = (snap.landmarks || []).slice(0, MARKS);
+  // (canyon country's deepest gorges, one per place)
+  if (opt.gorges && snap.gorge) {
+    const Gl = new GridLite(snap.N, snap.R), cells = [];
+    const want = opt.gorgeRock ? opt.gorgeRock.split(',') : null;
+    snap.gorge.forEach((v, c) => { if (v && (!want || want.includes(ROCKS[snap.rock[c]].name))) cells.push(c); });
+    cells.sort((x, y) => snap.gorge[y] - snap.gorge[x]);
+    const got = [], d = [0, 0, 0];
+    for (const c of cells) {
+      if (got.length >= +opt.gorges) break;
+      Gl.centre(c, d);
+      if (got.some((q) => q.d[0] * d[0] + q.d[1] * d[1] + q.d[2] * d[2] > Math.cos(20 * Gl.spacing / Gl.R))) continue;
+      got.push({ d: d.slice(), name: `gorge ${snap.gorge[c]} m`, kind: 'gorge', text: `${snap.gorge[c]} m below the plateau, in ${ROCKS[snap.rock[c]].name}`, lat: Math.asin(d[1]) * 180 / Math.PI, lon: Math.atan2(d[2], d[0]) * 180 / Math.PI });
+    }
+    marks.unshift(...got);
+  }
   for (let m = 0; m < marks.length; m++) {
     const lm = marks[m], la = lm.lat * Math.PI / 180, lo = lm.lon * Math.PI / 180;
     const d = [Math.cos(la) * Math.cos(lo), Math.sin(la), Math.cos(la) * Math.sin(lo)], uv = {};

@@ -645,12 +645,13 @@ export class TerrainGenerator {
     // below them) follow the sim's heights along the line, so the water only runs downhill
     let wl = -1e9;
     const rv = iceH > 30 ? null : this._riverAt(x, y, z);
-    // (the wet ground along it, for the shading)
-    if (rv && rv.dist < rv.w * 2.5) out[S_WET] = dm.smoothstep(rv.w * 2.5, rv.w * 0.6, rv.dist);
+    // (the wet ground along it, for the shading: only where water runs now; a dry world's old
+    // channels are valleys in its dust, not dark strokes)
+    if (rv && this.wetNow && rv.dist < rv.w * 2.5) out[S_WET] = dm.smoothstep(rv.w * 2.5, rv.w * 0.6, rv.dist);
     if (rv) {
       // (a meandering river's floodplain: the belt it has swung across, laid level near its banks;
       // and the loops it cut off, lakes while young, swales once filled)
-      const bank0 = Math.max(rv.hs, 0) + 1 + 0.05 * rv.depth;
+      const bank0 = this._bankOf(rv);
       if (rv.belt > 0 && rv.axis < 1.3 * rv.belt) h += (bank0 + 0.5 - h) * 0.85 * dm.smoothstep(1.3 * rv.belt, 0.85 * rv.belt, rv.axis);
       const oh = 0.5 * (rv.oxW || rv.w);
       if (rv.ox < oh && rv.oxAge < 0.8) {
@@ -661,10 +662,12 @@ export class TerrainGenerator {
     }
     if (rv) {
       // (a river narrower than the sampling's spacing drawn as wide as it, so it shows as a line
-      // from afar, not as the few samples that happen to land in it; its own width near)
-      const half = Math.max(rv.w * 0.5, 0.5 * minWavelength), flank = Math.max(rv.w * 1.5 + S.G.spacing * (0.02 + 0.12 * rv.k), 1.25 * half);
+      // from afar, not as the few samples that happen to land in it; its own width near. A dry
+      // world's old channel isn't: it's no wider than it is, a valley you see when you're near,
+      // not a one-sample trench that shades as a dark stitched line from afar)
+      const half = this.wetNow ? Math.max(rv.w * 0.5, 0.5 * minWavelength) : rv.w * 0.5, flank = Math.max(rv.w * 1.5 + S.G.spacing * (0.02 + 0.12 * rv.k), 1.25 * half);
       if (rv.dist < flank) {
-        const bank = Math.max(rv.hs, 0) + 1 + 0.05 * rv.depth;
+        const bank = this._bankOf(rv);
         h += (bank - h) * dm.smoothstep(flank, half * 1.2, rv.dist);
         if (rv.dist < half) {
           h = Math.min(h, bank - rv.depth * (1 - (rv.dist / half) * (rv.dist / half)));
@@ -681,8 +684,11 @@ export class TerrainGenerator {
       const half = Math.min(0.45 * finest, 0.5 + 0.9 * dm.exp(0.45 * k)), dep = Math.min(3, 0.25 + 0.3 * dm.exp(0.3 * k));
       const dist = finRd.cd * finest, flank = half * 3;
       if (dist < flank) {
-        const bank = finRd.ch / this.hScale + 0.2;
-        h += (bank - h) * dm.smoothstep(flank, half * 1.2, dist);
+        // (with water in it the banks are laid to the line, so it runs downhill; a dry world's
+        // gully only cuts down: two creeks a cell or two apart, their lines at different heights,
+        // would otherwise step the ground between them in rungs)
+        const bank = finRd.ch / this.hScale + 0.2, pull = bank - h;
+        h += (this.wetNow ? pull : Math.min(0, pull)) * dm.smoothstep(flank, half * 1.2, dist);
         if (dist < half) {
           h = Math.min(h, bank - dep * (1 - (dist / half) * (dist / half)));
           if (this.wetNow && A > CREEK_WET) wl = Math.max(wl, bank - 0.25 - 0.1 * dep);
@@ -829,6 +835,10 @@ export class TerrainGenerator {
     o.a += oa * span; o.b += ob * span;
     return o;
   }
+
+  // a river's banks along it: its line's height (on a world with a sea, no lower than the datum it
+  // runs out to; a world without one has none, and a channel below the datum stays there)
+  _bankOf(rv) { return (this.wetNow ? Math.max(rv.hs, 0) : rv.hs) + 1 + 0.05 * rv.depth; }
 
   _riverAt(x, y, z) {
     const S = this.snap, s = S.s;

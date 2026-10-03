@@ -33,7 +33,7 @@
 // (so its edges drain as the land beyond does); what's kept is the inner square and half the
 // margin (the overlap with its neighbours, where the ground cross-fades between them).
 
-import { dirFromFaceUV, chunkArcSize } from './cubesphere.js';
+import { dirFromFaceUV, chunkArcSize, FACES } from './cubesphere.js';
 import { S_LEN, S_H } from './terrain.js';
 import { Erosion } from './worldsim/erosion.js';
 import { ROCKS, ROCK_UP } from './worldsim/lithology.js';
@@ -99,6 +99,66 @@ function tileGrid(face, ti, tj, L, R) {
   let sp = 0;
   for (let c = 0; c < n; c++) sp += Math.sqrt(area[c]);
   return { n, N: NG, nStart, nbr: nbr.subarray(0, e), nDist: nDist.subarray(0, e), area, dir, spacing: sp / n, u0, v0, du };
+}
+
+// The great rivers coming in: where the world sim's water crosses into a refinement tile's
+// ground from a cell beyond it, the drainage gathered upstream comes in with it (a tile's own
+// rain is only its own: without this a great river crossing it is a creek here, and cuts like
+// one). Each comes in a cell inside the edge it crosses, and the edge there is shut (the river
+// comes in by it, it doesn't leave). Returns { src, shut } (rain-weighted m^2 by cell) or null.
+// (A world with no climate now ran its history's drainage on a unit rain: its rivers are scaled
+// by the rain the tile has, its history's while it rained.)
+const RIVER_IN = 1e8;
+function riverInflow(S, G, face, rain) {
+  if (!S || !S.s.rcv || !S.s.riverMax) return null;
+  const n = G.n, F = FACES[face];
+  // (a direction's place on this tile's grid (cell units), past the face's edge too: the tile's
+  // margin reaches over)
+  const QPI = Math.PI / 4, ij = (d) => {
+    const dn = d[0] * F.N[0] + d[1] * F.N[1] + d[2] * F.N[2];
+    if (dn <= 0.05) return null;
+    const u = Math.atan((d[0] * F.U[0] + d[1] * F.U[1] + d[2] * F.U[2]) / dn) / QPI;
+    const v = Math.atan((d[0] * F.V[0] + d[1] * F.V[1] + d[2] * F.V[2]) / dn) / QPI;
+    return [(u - G.u0) / G.du - 0.5, (v - G.v0) / G.du - 0.5];
+  };
+  const on = (g) => g && g[0] >= 0 && g[1] >= 0 && g[0] <= NG - 1 && g[1] <= NG - 1;
+  const a = [0, 0, 0], b = [0, 0, 0], q = [0, 0, 0], nb = new Int32Array(8);
+  // the world cells whose middles are on the grid
+  const near = new Set(), inside = new Set();
+  for (let c = 0; c < n; c++) near.add(S.G.cellAt(G.dir[c * 3], G.dir[c * 3 + 1], G.dir[c * 3 + 2]));
+  for (const r of near) if (on(ij(S.G.centre(r, a)))) inside.add(r);
+  const src = new Float64Array(n), shut = new Uint8Array(n);
+  let any = false;
+  for (const r of inside) {
+    const k = S.G.nbrs(r, nb);
+    for (let e = 0; e < k; e++) {
+      const p = nb[e];
+      if (inside.has(p) || !S.s.river[p] || S.rcvOf(p) !== r) continue;
+      const Ap = S.s.riverMax * 1e-4 * Math.pow(10, 4 * S.s.river[p] / 255);
+      if (Ap < RIVER_IN) continue;
+      // along the line from its middle to the cell it drains into, the first point on the grid
+      S.G.centre(p, a); S.G.centre(r, b);
+      let hit = null;
+      for (let t = 0; t <= 1.0001 && !hit; t += 0.05) {
+        q[0] = a[0] + (b[0] - a[0]) * t; q[1] = a[1] + (b[1] - a[1]) * t; q[2] = a[2] + (b[2] - a[2]) * t;
+        const g = ij(q);
+        if (on(g)) hit = g;
+      }
+      if (!hit) continue;
+      // a cell in from the edge it crossed; that stretch of edge shut
+      let i = Math.round(hit[0]), j = Math.round(hit[1]);
+      const di = Math.min(i, NG - 1 - i), dj = Math.min(j, NG - 1 - j);
+      if (di <= dj) i = i < NG / 2 ? 1 : NG - 2; else j = j < NG / 2 ? 1 : NG - 2;
+      i = Math.max(1, Math.min(NG - 2, i)); j = Math.max(1, Math.min(NG - 2, j));
+      const ci = j * NG + i;
+      src[ci] += Ap * (S.Gc ? 1 : rain[ci]); any = true;
+      for (let dj2 = -3; dj2 <= 3; dj2++) for (let di2 = -3; di2 <= 3; di2++) {
+        const ii = i + di2, jj = j + dj2;
+        if (ii >= 0 && jj >= 0 && ii < NG && jj < NG) shut[jj * NG + ii] = 1;
+      }
+    }
+  }
+  return any ? { src, shut } : null;
 }
 
 // a kept square's height at face (u, v), bilinear (null outside it)
@@ -194,6 +254,8 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
       // and a one-cell valley's stairs would stay in the ground here): its rivers are for the
       // water here to find)
       let hb = S.hSmooth(dx, dy, dz) * hs;
+      // (canyon country: the plateau's level round a great river's gorge, for it to cut here)
+      if (S.s.gorge) hb += S.gorgeSmooth(dx, dy, dz) * hs;
       // (its rivers' courses, a cell or so wide, for the water here to find)
       const rv = gen._riverAt(dx, dy, dz);
       if (rv && rv.dist < 1.5 * cell) hb = Math.min(hb, (Math.max(rv.hs, 0) + 1 - 0.5 * rv.depth) * hs);
@@ -309,10 +371,13 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
   E.lakeId.fill(-1); E.lakeList = [];
   E.findBase = () => {};
   const edge = (c) => { const i = c % NG, j = (c - i) / NG; return i === 0 || j === 0 || i === NG - 1 || j === NG - 1; };
-  for (let c = 0; c < n; c++) E.base[c] = wet[c] || edge(c) ? 1 : 0;
+  // (the great rivers coming in from beyond it: a refinement's, from the world sim)
+  const inflow = refine ? riverInflow(S, G, face, rain) : null, shut = inflow ? inflow.shut : null;
+  if (inflow) E.src = inflow.src;
+  for (let c = 0; c < n; c++) E.base[c] = wet[c] || (edge(c) && !(shut && shut[c])) ? 1 : 0;
   E.nStep = 0; E.route(); E.drain();
   let aOut = 0;
-  for (let c = 0; c < n; c++) if (edge(c) && !wet[c]) aOut = Math.max(aOut, E.A[c]);
+  for (let c = 0; c < n; c++) if (edge(c) && !wet[c] && !(shut && shut[c])) aOut = Math.max(aOut, E.A[c]);
   const drop = opts.drop ?? (region ? dm.clamp(ST.rel * 0.3, 5, 700) : 0);
   // (a refinement's sea stood lower through the ice ages, by lowstand m: its rivers ran out
   // across the shelf and cut their valleys down to it; then it rose, and drowned them)
@@ -320,7 +385,7 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
   // only what its own scale adds, the low sea's fall shrinking with the cells as relief does)
   const lowstand = rf ? (opts.lowstand ?? 100) * (pyr ? dm.pow(Math.min(1, 4 * cell / S.G.spacing), 0.7) : 1) : 0, rise = Math.floor(steps * 0.85);
   for (let c = 0; c < n; c++) {
-    const out = edge(c) && !wet[c] && E.A[c] >= 0.08 * aOut;
+    const out = edge(c) && !wet[c] && !(shut && shut[c]) && E.A[c] >= 0.08 * aOut;
     E.base[c] = (wet[c] === 1 && B[c] < -lowstand) || wet[c] === 2 || out ? 1 : 0;
     if (out) h[c] = B[c] - (rf ? dm.clamp(relC[c] * 0.3, pyr ? 1 : 5, 900) : drop);
   }
@@ -432,7 +497,7 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
     for (let c = 0; c < n; c++) {
       sz[c] = Math.round(Math.sqrt(area[c]) * 1000);
       flags[c] = (E.base[c] ? 1 : 0) | (lowstand && wet[c] === 1 && !E.base[c] ? 2 : 0);
-      a[c] = Math.max(1, Math.round(area[c] / aref * rain[c] * 16));
+      a[c] = Math.max(1, Math.round(area[c] / aref * rain[c] * 16)) + (E.src ? Math.round(E.src[c] / aref * 16) : 0);   // (and a great river coming in)
       hdI[c] = Math.round(255 * hardAt(c, h[c]));
       h0[c] = Math.round(h[c] * 4096); BI[c] = Math.round(B[c] * 4096);
     }

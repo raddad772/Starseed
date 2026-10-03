@@ -241,8 +241,21 @@ surveying many worlds; bit-exact across runs and clients, not across revisions):
 - **No special-casing (Dave, 2026-10-02: "Don't special-case Mars, make it arise from first
   principles... you can tune the algorithms... but don't just make up a wet history"):** SOL's
   worlds carry only inputs (orbits, masses, make-up, spins); their dichotomies, volcanoes,
-  canyons, palettes and airs come from the same physics and draws as any world's. (So SOL's
-  Titan may come out airless and Callisto Titan-like: the "titanish" coin toss is a model gap.)
+  canyons, palettes and airs come from the same physics and draws as any world's.
+- **Titan's air by mechanism (SIM 48, evolve.js):** a cold icy world keeps a nitrogen-methane
+  air where its nitrogen came as ammonia in cold-formed ices (teq under ~100-125 K) and its
+  impacts came in slowly enough to build an air rather than erode it: impact speed from the
+  comets' approach (0.42 of its orbital speed round the star), a giant host's well (3 v_orb^2)
+  and its escape speed; kept under ~4.6x escape speed, lost over ~5.8x (Zahnle et al. 1992).
+  SOL: Titan 1.48 bar 97 K every time (real 1.47 bar, 94 K); Callisto (6.3x) and Ganymede
+  (7.2x) airless. Population: 24% of cold worlds over 1500 km, 14% of cold moons.
+- **CO2 caps (SIM 48):** the condensation's polar cold is reckoned as the high-tilt test's (they
+  disagreed: caps froze and sublimed by turns every step); near its frost point an air still
+  collapses and comes back with the tilt's swings (a coarse stand-in for Mars' obliquity
+  cycles), told once per 0.5 Gyr. SOL Mars 8.9 mbar, 206 K.
+- **Iahahound airless is right:** 0.22 Earth masses (6.7 km/s escape) at Earth's sunlight from
+  a 0.45 M_sun M dwarf, active ~3 Gyr: its upper air flows off (heating/hold ~2) through that
+  youth, and its weak volcanism can't rebuild one after (the cosmic shoreline).
 - **Early Mars from the physics (SIM 44, TILE 24), evolve.js:**
   - the young Sun strips a small world's first air (hydrodynamic onset); its volcanoes rebuild
     one: stagnant-lid outgassing 0.08 x heat^2 (capped at 4x: the young hot mantle) of a plate
@@ -266,8 +279,13 @@ surveying many worlds; bit-exact across runs and clients, not across revisions):
     valley networks over its highlands (survey mars7). Titan-like methane: its window, rainK0.
   - refine.js riverIndex: the phase walk marks its path (was `stack.includes`, quadratic: Mars'
     long flat-ground chains hung the survey) and the smoothing walk is guarded (loops in links).
-  - Mars' channels at world scale are stair-stepped (D8 at the refinement's cells) and drawn
-    as dark strokes; real valley networks are subtler from afar.
+  - Mars' channels drew as dark stitched strokes from afar, three causes (terrain.js): the "wet
+    ground beside a river" shading (S_WET) was set along every channel, even with no liquid now;
+    a channel's banks were held at or above the datum (`Math.max(rv.hs, 0)`), so on a world with
+    no sea a channel below it pulled its banks up into ridges (`_bankOf`: only with a sea); and
+    a channel narrower than the sampling was drawn as wide as it (so a river shows from afar),
+    which on a dry world made one-sample trenches that shade as beaded lines. A dry world's old
+    channels are now valleys at their own width.
 - **Survey 14 (14 worlds on SIM 45):** Earth, Opast, Europa, Moon, Ephai, Gliavekseth fine.
   Iahahound (LAB-6 2, was a Mars-like desert) is now airless (the new escape); Moadeal now
   190 bar, 1184 K (it glows); SOL's Titan airless and Callisto Titan-like (the coin toss).
@@ -411,13 +429,30 @@ surveying many worlds; bit-exact across runs and clients, not across revisions):
   map and its landmarks at 400/60/12 km; the GPU check page takes `?seed=&body=` (runs the sim).
 
 Open:
-- **Grand Canyon-style canyons (Dave asked how it formed, 2026-10-02):** a big river holding its
-  course while a plateau of flat-lying layered rock rises under it, in a dry climate: the inner
-  gorge cut down, then widened by side canyons and scarp retreat, hard beds standing as cliffs
-  and soft ones as slopes. The parts exist (rock columns with hard/soft beds and collapse to each
-  rock's angle in the pyramid; river incision in the tile sims; the world sim's mesa country), but
-  nothing makes them meet: uplift under an antecedent river in the world sim, then enough
-  incision at the refinement and pyramid levels (a real canyon is 1-3 km wide at game scale).
+- **Canyons (SIM 49, TILE 27; Dave asked how the Grand Canyon formed, 2026-10-02):**
+  - *Great rivers come into the tiles* (localsim.js `riverInflow`). A refinement tile's drainage
+    used to be only its own rain, so a great river crossing it cut like a creek. Now, where a
+    world-sim river (>= 1e8 rain-weighted m^2) crosses into a tile from a cell outside it, its
+    upstream drainage comes in a cell inside that edge, and the edge there is shut (it's no
+    outlet). `Erosion.drain` takes the `src` term; the integer sim gets it in its per-cell `a`.
+    On a world with no climate grid (stagnant: its history ran on a unit rain) it's scaled by
+    the tile's rain. Big rivers' drawn half width is capped at 600 m (refine.js riverIndex),
+    since whole basins' water now reaches them.
+  - *Canyon country* (world.js `gorge`, snapshot `gorge` u16, `gorgeSmooth`). A great river
+    (>= 1.5% of the world's greatest drainage) in dry country (Koppen B or < 0.45 m/yr) that lies
+    > 150 m below the even ground either side held its course as the land rose under it (an
+    antecedent river). Its world cell averages the gorge in with the plateau, a broad dip, so
+    the refinement starts from the plateau's level there (`hSmooth + gorgeSmooth`). The river's
+    trench stays at its own level; stream power with the inflow cuts the gorge, and collapse to
+    each rock's angle widens it (in layered rock, cliff bands).
+  - Scan (tools: scratchpad gorgescan): 12 of 40 temperate water worlds have some; Thugroadath
+    (LAB-44 5), Ishiodreill (LAB-30 4) and Quuhiaglou (LAB-73 3) have 200+ cells. Thugroadath's
+    deepest (858 m, granite) is a water gap through a range; its sandstone ones (215-290 m) are
+    narrow cliff-walled canyons in a plateau (Canyonlands rather than a 1.8 km Grand Canyon).
+  - `node tools/survey.mjs ... --gorges N [--gorgeRock sandstone,shale]` renders the deepest.
+  - Still open: deeper plateau canyons need more uplift history than the world sim's 150 Myr
+    fine epoch gives a dry plateau; side canyons and scarp retreat come from the pyramid levels'
+    own drainage, which has no inflow yet (only the refinement does).
 - **Desert landforms:** dunes are in (below); wadis and mesas (the world sim marks mesa
   country) still to draw.
 - **Big rivers:** now drawn from the refinement's own drainage (below); finer meanders (a lateral

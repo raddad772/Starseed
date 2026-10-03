@@ -102,7 +102,7 @@ export function riverIndex(parts, N, Rw) {
   const half = new Float32Array(m), size = new Float32Array(m), lo = dm.log(RIVER_A), span = dm.log(1e11) - lo;
   for (let r = 0; r < m; r++) {
     const A = rec[r * RIVER_REC + 12], la = dm.log(A);
-    half[r] = 0.5 + 0.9 * dm.exp(0.45 * (la - dm.log(6e4)));
+    half[r] = Math.min(600, 0.5 + 0.9 * dm.exp(0.45 * (la - dm.log(6e4))));   // (the greatest, whole basins' water come in: no wider)
     size[r] = Math.max(0, Math.min(1, (la - lo) / span));
   }
   // (how far up its river each record lies, in its channel's widths from where the river ends:

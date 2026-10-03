@@ -22,7 +22,7 @@ import { Noise3 } from '../../core/noise.js';
 import { dunePatches } from '../dunes.js';
 import { ROCK_UP } from './lithology.js';
 
-export const SIM_VERSION = 48;
+export const SIM_VERSION = 49;
 
 // a world's grid size: maxN for an Earth-sized one, finer cells don't help a small one
 // (N ~ sqrt(radius): Mars ~210, the Moon ~150, a moonlet 64)
@@ -107,6 +107,8 @@ export function packSnapshot(W, body) {
   // sand seas (world.js: truly dry, sand to hand, gentle ground) and the dunes the wind builds
   // in them (dunes.js: the same patches for every world, made once)
   if (W.dunes && W.dunes.some((v) => v)) { out.dunes = Uint8Array.from(W.dunes); out.dunePatch = dunePatches(); }
+  // canyon country (world.js): how far a great river lies below the dry plateau round it (m)
+  if (W.gorge && W.gorge.some((v) => v)) out.gorge = Uint16Array.from(W.gorge);
   // the maria's lava levels (barren.js floodBasin; m, -32768 none): their edges follow them
   // (a dry world's wet past: how much rain it had, 0..1, for the finer levels' valleys)
   if (W.wetK) { out.wetK = W.wetK; out.wetFrac = W.wetFrac; out.wetRain = W.wetRain; }
@@ -136,7 +138,7 @@ export function packSnapshot(W, body) {
 
 // the arrays a snapshot carries (for transfer lists and caching)
 export function snapshotBuffers(s) {
-  return ['h', 'water', 'rock', 'ice', 'river', 'melt', 'relief', 'rcv', 'Tsea', 'P', 'cover', 'forest', 'open', 'cloud', 'cloudPx', 'crat', 'dunes', 'ocean', 'mareLv'].filter((k) => s[k]).map((k) => s[k].buffer);
+  return ['h', 'water', 'rock', 'ice', 'river', 'melt', 'relief', 'rcv', 'Tsea', 'P', 'cover', 'forest', 'open', 'cloud', 'cloudPx', 'crat', 'dunes', 'gorge', 'ocean', 'mareLv'].filter((k) => s[k]).map((k) => s[k].buffer);
 }
 
 // reads a snapshot at any direction
@@ -222,6 +224,17 @@ export class SnapshotSampler {
     this.G.corners16(this._d(x, y, z), c, w, this.uv);
     let s = 0;
     for (let k = 0; k < 16; k++) s += h[c[k]] * w[k];
+    return s;
+  }
+  // canyon country's gorge here (m below the plateau round it), smooth as hSmooth: added to that,
+  // the plateau's level where its cell's mean dipped for the gorge (0 elsewhere)
+  gorgeSmooth(x, y, z) {
+    const g = this.s.gorge;
+    if (!g) return 0;
+    const c = this._c16 || (this._c16 = new Int32Array(16)), w = this._w16 || (this._w16 = new Float64Array(16));
+    this.G.corners16(this._d(x, y, z), c, w, this.uv);
+    let s = 0;
+    for (let k = 0; k < 16; k++) s += g[c[k]] * w[k];
     return s;
   }
   // the ice's thickness here (H) and the bed it lies on (hb), both smooth (the cells' B-spline

@@ -14,7 +14,8 @@
 //            each lake's balance: a lake that can't fill to its brim is closed
 //            (the Dead Sea's, the Great Salt Lake's): nothing leaves it, water or
 //            sediment; it stands lower, salty, or dries to a salt flat
-//   drain    rain-weighted drainage area, summed down the tree (stopping at closed lakes)
+//   drain    rain-weighted drainage area, summed down the tree (stopping at closed lakes);
+//            plus src (if set): what comes in from beyond the grid
 //   incise   the implicit stream-power solve, downstream first
 //   deposit  sediment down the tree into lakes, then over the sea floor
 //
@@ -195,6 +196,8 @@ export class Erosion {
     const { G, A, rain, rcv, order, lakeId, lakeList } = this;
     const k = this.rainK ?? 1; // (the climate's rain, vs today, through history)
     for (let c = 0; c < G.n; c++) A[c] = G.area[c] * rain[c] * k;
+    // (water coming in from beyond the grid: a tile's great rivers, their drainage upstream)
+    if (this.src) for (let c = 0; c < G.n; c++) A[c] += this.src[c];
     for (let k = G.n - 1; k >= 0; k--) {
       const c = order[k], r = rcv[c];
       if (r < 0) continue;
