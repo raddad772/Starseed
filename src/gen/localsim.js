@@ -338,7 +338,25 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
   // (a refinement's rock: the world sim's, read as its cells' stack at each cell's height as it
   // is now: so as valleys cut down, lower rock shows in them)
   const rockC = rf ? new Uint8Array(n) : null, rkOut = {};
+  // (a refinement reads its cells' rock from the world sim's again and again as they wear down:
+  // each cell's warped place reckoned once, and a cell among cells of one rock answered once)
+  let wdC = null, fixC = null;
   const readRock = () => {
+    if (refine && !S.ref && !S.pyrReaders().length) {
+      const wd = dd;
+      if (!wdC) {
+        wdC = new Float64Array(3 * n); fixC = new Int16Array(n).fill(-2);
+        for (let c = 0; c < n; c++) { S.rockWarp(G.dir[c * 3], G.dir[c * 3 + 1], G.dir[c * 3 + 2], wd); wdC[c * 3] = wd[0]; wdC[c * 3 + 1] = wd[1]; wdC[c * 3 + 2] = wd[2]; }
+      }
+      for (let c = 0; c < n; c++) {
+        if (fixC[c] >= 0) { rockC[c] = fixC[c]; continue; }
+        wd[0] = wdC[c * 3]; wd[1] = wdC[c * 3 + 1]; wd[2] = wdC[c * 3 + 2];
+        const r = S.rockAtWarped(wd, h[c] / hs);
+        rockC[c] = r;
+        if (fixC[c] === -2) fixC[c] = S.rockSame ? r : -1;
+      }
+      return;
+    }
     for (let c = 0; c < n; c++) {
       if (pyr) { dd[0] = G.dir[c * 3]; dd[1] = G.dir[c * 3 + 1]; dd[2] = G.dir[c * 3 + 2]; rockC[c] = parent.sampleUV(face, U[c], V[c]) || parent.sample(dd) ? parent.rockAt(h[c], rkOut) : S.rockAt(dd[0], dd[1], dd[2], h[c] / hs); }
       else rockC[c] = S.rockAt(G.dir[c * 3], G.dir[c * 3 + 1], G.dir[c * 3 + 2], h[c] / hs);
@@ -608,8 +626,15 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
       const mLv = S.s.mareLv || null, BAS = ROCKS.findIndex((r) => r.name === 'basalt');
       const rk = new Int32Array(16), Wr = new Float64Array(16), Hr = new Float64Array(16);
       for (let c = 0; c < n; c++) {
-        dd[0] = G.dir[c * 3]; dd[1] = G.dir[c * 3 + 1]; dd[2] = G.dir[c * 3 + 2];
-        S.G.corners16(S.rockWarp(dd[0], dd[1], dd[2], wd), cc, ww, uv);
+        // (each cell's warped place and its one-rock answer, as the steps reckoned them)
+        if (wdC) {
+          if (fixC[c] >= 0) { rockC[c] = fixC[c]; continue; }
+          wd[0] = wdC[c * 3]; wd[1] = wdC[c * 3 + 1]; wd[2] = wdC[c * 3 + 2];
+          S.G.corners16(wd, cc, ww, uv);
+        } else {
+          dd[0] = G.dir[c * 3]; dd[1] = G.dir[c * 3 + 1]; dd[2] = G.dir[c * 3 + 2];
+          S.G.corners16(S.rockWarp(dd[0], dd[1], dd[2], wd), cc, ww, uv);
+        }
         const r0 = sr[cc[0]];
         let same = true;
         for (let k = 1; k < 16 && same; k++) if (sr[cc[k]] !== r0) same = false;

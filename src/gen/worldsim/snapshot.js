@@ -301,12 +301,19 @@ export class SnapshotSampler {
     }
     this.rockPyr = false;
     if (this.ref && this.ref.sample(this._d(x, y, z))) return this.ref.rockAt(h * this._hs, this, NaN);
+    return this.rockAtWarped(this.rockWarp(x, y, z, this._wd3 || (this._wd3 = [0, 0, 0])), h);
+  }
+  // the world sim's own rock at a direction already warped (rockWarp's), for a caller reading the
+  // same places over and over as their heights change (a refinement tile's cells); rockSame: the
+  // cells round it all hold the one rock (so the answer is that whatever the height)
+  rockAtWarped(wd, h) {
     const s = this.s, c = this._rc || (this._rc = new Int32Array(16)), w = this._rw || (this._rw = new Float64Array(16));
-    this.G.corners16(this.rockWarp(x, y, z, this._wd3 || (this._wd3 = [0, 0, 0])), c, w, this.uv);
+    this.G.corners16(wd, c, w, this.uv);
     const r0 = s.rock[c[0]];
     this.rock2 = r0; this.rockMix = 0;
     let same = true;
     for (let k = 1; k < 16 && same; k++) if (s.rock[c[k]] !== r0) same = false;
+    this.rockSame = same;
     if (same) return r0;
     let hb = 0, lo = 1e9, hi = -1e9;
     for (let k = 0; k < 16; k++) { const hk = s.h[c[k]]; hb += w[k] * hk; lo = Math.min(lo, hk); hi = Math.max(hi, hk); }
