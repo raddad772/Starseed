@@ -151,6 +151,12 @@ surveying many worlds; bit-exact across runs and clients, not across revisions):
   (`ICY_WATER`, a shell tens of km deep), checked before volcanism. Thin-air frozen water covers
   only its cold traps (Mars' caps, ~5% of the area at 16 mbar, poleward of ~70 degrees). Rays
   only on worlds with next to no air. On a dusty world exposed rock wears the dust's rind.
+- **SOL's rocky worlds, still to fix (2026-10-02 mosaic):** Earth's ice reaches ~50 degrees of
+  latitude (a 286 K mean, a little cool; check the climate's ice and the snow rule on a living
+  world); Mars' caps reach ~60 degrees (real: the seasonal cap to ~55-60 in winter, the residual
+  caps far smaller); Io keeps cratered blocks (the 10% its resurfacing leaves: its mountains
+  should be uncratered fault blocks); Venus' tesserae/plains are flat-shaded at world scale.
+  Earth's water corrected to 2.6e-4 of its mass (it had two oceans' worth: one big sea).
 - **Io, airless crusts, crater forms (SIM 31, TILE 22):** a rock moon its tides melt (tidal >
   0.6, lava) is repaved every few Myr (Io: 6 Myr; its mountains keep theirs): it had a full
   crater record and sampled at 108 us a sample, now 1.8. An airless world's old crust is ice on

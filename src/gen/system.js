@@ -349,7 +349,7 @@ const SOL = {
   planets: [
     { name: 'Mercury', aAU: 0.387, massEarth: 0.0553, iron: 0.68, water: 1e-5 },
     { name: 'Venus', aAU: 0.723, massEarth: 0.815, iron: 0.31, water: 2e-4 },
-    { name: 'Earth', aAU: 1.0, massEarth: 1.0, iron: 0.32, water: 5e-4 },
+    { name: 'Earth', aAU: 1.0, massEarth: 1.0, iron: 0.32, water: 2.6e-4 },
     // (Mars' history, which no physics here decides: its crustal dichotomy, the Tharsis rise and
     // its giant shields (Olympus Mons, the Tharsis Montes, Elysium), Valles Marineris)
     { name: 'Mars', aAU: 1.524, massEarth: 0.107, iron: 0.24, water: 4e-4, known: { dichotomy: true, shields: 5, canyon: true } },
