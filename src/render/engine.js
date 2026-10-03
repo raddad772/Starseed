@@ -48,6 +48,8 @@ void main() {
   c += texture(tColor, vUv + vec2(-0.25, 0.25) / 128.0).rgb;
   c += texture(tColor, vUv + vec2(0.25, 0.25) / 128.0).rgb;
   float l = dot(c * 0.25, vec3(0.2126, 0.7152, 0.0722));
+  // (a bad pixel (NaN, inf: a degenerate surface's shading) counts as black, not the whole average)
+  if (isnan(l) || isinf(l)) l = 0.0;
   // luminance relative to the incident-light reference (an 18% grey card lit
   // where the camera is), clamped to [-6, +3] stops
   float x = clamp(l / max(uRef, 1e-9), 1.0 / 64.0, 8.0);
@@ -94,6 +96,9 @@ void main() {
   float stops = clamp(max(logAvg * uStrength, hi), -uUp, uDown);
   float avg = log2(max(uRef, 1e-9)) + stops;
   float prev = texture(tPrev, vec2(0.5)).r;
+  // (never let a NaN in: it would stay in this feedback for good and black the screen out)
+  if (isnan(avg) || isinf(avg)) avg = (isnan(prev) || isinf(prev)) ? log2(max(uRef, 1e-9)) : prev;
+  if (isnan(prev) || isinf(prev)) prev = avg;
   float speed = avg > prev ? 1.1 : 0.6; // adapt to bright faster than to dark
   float k = uReset > 0.5 ? 1.0 : 1.0 - exp(-uDt * speed);
   gl_FragColor = vec4(mix(prev, avg, k), 0.0, 0.0, 1.0);
