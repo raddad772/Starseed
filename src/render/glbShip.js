@@ -223,8 +223,9 @@ const _cv = new THREE.Vector3(), _pa = new THREE.Vector3(), _ph = new THREE.Vect
 // A small craft whose model is a named node in a shared file (the yacht and
 // the pods in the carrier's, the vehicles and landers in craft.glb): cloned,
 // painted in the craft's livery. Its moving parts (a container's door, a
-// ramp) are child nodes named '<template>:<part>', swung about their hinges
-// from the vessel's door state (world state: the visual only reads it).
+// ramp, an airlock's leaves) are child nodes named '<template>:<part>', swung
+// about their hinges or slid along `slide` from the vessel's door state
+// (world state: the visual only reads it).
 export class GlbCraftVisual {
   constructor(engine, vessel) {
     this.engine = engine;
@@ -266,6 +267,7 @@ export class GlbCraftVisual {
     root.quaternion.copy(v.quat);
     root.visible = !v.dead && root.position.length() < 300000;
     for (const P of this.parts) {
+      if (P.pt.slide) { P.node.position.copy(P.p0).addScaledVector(_pa.fromArray(P.pt.slide), v.doors[P.pt.door].open); continue; } // (a sliding leaf)
       _pq.setFromAxisAngle(_pa.fromArray(P.pt.axis), v.doors[P.pt.door].open * P.pt.angle);
       _ph.fromArray(P.pt.hinge);
       P.node.position.copy(P.p0).sub(_ph).applyQuaternion(_pq).add(_ph);

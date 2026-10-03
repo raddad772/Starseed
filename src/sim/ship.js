@@ -253,6 +253,8 @@ export class Ship {
         const across = (d.axis === 'x' ? w.z : w.x) - uc;
         if (Math.abs(along) < 4.5 && Math.abs(across) < half + 1.5) { near = true; break; }
       }
+      // (an airlock's two doors never both open; an outer one stays shut while docked)
+      if ((d.interlock && this.doors[d.interlock].open > 0.02) || (d.whenFree && this.parent)) { near = false; st.hold = 0; }
       st.hold = near ? 1.5 : Math.max(0, st.hold - dt);
       st.target = st.hold > 0 ? 1 : 0;
       const r = (st.target > st.open ? 3.2 : 1.4) * dt; // (quick to open, unhurried to close)

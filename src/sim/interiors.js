@@ -26,13 +26,16 @@ function pushOutOfSolids(solids, p, vel) {
 
 // Big-ship rooms: keep the body (RADIUS around, HEIGHT tall from the feet) out
 // of solid boxes along whichever axis needs the smallest push, so you can
-// land on a catwalk, bump your head on its underside, or walk into a crate.
+// land on a catwalk, bump your head on its underside, or walk into a crate;
+// one no higher than a stair you walk up onto.
+const STEP = 0.36;
 function pushOutOfSolids3D(solids, p, vel) {
   for (const s of solids) {
     const ox = Math.min(p.x + RADIUS - s.min[0], s.max[0] - (p.x - RADIUS));
     const oz = Math.min(p.z + RADIUS - s.min[2], s.max[2] - (p.z - RADIUS));
     const oy = Math.min(p.y + HEIGHT - s.min[1], s.max[1] - p.y);
     if (ox <= 0 || oz <= 0 || oy <= 0) continue;
+    if (s.max[1] - p.y <= STEP) { p.y = s.max[1]; vel.y = Math.max(vel.y, 0); continue; }
     const m = Math.min(ox, oy, oz);
     if (m === oy) {
       if (p.y + HEIGHT / 2 > (s.min[1] + s.max[1]) / 2) { p.y = s.max[1]; vel.y = Math.max(vel.y, 0); }
@@ -211,9 +214,10 @@ export class RoomInterior {
     let f = r ? r.min[1] : null;
     const ry = this.ramps.length ? this.rampAt(x, z) : null;
     if (ry !== null && y > ry - 1.2 && (f === null || ry > f)) f = ry;
+    // (under any part of you: you stand on a stair's edge, and walk up onto it)
     for (const s of this.solids) {
-      if (x < s.min[0] - 0.05 || x > s.max[0] + 0.05 || z < s.min[2] - 0.05 || z > s.max[2] + 0.05) continue;
-      if (s.max[1] <= y + 0.35 && (f === null || s.max[1] > f)) f = s.max[1];
+      if (x < s.min[0] - RADIUS || x > s.max[0] + RADIUS || z < s.min[2] - RADIUS || z > s.max[2] + RADIUS) continue;
+      if (s.max[1] <= y + STEP && (f === null || s.max[1] > f)) f = s.max[1];
     }
     return f;
   }
@@ -261,14 +265,17 @@ export class RoomInterior {
     return this._outside || (this._outside = this.rooms.filter((r) => !r.car));
   }
 
-  // the solids in your way: riding a car, none of the guideway it runs through (`ride`);
-  // outside one, a car's own space in a shaft only while its doorway is shut
+  // the solids in your way: a sliding door only while it's shut (`door`); riding a
+  // turbolift car, none of the guideway it runs through (`ride`); outside one, a car's
+  // own space in a shaft only while its doorway is shut
   solidsFor(p) {
-    if (!this.tl) return this.solids;
+    if (this._gated === undefined) this._gated = this.solids.some((s) => s.door || s.shaft || s.ride);
+    if (!this._gated) return this.solids;
     const inCar = !!this.carAt(p);
     const out = this._sol || (this._sol = []);
     out.length = 0;
     for (const s of this.solids) {
+      if (s.door && this.v.doors[s.door] && this.v.doors[s.door].open > 0.7) continue;
       if (inCar ? s.ride : s.shaft && this.v.doors[`tl-${s.shaft}`].open > 0.7) continue;
       out.push(s);
     }

@@ -11,6 +11,7 @@
 
 import { HULL_PROBES, SHIP_HULL_BOXES, SHIP_INTERIOR } from '../render/shipModel.js';
 import { BASTION } from './layouts/bastion.js';
+import { YACHT_DECK, YACHT_SOLIDS, YACHT_SEATS, YACHT_HULL } from './layouts/yacht.data.js';
 
 const box = (x0, y0, z0, x1, y1, z1) => ({ min: [x0, y0, z0], max: [x1, y1, z1] });
 const G = 9.81;
@@ -183,35 +184,50 @@ export const YACHT = {
   thrust: { main: 9.0, retro: 2.0, belly: 5.0, down: 1.2, lateral: 2.0 },
   alpha: [1.2, 1.0, 2.0], rate: [1.0, 0.8, 1.5],
   hullRating: 80,
-  legs: true, legLength: 1.6, legAttach: [[-6, -4.5, -12], [6, -4.5, -12], [-6, -4.5, 14], [6, -4.5, 14]],
-  aero: { cd: [60, 140, 8], wing: 40 },
-  probes: boxCorners(-9, -4.5, -23, 9, 4.5, 23),
-  radius: 24,
-  // walk-in: cockpit, salon, aft cabin. Docked under the carrier you come and
-  // go by the hatch overhead (homeHatch, under it in the salon); landed, by
-  // the port airlock (F from the ground under it climbs in)
-  rooms: [
-    { id: 'cockpit', name: 'Cockpit', type: 'cockpit', min: [-3.2, -2.0, -15.5], max: [3.2, 1.9, -8.5] },
-    { id: 'salon', name: 'Salon', type: 'lounge', min: [-6, -2.5, -8.5], max: [6, 2.6, 9.5] },
-    { id: 'cabin', name: "Captain's cabin", type: 'cabin', min: [-6, -2.5, 9.5], max: [6, 2.6, 17.5] },
-    { id: 'door-fwd', name: 'Doorway', type: 'door', min: [-1, -2.5, -9.3], max: [1, 1.5, -7.7] },
-    { id: 'door-aft', name: 'Doorway', type: 'door', min: [-1, -2.5, 8.7], max: [1, 1.5, 10.3] },
-    // (it reaches 1 m into the salon: the two must overlap by more than a body's width to walk between them)
-    { id: 'airlock', name: 'Airlock', type: 'door', min: [-9.4, -2.5, -1.0], max: [-5.0, 0.2, 1.0], open: ['-x'], exitTo: [-10.5, -5.8, 0], whenFree: true },
-  ],
-  entries: [{ label: 'airlock', outside: [-10.2, -5.8, 0], inside: [-7.4, -2.5, 0], heading: [1, 0, 0], whenFree: true }],
-  homeHatch: [0, -2.5, -4], // (under the hatch to the carrier's yacht dock)
+  legs: true, legLength: 1.8, legAttach: [[-8.8, -2.3, -10], [8.8, -2.3, -10], [-8.8, -2.3, 17], [8.8, -2.3, 17]],
+  aero: { cd: [70, 160, 9], wing: 40 },
+  probes: boxCorners(-13.2, -3.05, -23, 13.2, 3.8, 25.4),
+  colliders: YACHT_HULL.map(([min, max]) => ({ min, max })),
+  radius: 28, size: [26.4, 6.9, 48.4],
+  // walk-in (the refit's family yacht: an oval main deck round a central
+  // transfer hub, cabins about the rim, the cockpit up three steps forward, a
+  // garage aft): one room, its walls, furniture and steps as solids (read from
+  // the model by tools/blender/yacht_layout.py). Docked under the carrier you
+  // come and go by the dorsal hatch over the hub (homeHatch); landed, by the
+  // port airlock (F from the ground beside it climbs in).
+  rooms: [{ id: 'deck', name: 'Main deck', type: 'lounge', min: YACHT_DECK[0], max: YACHT_DECK[1] }],
   solids: [
-    { kind: 'console', ...box(-2.8, -2.0, -15.5, 2.8, -1.0, -14.8) },
-    // (the port bench in two, either side of the airlock's doorway)
-    { kind: 'bench', ...box(-5.9, -2.5, -6, -4.6, -1.9, -1.4) }, { kind: 'bench', ...box(-5.9, -2.5, 1.4, -4.6, -1.9, 4) },
-    { kind: 'bench', ...box(4.6, -2.5, -6, 5.9, -1.9, 4) },
-    { kind: 'table', ...box(-1.2, -2.5, -1.5, 1.2, -1.75, 1.5) },
-    { kind: 'bed', ...box(-2, -2.5, 13, 2, -1.9, 17.4) },
+    ...YACHT_SOLIDS.map(([min, max]) => ({ kind: max[1] > 0 ? 'wall' : 'step', min, max })),
+    // the sliding doors while they're shut (see slideDoors)
+    { kind: 'door', door: 'airlock-in', ...box(-8.3, -1.1, 7.2, -8.1, 1.2, 9.5) },
+    { kind: 'door', door: 'airlock-out', ...box(-13.3, -1.1, 7.2, -13.1, 1.2, 9.5) },
+    { kind: 'door', door: 'garage', ...box(-0.85, -1.1, 12.25, 0.85, 1.2, 12.35) },
   ],
-  lights: [{ pos: [0, 2.4, -2], color: 0xffe2c4, intensity: 5, range: 14 }, { pos: [0, 2.4, 13], color: 0xffe2c4, intensity: 3, range: 9 }, { pos: [0, 1.7, -11.5], color: 0xb8dcff, intensity: 3, range: 7 }],
-  seats: [{ pilot: true, pos: [0, -2.0, -13.4], eye: [0, -0.75, -13.8], stand: [0, -2.0, -11.6], heading: [0, 0, 1], label: 'Pilot seat' }],
-  launch: { dir: [0, -1, 0], speed: 6, clear: [0, -8.5, 0] }, // (its roof sits 7 m up in the recess: out 1.5 m clear of the hull)
+  // the airlock's doors never both open (and the outer only when the yacht is free of the
+  // carrier); the garage's pressure door between the cabins and the garage
+  slideDoors: [
+    { id: 'airlock-in', axis: 'x', plane: -8.2, u0: 7.2, u1: 9.5, y0: -1.1, y1: 1.2, interlock: 'airlock-out' },
+    { id: 'airlock-out', axis: 'x', plane: -13.2, u0: 7.2, u1: 9.5, y0: -1.1, y1: 1.2, interlock: 'airlock-in', whenFree: true },
+    { id: 'garage', axis: 'z', plane: 12.3, u0: -0.85, u1: 0.85, y0: -1.1, y1: 1.2 },
+  ],
+  parts: [
+    { node: 'airlock_inner_A', door: 'airlock-in', slide: [0, 0, 1.1] }, { node: 'airlock_inner_B', door: 'airlock-in', slide: [0, 0, -1.1] },
+    { node: 'airlock_outer_A', door: 'airlock-out', slide: [0, 0, 1.1] }, { node: 'airlock_outer_B', door: 'airlock-out', slide: [0, 0, -1.1] },
+    { node: 'garage_pressure_door_A', door: 'garage', slide: [-0.82, 0, 0] }, { node: 'garage_pressure_door_B', door: 'garage', slide: [0.82, 0, 0] },
+  ],
+  entries: [{ label: 'airlock', outside: [-14.8, -4.1, 8.35], inside: [-10.6, -1.1, 8.35], heading: [1, 0, 0], whenFree: true }],
+  homeHatch: [0, -1.1, -8], // (under the dorsal hatch, where the carrier's transfer lift comes down)
+  lights: [
+    { pos: [0, 2.0, -8], color: 0xffe2c4, intensity: 5, range: 12 }, { pos: [-2, 2.0, -12.5], color: 0xffe2c4, intensity: 4, range: 9 },
+    { pos: [0, 2.0, -2], color: 0xffe2c4, intensity: 4, range: 10 }, { pos: [0, 2.0, 7], color: 0xffe2c4, intensity: 4, range: 10 },
+    { pos: [0, 1.8, 18], color: 0xfff0dc, intensity: 5, range: 12 }, { pos: [0, 1.2, -17.5], color: 0xb8dcff, intensity: 3, range: 7 },
+  ],
+  // the cockpit's two flight seats, up on its platform (y -0.5), facing forward
+  seats: YACHT_SEATS.map(([x, , zf, zb], i) => ({
+    pilot: i === 0, pos: [x, -0.5, (zf + zb) / 2], eye: [x, 0.72, (zf + zb) / 2 - 0.05], stand: [x * 0.6, -0.5, zb + 0.5], heading: [0, 0, 1],
+    label: i === 0 ? 'Pilot seat' : "Co-pilot's seat",
+  })),
+  launch: { dir: [0, -1, 0], speed: 6, clear: [0, -8.5, 0] }, // (its roof sits up in the recess: dropped 8.5 m, 2 m clear of the hull)
 };
 export const POD = {
   key: 'pod', className: 'Escape pod', big: false, seatOnly: true, ftl: false,
@@ -357,21 +373,31 @@ export const LIFTER = {
   legs: true, legLength: 3.0, legAttach: [[-4.9, 2.1, -6.5], [4.9, 2.1, -6.5], [-4.9, 2.1, 6.5], [4.9, 2.1, 6.5]], // (a clamped container clears the ground by ~0.3 m)
   ...springs(45000, 0.17),
   aero: { cd: [60, 120, 25], wing: 0 },
-  probes: [...hullCorners(-2.2, 1.5, -14.5, 2.2, 5.2, -9), ...hullCorners(-1.8, 2.9, -9, 1.8, 5.0, 12), [-5.8, 3.2, -6.5], [5.8, 3.2, -6.5], [-5.8, 3.2, 6.5], [5.8, 3.2, 6.5]],
-  colliders: [box(-2.2, 1.5, -14.5, 2.2, 5.2, -9), box(-1.8, 2.9, -9, 1.8, 5.0, 12),
-    box(-5.8, 3.2, -7.2, 5.8, 4.2, -5.8), box(-5.8, 3.2, 5.8, 5.8, 4.2, 7.2)],
-  clamp: { name: 'Cargo cradle', pos: [0, 0, 0], reach: [2.2, 1.8, 3.2], fits: [4.6, 3.4, 9.0] },
-  radius: 18, size: [12, 6, 30],
-  // walk-in: a small flight deck in the cockpit pod, a hatch to port (F from
-  // the ground beside it climbs in; walking out through it drops you there)
+  probes: [...hullCorners(-2.2, 1.5, -14.8, 2.2, 5.2, -9), ...hullCorners(-1.8, 2.9, -9, 1.8, 5.0, 11.2), [-8.0, 2.0, -6.3], [8.0, 2.0, -6.3], [-8.0, 2.0, 6.3], [8.0, 2.0, 6.3]],
+  // (the refit: four rocket pods on outriggers, out to 8 m either side)
+  colliders: [box(-2.2, 1.5, -14.8, 2.2, 5.2, -9), box(-1.8, 2.9, -9, 1.8, 5.0, 11.2),
+    box(-4.7, 3.2, -7.0, 4.7, 4.2, -5.6), box(-4.7, 3.2, 5.6, 4.7, 4.2, 7.0),
+    box(-8.1, 1.9, -7.4, -4.6, 6.3, -5.2), box(4.6, 1.9, -7.4, 8.1, 6.3, -5.2), box(-8.1, 1.9, 5.2, -4.6, 6.3, 7.4), box(4.6, 1.9, 5.2, 8.1, 6.3, 7.4)],
+  // the open carry mount (cargo may overhang the sides)
+  clamp: { name: 'Cargo cradle', pos: [0, 0, 0], reach: [2.2, 1.8, 3.2], fits: [7.4, 3.67, 9.28] },
+  radius: 18, size: [16.2, 7, 26.1],
+  // walk-in: the cabin in the cockpit pod (the refit's: two seats up on a
+  // raised flight deck, two berths, a galley and a WC), a hatch to port (F
+  // from the ground beside it climbs in; walking out through it drops you there)
   rooms: [
     { id: 'deck', name: 'Flight deck', type: 'cockpit', min: [-1.8, 1.8, -13.6], max: [1.8, 4.6, -9.4] },
     { id: 'hatch', name: 'Hatch', type: 'door', min: [-2.6, 1.8, -12.2], max: [-1.2, 4.0, -10.8], open: ['-x'], exitTo: [-3.2, -0.6, -11.5] },
   ],
-  entries: [{ label: 'hatch', outside: [-3.0, -0.6, -11.5], inside: [-0.8, 1.8, -11.5], heading: [1, 0, 0] }],
-  solids: [{ kind: 'console', ...box(-1.6, 1.8, -13.6, 1.6, 2.8, -13.1) }],
-  lights: [{ pos: [0, 4.4, -11.5], color: 0xfff0da, intensity: 3, range: 6 }],
-  seats: [{ pilot: true, pos: [0, 1.8, -12.5], eye: [0, 3.0, -12.8], stand: [0, 1.8, -11.0], heading: [0, 0, 1], label: 'Pilot seat' }],
+  entries: [{ label: 'hatch', outside: [-3.0, -0.6, -11.5], inside: [-1.2, 1.8, -11.3], heading: [1, 0, 0] }],
+  solids: [
+    { kind: 'flightdeck', ...box(-1.8, 1.8, -13.6, 1.8, 2.18, -12.57) }, // (0.38 m up, the seats on it)
+    { kind: 'bunks', ...box(-1.8, 1.8, -10.48, 0.38, 3.68, -9.4) },
+    { kind: 'galley', ...box(1.13, 1.8, -12.67, 1.8, 3.83, -11.69) },
+    { kind: 'wc', ...box(0.5, 1.8, -10.85, 1.8, 3.75, -9.4) },
+  ],
+  lights: [{ pos: [0, 4.4, -11.2], color: 0xfff0da, intensity: 3, range: 6 }],
+  seats: [{ pilot: true, pos: [0.58, 2.18, -13.35], eye: [0.58, 3.4, -13.3], stand: [0.3, 1.8, -12.1], heading: [0, 0, 1], label: 'Pilot seat' },
+    { pos: [-0.72, 2.18, -13.35], eye: [-0.72, 3.4, -13.3], stand: [-0.55, 1.8, -12.3], heading: [0, 0, 1], label: 'Crew seat' }],
   help: 'Y clamps the cargo under you (or lets it go)',
 };
 
