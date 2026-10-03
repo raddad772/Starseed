@@ -345,8 +345,28 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
     if (refine && !S.ref && !S.pyrReaders().length) {
       const wd = dd;
       if (!wdC) {
+        // (the warp is smooth, its finest swirls ~20 cells across: reckoned every fourth cell and
+        // laid between them, its offsets bilinear)
         wdC = new Float64Array(3 * n); fixC = new Int16Array(n).fill(-2);
-        for (let c = 0; c < n; c++) { S.rockWarp(G.dir[c * 3], G.dir[c * 3 + 1], G.dir[c * 3 + 2], wd); wdC[c * 3] = wd[0]; wdC[c * 3 + 1] = wd[1]; wdC[c * 3 + 2] = wd[2]; }
+        const S4 = 4, nl = Math.ceil((NG - 1) / S4) + 1, off = new Float64Array(nl * nl * 3);
+        for (let lj = 0; lj < nl; lj++) for (let li = 0; li < nl; li++) {
+          const c = Math.min(NG - 1, lj * S4) * NG + Math.min(NG - 1, li * S4), o = (lj * nl + li) * 3;
+          S.rockWarp(G.dir[c * 3], G.dir[c * 3 + 1], G.dir[c * 3 + 2], wd);
+          off[o] = wd[0] - G.dir[c * 3]; off[o + 1] = wd[1] - G.dir[c * 3 + 1]; off[o + 2] = wd[2] - G.dir[c * 3 + 2];
+        }
+        for (let j = 0; j < NG; j++) {
+          const lj = Math.min(nl - 2, Math.floor(j / S4)), fj = Math.min(1, (j - lj * S4) / Math.max(1, Math.min(NG - 1, (lj + 1) * S4) - lj * S4));
+          for (let i = 0; i < NG; i++) {
+            const li = Math.min(nl - 2, Math.floor(i / S4)), fi = Math.min(1, (i - li * S4) / Math.max(1, Math.min(NG - 1, (li + 1) * S4) - li * S4));
+            const c = j * NG + i, a = (lj * nl + li) * 3, b = a + 3, d = a + nl * 3, e = d + 3;
+            let x = G.dir[c * 3], y = G.dir[c * 3 + 1], z = G.dir[c * 3 + 2];
+            x += (off[a] * (1 - fi) + off[b] * fi) * (1 - fj) + (off[d] * (1 - fi) + off[e] * fi) * fj;
+            y += (off[a + 1] * (1 - fi) + off[b + 1] * fi) * (1 - fj) + (off[d + 1] * (1 - fi) + off[e + 1] * fi) * fj;
+            z += (off[a + 2] * (1 - fi) + off[b + 2] * fi) * (1 - fj) + (off[d + 2] * (1 - fi) + off[e + 2] * fi) * fj;
+            const l = Math.sqrt(x * x + y * y + z * z);
+            wdC[c * 3] = x / l; wdC[c * 3 + 1] = y / l; wdC[c * 3 + 2] = z / l;
+          }
+        }
       }
       for (let c = 0; c < n; c++) {
         if (fixC[c] >= 0) { rockC[c] = fixC[c]; continue; }
