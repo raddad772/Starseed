@@ -76,7 +76,16 @@ export function stagnantWorld(G, opts) {
   // northern plains, far younger and smoother than its southern highlands))
   const fillAt = dich ? rng.fork('lowlandFill').range(0.2, 0.35) * Math.min(age, volcEnd) : null;
   let filled = false;
-  for (let t = 0; t < age; t += DT_MYR / 1000) {
+  // a Titan's organic haze (opts.haze: m a Gyr, real, over the whole ground): what its methane
+  // air's photochemistry makes falls out, and its rain and wind carry it into the lows, the
+  // crater bowls and basins, filling each toward the ground round it (so a bowl fills ~10 times
+  // as fast as the mean: Lorenz & Lunine 1996's few hundred metres over its age lie mostly
+  // there). Where it's buried ~200 m deep the crater record starts again: Titan's surface keeps
+  // few craters, and those shallow (Neish & Lorenz 2012: 0.2-1 Gyr old)
+  const haze = opts.haze || 0, HAZE_EVERY = 5, B0 = 200 * scale * VEXAG;
+  const bur = haze ? new Float32Array(n) : null, mean = haze ? new Float64Array(n) : null, mtmp = haze ? new Float64Array(n) : null;
+  let step = 0;
+  for (let t = 0; t < age; t += DT_MYR / 1000, step++) {
     stats.craters += imp.step(DT_MYR, dMin, (c, dh) => { h[c] += dh; }, t * 1000, t, h).length;
     cum.push(cum[cum.length - 1] + imp.density(DT_MYR, t));
     // the rise swells, the shields build, while the interior is hot
@@ -122,6 +131,23 @@ export function stagnantWorld(G, opts) {
       for (let k = poissonDraw(vrng, nCoronae * kf); k > 0; k--) {
         const at = corona(G, h, vrng, scale); stats.coronae = (stats.coronae || 0) + 1;
         if (srng.next() < 0.7) shieldFields.push(shieldField(srng, at, G.R, scale, 1));
+      }
+    }
+    if (haze && step % HAZE_EVERY === HAZE_EVERY - 1) {
+      // (the ground round each place: three passes over its neighbours, a few cells)
+      mean.set(h);
+      for (let it = 0; it < 3; it++) {
+        for (let c = 0; c < n; c++) { let sm = 2 * mean[c], w = 2; for (let e = G.nStart[c]; e < G.nStart[c + 1]; e++) { sm += mean[G.nbr[e]]; w++; } mtmp[c] = sm / w; }
+        mean.set(mtmp);
+      }
+      let lows = 0;
+      for (let c = 0; c < n; c++) { const l = mean[c] - h[c]; mtmp[c] = l > 0 ? l : 0; lows += mtmp[c]; }
+      const V = haze * scale * VEXAG * (HAZE_EVERY * DT_MYR / 1000) * n;   // (cells about equal: the mean thickness times their count)
+      if (lows > 0) for (let c = 0; c < n; c++) {
+        if (!mtmp[c]) continue;
+        const dep = Math.min(mtmp[c], V * mtmp[c] / lows);
+        h[c] += dep; bur[c] += dep;
+        if (bur[c] > B0) { since[c] = t; bur[c] = 0; }
       }
     }
     // rain while there's water: valleys, lakes in craters, a sea in the lows; as much as the

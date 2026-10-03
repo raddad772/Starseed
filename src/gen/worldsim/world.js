@@ -132,7 +132,9 @@ export function worldSim(body, star, opts = {}) {
       rainAt = (tg) => { let s = 0, k = 0; for (let i = 0; i < st.length; i++) if (st[i] >= tg - 0.005 && st[i] < tg + 0.01) { s += sr[i]; k++; } return k ? s / k : 0; };
     }
     if (!wet && H.titanish && (H.mainLiquid === 'methane' || H.mainLiquid === 'ethane')) { wet = [Math.max(0, age - 1), age]; rainK0 = 0.005; seaFrac = Math.min(0.05, (H.mainLiquidDepth || 0) / ((H.mainLiquidDepth || 0) + 100)); log('methane rain: channels and polar lakes'); }
-    const S = stagnantWorld(G, { rng: rng.fork('stagnant'), body, age, scale, wet, seaFrac, rainK0, tier: H.tier, volcEnd: 1 + 15 * dm.pow(body.massEarth, 0.6), rate, spike, resurfaceAt, resurfaceShare, rainAt: rainK0 === 1 ? rainAt : null });
+    // (a Titan's haze: its photochemistry by the sunlight it has, Titan's ~80 m a Gyr at 1% of Earth's)
+    const haze = H.titanish ? 80 * dm.clamp((body.insolation || 0.011) / 0.011, 0.2, 5) : 0;
+    const S = stagnantWorld(G, { rng: rng.fork('stagnant'), body, age, scale, wet, seaFrac, rainK0, tier: H.tier, volcEnd: 1 + 15 * dm.pow(body.massEarth, 0.6), rate, spike, resurfaceAt, resurfaceShare, rainAt: rainK0 === 1 ? rainAt : null, haze });
     const volcanoes = S.shields.map((v) => ({ ...latLonOf(v.at), heightM: v.H }));
     const melt = stampFresh(G, S.h, H, body, scale);
     const crater = { crat: S.crat, g: body.gravity, scale, Dw: S.dMin * 1000, Dair: airCut(body.atmosphere ? body.atmosphere.pressure : 0, body.gravity) * 1000 * scale };

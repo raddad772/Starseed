@@ -249,6 +249,14 @@ surveying many worlds; bit-exact across runs and clients, not across revisions):
   and its escape speed; kept under ~4.6x escape speed, lost over ~5.8x (Zahnle et al. 1992).
   SOL: Titan 1.48 bar 97 K every time (real 1.47 bar, 94 K); Callisto (6.3x) and Ganymede
   (7.2x) airless. Population: 24% of cold worlds over 1500 km, 14% of cold moons.
+- **Titan's haze (SIM 50, stagnant.js `haze`):** a titanish world's photochemical organics fall
+  out (Titan ~80 m a Gyr at 1% of Earth's sunlight, by its sunlight: Lorenz & Lunine 1996) and
+  are washed and blown into the lows, filling crater bowls toward the ground round them; where
+  ~200 m deep the crater record restarts. Effect: Titan's crater relief -18% small scale, -12%
+  large (shallow craters, as Titan's are). **Open:** Titan still keeps far too many big craters
+  (real: a handful over 50 km, a 0.2-1 Gyr surface). Haze alone can't erase km-deep bowls;
+  methane-rain erosion over more of its history than the model's last-Gyr window, or relaxation
+  in warm ice, would; the rain's crater reset is still a threshold (rk > 0.2), not cumulative.
 - **CO2 caps (SIM 48):** the condensation's polar cold is reckoned as the high-tilt test's (they
   disagreed: caps froze and sublimed by turns every step); near its frost point an air still
   collapses and comes back with the tilt's swings (a coarse stand-in for Mars' obliquity
