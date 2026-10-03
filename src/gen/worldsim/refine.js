@@ -341,10 +341,19 @@ export class RefineReader {
       }
       const x0 = (ui + i) / 2, y0 = (uj + j) / 2, x2 = (i + ri) / 2, y2 = (j + rj) / 2;
       const h0 = (H[uj * K + ui] + H[o]) / 2, h2 = (H[o] + H[rj * K + ri]) / 2;
-      for (let q = 0; q <= 8; q++) {
+      // (the nearest point on the curve, over eight chords each projected onto: not on its
+      // nine points, between which a narrow creek drew dotted)
+      let px = x0, py = y0;
+      for (let q = 1; q <= 8; q++) {
         const s2 = q / 8, a0 = (1 - s2) * (1 - s2), a1 = 2 * s2 * (1 - s2), a2 = s2 * s2;
-        const dx = a0 * x0 + a1 * i + a2 * x2 - fi, dy = a0 * y0 + a1 * j + a2 * y2 - fj, d = Math.sqrt(dx * dx + dy * dy);
-        if (d < bd) { bd = d; found = true; this.cd = d; this.cA = dm.exp(fl[o] / 255 * LN_A); this.ch = a0 * h0 + a1 * H[o] + a2 * h2; }
+        const qx = a0 * x0 + a1 * i + a2 * x2, qy = a0 * y0 + a1 * j + a2 * y2, ux = qx - px, uy = qy - py, L2 = ux * ux + uy * uy;
+        const f = L2 > 0 ? Math.max(0, Math.min(1, ((fi - px) * ux + (fj - py) * uy) / L2)) : 0;
+        const dx = px + f * ux - fi, dy = py + f * uy - fj, d = Math.sqrt(dx * dx + dy * dy);
+        if (d < bd) {
+          const tt = (q - 1 + f) / 8, b0 = (1 - tt) * (1 - tt), b1 = 2 * tt * (1 - tt), b2 = tt * tt;
+          bd = d; found = true; this.cd = d; this.cA = dm.exp(fl[o] / 255 * LN_A); this.ch = b0 * h0 + b1 * H[o] + b2 * h2;
+        }
+        px = qx; py = qy;
       }
     }
     return found;

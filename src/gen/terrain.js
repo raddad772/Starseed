@@ -66,6 +66,24 @@ function smax(a, b, k) { return -smin(-a, -b, k); }
 
 // the refinement's river curves' bounds (for _refRiverAt): each one's middle (x, y, z) and the
 // radius round it that holds its three control points (so the curve, inside their hull)
+// the nearest point to (x, y, z) on a river record's curve (the quadratic through its three
+// points at rec[b..b+8]): over eight chords, each projected onto; [squared distance, t]
+const _nc = [0, 0];
+export function nearestOnCurve(rec, b, x, y, z) {
+  let bd = 1e30, bt = 0, px = rec[b], py = rec[b + 1], pz = rec[b + 2];
+  for (let k = 1; k <= 8; k++) {
+    const t = k / 8, a0 = (1 - t) * (1 - t), a1 = 2 * t * (1 - t), a2 = t * t;
+    const qx = a0 * rec[b] + a1 * rec[b + 3] + a2 * rec[b + 6], qy = a0 * rec[b + 1] + a1 * rec[b + 4] + a2 * rec[b + 7], qz = a0 * rec[b + 2] + a1 * rec[b + 5] + a2 * rec[b + 8];
+    const ux = qx - px, uy = qy - py, uz = qz - pz, L2 = ux * ux + uy * uy + uz * uz;
+    const f = L2 > 0 ? Math.max(0, Math.min(1, ((x - px) * ux + (y - py) * uy + (z - pz) * uz) / L2)) : 0;
+    const dx = px + f * ux - x, dy = py + f * uy - y, dz = pz + f * uz - z, d2 = dx * dx + dy * dy + dz * dz;
+    if (d2 < bd) { bd = d2; bt = (k - 1 + f) / 8; }
+    px = qx; py = qy; pz = qz;
+  }
+  _nc[0] = bd; _nc[1] = bt;
+  return _nc;
+}
+
 function riverBounds(Rv) {
   const rec = Rv.rec, n = rec.length / RIVER_REC, o = new Float64Array(n * 4);
   for (let r = 0; r < n; r++) {
@@ -665,7 +683,9 @@ export class TerrainGenerator {
       // from afar, not as the few samples that happen to land in it; its own width near. A dry
       // world's old channel isn't: it's no wider than it is, a valley you see when you're near,
       // not a one-sample trench that shades as a dark stitched line from afar)
-      const half = this.wetNow ? Math.max(rv.w * 0.5, 0.5 * minWavelength) : rv.w * 0.5, flank = Math.max(rv.w * 1.5 + S.G.spacing * (0.02 + 0.12 * rv.k), 1.25 * half);
+      // (0.75 of the spacing each side: a line at any angle has a sample within that of it, where
+      // half the spacing leaves a diagonal one dotted)
+      const half = this.wetNow ? Math.max(rv.w * 0.5, 0.75 * minWavelength) : rv.w * 0.5, flank = Math.max(rv.w * 1.5 + S.G.spacing * (0.02 + 0.12 * rv.k), 1.25 * half);
       if (rv.dist < flank) {
         const bank = this._bankOf(rv);
         h += this._levelled(rv, bank - h) * dm.smoothstep(flank, half * 1.2, rv.dist);
@@ -681,7 +701,12 @@ export class TerrainGenerator {
     // the ground along the line (the valley the tile's water cut), water in it where it lasts
     if (finRd && finest <= 60 && !(rv && rv.dist < rv.w * 1.5) && finRd.creekAt(CREEK_A)) {
       const A = finRd.cA, k = dm.log(A / CREEK_A);
-      const half = Math.min(0.45 * finest, 0.5 + 0.9 * dm.exp(0.45 * k)), dep = Math.min(3, 0.25 + 0.3 * dm.exp(0.3 * k));
+      const own = Math.min(0.45 * finest, 0.5 + 0.9 * dm.exp(0.45 * k)), dep = Math.min(3, 0.25 + 0.3 * dm.exp(0.3 * k));
+      // (a creek with water in it drawn at least 0.75 of the sampling's spacing each side, as a
+      // river is, so it shows as a line, not as the samples that happen to land in it (a dotted
+      // line); one more than 4 times narrower than that isn't drawn at all)
+      const wide = this.wetNow && A > CREEK_WET ? Math.max(own, 0.75 * minWavelength) : own, seen = wide <= 4 * own;
+      const half = seen ? wide : own;
       const dist = finRd.cd * finest, flank = half * 3;
       if (dist < flank) {
         // (with water in it the banks are laid to the line, so it runs downhill; a dry world's
@@ -691,7 +716,7 @@ export class TerrainGenerator {
         h += (this.wetNow ? pull : Math.min(0, pull)) * dm.smoothstep(flank, half * 1.2, dist);
         if (dist < half) {
           h = Math.min(h, bank - dep * (1 - (dist / half) * (dist / half)));
-          if (this.wetNow && A > CREEK_WET) wl = Math.max(wl, bank - 0.25 - 0.1 * dep);
+          if (this.wetNow && A > CREEK_WET && seen) wl = Math.max(wl, bank - 0.25 - 0.1 * dep);
         }
       }
     }
@@ -980,14 +1005,10 @@ export class TerrainGenerator {
         if (Rv.big && Rv.big.has[r]) continue;   // (a great river's own winding channel, below)
         const o = r * 4, ex = bnd[o] - x, ey = bnd[o + 1] - y, ez = bnd[o + 2] - z;
         if ((Math.sqrt(ex * ex + ey * ey + ez * ez) - bnd[o + 3]) * R - 2 * half >= bs) continue;
-        // (its curve: from halfway to its main inflow, through its cell, to halfway on)
-        let bd = 1e30, bt = 0;
-        for (let k = 0; k <= 8; k++) {
-          const t = k / 8, a0 = (1 - t) * (1 - t), a1 = 2 * t * (1 - t), a2 = t * t;
-          const dx = a0 * rec[b] + a1 * rec[b + 3] + a2 * rec[b + 6] - x, dy = a0 * rec[b + 1] + a1 * rec[b + 4] + a2 * rec[b + 7] - y, dz = a0 * rec[b + 2] + a1 * rec[b + 5] + a2 * rec[b + 8] - z;
-          const d2 = dx * dx + dy * dy + dz * dz;
-          if (d2 < bd) { bd = d2; bt = t; }
-        }
+        // (its curve: from halfway to its main inflow, through its cell, to halfway on; the
+        // nearest point on it, not on its eight-point sketch: between the sketch's points the
+        // distance to them swelled past a narrow river's banks, and it drew dotted)
+        const bdt = nearestOnCurve(rec, b, x, y, z), bd = bdt[0], bt = bdt[1];
         const dist = Math.sqrt(bd) * R, w = 2 * half;
         if (dist - w < bs) {
           bs = dist - w;

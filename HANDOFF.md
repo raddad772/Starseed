@@ -433,6 +433,13 @@ surveying many worlds; bit-exact across runs and clients, not across revisions):
   where the refinement's valley wandered off them. Tiles route water across flats by a
   distance-based fill and a slope-weighted draw (`flatK`, wander 2; native/sim.c rebuilt, bit
   for bit with erosion.js): rivers wind across plains instead of running along the grid's lines.
+- **Rivers no longer draw dotted (2026-10-03):** a river's (and a creek's) distance was taken to
+  the nearest of nine points sketched along its record's curve; between them (~125 m apart on a
+  ~1 km record) it swelled past a narrow river's banks, so its water showed in dashes. Now the
+  nearest point on the curve (eight chords, each projected onto: terrain.js `nearestOnCurve`,
+  refine.js `creekAt`). Also: a wet river narrower than the sampling drawn 0.75 of the spacing
+  each side (a diagonal line at 0.5 dotted), and a wet creek likewise, up to 4 times its own
+  width (narrower than that, not drawn: no dotted lines).
 - **Survey tool:** `node tools/survey.mjs --out DIR --cache DIR SEED[:body] ...` writes each world's
   map and its landmarks at 400/60/12 km; the GPU check page takes `?seed=&body=` (runs the sim).
 
