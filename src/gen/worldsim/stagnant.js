@@ -18,6 +18,7 @@ import { Impacts, craterFloor, worldCell, WORLD_CELLS } from './impacts.js';
 import { resurface, relaxShell, pave } from './barren.js';
 import { Erosion, Heap } from './erosion.js';
 import { smoothField } from './tectonics.js';
+import { foldAt, ridgeWidth } from '../craters.js';
 
 const DT_MYR = 10;
 const VEXAG = 2.5;
@@ -84,10 +85,15 @@ export function stagnantWorld(G, opts) {
   // few craters, and those shallow (Neish & Lorenz 2012: 0.2-1 Gyr old)
   const haze = opts.haze || 0, HAZE_EVERY = 5, B0 = 200 * scale * VEXAG;
   const bur = haze ? new Float32Array(n) : null, mean = haze ? new Float64Array(n) : null, mtmp = haze ? new Float64Array(n) : null;
+  const sed = haze ? new Float64Array(n) : null;   // (all it laid down, as drawn: where its sand is)
   let step = 0;
   const prng = rng.fork('pipe');
+  // (an icy lid's contraction ridges: in two pulses as its shell thickens)
+  const icyLid = !!(body.terrain && body.terrain.icy), crng = rng.fork('contraction'), rugged = icyLid ? new Float64Array(n) : null, folds = [];
+  let pulses = 0;
   for (let t = 0; t < age; t += DT_MYR / 1000, step++) {
     stats.craters += imp.step(DT_MYR, dMin, (c, dh) => { h[c] += dh; }, t * 1000, t, h).length;
+    if (icyLid && pulses < 2 && t >= age * (pulses === 0 ? 0.35 : 0.7)) { const a = contractionRidges(G, h, crng, scale, 0.5, rugged); folds.push(...a); stats.ridges = folds.length; pulses++; }
     cum.push(cum[cum.length - 1] + imp.density(DT_MYR, t));
     // the rise swells, the shields build, while the interior is hot
     if (rise && t < volcEnd * 0.7) {
@@ -147,7 +153,7 @@ export function stagnantWorld(G, opts) {
       if (lows > 0) for (let c = 0; c < n; c++) {
         if (!mtmp[c]) continue;
         const dep = Math.min(mtmp[c], V * mtmp[c] / lows);
-        h[c] += dep; bur[c] += dep;
+        h[c] += dep; bur[c] += dep; sed[c] += dep;
         if (bur[c] > B0) { since[c] = t; bur[c] = 0; }
       }
     }
@@ -158,11 +164,19 @@ export function stagnantWorld(G, opts) {
     // (a crater record that starts again at a moment: a Titan's outgassing overturn)
     if (opts.recordAt != null && !stats.recordReset && t >= opts.recordAt) { since.fill(t); stats.recordReset = true; }
     if (wet && t >= wet[0] && t < wet[1] && rk > 2e-3) {
-      if (!E) E = new Erosion(G, hs, { sea: opts.seaFrac > 0.02, K: 8e-7, rain: 1, m: 0.45, kd: 1 });
-      sl = opts.seaFrac > 0.02 ? quantile(h, opts.seaFrac) : 0;
+      // (any sea is its rivers' base level: without one the whole world is a closed basin, and
+      // its lakes fill it level (a Titan's polar seas, a few % of it, are its base)
+      if (!E) E = new Erosion(G, hs, { sea: opts.seaFrac > 0, K: 8e-7, rain: 1, m: 0.45, kd: 1 });
+      sl = opts.seaFrac > 0 ? quantile(h, opts.seaFrac) : 0;
       for (let c = 0; c < n; c++) hs[c] = h[c] - sl;
-      E.rainK = (opts.rainK0 ?? 1) * Math.min(1, (wet[1] - t) / 0.15) * Math.min(1, rk); // drying out toward the end (a methane world's rain is a trickle, in storms)
-      E.step(DT_MYR * 1e6);
+      E.rainK = (opts.rainK0 ?? 1) * Math.min(1, (wet[1] - t) / 0.15) * (opts.rainAt ? Math.min(1, rk) : 1); // drying out toward the end (a methane world's rain is a trickle, in storms)
+      // (and its creep with it: soil creeps as water wets it, freezes in it, washes it (an Earth's,
+      // ~1 m^2 a year); under a trickle of rain, on cold ground, hardly at all)
+      E.kd = dm.clamp(E.rainK, 1e-3, 1);
+      // (a trickle (a Titan's methane, 0.5% of an Earth's rain) cuts nothing a cell this size
+      // shows: the water's ways are traced, for its rivers; the finer levels cut their valleys)
+      if ((opts.rainK0 ?? 1) < 0.05) { E.route(); E.drain(); }
+      else E.step(DT_MYR * 1e6);
       for (let c = 0; c < n; c++) { h[c] = hs[c] + sl; if (!E.base[c]) river[c] = Math.max(river[c], E.A[c]); }
       stats.wetSteps++;
       // (lasting rain wears the craters away; brief spells leave them)
@@ -188,7 +202,66 @@ export function stagnantWorld(G, opts) {
   const crat = new Float32Array(n), all = cum[cum.length - 1], dtG = DT_MYR / 1000;
   for (let c = 0; c < n; c++) crat[c] = all - cum[since[c] > 0 ? Math.min(cum.length - 1, Math.round(since[c] / dtG) + 1) : 0];
   stats.shieldFields = shieldFields.length;
-  return { h, volc, river, impacts: imp, stats, seaLevelWet: sl, rise, shields, dich, crat, dMin, shieldFields };
+  return { h, volc, river, impacts: imp, stats, seaLevelWet: sl, rise, shields, dich, crat, dMin, shieldFields, rugged, sed, folds };
+}
+
+// an icy lid squeezed as its world's interior cools and its shell thickens (Titan's mountains:
+// Mitri et al. 2010): ridges of folded and thrust ice, ~10-40 km across (real), hundreds of m to
+// ~1.5 km high, narrower than the shell relaxes (world.js shellRelax), so they stand. Near the
+// equator the tides' and despinning's stresses set them east-west, in long chains; elsewhere in
+// provinces of short ridges packed close (Xanadu's), and scattered. Raised in h (as drawn)
+export function contractionRidges(G, h, rng, scale, k = 1, rugged = null) {
+  const n = G.n, d = G.dir, R = G.R, ridges = [];
+  const east = (p) => { const l = Math.hypot(p[0], p[2]) || 1; return [-p[2] / l, 0, p[0] / l]; };
+  const rot = (p, ax, a) => {   // (p turned by a about the unit axis ax)
+    const c = dm.cos(a), sn = dm.sin(a), dt = p[0] * ax[0] + p[1] * ax[1] + p[2] * ax[2];
+    return [p[0] * c + (ax[1] * p[2] - ax[2] * p[1]) * sn + ax[0] * dt * (1 - c), p[1] * c + (ax[2] * p[0] - ax[0] * p[2]) * sn + ax[1] * dt * (1 - c), p[2] * c + (ax[0] * p[1] - ax[1] * p[0]) * sn + ax[2] * dt * (1 - c)];
+  };
+  const add = (at, heading, L, w, H) => ridges.push({ at, heading, L, w, H });
+  const headingAt = (at, spread) => { const e = east(at); return rot(e, at, rng.range(-spread, spread)); };
+  // (the equatorial chains)
+  const nEq = Math.round(rng.range(20, 40) * k);
+  for (let i = 0; i < nEq; i++) {
+    const lon = rng.range(0, 2 * Math.PI), lat = rng.range(-0.42, 0.42), at = [Math.cos(lat) * Math.cos(lon), Math.sin(lat), Math.cos(lat) * Math.sin(lon)];
+    add(at, headingAt(at, 0.35), rng.range(150e3, 800e3), rng.range(8e3, 20e3), rng.range(400, 1500));
+  }
+  // (provinces of short ridges packed close, most in the low latitudes)
+  const nProv = Math.round(rng.range(3, 6));
+  for (let p = 0; p < nProv; p++) {
+    const c0 = p < nProv - 1 ? (() => { const lon = rng.range(0, 2 * Math.PI), lat = rng.range(-0.3, 0.3); return [Math.cos(lat) * Math.cos(lon), Math.sin(lat), Math.cos(lat) * Math.sin(lon)]; })() : rng.unitVector();
+    const rad = rng.range(600e3, 1400e3) / (R / scale), dir0 = rng.range(0, Math.PI), nR = Math.round(rng.range(60, 150) * k);
+    for (let i = 0; i < nR; i++) {
+      const e = east(c0), nn = [c0[1] * e[2] - c0[2] * e[1], c0[2] * e[0] - c0[0] * e[2], c0[0] * e[1] - c0[1] * e[0]];
+      const a = rng.range(0, 2 * Math.PI), r = rad * Math.sqrt(rng.next());
+      let at = [c0[0] + r * (Math.cos(a) * e[0] + Math.sin(a) * nn[0]), c0[1] + r * (Math.cos(a) * e[1] + Math.sin(a) * nn[1]), c0[2] + r * (Math.cos(a) * e[2] + Math.sin(a) * nn[2])];
+      const l = Math.hypot(...at); at = at.map((x) => x / l);
+      add(at, rot(east(at), at, dir0 + rng.range(-0.6, 0.6)), rng.range(50e3, 250e3), rng.range(6e3, 15e3), rng.range(300, 1200));
+    }
+  }
+  // (and scattered)
+  for (let i = 0, ns = Math.round(rng.range(20, 40) * k); i < ns; i++) { const at = rng.unitVector(); add(at, headingAt(at, Math.PI), rng.range(80e3, 400e3), rng.range(6e3, 18e3), rng.range(300, 1000)); }
+  // each a great circle's arc, kept in `folds` for the terrain's levels to draw (craters.js
+  // stampFolds: the refinement whole, each finer level narrower): too narrow for the grid's cells,
+  // which would only carry a smear of each, and its haze would bury that (filling the flanks
+  // toward the ground round them), where Titan's stand a km or two. The grid keeps where they
+  // stand close (rugged): its rock bare ice there, its sand kept off
+  const wCell = worldCell(R, G.N), arcs = [];
+  for (const r of ridges) {
+    const Lg = r.L * scale / R, hd = r.heading, at = r.at;
+    let pole = [at[1] * hd[2] - at[2] * hd[1], at[2] * hd[0] - at[0] * hd[2], at[0] * hd[1] - at[1] * hd[0]];
+    const pl = Math.hypot(...pole); pole = pole.map((x) => x / pl);
+    const u = rot(at, pole, -Lg / 2), v = [pole[1] * u[2] - pole[2] * u[1], pole[2] * u[0] - pole[0] * u[2], pole[0] * u[1] - pole[1] * u[0]];
+    const A = { pole, u, v, start: 0, len: Lg, H: r.H * scale * VEXAG, w: 2 * r.w * scale, mid: at };
+    arcs.push(A);
+    const wg = ridgeWidth(A.w, wCell), reach = 1.6 * wg / R;
+    for (let c = 0; c < n; c++) {
+      const x = d[c * 3], y = d[c * 3 + 1], z = d[c * 3 + 2];
+      if (Math.abs(x * pole[0] + y * pole[1] + z * pole[2]) > reach) continue;
+      const dh = foldAt(A, x, y, z, R, wg);
+      if (dh && rugged) rugged[c] += dh / (scale * VEXAG);
+    }
+  }
+  return arcs;
 }
 
 // a field of small shield volcanoes round `at` (a unit direction): low lava shields ~1-15 km

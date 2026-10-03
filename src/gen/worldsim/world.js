@@ -190,32 +190,66 @@ export function worldSim(body, star, opts = {}) {
     const melt = stampFresh(G, S.h, H, body, scale);
     const crater = { crat: S.crat, g: body.gravity, scale, Dw: S.dMin * 1000, Dair: airCut(body.atmosphere ? body.atmosphere.pressure : 0, body.gravity) * 1000 * scale, Drel: relax ? 2 * relax.lidKm * 1000 * scale : 0 };
     // its rock: the old crust, and lava where the volcanoes and floods laid it
-    const rock = new Uint8Array(G.n), BAS = ROCK.basalt;
-    for (let c = 0; c < G.n; c++) rock[c] = S.volc[c] > 0.5 ? BAS : 0;
+    // (an icy world's: its ice where its lid was squeezed into ridges, rugged and bare; its old
+    // broken regolith over the rest. Where its ridges stand close: a rugged province)
+    const rock = new Uint8Array(G.n), BAS = ROCK.basalt, ICE = ROCK.ice, REG = ROCK.regolith;
+    let ruggedK = null;
+    let ruggedFar = null;
+    if (icy && S.rugged) {
+      ruggedK = Float64Array.from(S.rugged); blur(G, ruggedK, 10);
+      ruggedFar = Float64Array.from(S.rugged); blur(G, ruggedFar, 40);
+      let mx = 0; for (let c = 0; c < G.n; c++) mx = Math.max(mx, ruggedFar[c]);
+      for (let c = 0; c < G.n; c++) { ruggedK[c] = dm.smoothstep(6, 30, ruggedK[c]); ruggedFar[c] = mx > 0 ? dm.smoothstep(0.1, 0.6, ruggedFar[c] / mx) : 0; }
+    }
+    // (an icy world's lava is slush, water and ammonia: ice once frozen)
+    for (let c = 0; c < G.n; c++) rock[c] = icy ? (ruggedK && ruggedK[c] > 0.35 ? ICE : REG) : S.volc[c] > 0.5 ? BAS : 0;
     // (a Titan's liquid stands in its polar basins: the methane rains out where it's cold and
     // evaporates from the low latitudes. The datum at the level that holds its share of the
     // world's area in the basins poleward of ~55 degrees; the low latitudes standing a few
     // hundred metres higher (as Titan's do), their basins dry, floored with what wind and rain
     // carried into them, so no crater there reaches down to the liquid's level)
-    // (its poles stand lower than its equator, a smooth bowl to each pole (Titan's shape: a few
-    // hundred metres), so its liquid gathers in the polar basins)
-    let ocean = null;
+    let ocean = null, dunes = null;
     const hydrocarbon = body.terrain && (body.terrain.liquid === 'methane' || body.terrain.liquid === 'ethane');
     if (hydrocarbon) {
       const share = seaFrac > 0 ? seaFrac : Math.min(0.15, body.terrain.ocean || 0.05);
-      const bowl = (c) => { const y = G.dir[c * 3 + 1]; return 120 * (1 - y * y); };
-      const all = new Float64Array(G.n);
-      for (let c = 0; c < G.n; c++) all[c] = S.h[c] + bowl(c);
-      all.sort();
-      const L = all[Math.min(G.n - 1, Math.floor(share * G.n))];
+      const pol = [];
+      for (let c = 0; c < G.n; c++) if (Math.abs(G.dir[c * 3 + 1]) > 0.82) pol.push(S.h[c]);
+      pol.sort((a, b) => a - b);
+      const L = pol.length ? pol[Math.min(pol.length - 1, Math.floor(share * G.n))] : 0;
       ocean = new Uint8Array(G.n);
+      const h0 = Float64Array.from(S.h);   // (the ground as its history left it, for the dunes below)
       for (let c = 0; c < G.n; c++) {
         const pw = dm.smoothstep(0.77, 0.88, Math.abs(G.dir[c * 3 + 1]));
-        let hc = S.h[c] - L + bowl(c);
+        let hc = S.h[c] - L + 400 * (1 - pw);
         const floor = 2 + 300 * (1 - pw);
         if (hc < floor) hc += (floor - hc) * (1 - pw);
         S.h[c] = hc;
         if (hc < 0 && pw > 0.5) ocean[c] = 1;
+      }
+      // (and its haze's organic sand: the low latitudes are its desert (the methane rains out
+      // toward the poles, where it's cold), and there the wind gathers the sand into seas of
+      // dunes in the lowlands, round the ridges and the higher ground: Titan's dark equatorial
+      // belt, broken by its mountains and highland provinces)
+      if (haze > 0) {
+        // (its sand: the organics its haze laid down, thick where they washed into the old basins)
+        const sand = S.sed ? Float64Array.from(S.sed) : null;
+        let sMean = 0;
+        if (sand) { blur(G, sand, 3); for (let c = 0; c < G.n; c++) sMean += sand[c]; sMean /= G.n; }
+        const sm = Float64Array.from(h0), big = Float64Array.from(h0), f = new Float64Array(G.n);
+        blur(G, sm, 3); blur(G, big, 25);
+        let sd = 0;
+        for (let c = 0; c < G.n; c++) sd += (h0[c] - big[c]) * (h0[c] - big[c]);
+        sd = Math.sqrt(sd / G.n) + 1e-6;
+        for (let c = 0; c < G.n; c++) {
+          const lat = Math.abs(G.dir[c * 3 + 1]), low = ((big[c] - h0[c]) + 0.5 * (sm[c] - h0[c])) / sd;
+          // (the sand thins out toward the rugged provinces: the belt narrows round them)
+          const near = ruggedFar ? ruggedFar[c] : 0;
+          const supply = sand && sMean > 0 ? dm.smoothstep(0.4, 1.6, sand[c] / sMean) : 1;
+          f[c] = ocean[c] ? 0 : dm.smoothstep(0.6 - 0.3 * near, 0.3 - 0.2 * near, lat - 0.15 * (supply - 0.5)) * supply * (ruggedK ? 1 - ruggedK[c] : 1);
+        }
+        blur(G, f, 1);
+        dunes = new Uint8Array(G.n);
+        for (let c = 0; c < G.n; c++) dunes[c] = Math.round(255 * Math.min(1, 1.3 * f[c]));
       }
     }
     // (how much its past rain cut, for the finer levels' valleys: stream power wears as the
@@ -229,7 +263,7 @@ export function worldSim(body, star, opts = {}) {
     else if (H.series && H.series.rain) { const st = H.series.t, sr = H.series.rain; let tw = 0, rw = 0; for (let i = 1; i < st.length; i++) if (sr[i] > 0) { const d = st[i] - st[i - 1]; tw += d; rw += d * sr[i]; } wetFrac = tw / Math.max(age, 0.1); wetRain = tw > 0 ? rw / tw : 0; }
     wetFrac = dm.clamp(wetFrac, 0, 1); wetRain = dm.clamp(wetRain, 0, 3);
     const wetK = wetFrac * dm.pow(wetRain, 0.45);
-    return Object.assign(out, { h: S.h, volc: S.volc, river: S.river, stats: S.stats, wet, seaFrac, wetK, wetFrac, wetRain, craters: survivors(G, S.impacts.events, resurfaceAt, S.volc), volcanoes, melt, crater, rock, shieldFields: S.shieldFields, ocean });
+    return Object.assign(out, { h: S.h, volc: S.volc, river: S.river, stats: S.stats, wet, seaFrac, wetK, wetFrac, wetRain, craters: survivors(G, S.impacts.events, resurfaceAt, S.volc), volcanoes, melt, crater, rock, shieldFields: S.shieldFields, ocean, dunes, folds: S.folds && S.folds.length ? S.folds : null });
   }
 
   // ---- plates: the generator's continents as the starting crust

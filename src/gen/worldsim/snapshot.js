@@ -22,7 +22,7 @@ import { Noise3 } from '../../core/noise.js';
 import { dunePatches } from '../dunes.js';
 import { ROCK_UP } from './lithology.js';
 
-export const SIM_VERSION = 55;
+export const SIM_VERSION = 56;
 
 // a world's grid size: maxN for an Earth-sized one, finer cells don't help a small one
 // (N ~ sqrt(radius): Mars ~210, the Moon ~150, a moonlet 64)
@@ -115,6 +115,8 @@ export function packSnapshot(W, body) {
   if (W.mareLv) { out.mareLv = new Int16Array(n); for (let c = 0; c < n; c++) out.mareLv[c] = W.mareLv[c] === W.mareLv[c] ? Math.max(-32767, Math.min(32767, Math.round(W.mareLv[c]))) : -32768; }
   // an icy shell's cracks (barren.js crackShell): arcs, for each level to draw its ridges
   if (W.lineae) out.lineae = W.lineae.map((a) => ({ pole: a.pole.slice(), u: a.u.slice(), v: a.v.slice(), start: a.start, len: a.len, H: a.H }));
+  // (a squeezed icy lid's folds: arcs the finer levels draw as narrow as they are)
+  if (W.folds) out.folds = W.folds.map((a) => ({ pole: a.pole.slice(), u: a.u.slice(), v: a.v.slice(), start: a.start, len: a.len, H: a.H, w: a.w, mid: a.mid.slice() }));
   // and where it broke into rafts over warm spots (chaos: the rafts drawn where the ground is seen)
   if (W.chaos && W.chaos.length) out.chaos = W.chaos.map((c) => ({ at: c.at.slice(), R: c.R, H: c.H }));
   // (fields of small shield volcanoes: drawn where the ground is seen, terrain.js _shieldsAt)

@@ -521,6 +521,39 @@ export function ridgeAt(A, x, y, z, R, w) {
   const e = Math.min(1, Math.min(th, A.len - th) / (0.05 * A.len)), q = (ax - 0.3 * w) / (0.2 * w);
   return A.H * e * e * (3 - 2 * e) * dm.exp(-q * q);
 }
+// a fold's ridge (a squeezed icy lid's: stagnant.js contractionRidges) at direction (x, y, z):
+// one crest, A.H high, about w across, tapering to its ends
+export function foldAt(A, x, y, z, R, w) {
+  const ax = Math.abs(x * A.pole[0] + y * A.pole[1] + z * A.pole[2]) * R;
+  if (ax > 1.6 * w) return 0;
+  let th = dm.atan2(x * A.v[0] + y * A.v[1] + z * A.v[2], x * A.u[0] + y * A.u[1] + z * A.u[2]) - A.start;
+  th -= dm.TWO_PI * Math.floor(th / dm.TWO_PI);
+  if (th > A.len) return 0;
+  const q = ax / (0.5 * w);
+  return A.H * dm.pow(dm.sin(Math.PI * th / A.len), 0.6) * dm.exp(-q * q);
+}
+// the folds this level adds onto B: each as wide as it is or as this level's cells hold (cellL),
+// less the level above's drawing of it (cellUp)
+export function stampFolds(B, G, arcs, R, cellL, cellUp) {
+  if (!arcs || !arcs.length) return;
+  const n = G.N * G.N, dir = G.dir, cc = (G.N >> 1) * (G.N + 1);
+  const half = 0.75 * G.N * G.spacing;
+  // (cellUp Infinity: nothing above draws them, this level draws them whole)
+  const whole = !isFinite(cellUp);
+  for (const A of arcs) {
+    const w = ridgeWidth(A.w, cellL), wUp = whole ? 2 * w : ridgeWidth(A.w, cellUp);
+    if (w >= wUp) continue;
+    // (the tile's middle against the arc's: passed over when it can't reach)
+    const mx = A.mid[0] - dir[cc * 3], my = A.mid[1] - dir[cc * 3 + 1], mz = A.mid[2] - dir[cc * 3 + 2];
+    if (Math.sqrt(mx * mx + my * my + mz * mz) * R > half + 0.5 * A.len * R + 1.6 * wUp) continue;
+    for (let c = 0; c < n; c++) {
+      const x = dir[c * 3], y = dir[c * 3 + 1], z = dir[c * 3 + 2];
+      if (Math.abs(x * A.pole[0] + y * A.pole[1] + z * A.pole[2]) * R > 1.6 * wUp) continue;
+      B[c] += foldAt(A, x, y, z, R, w) - (whole ? 0 : foldAt(A, x, y, z, R, wUp));
+    }
+  }
+}
+
 // the ridges this level adds onto B (a tile's grid G): its width's less the level above's
 export function stampRidges(B, G, arcs, R, w, wUp) {
   if (!arcs || !arcs.length || w >= wUp) return;

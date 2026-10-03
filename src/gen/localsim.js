@@ -41,7 +41,7 @@ import { Rng, hashInts } from '../core/rng.js';
 import * as dm from '../core/dmath.js';
 
 import { MT, MARGIN, KEEP, TILE_VERSION } from './tileshape.js';
-import { stampCraters, stampRidges, ridgeWidth, RIDGE } from './craters.js';
+import { stampCraters, stampRidges, stampFolds, ridgeWidth, RIDGE } from './craters.js';
 import { craterFloor, worldCell, TILE_CELLS } from './worldsim/impacts.js';
 import { REGION_UP, tileLevel, regionLevel, faceMetres, SUITE, SUITES, DEPOSITS, rockColumn, regionStructure, jointAt, worldColumn, bedAt } from './geology.js';
 export { MT, MARGIN, KEEP, TILE_VERSION, REGION_UP, tileLevel, regionLevel };
@@ -338,6 +338,11 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
   if (rf && S && S.s.lineae) {
     const wT = RIDGE.w * (S.s.crater ? S.s.crater.scale : 0.1), cellL = chunkArcSize(L, R) / MT;
     stampRidges(B, G, S.s.lineae, R, ridgeWidth(wT, cellL), ridgeWidth(wT, pyr ? 4 * cellL : worldCell(R, S.s.N)));
+  }
+  // (a squeezed icy lid's folds, likewise: each as narrow as it is or as this level's cells hold)
+  if (rf && S && S.s.folds) {
+    const cellL = chunkArcSize(L, R) / MT;
+    stampFolds(B, G, S.s.folds, R, cellL, pyr ? 4 * cellL : Infinity);
   }
   // (a world without air has no rain: nothing but creep and collapse wear it)
   // (or a wet past: a world that's dry now but had rain once keeps the valleys it cut: its rivers
