@@ -42,8 +42,12 @@ const args = process.argv.slice(2), opt = {}, worlds = [];
 for (let i = 0; i < args.length; i++) { if (args[i].startsWith('--')) opt[args[i].slice(2)] = args[++i]; else worlds.push(args[i]); }
 const OUT = opt.out || 'survey', CACHE = opt.cache || OUT, W = +(opt.W || 1200), MARKS = +(opt.marks || 6);
 const FLOAT = opt.float === '1', THREADS = +(opt.threads || Math.min(4, os.cpus().length));
+// (--trueScale 1: the levels below the deep time at true scale (localsim.js trueScale), each
+// level's channels from --heads cells' water; its own caches)
+const TILE_OPTS = opt.trueScale === '1' ? { trueScale: true, ...(opt.heads ? { headCells: +opt.heads } : {}) } : (opt.heads ? { headCells: +opt.heads } : {});
+const TS_TAG = (opt.trueScale === '1' ? '-ts' : '') + (opt.heads ? '-h' + opt.heads : '');
 fs.mkdirSync(OUT, { recursive: true }); fs.mkdirSync(CACHE, { recursive: true });
-const TY = { h: Float32Array, water: Float32Array, rock: Uint8Array, ice: Uint16Array, river: Uint8Array, melt: Uint8Array, relief: Uint16Array, rcv: Uint8Array, Tsea: Float32Array, P: Float32Array, cover: Float32Array, forest: Float32Array, open: Float32Array, cloud: Float32Array, cloudPx: Uint8Array, crat: Uint8Array, dunes: Uint8Array, gorge: Uint16Array };
+const TY = { h: Float32Array, water: Float32Array, rock: Uint8Array, ice: Uint16Array, river: Uint8Array, melt: Uint8Array, relief: Uint16Array, rcv: Uint8Array, Tsea: Float32Array, P: Float32Array, cover: Float32Array, forest: Float32Array, open: Float32Array, cloud: Float32Array, cloudPx: Uint8Array, crat: Uint8Array, dunes: Uint8Array, gorge: Uint16Array, gLr: Uint16Array, gVsp: Uint16Array, gYouth: Uint8Array, gGx: Uint8Array, gGy: Uint8Array, gGlac: Uint8Array };
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
 const list = fs.existsSync(path.join(OUT, 'survey.json')) ? JSON.parse(fs.readFileSync(path.join(OUT, 'survey.json'))) : {};
 
@@ -72,7 +76,7 @@ for (const w of worlds) {
   }
   let gen = new TerrainGenerator({ ...b.terrain, snapshot: snap });
   // its refinement, cached
-  const rf = path.join(CACHE, `ref-${seed}-${b.id}-N${N}-v${SIM_VERSION}-r${TILE_VERSION}${FLOAT ? 'f' : 'i'}`);
+  const rf = path.join(CACHE, `ref-${seed}-${b.id}-N${N}-v${SIM_VERSION}-r${TILE_VERSION}${FLOAT ? 'f' : 'i'}${TS_TAG}`);
   let R;
   if (fs.existsSync(rf + '.v8')) R = fromStorable(v8.deserialize(fs.readFileSync(rf + '.v8')));
   else {
@@ -84,7 +88,7 @@ for (const w of worlds) {
     log(`  refinement (${6 * n * n} tiles) in ${((performance.now() - t0) / 1000).toFixed(0)} s`);
   }
   const pyr = new Map();
-  gen = new TerrainGenerator({ ...b.terrain, snapshot: snap, refine: R, pyr });
+  gen = new TerrainGenerator({ ...b.terrain, snapshot: snap, refine: R, pyr, ...(TILE_OPTS.trueScale ? { trueScale: true } : {}) });
   const entry = list[tag] = { seed, body: b.name, label: b.label || '', world: `${tag}-world.png`, marks: [] };
   // the whole world
   {
@@ -141,9 +145,9 @@ for (const w of worlds) {
         if (ti < 0 || tj < 0 || ti >= n || tj >= n) continue;
         // (--pyrCache 1: kept on disk by the tile sim's and world sim's versions: they read the
         // refinement and the snapshot, not the sampler, so a change to terrain.js reuses them)
-        const pf = opt.pyrCache === '1' ? path.join(CACHE, `pyr-${tag}-N${N}-v${SIM_VERSION}-r${TILE_VERSION}${FLOAT ? 'f' : 'i'}${opt.pyrIn === '0' ? '-noin' : ''}-L${L}-${t0.face}-${ti}-${tj}.v8`) : null;
+        const pf = opt.pyrCache === '1' ? path.join(CACHE, `pyr-${tag}-N${N}-v${SIM_VERSION}-r${TILE_VERSION}${FLOAT ? 'f' : 'i'}${TS_TAG}${opt.pyrIn === '0' ? '-noin' : ''}-L${L}-${t0.face}-${ti}-${tj}.v8`) : null;
         if (pf && fs.existsSync(pf)) { set.put(t0.face, ti, tj, v8.deserialize(fs.readFileSync(pf))); continue; }
-        const P = prepareTile(gen, t0.face, ti, tj, { kind: 'pyr', L, parent: reader, inflow: opt.pyrIn !== '0' });
+        const P = prepareTile(gen, t0.face, ti, tj, { kind: 'pyr', L, parent: reader, inflow: opt.pyrIn !== '0', ...TILE_OPTS });
         if (FLOAT) P.steps(); else P.fromInts(runInt(P.ints()));
         const T = P.finish();
         const rw = new Uint8Array(T.rockC.length);
@@ -210,7 +214,7 @@ function refineTiles(seed, body, snap, n, put) {
     const ws = [];
     const give = (w) => { if (next < jobs.length) { w.job = next++; w.postMessage(jobs[w.job]); } };
     for (let k = 0; k < Math.min(THREADS, jobs.length); k++) {
-      const w = new Worker(new URL('./surveyWorker.mjs', import.meta.url), { workerData: { seed, body, snap: sn, float: FLOAT } });
+      const w = new Worker(new URL('./surveyWorker.mjs', import.meta.url), { workerData: { seed, body, snap: sn, float: FLOAT, tileOpts: TILE_OPTS } });
       w.on('message', ({ p, riv }) => {
         put(p); parts[w.job] = riv;
         if (++done === jobs.length) { for (const x of ws) x.terminate(); resolve(parts); } else give(w);
