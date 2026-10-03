@@ -257,9 +257,9 @@ export function evolveWorld(ctx) {
     const haze = pCH4 > 1e-4 && pCH4 > 0.2 * co2;
     const minor = 0.35 * dm.log(1 + pCH4 / 1e-4) + 0.9 * dm.pow(Math.max(0, pH2 * P), 0.6) + 0.3 * dm.log(1 + pNH3 / 1e-6);
     // (the gases' lines broadened by the air's pressure: in thin air the same CO2 holds far
-    // less heat (Mars' column is 25 times Earth's, its warming a few K), in thick air far more
-    // (Venus' 92 bar: 737 K, its lines broad and its dense CO2 absorbing between them too)
-    const broad = dm.pow(Math.max(P, 1e-6), 0.35);
+    // less heat (Mars' column is 25 times Earth's, its warming a few K), in thick air more, but
+    // its bands saturating, more slowly (Venus' 92 bar: 737 K))
+    const broad = P < 1 ? dm.pow(Math.max(P, 1e-6), 0.35) : dm.pow(P, 0.22);
     const tau = (0.8 * dm.pow(bg, 0.9) + (0.25 * dm.log(1 + co2 / PCO2_EARTH) * dm.pow(1 + co2 / 3, 0.8) + minor) * broad + (titanish ? 0.6 * dm.pow(bg, 0.9) : 0)) * (haze ? 0.92 : 1);
     const A0 = snowed ? SNOW_ALBEDO : dm.clamp(0.3 - 0.08 * (W_EARTH_LAND - landAt(t)) + 0.01 * co2 + (P < 0.01 ? -0.15 : 0) + (haze ? 0.06 : 0), 0.06, 0.75);
     let Tt = equilibriumTemp(S(t), A0) * dm.pow(1 + 0.75 * tau, 0.25);

@@ -191,6 +191,9 @@ surveying many worlds; bit-exact across runs and clients, not across revisions):
   190 bar, 1184 K (it glows); SOL's Titan airless and Callisto Titan-like (the coin toss).
   Io-like moons (SIM 46): repaved every few Myr, the crater record restarts everywhere
   (`paveAll`), only the lows flooded; their heights keep old basin-rim relief as blocks.
+- **Greenhouse broadening saturates (SIM 47):** P^0.35 below a bar (Mars), P^0.22 above (bands
+  saturating; fits Venus 92 bar ~737 K): SOL's Venus 50 bar 697 K, Moadeal 200 bar 1011 K (was
+  1184).
   - Population (1075 worlds over 1500 km): habitable-temperature N2 airs 77 -> 88, others a few.
 - **Known spins; Mars' caps (SIM 34):** SOL's planets carry their real day lengths and axial
   tilts (`known.rotH`, `obliquityDeg`, `retro`: Mercury's 3:2 spin, Venus' slow retrograde
