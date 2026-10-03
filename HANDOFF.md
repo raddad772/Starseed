@@ -156,10 +156,18 @@ surveying many worlds; bit-exact across runs and clients, not across revisions):
   and -47 C at 80S, ice to 50 degrees. Now 0.5 sqrt(P): 33 C, 0 C at 60N, -18 C at 80N (real
   -18), ice poleward of ~65-70 degrees. Every plate world's climate milder toward its poles.
   SOL's Earth's life started late by its own draws (1.4 Gyr ago, no land plants): bare land.
+- **Known spins; Mars' caps (SIM 34):** SOL's planets carry their real day lengths and axial
+  tilts (`known.rotH`, `obliquityDeg`, `retro`: Mercury's 3:2 spin, Venus' slow retrograde
+  one; Mars had drawn 37.5 degrees and a 13 h day). Thin-air ice covers its cold traps only
+  (~2% of Mars, caps to ~78-80 degrees; was 6%, to 69). The snow rule on a world with no
+  climate grid finds its coldest from its own climate at the poles (was a fixed -90 C).
+  Mars at world scale is still one even tan: real Mars' dark regions (dust swept off basalt,
+  Syrtis Major) and bright dusty ones would want dust cover by wind and slope.
 - **SOL's rocky worlds, still to fix (2026-10-02 mosaic):** Mars' caps reach ~60 degrees (real: the seasonal cap to ~55-60 in winter, the residual
   caps far smaller); Io keeps cratered blocks (the 10% its resurfacing leaves: its mountains
   should be uncratered fault blocks); Venus' tesserae/plains are flat-shaded at world scale.
   Earth's water corrected to 2.6e-4 of its mass (it had two oceans' worth: one big sea).
+  (Earth's ice and Mars' caps: fixed, below/above.)
 - **Io, airless crusts, crater forms (SIM 31, TILE 22):** a rock moon its tides melt (tidal >
   0.6, lava) is repaved every few Myr (Io: 6 Myr; its mountains keep theirs): it had a full
   crater record and sampled at 108 us a sample, now 1.8. An airless world's old crust is ice on

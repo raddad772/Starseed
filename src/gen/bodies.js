@@ -482,6 +482,9 @@ export function buildBody(rng, proto, star, host) {
     obliquity = r < 0.72 ? Math.abs(rot.normal(0, 0.28)) : (r < 0.95 ? rot.range(0.5, 1.1) : rot.range(1.2, 1.7));
     obliquity = Math.min(obliquity, 1.65);
   }
+  // (a known world's spin (the Solar System's), the same draws made either way)
+  const kn = proto.known;
+  if (kn && kn.rotH) { locked = false; periodRealH = kn.rotH; obliquity = kn.obliquityDeg * dm.PI / 180; retrograde = !!kn.retro; }
   b.rotation = { locked, periodRealH, obliquity, retrograde, phase0: rot.range(0, dm.TWO_PI), tiltAzimuth: rot.range(0, dm.TWO_PI) };
 
   // ---- gas & ice giants, mini-Neptunes: no surface
@@ -571,7 +574,7 @@ export function buildBody(rng, proto, star, host) {
     // (frozen: in a thin air the ice keeps to the cold traps, Mars' caps and its ground ice,
     // not a sheet over the world)
     const thinK = 1 - dm.clamp(LOG10(Math.max(pBar, 1e-6)) + 2, 0, 1);
-    if (hist.snowball || Tsurf < 255) hydro = { water: 'frozen', liquid: null, oceanFraction: dm.clamp(coverage, 0.05, 1) * (1 - 0.9 * thinK), iceCover: dm.clamp(0.75 + (255 - Tsurf) / 60, 0.75, 1) * (1 - thinK) * (1 - thinK) + 0.03 * thinK };
+    if (hist.snowball || Tsurf < 255) hydro = { water: 'frozen', liquid: null, oceanFraction: dm.clamp(coverage, 0.05, 1) * (1 - 0.9 * thinK), iceCover: dm.clamp(0.75 + (255 - Tsurf) / 60, 0.75, 1) * (1 - thinK) * (1 - thinK) * (1 - thinK) + 0.015 * thinK };
     else {
       hydro = { water: 'liquid', liquid: 'water', oceanFraction: dm.clamp(coverage * hydroRng.range(0.85, 1.1), 0.02, 1.0), iceCover: Tsurf < 273 ? (273 - Tsurf) / 18 * 0.6 : 0 };
       if (waterNow > 0.02) hydro.oceanFraction = 1.0; // global ocean world
