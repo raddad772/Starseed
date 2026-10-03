@@ -10,7 +10,7 @@
 // relation is made symmetric. Deterministic: built only from dmath and
 // correctly-rounded arithmetic.
 
-import { dirFromFaceUV, faceUVFromDir, FACES } from '../cubesphere.js';
+import { dirFromFaceUV, faceUVFromDir, FACES, cellJitter } from '../cubesphere.js';
 import * as dm from '../../core/dmath.js';
 
 export class SimGrid {
@@ -20,14 +20,16 @@ export class SimGrid {
     const n = this.n = 6 * N * N;
     const dir = this.dir = new Float64Array(n * 3);
     const area = this.area = new Float64Array(n);
-    const d = [0, 0, 0], c0 = [0, 0, 0], c1 = [0, 0, 0], c2 = [0, 0, 0], c3 = [0, 0, 0];
+    const d = [0, 0, 0], c0 = [0, 0, 0], c1 = [0, 0, 0], c2 = [0, 0, 0], c3 = [0, 0, 0], jt = [0, 0];
     const s = 2 / N;
     for (let f = 0; f < 6; f++) {
       for (let j = 0; j < N; j++) {
         for (let i = 0; i < N; i++) {
           const c = (f * N + j) * N + i;
           const u = -1 + (i + 0.5) * s, v = -1 + (j + 0.5) * s;
-          dirFromFaceUV(f, u, v, d);
+          // (its point: its centre, jittered (cubesphere.js cellJitter))
+          cellJitter(f, N, i, j, jt);
+          dirFromFaceUV(f, u + jt[0] * s, v + jt[1] * s, d);
           dir[c * 3] = d[0]; dir[c * 3 + 1] = d[1]; dir[c * 3 + 2] = d[2];
           // area: the cell's corner quad, as two triangles (flat: cells are small)
           dirFromFaceUV(f, u - s / 2, v - s / 2, c0); dirFromFaceUV(f, u + s / 2, v - s / 2, c1);
@@ -192,9 +194,12 @@ export class GridLite {
     this._d = [0, 0, 0];
     this._uv = { face: 0, u: 0, v: 0 };
   }
-  // cell c's centre direction into out (as dirFromFaceUV, from the centres' tangents)
+  // cell c's point into out (its centre, as dirFromFaceUV from the centres' tangents; jittered
+  // as SimGrid's are, cubesphere.js cellJitter)
   centre(c, out) {
     const N = this.N, f = Math.floor(c / (N * N)), r = c - f * N * N, j = Math.floor(r / N), i = r - j * N;
+    const jt = cellJitter(f, N, i, j, this._jt || (this._jt = [0, 0]));
+    if (jt[0] || jt[1]) { const s = 2 / N; return dirFromFaceUV(f, -1 + (i + 0.5 + jt[0]) * s, -1 + (j + 0.5 + jt[1]) * s, out); }
     const F = FACES[f], a = this.tanCentres[i], b = this.tanCentres[j];
     const x = F.N[0] + a * F.U[0] + b * F.V[0], y = F.N[1] + a * F.U[1] + b * F.V[1], z = F.N[2] + a * F.U[2] + b * F.V[2];
     const l = Math.sqrt(x * x + y * y + z * z);

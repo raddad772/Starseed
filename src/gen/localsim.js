@@ -33,11 +33,14 @@
 // (so its edges drain as the land beyond does); what's kept is the inner square and half the
 // margin (the overlap with its neighbours, where the ground cross-fades between them).
 
-import { dirFromFaceUV, chunkArcSize, FACES } from './cubesphere.js';
+import { dirFromFaceUV, chunkArcSize, FACES, cellJitter } from './cubesphere.js';
 import { S_LEN, S_H } from './terrain.js';
 import { Erosion } from './worldsim/erosion.js';
 import { ROCKS, ROCK_UP } from './worldsim/lithology.js';
 import { Rng, hashInts } from '../core/rng.js';
+import { Noise3 } from '../core/noise.js';
+let _roughNz = null;
+const _gr = { lr: 0, youth: 0, gx: 0, gy: 0, glac: 0, vsp: 0 };
 import * as dm from '../core/dmath.js';
 
 import { MT, MARGIN, KEEP, TILE_VERSION } from './tileshape.js';
@@ -74,10 +77,16 @@ const UPK = ROCK_UP;
 function tileGrid(face, ti, tj, L, R) {
   const n = NG * NG, du = 2 / (1 << L) / MT;
   const u0 = -1 + ti * 2 / (1 << L) - MARGIN * du, v0 = -1 + tj * 2 / (1 << L) - MARGIN * du;
-  const dir = new Float64Array(n * 3), d = [0, 0, 0];
+  // (each cell's point jittered (cubesphere.js cellJitter), by its place on the level's whole
+  // face, so the tiles round it, their margins over it, set it off alike; its area its square's)
+  const dir = new Float64Array(n * 3), ju = new Float64Array(n), jv = new Float64Array(n), d = [0, 0, 0], jt = [0, 0], g0 = [0, 0, 0], g1 = [0, 0, 0];
+  const gi0 = ti * MT - MARGIN, gj0 = tj * MT - MARGIN;
   for (let j = 0; j < NG; j++) for (let i = 0; i < NG; i++) {
-    dirFromFaceUV(face, u0 + (i + 0.5) * du, v0 + (j + 0.5) * du, d);
-    const c = j * NG + i; dir[c * 3] = d[0]; dir[c * 3 + 1] = d[1]; dir[c * 3 + 2] = d[2];
+    const c = j * NG + i;
+    cellJitter(face, 1000 + L, gi0 + i, gj0 + j, jt);
+    ju[c] = jt[0]; jv[c] = jt[1];
+    dirFromFaceUV(face, u0 + (i + 0.5 + jt[0]) * du, v0 + (j + 0.5 + jt[1]) * du, d);
+    dir[c * 3] = d[0]; dir[c * 3 + 1] = d[1]; dir[c * 3 + 2] = d[2];
   }
   const nStart = new Int32Array(n + 1), nbr = new Int32Array(n * 8), nDist = new Float64Array(n * 8), area = new Float64Array(n);
   let e = 0;
@@ -92,13 +101,14 @@ function tileGrid(face, ti, tj, L, R) {
       const o = jj * NG + ii;
       nbr[e] = o; nDist[e] = dist(c, o); e++;
     }
-    const iu = i < NG - 1 ? c + 1 : c - 1, iv = j < NG - 1 ? c + NG : c - NG;
-    area[c] = dist(c, iu) * dist(c, iv);
+    const fu = u0 + (i + 0.5) * du, fv = v0 + (j + 0.5) * du;
+    dirFromFaceUV(face, fu, fv, d); dirFromFaceUV(face, fu + du, fv, g0); dirFromFaceUV(face, fu, fv + du, g1);
+    area[c] = Math.sqrt((d[0] - g0[0]) ** 2 + (d[1] - g0[1]) ** 2 + (d[2] - g0[2]) ** 2) * Math.sqrt((d[0] - g1[0]) ** 2 + (d[1] - g1[1]) ** 2 + (d[2] - g1[2]) ** 2) * R * R;
   }
   nStart[n] = e;
   let sp = 0;
   for (let c = 0; c < n; c++) sp += Math.sqrt(area[c]);
-  return { n, N: NG, nStart, nbr: nbr.subarray(0, e), nDist: nDist.subarray(0, e), area, dir, spacing: sp / n, u0, v0, du };
+  return { n, N: NG, nStart, nbr: nbr.subarray(0, e), nDist: nDist.subarray(0, e), area, dir, ju, jv, spacing: sp / n, u0, v0, du };
 }
 
 // The great rivers coming in: where the world sim's water crosses into a refinement tile's
@@ -275,11 +285,16 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
   // world's standing water (the sea, its lakes), which stays where it is
   const B = new Float64Array(n), rain = new Float64Array(n), X = new Float64Array(n), Y = new Float64Array(n), U = new Float64Array(n), V = new Float64Array(n);
   const wet = new Uint8Array(n), relC = new Float64Array(n), hs = gen.hScale;
+  // (true scale below the deep time (opts.trueScale): the world sim's valleys, km deep and many
+  // km apart, are real proportions on the drawn world; what this level adds below them is held to
+  // real ground's relief at its scale (the ground layer's, ground.js), its slopes to what real
+  // ground stands over its cells)
+  const ts = !!opts.trueScale, Bw = ts && refine ? new Float64Array(n) : null, lrC = ts && S && S.s.gLr ? new Float64Array(n) : null;
   // (the relief over a cell of the level above, from the world sim's: relief grows with scale
   // about as its 0.7th power)
   const relK = rf ? dm.pow(Math.min(1, (pyr ? 4 * cell : S.G.spacing) / S.G.spacing), 0.7) : 1, dd = [0, 0, 0], ctr = [0, 0, 0];
   for (let j = 0; j < NG; j++) for (let i = 0; i < NG; i++) {
-    const c = j * NG + i, u = G.u0 + (i + 0.5) * G.du, v = G.v0 + (j + 0.5) * G.du;
+    const c = j * NG + i, u = G.u0 + (i + 0.5 + G.ju[c]) * G.du, v = G.v0 + (j + 0.5 + G.jv[c]) * G.du;
     X[c] = u * Mu; Y[c] = v * Mu; U[c] = u; V[c] = v;
     const dx = G.dir[c * 3], dy = G.dir[c * 3 + 1], dz = G.dir[c * 3 + 2];
     if (pyr) {
@@ -298,6 +313,7 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
       let hb = S.hSmooth(dx, dy, dz) * hs;
       // (canyon country: the plateau's level round a great river's gorge, for it to cut here)
       if (S.s.gorge) hb += S.gorgeSmooth(dx, dy, dz) * hs;
+      if (Bw) { Bw[c] = hb; if (lrC && S.ground(dx, dy, dz, _gr)) lrC[c] = _gr.lr; }
       // (its rivers' courses, a cell or so wide, for the water here to find)
       const rv = gen._riverAt(dx, dy, dz);
       if (rv && rv.dist < 1.5 * cell) hb = Math.min(hb, (Math.max(rv.hs, 0) + 1 - 0.5 * rv.depth) * hs);
@@ -326,6 +342,7 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
     const P = gen.snap ? (gen.snap.Gc ? gen.snap.rain(dx, dy, dz) : (gen.snap.s.wetRain || 0) * 1000) : 800;
     rain[c] = Math.max(0.02, Math.min(3, (P ?? 800) / 1000));
   }
+  if (lrC && pyr) for (let c = 0; c < n; c++) { if (S.ground(G.dir[3 * c], G.dir[3 * c + 1], G.dir[3 * c + 2], _gr)) lrC[c] = _gr.lr; }
   // the craters the refinement's cells draw round and the world sim's couldn't (craters.js): on
   // the ground it starts from, so the run wears them and the mean is held to them (the finer
   // ones the sampler draws, where the ground is seen: no tile edges among them)
@@ -434,7 +451,24 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
   // the starting surface, with a few centimetres of jitter (so water has a way to choose)
   const h = new Float64Array(n);
   const jk = rng.int(1, 0x7fffffff);
+  // (a replay of the world's history (opts.replay): the run starts from its surface as it was,
+  // and the ground's mean is held each step to its surface then; B ends as the world's now)
+  const Bnow = opts.replay ? Float64Array.from(B) : null;
+  if (opts.replay) opts.replay.start(B, G, Bnow);
   for (let c = 0; c < n; c++) h[c] = B[c] + 0.04 * (hu(jk, c, 0, 0) - 0.5);
+  // (opts.seedRough: the ground starts as uneven below the level above's cells as real ground is,
+  // a share of the relief a cell of that level holds, rougher the bigger (fractal, H 0.7), for the
+  // run's water to find its own ways through: the start only, the history shapes it)
+  if (opts.seedRough) {
+    const nz = _roughNz || (_roughNz = new Noise3(0x5eed0f)), lam0 = (pyr ? 4 : S.G.spacing / cell) * cell, Rr = R;
+    for (let c = 0; c < n; c++) {
+      if (wet[c]) continue;
+      const x = G.dir[3 * c] * Rr / lam0, y = G.dir[3 * c + 1] * Rr / lam0, z = G.dir[3 * c + 2] * Rr / lam0;
+      let s = 0, a = 1, f = 1, norm = 0;
+      for (let o = 0; o < 6 && lam0 / f >= 1.5 * cell; o++) { s += a * nz.noise(x * f + 17.1 * o, y * f - 3.3 * o, z * f + 9.7 * o); norm += a * a; a *= dm.pow(0.5, 0.7); f *= 2; }
+      h[c] += opts.seedRough * relC[c] * s / Math.sqrt(norm || 1);
+    }
+  }
   // (a pyramid tile's faults have slipped before its run: their scarps wear through it)
   if (pyr) faults.forEach((f, k) => {
     f.done = true;
@@ -477,7 +511,7 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
   const sig = rf ? 4 : Math.round(NG / (region ? 10 : 20)), mean = new Float64Array(n), btmp = new Float64Array(NG);
   // (stream power's rate by the cell: each level runs the same number of steps, and finer
   // features form proportionally faster; so each level adds about the relief its scale holds)
-  const K0 = opts.K0 ?? (!fluvial ? 0 : (rf ? 1.6 * dm.pow(cell / 1000, 0.85) : region ? 0.3 : 1.2e-2) * wetK), kd0 = opts.kd0 ?? (rf ? 0.25 : region ? 0.15 : 0.06);
+  const K0 = opts.K0 ?? (!fluvial ? 0 : (rf ? 1.6 * dm.pow(cell / 1000, 0.85) : region ? 0.3 : 1.2e-2) * wetK * (opts.K0mul ?? 1)), kd0 = opts.kd0 ?? (rf ? 0.25 : region ? 0.15 : 0.06);
   // channel heads: water cuts only where enough of it gathers (m^2 of rain-weighted drainage);
   // below that the ground is hillslope, shaped by creep and collapse: smooth between valleys,
   // where real terrain stops being rough at every scale
@@ -498,7 +532,7 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
       // (and at least a few cells' worth: where a cell is bigger than a channel head every one of
       // them would cut, rills one cell apart combing every slope; a level cuts only where its
       // water gathers, the finer levels' cells the rills between)
-      AcC[c] = opts.Ac ?? Math.max(dm.clamp(3e4 * rockF[rt] * rp, 3e3, 1e6), rf ? 3 * G.area[c] : 0);
+      AcC[c] = opts.Ac ?? Math.max(dm.clamp(3e4 * rockF[rt] * rp, 3e3, 1e6), rf ? (opts.headCells ?? 3) * G.area[c] : 0);
       // the ground's roughness (Hurst exponent H; its surface's fractal dimension 3 - H): rough
       // where mountains are young and high, the rock hard and the climate dry; smoother where
       // the land is old and worn, soft, and wet enough for soil to creep
@@ -512,6 +546,9 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
   if (rf) readRock();
   if (pyr) readSuite();
   const talus = new Float32Array(n), hd = new Float64Array(n), tmp = new Float64Array(n);
+  // (how steep a slope stands over one of this level's cells: at real scale, ground a km across
+  // is never cliff; tens of metres of it can be, in hard rock)
+  const scK = ts ? dm.clamp(30 / cell, 0.15, 1) : 1;
   const { nStart, nbr, nDist, area } = G;
   const fDone = new Uint8Array(faults.length);
   const stepsFloat = () => {
@@ -524,6 +561,7 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
       const fs = fside[k];
       for (let c = 0; c < n; c++) if (fs[c] && !E.base[c]) { const dz = 0.5 * f.dz * fs[c]; h[c] += dz; bedOff[c] -= dz; }
     });
+    if (opts.replay) opts.replay.at(st, steps, B, Bnow);
     if (st % 2 === 1 && holdMean) {
       for (let c = 0; c < n; c++) mean[c] = h[c] - B[c];
       blur(mean, sig, btmp);
@@ -547,6 +585,7 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
       h[c] = (h[c] + f * hr) / (1 + f);
     }
     // soil creep: fast on soft ground, hardly at all on hard rock
+    for (let sub = 0; sub < (opts.creepSub ?? 1); sub++) {
     for (let c = 0; c < n; c++) {
       if (E.base[c]) { tmp[c] = 0; continue; }
       let acc = 0;
@@ -555,10 +594,11 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
       tmp[c] = kc * acc * 0.25;
     }
     for (let c = 0; c < n; c++) h[c] += tmp[c];
+    }
     // slopes past what their rock holds collapse: the excess falls to the foot as talus
     for (let c = 0; c < n; c++) {
       if (E.base[c]) continue;
-      const sc = 0.65 + 3.4 * hd[c] * hd[c];
+      const sc = 0.65 + 3.4 * hd[c] * hd[c] * scK;
       for (let e = nStart[c]; e < nStart[c + 1]; e++) {
         const o = nbr[e], dz = h[c] - h[o] - sc * nDist[e];
         if (dz <= 0.01) continue;
@@ -606,7 +646,7 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
     // (block by block, ~64 cells a side, each to its own ground's H; the scale eased between
     // blocks' centres, so the roughness changes as the ground does, not in steps)
     const lagP = 4, lag = 2, BS = 64, nb = Math.ceil((NG - 2 * MARGIN) / BS), m = nb * nb;
-    const S6 = Array.from({ length: 7 }, () => new Float64Array(m + 1));   // gB, gBl, gD, cBD, nP, nl, H (block m: all)
+    const S6 = Array.from({ length: 8 }, () => new Float64Array(m + 1));   // gB, gBl, gD, cBD, nP, nl, H, lr (block m: all)
     for (let j = MARGIN; j < NG - MARGIN; j += 2) for (let i = MARGIN; i < NG - MARGIN; i += 2) {
       const c = j * NG + i;
       if (wet[c] || h[c] < 0) continue;
@@ -614,7 +654,7 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
       for (const o of [c + lagP, c + lagP * NG]) { const d = B[o] - B[c]; for (const k of [b, m]) { S6[0][k] += d * d; S6[4][k]++; } }
       for (const o of [c + lag, c + lag * NG]) {
         const db = B[o] - B[c], dd2 = (h[o] - B[o]) - (h[c] - B[c]);
-        for (const k of [b, m]) { S6[1][k] += db * db; S6[2][k] += dd2 * dd2; S6[3][k] += db * dd2; S6[5][k]++; S6[6][k] += Hc[c]; }
+        for (const k of [b, m]) { S6[1][k] += db * db; S6[2][k] += dd2 * dd2; S6[3][k] += db * dd2; S6[5][k]++; S6[6][k] += Hc[c]; if (lrC) S6[7][k] += lrC[c]; }
       }
     }
     const solve = (k) => {
@@ -622,7 +662,11 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
       const gB = S6[0][k] / S6[4][k], gBl = S6[1][k] / S6[5][k], gD = S6[2][k] / S6[5][k], cBD = S6[3][k] / S6[5][k], H = S6[6][k] / S6[5][k];
       // (gBl + 2 f cBD + f^2 gD = the target: the parent's roughness over a cell, at half the
       // scale, times 2^-2H)
-      const target = gB * dm.pow(lag / lagP, 2 * H), disc = cBD * cBD - gD * (gBl - target);
+      // (at true scale, the ground layer's local relief: its span in ~20 km, the ground's rms
+      // difference over that about half of it; and down to this lag as real mountains are, rough
+      // to small scales (H ~0.5: a third of it still over 2 km))
+      const lrm = lrC ? S6[7][k] / S6[5][k] : 0;
+      const target = lrm > 0 ? (lrm / 2) * (lrm / 2) * dm.pow(lag * cell / 20000, 2 * Math.min(H, 0.55)) : gB * dm.pow(lag / lagP, 2 * H), disc = cBD * cBD - gD * (gBl - target);
       return Math.max(0.02, Math.min(3, disc > 0 ? (-cBD + Math.sqrt(disc)) / gD : 0.2));
     };
     const fAll = solve(m);
@@ -641,7 +685,7 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
     }
     if (fmax > 1) for (let pass = 0; pass < 8; pass++) for (let c = 0; c < n; c++) {
       if (E.base[c]) continue;
-      const sc = 0.65 + 3.4 * hardAt(c, h[c]) ** 2;
+      const sc = 0.65 + 3.4 * hardAt(c, h[c]) ** 2 * scK;
       for (let e = nStart[c]; e < nStart[c + 1]; e++) {
         const o = nbr[e], dz = h[c] - h[o] - sc * nDist[e];
         if (dz <= 0.01) continue;

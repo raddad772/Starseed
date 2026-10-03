@@ -75,3 +75,20 @@ export function fibonacciSphere(n) {
   }
   return pts;
 }
+
+// ---- cells jittered: a grid cell's point (where its value stands, where its water runs) set off
+// its centre by a fixed amount, the same for every grid holding that cell (a level by its cells'
+// place on their face: key, i, j). With the points uneven, no direction of the grid is favoured:
+// water no longer runs in straight lines along its rows and diagonals. JITTER.amp: up to this
+// share of a cell each way (0: none)
+export const JITTER = { amp: 0 };
+export function cellJitter(face, key, i, j, out) {
+  const a = JITTER.amp;
+  if (!a) { out[0] = 0; out[1] = 0; return out; }
+  let h = Math.imul(face + 0x9e37, 0x85ebca6b) ^ Math.imul(key + 0x632b, 0xc2b2ae35);
+  h = Math.imul(h ^ (i + 0x1b873593), 0xcc9e2d51); h = (h << 15 | h >>> 17);
+  h = Math.imul(h ^ (j + 0x5bd1e995), 0x1b873593); h ^= h >>> 13; h = Math.imul(h, 0xc2b2ae35); h ^= h >>> 16;
+  out[0] = a * (2 * ((h & 0xffff) / 65536) - 1);
+  out[1] = a * (2 * ((h >>> 16) / 65536) - 1);
+  return out;
+}

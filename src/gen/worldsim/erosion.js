@@ -65,6 +65,11 @@ const SILL = 10;       // m: water below sea level joined to a sea over a sill l
 const SALT = 1.5e-4;   // salt left per m^3 of river water evaporated away (m^3)
 const SPILL_K = 5;     // how much harder an overflowing lake's spillway cuts
 
+// how water finds its way down (drain): mfd, spread over the ways down on the hillslopes until
+// lo..hi cells' worth of rain has gathered (Quinn's: by slope over distance, the cell's side
+// facing each), then one way, its receiver's
+export const ROUTE = { mfd: false, lo: 3, hi: 30 };
+
 export class Erosion {
   // G: SimGrid; h: heights (m, sea level 0), edited in place
   // opts: { sea: true if there's an ocean (else the lowest basins drain a dry world),
@@ -198,11 +203,30 @@ export class Erosion {
     for (let c = 0; c < G.n; c++) A[c] = G.area[c] * rain[c] * k;
     // (water coming in from beyond the grid: a tile's great rivers, their drainage upstream)
     if (this.src) for (let c = 0; c < G.n; c++) A[c] += this.src[c];
-    for (let k = G.n - 1; k >= 0; k--) {
-      const c = order[k], r = rcv[c];
+    // (ROUTE.mfd: on the hillslopes water spreads over every way down, by how steep, gathering
+    // into one way (its receiver) as it grows: from ROUTE.lo cells' worth of rain, all of it by
+    // ROUTE.hi. Upstream first by the filled surface (route's order rises through it), so each
+    // cell has all its water before it passes it on)
+    const mfd = ROUTE.mfd, { nStart, nbr, nDist, area } = G, fill = this.fill, h = this.h, lo = ROUTE.lo, hi = ROUTE.hi;
+    for (let q = G.n - 1; q >= 0; q--) {
+      const c = order[q], r = rcv[c];
       if (r < 0) continue;
       const L = lakeId[c] >= 0 && lakeId[r] !== lakeId[c] ? lakeList[lakeId[c]] : null; // (c: where a lake leaves)
       if (L && L.closed) continue;
+      if (mfd && lakeId[c] < 0 && fill[c] - h[c] <= 0.5) {
+        const x = A[c] / (area[c] * Math.max(1e-3, rain[c] * k)), g = x <= lo ? 0 : x >= hi ? 1 : dm.smoothstep(lo, hi, x);
+        if (g < 1) {
+          let sw = 0;
+          const fc = fill[c];
+          for (let e = nStart[c]; e < nStart[c + 1]; e++) { const dz = fc - fill[nbr[e]]; if (dz > 0) sw += dz / (nDist[e] * nDist[e]); }
+          if (sw > 0) {
+            const spread = A[c] * (1 - g) / sw;
+            for (let e = nStart[c]; e < nStart[c + 1]; e++) { const o = nbr[e], dz = fc - fill[o]; if (dz > 0) A[o] += spread * dz / (nDist[e] * nDist[e]); }
+            A[r] += A[c] * g;
+            continue;
+          }
+        }
+      }
       A[r] += A[c];
     }
   }
