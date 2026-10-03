@@ -75,7 +75,9 @@ export function climate(G, opts) {
   // poleward spread: thick air carries more; a slow spinner's Hadley cells reach the poles
   // and a locked world's air sweeps the day side's heat round to the night
   const spinK = opts.locked ? 3 : dm.clamp(dm.pow(Math.max(opts.rotH || 24, 1) / 24, 0.3), 0.5, 3);
-  const Dm = 0.2 * dm.sqrt(P) * spinK * (opts.locked ? 2 : 1);
+  // (W/m^2/K in sin(latitude): ~0.5 for an Earth, as energy-balance models fit its observed
+  // equator-to-pole gradient, ~27 C to ~-25 C in the year's mean (North et al. 1981))
+  const Dm = 0.5 * dm.sqrt(P) * spinK * (opts.locked ? 2 : 1);
   const NB = 36;
   const bandOf = new Int32Array(n);
   for (let c = 0; c < n; c++) {

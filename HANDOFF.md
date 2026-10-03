@@ -151,9 +151,12 @@ surveying many worlds; bit-exact across runs and clients, not across revisions):
   (`ICY_WATER`, a shell tens of km deep), checked before volcanism. Thin-air frozen water covers
   only its cold traps (Mars' caps, ~5% of the area at 16 mbar, poleward of ~70 degrees). Rays
   only on worlds with next to no air. On a dusty world exposed rock wears the dust's rind.
-- **SOL's rocky worlds, still to fix (2026-10-02 mosaic):** Earth's ice reaches ~50 degrees of
-  latitude (a 286 K mean, a little cool; check the climate's ice and the snow rule on a living
-  world); Mars' caps reach ~60 degrees (real: the seasonal cap to ~55-60 in winter, the residual
+- **Heat transport (SIM 32):** the climate's poleward diffusion was 0.2 sqrt(P) W/m^2/K, about
+  half what energy-balance models fit to Earth's gradient: SOL's Earth ran 40 C at the equator
+  and -47 C at 80S, ice to 50 degrees. Now 0.5 sqrt(P): 33 C, 0 C at 60N, -18 C at 80N (real
+  -18), ice poleward of ~65-70 degrees. Every plate world's climate milder toward its poles.
+  SOL's Earth's life started late by its own draws (1.4 Gyr ago, no land plants): bare land.
+- **SOL's rocky worlds, still to fix (2026-10-02 mosaic):** Mars' caps reach ~60 degrees (real: the seasonal cap to ~55-60 in winter, the residual
   caps far smaller); Io keeps cratered blocks (the 10% its resurfacing leaves: its mountains
   should be uncratered fault blocks); Venus' tesserae/plains are flat-shaded at world scale.
   Earth's water corrected to 2.6e-4 of its mass (it had two oceans' worth: one big sea).
