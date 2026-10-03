@@ -1,5 +1,5 @@
 # The carrier's hull colliders from its exterior mesh (the refit): vertical rays on a grid through the
-# 'exterior' object, each column's solid spans (bays come out hollow: roof and floor), merged into
+# 'exterior' object and the refit's armour, each column's solid spans (bays come out hollow: roof and floor), merged into
 # boxes, in the game's vessel frame (x starboard, y up, z aft; Blender (x, y, z) -> game (x, z, -y)).
 # Writes src/sim/layouts/bastion-hull.data.js. Run in Blender (MCP):
 #   exec(open('/Users/dave/dev/starseed/tools/blender/hull_colliders.py').read()); build_colliders()
@@ -12,11 +12,17 @@ OUT = '/Users/dave/dev/starseed/src/sim/layouts/bastion-hull.data.js'
 STEP = 6.0      # m: the grid
 QY = 2.0        # m: spans' heights rounded to this before merging
 CUTS = ('room:bay-p', 'room:bay-s')
+SHELL = ('exterior', 'bastion:refit_armor', 'bastion:yacht_dock_fairing')   # (the meshes the hull is)
 
 
-def _tree(name):
-    o = bpy.data.objects[name]
-    bm = bmesh.new(); bm.from_mesh(o.data); bm.transform(o.matrix_world)
+def _tree(names):
+    bm = bmesh.new()
+    for n in names:
+        o = bpy.data.objects.get(n)
+        if o is None:
+            continue
+        b2 = bmesh.new(); b2.from_mesh(o.data); b2.transform(o.matrix_world)
+        me = bpy.data.meshes.new('_hc'); b2.to_mesh(me); b2.free(); bm.from_mesh(me); bpy.data.meshes.remove(me)
     t = BVHTree.FromBMesh(bm); bm.free()
     return t
 
@@ -60,7 +66,7 @@ def _spans(t, xb, yb, cuts):
 
 
 def build_colliders():
-    t = _tree('exterior')
+    t = _tree(SHELL)
     cuts = []   # (Blender frame boxes)
     for n in CUTS:
         o = bpy.data.objects.get(n)
