@@ -440,10 +440,12 @@ export function worldSim(body, star, opts = {}) {
     let amax = 0;
     for (let c = 0; c < G.n; c++) if (!E.base[c] && E.A[c] > amax) amax = E.A[c];
     for (let c = 0; c < G.n; c++) {
-      if (h[c] < 0 || E.base[c] || ice.ice[c] > 0 || E.A[c] < 0.015 * amax) continue;
+      // (high country: the river itself well above the sea it runs to, not a coastal valley)
+      if (h[c] < 150 || E.base[c] || ice.ice[c] > 0 || E.A[c] < 0.015 * amax) continue;
       d[0] = G.dir[c * 3]; d[1] = G.dir[c * 3 + 1]; d[2] = G.dir[c * 3 + 2];
       const k = clim.koppen[Gc.cellAt(d[0], d[1], d[2])];
       if (!k || (k[0] !== 'B' && !(rain[c] < 0.45))) continue;   // (dry: desert or steppe)
+      if (Tsl[c] - lapse * h[c] < 275) continue;                  // (and above freezing: a river's, not a glacier's)
       // the ground either side: the neighbours off the river
       let s = 0, m = 0, lo = Infinity, hi = -Infinity;
       for (let e = G.nStart[c]; e < G.nStart[c + 1]; e++) {

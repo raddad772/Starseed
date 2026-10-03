@@ -453,6 +453,11 @@ Open:
     the refinement starts from the plateau's level there (`hSmooth + gorgeSmooth`). The river's
     trench stays at its own level; stream power with the inflow cuts the gorge, and collapse to
     each rock's angle widens it (in layered rock, cliff bands).
+  - Canyon country also needs the ground above freezing (Tsl - lapse h > 275 K: a river's, not a
+    glacier's) and the river itself > 150 m up (high country, not a coastal valley) (SIM 52).
+  - The sampler's floodplain leveling no longer flattens valley walls (terrain.js `_levelled`):
+    full across ground up to ~2 river depths above the bank, none past ~8 (still raised where
+    the ground lies below the bank, so the water stays in).
   - Scan (tools: scratchpad gorgescan): 12 of 40 temperate water worlds have some; Thugroadath
     (LAB-44 5), Ishiodreill (LAB-30 4) and Quuhiaglou (LAB-73 3) have 200+ cells. Thugroadath's
     deepest (858 m, granite) is a water gap through a range; its sandstone ones (215-290 m) are

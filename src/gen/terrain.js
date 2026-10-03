@@ -652,7 +652,7 @@ export class TerrainGenerator {
       // (a meandering river's floodplain: the belt it has swung across, laid level near its banks;
       // and the loops it cut off, lakes while young, swales once filled)
       const bank0 = this._bankOf(rv);
-      if (rv.belt > 0 && rv.axis < 1.3 * rv.belt) h += (bank0 + 0.5 - h) * 0.85 * dm.smoothstep(1.3 * rv.belt, 0.85 * rv.belt, rv.axis);
+      if (rv.belt > 0 && rv.axis < 1.3 * rv.belt) h += this._levelled(rv, bank0 + 0.5 - h) * 0.85 * dm.smoothstep(1.3 * rv.belt, 0.85 * rv.belt, rv.axis);
       const oh = 0.5 * (rv.oxW || rv.w);
       if (rv.ox < oh && rv.oxAge < 0.8) {
         const q = 1 - (rv.ox / oh) * (rv.ox / oh), dep = rv.depth * 0.6 * (1 - rv.oxAge);
@@ -668,7 +668,7 @@ export class TerrainGenerator {
       const half = this.wetNow ? Math.max(rv.w * 0.5, 0.5 * minWavelength) : rv.w * 0.5, flank = Math.max(rv.w * 1.5 + S.G.spacing * (0.02 + 0.12 * rv.k), 1.25 * half);
       if (rv.dist < flank) {
         const bank = this._bankOf(rv);
-        h += (bank - h) * dm.smoothstep(flank, half * 1.2, rv.dist);
+        h += this._levelled(rv, bank - h) * dm.smoothstep(flank, half * 1.2, rv.dist);
         if (rv.dist < half) {
           h = Math.min(h, bank - rv.depth * (1 - (rv.dist / half) * (rv.dist / half)));
           if (this.wetNow) wl = Math.max(bank - 0.6 - 0.03 * rv.depth, 0.3);
@@ -839,6 +839,10 @@ export class TerrainGenerator {
   // a river's banks along it: its line's height (on a world with a sea, no lower than the datum it
   // runs out to; a world without one has none, and a channel below the datum stays there)
   _bankOf(rv) { return (this.wetNow ? Math.max(rv.hs, 0) : rv.hs) + 1 + 0.05 * rv.depth; }
+  // how far ground beside a river is laid to its banks (pull: bank - ground): all the way across
+  // its floodplain (ground a few metres above it, or below it: raised, so the water stays in its
+  // bed), none of a gorge's or a valley's walls standing far above it: they rise from its banks
+  _levelled(rv, pull) { return pull >= 0 ? pull : pull * (1 - dm.smoothstep(2 * rv.depth + 3, 8 * rv.depth + 10, -pull)); }
 
   _riverAt(x, y, z) {
     const S = this.snap, s = S.s;
