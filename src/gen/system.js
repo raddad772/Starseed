@@ -402,7 +402,7 @@ function systemHead(seedInput) {
   const exception = sol ? null : pickException(root.fork('exception'), protos, star);
   const planetRng = root.fork('planets');
   const names = sol ? SOL.planets.map((p) => p.name) : protos.map((proto) => makeName(planetRng.fork('p' + proto.slot).fork('name'), 2, 3));
-  const debris = systemDebris(root.fork('debris'), protos, disk);
+  const debris = systemDebris(root.fork('debris'), protos, disk, sol);
   return { seed, root, star, disk, protos, exception, planetRng, names, debris };
 }
 
@@ -411,9 +411,14 @@ function systemHead(seedInput) {
 // stir their belts and with more leftover disk solids; sometimes the giants'
 // orbits shift and fling a late storm of debris inward (as the Nice model has
 // the Solar System's late heavy bombardment)
-function systemDebris(rng, protos, disk) {
+// (the impact chronology is the Moon's record, so the Solar System is 1: its own draw, and the
+// stirring of its four giants, are what the record already holds; another system by its own
+// giants and disk against those)
+const SOL_STIR = 1.4 + 0.2 * 4;
+function systemDebris(rng, protos, disk, sol = false) {
   const giants = protos.filter((p) => p.comp.envelope > 0.5).length;
-  const level = rng.lognormal(1, 0.7) * (giants ? 1.4 + 0.2 * giants : 0.6) * dm.pow(disk.sigma1 / 11, 0.3);
+  const draw = rng.lognormal(1, 0.7);
+  const level = sol ? 1 : draw * (giants ? 1.4 + 0.2 * giants : 0.6) / SOL_STIR * dm.pow(disk.sigma1 / 11, 0.3);
   const spike = giants >= 2 && rng.next() < 0.3 ? { atGyr: rng.range(0.4, 1.0), widthGyr: rng.range(0.05, 0.15), strength: rng.lognormal(15, 0.6) } : null;
   const name = level < 0.5 ? 'quiet' : level < 2 ? 'ordinary' : level < 5 ? 'busy' : 'a shooting gallery';
   return { level, spike, name };

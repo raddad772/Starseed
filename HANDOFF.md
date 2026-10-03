@@ -491,6 +491,56 @@ surveying many worlds; bit-exact across runs and clients, not across revisions):
   smoothed over two meander wavelengths (+-18 widths: +-14 km for a 760 m river), which cut across
   the valley's own bends: straight legs over the hills, kinked where they met (Earth's Ciadairon
   at 12 km). Now +-5 widths.
+- **Rivers fade from afar (terrain.js `S_RFADE`):** a river drawn wider than itself so it shows
+  as a line (0.75 of the sampling's spacing each side) fades out when that's 4-16x its own width:
+  its channel shallower, wet ground paler, water blended into the ground's colour (shadeSnap
+  shades the ground under it and mixes). Dave: "sure fade those rivers" (2026-10-03). World maps
+  no longer veined teal; the greatest rivers stay faint at map scale and come in as you descend.
+- **Impact rates calibrated to the Moon (SIM 54, system.js systemDebris):** the chronology *is*
+  the Moon's record, so SOL's debris level is 1 (it was a random draw, x2.3: SOL's Moon had 2.3x
+  its own record, Titan 4.8x); other systems scale by their giants against SOL's four (1.4 +
+  0.2 x giants over 2.2) and their disk. Most systems' craters drop ~0.45-0.75x.
+- **Icy shells relax (SIM 54, world.js shellRelax, barren.js relaxShell, craters.js shape):** an
+  icy world's warm, soft ice flows under its cold lid, so relief wider than ~2 lids relaxes to 15%
+  (a palimpsest). The lid: down the conductive profile its heat flow sets (k ~ 651/T, so T = Ts
+  e^(qz/651); q = heatNow x 87 mW/m^2) to where the ice is soft (~216 K, 1e17 Pa s). SOL: Europa
+  2 km, Ganymede 26 km, Callisto 111 km (its ghost basins), Titan 154 km. The grid's relief is
+  relaxed every 250 Myr and at the end (blur at ~4 lids, minus 85% of it); the finer levels'
+  craters by the snapshot's `crater.Drel` (drawn m). Titan's relief ~ +-10 km -> ~1.3 km (its
+  511 basins over 300 km and the Mars recipe's dichotomy and giant shields were the excess).
+- **Uthmir (LAB-86 1) investigated (Dave, 2026-10-03), SIM 54:** a 0.59 Earth-mass world 43 Myr
+  old (its whole system is newborn), locked, 827 K, 27 mbar CO2, no water since birth. It looked
+  bland: the barren path (dead moons') gave it a primordial crust, a quarter of the Moon's early
+  bombardment (the chronology's first 43 Myr), and basins that flood 0.1-0.8 Gyr later (the
+  Moon's timing): nothing yet. Its history, though, has it 'mobile' (evolve.js keeps any world
+  under 0.2 Gyr mobile: too hot for a lid) at 2.4x Earth's heat with no water: physically a heat
+  pipe (Io's way; the early Earth's, Moore & Webb 2013). Now (world.js `heatPipe`, barren.js
+  `pave`): while the history has a world mobile and dry with heat > 1, lava pours out at
+  1e4 m/Myr x (heat/12)^3 (Io's ~1 cm/yr at 12x), flooding the lows to the level that holds it
+  (crater record restarting there) with vent lobes over them; a pipe still running leaves vent
+  shield fields (snapshot shieldFields). Uthmir: 85 m of lava a Myr, 89% of it fresh basalt
+  plains, the old cratered highlands standing above. And dust and soil take time
+  (terrain.js `aged`, terrain param `ageGyr`): a world under ~0.3 Gyr has bare rock, so the thin
+  dry air's Mars dust no longer blankets a newborn world's lava. Still: the plains are flat and
+  near-black, too uniform close up (texture wanted: flow fronts, wrinkle ridges, more vents).
+- **Titan investigated (2026-10-03), SIM 54:** its world sim stamped 511 basins over 300 km
+  (largest 1544 km; real Titan has one over 400 km) at 4.8x the Moon's rate (x2.3 the debris
+  miscalibration above, x2.1 Saturn's focusing), and the stagnant path's Mars recipe gave it a
+  dichotomy, giant shields (scaled up for its low gravity) and a canyon. The shell relaxation
+  (above) takes out everything wider than ~300 km: relief ~1.3 km. Still open:
+  - its craters 50-300 km (the lid is too thick to relax them: they need its surface processes,
+    organic sediment burial (plains + dunes cover ~80% of the real Titan) and methane erosion);
+  - its polar lakes now sit in crater bowls (polka dots): the broad lowlands that held seas were
+    the Mars recipe's, now relaxed; real Titan's seas need broad polar basins from somewhere;
+  - **its history has no air** (evolve.js: P 0, 86 K, "the air grows too thin"): bodies.js gives
+    a titanish world its 1.48 bar N2-CH4 air by a lognormal draw regardless, so the history never
+    has liquid methane and the world sim's methane rain (mainLiquid) has been off since SIM 48.
+    Turning the rain on (keyed off terrain.liquid) with the relaxed terrain filled the polar
+    pits level and the seas went to all-or-speckle: reverted; fix the history's Titan air and
+    the seas' basins together. (A methane era now starts 0.3-1 Gyr ago, outgassing as the shell
+    convects (Tobie et al. 2006), where the history has the liquid.)
+- **Seen in passing:** icy moons are all white (Callisto is really one of the darkest); the Moon's
+  maria (11% of its cells flooded) barely show against its highlands at map scale.
 - **Drowned rivers (terrain.js):** a river whose line runs below the sea fades out over its last
   3 m (`rvK`): its banks were held up to the datum, building levees out across the shelf, drawn
   as canals in the sea.

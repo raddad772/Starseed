@@ -18,7 +18,8 @@ import * as dm from '../../core/dmath.js';
 import { hashInts } from '../../core/rng.js';
 import { Impacts, craterFloor, worldCell, WORLD_CELLS, VEXAG } from './impacts.js';
 import { RIDGE, ridgeWidth, ridgeAt } from '../craters.js';
-import { smoothField } from './tectonics.js';
+import { smoothField, blur } from './tectonics.js';
+import { Heap } from './erosion.js';
 
 const DT_MYR = 5;
 const WEATHER_MYR = 450;     // space weathering darkens fresh material
@@ -55,6 +56,8 @@ export function barrenWorld(G, opts) {
   const apply = (c, dh) => { h[c] += dh; fresh[c] = 1; };
   const decay = dm.exp(-DT_MYR / WEATHER_MYR);
   const stats = { craters: 0, basins: 0, flooded: 0, biggest: 0 };
+  let relaxN = 0;
+  const prng = rng.fork('pipe');
   for (let t = 0; t < age; t += DT_MYR / 1000) {
     const made = imp.step(DT_MYR, dMin, apply, t * 1000, t, h);
     cum.push(cum[cum.length - 1] + imp.density(DT_MYR, t));
@@ -79,6 +82,13 @@ export function barrenWorld(G, opts) {
       flood.splice(i, 1);
     }
     for (let c = 0; c < n; c++) fresh[c] *= decay;
+    // (too hot for a lid: its heat piped out through volcanoes, the lava as fast as opts.pipe has it)
+    if (opts.pipe) {
+      const v = opts.pipe(t);
+      if (v > 0) { pave(G, h, v * DT_MYR * imp.scale * VEXAG, mare, fresh, since, t, prng, Math.round(Math.min(40, 4 * v / 20)), 60 * imp.scale * VEXAG); stats.paved = (stats.paved || 0) + v * DT_MYR; }
+    }
+    // (an icy shell's warm base: its wide relief flows flat, every 250 Myr and at the end)
+    if (opts.relax && (++relaxN % 50 === 0 || t + DT_MYR / 1000 >= age)) relaxShell(G, h, opts.relax);
     // a whole-world resurfacing (a Venus's overturn, or an icy shell renewing): the lows
     // flood, their craters gone; what came after is all that's cratered there
     if (opts.resurfaceAt != null && !stats.resurfaced && t >= opts.resurfaceAt) {
@@ -91,10 +101,64 @@ export function barrenWorld(G, opts) {
     }
   }
   const cracks = opts.crack ? crackShell(G, h, rng.fork('cracks'), opts.crack, opts.scale ?? 0.1, plains, since, age) : null;
+  // (a heat pipe still running: its vents' fields of small shield volcanoes over the new plains,
+  // as many as its lava now feeds (drawn by the finer levels, terrain.js _shieldsAt))
+  const shieldFields = [];
+  const vNow = opts.pipe ? opts.pipe(age) : 0;
+  if (vNow > 0) {
+    const frng = rng.fork('ventFields'), nf = Math.round(Math.min(120, 10 + vNow / 3));
+    for (let k = 0, tries = 0; k < nf && tries < nf * 20; tries++) {
+      const at = frng.unitVector(), c = G.cellAt(at[0], at[1], at[2]);
+      if (mare[c] < 0.5) continue;
+      shieldFields.push({ at, R: frng.range(25e3, 150e3) * imp.scale / G.R, n: Math.round(frng.range(20, 200)), k: frng.range(0.5, 1) });
+      k++;
+    }
+  }
   const crat = new Float32Array(n), all = cum[cum.length - 1], dtG = DT_MYR / 1000;
   // (a flood at a step's time buries that step's craters too)
   for (let c = 0; c < n; c++) crat[c] = all - cum[since[c] > 0 ? Math.min(cum.length - 1, Math.round(since[c] / dtG) + 1) : 0];
-  return { h, fresh, mare, plains, impacts: imp, stats, crat, dMin, lineae: cracks ? cracks.arcs : null, chaos: cracks ? cracks.chaos : null, mareLv: stats.flooded ? mareLv : null };
+  return { h, fresh, mare, plains, impacts: imp, stats, crat, dMin, lineae: cracks ? cracks.arcs : null, chaos: cracks ? cracks.chaos : null, mareLv: stats.flooded ? mareLv : null, shieldFields };
+}
+
+// a young world too hot for a rigid lid pipes its heat out through volcanoes (Io's way, and
+// likely the early Earth's: Moore & Webb 2013). vol: this step's lava over the whole world (m as
+// drawn): it floods the lows to the level that holds it (smooth dark plains embaying what stands
+// above them, their crater record starting again), and pours from vents over the ground in
+// lobes (each running downhill from where it wells up, thinning to its toe)
+export function pave(G, h, vol, marks, fresh, since, t, rng, nVents, ventThick) {
+  const n = G.n, s = Float64Array.from(h).sort();
+  let pre = 0, L = s[0];
+  for (let k = 0; k < n; k++) {
+    pre += s[k];
+    L = (vol * n / 0.88 + pre) / (k + 1);
+    if (k === n - 1 || L <= s[k + 1]) break;
+  }
+  for (let c = 0; c < n; c++) if (h[c] < L) { h[c] = L - (L - h[c]) * 0.12; marks[c] = 1; if (fresh) fresh[c] = 0; if (since) since[c] = t; }
+  const heap = pave._heap && pave._heap.cap >= n ? pave._heap : (pave._heap = new Heap(n));
+  heap.cap = n;
+  for (let v = 0; v < nVents; v++) {
+    let c0 = G.cellAt(...rng.unitVector());
+    const cells = Math.round(4 + 60 * rng.next() * rng.next()), thick = ventThick * rng.range(0.4, 1.6), done = new Set([c0]);
+    heap.size = 0; heap.push(h[c0], c0);
+    for (let k = 0; k < cells && heap.size; k++) {
+      const c = heap.pop();
+      h[c] += thick * (1 - 0.6 * k / cells); marks[c] = 1; if (since) since[c] = t;
+      for (let e = G.nStart[c]; e < G.nStart[c + 1]; e++) { const o = G.nbr[e]; if (!done.has(o)) { done.add(o); heap.push(h[o], o); } }
+    }
+  }
+  return L;
+}
+
+// an icy shell's relaxation (world.js shellRelax): the relief wider than about twice its cold
+// lid flows down nearly flat (keeps a share: a palimpsest's faint relief)
+export function relaxShell(G, h, relax) {
+  if (!relax) return;
+  const L = Float64Array.from(h);
+  blur(G, L, relax.passes);
+  let m = 0;
+  for (let c = 0; c < G.n; c++) m += L[c];
+  m /= G.n;
+  for (let c = 0; c < G.n; c++) h[c] -= (1 - relax.keep) * (L[c] - m);
 }
 
 // lava fills a basin's floor up to about half its depth: flat dark plains

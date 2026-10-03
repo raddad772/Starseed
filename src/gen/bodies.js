@@ -707,6 +707,7 @@ function terrainParams(rng, b, star, minerals, tidalHeating, proto) {
     iceCover: hydro.iceCover,
     frozenOcean: hydro.water === 'frozen' && hydro.oceanFraction > 0,
     airP: P,
+    ageGyr: b.history ? b.history.age : null,   // (dust and soil take time to build: a newborn world's rock is bare)
     tectonics, craters, volcanism, erosion, dunes, canyons, maria, lineae, dichotomy, mesas,
     icy: icy ? 1 : 0,
     continentFreq: rng.range(1.1, 2.4),

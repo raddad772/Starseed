@@ -141,7 +141,10 @@ export function stampCraters(B, G, face, S, Dlo, Dhi, K, seed, R, hs = 1) {
 function shape(D, K) {
   const Dr = D / K.scale / 1000;
   const law = 170 * dm.pow(Dr, 0.43) * dm.pow(9.81 / K.g, 0.6) * K.scale * VEXAG;
-  const depth = Math.min(law, 0.17 * D), complex = Dr > 15 * 1.62 / K.g;
+  // (on an icy shell a crater wider than about twice its cold lid relaxes nearly flat, its warm
+  // base flowing in: a palimpsest, its rim a faint ring; world.js shellRelax)
+  const rel = K.Drel ? 0.85 * dm.smoothstep(K.Drel, 2 * K.Drel, D) : 0;
+  const depth = Math.min(law, 0.17 * D) * (1 - rel), complex = Dr > 15 * 1.62 / K.g;
   return { depth, rim: (complex ? 0.35 : 0.25) * depth, peak: complex && Dr > 8 ? 0.3 * depth : 0, complex };
 }
 

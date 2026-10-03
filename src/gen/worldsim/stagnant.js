@@ -15,7 +15,7 @@
 import * as dm from '../../core/dmath.js';
 import { hashInts } from '../../core/rng.js';
 import { Impacts, craterFloor, worldCell, WORLD_CELLS } from './impacts.js';
-import { resurface } from './barren.js';
+import { resurface, relaxShell } from './barren.js';
 import { Erosion, Heap } from './erosion.js';
 import { smoothField } from './tectonics.js';
 
@@ -165,6 +165,8 @@ export function stagnantWorld(G, opts) {
       // (lasting rain wears the craters away; brief spells leave them)
       if (rk > 0.2) since.fill(t);
     }
+    // (an icy shell's warm base: its wide relief flows flat, every 250 Myr and at the end)
+    if (opts.relax && ((step + 1) % 25 === 0 || t + DT_MYR / 1000 >= age)) relaxShell(G, h, opts.relax);
   }
   const crat = new Float32Array(n), all = cum[cum.length - 1], dtG = DT_MYR / 1000;
   for (let c = 0; c < n; c++) crat[c] = all - cum[since[c] > 0 ? Math.min(cum.length - 1, Math.round(since[c] / dtG) + 1) : 0];

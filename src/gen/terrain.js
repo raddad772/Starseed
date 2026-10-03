@@ -1163,7 +1163,10 @@ export class TerrainGenerator {
     let ground = P.soil || P.regolith;
     // (on a dusty world (thin dry air: Mars') the dust blankets all but the steep ground, the
     // rock beneath showing only on cliffs and crater walls)
-    const dusty = !p.liquid && p.airP > 0 ? 1 - dm.smoothstep(0.02, 0.05, p.airP) : 0;
+    // (and only once it's had time to make the dust and the soil: weathering, impacts grinding
+    // the rock, the wind sorting it, over hundreds of Myr; a newborn world's lava stands bare)
+    const aged = p.ageGyr == null ? 1 : dm.smoothstep(0.03, 0.3, p.ageGyr);
+    const dusty = !p.liquid && p.airP > 0 ? (1 - dm.smoothstep(0.02, 0.05, p.airP)) * aged : 0;
     // (and not evenly: it settles thickest on high ground, where the thin air's winds are too
     // weak to lift it again (Tharsis, Arabia), and is swept off the low plains and out of the
     // hollows, where dark basalt sand gathers in dunes (Syrtis Major, Acidalia, crater floors);
@@ -1178,7 +1181,8 @@ export class TerrainGenerator {
     }
     // (and what rock shows wears the same weathered rind as the dust: Mars' basalt reddened)
     if (dusty > 0 && P.rock) for (let k = 0; k < 3; k++) rc[k] += (P.rock[k] - rc[k]) * 0.5 * dusty;
-    const show = sandW + (1 - sandW) * ((0.35 - 0.27 * dusty) + (0.65 + 0.27 * dusty) * rockW);
+    let show = sandW + (1 - sandW) * ((0.35 - 0.27 * dusty) + (0.65 + 0.27 * dusty) * rockW);
+    show += (1 - show) * (1 - aged);
     let r = ground[0] + (rc[0] - ground[0]) * show;
     let g = ground[1] + (rc[1] - ground[1]) * show;
     let b = ground[2] + (rc[2] - ground[2]) * show;

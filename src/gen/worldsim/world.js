@@ -69,6 +69,38 @@ export function choosePath(body) {
   return 'barren';
 }
 
+// a young world too hot for a rigid lid: while its history has it 'mobile' with no water at the
+// surface (plates need water to break and sink; a hot young interior can't hold a lid either),
+// its heat goes out through volcanoes, a heat pipe (Io's; the early Earth's, Moore & Webb 2013).
+// The lava, real m a Myr over the whole world, as its heat cubed: Io's ~1 cm a year at 12x
+// Earth's heat. (t Gyr since it formed) -> m/Myr, or null if it never was
+export function heatPipe(H) {
+  const s = H.series;
+  if (!s || !s.t || !s.mobile || !s.heat) return null;
+  let any = false;
+  for (let i = 0; i < s.t.length; i++) if (s.mobile[i] && !(s.oceans[i] > 0.01) && s.heat[i] > 1) any = true;
+  if (!any) return null;
+  return (t) => {
+    let i = 0;
+    while (i < s.t.length - 1 && s.t[i + 1] <= t) i++;
+    return s.mobile[i] && !(s.oceans[i] > 0.01) && s.heat[i] > 1 ? 1e4 * dm.pow(s.heat[i] / 12, 3) : 0;
+  };
+}
+
+// an icy shell's relaxation (worldSim): its cold lid (km) from its heat flow (the history's,
+// x Earth's 87 mW/m^2) and surface temperature, and the smoothing that takes out relief wider
+// than twice it (cells of G: a blur's passes, ~1.2 cells^2 of spread each) -- or null if the
+// lid is deeper than the world is wide (a cold dead shell: nothing flows)
+export function shellRelax(H, G, scale) {
+  const q = 0.087 * Math.max(H.heatNow || 0, 1e-4), Ts = H.T || 100;
+  if (Ts >= 210) return null;
+  const lidKm = 651 / q * dm.log(216 / Ts) / 1000;
+  if (lidKm > 0.5 * G.R / scale / 1000) return null;
+  // (a wavelength of 4 lids, as a Gaussian's sigma: lambda / 2 pi)
+  const cellKm = G.spacing / scale / 1000, sigma = 4 * lidKm / (2 * Math.PI) / cellKm;
+  return { lidKm, passes: Math.max(1, Math.round(sigma * sigma / 1.2)), keep: 0.15 };
+}
+
 // when the history had liquid water at the surface: [first, last] Gyr since formation, or null
 export function wetWindow(H) {
   const s = H.series;
@@ -107,16 +139,24 @@ export function worldSim(body, star, opts = {}) {
   // impact crater lasts; its mountains, blocks thrust up through the lava, stand)
   else if (!icy && tidal > 0.6 && p.liquid === 'lava') { resurfaceAt = age - dm.clamp(0.003 / (tidal * tidal), 0.006, 1); resurfaceShare = 0.9; paveAll = resurfaceAt > age - 0.05; }
   if (resurfaceAt != null) log(`resurfaced ${Math.round((age - resurfaceAt) * 1000)} Myr ago${crack ? ' (an icy shell, cracking under the tides)' : ''}`);
+  // an icy shell's soft warm base flows: relief wider than about twice its cold lid relaxes
+  // nearly flat (Ganymede's and Callisto's ghost basins; Titan's missing ones; Europa's
+  // shallow craters). The lid: down the conductive profile its heat flow sets (ice's k ~ 651/T
+  // W/m/K, so T = Ts e^(qz/651)) to where the ice is soft, ~216 K (1e17 Pa s)
+  const relax = icy && H ? shellRelax(H, G, scale) : null;
+  if (relax) log(`icy shell: cold lid ${Math.round(relax.lidKm)} km, relief wider than ${Math.round(2 * relax.lidKm)} km relaxes`);
   if (path === 'barren') {
-    const W = barrenWorld(G, { rng: rng.fork('barren'), body, age, scale, volcEnd: 1 + 15 * dm.pow(body.massEarth, 0.6), rate, spike, resurfaceAt, resurfaceShare, crack, paveAll });
+    const pipe = !icy && H ? heatPipe(H) : null;
+    if (pipe) log(`too hot for a lid: its heat piped out through volcanoes (${Math.round(pipe(age))} m of lava a Myr now)`);
+    const W = barrenWorld(G, { rng: rng.fork('barren'), body, age, scale, volcEnd: 1 + 15 * dm.pow(body.massEarth, 0.6), rate, spike, resurfaceAt, resurfaceShare, crack, paveAll, relax, pipe });
     const melt = stampFresh(G, W.h, H, body, scale);
     // (the craters below its grid's: their record by place, for the finer levels to draw)
-    const crater = { crat: W.crat, g: body.gravity, scale, Dw: W.dMin * 1000, Dair: airCut(body.atmosphere ? body.atmosphere.pressure : 0, body.gravity) * 1000 * scale };
+    const crater = { crat: W.crat, g: body.gravity, scale, Dw: W.dMin * 1000, Dair: airCut(body.atmosphere ? body.atmosphere.pressure : 0, body.gravity) * 1000 * scale, Drel: relax ? 2 * relax.lidKm * 1000 * scale : 0 };
     // its rock: the old crust (an icy world's old dirty ice; a rocky one's broken regolith: no
     // granite without water and plates to make it), the dark lava of the maria
     const rock = new Uint8Array(G.n), BAS = ROCK.basalt, ICE = ROCK.ice, REG = ROCK.regolith;
     for (let c = 0; c < G.n; c++) rock[c] = W.mare[c] > 0.5 ? BAS : icy ? ICE : REG;
-    return Object.assign(out, { h: W.h, mare: W.mare, fresh: W.fresh, stats: W.stats, craters: survivors(G, W.impacts.events, resurfaceAt, W.plains, W.mare), melt, crater, lineae: W.lineae, chaos: W.chaos, mareLv: W.mareLv, rock });
+    return Object.assign(out, { h: W.h, mare: W.mare, fresh: W.fresh, stats: W.stats, craters: survivors(G, W.impacts.events, resurfaceAt, W.plains, W.mare), melt, crater, lineae: W.lineae, chaos: W.chaos, mareLv: W.mareLv, rock, shieldFields: W.shieldFields });
   }
   if (path === 'stagnant') {
     let wet = wetWindow(H);
@@ -131,13 +171,20 @@ export function worldSim(body, star, opts = {}) {
       const st = H.series.t, sr = H.series.rain;
       rainAt = (tg) => { let s = 0, k = 0; for (let i = 0; i < st.length; i++) if (st[i] >= tg - 0.005 && st[i] < tg + 0.01) { s += sr[i]; k++; } return k ? s / k : 0; };
     }
-    if (!wet && H.titanish && (H.mainLiquid === 'methane' || H.mainLiquid === 'ethane')) { wet = [Math.max(0, age - 1), age]; rainK0 = 0.005; seaFrac = Math.min(0.05, (H.mainLiquidDepth || 0) / ((H.mainLiquidDepth || 0) + 100)); log('methane rain: channels and polar lakes'); }
+    if (!wet && H.titanish && (H.mainLiquid === 'methane' || H.mainLiquid === 'ethane')) {
+      // (its methane is recent: sunlight breaks it down in tens of Myr, so methane now means an
+      // outgassing a few hundred Myr ago (Tobie et al. 2006: as its ice shell began to convect).
+      // The methane rains from then on)
+      const tOut = Math.max(0, age - rng.fork('outgas').range(0.3, 1.0));
+      wet = [tOut, age]; rainK0 = 0.005; seaFrac = Math.min(0.05, (H.mainLiquidDepth || 0) / ((H.mainLiquidDepth || 0) + 100));
+      log(`methane outgassed ${Math.round((age - tOut) * 1000)} Myr ago: channels and polar lakes`);
+    }
     // (a Titan's haze: its photochemistry by the sunlight it has, Titan's ~80 m a Gyr at 1% of Earth's)
     const haze = H.titanish ? 80 * dm.clamp((body.insolation || 0.011) / 0.011, 0.2, 5) : 0;
-    const S = stagnantWorld(G, { rng: rng.fork('stagnant'), body, age, scale, wet, seaFrac, rainK0, tier: H.tier, volcEnd: 1 + 15 * dm.pow(body.massEarth, 0.6), rate, spike, resurfaceAt, resurfaceShare, rainAt: rainK0 === 1 ? rainAt : null, haze });
+    const S = stagnantWorld(G, { rng: rng.fork('stagnant'), body, age, scale, wet, seaFrac, rainK0, tier: H.tier, volcEnd: 1 + 15 * dm.pow(body.massEarth, 0.6), rate, spike, resurfaceAt, resurfaceShare, rainAt: rainK0 === 1 ? rainAt : null, haze, relax });
     const volcanoes = S.shields.map((v) => ({ ...latLonOf(v.at), heightM: v.H }));
     const melt = stampFresh(G, S.h, H, body, scale);
-    const crater = { crat: S.crat, g: body.gravity, scale, Dw: S.dMin * 1000, Dair: airCut(body.atmosphere ? body.atmosphere.pressure : 0, body.gravity) * 1000 * scale };
+    const crater = { crat: S.crat, g: body.gravity, scale, Dw: S.dMin * 1000, Dair: airCut(body.atmosphere ? body.atmosphere.pressure : 0, body.gravity) * 1000 * scale, Drel: relax ? 2 * relax.lidKm * 1000 * scale : 0 };
     // its rock: the old crust, and lava where the volcanoes and floods laid it
     const rock = new Uint8Array(G.n), BAS = ROCK.basalt;
     for (let c = 0; c < G.n; c++) rock[c] = S.volc[c] > 0.5 ? BAS : 0;
