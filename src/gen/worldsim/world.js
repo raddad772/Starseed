@@ -287,10 +287,48 @@ export function worldSim(body, star, opts = {}) {
   const Et = new Erosion(Gt, ht, { sea, K: KD, rain: rainT, m: 0.45, kd: 1 });
   Et.routeEvery = 2;   // (0.5 Myr steps: the drainage hardly changes from one to the next)
   const realms = new RealmTracker(Gt, rng.fork('realms'));
+  // the climate on the plates' surface (the fine epoch's rain and snow come from it), and life
+  // on the map (life.js)
+  const Gc = new SimGrid(opts.Nc ?? 40, body.R);
+  const climOpts = climateOpts(body, star, host);
+  // (a world without seas has none in its climate, whatever lies below its datum)
+  const drySea = sea ? null : new Uint8Array(Gt.n);
+  // life through the history (on unless opts.lifeHistory is false): its map advanced as the plates move, every
+  // LIFE_DT Myr, in the climate of the time, run again every CLIM_DT Myr with the history's warmth
+  // and air then and the life of the time (forests darken the land, plants hand rain on inland);
+  // where the rain falls then is where the rivers cut, and the plants of the time hold the soil
+  const lifeHist = opts.lifeHistory !== false, LIFE_DT = 2.5, CLIM_DT = 25;
+  const lifeMap = lifeHist ? new LifeMap(Gc, H, rng.fork('life-hist')) : null;
+  let climT = null, climAgo = 0, vegT = null, rainNow = null;
+  if (lifeHist) { vegT = new Float32Array(Gt.n); rainNow = new Float64Array(Gt.n); }
+  let rainMean0 = 0;
+  for (let c = 0; c < Gt.n; c++) rainMean0 += rainT[c];
+  rainMean0 /= Gt.n;
   for (let k = 0; k < myr / tdt; k++) {
-    Et.rainK = H.at(myr - k * tdt, 'rain') || 0.05; // the climate then, vs now
-    Et.bare = !plantsAt(H, myr - k * tdt);           // no land plants yet: nothing holds the soil
-    Et.veg = Et.bare ? null : vegFrom(rainT, Et.rainK, Et.veg);
+    const ago = myr - k * tdt;
+    if (lifeHist && k % Math.round(CLIM_DT / tdt) === 0) {
+      climT = climateOn(Gc, Gt, ht, { ...climOpts, Tmean: H.at(ago, 'T') ?? climOpts.Tmean, pressure: H.at(ago, 'P') ?? climOpts.pressure }, drySea, lifeMap.cover.some((v) => v > 0) ? lifeMap : null);
+      climAgo = ago;
+      // (its rain on the plates' grid, as the moisture the rivers have, its mean the start's)
+      let m = 0;
+      const d = [0, 0, 0];
+      for (let c = 0; c < Gt.n; c++) {
+        d[0] = Gt.dir[c * 3]; d[1] = Gt.dir[c * 3 + 1]; d[2] = Gt.dir[c * 3 + 2];
+        const P = Gc.sample(climT.Pann, d), Tc = Gc.sample(climT.Tann, d);
+        rainNow[c] = Math.max(0.05, Math.min(1, P / 1500)) * (Tc > 263 ? 1 : 0.3); m += rainNow[c];
+      }
+      m /= Gt.n;
+      for (let c = 0; c < Gt.n; c++) rainNow[c] *= rainMean0 / Math.max(m, 1e-6);
+      Et.rain = rainNow;
+    }
+    if (lifeHist && k % Math.round(LIFE_DT / tdt) === 0) {
+      lifeMap.advance(envAt(Gc, Gt, ht, drySea, climT, H, ago, climAgo, climOpts.lapse ?? 0.0065), ago, LIFE_DT);
+      const d = [0, 0, 0];
+      for (let c = 0; c < Gt.n; c++) { d[0] = Gt.dir[c * 3]; d[1] = Gt.dir[c * 3 + 1]; d[2] = Gt.dir[c * 3 + 2]; vegT[c] = Gc.sample(lifeMap.cover, d); }
+    }
+    Et.rainK = H.at(ago, 'rain') || 0.05; // the climate then, vs now
+    Et.bare = !plantsAt(H, ago);           // no land plants yet: nothing holds the soil
+    Et.veg = Et.bare ? null : lifeHist ? vegT : vegFrom(rainT, Et.rainK, Et.veg);
     T.stepEroded(tdt, Et);
     // life's realms ride the plates (every 10 Myr, while there are land plants)
     if (!Et.bare && k % Math.round(10 / tdt) === 0) realms.check(T, ht, myr - k * tdt);
@@ -299,19 +337,15 @@ export function worldSim(body, star, opts = {}) {
   if (realms.checks) realms.check(T, ht, 0);
   if (realms.checks) log(`realms: ${realms.count()} lineages on the land now; ${realms.interchanges.length} interchanges (landmasses meeting), ${realms.splits} divergences (split apart)`);
   T.heights(ht, ut);
-  // the climate on the plates' surface: the fine epoch's rain and snow come from it
-  const Gc = new SimGrid(opts.Nc ?? 40, body.R);
-  const climOpts = climateOpts(body, star, host);
-  // (a world without seas has none in its climate, whatever lies below its datum)
-  const drySea = sea ? null : new Uint8Array(Gt.n);
-  let clim = climateOn(Gc, Gt, ht, climOpts, drySea);
+  let clim = climateOn(Gc, Gt, ht, climOpts, drySea, lifeMap);
   // life on the map (life.js), and the climate again with its plant cover (forests darken
   // the land, plants hand rain on inland): the cover then holds the fine epoch's soil
-  // (the realms the plates' history left, on the climate grid)
+  // (the realms the plates' history left, on the climate grid; with the life through the
+  // history, where its map has got to)
   const realmGc = realms.checks ? realms.onGrid(Gc) : null;
-  let life0 = lifeOn(Gc, clim, H, rng.fork('life0'), null, realmGc);
+  let life0 = lifeOn(Gc, clim, H, rng.fork('life0'), null, realmGc, lifeMap);
   clim = climateOn(Gc, Gt, ht, climOpts, drySea, life0);
-  life0 = lifeOn(Gc, clim, H, rng.fork('life0'), null, realmGc);
+  life0 = lifeOn(Gc, clim, H, rng.fork('life0'), null, realmGc, lifeMap);
   log(`climate: ${summarizeKoppen(clim)}`);
   log(`plates: ${myr} Myr, ${T.plates.filter((q) => !q.dead).length} plates, ${T.hot.length} hotspots (${T.activity.name}), ${(T.events || []).length} rifts/welds, ${T.impacts.events.length} impacts`);
   // the finer epoch: the plates' surface and uplift, rivers cutting it finer
@@ -372,6 +406,7 @@ export function worldSim(body, star, opts = {}) {
   let totalArea = 0, wetArea = 0;
   for (let c = 0; c < G.n; c++) { totalArea += G.area[c]; if (h[c] < 0) wetArea += G.area[c]; }
   const oceanShare = wetArea / totalArea;
+  if (opts.onFineStep) opts.onFineStep(-1, E, h);
   for (let k = 0; k < steps; k++) {
     Ef.step(dt / 1e6, craterFloor(worldCell(G.R, G.N), WORLD_CELLS) / 1000, (c, dh) => { h[c] += h[c] < 0 ? dh * 0.5 : dh; if (dh < 0) lith.erode(c, -dh); else lith.deposit(c, dh, ROCK.regolith); }, k * dt / 1e6, undefined, h);
     E.rainK = H.at((steps - k) * dt / 1e6, 'rain') || 0.05;
@@ -572,7 +607,7 @@ export function worldSim(body, star, opts = {}) {
     log(`soil: ${(deep / la * 100).toFixed(0)}% of ice-free land deeper than 2 m, ${(thin / la * 100).toFixed(0)}% thinner than 0.3 m; wetlands ${(wetA / la * 100).toFixed(1)}%; loess ${(loessA / la * 100).toFixed(1)}%`);
   }
   // life on the map now, with the soil and groundwater (and rivers' nutrients at the coasts)
-  const life = lifeOn(Gc, clim, H, rng.fork('life'), { G, soil, E, h }, realmGc);
+  const life = lifeOn(Gc, clim, H, rng.fork('life'), { G, soil, E, h }, realmGc, lifeMap);
   life.interchanges = realms.interchanges;
   {
     const S = life.summary(life.env);
@@ -746,7 +781,8 @@ class RealmTracker {
 
 // the life map on the climate grid; fine: { G, soil, E, h } to bring the fine epoch's soil,
 // groundwater and river nutrients up to it (else soil 1 m and groundwater deep)
-function lifeOn(Gc, clim, H, rng, fine, realmInit = null) {
+// (prior: the life the history's map left, life through the history: where it has got to)
+function lifeOn(Gc, clim, H, rng, fine, realmInit = null, prior = null) {
   const n = Gc.n;
   const env = { land: new Uint8Array(n), T: clim.Tann, Tm: clim.Tm, P: clim.Pann, Pm: clim.Pm, pet: new Float64Array(n), soil: new Float64Array(n).fill(1), wtd: new Float64Array(n).fill(30), upwell: clim.upwell, coastNutr: new Float64Array(n) };
   for (let c = 0; c < n; c++) { env.land[c] = clim.sea[c] ? 0 : 1; env.pet[c] = petOf(clim.Tann[c], clim.Pann[c] / 1000); }
@@ -761,12 +797,31 @@ function lifeOn(Gc, clim, H, rng, fine, realmInit = null) {
     for (let q = 0; q < n; q++) { if (cnt[q]) { env.soil[q] = sum[q] / cnt[q]; env.wtd[q] = wsum[q] / cnt[q]; } nmax = Math.max(nmax, nut[q]); }
     for (let q = 0; q < n; q++) env.coastNutr[q] = nmax > 0 ? Math.min(1, 10 * nut[q] / nmax) : 0;
   }
-  env.realmInit = realmInit;
+  env.realmInit = realmInit; env.prior = prior;
   const L = new LifeMap(Gc, H, rng).run(env, 20, 0.5);
   L.env = env;
   L.plantCover = new Float32Array(n);
   for (let c = 0; c < n; c++) L.plantCover[c] = env.land[c] ? L.cover[c] : 0;
   return L;
+}
+
+// the environment life has at agoMyr on the climate grid: the land the plates' surface has then
+// (ht on Gt), the climate run at climAgo (its temperatures moved by the history's warmth since,
+// and by the lapse rate where the ground has risen or sunk since), its rain
+function envAt(Gc, Gt, ht, drySea, clim, H, ago, climAgo, lapse) {
+  const n = Gc.n, d = [0, 0, 0], uv = { face: 0, u: 0, v: 0 };
+  const dT = (H.at(ago, 'T') ?? 288) - (H.at(climAgo, 'T') ?? 288);
+  const env = { land: new Uint8Array(n), T: new Float64Array(n), Tm: new Float64Array(12 * n), P: clim.Pann, Pm: clim.Pm, pet: new Float64Array(n), soil: new Float64Array(n).fill(1), wtd: new Float64Array(n).fill(30), upwell: clim.upwell, coastNutr: new Float64Array(n) };
+  for (let c = 0; c < n; c++) {
+    d[0] = Gc.dir[c * 3]; d[1] = Gc.dir[c * 3 + 1]; d[2] = Gc.dir[c * 3 + 2];
+    const hNow = Gt.sample(ht, d, uv), wet = drySea ? false : hNow < 0;
+    env.land[c] = wet ? 0 : 1;
+    const shift = dT - lapse * (Math.max(0, hNow) - Math.max(0, clim.h[c]));
+    env.T[c] = clim.Tann[c] + shift;
+    for (let m = 0; m < 12; m++) env.Tm[m * n + c] = clim.Tm[m * n + c] + shift;
+    env.pet[c] = petOf(env.T[c], clim.Pann[c] / 1000);
+  }
+  return env;
 }
 
 // potential evaporation (m/yr) from the yearly mean temperature (K) and rain (m/yr):

@@ -43,13 +43,13 @@ export class LifeMap {
   // the environment on this grid: { land (Uint8), T (annual mean K), Tm (12 x n monthly K),
   //   P (mm/yr), Pm (12 x n), pet (m/yr), soil (m), wtd (m), wet (0..1), upwell (0..1 cold
   //   currents), coastNutr (0..1 near river mouths) }
-  potentials(env) {
+  potentials(env, stageAt = null, floraAt = null) {
     const { G, H } = this, n = G.n;
     const light = Math.max(0.01, H.usableLight ?? 1);
     const lightK = dm.clamp(light / (light + 0.3) * 1.3, 0, 1.5);
     const o2 = H.air ? (H.air.O2 || 0) / Math.max(H.P, 1e-6) : 0;
     const fireOK = dm.smoothstep(0.15, 0.2, o2);
-    const stage = H.lifeStage || 0, flora = H.floraStage ?? -1;
+    const stage = stageAt ?? (H.lifeStage || 0), flora = floraAt ?? (H.floraStage ?? -1);
     const out = { landPot: new Float32Array(n), seaPot: new Float32Array(n) };
     for (let c = 0; c < n; c++) {
       const tC = env.T[c] - 273.15;
@@ -94,6 +94,15 @@ export class LifeMap {
     this.realmNext = 0;
     for (let c = 0; c < n; c++) if (!env.land[c]) this.seaLife[c] = stage >= 1 ? pot.seaPot[c] * (stage >= 5 ? 1 : 0.4) : 0;
     if (stage < 2) return this.finish(env, pot);
+    // (where the history's map has got to, life through the history: its plants where they
+    // spread to, spreading on over the window)
+    const P0 = env.prior;
+    if (P0 && tPlants != null && stage >= 7) {
+      for (let c = 0; c < n; c++) if (env.land[c] && P0.landed[c] && pot.landPot[c] > 0.02) { this.landed[c] = 1; this.since[c] = P0.since[c]; this.realm[c] = env.realmInit && env.realmInit[c] >= 0 ? env.realmInit[c] : P0.realm[c]; this.realmNext = Math.max(this.realmNext, this.realm[c] + 1); }
+      const means = P0.means || {};
+      for (let t = startAgo; t > 0; t -= dt) this.spread(env, pot, dt, fliersAgo != null && t < fliersAgo, means);
+      return this.finish(env, pot);
+    }
     // land: microbial crusts wherever it's wet enough, long before plants
     if (tPlants == null || stage < 7) {
       for (let c = 0; c < n; c++) if (env.land[c]) this.cover[c] = 0.05 * dm.smoothstep(0.1, 0.6, pot.landPot[c]);
@@ -122,9 +131,13 @@ export class LifeMap {
   // one step of spread: to neighbouring land by adaptation (slower across climate
   // differences), across narrow seas by chance (rafting, spores, seeds), and with fliers
   // in far jumps to places like home
-  spread(env, pot, dt, fliers) {
+  // (means, life through the history: how it travels then: base, the pace to a neighbour (a
+  // Myr); rich, how much faster onto richer land (it takes the easy energy first); sea, the
+  // chance a Myr of a crossing (rafts, seeds on the wind, birds); world, the world's own pace
+  // (the energy life has to use there))
+  spread(env, pot, dt, fliers, means = null) {
     const { G, rng } = this, n = G.n;
-    const add = [];
+    const add = [], base = means && means.base != null ? means.base : 0.8, rich = means ? means.rich || 0 : 0, seaK = means && means.sea != null ? means.sea : 0.01, wk = means ? means.world || 1 : 1, reach = means && means.reach ? means.reach : 3;
     for (let c = 0; c < n; c++) {
       if (!this.landed[c]) continue;
       this.since[c] += dt;
@@ -133,12 +146,32 @@ export class LifeMap {
         if (env.land[o]) {
           if (this.landed[o] || pot.landPot[o] < 0.02) continue;
           const gap = Math.abs(env.T[o] - env.T[c]) / 8 + Math.abs(dm.log((env.P[o] + 50) / (env.P[c] + 50)));
-          if (rng.next() < dt * 0.8 * dm.exp(-2 * gap)) add.push([o, this.realm[c]]);
-        } else if (rng.next() < dt * 0.01) {
+          const pace = base * wk * (rich ? (1 - rich) + rich * 2 * Math.min(1, pot.landPot[o]) : 1);
+          if (rng.next() < dt * pace * dm.exp(-2 * gap)) add.push([o, this.realm[c]]);
+        } else if (rng.next() < dt * seaK * wk) {
           // across the sea: the far shore within a few cells
-          const far = acrossSea(G, env.land, o, 3, this.comp, this.comp[c]);
+          const far = acrossSea(G, env.land, o, reach, this.comp, this.comp[c]);
           if (far >= 0 && !this.landed[far] && pot.landPot[far] > 0.02) add.push([far, this.realmNext++]);
         }
+      }
+    }
+    // (spores and light seeds on the high winds: now and then one lands far away, the nearer
+    // the likelier, where the climate is like home: means.far a Myr, falling off over farKm)
+    if (means && means.far && rng.next() < dt * means.far * wk) {
+      const from = [];
+      for (let c = 0; c < n; c++) if (this.landed[c]) from.push(c);
+      if (from.length) {
+        const a = from[Math.floor(rng.next() * from.length)], Rkm = this.H.radiusKm || 6371;
+        let best = -1, bw = 0;
+        for (let k = 0; k < 24; k++) {
+          const b = Math.floor(rng.next() * n);
+          if (!env.land[b] || this.landed[b] || pot.landPot[b] < 0.02) continue;
+          const cos = G.dir[a * 3] * G.dir[b * 3] + G.dir[a * 3 + 1] * G.dir[b * 3 + 1] + G.dir[a * 3 + 2] * G.dir[b * 3 + 2];
+          const km = dm.acos(dm.clamp(cos, -1, 1)) * Rkm;
+          const w = dm.exp(-km / means.farKm) * dm.exp(-Math.abs(env.T[a] - env.T[b]) / 6 - Math.abs(dm.log((env.P[a] + 50) / (env.P[b] + 50))));
+          if (w > bw) { bw = w; best = b; }
+        }
+        if (best >= 0 && rng.next() < bw) add.push([best, this.realmNext++]);
       }
     }
     if (fliers && rng.next() < dt * 0.5) {
@@ -151,6 +184,69 @@ export class LifeMap {
       }
     }
     for (const [c, r] of add) if (!this.landed[c]) { this.landed[c] = 1; this.realm[c] = r; this.since[c] = 0; }
+  }
+
+  // ---- life through the history (world.js, as the plates move; Dave: "feedback all the way
+  // through history"): the map advanced dt Myr at agoMyr before now, in the environment of the
+  // time (env: its land, its climate), with life's stage then (the history's series). Land life
+  // travels by its means: microbial crusts slowly from the shores; the first plants (spores) a
+  // little faster; seed plants on the wind; with land animals, seeds carried; with fliers, far
+  // jumps. All faster onto richer land, and on a world with more energy to use. The history's
+  // die-offs strike as they happen (around where they struck, and a share everywhere); what
+  // they emptied is taken again from what's left. Sets cover, forest, open as of then
+  advance(env, agoMyr, dt) {
+    const { G, H, rng } = this, n = G.n;
+    const t = H.age - agoMyr / 1000, L = H.life || {};
+    const stage = Math.round(H.at(agoMyr, 'stage') ?? (H.lifeStage || 0));
+    const plantsMyr = stage >= 7 && L.plants != null ? Math.max(0, (t - L.plants) * 1000) : 0;
+    const flora = stage < 7 ? (stage >= 2 ? 0 : -1) : plantsMyr < 50 ? 1 : plantsMyr < 90 ? 2 : plantsMyr < 300 ? 3 : 4;
+    const pot = this.potentials(env, stage, flora);
+    if (!this.comp || this._landSig !== agoMyr) { this.comp = landmasses(G, env.land); this._landSig = agoMyr; }
+    for (let c = 0; c < n; c++) if (!env.land[c]) this.seaLife[c] = stage >= 1 ? pot.seaPot[c] * (stage >= 5 ? 1 : 0.4) : 0;
+    // (where the land went under the sea, or can't feed anything now, the life there is gone)
+    for (let c = 0; c < n; c++) if (!env.land[c] || pot.landPot[c] < 0.02) { this.landed[c] = 0; this.cover[c] = 0; this.forest[c] = 0; this.open[c] = 0; }
+    const crust = (c) => stage >= 2 && env.land[c] ? 0.05 * dm.smoothstep(0.1, 0.6, pot.landPot[c]) : 0;
+    if (stage < 7) { for (let c = 0; c < n; c++) this.cover[c] = crust(c); this.means = null; return this; }
+    // (the die-offs of this stretch: around where they struck; and a share everywhere)
+    const Rkm = H.radiusKm || 6371;
+    for (const e of H.extinctions || []) {
+      const ea = e.ago * 1000;
+      if (ea > agoMyr || ea <= agoMyr - dt) continue;
+      const reach = e.reachKm ? e.reachKm / Rkm : 0;
+      for (let c = 0; c < n; c++) {
+        if (!this.landed[c]) continue;
+        let k = 0.5 * e.loss;
+        if (reach && e.at) { const cos = G.dir[c * 3] * e.at[0] + G.dir[c * 3 + 1] * e.at[1] + G.dir[c * 3 + 2] * e.at[2]; const a = dm.acos(dm.clamp(cos, -1, 1)) / reach; k = Math.max(k, dm.exp(-a * a)); }
+        if (rng.next() < k) { this.landed[c] = 0; this.since[c] = 0; }
+      }
+    }
+    // (plants older than the history's window: on all the land they can hold, a lineage to
+    // each landmass; arriving now: the first from the richest shore)
+    let any = false;
+    for (let c = 0; c < n && !any; c++) if (this.landed[c]) any = true;
+    if (!any && !this._began && plantsMyr > dt) {
+      for (let c = 0; c < n; c++) if (env.land[c] && pot.landPot[c] > 0.02) { this.landed[c] = 1; this.since[c] = plantsMyr; this.realm[c] = this.comp[c]; this.realmNext = Math.max(this.realmNext, this.comp[c] + 1); }
+      any = true;
+    }
+    this._began = true;
+    if (!any) {
+      let best = -1;
+      for (let c = 0; c < n; c++) if (env.land[c] && coastal(G, env.land, c) && (best < 0 || pot.landPot[c] > pot.landPot[best])) best = c;
+      if (best >= 0) { this.landed[best] = 1; this.realm[best] = this.realmNext++; }
+    }
+    // (its means of travel then; the world's pace: the light it has to use)
+    const animals = stage >= 8, fliers = animals && L.landAnimals != null && (t - L.landAnimals) * 1000 > 30;
+    // (the first plants: spores, slow over the ground (they need it wet) but light enough for
+    // the wind to carry far over the sea; seeds: faster over the ground, nearer over the sea;
+    // with animals carrying seeds, faster still)
+    const means = this.means = flora <= 1 ? { base: 0.4, rich: 0.6, sea: 0.05, reach: 6, far: 0.3, farKm: 4000 } : animals ? { base: 1.6, rich: 0.6, sea: 0.03, reach: 4, far: 0.1, farKm: 2500 } : { base: 0.9, rich: 0.6, sea: 0.02, reach: 3, far: 0.15, farKm: 2500 };
+    means.world = dm.clamp(H.usableLight ?? 1, 0.3, 1.5);
+    for (let s = 0; s < dt - 1e-9; s += 0.5) this.spread(env, pot, Math.min(0.5, dt - s), fliers, means);
+    for (let c = 0; c < n; c++) {
+      if (this.landed[c]) this.cover[c] = dm.clamp(pot.landPot[c], 0, 1);
+      else { this.cover[c] = crust(c); this.forest[c] = 0; this.open[c] = 0; }
+    }
+    return this;
   }
 
   // cover, diversity, realms, and the history's die-offs in the window knocking it back
