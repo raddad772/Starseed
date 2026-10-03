@@ -151,6 +151,17 @@ function shape(D, K) {
 // (scallops, cusps between them), the outline squared off along the target's joints (Meteor
 // Crater's), a big one's walls in terraces, its central peak a cluster of knobs
 const NA = 96;      // (the outline's tables, by bearing round the centre: read smoothly between entries)
+// (the bearings' angles and the sines and cosines of their half-angle multiples, made once: a
+// crater's tables are then sums of products, by angle addition, with a dozen of its own phases'
+// sines and cosines, not a thousand)
+const TH = new Float64Array(NA), HS = [], HC = [];
+for (let k = 0; k < NA; k++) { const p = 4 * k / NA, qd = Math.min(3, Math.floor(p)), t = p - qd; TH[k] = qd * dm.HALF_PI + dm.atan2(t, 1 - t); }
+for (let m = 0; m <= 12; m++) {
+  const s = new Float64Array(NA), c = new Float64Array(NA);
+  for (let k = 0; k < NA; k++) { s[k] = dm.sin(m * TH[k] / 2); c[k] = dm.cos(m * TH[k] / 2); }
+  HS.push(s); HC.push(c);
+}
+const _jc = new Float64Array(16), _js = new Float64Array(16), _jd = new Uint8Array(16);
 export function craterForm(D, K, key) {
   const rng = new Rng([key >>> 0, hashInts(Math.round(D * 16), 0xc7a7), 0x5ca1, 0xf0e]);
   const sh = shape(D, K);
@@ -164,17 +175,26 @@ export function craterForm(D, K, key) {
   const Rm = new Float64Array(NA), Rh = new Float64Array(NA), Ej = new Float64Array(NA), To = new Float64Array(NA);
   const t2 = dm.TWO_PI * rng.next(), t3 = dm.TWO_PI * rng.next(), t5 = dm.TWO_PI * rng.next();
   let rmax = 0, mh = 0, me = 0;
+  const cpl = dm.cos(pl), spl = dm.sin(pl), cpl2 = dm.cos(pl2), spl2 = dm.sin(pl2), cp2 = dm.cos(p2), sp2 = dm.sin(p2), cp3 = dm.cos(p3), sp3 = dm.sin(p3);
+  const cps = dm.cos(psi), sps = dm.sin(psi), cq2 = dm.cos(q2), sq2 = dm.sin(q2), cq5 = dm.cos(q5), sq5 = dm.sin(q5);
+  const ct2 = dm.cos(t2), st2 = dm.sin(t2), ct3 = dm.cos(t3), st3 = dm.sin(t3), ct5 = dm.cos(t5), st5 = dm.sin(t5);
+  const Sn = HS[nl], Cn = HC[nl], Sn2 = HS[nl2], Cn2 = HC[nl2], S2 = HS[2], C2 = HC[2], S4 = HS[4], C4 = HC[4], S6 = HS[6], C6 = HC[6], S10 = HS[10], C10 = HC[10];
+  const per = dm.TWO_PI / np;
+  _jd.fill(0);
   for (let k = 0; k < NA; k++) {
-    const p = 4 * k / NA, qd = Math.min(3, Math.floor(p)), t = p - qd, th = qd * dm.HALF_PI + dm.atan2(t, 1 - t);
-    const s1 = dm.sin(nl * th / 2 + pl), s2 = dm.sin(nl2 * th / 2 + pl2);
+    const th = TH[k];
+    const s1 = Sn[k] * cpl + Cn[k] * spl, s2 = Sn2[k] * cpl2 + Cn2[k] * spl2;
     const sc = Math.sqrt(s1 * s1 + 0.02) - 0.65, sc2 = Math.sqrt(s2 * s2 + 0.02) - 0.65;
-    const w = (th - pp) - (dm.TWO_PI / np) * Math.floor((th - pp) / (dm.TWO_PI / np)) - dm.PI / np;
-    Rm[k] = 1 + al * sc + al2 * sc2 + ap * (1 / dm.cos(w) - 1.1) + a2 * dm.cos(2 * th + p2) + a3 * dm.cos(3 * th + p3);
-    const down = dm.cos(th - psi);
-    Rh[k] = Math.max(0.3, 1 + 0.35 * obl * down + h2 * dm.cos(2 * th + q2) + h5 * dm.cos(5 * th + q5));
-    Ej[k] = Math.max(0, 1 + 1.3 * obl * down) * (1 + 0.3 * h2 * dm.cos(3 * th + q5));
+    // (the joints' squared outline: the bearing from its own joint-set's middle, j of them round)
+    const j = Math.floor((th - pp) / per), ji = j + 8;
+    if (!_jd[ji]) { const b = pp + per * j + dm.PI / np; _jc[ji] = dm.cos(b); _js[ji] = dm.sin(b); _jd[ji] = 1; }
+    const cw = C2[k] * _jc[ji] + S2[k] * _js[ji];
+    Rm[k] = 1 + al * sc + al2 * sc2 + ap * (1 / cw - 1.1) + a2 * (C4[k] * cp2 - S4[k] * sp2) + a3 * (C6[k] * cp3 - S6[k] * sp3);
+    const down = C2[k] * cps + S2[k] * sps;
+    Rh[k] = Math.max(0.3, 1 + 0.35 * obl * down + h2 * (C4[k] * cq2 - S4[k] * sq2) + h5 * (C10[k] * cq5 - S10[k] * sq5));
+    Ej[k] = Math.max(0, 1 + 1.3 * obl * down) * (1 + 0.3 * h2 * (C6[k] * cq5 - S6[k] * sq5));
     // (where the wall's slumps stand, by bearing: the terraces wander, merge and split round it)
-    To[k] = 0.45 * dm.cos(2 * th + t2) + 0.3 * dm.cos(3 * th + t3) + 0.2 * dm.cos(5 * th + t5);
+    To[k] = 0.45 * (C4[k] * ct2 - S4[k] * st2) + 0.3 * (C6[k] * ct3 - S6[k] * st3) + 0.2 * (C10[k] * ct5 - S10[k] * st5);
     if (Rm[k] > rmax) rmax = Rm[k];
     mh += Rh[k] / NA; me += Ej[k] / NA;
   }

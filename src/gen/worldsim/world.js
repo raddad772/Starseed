@@ -103,15 +103,19 @@ export function worldSim(body, star, opts = {}) {
   let resurfaceAt = null, resurfaceShare = 0.75, crack = 0;
   if (H && H.regime === 'stagnant' && H.runaway && H.heatNow > 0.3) resurfaceAt = age - rng.fork('resurface').range(0.3, 0.8);
   if (icy && tidal > 0.2) { resurfaceAt = age - dm.clamp(0.06 / (tidal * tidal), 0.01, 2); resurfaceShare = 0.97; crack = tidal; }
+  // (a rocky moon its tides melt (Io's) is paved over by its volcanoes every few Myr: no
+  // impact crater lasts; its mountains, blocks thrust up through the lava, stand)
+  else if (!icy && tidal > 0.6 && p.liquid === 'lava') { resurfaceAt = age - dm.clamp(0.003 / (tidal * tidal), 0.006, 1); resurfaceShare = 0.9; }
   if (resurfaceAt != null) log(`resurfaced ${Math.round((age - resurfaceAt) * 1000)} Myr ago${crack ? ' (an icy shell, cracking under the tides)' : ''}`);
   if (path === 'barren') {
     const W = barrenWorld(G, { rng: rng.fork('barren'), body, age, scale, volcEnd: 1 + 15 * dm.pow(body.massEarth, 0.6), rate, spike, resurfaceAt, resurfaceShare, crack });
     const melt = stampFresh(G, W.h, H, body, scale);
     // (the craters below its grid's: their record by place, for the finer levels to draw)
     const crater = { crat: W.crat, g: body.gravity, scale, Dw: W.dMin * 1000, Dair: airCut(body.atmosphere ? body.atmosphere.pressure : 0, body.gravity) * 1000 * scale };
-    // its rock: the old crust, the dark lava of the maria, an icy shell's refrozen plains
-    const rock = new Uint8Array(G.n), BAS = ROCK.basalt, ICE = ROCK.ice;
-    for (let c = 0; c < G.n; c++) rock[c] = W.mare[c] > 0.5 ? BAS : W.plains[c] > 0.5 && icy ? ICE : 0;
+    // its rock: the old crust (an icy world's old dirty ice; a rocky one's broken regolith: no
+    // granite without water and plates to make it), the dark lava of the maria
+    const rock = new Uint8Array(G.n), BAS = ROCK.basalt, ICE = ROCK.ice, REG = ROCK.regolith;
+    for (let c = 0; c < G.n; c++) rock[c] = W.mare[c] > 0.5 ? BAS : icy ? ICE : REG;
     return Object.assign(out, { h: W.h, mare: W.mare, fresh: W.fresh, stats: W.stats, craters: survivors(G, W.impacts.events, resurfaceAt, W.plains, W.mare), melt, crater, lineae: W.lineae, chaos: W.chaos, mareLv: W.mareLv, rock });
   }
   if (path === 'stagnant') {

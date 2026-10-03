@@ -151,6 +151,15 @@ surveying many worlds; bit-exact across runs and clients, not across revisions):
   (`ICY_WATER`, a shell tens of km deep), checked before volcanism. Thin-air frozen water covers
   only its cold traps (Mars' caps, ~5% of the area at 16 mbar, poleward of ~70 degrees). Rays
   only on worlds with next to no air. On a dusty world exposed rock wears the dust's rind.
+- **Io, airless crusts, crater forms (SIM 31, TILE 22):** a rock moon its tides melt (tidal >
+  0.6, lava) is repaved every few Myr (Io: 6 Myr; its mountains keep theirs): it had a full
+  crater record and sampled at 108 us a sample, now 1.8. An airless world's old crust is ice on
+  an icy world, regolith on a rocky one (was granite everywhere: Europa showed brown rock
+  islands). craterForm's tables by angle addition over shared half-angle sines/cosines: 7.3x
+  faster, the same shapes (to the last digits). The Moon still samples at ~35-60 us: its field
+  is saturated, every point within reach of many craters on every band (a bucket index didn't
+  help: a crater's reach spans most of a lattice cell; a smaller lattice with long-reach craters
+  kept apart would).
 - **Mars looking like Mars (SIM 25):**
   - a Mars-type world that once had water rusts (ferric/ochre dust, no grey basalt draw);
   - snow (the terrain's rule and the climate's ice albedo) needs air to carry water: in thin
