@@ -22,7 +22,7 @@ import { Noise3 } from '../../core/noise.js';
 import { dunePatches } from '../dunes.js';
 import { ROCK_UP } from './lithology.js';
 
-export const SIM_VERSION = 47;
+export const SIM_VERSION = 48;
 
 // a world's grid size: maxN for an Earth-sized one, finer cells don't help a small one
 // (N ~ sqrt(radius): Mars ~210, the Moon ~150, a moonlet 64)
@@ -68,8 +68,8 @@ export function packSnapshot(W, body) {
     for (let c = 0; c < n; c++) if (gi[c] > 0) ice[c] = u16(Math.max(1, Math.min(top[c] - W.h[c], cap(c))));
   }
   const river = new Uint8Array(n);
+  let amax = 0;   // (the greatest drainage: the bytes' scale, kept so a tile can know a river's)
   if (W.E && W.E.A) {
-    let amax = 0;
     for (let c = 0; c < n; c++) if (!W.E.base[c] && W.E.A[c] > amax) amax = W.E.A[c];
     for (let c = 0; c < n; c++) if (!W.E.base[c] && amax > 0) river[c] = Math.round(255 * Math.min(1, Math.max(0, dm.log(Math.max(W.E.A[c], 1e-30) / (amax * 1e-4)) / dm.log(1e4))));
   }
@@ -89,7 +89,7 @@ export function packSnapshot(W, body) {
   const relief = new Uint16Array(n);
   for (let c = 0; c < n; c++) { let r = 0; for (let e = G.nStart[c]; e < G.nStart[c + 1]; e++) r = Math.max(r, Math.abs(W.h[c] - W.h[G.nbr[e]])); relief[c] = u16(r); }
   // (sea: whether the world has a liquid to stand below the datum; without one, its lows are dry)
-  const out = { version: SIM_VERSION, path: W.path, N: G.N, R: G.R, h, water, rock, ice, river, melt, relief, rcv, Nc: 0, sea: !!(body.terrain && body.terrain.liquid) };
+  const out = { version: SIM_VERSION, path: W.path, N: G.N, R: G.R, h, water, rock, ice, river, riverMax: amax, melt, relief, rcv, Nc: 0, sea: !!(body.terrain && body.terrain.liquid) };
   // the flat-topped volcanoes eruptions under ice left (world.js)
   out.tuyas = (W.tuyas || []).map((t) => ({ d: t.d.slice(), top: t.top, r: t.r }));
   // the sea itself (the erosion's base: water below the datum joined to a body big enough to be

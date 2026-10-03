@@ -127,9 +127,21 @@ export function evolveWorld(ctx) {
   const escRate = (t, shield) => { const r = S(t) * xuvHeavy(t) / Scrit; return 1.6 * r * (1 + (r / 0.4) * (r / 0.4) * (r / 0.4)) * escLuck * shield; };
   // too cold to hold a gas atmosphere: nitrogen and CO2 freeze onto the ground (Ganymede, Callisto)
   const frozenOut = teqBareOf(ctx.S) < 125;
-  // a moon's frozen methane-and-nitrogen air (Titan) on cold, icy, big-enough worlds
+  // a nitrogen-and-methane air (Titan) on a cold, icy, big-enough world: its nitrogen came as
+  // ammonia in ices that formed cold (Titan's did; Callisto's, warmer, held little), and an air
+  // built by its impacts survives where they come in slowly. A giant's deep well speeds them: at
+  // Jupiter's big moons ~15-20 km/s, 6-7 times their escape speed, eroding more air than they
+  // bring; at Saturn's Titan ~11, 4 times (Zahnle et al. 1992). The draw: the luck of its
+  // impacts and ices. (Colder than ~65 K the nitrogen freezes onto the ground: Triton, Pluto.)
   const teqBare = teqBareOf(ctx.S);
-  const titanish = teqBare < 125 && water0 > 0.08 && massE > 0.008 && rng.next() < (ctx.kind === 'planet' ? 0.6 : 0.28) && teqBare > 65; // (colder: the nitrogen freezes onto the ground)
+  const impactRatio = (() => {
+    const vp = 29.8 * dm.sqrt(star.mass || 1) * dm.pow(ctx.S / (star.luminosity || 1), 0.25);   // the world's (or its giant's) speed round the star, km/s (a = sqrt(L/S))
+    const vInf = 0.42 * vp;                                            // comets' approach speed there
+    const hst = ctx.host || null, vMoon = hst && ctx.aHost > 0 ? dm.sqrt(3.986e14 * hst.massEarth / ctx.aHost) / 1000 : 0;
+    return dm.sqrt(vInf * vInf + 3 * vMoon * vMoon + vesc * vesc) / vesc;
+  })();
+  const titanish = teqBare < 125 && water0 > 0.08 && massE > 0.008
+    && dm.smoothstep(125, 100, teqBare) * dm.smoothstep(5.8, 4.6, impactRatio) * (0.6 + 0.8 * rng.next()) > 0.5 && teqBare > 65;
   // ---- what it's made of (WORLDSIM.md 16; broad curves): the mantle's redox (dIW: Earth
   // ~+3.5) from its water and the cloud's carbon (carbon worlds are reduced); it decides
   // what the volcanoes breathe: CO2, water, SO2 when oxidised; CO, H2, CH4, NH3, H2S
@@ -180,6 +192,7 @@ export function evolveWorld(ctx) {
   let life = { origin: null, photo: null, goe: null, euk: null, complex: null, animals: null, plants: null, landAnimals: null, extinct: null };
   let stage = 0, div = 0, everLife = false, lastSterile = null, offFor = 0, snowSince = 0;
   let solvent = null, backbone = null;   // life's chemistry (biochem.js), set when it starts
+  let capsTold = -1;                     // (when the caps last sublimed, as told)
   const regained = new Uint8Array(9);   // stages once evolved and lost (relatives remain: easier again)
   const extinctions = [], bigImpacts = [], lips = [], superEruptions = [];
   const radiations = [];        // [t, loss]: the emptied world's boost to new forms
@@ -428,7 +441,10 @@ export function evolveWorld(ctx) {
     // CO2 too: past its vapour pressure at the cold poles it freezes there (Mars' caps);
     // the caps give it back as the world warms; no more than the world's carbon
     {
-      const capC = co2Sat(Tn - coldK);
+      // (the poles' cold as it is now: the same reckoning as the high-tilt test below, else the
+      // two disagree and the caps freeze and sublime by turns, step after step)
+      const ckNow = Tn * (0.087 + 0.21 * (1 - dm.clamp((dm.log10(Math.max(Ptot(), 1e-6)) + 2.2) / 2.2, 0, 1)));
+      const capC = co2Sat(Tn - ckNow);
       if (pCO2 > capC) { CO2ice += pCO2 - capC; pCO2 = capC; }
       else if (CO2ice > 0) { const back = Math.min(CO2ice, capC - pCO2); CO2ice -= back; pCO2 += back; }
       CO2ice = Math.min(CO2ice, Math.max(0, carbon - pCO2));
@@ -439,7 +455,12 @@ export function evolveWorld(ctx) {
       if (CO2ice > 0.01 && ctx.kind === 'planet') {
         const Pt = Ptot() + CO2ice, Tt = tempOf(t, Pt, pCO2 + CO2ice, 0, snow)[0];
         const ck = Tt * (0.087 + 0.21 * (1 - dm.clamp((dm.log10(Pt) + 2.2) / 2.2, 0, 1)));
-        if (co2Sat(Tt - ck) > pCO2 + CO2ice) { pCO2 += CO2ice; CO2ice = 0; ev(t, 'caps sublime', 'at a high tilt the polar caps sublime: the air thickens'); }
+        if (co2Sat(Tt - ck) > pCO2 + CO2ice) {
+          // (near its frost point the air collapses and comes back over and over, with the tilt's
+          // swings: told once a while)
+          if (CO2ice > pCO2 && !(capsTold > t - 0.5)) { capsTold = t; ev(t, 'caps sublime', 'at a high tilt the polar caps sublime: the air thickens'); }
+          pCO2 += CO2ice; CO2ice = 0;
+        }
       }
     }
     [Tn, An] = tempOf(t, Ptot(), pCO2, 0, snow);
