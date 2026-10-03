@@ -86,7 +86,7 @@ export class TerrainTiles {
         const pl = pyr.get(t.L - 2), pti = t.ti >> 2, ptj = t.tj >> 2, pT = (uv.face * (1 << (t.L - 2)) + ptj) * (1 << (t.L - 2)) + pti;
         const p = pl && pl.tiles.get(pT);
         if (!p) continue;
-        parents = [{ face: uv.face, ti: pti, tj: ptj, h: p.h, rw: p.rw }];
+        parents = [{ face: uv.face, ti: pti, tj: ptj, h: p.h, rw: p.rw, fl: p.fl, rcv: p.rcv }];
       }
       this.pending.add(key);
       const id = b.data.id, face = uv.face;

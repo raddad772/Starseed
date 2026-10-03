@@ -450,6 +450,34 @@ surveying many worlds; bit-exact across runs and clients, not across revisions):
     bit) and reckon the warp every fourth cell (setup 24% faster, TILE 28).
 - **Survey tool:** `node tools/survey.mjs --out DIR --cache DIR SEED[:body] ...` writes each world's
   map and its landmarks at 400/60/12 km; the GPU check page takes `?seed=&body=` (runs the sim).
+  It now runs the game's own integer tile sim (compiled), the refinement's tiles on `--threads`
+  workers (tools/surveyWorker.mjs, default 4): a world's refinement ~270 s -> ~57 s, and bit
+  for bit the game's (checked 2026-10-03: Ishiodreill's refinement, river index and two pyramid
+  tiles hash the same in a test tab and the survey). `--float 1` runs the float sim instead;
+  `--pyrIn 0` turns off the pyramid's inflow (for comparisons). Cache: one `ref-...-r29i.v8`.
+- **Pyramid inflow (TILE 29, 2026-10-03):** a pyramid tile takes in the water coming from beyond
+  it (localsim.js `pyrInflow`): where the level above's drainage crosses into its grid carrying
+  more than ~400 cells' worth, it comes in a cell inside that edge and the edge there is shut,
+  as the refinement's world-sim inflow does. The refinement keeps its drainage for this
+  (`R.fl`, `R.rcv`: 2 bytes a cell more; stored in IndexedDB too); the pyramid's parents pass
+  theirs. Integer inflow held under 2^30 units. The effect at Ishiodreill's gorges is small (the
+  refinement already cut them); it's for rivers keeping their channels at every level.
+- **Game plumbing (2026-10-03):** the refinement's river index is built from the tiles in tile
+  order (was arrival order: clients could differ); a pyramid worker gets the refinement once
+  (without the river index, ~7 MB on an Earth-sized world, which every pyramid job used to copy).
+- **Rock rule (TILE 29):** in all three copies (snapshot.js rockAtWarped, the refinement's in
+  localsim.js, RefineReader.rockAt) the height terms now scale with each rock's share, as the
+  lows/rises term did: a rock entering the cells round a point (from weight 0) no longer wins
+  at once on height alone along the cells' edges.
+- **Straight N-S coasts (investigated 2026-10-03, still open):** Ishiodreill (LAB-30 4) has a
+  dead straight N-S coast at ~-4E, 10-28N (as Dorith's near 156E). On the equatorial cube faces
+  a grid column is a meridian, so suspect the face grid. Traced (scratchpad platetrace*.mjs,
+  onPlateStep): it's a continental margin carried on one plate since a rift at 52.5 Myr whose
+  halves re-welded at 56.5. Not the rift line's wander (wobble std 0.14, wobble2 0.12, both
+  fine): with wobble2 x6 the world evolves differently and still grows a straight N-S coast.
+  Next suspects: the gap fill (lowest plate id, filled in scan order: row-major on the faces)
+  and frame-cell remaps in merge(). The 60 km rock staircases at Ishiodreill's gorge come from
+  it too (the world's rock along that column).
 
 Open:
 - **Canyons (SIM 49, TILE 27; Dave asked how the Grand Canyon formed, 2026-10-02):**
@@ -480,7 +508,7 @@ Open:
   - `node tools/survey.mjs ... --gorges N [--gorgeRock sandstone,shale]` renders the deepest.
   - Still open: deeper plateau canyons need more uplift history than the world sim's 150 Myr
     fine epoch gives a dry plateau; side canyons and scarp retreat come from the pyramid levels'
-    own drainage, which has no inflow yet (only the refinement does).
+    own drainage (which now has inflow: TILE 29, above).
 - **Desert landforms:** dunes are in (below); wadis and mesas (the world sim marks mesa
   country) still to draw.
 - **Big rivers:** now drawn from the refinement's own drainage (below); finer meanders (a lateral

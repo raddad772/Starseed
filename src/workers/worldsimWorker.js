@@ -43,7 +43,7 @@ self.onmessage = async (e) => {
       P.fromInts(G ? await G.run(I) : runInt(I));
       const T = P.finish(), p = packTile(T);
       p.riv = tileRivers(T);
-      self.postMessage({ type: 'tile', job: m.job, body: m.body, tile: p }, [p.h.buffer, p.rw.buffer, p.riv.rec.buffer, p.riv.keys.buffer]);
+      self.postMessage({ type: 'tile', job: m.job, body: m.body, tile: p }, [p.h.buffer, p.rw.buffer, p.fl.buffer, p.rcv.buffer, p.riv.rec.buffer, p.riv.keys.buffer]);
       self.postMessage({ type: 'refined', job: m.job, body: m.body, face: m.face });
       return;
     }
@@ -51,15 +51,17 @@ self.onmessage = async (e) => {
       // one tile of the terrain pyramid (gen/terrainTiles.js), on the level above's tiles (or
       // the refinement): its heights (m) and rock | water << 5 come back
       // (the world's generator kept between its tiles: its snapshot comes once to each worker)
+      // (and its refinement comes once too: kept with the generator)
       let gen = pyrGens.get(m.body);
-      if (!gen || gen._key !== m.refKey) {
+      if (m.refine || !gen || gen._key !== m.refKey) {
         const b = sys.bodies[m.body];
         if (!snaps.has(m.body)) throw new Error(`no snapshot for body ${m.body} in this worker`);
+        if (!m.refine) throw new Error(`no refinement for body ${m.body} in this worker`);
         gen = new TerrainGenerator({ ...b.terrain, snapshot: snaps.get(m.body), refine: m.refine });
-        gen._key = m.refKey;
+        gen._key = m.refKey; gen._ref = m.refine;
         pyrGens.set(m.body, gen);
       }
-      let src = m.refine;
+      let src = gen._ref;
       if (m.parents.length) { src = new TileSet(m.L - 2); for (const p of m.parents) src.put(p.face, p.ti, p.tj, p); }
       const P = prepareTile(gen, m.face, m.ti, m.tj, { kind: 'pyr', L: m.L, parent: new RefineReader(src) }), I = P.ints(), G = m.gpu === false ? null : await gpu();
       P.fromInts(G ? await G.run(I) : runInt(I));

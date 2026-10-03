@@ -161,6 +161,48 @@ function riverInflow(S, G, face, rain) {
   return any ? { src, shut } : null;
 }
 
+// The same for a pyramid tile, from the level above's own drainage (its fl and rcv: the
+// refinement's, or the tile of the level above this one lies in): where that level's water
+// crosses into this tile's grid from a cell outside it, carrying more than a small catchment's,
+// it comes in a cell inside the edge, and the edge there is shut. So a river keeps cutting its
+// own channel down every level (a tile's own rain made it a creek at its entry), and the side
+// canyons and gullies running into it have their base level. Returns { src, shut } or null
+const K_ = MT + 2 * KEEP, LN_FL = dm.log(1e11), nbDI = (k) => ((k >= 4 ? k + 1 : k) % 3) - 1, nbDJ = (k) => (((k >= 4 ? k + 1 : k) / 3) | 0) - 1;
+function pyrInflow(parent, face, ti, tj, cell) {
+  const P = parent && parent.src;
+  if (!P) return null;
+  // (the level above's tile holding this one, and its arrays)
+  const pti = ti >> 2, ptj = tj >> 2;
+  let fl, rc, off = 0;
+  if (parent.sparse) { const t = P.tiles.get((face * P.n + ptj) * P.n + pti); if (!t || !t.fl || !t.rcv) return null; fl = t.fl; rc = t.rcv; }
+  else { if (!P.fl || !P.rcv) return null; fl = P.fl; rc = P.rcv; off = ((face * P.n + ptj) * P.n + pti) * K_ * K_; }
+  // (this grid in the level above's cells: its NG cells, four to one, from MARGIN / 4 outside
+  // this tile's square; a cell (pi, pj) of that span at (pi, pj) + o0 in its tile's kept square)
+  const span = NG / 4, o0i = (ti & 3) * (MT / 4) - MARGIN / 4 + KEEP, o0j = (tj & 3) * (MT / 4) - MARGIN / 4 + KEEP;
+  const thr = Math.round(255 * dm.log(Math.max(1e5, 400 * cell * cell)) / LN_FL);
+  const src = new Float64Array(NG * NG), shut = new Uint8Array(NG * NG), W = 6;
+  let any = false;
+  const ring = (pi, pj) => pi === 0 || pj === 0 || pi === span - 1 || pj === span - 1;
+  for (let pj = -1; pj <= span; pj++) for (let pi = -1; pi <= span; pi++) {
+    if (pi >= 0 && pj >= 0 && pi < span && pj < span) continue;   // (only the cells just outside)
+    const o = off + (pj + o0j) * K_ + pi + o0i, k = rc[o];
+    if (k === 255 || fl[o] < thr) continue;
+    const qi = pi + nbDI(k), qj = pj + nbDJ(k);
+    if (qi < 0 || qj < 0 || qi >= span || qj >= span || !ring(qi, qj)) continue;
+    // (the cell it drains into, in this grid's cells: a cell in from the edge it crosses)
+    let i = qi * 4 + 1.5, j = qj * 4 + 1.5;
+    if (pi < 0) i = 1; else if (pi >= span) i = NG - 2;
+    else if (pj < 0) j = 1; else j = NG - 2;
+    i = Math.max(1, Math.min(NG - 2, Math.round(i))); j = Math.max(1, Math.min(NG - 2, Math.round(j)));
+    src[j * NG + i] += dm.exp(fl[o] / 255 * LN_FL); any = true;
+    for (let dj = -W; dj <= W; dj++) for (let di = -W; di <= W; di++) {
+      const ii = i + di, jj = j + dj;
+      if (ii >= 0 && jj >= 0 && ii < NG && jj < NG) shut[jj * NG + ii] = 1;
+    }
+  }
+  return any ? { src, shut } : null;
+}
+
 // a kept square's height at face (u, v), bilinear (null outside it)
 function tileHeightAt(T, u, v) {
   const K = MT + 2 * KEEP, s = 2 / (1 << T.L), du = s / MT;
@@ -409,8 +451,9 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
   E.lakeId.fill(-1); E.lakeList = [];
   E.findBase = () => {};
   const edge = (c) => { const i = c % NG, j = (c - i) / NG; return i === 0 || j === 0 || i === NG - 1 || j === NG - 1; };
-  // (the great rivers coming in from beyond it: a refinement's, from the world sim)
-  const inflow = refine ? riverInflow(S, G, face, rain) : null, shut = inflow ? inflow.shut : null;
+  // (the great rivers coming in from beyond it: a refinement's, from the world sim; a pyramid
+  // tile's, from the level above)
+  const inflow = refine ? riverInflow(S, G, face, rain) : pyr && opts.inflow !== false ? pyrInflow(parent, face, ti, tj, cell) : null, shut = inflow ? inflow.shut : null;
   if (inflow) E.src = inflow.src;
   for (let c = 0; c < n; c++) E.base[c] = wet[c] || (edge(c) && !(shut && shut[c])) ? 1 : 0;
   E.nStep = 0; E.route(); E.drain();
@@ -535,7 +578,7 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
     for (let c = 0; c < n; c++) {
       sz[c] = Math.round(Math.sqrt(area[c]) * 1000);
       flags[c] = (E.base[c] ? 1 : 0) | (lowstand && wet[c] === 1 && !E.base[c] ? 2 : 0);
-      a[c] = Math.max(1, Math.round(area[c] / aref * rain[c] * 16)) + (E.src ? Math.round(E.src[c] / aref * 16) : 0);   // (and a great river coming in)
+      a[c] = Math.max(1, Math.round(area[c] / aref * rain[c] * 16)) + (E.src ? Math.min(2 ** 30, Math.round(E.src[c] / aref * 16)) : 0);   // (and a great river coming in: held well inside 32 bits)
       hdI[c] = Math.round(255 * hardAt(c, h[c]));
       h0[c] = Math.round(h[c] * 4096); BI[c] = Math.round(B[c] * 4096);
     }
@@ -679,7 +722,7 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
           // follows the land's own swales and rises, not the world sim's cells)
           // (a mare's lava filled the lows of its basin: it lies in them, embaying what stood up)
           const rel = (Hr[q] / Wr[q] - hb) / span, up = DEP.has(rk[q]) || (rk[q] === BAS && mw > 0.02) ? -1 : dm.clamp(4 * rel + UPK[rk[q]], -1, 1);
-          const score = Wr[q] + 1.5 * e * rel + 0.8 * el * up * Math.min(1, 2.5 * Wr[q]);
+          const score = Wr[q] + (1.5 * e * rel + 0.8 * el * up) * Math.min(1, 2.5 * Wr[q]);
           if (score > bs) { bs = score; best = rk[q]; }
         }
         rockC[c] = best;

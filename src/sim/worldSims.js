@@ -194,7 +194,12 @@ export class WorldSims {
         const has = w.hasSnap || (w.hasSnap = new Set());
         const snap = has.has(job.id) ? null : job.snap;
         has.add(job.id);
-        w.worker.postMessage({ type: 'pyr', job: job.id, seed: this.seed, body: job.id, L: job.L, face: job.face, ti: job.ti, tj: job.tj, snap, refine: job.refine, refKey: this.refKey(job.id), parents: job.parents, gpu: this.gpu });
+        // (and its refinement once, without its rivers' index (MBs, which the tiles don't read):
+        // its heights and rock are shared memory, so the worker's copy is the same arrays)
+        const sent = w.refSent || (w.refSent = new Map()), refKey = this.refKey(job.id), R = job.refine;
+        const refine = sent.get(job.id) === R ? null : { version: R.version, L: R.L, n: R.n, K: R.K, h: R.h, rw: R.rw, fl: R.fl, rcv: R.rcv, done: R.done };
+        sent.set(job.id, R);
+        w.worker.postMessage({ type: 'pyr', job: job.id, seed: this.seed, body: job.id, L: job.L, face: job.face, ti: job.ti, tj: job.tj, snap, refine, refKey, parents: job.parents, gpu: this.gpu });
         continue;
       }
       if (job.kind === 'refine') {
@@ -227,7 +232,7 @@ export class WorldSims {
       w.job = null; this._next(); return;
     }
     if (m.type === 'ptile') { const job = w.job; w.job = null; job.resolve({ h: m.h, rw: m.rw, fl: m.fl, rcv: m.rcv }); this._next(); return; }
-    if (m.type === 'tile') { const st = this.refine.get(m.body); if (st && st.R) { putTile(st.R, m.tile); if (m.tile.riv) (st.riv || (st.riv = [])).push(m.tile.riv); } return; }
+    if (m.type === 'tile') { const st = this.refine.get(m.body); if (st && st.R) { putTile(st.R, m.tile); if (m.tile.riv) { m.tile.riv.at = (m.tile.face * 64 + m.tile.tj) * 64 + m.tile.ti; (st.riv || (st.riv = [])).push(m.tile.riv); } } return; }
     if (m.type === 'refined') {
       w.job = null;
       this._next();   // (the worker's free while the last tile's rivers are indexed)
@@ -235,9 +240,10 @@ export class WorldSims {
       st.done++;
       if (st.done === st.total && complete(st.R)) {
         st.ms = performance.now() - st.t0;
-        // (its rivers, indexed by the world sim's cells: in a worker of their own, a few hundred ms)
+        // (its rivers, indexed by the world sim's cells: in a worker of their own, a few hundred ms;
+        // in tile order, not the order they came back in, so every client's index is the same)
         const snap = this.game.system.bodies[m.body].terrain.snapshot;
-        if (st.riv && snap) st.R.riv = await indexRivers(st.riv, snap.N, snap.R);
+        if (st.riv && snap) st.R.riv = await indexRivers(st.riv.sort((a, b) => a.at - b.at), snap.N, snap.R);
         st.riv = null;
         dbPut(await this.dbP, this.refKey(m.body), toStorable(st.R));
         this._applyRefine(m.body, st, false);

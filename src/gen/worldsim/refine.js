@@ -26,7 +26,9 @@ function alloc(Type, n, shared) {
 // an empty refinement of level L (2^L tiles across a face)
 export function newRefine(L, shared = true) {
   const n = 1 << L, nt = 6 * n * n;
-  return { version: TILE_VERSION, L, n, K, h: alloc(Int16Array, nt * KK, shared), rw: alloc(Uint8Array, nt * KK, shared), done: new Uint8Array(nt) };
+  // (heights, rock | water << 5, and its drainage: the water through each cell (fl, log) and its
+  // way down (rcv), for the pyramid's tiles to take in the water coming from beyond them)
+  return { version: TILE_VERSION, L, n, K, h: alloc(Int16Array, nt * KK, shared), rw: alloc(Uint8Array, nt * KK, shared), fl: alloc(Uint8Array, nt * KK, shared), rcv: alloc(Uint8Array, nt * KK, shared), done: new Uint8Array(nt) };
 }
 export const tileIndex = (R, face, ti, tj) => (face * R.n + tj) * R.n + ti;
 
@@ -37,19 +39,19 @@ export function packTile(t) {
     h[o] = Math.max(-32767, Math.min(32767, Math.round(t.h[o])));
     rw[o] = (t.rockC[o] & 31) | (t.water[o] << 5);
   }
-  return { face: t.face, ti: t.ti, tj: t.tj, h, rw };
+  return { face: t.face, ti: t.ti, tj: t.tj, h, rw, fl: t.fl, rcv: t.rcv };
 }
 export function putTile(R, p) {
   const T = tileIndex(R, p.face, p.ti, p.tj);
-  R.h.set(p.h, T * KK); R.rw.set(p.rw, T * KK); R.done[T] = 1;
+  R.h.set(p.h, T * KK); R.rw.set(p.rw, T * KK); R.fl.set(p.fl, T * KK); R.rcv.set(p.rcv, T * KK); R.done[T] = 1;
 }
 export const complete = (R) => R.done.every((x) => x);
 
 // for IndexedDB (a SharedArrayBuffer can't be stored): plain copies, and back
-export function toStorable(R) { return { version: R.version, L: R.L, n: R.n, K: R.K, h: Int16Array.from(R.h), rw: Uint8Array.from(R.rw), riv: R.riv || null }; }
+export function toStorable(R) { return { version: R.version, L: R.L, n: R.n, K: R.K, h: Int16Array.from(R.h), rw: Uint8Array.from(R.rw), fl: Uint8Array.from(R.fl), rcv: Uint8Array.from(R.rcv), riv: R.riv || null }; }
 export function fromStorable(o) {
   const R = newRefine(o.L);
-  R.h.set(o.h); R.rw.set(o.rw); R.done.fill(1);
+  R.h.set(o.h); R.rw.set(o.rw); R.fl.set(o.fl); R.rcv.set(o.rcv); R.done.fill(1);
   R.riv = o.riv || null;
   return R;
 }
@@ -387,10 +389,14 @@ export class RefineReader {
     for (let k = 0; k < nr; k++) {
       if (W[k] < 1e-6) continue;
       const rel = (Hs[k] / W[k] - hb) / span;
-      let score = W[k] + 1.5 * e * rel;
+      // (each term by how much of it there is: a rock just entering the cells round the point
+      // (its weight from 0 at a cell's edge) gains on the others smoothly, not all at once there,
+      // which drew its contacts along the cells' edges: stairs)
+      const wk = Math.min(1, 2.5 * W[k]);
+      let score = W[k] + 1.5 * e * rel * wk;
       // (and by where the ground stands among its own lows and rises: cover strata and lava hold
       // the rises, the basement shows where valleys cut to it, deposits lie in the lows)
-      if (el) score += 0.8 * el * (dep && dep.has(rk[k]) ? -1 : dm.clamp(4 * rel + ROCK_UP[rk[k]], -1, 1)) * Math.min(1, 2.5 * W[k]);
+      if (el) score += 0.8 * el * (dep && dep.has(rk[k]) ? -1 : dm.clamp(4 * rel + ROCK_UP[rk[k]], -1, 1)) * wk;
       if (score > bs) { sec = best; ss = bs; bs = score; best = rk[k]; } else if (score > ss) { ss = score; sec = rk[k]; }
     }
     if (sec >= 0) { out.rock2 = sec; out.rockMix = 0.5 * (1 - dm.smoothstep(0, 0.12, bs - ss)); }

@@ -333,7 +333,7 @@ export class SnapshotSampler {
       if (W < 1e-9) continue;
       // (and on even ground by its rises and hollows: cover holds the rises, the basement shows in
       // the hollows, so a contact snakes along them rather than the cells' blend)
-      const score = W + 1.5 * e * (H / W - hb) / span + 0.8 * dm.clamp(2 * e, -1, 1) * ROCK_UP[r] * Math.min(1, 2.5 * W);
+      const score = W + (1.5 * e * (H / W - hb) / span + 0.8 * dm.clamp(2 * e, -1, 1) * ROCK_UP[r]) * Math.min(1, 2.5 * W);
       if (score > bs) { sec = best; ss = bs; bs = score; best = r; } else if (score > ss) { ss = score; sec = r; }
     }
     if (sec >= 0) { this.rock2 = sec; this.rockMix = 0.5 * (1 - dm.smoothstep(0, 0.12, bs - ss)); }

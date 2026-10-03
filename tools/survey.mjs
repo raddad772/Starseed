@@ -3,14 +3,16 @@
 // refinement's (~400 km across), and two finer levels of the terrain pyramid made there
 // (~60 km and ~12 km). Coloured as the game colours it, lit from the north-west.
 //
-//   node tools/survey.mjs --out DIR [--cache DIR] [--W 1200] [--marks 6] [--gorges N] SEED[:bodyId] ...
+//   node tools/survey.mjs --out DIR [--cache DIR] [--W 1200] [--marks 6] [--gorges N] [--threads 4] SEED[:bodyId] ...
 //
 // (--gorges N: also views at the world's N deepest canyon-country gorges, world.js, first;
 // --gorgeRock a,b: only those cut in these rocks, e.g. sandstone,shale,limestone)
 //
 // Writes DIR/<seed>-<body>-world.png and DIR/<seed>-<body>-<n>-<kind>-<scale>.png, and a
-// DIR/survey.json listing them (for a contact sheet). The refinement and pyramid here run the
-// floating-point tile sim (the game runs the integer one on the GPU: alike, not bit for bit).
+// DIR/survey.json listing them (for a contact sheet). The refinement and pyramid run the tile
+// sim as the game does (the integer sim, compiled: the GPU's results bit for bit), the
+// refinement's tiles on --threads workers (tools/surveyWorker.mjs); --float 1 runs the
+// floating-point sim instead (alike, not bit for bit). The caches keep the two apart.
 
 import fs from 'fs';
 import path from 'path';
@@ -21,8 +23,11 @@ import { findFeatures } from '../src/gen/worldsim/features.js';
 import { nameLandmarks, landmarks } from '../src/gen/worldsim/landmarks.js';
 import { ROCKS } from '../src/gen/worldsim/lithology.js';
 import { TerrainGenerator, S_H, S_LEN } from '../src/gen/terrain.js';
-import { runTile, refineLevel, tileAt } from '../src/gen/localsim.js';
-import { newRefine, packTile, putTile, toStorable, fromStorable, TileSet, RefineReader, tileRivers, riverIndex } from '../src/gen/worldsim/refine.js';
+import { prepareTile, refineLevel, tileAt } from '../src/gen/localsim.js';
+import { runInt } from '../src/gpu/itile.js';
+import { Worker } from 'worker_threads';
+import os from 'os';
+import { newRefine, putTile, toStorable, fromStorable, TileSet, RefineReader, riverIndex } from '../src/gen/worldsim/refine.js';
 import v8 from 'v8';
 import { TILE_VERSION } from '../src/gen/tileshape.js';
 import { dunePatches } from '../src/gen/dunes.js';
@@ -33,6 +38,7 @@ import { writePNG } from './png.mjs';
 const args = process.argv.slice(2), opt = {}, worlds = [];
 for (let i = 0; i < args.length; i++) { if (args[i].startsWith('--')) opt[args[i].slice(2)] = args[++i]; else worlds.push(args[i]); }
 const OUT = opt.out || 'survey', CACHE = opt.cache || OUT, W = +(opt.W || 1200), MARKS = +(opt.marks || 6);
+const FLOAT = opt.float === '1', THREADS = +(opt.threads || Math.min(4, os.cpus().length));
 fs.mkdirSync(OUT, { recursive: true }); fs.mkdirSync(CACHE, { recursive: true });
 const TY = { h: Float32Array, water: Float32Array, rock: Uint8Array, ice: Uint16Array, river: Uint8Array, melt: Uint8Array, relief: Uint16Array, rcv: Uint8Array, Tsea: Float32Array, P: Float32Array, cover: Float32Array, forest: Float32Array, open: Float32Array, cloud: Float32Array, cloudPx: Uint8Array, crat: Uint8Array, dunes: Uint8Array, gorge: Uint16Array };
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
@@ -63,22 +69,15 @@ for (const w of worlds) {
   }
   let gen = new TerrainGenerator({ ...b.terrain, snapshot: snap });
   // its refinement, cached
-  const rf = path.join(CACHE, `ref-${seed}-${b.id}-N${N}-v${SIM_VERSION}-r${TILE_VERSION}`);
+  const rf = path.join(CACHE, `ref-${seed}-${b.id}-N${N}-v${SIM_VERSION}-r${TILE_VERSION}${FLOAT ? 'f' : 'i'}`);
   let R;
-  if (fs.existsSync(rf + '.h')) {
-    const meta = JSON.parse(fs.readFileSync(rf + '.json')), hb = fs.readFileSync(rf + '.h'), rb = fs.readFileSync(rf + '.rw');
-    R = fromStorable({ ...meta, h: new Int16Array(hb.buffer, hb.byteOffset, hb.length / 2), rw: new Uint8Array(rb.buffer, rb.byteOffset, rb.length) });
-    if (fs.existsSync(rf + '.riv')) R.riv = v8.deserialize(fs.readFileSync(rf + '.riv'));
-  } else {
+  if (fs.existsSync(rf + '.v8')) R = fromStorable(v8.deserialize(fs.readFileSync(rf + '.v8')));
+  else {
     const t0 = performance.now(), L = refineLevel(gen), n = 1 << L;
     R = newRefine(L, false);
-    const parts = [];
-    for (let f = 0; f < 6; f++) for (let tj = 0; tj < n; tj++) for (let ti = 0; ti < n; ti++) { const T = runTile(gen, f, ti, tj, { kind: 'refine' }); putTile(R, packTile(T)); parts.push(tileRivers(T)); }
+    const parts = await refineTiles(seed, b.id, snap, n, (p) => putTile(R, p));
     R.riv = riverIndex(parts, snap.N, snap.R);
-    fs.writeFileSync(rf + '.riv', v8.serialize(R.riv));
-    const o = toStorable(R);
-    fs.writeFileSync(rf + '.json', JSON.stringify({ L: o.L, n: o.n, K: o.K, version: o.version }));
-    fs.writeFileSync(rf + '.h', Buffer.from(o.h.buffer)); fs.writeFileSync(rf + '.rw', Buffer.from(o.rw.buffer));
+    fs.writeFileSync(rf + '.v8', v8.serialize(toStorable(R)));
     log(`  refinement (${6 * n * n} tiles) in ${((performance.now() - t0) / 1000).toFixed(0)} s`);
   }
   const pyr = new Map();
@@ -128,12 +127,14 @@ for (const w of worlds) {
     for (const L of [R.L + 2, R.L + 4]) {
       const t = tileAt(uv.face, uv.u, uv.v, L);
       const reader = parent || new RefineReader(R);
-      const T = runTile(gen, t.face, t.ti, t.tj, { kind: 'pyr', L, parent: reader });
+      const P = prepareTile(gen, t.face, t.ti, t.tj, { kind: 'pyr', L, parent: reader, inflow: opt.pyrIn !== '0' });
+      if (FLOAT) P.steps(); else P.fromInts(runInt(P.ints()));
+      const T = P.finish();
       const rw = new Uint8Array(T.rockC.length);
       for (let o = 0; o < rw.length; o++) rw[o] = (T.rockC[o] & 31) | (T.water[o] << 5);
       let set = pyr.get(L);
       if (!set) { set = new TileSet(L); pyr.set(L, set); }
-      set.put(t.face, t.ti, t.tj, { h: T.h, rw });
+      set.put(t.face, t.ti, t.tj, { h: T.h, rw, fl: T.fl, rcv: T.rcv });
       parent = new RefineReader(set);
     }
     gen.snap.attachPyr(pyr);
@@ -178,4 +179,27 @@ function mapAt(gen, b, d, span, px, file) {
     shadePixel(gen, s, gx, gy, b, col, mat, rgb, o * 3);
   }
   writePNG(file, px, px, rgb);
+}
+
+// a world's refinement tiles on THREADS workers; put(p) as each comes back. Its rivers' parts
+// in tile order (riverIndex keeps their order)
+function refineTiles(seed, body, snap, n, put) {
+  const jobs = [];
+  for (let f = 0; f < 6; f++) for (let tj = 0; tj < n; tj++) for (let ti = 0; ti < n; ti++) jobs.push([f, ti, tj]);
+  const parts = new Array(jobs.length), sn = {};
+  for (const k in snap) if (k !== 'dunePatch') sn[k] = snap[k];
+  let next = 0, done = 0;
+  return new Promise((resolve, reject) => {
+    const ws = [];
+    const give = (w) => { if (next < jobs.length) { w.job = next++; w.postMessage(jobs[w.job]); } };
+    for (let k = 0; k < Math.min(THREADS, jobs.length); k++) {
+      const w = new Worker(new URL('./surveyWorker.mjs', import.meta.url), { workerData: { seed, body, snap: sn, float: FLOAT } });
+      w.on('message', ({ p, riv }) => {
+        put(p); parts[w.job] = riv;
+        if (++done === jobs.length) { for (const x of ws) x.terminate(); resolve(parts); } else give(w);
+      });
+      w.on('error', (e) => { for (const x of ws) x.terminate(); reject(e); });
+      ws.push(w); give(w);
+    }
+  });
 }
