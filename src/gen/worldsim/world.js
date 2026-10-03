@@ -33,6 +33,7 @@ import { Coasts } from './coasts.js';
 import { climate, biomeOfKoppen } from './climate.js';
 import { soilAndWater } from './soil.js';
 import { LifeMap } from './life.js';
+import { Ground } from './ground.js';
 
 // river erosion (stream power) constants, deep time and the fine epoch: real K ~1e-6
 // m^0.1/yr for m = 0.45, x ~0.8 at the game's 1/10 scale (areas and lengths shrink)
@@ -304,6 +305,8 @@ export function worldSim(body, star, opts = {}) {
   let rainMean0 = 0;
   for (let c = 0; c < Gt.n; c++) rainMean0 += rainT[c];
   rainMean0 /= Gt.n;
+  // the ground inside each cell (ground.js), evolved with the history
+  const ground = new Ground(Gt);
   for (let k = 0; k < myr / tdt; k++) {
     const ago = myr - k * tdt;
     if (lifeHist && k % Math.round(CLIM_DT / tdt) === 0) {
@@ -330,6 +333,7 @@ export function worldSim(body, star, opts = {}) {
     Et.bare = !plantsAt(H, ago);           // no land plants yet: nothing holds the soil
     Et.veg = Et.bare ? null : lifeHist ? vegT : vegFrom(rainT, Et.rainK, Et.veg);
     T.stepEroded(tdt, Et);
+    ground.plateStep(Et, T, ht, tdt);
     // life's realms ride the plates (every 10 Myr, while there are land plants)
     if (!Et.bare && k % Math.round(10 / tdt) === 0) realms.check(T, ht, myr - k * tdt);
     if (opts.onPlateStep) opts.onPlateStep(T, ht, k * tdt);
@@ -373,6 +377,7 @@ export function worldSim(body, star, opts = {}) {
     if (h[c] > 0) h[c] += (hashJitter(c) - 0.5) * 5;
   }
   const h0 = Float64Array.from(h);
+  ground.fineStart(G);
   const lakeShare = (Ex, hx) => { let lk = 0, land = 0; for (let c = 0; c < hx.length; c++) { if (Ex.base[c]) continue; land += Ex.G.area[c]; if (Ex.fill[c] - hx[c] > 20) lk += Ex.G.area[c]; } return (100 * lk / Math.max(land, 1)).toFixed(1); };
   // the rock: each place's layers, from what the plates carried there
   const lith = buildRock(G, Gt, T, rng.fork('rock'));
@@ -450,6 +455,7 @@ export function worldSim(body, star, opts = {}) {
       }
       if (salt > 0) lith.deposit(c, salt, ROCK.salt);
     }
+    ground.fineStep(E, ice, h, hb, dt, KF);
     for (let c = 0; c < G.n; c++) { h[c] += isoDh[c]; lifted[c] += isoDh[c] + E.U[c] * dt; }
     // sea level holds the world's ocean share (as the plates' epoch does): wear moves land
     // into the sea, and low coasts would otherwise slip under it
@@ -626,7 +632,8 @@ export function worldSim(body, star, opts = {}) {
   const drowned = new Uint8Array(G.n);
   for (let c = 0; c < G.n; c++) if (lowRiver[c] && h[c] < 0) drowned[c] = 1;
   const melt = stampFresh(G, h, H, body, scale);
-  return Object.assign(out, { h, h0, E, Gt, ht, tect: T, impacts: Ef, craters: T.impacts.events.concat(Ef.events), volcanoes, tuyas, lith, rock, glaciers: ice, veg: E.veg, coasts: sea2, dunes, mesas, gorge, soil, drowned, melt });
+  ground.finish(h, rain, Tsl, lapse, plantCover, E.K, KF);
+  return Object.assign(out, { ground, h, h0, E, Gt, ht, tect: T, impacts: Ef, craters: T.impacts.events.concat(Ef.events), volcanoes, tuyas, lith, rock, glaciers: ice, veg: E.veg, coasts: sea2, dunes, mesas, gorge, soil, drowned, melt });
 }
 
 // Each fine cell's layers from the plates' record there: the basement (granite

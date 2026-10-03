@@ -22,7 +22,7 @@ import { Noise3 } from '../../core/noise.js';
 import { dunePatches } from '../dunes.js';
 import { ROCK_UP } from './lithology.js';
 
-export const SIM_VERSION = 57;
+export const SIM_VERSION = 58;
 
 // a world's grid size: maxN for an Earth-sized one, finer cells don't help a small one
 // (N ~ sqrt(radius): Mars ~210, the Moon ~150, a moonlet 64)
@@ -109,6 +109,14 @@ export function packSnapshot(W, body) {
   if (W.dunes && W.dunes.some((v) => v)) { out.dunes = Uint8Array.from(W.dunes); out.dunePatch = dunePatches(); }
   // canyon country (world.js): how far a great river lies below the dry plateau round it (m)
   if (W.gorge && W.gorge.some((v) => v)) out.gorge = Uint16Array.from(W.gorge);
+  // the ground inside each cell (ground.js): local relief (m), youth, grain, glaciation,
+  // valley spacing (m real)
+  if (W.ground && W.ground.youth) {
+    const g = W.ground, b8 = (v) => Math.max(0, Math.min(255, Math.round(128 + 127 * v)));
+    out.gLr = Uint16Array.from(g.lr, (v) => u16(v)); out.gVsp = Uint16Array.from(g.vsp, (v) => u16(v));
+    out.gYouth = Uint8Array.from(g.youth, b8); out.gGx = Uint8Array.from(g.gx, b8); out.gGy = Uint8Array.from(g.gy, b8);
+    out.gGlac = Uint8Array.from(g.glac, (v) => Math.round(255 * Math.max(0, Math.min(1, v))));
+  }
   // the maria's lava levels (barren.js floodBasin; m, -32768 none): their edges follow them
   // (a dry world's wet past: how much rain it had, 0..1, for the finer levels' valleys)
   if (W.wetK) { out.wetK = W.wetK; out.wetFrac = W.wetFrac; out.wetRain = W.wetRain; }
@@ -227,6 +235,19 @@ export class SnapshotSampler {
     let s = 0;
     for (let k = 0; k < 16; k++) s += h[c[k]] * w[k];
     return s;
+  }
+  // the ground inside the cells here (ground.js), smooth as hSmooth: into o { lr (m), youth
+  // (-1..1), gx, gy (the grain: s cos 2a, s sin 2a, a from east toward north), glac (0..1),
+  // vsp (m real) }; null on a world without it
+  ground(x, y, z, o) {
+    const s = this.s;
+    if (!s.gLr) return null;
+    const c = this._c16 || (this._c16 = new Int32Array(16)), w = this._w16 || (this._w16 = new Float64Array(16));
+    this.G.corners16(this._d(x, y, z), c, w, this.uv);
+    let lr = 0, yo = 0, gx = 0, gy = 0, gl = 0, vs = 0;
+    for (let k = 0; k < 16; k++) { const q = c[k], wk = w[k]; lr += s.gLr[q] * wk; yo += s.gYouth[q] * wk; gx += s.gGx[q] * wk; gy += s.gGy[q] * wk; gl += s.gGlac[q] * wk; vs += s.gVsp[q] * wk; }
+    o.lr = lr; o.youth = (yo - 128) / 127; o.gx = (gx - 128) / 127; o.gy = (gy - 128) / 127; o.glac = gl / 255; o.vsp = vs;
+    return o;
   }
   // canyon country's gorge here (m below the plateau round it), smooth as hSmooth: added to that,
   // the plateau's level where its cell's mean dipped for the gorge (0 elsewhere)
