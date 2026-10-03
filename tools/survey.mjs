@@ -6,7 +6,9 @@
 //   node tools/survey.mjs --out DIR [--cache DIR] [--W 1200] [--marks 6] [--gorges N] [--threads 4] SEED[:bodyId] ...
 //
 // (--gorges N: also views at the world's N deepest canyon-country gorges, world.js, first;
-// --gorgeRock a,b: only those cut in these rocks, e.g. sandstone,shale,limestone)
+// --gorgeRock a,b: only those cut in these rocks, e.g. sandstone,shale,limestone;
+// --at lat,lon/lat,lon: views at these places too, first; --pyr 0: no pyramid tiles, the
+// refinement alone; --pyrN 3: a 3x3 block of tiles at each level, not one)
 //
 // Writes DIR/<seed>-<body>-world.png and DIR/<seed>-<body>-<n>-<kind>-<scale>.png, and a
 // DIR/survey.json listing them (for a contact sheet). The refinement and pyramid run the tile
@@ -117,6 +119,8 @@ for (const w of worlds) {
     }
     marks.unshift(...got);
   }
+  // (and any places asked for: --at lat,lon/lat,lon...)
+  if (opt.at) marks.unshift(...opt.at.split('/').map((ll) => { const [lat, lon] = ll.split(',').map(Number); return { name: `${lat},${lon}`, kind: 'at', text: 'asked for', lat, lon }; }));
   for (let m = 0; m < marks.length; m++) {
     const lm = marks[m], la = lm.lat * Math.PI / 180, lo = lm.lon * Math.PI / 180;
     const d = [Math.cos(la) * Math.cos(lo), Math.sin(la), Math.cos(la) * Math.sin(lo)], uv = {};
@@ -124,17 +128,23 @@ for (const w of worlds) {
     const t0 = performance.now();
     // the pyramid there: two levels over the refinement, each on the last
     let parent = null;
-    for (const L of [R.L + 2, R.L + 4]) {
-      const t = tileAt(uv.face, uv.u, uv.v, L);
-      const reader = parent || new RefineReader(R);
-      const P = prepareTile(gen, t.face, t.ti, t.tj, { kind: 'pyr', L, parent: reader, inflow: opt.pyrIn !== '0' });
-      if (FLOAT) P.steps(); else P.fromInts(runInt(P.ints()));
-      const T = P.finish();
-      const rw = new Uint8Array(T.rockC.length);
-      for (let o = 0; o < rw.length; o++) rw[o] = (T.rockC[o] & 31) | (T.water[o] << 5);
+    // (--pyr 0: none, the refinement alone; --pyrN 3: each level a 3x3 block of tiles round the
+    // place, as the game has round a player, not one tile whose edges the views cross)
+    const PN = opt.pyr === '0' ? 0 : +(opt.pyrN || 1), hb = (PN - 1) >> 1;
+    for (const L of PN ? [R.L + 2, R.L + 4] : []) {
+      const t0 = tileAt(uv.face, uv.u, uv.v, L), reader = parent || new RefineReader(R), n = 1 << L;
       let set = pyr.get(L);
       if (!set) { set = new TileSet(L); pyr.set(L, set); }
-      set.put(t.face, t.ti, t.tj, { h: T.h, rw, fl: T.fl, rcv: T.rcv });
+      for (let dj = -hb; dj <= hb; dj++) for (let di = -hb; di <= hb; di++) {
+        const ti = t0.ti + di, tj = t0.tj + dj;
+        if (ti < 0 || tj < 0 || ti >= n || tj >= n) continue;
+        const P = prepareTile(gen, t0.face, ti, tj, { kind: 'pyr', L, parent: reader, inflow: opt.pyrIn !== '0' });
+        if (FLOAT) P.steps(); else P.fromInts(runInt(P.ints()));
+        const T = P.finish();
+        const rw = new Uint8Array(T.rockC.length);
+        for (let o = 0; o < rw.length; o++) rw[o] = (T.rockC[o] & 31) | (T.water[o] << 5);
+        set.put(t0.face, ti, tj, { h: T.h, rw, fl: T.fl, rcv: T.rcv });
+      }
       parent = new RefineReader(set);
     }
     gen.snap.attachPyr(pyr);

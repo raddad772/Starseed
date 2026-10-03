@@ -578,6 +578,65 @@ surveying many worlds; bit-exact across runs and clients, not across revisions):
     real profile: vertical up to the critical height, talus below), drawn by every level filtered
     by its sampling, so nothing pops; and in the tile sims, processes that make faces (caprock
     undercut and block fall) rather than only rules that allow them.
+- **Rivers made continuous (2026-10-03, terrain.js `_meander`, `_meanderA`, `_meanderFrame`,
+  `_meanderLine`, `_rivLinks`; meanders.js `meanderNearA`).** Dave: rivers "non-contiguous with
+  obvious seams" (Thugroadath -40.77, -31.18; Ishiodreill everywhere). Causes, all in the sampler's
+  meanders of ordinary rivers (great ones are refine.js bigChannels, untouched):
+  - amplitude from each record's own slope, with a hard cutoff (A < 0.35: straight), so it
+    flipped record to record. Now `_meanderA`: slope over 3 records each way, continuous,
+    blended along each record to its neighbours'; `meanderNearA` scales the trace's swing by A
+    with true distances, so any A works.
+  - phase restarted at each record (`phase + (0.5 - t) len / w` assumes the curve's middle is its
+    cell and its halves equal; D8 diagonals are 1.4x longer): jogs at every junction. Now each
+    junction has one phase (halfway between the records' cell phases) and one width, shared.
+  - the trace's frame was the record's own curve, which zigzags at the D8 cells' 45 deg turns: a
+    loop out on the belt reached into the next record's reach and was sliced. Now laid along
+    each river's smoothed line (cell points averaged over 3 records each way, the window equal
+    both ways so it keeps to the river at its ends), the nearest of 5 frames (2 each way); its
+    banks' level taken along the same frame; swing capped at 0.7 x the smoothed line's turning
+    radius.
+  - loops cut off at a river's source or mouth: the swing grows from 0 over the first record and
+    dies over the last; oxbow lakes only where it swings freely (A 0.5-0.85).
+  - Ishiodreill: records meandering 5425 (was 10551 with the noisy per-record slope), mean belt
+    half width 82 m (was 122). Earth's great rivers unchanged; their channel shows angular
+    corners at 12 km (bigChannels thins its trace to every other point): a separate fix.
+  - Records link end to start by position (`_rivLinks`: dn, up = main inflow, river ids).
+- **Canyons (terrain.js `_canyons`, `_canyonRec`, `_canyonRaw`, `_canyonFit`, `_greaterNear`;
+  canyon.js), 2026-10-03.** Rivers entrenched in dry land get canyons at true size, each level a
+  filtered view of the same ground:
+  - Where: the refinement's levels show a dip a cell or two across that is sharper than the valley's
+    sides. Each river record, at 5 points per side, reads the levels (refinement only, so it is
+    deterministic and doesn't depend on which pyramid tiles exist) at d1 = 1.5 and d2 = 2.5 refCells
+    across. The side is carried inward as a line, no higher than at d1; a V valley's sides meet at its
+    river, so no canyon. Needs: depth > 30 m (full at 80 m); the side not falling away beyond d1;
+    rain < 1200 mm (full below 500); not a great river (next: entrenched meanders along the big
+    segments); no river 1.5x wider on another river within d1 (the dip is that one's valley).
+  - Walls: canyon.js turns the rock column (geology.js rockColumn, 1 m beds) into a wall. Each bed
+    lays back by 1/tan of its slope: tan = 0.6 + 9·smoothstep(0.35, 0.8, hardness)². Sandstone and
+    limestone are cliffs, shale is benches, granite is one sheer wall. Prefix sums give the exact
+    average over any window, so `canyonAt` filters the profile over minW: from afar the mean slope,
+    close up each cliff.
+  - Volume: the floor is no wider than the river and its belt allow (x4 in sedimentary rock, x3 in
+    volcanic, x2 elsewhere: walls retreat faster where soft beds are sapped). `_canyonFit` solves
+    the rim height so the gorge plus a broader valley above it remove what the levels are missing
+    below the carried-in side. A full gorge (rim at the side) gets the levels' dip filled to the
+    side line; a lowered rim keeps the levels' valley and cuts the gorge into its floor. So
+    Thugroadath's 1 km granite valley is a V valley again (a narrow granite slot can't account for
+    it), not the 800 m-floored box it was in the first tries.
+  - Seams fixed along the way:
+    - params smoothed along the river over ±2 records (compact kernel, so where one record gives
+      way to the next both read alike), tapering out over the 2 records nearest a source or mouth;
+    - one canyon per river (its nearest record, by Newton-polished nearest point:
+      `nearestOnCurveFine`), different rivers taking the lower cut;
+    - the floor is the rivers' levels at 5 curve points each, blended by nearness, the exact level
+      only by the water.
+  - Fades in by 1 - smoothstep(W, 3W, minW) (W the half width at the top) and 1 - smoothstep(d1,
+    3 d1, minW). Cost: ~+1 us per sample near dry canyon rivers (3.3 vs 2.3 us at the granite
+    valley); nothing elsewhere.
+  - Still: at the sandstone site one wall arc and a short dark seam by the river's source; how
+    canyons look in game is untested.
+  - survey.mjs: `--at lat,lon/...` views at given places; `--pyr 0` refinement only; `--pyrN 3` a
+    3x3 block of pyramid tiles (one tile's edges cross the 3 km views).
 - **Wrinkle ridges (barren.js `wrinkleRidges`):** lava plains settle and shrink as they cool:
   ridges 100-350 m high, 4-10 km across, 60-350 km long, about one per 150 km square of plains
   (up to 5000), as folds. On Uthmir's and the Moon's maria. Faint on near-black basalt in the

@@ -196,3 +196,29 @@ export function meanderNear(F, X, Y, out) {
   out.d = d; out.ox = ox; out.oxAge = oxAge;
   return out;
 }
+
+// the same with the trace's swing across scaled by A (0..1: a river kept nearer its valley's line
+// swings less, its loops the same length along it): Y in widths across, unscaled. Distances are
+// true ones (widths), so a river may swing anything from its full belt to none, smoothly. Only
+// what comes within a width or so is found (out.d 1e9 beyond)
+export function meanderNearA(F, X, Y, A, out) {
+  if (F.ylo === undefined) { let lo = 1e9, hi = -1e9; for (const S of F.segs) { lo = Math.min(lo, S.y0, S.y0 + S.dy); hi = Math.max(hi, S.y0, S.y0 + S.dy); } F.ylo = Math.floor(lo) - 1; F.yhi = Math.ceil(hi) + 1; }
+  const P = F.P, x = ((X % P) + P) % P, i0 = Math.floor(x), mid = F.mid, a = Math.max(A, 1e-3);
+  // (the trace's rows that, scaled, come within a width of the point)
+  const j0 = Math.max(F.ylo, Math.floor(mid + (Y - 1) / a)), j1 = Math.min(F.yhi, Math.floor(mid + (Y + 1) / a));
+  let d = 1e9, ox = 1e9, oxAge = 1;
+  for (let j = j0; j <= j1; j++) for (let i = i0 - 1; i <= i0 + 1; i++) {
+    const l = F.grid.get(F.key(i, j));
+    if (!l) continue;
+    for (const s of l) {
+      const S = F.segs[s];
+      let px = x - S.x0;
+      if (px < -P / 2) px += P; if (px > P / 2) px -= P;
+      const py = Y - a * (S.y0 - mid), sy = a * S.dy, L2 = S.dx * S.dx + sy * sy, t = L2 > 0 ? Math.max(0, Math.min(1, (px * S.dx + py * sy) / L2)) : 0;
+      const ex = px - t * S.dx, ey = py - t * sy, dd = Math.sqrt(ex * ex + ey * ey);
+      if (S.line === 0) { if (dd < d) d = dd; } else if (dd < ox) { ox = dd; oxAge = S.age; }
+    }
+  }
+  out.d = d; out.ox = ox; out.oxAge = oxAge;
+  return out;
+}
