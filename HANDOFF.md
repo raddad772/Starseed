@@ -523,24 +523,33 @@ surveying many worlds; bit-exact across runs and clients, not across revisions):
   (terrain.js `aged`, terrain param `ageGyr`): a world under ~0.3 Gyr has bare rock, so the thin
   dry air's Mars dust no longer blankets a newborn world's lava. Still: the plains are flat and
   near-black, too uniform close up (texture wanted: flow fronts, wrinkle ridges, more vents).
-- **Titan investigated (2026-10-03), SIM 54:** its world sim stamped 511 basins over 300 km
-  (largest 1544 km; real Titan has one over 400 km) at 4.8x the Moon's rate (x2.3 the debris
-  miscalibration above, x2.1 Saturn's focusing), and the stagnant path's Mars recipe gave it a
-  dichotomy, giant shields (scaled up for its low gravity) and a canyon. The shell relaxation
-  (above) takes out everything wider than ~300 km: relief ~1.3 km. Still open:
-  - its craters 50-300 km (the lid is too thick to relax them: they need its surface processes,
-    organic sediment burial (plains + dunes cover ~80% of the real Titan) and methane erosion);
-  - its polar lakes now sit in crater bowls (polka dots): the broad lowlands that held seas were
-    the Mars recipe's, now relaxed; real Titan's seas need broad polar basins from somewhere;
-  - **its history has no air** (evolve.js: P 0, 86 K, "the air grows too thin"): bodies.js gives
-    a titanish world its 1.48 bar N2-CH4 air by a lognormal draw regardless, so the history never
-    has liquid methane and the world sim's methane rain (mainLiquid) has been off since SIM 48.
-    Turning the rain on (keyed off terrain.liquid) with the relaxed terrain filled the polar
-    pits level and the seas went to all-or-speckle: reverted; fix the history's Titan air and
-    the seas' basins together. (A methane era now starts 0.3-1 Gyr ago, outgassing as the shell
-    convects (Tobie et al. 2006), where the history has the liquid.)
-- **Seen in passing:** icy moons are all white (Callisto is really one of the darkest); the Moon's
-  maria (11% of its cells flooded) barely show against its highlands at map scale.
+- **Titan (2026-10-03, SIM 54-55):** its world sim stamped 511 basins over 300 km (real Titan
+  has one over 400 km) at 4.8x the Moon's rate, and the stagnant path's Mars recipe gave it a
+  dichotomy, giant shields and a canyon. Fixed, from its physics:
+  - impacts x2.1 (Saturn's focusing only: the debris calibration above); the shell relaxation
+    (above) takes out its relief wider than ~270 km;
+  - **its history keeps its air** (evolve.js): a titanish world's nitrogen is what its ammonia ices
+    gave the air its impacts built (a drawn bar or two, moved here from bodies.js, which now takes
+    the history's), and the generic escape law (the cosmic shoreline's, which stripped it in Myr)
+    doesn't take it (Titan loses ~1% in 4.5 Gyr, Strobel 2008); its albedo is its haze's (0.265)
+    not a snowball's; the cold trap scales with the air's column (liquids.js `coldTrapK`: Titan's
+    poles ~4 K under its equator, not 25; Earth's and Mars' as before). SOL Titan: 0.71 bar, 96 K,
+    ethane lakes, methane in the air;
+  - so its methane era runs again (off since SIM 48): rain from an outgassing 0.3-1 Gyr ago
+    (Tobie et al. 2006), and its crater record starts again then (stagnant.js `recordAt`): a few
+    small craters, as Titan's 0.2-1 Gyr surface. (The methane rain no longer counts as an
+    Earth's lasting rain that reset the record every step: rk is its own rainK0.)
+  - its seas: a polar bowl (its poles stand ~120 m low) and liquid only poleward of ~55 degrees.
+  - **Still**: Titan is flat now (relief ~400 m: relaxation, then the rain filling every pit), so
+    its seas are round polar caps and it has no albedo pattern. Real Titan's character is its broad
+    relief (Xanadu's highlands, equatorial mountain chains) and the dark organic dune seas in its
+    equatorial lowlands; a dune belt laid by latitude on flat ground was a straight-edged stripe
+    (dropped; the dark organic sand colour is in terrain.js for when it has ground to lie on).
+- **Icy and airless surfaces (terrain.js):** old icy ground warm enough to sublime (over ~90 K)
+  grows a dark lag by its crater record (exposure) x warmth: Callisto dark, Ganymede dark with
+  bright polar caps, Rhea/Triton/Europa bright. On an airless world the regolith is its own rock
+  ground up, so the Moon's maria now show dark. Darnzend (LAB-86 5) is wet (a frozen third of an
+  ocean), so it's not a heat pipe; the stagnant path has the heat pipe too now for those that are.
 - **Drowned rivers (terrain.js):** a river whose line runs below the sea fades out over its last
   3 m (`rvK`): its banks were held up to the datum, building levees out across the shelf, drawn
   as canals in the sea.

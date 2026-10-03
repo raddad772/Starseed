@@ -41,7 +41,7 @@
 import * as dm from '../../core/dmath.js';
 import { hzSeff } from '../star.js';
 import { equilibriumTemp } from '../bodies.js';
-import { surfaceLiquids, mainLiquid, pSat } from './liquids.js';
+import { surfaceLiquids, mainLiquid, pSat, coldTrapK } from './liquids.js';
 import { seaPH } from './materials.js';
 import { SOLVENTS, energyOf, backboneOf } from './biochem.js';
 
@@ -142,6 +142,12 @@ export function evolveWorld(ctx) {
   })();
   const titanish = teqBare < 125 && water0 > 0.08 && massE > 0.008
     && dm.smoothstep(125, 100, teqBare) * dm.smoothstep(5.8, 4.6, impactRatio) * (0.6 + 0.8 * rng.next()) > 0.5 && teqBare > 65;
+  // (its nitrogen, then: what its ammonia ices gave the air its impacts built, a bar or two (Titan
+  // 1.5), far more than the share of gas a world its size starts with; and it keeps it: what
+  // its impacts bring outweighs what they blow off, and nitrogen's heavy: Titan loses ~1% of its
+  // air in 4.5 Gyr (Strobel 2008), where the general escape law here, the cosmic shoreline's,
+  // would strip it in Myr)
+  if (titanish) N2 = Math.max(N2, dm.clamp(rng.fork('titanAir').lognormal(1.4, 0.55), 0.2, 6));
   // ---- what it's made of (WORLDSIM.md 16; broad curves): the mantle's redox (dIW: Earth
   // ~+3.5) from its water and the cloud's carbon (carbon worlds are reduced); it decides
   // what the volcanoes breathe: CO2, water, SO2 when oxidised; CO, H2, CH4, NH3, H2S
@@ -274,10 +280,13 @@ export function evolveWorld(ctx) {
     // its bands saturating, more slowly (Venus' 92 bar: 737 K))
     const broad = P < 1 ? dm.pow(Math.max(P, 1e-6), 0.35) : dm.pow(P, 0.22);
     const tau = (0.8 * dm.pow(bg, 0.9) + (0.25 * dm.log(1 + co2 / PCO2_EARTH) * dm.pow(1 + co2 / 3, 0.8) + minor) * broad + (titanish ? 0.6 * dm.pow(bg, 0.9) : 0)) * (haze ? 0.92 : 1);
-    const A0 = snowed ? SNOW_ALBEDO : dm.clamp(0.3 - 0.08 * (W_EARTH_LAND - landAt(t)) + 0.01 * co2 + (P < 0.01 ? -0.15 : 0) + (haze ? 0.06 : 0), 0.06, 0.75);
+    // (a Titan's orange haze, opaque to sunlight, sets what it reflects (its Bond albedo 0.265),
+    // whatever ice lies under it: no snowball's glare)
+    const hazeHides = titanish && bg > 0.1;
+    const A0 = hazeHides ? 0.265 : snowed ? SNOW_ALBEDO : dm.clamp(0.3 - 0.08 * (W_EARTH_LAND - landAt(t)) + 0.01 * co2 + (P < 0.01 ? -0.15 : 0) + (haze ? 0.06 : 0), 0.06, 0.75);
     let Tt = equilibriumTemp(S(t), A0) * dm.pow(1 + 0.75 * tau, 0.25);
     let Aeff = A0;
-    if (!snowed && oceans > 0.001 && P > 0.006) for (let it = 0; it < 6; it++) {
+    if (!snowed && !hazeHides && oceans > 0.001 && P > 0.006) for (let it = 0; it < 6; it++) {
       const iceF = dm.clamp((285 - Tt) / 35, 0, 1);
       Aeff = Math.min(SNOW_ALBEDO, A0 + (SNOW_ALBEDO - A0) * 0.5 * iceF);
       Tt = equilibriumTemp(S(t), Aeff) * dm.pow(1 + 0.75 * tau, 0.25);
@@ -333,7 +342,7 @@ export function evolveWorld(ctx) {
     // thousandths of one, and no colder: what freezes out there holds it at its frost point
     // (Mars' caps at ~148 K under a 210 K mean); a share of the mean, as the night sky draws
     // heat off cold ground far more slowly than off warm)
-    const coldK = Math.max(T || teqBare, teqBare) * (0.087 + 0.21 * (1 - dm.clamp((dm.log10(Math.max(Ptot(), 1e-6)) + 2.2) / 2.2, 0, 1)));
+    const coldK = coldTrapK(Math.max(T || teqBare, teqBare), Ptot(), ctx.gravity || 9.81);
     {
       const tCold = Math.max(T || teqBare, teqBare) - coldK;
       const nTot = N2 + N2ice, capN = pSat('nitrogen', tCold);
@@ -346,7 +355,7 @@ export function evolveWorld(ctx) {
     // (Mars'). Shared out by the air's make-up, the heavy CO2 more slowly
     {
       const esc = escRate(t, shield) * dt, P0 = Math.max(Ptot(), 1e-12);
-      N2 = Math.max(0, N2 - esc * N2 / P0);
+      if (!titanish) N2 = Math.max(0, N2 - esc * N2 / P0);
       // (CO2 held at its frost pressure by caps: they sublime to make up what's lost, so the
       // loss runs on at the air's rate while they last)
       let lc = esc * 0.6 * pCO2 / P0;

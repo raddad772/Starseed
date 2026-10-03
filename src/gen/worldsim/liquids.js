@@ -34,8 +34,18 @@ export function pSat(name, T) {
 // Returns what condenses, most first: [{ name, phase: 'liquid' | 'ice', bar, depthM
 // (as a global layer), hpIceM (high-pressure ice beneath) }] and `gas`: what stays in
 // the air of each (bar)
+// how far under the mean the coldest ground is (K): the polar night, colder the thinner the
+// air (which carries less of the day side's heat to it): ~9% under it in a bar or more (Earth's
+// poles, ~25 K), ~30% in a few thousandths of one (Mars' caps ~148 K under a 210 K mean); and a
+// column heavier than Earth's evens it out further (Titan's ten times Earth's air per m^2: its
+// poles ~3-4 K under its equator; Venus' none)
+export function coldTrapK(T, P, g = 9.81) {
+  const col = P / Math.max(g, 0.1) * 9.81;   // (its air per m^2, x Earth's)
+  return T * (0.087 * Math.min(1, 1 / Math.sqrt(Math.max(col, 1e-9))) + 0.21 * (1 - dm.clamp((dm.log10(Math.max(P, 1e-6)) + 2.2) / 2.2, 0, 1)));
+}
+
 export function surfaceLiquids(inv, T, P, g) {
-  const out = [], gas = {}, tCold = T - 25;
+  const out = [], gas = {}, tCold = T - coldTrapK(T, P, g);
   for (const name in inv) {
     const s = SUBSTANCES[name], have = inv[name];
     if (!s || !(have > 0)) continue;

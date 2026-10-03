@@ -52,6 +52,8 @@ export const S_ICE = 18;     // glacier ice over the ground here (m; S_H is its 
 export const S_WET = 19;     // a river's wet ground beside it 0..1
 export const S_RFADE = 20;   // how far a river's water here has faded out, seen from afar 0..1
 export const S_LEN = 21;
+const ORGANIC_SAND = [0.075, 0.055, 0.035];   // (linear: tholin sand, dark brown)
+const LAG_DUST = [0.13, 0.11, 0.09];           // (linear: an old icy surface's dark lag, ~0.2 albedo)
 
 // creeks from the terrain tiles' drainage: a channel from this much rain-weighted water (m^2),
 // water in it from this much
@@ -1155,12 +1157,27 @@ export class TerrainGenerator {
     const c1 = this.rockLin[rt] || P.rock, c2 = this.rockLin[r2] || P.rock, rc = this._rcol || (this._rcol = [0, 0, 0]);
     for (let k = 0; k < 3; k++) rc[k] = c1[k] + (c2[k] - c1[k]) * mix;
     // (a dune sea's sand over it)
-    if (s[S_SAND] > 0) { const sc = this.rockLin[ROCK['quartz sand']]; if (sc) for (let k = 0; k < 3; k++) rc[k] += (sc[k] - rc[k]) * s[S_SAND]; }
+    // (a hydrocarbon world's dunes are its haze's organics: dark brown sand, Titan's ~0.1 albedo)
+    if (s[S_SAND] > 0) { const sc = p.liquid === 'methane' || p.liquid === 'ethane' ? ORGANIC_SAND : this.rockLin[ROCK['quartz sand']]; if (sc) for (let k = 0; k < 3; k++) rc[k] += (sc[k] - rc[k]) * s[S_SAND]; }
     // (how much of it is sand: quartz, coral, black sand, lithology.js; no bedrock shows there)
     const sandW = Math.max((rt >= 11 ? 1 - mix : 0) + (r2 >= 11 ? mix : 0), s[S_SAND]);
     // bare rock on steep ground; soil (or regolith) on gentle
     const rockW = (1 - sandW) * dm.clamp(dm.smoothstep(0.12, 0.38, slope) + 0.3 * s[S_MOUNT] * dm.smoothstep(0.06, 0.2, slope), 0, 1);
     let ground = P.soil || P.regolith;
+    // (old ice warm enough to sublime grows a dark lag: the ice goes, the dust and rock it held
+    // stay, and impacts garden in more (Callisto's, ~0.2 albedo; a young surface (Europa's) or a
+    // cold one (Rhea's, Triton's, under ~90 K the ice hardly sublimes) stays bright): by its
+    // crater record, how long it's been exposed, and its warmth)
+    let lag = 0;
+    if (p.icy && S.crat) lag = dm.smoothstep(0.02, 0.6, S.crat(x, y, z)) * dm.smoothstep(86, 106, s[S_TEMP]);
+    if (lag > 0) for (let k = 0; k < 3; k++) { rc[k] += (LAG_DUST[k] - rc[k]) * 0.85 * lag; }
+    // (on an airless world the regolith is its own rock ground up by impacts: a mare's soil is
+    // dark basalt, the highlands' pale; not one colour laid over everything)
+    if (!p.liquid && !(p.airP > 0.001)) {
+      const gb = this._gb || (this._gb = [0, 0, 0]);
+      for (let k = 0; k < 3; k++) gb[k] = ground[k] + (rc[k] - ground[k]) * 0.7;
+      ground = gb;
+    }
     // (on a dusty world (thin dry air: Mars') the dust blankets all but the steep ground, the
     // rock beneath showing only on cliffs and crater walls)
     // (and only once it's had time to make the dust and the soil: weathering, impacts grinding
@@ -1219,7 +1236,7 @@ export class TerrainGenerator {
     const tMinC = S.TseaMin != null ? S.TseaMin - 273.15 : cl0 && !cl0.locked ? cl0.Tmean * dm.pow(Math.max(1 + cl0.s2 * cl0.transport, 0.002), 0.25) - 273.15 : -90;
     const sHi = -2 + (Math.min(-2, tMinC + 14) + 2) * thinK, sLo = -10 + (Math.min(-10, tMinC + 6) + 10) * thinK;
     let snow = waterCycle || (p.iceCover > 0 && S.Gc) ? dm.smoothstep(sHi, sLo, Ta) * (1 - 0.5 * rockW) : 0;
-    if (p.icy) snow = Math.max(snow, 0.3 * (0.5 + 0.5 * s[S_VARIANT]) * (1 - 0.5 * dm.smoothstep(0.3, 0.6, slope)) * (1 - s[S_LINEAE]));
+    if (p.icy) snow = Math.max(snow, 0.3 * (1 - lag) * (0.5 + 0.5 * s[S_VARIANT]) * (1 - 0.5 * dm.smoothstep(0.3, 0.6, slope)) * (1 - s[S_LINEAE]));
     if (p.iceCover > 0 && !p.icy && !S.Gc) snow = Math.max(snow, dm.smoothstep(this.iceCapCut - 0.03, this.iceCapCut + 0.03, this.iceCapMetric(s)));
     snow = dm.clamp(snow, 0, 1);
     if (snow > 0) { r += (P.snow[0] - r) * snow; g += (P.snow[1] - g) * snow; b += (P.snow[2] - b) * snow; mat[1] = snow; }

@@ -15,7 +15,7 @@
 import * as dm from '../../core/dmath.js';
 import { hashInts } from '../../core/rng.js';
 import { Impacts, craterFloor, worldCell, WORLD_CELLS } from './impacts.js';
-import { resurface, relaxShell } from './barren.js';
+import { resurface, relaxShell, pave } from './barren.js';
 import { Erosion, Heap } from './erosion.js';
 import { smoothField } from './tectonics.js';
 
@@ -85,6 +85,7 @@ export function stagnantWorld(G, opts) {
   const haze = opts.haze || 0, HAZE_EVERY = 5, B0 = 200 * scale * VEXAG;
   const bur = haze ? new Float32Array(n) : null, mean = haze ? new Float64Array(n) : null, mtmp = haze ? new Float64Array(n) : null;
   let step = 0;
+  const prng = rng.fork('pipe');
   for (let t = 0; t < age; t += DT_MYR / 1000, step++) {
     stats.craters += imp.step(DT_MYR, dMin, (c, dh) => { h[c] += dh; }, t * 1000, t, h).length;
     cum.push(cum[cum.length - 1] + imp.density(DT_MYR, t));
@@ -153,7 +154,9 @@ export function stagnantWorld(G, opts) {
     // rain while there's water: valleys, lakes in craters, a sea in the lows; as much as the
     // world's history has then (opts.rainAt: its rain through time, ~1 an Earth's), so a cold
     // world's brief warm spells cut a little, now and then
-    const rk = opts.rainAt ? opts.rainAt(t) : 1;
+    const rk = opts.rainAt ? opts.rainAt(t) : (opts.rainK0 ?? 1);
+    // (a crater record that starts again at a moment: a Titan's outgassing overturn)
+    if (opts.recordAt != null && !stats.recordReset && t >= opts.recordAt) { since.fill(t); stats.recordReset = true; }
     if (wet && t >= wet[0] && t < wet[1] && rk > 2e-3) {
       if (!E) E = new Erosion(G, hs, { sea: opts.seaFrac > 0.02, K: 8e-7, rain: 1, m: 0.45, kd: 1 });
       sl = opts.seaFrac > 0.02 ? quantile(h, opts.seaFrac) : 0;
@@ -164,6 +167,20 @@ export function stagnantWorld(G, opts) {
       stats.wetSteps++;
       // (lasting rain wears the craters away; brief spells leave them)
       if (rk > 0.2) since.fill(t);
+    }
+    // (too hot for a lid: its heat piped out through volcanoes, the lava as fast as opts.pipe has
+    // it (world.js heatPipe; barren.js pave), and at the end its vents' fields of small shields)
+    if (opts.pipe) {
+      const v = opts.pipe(t);
+      if (v > 0) {
+        pave(G, h, v * DT_MYR * scale * VEXAG, volc, null, since, t, prng, Math.round(Math.min(40, 4 * v / 20)), 60 * scale * VEXAG);
+        stats.paved = (stats.paved || 0) + v * DT_MYR;
+        if (t + DT_MYR / 1000 >= age) for (let k = 0, nf = Math.round(Math.min(120, 10 + v / 3)), tries = 0; k < nf && tries < nf * 20; tries++) {
+          const at = prng.unitVector(), c = G.cellAt(at[0], at[1], at[2]);
+          if (volc[c] < 0.5) continue;
+          shieldFields.push(shieldField(prng, at, G.R, scale, 1)); k++;
+        }
+      }
     }
     // (an icy shell's warm base: its wide relief flows flat, every 250 Myr and at the end)
     if (opts.relax && ((step + 1) % 25 === 0 || t + DT_MYR / 1000 >= age)) relaxShell(G, h, opts.relax);

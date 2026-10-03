@@ -186,8 +186,8 @@ function buildAtmosphere(rng, b, star, S, proto) {
 // the history's temperature through this file's Tsurf formula
 function atmosphereNow(rng, h, S) {
   if (h.titanish && h.T < 140) {
-    // a cold moon's nitrogen and methane, frozen in place (Titan)
-    const p = dm.clamp(rng.lognormal(1.4, 0.55), 0.2, 6);
+    // a cold moon's nitrogen and methane (Titan): as much as its history kept
+    const draw = dm.clamp(rng.lognormal(1.4, 0.55), 0.2, 6), p = h.P > 0.05 ? h.P : draw;
     const a = { type: 'titan', pressure: p, comp: { N2: 0.95, CH4: 0.05 }, albedo: 0.22, tauK: 0.7, life: false, snowball: false };
     a.tau = a.tauK * dm.pow(p, 0.9); a.mu = meanMolar(a.comp);
     return a;

@@ -166,22 +166,26 @@ export function worldSim(body, star, opts = {}) {
     // at the poles from its hydrocarbon seas (liquids.js)
     // (the rain its history had through time: a cold world's brief warm spells cut less than a
     // warm one's lasting rain; the mean over each sim step's span)
-    let rainK0 = 1, rainAt = null;
+    let rainK0 = 1, rainAt = null, recordAt = null;
     if (wet && H.series && H.series.rain && H.series.t.length) {
       const st = H.series.t, sr = H.series.rain;
       rainAt = (tg) => { let s = 0, k = 0; for (let i = 0; i < st.length; i++) if (st[i] >= tg - 0.005 && st[i] < tg + 0.01) { s += sr[i]; k++; } return k ? s / k : 0; };
     }
     if (!wet && H.titanish && (H.mainLiquid === 'methane' || H.mainLiquid === 'ethane')) {
       // (its methane is recent: sunlight breaks it down in tens of Myr, so methane now means an
-      // outgassing a few hundred Myr ago (Tobie et al. 2006: as its ice shell began to convect).
+      // outgassing a few hundred Myr ago (Tobie et al. 2006: as its ice shell began to convect,
+      // its surface overturned, its crater record starting again: Titan's 0.2-1 Gyr surface).
       // The methane rains from then on)
       const tOut = Math.max(0, age - rng.fork('outgas').range(0.3, 1.0));
-      wet = [tOut, age]; rainK0 = 0.005; seaFrac = Math.min(0.05, (H.mainLiquidDepth || 0) / ((H.mainLiquidDepth || 0) + 100));
+      wet = [tOut, age]; rainK0 = 0.005; recordAt = tOut; seaFrac = Math.min(0.05, (H.mainLiquidDepth || 0) / ((H.mainLiquidDepth || 0) + 100));
       log(`methane outgassed ${Math.round((age - tOut) * 1000)} Myr ago: channels and polar lakes`);
     }
+    // (too hot for a lid: a heat pipe, as on the barren path)
+    const stagPipe = !icy && H ? heatPipe(H) : null;
+    if (stagPipe) log(`too hot for a lid: its heat piped out through volcanoes (${Math.round(stagPipe(age))} m of lava a Myr now)`);
     // (a Titan's haze: its photochemistry by the sunlight it has, Titan's ~80 m a Gyr at 1% of Earth's)
     const haze = H.titanish ? 80 * dm.clamp((body.insolation || 0.011) / 0.011, 0.2, 5) : 0;
-    const S = stagnantWorld(G, { rng: rng.fork('stagnant'), body, age, scale, wet, seaFrac, rainK0, tier: H.tier, volcEnd: 1 + 15 * dm.pow(body.massEarth, 0.6), rate, spike, resurfaceAt, resurfaceShare, rainAt: rainK0 === 1 ? rainAt : null, haze, relax });
+    const S = stagnantWorld(G, { rng: rng.fork('stagnant'), body, age, scale, wet, seaFrac, rainK0, tier: H.tier, volcEnd: 1 + 15 * dm.pow(body.massEarth, 0.6), rate, spike, resurfaceAt, resurfaceShare, rainAt: rainK0 === 1 ? rainAt : null, haze, relax, recordAt, pipe: stagPipe });
     const volcanoes = S.shields.map((v) => ({ ...latLonOf(v.at), heightM: v.H }));
     const melt = stampFresh(G, S.h, H, body, scale);
     const crater = { crat: S.crat, g: body.gravity, scale, Dw: S.dMin * 1000, Dair: airCut(body.atmosphere ? body.atmosphere.pressure : 0, body.gravity) * 1000 * scale, Drel: relax ? 2 * relax.lidKm * 1000 * scale : 0 };
@@ -193,22 +197,25 @@ export function worldSim(body, star, opts = {}) {
     // world's area in the basins poleward of ~55 degrees; the low latitudes standing a few
     // hundred metres higher (as Titan's do), their basins dry, floored with what wind and rain
     // carried into them, so no crater there reaches down to the liquid's level)
+    // (its poles stand lower than its equator, a smooth bowl to each pole (Titan's shape: a few
+    // hundred metres), so its liquid gathers in the polar basins)
     let ocean = null;
     const hydrocarbon = body.terrain && (body.terrain.liquid === 'methane' || body.terrain.liquid === 'ethane');
     if (hydrocarbon) {
       const share = seaFrac > 0 ? seaFrac : Math.min(0.15, body.terrain.ocean || 0.05);
-      const pol = [];
-      for (let c = 0; c < G.n; c++) if (Math.abs(G.dir[c * 3 + 1]) > 0.82) pol.push(S.h[c]);
-      pol.sort((a, b) => a - b);
-      const L = pol.length ? pol[Math.min(pol.length - 1, Math.floor(share * G.n))] : 0;
+      const bowl = (c) => { const y = G.dir[c * 3 + 1]; return 120 * (1 - y * y); };
+      const all = new Float64Array(G.n);
+      for (let c = 0; c < G.n; c++) all[c] = S.h[c] + bowl(c);
+      all.sort();
+      const L = all[Math.min(G.n - 1, Math.floor(share * G.n))];
       ocean = new Uint8Array(G.n);
       for (let c = 0; c < G.n; c++) {
         const pw = dm.smoothstep(0.77, 0.88, Math.abs(G.dir[c * 3 + 1]));
-        let hc = S.h[c] - L + 400 * (1 - pw);
+        let hc = S.h[c] - L + bowl(c);
         const floor = 2 + 300 * (1 - pw);
         if (hc < floor) hc += (floor - hc) * (1 - pw);
         S.h[c] = hc;
-        if (hc < 0) ocean[c] = 1;
+        if (hc < 0 && pw > 0.5) ocean[c] = 1;
       }
     }
     // (how much its past rain cut, for the finer levels' valleys: stream power wears as the
