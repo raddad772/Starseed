@@ -175,10 +175,12 @@ surveying many worlds; bit-exact across runs and clients, not across revisions):
   crater record and sampled at 108 us a sample, now 1.8. An airless world's old crust is ice on
   an icy world, regolith on a rocky one (was granite everywhere: Europa showed brown rock
   islands). craterForm's tables by angle addition over shared half-angle sines/cosines: 7.3x
-  faster, the same shapes (to the last digits). The Moon still samples at ~35-60 us: its field
-  is saturated, every point within reach of many craters on every band (a bucket index didn't
-  help: a crater's reach spans most of a lattice cell; a smaller lattice with long-reach craters
-  kept apart would).
+  faster, the same shapes (to the last digits). The Moon sampled at ~43 us: the cost was each
+  big crater's secondaries (~50 each), all tested by every point in its 5.5-radius reach (~4000
+  tests a sample). Now each ray's cluster has a box tested first; each lattice cell keeps a
+  bucket index of the craters that can reach each quarter of it (`_targ`); candidates are
+  rejected on squared distance; continuous ejecta end at 2.4 radii (fading from 1.7; was 3,
+  from 2). Moon: 16 us at 10 m cells, 5 us at 1 km (SIM 36, TILE 23).
 - **Mars looking like Mars (SIM 25):**
   - a Mars-type world that once had water rusts (ferric/ochre dust, no grey basalt draw);
   - snow (the terrain's rule and the climate's ice albedo) needs air to carry water: in thin

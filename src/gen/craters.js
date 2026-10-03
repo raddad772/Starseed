@@ -21,7 +21,7 @@ import { dirFromFaceUV, faceUVFromDir, FACES } from './cubesphere.js';
 export const VEXAG = 2.5;
 
 const QPI = dm.PI / 4;
-const REACH = 3;          // (the ejecta reach 3 radii)
+const REACH = 2.4;        // (the continuous ejecta reach ~2.4 radii: thinning as r^-3 they're a few % of the rim's height by 2)
 const LAT = 6;
 // the share of craters D across that the air lets through (Dair: the smallest it lets through at
 // all; any units): the small impactors break up, many of them well above that size (Venus has
@@ -162,6 +162,7 @@ for (let m = 0; m <= 12; m++) {
   HS.push(s); HC.push(c);
 }
 const _jc = new Float64Array(16), _js = new Float64Array(16), _jd = new Uint8Array(16);
+const NBK = 4;      // (CraterField._targ's buckets a lattice cell's side)
 export function craterForm(D, K, key) {
   const rng = new Rng([key >>> 0, hashInts(Math.round(D * 16), 0xc7a7), 0x5ca1, 0xf0e]);
   const sh = shape(D, K);
@@ -246,7 +247,7 @@ export function craterDh(F, dist, tx, ty) {
   // (outside the rim: its uplift falling away fast, the ejecta slower, thrown downrange)
   const outer = r > 0.3 ? F.rim * (0.6 * rh / (r * r * r * r) + 0.4 * ej / (r * r * r)) : 1e9;
   let v = smin(inner, outer, F.ks);
-  if (r > 2) { const t = r - 2; v *= 1 - t * t * (3 - 2 * t); }
+  if (r > 1.7) { const t = Math.min(1, (r - 1.7) / 0.7); v *= 1 - t * t * (3 - 2 * t); }
   return v;
 }
 
@@ -256,9 +257,9 @@ export function craterDh(F, dist, tx, ty) {
 const SEC_MIN = 15, SEC_REACH = 5.5;   // (craters at least 15 km across, real, throw them)
 function secondaries(cr, e, n, K, R, Dref) {
   const rng = new Rng([cr.key >>> 0, 0x5ec0, 0xda7, 0x11]), out = [], Rc = cr.D / 2;
-  const nRay = 4 + Math.floor(5 * rng.next());
+  const nRay = 4 + Math.floor(5 * rng.next()), groups = [];
   for (let k = 0; k < nRay; k++) {
-    const th = dm.TWO_PI * rng.next(), m = 3 + Math.floor(8 * rng.next());
+    const th = dm.TWO_PI * rng.next(), m = 3 + Math.floor(8 * rng.next()), g0 = out.length;
     for (let q = 0; q < m; q++) {
       const r = Rc * (2 + 3 * rng.next()), a = th + 0.15 * (rng.next() - 0.5), tx = r * dm.cos(a) / R, ty = r * dm.sin(a) / R;
       const px = cr.at[0] + tx * e[0] + ty * n[0], py = cr.at[1] + tx * e[1] + ty * n[1], pz = cr.at[2] + tx * e[2] + ty * n[2], l = Math.sqrt(px * px + py * py + pz * pz);
@@ -268,8 +269,17 @@ function secondaries(cr, e, n, K, R, Dref) {
       F.ks = (0.08 + 0.5 * (1 - wear)) * (F.depth + F.rim);
       if (wear > 0.03) out.push({ at: [px / l, py / l, pz / l], F, wear, tx, ty });
     }
+    // (each ray's cluster: a box round its secondaries' reach in the crater's plane, so a point
+    // tests a ray's box before its craters)
+    if (out.length > g0) {
+      let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+      for (let q = g0; q < out.length; q++) { const s = out[q], r = REACH * s.F.R / R; x0 = Math.min(x0, s.tx - r); x1 = Math.max(x1, s.tx + r); y0 = Math.min(y0, s.ty - r); y1 = Math.max(y1, s.ty + r); }
+      groups.push({ x0, x1, y0, y1, a: g0, b: out.length });
+    }
   }
-  return out.length ? out : null;
+  if (!out.length) return null;
+  out.groups = groups;
+  return out;
 }
 
 // ---- a young crater's bright ejecta (the Moon's rays: fresh rock thrown out, darkened by the
@@ -372,7 +382,11 @@ export class CraterField {
       const el = Math.sqrt(ex * ex + ey * ey + ez * ez); ex /= el; ey /= el; ez /= el;
       const e = [ex, ey, ez], n = [at[1] * ez - at[2] * ey, at[2] * ex - at[0] * ez, at[0] * ey - at[1] * ex];
       const sec = cr.D >= SEC_MIN * 1000 * this.K.scale ? secondaries(cr, e, n, this.K, this.R, Dref) : null;
-      return { at, F, wear, band: b, age: cr.age, key: cr.key, base: NaN, sec, reach: (sec ? SEC_REACH : F.rays ? RAY_REACH : REACH) * (cr.D / 2) * F.reach, e, n };
+      const reach = (sec ? SEC_REACH : F.rays ? RAY_REACH : REACH) * (cr.D / 2) * F.reach;
+      // (where it is on this face: for the target cells' indexes, _targ)
+      const Fc = FACES[f], dn = at[0] * Fc.N[0] + at[1] * Fc.N[1] + at[2] * Fc.N[2];
+      const u = dm.atan((at[0] * Fc.U[0] + at[1] * Fc.U[1] + at[2] * Fc.U[2]) / dn) / QPI, v = dm.atan((at[0] * Fc.V[0] + at[1] * Fc.V[1] + at[2] * Fc.V[2]) / dn) / QPI;
+      return { at, F, wear, band: b, age: cr.age, key: cr.key, base: NaN, sec, reach, reach2: (reach / this.R) * (reach / this.R), e, n, u, v };
     });
     this.cache.set(key, list);
     return list;
@@ -394,12 +408,22 @@ export class CraterField {
         const B = this.bands[b], amp = dm.smoothstep(4 * minW, 8 * minW, B.D0);
         if (amp <= 0) break;     // (finer octaves are finer still)
         const sL = 2 / B.nL, i0 = Math.floor((u + 1) / sL), j0 = Math.floor((v + 1) / sL);
-        for (const c of this._near(b, B, f, i0, j0)) {
-          const ax = x - c.at[0], ay = y - c.at[1], az = z - c.at[2], dist = Math.sqrt(ax * ax + ay * ay + az * az) * this.R;
-          if (dist >= c.reach) continue;
-          if (c.sec) for (const sc of c.sec) {
-            const bx = x - sc.at[0], by = y - sc.at[1], bz = z - sc.at[2], sd = Math.sqrt(bx * bx + by * by + bz * bz) * this.R;
-            if (sd < REACH * sc.F.R) secDh += dm.smoothstep(4 * minW, 8 * minW, 2 * sc.F.R) * sc.wear * craterDh(sc.F, sd, x * c.e[0] + y * c.e[1] + z * c.e[2] - sc.tx, x * c.n[0] + y * c.n[1] + z * c.n[2] - sc.ty);
+        // (only the craters that can reach this part of the cell: its bucket of the cell's index)
+        const T = this._targ(b, B, f, i0, j0);
+        const bi = Math.min(NBK - 1, Math.max(0, Math.floor((u - T.u0) / T.bw))), bj = Math.min(NBK - 1, Math.max(0, Math.floor((v - T.v0) / T.bw)));
+        for (const c of T.idx[bj * NBK + bi]) {
+          const ax = x - c.at[0], ay = y - c.at[1], az = z - c.at[2], d2 = ax * ax + ay * ay + az * az;
+          if (d2 >= c.reach2) continue;      // (most are out of reach: no square root for them)
+          const dist = Math.sqrt(d2) * this.R;
+          if (c.sec) {
+            const px = x * c.e[0] + y * c.e[1] + z * c.e[2], py = x * c.n[0] + y * c.n[1] + z * c.n[2];
+            for (const gr of c.sec.groups) {
+              if (px < gr.x0 || px > gr.x1 || py < gr.y0 || py > gr.y1) continue;
+              for (let q = gr.a; q < gr.b; q++) {
+                const sc = c.sec[q], bx = x - sc.at[0], by = y - sc.at[1], bz = z - sc.at[2], sd = Math.sqrt(bx * bx + by * by + bz * bz) * this.R;
+                if (sd < REACH * sc.F.R) secDh += dm.smoothstep(4 * minW, 8 * minW, 2 * sc.F.R) * sc.wear * craterDh(sc.F, sd, px - sc.tx, py - sc.ty);
+              }
+            }
           }
           if (c.F.rays) { const rb = amp * rayAt(c.F, dist, x * c.e[0] + y * c.e[1] + z * c.e[2], x * c.n[0] + y * c.n[1] + z * c.n[2]); if (rb > this.ray) this.ray = rb; }
           if (dist >= REACH * c.F.R * c.F.reach) continue;
@@ -431,6 +455,33 @@ export class CraterField {
       h += amp * (c.wear * craterDh(c.F, dist, tx, ty) + excavate(c.F, dist, h, c.base, c.base + (c.gx * tx + c.gy * ty) * this.R));
     }
     return h + secDh;
+  }
+  // lattice cell (i0, j0) of octave b on face f as a target: NBK x NBK buckets over it, each
+  // listing the craters of its neighbourhood (3 x 3) whose reach overlaps the bucket (their reach
+  // in u, v taken at the face's least metres a unit: none missed). Kept (per field), so the
+  // samples falling in a cell share its index
+  _targ(b, B, f, i0, j0) {
+    const key = ((b * 6 + f) * (B.nL + 2) + j0 + 1) * (B.nL + 2) + i0 + 1, tc = this.tcache || (this.tcache = new Map());
+    let T = tc.get(key);
+    if (T) return T;
+    if (tc.size > 20000) tc.clear();
+    const sL = 2 / B.nL, u0 = -1 + i0 * sL, v0 = -1 + j0 * sL, bw = sL / NBK, uvM = QPI * this.R * 0.7, idx = [];
+    for (let k = 0; k < NBK * NBK; k++) idx.push([]);
+    for (let j = j0 - 1; j <= j0 + 1; j++) {
+      if (j < 0 || j >= B.nL) continue;
+      for (let i = i0 - 1; i <= i0 + 1; i++) {
+        if (i < 0 || i >= B.nL) continue;
+        for (const c of this._cell(b, B, f, i, j)) {
+          const r = c.reach / uvM * 1.02;
+          const ia = Math.max(0, Math.floor((c.u - r - u0) / bw)), ib = Math.min(NBK - 1, Math.floor((c.u + r - u0) / bw));
+          const ja = Math.max(0, Math.floor((c.v - r - v0) / bw)), jb = Math.min(NBK - 1, Math.floor((c.v + r - v0) / bw));
+          for (let jj = ja; jj <= jb; jj++) for (let ii = ia; ii <= ib; ii++) idx[jj * NBK + ii].push(c);
+        }
+      }
+    }
+    T = { u0, v0, bw, idx };
+    tc.set(key, T);
+    return T;
   }
   // the craters of lattice cell (i0, j0)'s neighbourhood (3 x 3) in octave b on face f (each
   // octave keeps the last few asked for, by depth: neighbouring samples ask for the same)
