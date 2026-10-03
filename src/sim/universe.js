@@ -9,6 +9,7 @@ import { TerrainGenerator, S_LEN, RELIEF_MAX, surfaceOf, liquidDepthOf } from '.
 import { dirFromFaceUV, faceUVFromDir, chunkArcSize } from '../gen/cubesphere.js';
 import { CHUNK_N } from '../gen/chunkbuilder.js';
 import * as U from '../core/units.js';
+import { atmoReal } from '../gen/bodies.js';
 
 const _p = [0, 0, 0], _v = [0, 0, 0];
 const _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion();
@@ -190,7 +191,9 @@ export class BodyRuntime {
       const lapse = this.data.terrain ? this.data.terrain.climate.lapse : 0;
       const T = Math.max(T0 * 0.6, T0 - lapse * Math.max(h, 0));
       out.temperature = T;
-      out.pressure = a.pressure * Math.exp(-h / H);
+      // (above the knee the air is squeezed: bodies.js atmoAlt; its density at a height the
+      // real air's at the height it stands for)
+      out.pressure = a.pressure * Math.exp(-atmoReal(h, a.render.knee ?? Infinity, a.render.upper ?? 1) / H);
     }
     out.density = out.pressure * 1e5 * mu / (U.K_B * out.temperature);
     out.inside = h < this.atmHeight;

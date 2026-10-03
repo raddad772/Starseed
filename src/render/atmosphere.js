@@ -12,6 +12,7 @@
 
 import * as THREE from 'three';
 import { GLSL_RAY, GLSL_DEPTH, GLSL_ATMO_LUT, GLSL_NOISE, FULLSCREEN_VERT } from './glsl.js';
+import { atmoAlt } from '../gen/bodies.js';
 
 export const GLSL_MEDIUM = /* glsl */`
 uniform float uRadius;      // datum radius (h = r - uRadius)
@@ -30,11 +31,16 @@ uniform float uAbsExp;
 // fades the far ground (the game draws worlds at a tenth of their size with air of real
 // density and height: without it a ridge that looks 50 km off has only 5 km of air before it)
 uniform vec4 uHaze;
+// the air above the knee (m) squeezed by uUpper (bodies.js atmoAlt): its density at a drawn
+// height is the real air's at the real height it stands for
+uniform float uKnee;
+uniform float uUpper;
 const float PI_A = 3.14159265358979;
 void mediumAt(float r, out vec3 scatR, out vec3 scatM, out vec3 ext) {
   float h = r - uRadius;
-  float dR = exp(-h / uRayleighH);
-  float dM = exp(-h / uMieH);
+  float hr = h <= uKnee ? h : uKnee + (h - uKnee) / uUpper;
+  float dR = exp(-hr / uRayleighH);
+  float dM = exp(-hr / uMieH);
   float dA = uAbsExp > 0.5 ? dR : max(0.0, 1.0 - abs(h - uAbsCenter) / max(uAbsWidth, 1.0));
   float dH = uHaze.x * exp(-max(h, 0.0) / max(uHaze.y, 1.0));
   scatR = uRayleigh * dR;
@@ -503,6 +509,8 @@ export class Atmosphere {
       uMieAbs: { value: v3(a.mieAbs) },
       uMieH: { value: a.mieH },
       uHaze: { value: new THREE.Vector4(...(a.haze || [0, 1000, 0, 0])) },
+      uKnee: { value: a.knee != null && isFinite(a.knee) ? a.knee : 1e12 },
+      uUpper: { value: a.upper || 1 },
       uMieG: { value: a.mieG },
       uAbs: { value: v3(a.ozone) },
       uAbsCenter: { value: a.ozoneCenter || 0 },
@@ -600,7 +608,9 @@ export class Atmosphere {
 
   makePassMaterial() {
     const d = this.body.data;
-    const clouds = d.atmosphere && d.atmosphere.clouds;
+    const clouds = d.atmosphere && d.atmosphere.clouds, ar = d.atmosphere && d.atmosphere.render;
+    // (a cloud deck above the knee drawn where the squeezed air puts it)
+    const cloudAlt = (z) => ar && ar.upper < 1 ? atmoAlt(z, ar.knee, ar.upper) : z;
     const u = {
       ...this.params,
       tTrans: { value: this.trans.texture },
@@ -614,7 +624,7 @@ export class Atmosphere {
       uTanHalf: { value: new THREE.Vector2(1, 1) },
       uToFixed: { value: new THREE.Matrix3() },
       uTime: { value: 0 },
-      uCloud: { value: new THREE.Vector4(clouds ? clouds.altitude : 0, clouds ? clouds.thickness : 0, clouds ? clouds.cover : 0, clouds ? clouds.scale : 1) },
+      uCloud: { value: new THREE.Vector4(clouds ? cloudAlt(clouds.altitude) : 0, clouds ? cloudAlt(clouds.altitude + clouds.thickness) - cloudAlt(clouds.altitude) : 0, clouds ? clouds.cover : 0, clouds ? clouds.scale : 1) },
       uCloudColor: { value: new THREE.Vector4(clouds ? clouds.color[0] : 1, clouds ? clouds.color[1] : 1, clouds ? clouds.color[2] : 1, clouds ? clouds.opacity : 0) },
       uCloudOn: { value: clouds && !this.body.giant ? 1 : 0 },
       tCloudMap: { value: blankCloudMap() }, uCloudMapOn: { value: 0 },

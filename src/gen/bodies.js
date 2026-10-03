@@ -234,6 +234,10 @@ function glowRGB(T) {
 //   organic   tholin haze where methane outweighs ~a fifth of the CO2 (Titan's orange)
 //   salt      sea-salt and water haze over seas (the faint white of Earth's horizon)
 //   soot      an impact winter's black (exceptional.js)
+// a height in the air (m above the datum) as drawn: real up to the knee, squeezed by upper
+// above it (atmosphereRender); and back (a drawn height to the real one the air's density is at)
+export const atmoAlt = (z, knee, upper) => z <= knee ? z : knee + (z - knee) * upper;
+export const atmoReal = (z, knee, upper) => z <= knee || !(upper < 1) ? z : knee + (z - knee) / upper;
 function atmosphereRender(rng, b, atm, Tsurf, dustColor) {
   const g = b.gravity, h = b.history || {};
   const Tcol = Math.max(60, Tsurf * 0.88);
@@ -295,10 +299,21 @@ function atmosphereRender(rng, b, atm, Tsurf, dustColor) {
   // optical depth straight up
   const hazeK = P < 0.002 ? 0 : 3e-4 * dm.sqrt(Math.min(P, 3)) * (0.5 + 0.7 * seas + 0.4 * dry);
   const haze = [hazeK, 700 * dm.sqrt(9.81 / g), 0.1, 0];
+  // the air above the knee squeezed (a solid world's), by the square root of the game's length
+  // scale (~0.32): below it, the air as it is (skies, haze, clouds and summits in real air), above
+  // it thinning three times as fast, so from orbit the limb is a thin line, not the halo round a
+  // moon, with some of its blue band kept (squeezed tenfold the limb went white); coming in through
+  // it feels the same (atmoAlt: real height to drawn). (?airsq=0: unsqueezed; ?airup=k: squeezed
+  // to k, for comparison)
+  const sqOff = typeof location !== 'undefined' && /[?&]airsq=0/.test(location.search);
+  const upK = typeof location !== 'undefined' && /[?&]airup=([\d.]+)/.exec(location.search);
+  const knee = b.solid && !sqOff ? Math.max(12000, 1.4 * H) : Infinity, upper = b.solid && !sqOff ? (upK ? +upK[1] : Math.sqrt(U.LEN_SCALE)) : 1;
+  const sq = (z) => atmoAlt(z, knee, upper);
+  const ozC = 25000 * (H / 8500), ozW = 15000 * (H / 8500);
   return {
-    rayleigh, rayleighH: H, mie, mieAbs, mieH, mieG, haze,
-    ozone, ozoneCenter: 25000 * (H / 8500), ozoneWidth: 15000 * (H / 8500), absorptionExp: false,
-    height: Math.min(12.5 * scaleMax, 0.35 * b.R + 5 * H),
+    rayleigh, rayleighH: H, mie, mieAbs, mieH, mieG, haze, knee, upper,
+    ozone, ozoneCenter: sq(ozC), ozoneWidth: sq(ozC + ozW) - sq(ozC), absorptionExp: false,
+    height: sq(Math.min(12.5 * scaleMax, 0.35 * b.R + 5 * H)),
     aerosols: pops.length,
   };
 }
