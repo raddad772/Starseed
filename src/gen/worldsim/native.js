@@ -86,3 +86,35 @@ export function routeNative(E, wander, salt) {
   E.order.set(heap(Int32Array, order, n));
   return true;
 }
+
+// gpu/itile.js runInt() on wasm (integers, pass for pass: the same tile bit for bit), given the
+// tables runInt built (gridTables, hardTables, apowTable): { h, talus } or null if unavailable
+export function runIntNative(T, t) {
+  if (!native()) return null;
+  const { NG, n } = T;
+  // (a tile's arrays want the room: the grids' resident tables go, and come back when next used)
+  grids = []; ex.arena_reset(base);
+  const i32 = (len) => alloc(4 * len), u8 = (len) => alloc(len), u16 = (len) => alloc(2 * len);
+  const flags = u8(n), hd = u8(n), h = i32(n), B = i32(n), a = i32(n), D = i32(n * 8), W = u16(n * 8), CM = i32(n * 2), CE = i32(n * 2);
+  const KH = i32(256), KD = i32(256), SC = i32(256), AP = i32(t.AP.length), Acu = u16(n);
+  const g = T.geo, colHd = g ? u8(g.colHd.length) : 0, suite = g ? u8(n) : 0, bedOff = g ? i32(n) : 0, weak = g ? u8(n) : 0;
+  const h2 = i32(n), F = i32(n), F2 = i32(n), A = i32(n), A2 = i32(n), rcv = u8(n), talus = i32(n);
+  const al = i32(n), al2 = i32(n), be = i32(n), be2 = i32(n), pt = i32(n), pt2 = i32(n);
+  const PB = T.sig <= 6 ? 4 : 8, NB = Math.ceil(NG / PB), M = i32(NB * NB), M2 = i32(NB * NB);
+  heap(Uint8Array, flags, n).set(T.flags); heap(Uint8Array, hd, n).set(T.hd);
+  heap(Int32Array, h, n).set(T.h0); heap(Int32Array, B, n).set(T.B); heap(Uint32Array, a, n).set(T.a);
+  heap(Uint32Array, D, n * 8).set(t.D); heap(Uint16Array, W, n * 8).set(t.W); heap(Uint32Array, CM, n * 2).set(t.CM); heap(Int32Array, CE, n * 2).set(t.CE);
+  heap(Uint32Array, KH, 256).set(t.KH); heap(Uint32Array, KD, 256).set(t.KD); heap(Uint32Array, SC, 256).set(t.SC); heap(Uint32Array, AP, t.AP.length).set(t.AP);
+  heap(Uint16Array, Acu, n).set(T.Acu);
+  if (g) { heap(Uint8Array, colHd, g.colHd.length).set(g.colHd); heap(Uint8Array, suite, n).set(g.suite); heap(Int32Array, bedOff, n).set(g.bedOff); heap(Uint8Array, weak, n).set(g.weak); }
+  // (a step a call: after the first few, the engine's optimised compile runs them)
+  let cur = h, other = h2;
+  for (let st = 0; st < T.steps; st++) {
+    const hp = ex.run_int(NG, st, st + 1, st === 0 ? 1 : 0, T.rise, T.K0 > 0 ? 1 : 0, T.salt >>> 0, T.sig, flags, hd, cur, B, a, D, W, CM, CE, KH, KD, SC, AP, Acu,
+      colHd, g ? g.colLo : 0, suite, bedOff, weak, other, F, F2, A, A2, rcv, talus, al, al2, be, be2, pt, pt2, M, M2);
+    if (hp !== cur) { other = cur; cur = hp; }
+  }
+  const out = { h: Int32Array.from(heap(Int32Array, cur, n)), talus: Int32Array.from(heap(Int32Array, talus, n)) };
+  ex.arena_reset(base);
+  return out;
+}

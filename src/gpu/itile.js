@@ -20,6 +20,7 @@
 
 import * as dm from '../core/dmath.js';
 import { hashInts } from '../core/rng.js';
+import { runIntNative } from '../gen/worldsim/native.js';
 
 export const Q = 4096;                 // height units a metre
 const DI = [-1, 0, 1, -1, 1, -1, 0, 1], DJ = [-1, -1, -1, 0, 0, 1, 1, 1];   // the 8 neighbours (slot k; 7 - k is back)
@@ -87,10 +88,14 @@ export function gridTables(T) {
 }
 
 // runs T (localsim's ints(): NG, n, steps, rise, sz, flags, a, hd, h0, B, aref, K0, kd0, sig,
-// salt) here; returns { h, talus } (Int32Arrays: Q units)
+// salt) here (on wasm when it can: native/sim.c run_int, bit for bit); returns { h, talus }
+// (Int32Arrays: Q units)
 export function runInt(T) {
   const { NG, n, a, B } = T;
   const { D, W, CM, CE } = gridTables(T), { KH, KD, SC } = hardTables(T.kd0), AP = apowTable();
+  // (compiled where it can be: native/sim.c's run_int is this, pass for pass)
+  const nat = runIntNative(T, { D, W, CM, CE, KH, KD, SC, AP });
+  if (nat) return nat;
   const flags = Uint8Array.from(T.flags), hd = Uint8Array.from(T.hd), Gx = T.geo;
   let h = Int32Array.from(T.h0), h2 = new Int32Array(n);
   let F = Int32Array.from(T.h0), F2 = new Int32Array(n);

@@ -440,6 +440,14 @@ surveying many worlds; bit-exact across runs and clients, not across revisions):
   refine.js `creekAt`). Also: a wet river narrower than the sampling drawn 0.75 of the spacing
   each side (a diagonal line at 0.5 dotted), and a wet creek likewise, up to 4 times its own
   width (narrower than that, not drawn: no dotted lines).
+- **Faster tiles (2026-10-03):**
+  - The integer tile sim's CPU fallback (gpu/itile.js `runInt`, used by the worldsim worker when
+    there's no WebGPU) is compiled now: native/sim.c `run_int`, the same passes in C, bit for bit
+    (checked: refinement and pyramid tiles, 8 and 120 steps, against the JavaScript). A tile 38 s
+    -> 7.7 s. It's called a step at a time (`runIntNative`): one long call stays in V8's quick
+    first compile, while the steps after the first few calls run optimised (2x).
+  - Refinement tiles keep each cell's rock-warp place (the float history 20% faster, bit for
+    bit) and reckon the warp every fourth cell (setup 24% faster, TILE 28).
 - **Survey tool:** `node tools/survey.mjs --out DIR --cache DIR SEED[:body] ...` writes each world's
   map and its landmarks at 400/60/12 km; the GPU check page takes `?seed=&body=` (runs the sim).
 
