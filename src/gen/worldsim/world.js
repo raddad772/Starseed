@@ -230,7 +230,16 @@ export function worldSim(body, star, opts = {}) {
         const floor = 2 + 300 * (1 - pw);
         if (hc < floor) hc += (floor - hc) * (1 - pw);
         S.h[c] = hc;
-        if (hc < 0 && pw > 0.5) ocean[c] = 1;
+      }
+      // (its seas: the ground below the datum joined to the polar basins through ground below it,
+      // so their shores are the ground's contours; cut at a latitude (the cells poleward of ~56
+      // degrees), a sea ended in a ruler line along it)
+      const q = new Int32Array(G.n);
+      let qn = 0;
+      for (let c = 0; c < G.n; c++) if (S.h[c] < 0 && Math.abs(G.dir[c * 3 + 1]) > 0.86) { ocean[c] = 1; q[qn++] = c; }
+      for (let i = 0; i < qn; i++) {
+        const c = q[i];
+        for (let e = G.nStart[c]; e < G.nStart[c + 1]; e++) { const o = G.nbr[e]; if (!ocean[o] && S.h[o] < 0) { ocean[o] = 1; q[qn++] = o; } }
       }
       // (and its haze's organic sand: the low latitudes are its desert (the methane rains out
       // toward the poles, where it's cold), and there the wind gathers the sand into seas of

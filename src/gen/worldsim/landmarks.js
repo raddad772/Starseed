@@ -64,8 +64,9 @@ const cap = (s) => s[0].toUpperCase() + s.slice(1);
 export function landmarks(F, dry = false) {
   const out = [];
   const add = (kind, f, text) => { if (f && f.name) out.push({ kind, name: cap(f.name), text, lat: f.lat, lon: f.lon }); };
-  if (F.peaks && F.peaks[0]) add('peak', F.peaks[0], `${Math.round(F.peaks[0].height).toLocaleString('en-US')} m`);
-  if (F.rivers && F.rivers[0]) add('river', F.rivers[0], `${km(F.rivers[0].lengthKm)} km${dry ? ', dry' : ''}`);
+  // (a world nearly all sea: no "peak" a few metres above it, no river a cell long)
+  if (F.peaks && F.peaks[0] && F.peaks[0].height >= 50) add('peak', F.peaks[0], `${Math.round(F.peaks[0].height).toLocaleString('en-US')} m`);
+  if (F.rivers && F.rivers[0] && F.rivers[0].lengthKm >= 10) add('river', F.rivers[0], `${km(F.rivers[0].lengthKm)} km${dry ? ', dry' : ''}`);
   const lake = F.lakes && F.lakes.find((l) => !l.underIce);
   if (lake) add('lake', lake, `${km(lake.areaKm2)} km²${dry ? ', dry' : ''}`);
   if (F.reefs && F.reefs[0]) add('reef', F.reefs[0], `${km(F.reefs[0].lengthKm)} km`);

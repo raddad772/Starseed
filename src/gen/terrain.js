@@ -827,7 +827,10 @@ export class TerrainGenerator {
       if (ts) for (const t of ts) {
         const dx = x - t.d[0], dy = y - t.d[1], dz = z - t.d[2], dist = Math.sqrt(dx * dx + dy * dy + dz * dz) * R;
         const edge = t.r * (1 + 0.15 * this.nMisc.noise(x * R / 900, y * R / 900, z * R / 900));
-        const lift = t.top - Math.max(0, dist - edge) * 0.7 + 40 * dm.smoothstep(edge * 0.35, 0, dist);
+        // (its flanks ~35 degrees as drawn: h is the real height, so the drop a drawn metre is
+        // 0.7 / hScale of it; at 0.7 the flanks of a world drawn at an eighth of its height ran out
+        // a km, past the cells that know the tuya, and stopped there in walls)
+        const lift = t.top - Math.max(0, dist - edge) * 0.7 / this.hScale + 40 * dm.smoothstep(edge * 0.35, 0, dist);
         if (lift > h) { h = lift; out[S_VOLC] = Math.max(out[S_VOLC], dist < edge ? 1 : 0.7); }
       }
     }
