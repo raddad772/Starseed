@@ -2,6 +2,51 @@
 
 Dave is play-testing and giving feedback in short bursts.
 
+## NOW: England-sized worlds, true-scale ground, channels as lines (session 39d69fa8, 2026-10-03/04)
+
+Dave looked at the same mountain (SOL Earth, Yotaxus Peak, 33.44 N 157.97 W) from orbit, descent, a low
+pass, the valley 27 km out and the summit, as the game was and as an England-sized Earth, and chose the
+small one: "I definitely like right a lot more", then "Yeah fix refine and optimize". All committed:
+- **Drawn size apart from the deep time's** (ef0d07f, b1b87fa): `units.js LEN_SCALE = 1/64` (Earth R 99.5
+  km); the world sim always runs at `SIM_LEN = 0.1` (its caches unchanged) and `SnapshotSampler(s, Rd)`
+  lays its grid on the drawn globe, converting the sizes across the ground (craters, tuyas, rivers'
+  inflow). Drawn heights = real x `HEIGHT_SCALE = sqrt(LEN_SCALE)` (x0.125; Dave chose the sqrt rule).
+  `?len=0.1` draws the old size (own tile caches: `TILE_VERSION = 38 + 10000*round(1/LEN_SCALE)`, 640038
+  at the default). Days are 3 h and orbits ~11 min at this size: untested in play.
+- **True scale below the deep time** (60093b7) with the integer sim's streams at their full rate
+  (7e7ab0a, `INT_CUT = 1`): the fine levels cut gullies and spurs into the mountains; at a third of the
+  rate they stayed smooth domes (the "doughy" look). Channel heads by valley spacing (`opts.headWidth`,
+  survey `--hw`) and a rough start (`--rough`) were tried and changed little: left as switches, off.
+- **Channels read as lines** (b1b87fa): a channel running diagonally across a level's cells was read
+  between them as a row of saddles (two floor cells, two bank cells blended): beads along every valley
+  that the next level's water ponded in, rungs along the valley walls ("ladders" in the survey views,
+  "a chain of lumps" in the game). Now `RefineReader.creekAt` also gives `cwc` (how steeply a channel's
+  banks rise), and near a channel the ground is held to a V from the line: the next level's starting
+  surface (localsim.js, channels of 10+ parent cells' water) and the sampler (terrain.js, 30+ cells).
+  Reading every rill as a line scratched the ground with short dashes: hence the thresholds.
+- **Tile seams** (3f2a577, 60093b7): the tile blend weights now reach zero at both ends of a tile's
+  readable window and sum to one across an overlap (a 1/48 step left a dark straight line); the detail
+  a tile level holds fades with the level's coverage instead of switching at a line (raised slabs).
+- **Tiles sooner** (the last commit): GPU tile sim batches 8 steps between waits (a tile alone: 21 s ->
+  6 s), wanted tiles ordered nearest-first across levels, two in flight. Ground under the camera at 10,
+  21, 32 s for the three levels in a hidden test tab (was ~22 s for the first and a minute for the rest).
+  `WorldSims.tileMs` keeps each tile's setup/sim/finish/wait ms (read it in the console).
+- Air squeezed above a ~12 km knee by sqrt(LEN_SCALE) (4328686): from orbit the small planet reads as a
+  planet with a thick sky, which Dave accepted ("daytime stars make sense from very high up").
+
+**What's still wrong / next:**
+- A tile's GPU time is ~5,800 small dispatches (fill 8 + accum 16 + jump 12 passes a step); the GPU is
+  not saturated alone (6 s), so fewer passes or routing every other step would help, but PASSES are shared
+  by the JS/C/GPU sims (bit-identical) and need a visual check. Setup ~2.4 s and finish ~1 s per tile in
+  the worker (0.9 / 0.35 in Node: CPU contention with the chunk-rebuild storm, ~140 chunks per tile).
+- The straight fault scarp on the summit: fault throws (geology.js, up to ~165 m) aren't scaled with
+  HEIGHT_SCALE. Snow covers most of the mountain (snowline on the real height, not the drawn).
+- Coastlines look blocky from orbit at this size (the world sim's 0.5 km cells). The survey's pictures
+  are the yardstick: `STARSEED_LEN` env for Node, `tools/survey.mjs --at lat,lon --scales 8,3,1 --px 640
+  --pyrCache 1`; the scratchpad's eng_* dirs hold this session's runs.
+- Older queue: ground-layer youth calibration, nutrient factor for life origin, life map through the
+  last 10 Myr, the integer-vs-float gap's other half.
+
 ## NOW: true scale, the ground layer, life through history (session 39d69fa8, 2026-10-03)
 
 Dave's asks: fix rivers inside canyons ("random noise is not interesting, but simulated history is"),
