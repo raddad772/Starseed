@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import { Rng } from '../core/rng.js';
 import { floraSpecies, FLORA_KINDS } from '../gen/flora.js';
-import { GLSL_SURFACE_ATMO } from './atmosphere.js';
+import { GLSL_SURFACE_ATMO, GLSL_CLOUD_N, GLSL_CLOUD_SHADOW } from './atmosphere.js';
 
 // ---------------------------------------------------------------- geometry
 
@@ -186,6 +186,8 @@ attribute float part;
 attribute float ao;
 uniform float uTime;
 uniform float uWind;
+uniform float uFadeStart;
+uniform float uFadeEnd;
 varying vec3 vWorld;
 varying vec3 vNormal;
 varying float vPart;
@@ -200,6 +202,9 @@ void main() {
   #ifdef USE_INSTANCING
   im = instanceMatrix;
   #endif
+  // (shrunk into the ground over its last stretch of range: a screen-door fade left a scatter of
+  // dark pixels, and a plant a pixel across reads as a speck, not as the ground's colour)
+  p *= 1.0 - smoothstep(uFadeStart, uFadeEnd, length((modelMatrix * im * vec4(0.0, 0.0, 0.0, 1.0)).xyz));
   float phase = im[3].x * 0.37 + im[3].z * 0.23;
   float bend = (part > 0.5 && part < 1.5) ? 1.0 : 0.25;
   p.x += sin(uTime * 1.4 + phase) * uWind * p.y * p.y * 0.012 * bend;
@@ -236,18 +241,27 @@ varying float vDist;
 #include <common>
 #include <logdepthbuf_pars_fragment>
 ${GLSL_SURFACE_ATMO}
-float dither(vec2 p) { return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715)))); }
+uniform float uRadius;
+uniform mat3 uToFixed;
+uniform vec4 uCloud;
+uniform float uCloudOn;
+uniform float uCloudOpacity;
+uniform sampler3D tNoise;
+uniform sampler2D tCloudMap;
+uniform float uCloudMapMean;
+${GLSL_CLOUD_N}
+${GLSL_CLOUD_SHADOW}
 void main() {
   #include <logdepthbuf_fragment>
-  float fade = 1.0 - smoothstep(uFadeStart, uFadeEnd, vDist);
-  if (dither(gl_FragCoord.xy) > fade) discard;
+  // (in the clouds' shadow as the ground under it is)
+  float foot = length(fwidth(vWorld));
   vec3 N = normalize(vNormal);
   if (!gl_FrontFacing) N = -N;
   vec3 rel = vWorld - uCenter;
   float r = length(rel);
   vec3 up = rel / r;
   float muS = dot(up, uSunDir);
-  vec3 sunT = atmoSunTransmittance(r, muS);
+  vec3 sunT = atmoSunTransmittance(r, muS) * cloudShadow(rel, r, muS, foot);
   vec3 skyE = atmoSkyIrradiance(r, muS);
   vec3 albedo = vPart < 0.5 ? uTrunk : vTint;
   float ndl = max(dot(N, uSunDir), 0.0);

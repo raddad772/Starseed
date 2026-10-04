@@ -1,7 +1,7 @@
 // Terrain surface shading.
 
 import * as THREE from 'three';
-import { GLSL_SURFACE_ATMO, GLSL_CLOUD_N } from './atmosphere.js';
+import { GLSL_SURFACE_ATMO, GLSL_CLOUD_N, GLSL_CLOUD_SHADOW, GLSL_THERMAL } from './atmosphere.js';
 import { GLSL_NOISE } from './glsl.js';
 
 export const DETAIL_PERIOD = 4096; // metres; every detail tile period divides this
@@ -103,9 +103,8 @@ uniform sampler3D tNoise;
 uniform sampler2D tCloudMap;
 uniform float uCloudMapMean;
 ${GLSL_CLOUD_N}
-float cloudDensityAt(vec3 fixedDir, float foot) {
-  return cloudCover(fixedDir * uRadius, fixedDir, foot, (uCloud.z - 0.5) * 0.3);
-}
+${GLSL_CLOUD_SHADOW}
+${GLSL_THERMAL}
 
 // detail texture: r = height noise, g/b = slope (encoded), a = secondary noise
 vec4 tri(vec3 p, vec3 w, float period) {
@@ -147,15 +146,7 @@ void main() {
   float muS = dot(up, uSunDir);
   vec3 sunT = atmoSunTransmittance(r, muS);
 
-  // cloud shadow
-  if (uCloudOn > 0.5 && muS > -0.05) {
-    float hc = uCloud.x - (r - uRadius);
-    if (hc > 0.0) {
-      vec3 pc = rel + uSunDir * hc / max(muS, 0.08);
-      float cd = cloudDensityAt(normalize(uToFixed * normalize(pc)), foot);
-      sunT *= 1.0 - 0.8 * cd * uCloudOpacity;
-    }
-  }
+  sunT *= cloudShadow(rel, r, muS, foot);
   vec3 skyE = atmoSkyIrradiance(r, muS);
 
   // ---- detail (planet-fixed, precision-safe coordinates)
@@ -236,6 +227,8 @@ void main() {
     float sp = pow(max(dot(N, H), 0.0), mix(20.0, 120.0, snow)) * (0.03 + 0.25 * snow + 0.3 * wet) * (uHasAtmo > 0.5 ? 1.0 : 0.1);
     color += uSunE * sunT * sp * ndl;
   }
+  // a hot world's ground glows at its own temperature (emissivity 1 - albedo), less the higher it stands
+  if (uThermal.x > 0.0) color += (vec3(1.0) - clamp(albedo, 0.0, 1.0)) * blackbodyGlow(uThermal.x - uThermal.y * (r - uRadius));
   // molten rock glows regardless of lighting
   if (emissive > 0.01) {
     float flick = 0.85 + 0.15 * sin(uTime * 1.7 + vFixedPos.x * 0.05 + vFixedPos.z * 0.07);

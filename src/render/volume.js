@@ -12,7 +12,7 @@
 
 import * as THREE from 'three';
 import { GLSL_RAY, GLSL_DEPTH, GLSL_ATMO_LUT, FULLSCREEN_VERT } from './glsl.js';
-import { GLSL_MEDIUM, GLSL_AIRLIGHT, glowUniforms, GLSL_CLOUD_N } from './atmosphere.js';
+import { GLSL_MEDIUM, GLSL_AIRLIGHT, GLSL_THERMAL, glowUniforms, GLSL_CLOUD_N, cloudBias } from './atmosphere.js';
 
 const FRAG = /* glsl */`
 ${GLSL_RAY}
@@ -49,6 +49,7 @@ uniform float uWindMax;
 uniform vec3 uPal[6];
 uniform float uFade;
 ${GLSL_AIRLIGHT}
+${GLSL_THERMAL}
 uniform vec2 uShape;   // base shape scale, detail scale (metres)
 layout(location = 0) out highp vec4 outL;
 layout(location = 1) out highp vec4 outT;
@@ -92,7 +93,6 @@ vec3 palette(float t) {
 }
 
 ${GLSL_CLOUD_N}
-float gPixA;   // (the angle a pixel spans: set at the top of main)
 // coverage of deck i (0..1) at body-fixed point q (metres) with direction dirF, a pixel foot m across
 float coverage(int i, vec3 dirF, vec3 q, float foot) {
   float lat = asin(clamp(dirF.y, -1.0, 1.0));
@@ -137,11 +137,15 @@ float deckDensity(int i, vec3 q, float h, float cov, bool detail, out float frac
 }
 
 void main() {
-  vec2 ndc = vUv * 2.0 - 1.0;
+  // (the ray through the one full-resolution pixel whose depth this half-resolution fragment reads:
+  // its 2x2 block's centre ray with one of its four depths sent a sky ray into the ground where a
+  // horizon crossed the block, a dark dash along the skyline that the sky pixels took up)
+  ivec2 px = depthPixel(tDepth, vUv);
+  vec2 ndc = (vec2(px) + 0.5) / vec2(textureSize(tDepth, 0)) * 2.0 - 1.0;
   vec3 dView = normalize(vec3(ndc.x * uTanHalf.x, ndc.y * uTanHalf.y, -1.0));
   vec3 D = normalize(uCamRot * dView);
   gPixA = length(fwidth(D));
-  float depth = texture(tDepth, vUv).r;
+  float depth = texelFetch(tDepth, px, 0).r;
   float sceneDist = isSkyDepth(depth) ? 1e30 : viewZFromDepth(depth) / max(-dView.z, 1e-4);
   vec2 hit = raySphere(uCenter, uTop, D);
   if (hit.y <= 0.0 || hit.x > hit.y) { outL = vec4(0.0); outT = vec4(1.0); return; }
@@ -245,6 +249,11 @@ void main() {
       vec3 Ts = exp(-ext * dt);
       L += T * (S - S * Ts) / max(ext, vec3(1e-12));
       if (uGlow > 0.0 && h < -20000.0) Lth += T * thermalGlow(h) * (vec3(1.0) - Ts);
+      // (a hot rocky world's air, from one optical depth into the step, or its middle: atmosphere.js)
+      if (uThermal.x > 0.0) {
+        float te = a + float(i) * dt + min(0.5 * dt, 1.0 / max(ext.g, 1e-12));
+        Lth += T * (vec3(1.0) - Ts) * airHeatGlow(length((te - tca) * D - perp));
+      }
       Lth += T * airLight(p, r) * dt;   // (airglow: the air's own light; the aurora is drawn after)
       T *= Ts;
       if (max(T.x, max(T.y, T.z)) < 0.003) { T = vec3(0.0); break; }
@@ -273,16 +282,18 @@ uniform sampler2D tT;
 uniform vec2 uLowSize;
 varying vec2 vUv;
 float linZ(vec2 uv) {
-  float d = texture(tDepth, uv).r;
+  float d = texelFetch(tDepth, depthPixel(tDepth, uv), 0).r;
   return isSkyDepth(d) ? 1e12 : viewZFromDepth(d);
 }
+// how far apart two depths are, as a fraction of the larger (sky 1e12 against ground: ~1)
+float zGap(float a, float b) { return abs(a - b) / max(max(a, b), 1e-3); }
 void main() {
   vec4 scene = texture(tColor, vUv);
   float z0 = linZ(vUv);
   vec2 p = vUv * uLowSize - 0.5;
   vec2 i = floor(p), f = p - i;
   vec3 L = vec3(0.0), T = vec3(0.0);
-  float wsum = 0.0;
+  float wsum = 0.0, gap = 1e30;
   for (int k = 0; k < 4; k++) {
     vec2 c = vec2(float(k & 1), float(k >> 1));
     vec2 uv = (i + c + 0.5) / uLowSize;
@@ -293,8 +304,18 @@ void main() {
     L += texture(tL, uv).rgb * w;
     T += texture(tT, uv).rgb * w;
     wsum += w;
+    gap = min(gap, zGap(z0, zc));
   }
   L /= wsum; T /= wsum;
+  // none of the four at this pixel's depth (a pixel-thin sliver of sky over a tilted horizon or a
+  // planet's limb whose four all fell on the ground): the nearest in depth of the sixteen around it
+  if (gap > 0.1) {
+    for (int k = 0; k < 16; k++) {
+      vec2 uv = (i + vec2(float(k & 3) - 1.0, float(k >> 2) - 1.0) + 0.5) / uLowSize;
+      float g = zGap(z0, linZ(uv));
+      if (g < gap) { gap = g; L = texture(tL, uv).rgb; T = texture(tT, uv).rgb; }
+    }
+  }
   gl_FragColor = vec4(scene.rgb * T + L, scene.a);
 }
 `;
@@ -312,7 +333,7 @@ export class VolumePass {
       }
     } else {
       const c = d.atmosphere.clouds;
-      decks.push({ base: c.altitude - c.thickness * 0.35, top: c.altitude + c.thickness * 0.65, density: 0.9, bias: (c.cover - 0.5) * 0.3, color: c.color });
+      decks.push({ base: c.altitude - c.thickness * 0.35, top: c.altitude + c.thickness * 0.65, density: 0.9, bias: cloudBias(c.cover), color: c.color });
     }
     const u = {
       ...atmo.params,

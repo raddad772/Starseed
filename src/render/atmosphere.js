@@ -13,6 +13,7 @@
 import * as THREE from 'three';
 import { GLSL_RAY, GLSL_DEPTH, GLSL_ATMO_LUT, GLSL_NOISE, FULLSCREEN_VERT } from './glsl.js';
 import { atmoAlt } from '../gen/bodies.js';
+import * as U from '../core/units.js';
 
 // the cloud cover's weather systems, as fractions of the world's radius (the noise tile; four lobes to
 // one): fronts and cyclones a quarter of the radius across, as Earth's are; then storms, then the
@@ -30,8 +31,15 @@ export const CLOUD_K = [1.0, 0.236, 0.064];
 // Each octave fades to its mean where a pixel (foot m across) spans a few of its texels (the noise has
 // no mip levels: from space they alias to speckle), and the threshold widens by the spread that took
 // away, so a far pixel shows the fraction of it covered. Needs tNoise, tCloudMap, uCloudMapMean, uRadius.
+// cloudBias's twin for the near volume's decks (their bias a uniform)
+const sstep = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+export const cloudBias = (cover) => (cover - 0.5) * 0.3 + 0.5 * sstep(0.8, 1.0, cover) - 0.5 * (1 - sstep(0.0, 0.2, cover));
 export const GLSL_CLOUD_N = /* glsl */`
 float cloudN(float n) { return 0.55 + (n - 0.682) * 4.3; }
+// how far a world's cover (0..1) moves the threshold: gently through the middle (an Earth's 0.52),
+// then a closed deck at 1 (a Venus: its full cover had let the weather's spread open holes, the long
+// path behind showing through as a ring) and a clear sky at 0
+float cloudBias(float cover) { return (cover - 0.5) * 0.3 + 0.5 * smoothstep(0.8, 1.0, cover) - 0.5 * (1.0 - smoothstep(0.0, 0.2, cover)); }
 // 0 where a pixel foot m across sees an octave of tile L m whole, 1 where it spans a few texels
 float cloudFade(float foot, float L) { return smoothstep(1.0, 4.0, foot * 64.0 / L); }
 // cover (0..1) at q (body-fixed m) in direction dirF; bias: the world's cover moving the threshold
@@ -56,6 +64,42 @@ float cloudDetail(vec3 q, float foot) {
   float L2 = uRadius * ${CLOUD_K[2].toFixed(3)}, f = cloudFade(foot, L2);
   return f > 0.999 ? 0.682 : mix(textureLod(tNoise, q / L2, 0.0).r, 0.682, f);
 }`;
+
+// the share of the sun's light the cloud deck lets through at rel (from the world's centre, world
+// axes; r = |rel|), its cover read where the ray toward the sun crosses the deck: the ground's and the
+// plants' cloud shadows alike. Needs GLSL_CLOUD_N, uSunDir, uToFixed, uCloud, uCloudOn, uCloudOpacity.
+export const GLSL_CLOUD_SHADOW = /* glsl */`
+float cloudShadow(vec3 rel, float r, float muS, float foot) {
+  if (uCloudOn < 0.5 || muS <= -0.05) return 1.0;
+  float hc = uCloud.x - (r - uRadius);
+  if (hc <= 0.0) return 1.0;
+  vec3 d = normalize(uToFixed * normalize(rel + uSunDir * hc / max(muS, 0.08)));
+  return 1.0 - 0.8 * cloudCover(d * uRadius, d, foot, cloudBias(uCloud.z)) * uCloudOpacity;
+}`;
+
+// a hot world's own light. blackbodyGlow: a blackbody's visible light at T K in the scene's radiance
+// (1 = ~127,000 cd/m^2: a white surface under 1 AU's sun shows 1/pi), an exponential fitted to
+// Planck's law through the eye's response, within ~10% from 800 to 2,000 K (2.6 cd/m^2 at 1,000 K,
+// 256 at 1,240, 2,400 at 1,400), its colour linear sRGB (red, the green rising from ~3% at 1,000 K
+// to 27% at 2,000). uThermal: the surface's temperature (K; 0 too cold to glow), how fast it falls
+// per metre of the ground's drawn height (the real lapse, heights drawn smaller) and of the air's.
+export const GLSL_THERMAL = /* glsl */`
+uniform vec4 uThermal;
+vec3 blackbodyGlow(float T) {
+  if (T < 650.0) return vec3(0.0);
+  float g = max(0.0, 0.0287 + 2.37e-4 * (T - 1000.0));
+  return vec3(1.0, g, 0.0) * (6.0e5 * exp(-24060.0 / T) / (0.2126 + 0.7152 * g));
+}
+// the air's own glow at radius r: a hot, thick atmosphere fills each step with it as far as the step
+// is opaque (an oven: looking any way, the walls' light, the air making up what the path dims)
+vec3 airHeatGlow(float r) { return uThermal.x > 0.0 ? blackbodyGlow(uThermal.x - uThermal.z * max(r - uRadius, 0.0)) : vec3(0.0); }`;
+
+// uThermal for a body: its surface temperature when hot enough to glow, the dry adiabat's fall with
+// height (g / cp, cp ~1,100 J/kg/K) per metre of drawn ground (heights drawn HEIGHT_SCALE small) and air
+export function thermalUniform(b) {
+  const T = (b.data && b.data.Tsurf) || 0, lapse = (b.data && b.data.gravity || 9.8) / 1100;
+  return new THREE.Vector4(T > 650 ? T : 0, lapse / U.HEIGHT_SCALE, lapse, 0);
+}
 
 export const GLSL_MEDIUM = /* glsl */`
 uniform float uRadius;      // datum radius (h = r - uRadius)
@@ -272,6 +316,7 @@ void main() {
 // are vertical radiances per unit of the shell's thickness. Needs uRadius, uTop, uToFixed,
 // uTime and tNoise declared before it
 export const GLSL_AIRLIGHT = `
+float gPixA;   // (the angle a pixel spans: set at the top of main, in uniform control flow)
 uniform vec4 uAurora;      // aurora strength, oval latitude, oval width (rad); airglow strength
 uniform vec3 uAuroraLo;
 uniform vec3 uAuroraHi;
@@ -282,8 +327,10 @@ vec3 airLight(vec3 p, float r) {
   float hgt = (r - uRadius) / (uTop - uRadius);
   return uAurora.w * exp(-pow((hgt - 0.6) / 0.03, 2.0)) * uAirglowCol / (uTop - uRadius);
 }
-// the aurora's brightness at a body-fixed direction
-float auroraArcs(vec3 pf) {
+// the aurora's brightness at a body-fixed direction; blur (rad): how far the sample stands for
+// across the arcs (a curtain thinner than a ray's step between shells, seen aslant from orbit, drew
+// as a row of dots): the arcs widened by it, their light kept
+float auroraArcs(vec3 pf, float blur) {
   float ml = asin(clamp(dot(pf, uMagAxis), -1.0, 1.0)), aml = abs(ml);
   if (uAurora.y < 0.0) return 0.3 * texture(tNoise, pf * 3.0 + vec3(0.0, 0.0, uTime * 0.002)).r;
   float band = exp(-pow((aml - uAurora.y) / uAurora.z, 2.0));
@@ -299,8 +346,9 @@ float auroraArcs(vec3 pf) {
     float wig = texture(tNoise, vec3(cs * 0.6, side + fj * 2.7 + uTime * 0.0015)).r - 0.5;
     wig += 0.45 * (texture(tNoise, vec3(cs * 2.3, side + fj * 1.3 + uTime * 0.004)).r - 0.5);
     float lineLat = uAurora.y + (fj - 0.5) * uAurora.z * 0.9 + wig * uAurora.z * 2.2;
-    float d = (aml - lineLat) / (uAurora.z * 0.035);
-    float arc = exp(-d * d);
+    float w0 = uAurora.z * 0.035, w = sqrt(w0 * w0 + blur * blur);
+    float d = (aml - lineLat) / w;
+    float arc = exp(-d * d) * w0 / w;
     if (arc < 0.01) continue;
     float rays = texture(tNoise, vec3(cs * 5.0, side + fj * 0.61 + uTime * 0.02)).r;
     b += arc * (0.25 + 1.8 * rays * rays);
@@ -330,7 +378,9 @@ void auroraRay(vec3 D, float tca, vec3 perp, float tMax, float jitter, out vec3 
       if (t <= 0.0 || t >= tMax) continue;
       vec3 p = (t - tca) * D - perp;
       float mu = (t - tca) / a;
-      float b = auroraArcs(uToFixed * (p / a));
+      // (the ray's sideways run across one slab, and the pixel's span there)
+      float blur = (slab * sqrt(max(1.0 - mu * mu, 0.0)) / max(abs(mu), 0.04) + t * gPixA) / a;
+      float b = auroraArcs(uToFixed * (p / a), blur);
       if (b <= 0.0) continue;
       vec3 e = col * b * slab / max(abs(mu), 0.04);
       if (k == 0) near += e; else far += e;
@@ -370,14 +420,14 @@ float ign(vec2 p) { return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00
 uniform sampler3D tNoise;
 uniform float uWindMax;
 ${GLSL_AIRLIGHT}
+${GLSL_THERMAL}
 vec3 gEm;   // (emitted light along the ray so far: not lit by the sun, so kept apart)
 ${GLSL_CLOUD_N}
 // Same coverage field as the volumetric pass (render/volume.js, mode 1), so
 // switching between the far 2D shell and near 3D clouds is seamless.
-float gPixA;   // (the angle a pixel spans: set at the top of main, in uniform control flow)
 float cloudDensity(vec3 pFixedDir, float foot) {
   vec3 q = pFixedDir * uRadius;
-  float cov = cloudCover(q, pFixedDir, foot, (uCloud.z - 0.5) * 0.3);
+  float cov = cloudCover(q, pFixedDir, foot, cloudBias(uCloud.z));
   return cov * smoothstep(0.15, 0.55, cloudDetail(q, foot) * cov + 0.25);
 }
 
@@ -402,6 +452,12 @@ void march(float t0, float t1, vec3 D, float tca, vec3 perp, float cosTheta, flo
     vec3 eSafe = max(e, vec3(1e-14));
     L += T * (S - S * Ts) / eSafe;
     gEm += T * airLight(p, r) * dt;
+    // (a hot world's air glows from where the step's light comes from: one optical depth in, or its
+    // middle when it is thin; at the jittered sample the glow's fall with height showed as dither)
+    if (uThermal.x > 0.0) {
+      float te = t0 + float(i) * dt + min(0.5 * dt, 1.0 / max(e.g, 1e-12));
+      gEm += T * (vec3(1.0) - Ts) * airHeatGlow(length((te - tca) * D - perp));
+    }
     T *= Ts;
   }
 }
@@ -409,11 +465,15 @@ void march(float t0, float t1, vec3 D, float tca, vec3 perp, float cosTheta, flo
 layout(location = 0) out highp vec4 outL;
 layout(location = 1) out highp vec4 outT;
 void main() {
-  vec2 ndc = vUv * 2.0 - 1.0;
+  // (the ray through the one full-resolution pixel whose depth this half-resolution fragment reads:
+  // its 2x2 block's centre ray with one of its four depths sent a sky ray into the ground where a
+  // horizon crossed the block, a dark dash along the skyline that the sky pixels took up)
+  ivec2 px = depthPixel(tDepth, vUv);
+  vec2 ndc = (vec2(px) + 0.5) / vec2(textureSize(tDepth, 0)) * 2.0 - 1.0;
   vec3 dView = normalize(vec3(ndc.x * uTanHalf.x, ndc.y * uTanHalf.y, -1.0));
   vec3 D = normalize(uCamRot * dView);
   gPixA = length(fwidth(D));
-  float depth = texture(tDepth, vUv).r;
+  float depth = texelFetch(tDepth, px, 0).r;
   float sceneDist = isSkyDepth(depth) ? 1e30 : viewZFromDepth(depth) / max(-dView.z, 1e-4);
 
   vec2 hit = raySphere(uCenter, uTop, D);
@@ -433,14 +493,21 @@ void main() {
   gEm = vec3(0.0);
 
   // cloud shell intersection
-  float tc = -1.0;
+  float tc = -1.0, graze = 1.0;
   if (uCloudOn > 0.5) {
     float rc = uRadius + uCloud.x;
     vec2 ch = raySphere(uCenter, rc, D);
+    float camR = length(uCenter);
     if (ch.y > 0.0 && ch.x < ch.y) {
-      float camR = length(uCenter);
       float cand = camR > rc ? ch.x : ch.y;
       if (cand > t0 && cand < t1) tc = cand;
+    } else if (camR > rc && tca > t0 && tca < t1) {
+      // (a ray passing over the shell from above still grazes the deck's tops, which thin with height
+      // over a quarter of its thickness: opaque at the shell, half as at two of those heights above
+      // it, so the limb is soft; a bare shell ended in a hard ring inside the disc where the air above
+      // it goes on, Vovuld's from space)
+      float hb = length(perp) - rc, Hc = max(uCloud.y * 0.25, 1.0);
+      if (hb < 6.0 * Hc) { tc = tca; graze = 1.0 - exp(-7.4 * exp(-hb / Hc)); }
     }
   }
   vec3 aNear, aFar;
@@ -458,7 +525,7 @@ void main() {
   float rc = length(pc);
   vec3 up = pc / rc;
   float dens = cloudDensity(normalize(uToFixed * up), tc * gPixA);
-  float alpha = clamp(dens * uCloudColor.a, 0.0, 1.0);
+  float alpha = clamp(dens * uCloudColor.a, 0.0, 1.0) * graze;
   vec3 L2 = vec3(0.0), T2 = vec3(1.0);
   march(tc, t1, D, tca, perp, cosTheta, jitter, L2, T2, steps / 2 + 2);
   vec3 cl = vec3(0.0);
@@ -555,6 +622,7 @@ export class Atmosphere {
       uAbsWidth: { value: a.ozoneWidth || 1 },
       uAbsExp: { value: a.absorptionExp ? 1 : 0 },
       uGroundAlbedo: { value: new THREE.Vector3(0.18, 0.18, 0.18) },
+      uThermal: { value: thermalUniform(body) },
     };
     if (d.terrain) {
       const p = d.terrain.palette;

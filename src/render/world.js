@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import { PlanetTerrain } from './planetTerrain.js';
 import { cloudMapPixels } from '../gen/worldsim/snapshot.js';
-import { Atmosphere, blankCloudMap } from './atmosphere.js';
+import { Atmosphere, blankCloudMap, thermalUniform } from './atmosphere.js';
 import { makeStarMesh } from './sky.js';
 import { makeGiantMesh, makeRingMesh } from './giant.js';
 import { VolumePass } from './volume.js';
@@ -90,6 +90,7 @@ export class WorldRenderer {
       // (the atmosphere's own: rebuildTerrain hands the climate's cloud map to all three)
       tCloudMap: a ? a.material.uniforms.tCloudMap : { value: blankCloudMap() },
       uCloudMapMean: a ? a.material.uniforms.uCloudMapMean : { value: 0 },
+      uThermal: a ? a.material.uniforms.uThermal : { value: thermalUniform(b) },
       uNear: { value: new THREE.Vector2(0, 0) },
       uNearUp: { value: new THREE.Vector3(0, 1, 0) },
     };
@@ -97,7 +98,9 @@ export class WorldRenderer {
       const clouds = b.data.atmosphere && b.data.atmosphere.clouds;
       if (b.giant) it.volume = new VolumePass(b, a, this.cloudNoise, 0);
       else if (clouds && clouds.type !== 'sulfuric') it.volume = new VolumePass(b, a, this.cloudNoise, 1);
-      if (it.volume) a.material.uniforms.tNoise.value = this.cloudNoise;
+      // (the far shell's cover reads the noise on every world: bound only beside a near volume, a
+      // sulfuric deck, which has none, read nothing and was never drawn, its world a ball of haze)
+      a.material.uniforms.tNoise.value = this.cloudNoise;
     }
     if (b.solid) {
       it.terrain = new PlanetTerrain(b, this.pool, it.shared);

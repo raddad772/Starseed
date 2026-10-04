@@ -52,6 +52,10 @@ float viewZFromDepth(float d) {
   return exp2(d * uLogDepthFC) - 1.0;
 }
 bool isSkyDepth(float d) { return uDepthMode < 0.5 ? d <= 0.0 : d >= 1.0; }
+// the full-resolution pixel under screen position uv, the same one wherever it is asked: a
+// half-resolution fragment's centre falls between four (the +0.25 keeps an interpolated
+// 2i+1 - epsilon on 2i+1, and a full-resolution pixel's centre on itself)
+ivec2 depthPixel(sampler2D t, vec2 uv) { return ivec2(uv * vec2(textureSize(t, 0)) + 0.25); }
 `;
 
 // Bruneton-style transmittance LUT parameterisation
