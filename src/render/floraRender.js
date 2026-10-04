@@ -5,6 +5,7 @@ import { Rng } from '../core/rng.js';
 import { floraSpecies, FLORA_KINDS } from '../gen/flora.js';
 import { GLSL_SURFACE_ATMO, GLSL_CLOUD_N, GLSL_CLOUD_SHADOW } from './atmosphere.js';
 import { GLSL_TERRAIN_SHADOW } from './terrainShadow.js';
+import { GLSL_SUN_SHADOW, SHADOW_LAYER } from './sunShadows.js';
 
 // ---------------------------------------------------------------- geometry
 
@@ -253,6 +254,7 @@ uniform float uCloudMapMean;
 ${GLSL_CLOUD_N}
 ${GLSL_CLOUD_SHADOW}
 ${GLSL_TERRAIN_SHADOW}
+${GLSL_SUN_SHADOW}
 void main() {
   #include <logdepthbuf_fragment>
   // (in the clouds' shadow as the ground under it is)
@@ -264,7 +266,7 @@ void main() {
   vec3 up = rel / r;
   float muS = dot(up, uSunDir);
   vec3 pF = uToFixed * rel;
-  vec3 sunT = atmoSunTransmittance(r, muS) * cloudShadow(rel, r, muS, foot) * terrainShadow(pF, normalize(pF), uToFixed * uSunDir, uRadius);
+  vec3 sunT = atmoSunTransmittance(r, muS) * cloudShadow(rel, r, muS, foot) * terrainShadow(pF, normalize(pF), uToFixed * uSunDir, uRadius) * sunShadowMap(vWorld, N);
   vec3 skyE = atmoSkyIrradiance(r, muS);
   vec3 albedo = vPart < 0.5 ? uTrunk : vTint;
   float ndl = max(dot(N, uSunDir), 0.0);
@@ -334,6 +336,7 @@ export class FloraSet {
       const n = arr.length / 8;
       if (!n) continue;
       const mesh = new THREE.InstancedMesh(this.geos[kind], this.materials[kind], n);
+      mesh.layers.enable(SHADOW_LAYER);
       mesh.frustumCulled = false;
       mesh.userData.kind = kind;
       for (let i = 0; i < n; i++) {

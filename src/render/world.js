@@ -9,6 +9,7 @@ import { makeGiantMesh, makeRingMesh } from './giant.js';
 import { VolumePass } from './volume.js';
 import { loadMaterials, windRipple } from './materials.js';
 import { HeightCube } from './terrainShadow.js';
+import { SUN_SHADOW_UNIFORMS } from './sunShadows.js';
 import * as U from '../core/units.js';
 
 const _v = new THREE.Vector3(), _v2 = new THREE.Vector3();
@@ -102,6 +103,7 @@ export class WorldRenderer {
       uThermal: a ? a.material.uniforms.uThermal : { value: thermalUniform(b) },
       uWindRipple: { value: windRipple(b) },
       ...(it.heightCube ? it.heightCube.uniforms : {}),
+      ...SUN_SHADOW_UNIFORMS,
       uNear: { value: new THREE.Vector2(0, 0) },
       uNearUp: { value: new THREE.Vector3(0, 1, 0) },
     };
@@ -138,6 +140,10 @@ export class WorldRenderer {
     const out = [];
     const cam = this.engine.camera;
     const pxPerRad = this.engine.height / (THREE.MathUtils.degToRad(cam.fov));
+    // (the near sun shadows follow the nearest solid world the camera is low over: sunShadows.js)
+    const ss = this.engine.sunShadows;
+    let ssBest = Infinity;
+    if (ss) ss.active = false;
     for (const it of this.items) {
       const b = it.body;
       _v.copy(b.pos).sub(camWorld);
@@ -155,6 +161,9 @@ export class WorldRenderer {
       const E = this.u.sunIlluminance(b.pos);
       sh.uSunE.value.copy(this.starColor).multiplyScalar(E);
       sh.uCenter.value.copy(_v);
+      if (ss && b.solid && it.terrain && dist - b.R < 60000 && dist - b.R < ssBest) {
+        ssBest = dist - b.R; ss.active = true; ss.sunDir.copy(sh.uSunDir.value); ss.anchor.copy(_v);
+      }
       _m4.makeRotationFromQuaternion(b.qInv);
       sh.uToFixed.value.setFromMatrix4(_m4);
       sh.uTime.value = this.timeSec;

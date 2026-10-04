@@ -11,6 +11,7 @@ import * as THREE from 'three';
 import { FULLSCREEN_VERT, GLSL_DEPTH } from './glsl.js';
 import { renderFullscreen } from './atmosphere.js';
 import { VOLUME_COMPOSITE_FRAG } from './volume.js';
+import { SunShadows } from './sunShadows.js';
 
 const BG_FRAG = /* glsl */`
 ${GLSL_DEPTH}
@@ -328,6 +329,7 @@ export class Engine {
       window.dispatchEvent(new ErrorEvent('error', { message: msg }));
     };
     renderer.autoClear = false;
+    this.sunShadows = new SunShadows();
     renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
     renderer.toneMapping = THREE.NoToneMapping;
     renderer.shadowMap.enabled = true;
@@ -564,6 +566,8 @@ export class Engine {
     const camRot = new THREE.Matrix3().setFromMatrix4(cam.matrixWorld);
     const tanHalf = this.tanHalf;
 
+    // 0. the near sun shadows' maps (once a frame)
+    if (animate && this.sunShadows) { this.passBegin('shadows'); this.sunShadows.render(r, this.scene); this.passEnd(); }
     // 1. opaque scene into the HDR target
     this.passBegin('scene');
     r.setRenderTarget(V.rtScene);

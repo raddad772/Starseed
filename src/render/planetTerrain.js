@@ -8,6 +8,7 @@
 // nodes hidden behind the planet's limb.
 
 import * as THREE from 'three';
+import { SHADOW_LAYER } from './sunShadows.js';
 import { FACES, dirFromFaceUV, chunkArcSize } from '../gen/cubesphere.js';
 import { CHUNK_N, chunkIndices } from '../gen/chunkbuilder.js';
 import { makeTerrainMaterial, DETAIL_PERIOD } from './terrainMaterial.js';
@@ -265,6 +266,7 @@ export class PlanetTerrain {
     g.setIndex(indexAttr());
     g.boundingSphere = new THREE.Sphere(new THREE.Vector3(d.bsphere[0], d.bsphere[1], d.bsphere[2]), d.bsphere[3]);
     const m = new THREE.Mesh(g, makeTerrainMaterial(this.shared));
+    m.layers.enable(SHADOW_LAYER);   // (it casts the near sun shadows)
     m.position.set(d.origin[0], d.origin[1], d.origin[2]);
     m.matrixAutoUpdate = false;
     m.updateMatrix();
@@ -479,6 +481,7 @@ export class PlanetTerrain {
     g.setIndex(new THREE.BufferAttribute(d.index, 1));
     g.computeBoundingSphere();
     const m = new THREE.Mesh(g, makeTerrainMaterial(this.shared));
+    m.layers.enable(SHADOW_LAYER);   // (it casts the near sun shadows)
     m.position.set(d.origin[0], d.origin[1], d.origin[2]);
     m.matrixAutoUpdate = false;
     m.updateMatrix();
