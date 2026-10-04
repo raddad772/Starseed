@@ -313,7 +313,9 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
   const R = gen.R, Mu = faceMetres(R), S = gen.snap;
   const L = pyr ? opts.L : refine ? refineLevel(gen) : region ? regionLevel(R) : tileLevel(R), parent = pyr ? opts.parent : null;
   const G = tileGrid(face, ti, tj, L, R), n = G.n, cell = G.spacing;
-  const steps = opts.steps ?? (rf ? 120 : region ? 140 : 100);
+  // (a refinement's or a pyramid tile's run: 60 steps at twice the rates of streams and creep cut
+  // and wear as 120 did, the survey's views alike at every scale; half the time to the ground)
+  const steps = opts.steps ?? (rf ? 60 : region ? 140 : 100);
   // its region's structure (a local tile's: the region it's in; a refinement's is the world
   // sim's own, its rock by place)
   // (a pyramid tile: the region its middle is in)
@@ -576,7 +578,7 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
   const sig = rf ? 4 : Math.round(NG / (region ? 10 : 20)), mean = new Float64Array(n), btmp = new Float64Array(NG);
   // (stream power's rate by the cell: each level runs the same number of steps, and finer
   // features form proportionally faster; so each level adds about the relief its scale holds)
-  const K0 = opts.K0 ?? (!fluvial ? 0 : (rf ? 1.6 * dm.pow(cell / 1000, 0.85) : region ? 0.3 : 1.2e-2) * wetK * (opts.K0mul ?? 1)), kd0 = opts.kd0 ?? (rf ? 0.25 : region ? 0.15 : 0.06);
+  const K0 = opts.K0 ?? (!fluvial ? 0 : (rf ? 3.2 * dm.pow(cell / 1000, 0.85) : region ? 0.3 : 1.2e-2) * wetK * (opts.K0mul ?? 1)), kd0 = opts.kd0 ?? (rf ? 0.5 : region ? 0.15 : 0.06);
   // channel heads: water cuts only where enough of it gathers (m^2 of rain-weighted drainage);
   // below that the ground is hillslope, shaped by creep and collapse: smooth between valleys,
   // where real terrain stops being rough at every scale

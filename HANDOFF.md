@@ -78,6 +78,11 @@ small one: "I definitely like right a lot more", then "Yeah fix refine and optim
   each cell less its neighbours' mean: 5.1/3.0/0.63 m -> 3.9/2.4/0.47 m at 38/9.6/2.4 m cells).
   Not the beds, joints or dips (each switched off: the same grooves; `opts.beds false` stays as a switch).
   Bed dips and folds back at real size (geology.js; the fault throw stays drawn by hScale).
+- Tile sims run 60 steps at twice the stream and creep rates (localsim.js, TILE 48): the survey's views
+  alike at 8/3/1 km on Earth, Mars and Titan, the sim time halved (Node/wasm: refinement tile 7.4 -> 4.0 s,
+  L3 6.7 -> 3.6 s, L5 12.7 -> 6.2 s). A chunk rebuild costs 10-15 ms (not the bottleneck).
+- Seen, not fixed: rock-colour patches with straight cell edges at the 3 km view of a delta (Ciadairon
+  River mouth, sand/alluvium classes per refinement cell).
 - Tried and dropped: each tile level faded out by the mesh's spacing (to cut chunk rebuilds and aliasing):
   the finest level (2.4 m) wears down sharp cones the 9.6 m level leaves (L+4 has ~5.6% of its cells
   steeper than 60 degrees), and without it they stood in the middle distance. Every level is read at
