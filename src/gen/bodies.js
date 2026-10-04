@@ -766,7 +766,8 @@ function terrestrialLabel(b) {
   if (atm && atm.type === 'venus') return size + 'greenhouse world';
   if (h.water === 'liquid') return h.oceanFraction >= 0.99 ? 'Ocean world' : 'Temperate terrestrial';
   if (atm && atm.type === 'titan') return moon ? 'Titan-like moon' : 'Methane-haze world';
-  if (h.water === 'frozen' && h.iceCover > 0.55) {
+  // (an ocean of another liquid frozen over, ammonia-water: ice is what shows, its iceCover unset)
+  if (h.water === 'frozen' && (h.iceCover > 0.55 || (h.liquid && h.liquid !== 'water' && h.oceanFraction > 0.55))) {
     // (a world that froze over near its star's habitable zone is a snowball; far out, just frozen)
     if (atm && atm.type === 'temperate') return b.Teq > 200 ? 'Snowball world' : (moon ? 'Frozen moon' : 'Frozen world');
     return moon ? 'Icy moon' : 'Icy world';

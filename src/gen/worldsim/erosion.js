@@ -385,8 +385,40 @@ export class Erosion {
     }
     if (this.kd > 0) this.creep(dt);
     if (this.sea) this.seaFloor();
-    else for (let c = 0; c < n; c++) if (base[c] && qs[c] > 0) { h[c] += qs[c] / area[c]; qs[c] = 0; } // playas fill
+    else this.playas();
     this.t += dt;
+  }
+
+  // a world with no sea: what reaches each sink (a playa) fills it level, its lowest ground first,
+  // out to as many cells as it takes, as water fills a basin. All of it onto the sink's one cell
+  // stood a column there as high as the catchment's whole wear spread over one cell (a dry
+  // greenhouse world's basins: 200 km in a step, then the plates carried it on)
+  playas() {
+    const { G, h, base, qs } = this, n = G.n, area = G.area, { nStart, nbr } = G;
+    const ph = this._ph || (this._ph = new Heap(n)), seen = this._pseen || (this._pseen = new Int32Array(n).fill(-1)), got = this._pgot || (this._pgot = new Int32Array(n));
+    let stamp = this._pstamp || 0;
+    for (let c0 = 0; c0 < n; c0++) {
+      if (!base[c0] || !(qs[c0] > 0)) continue;
+      let vol = qs[c0];
+      qs[c0] = 0;
+      stamp++;
+      ph.size = 0; ph.push(h[c0], c0); seen[c0] = stamp;
+      // (the cells taken so far, lowest first; the level rises past each next one's height while
+      // the volume lasts)
+      let ng = 0, A = 0, L = h[c0];
+      while (ph.size && ng < 4096) {
+        const c = ph.pop(), z = ph.top;
+        // (filling the cells taken up to z needs this much)
+        const need = (z - L) * A;
+        if (A > 0 && need >= vol) break;
+        vol -= A > 0 ? need : 0; L = z;
+        got[ng++] = c; A += area[c];
+        for (let e = nStart[c]; e < nStart[c + 1]; e++) { const o = nbr[e]; if (seen[o] !== stamp) { seen[o] = stamp; ph.push(h[o], o); } }
+      }
+      L += vol / A;
+      for (let k = 0; k < ng; k++) { const c = got[k]; if (h[c] < L) h[c] = L; }
+    }
+    this._pstamp = stamp;
   }
 
   // hillslope creep: land heights diffuse (explicit, substepped to stay stable)

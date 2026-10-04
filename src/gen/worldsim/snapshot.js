@@ -22,7 +22,7 @@ import { Noise3 } from '../../core/noise.js';
 import { dunePatches } from '../dunes.js';
 import { ROCK_UP } from './lithology.js';
 
-export const SIM_VERSION = 59;
+export const SIM_VERSION = 60;
 
 // a world's grid size: maxN for an Earth-sized one, finer cells don't help a small one
 // (N ~ sqrt(radius): Mars ~210, the Moon ~150, a moonlet 64)
@@ -286,6 +286,16 @@ export class SnapshotSampler {
   ice(x, y, z) { return this.G.sample(this.s.ice, this._d(x, y, z), this.uv); }
   river(x, y, z) { return this.G.sample(this.s.river, this._d(x, y, z), this.uv) / 255; }
   melt(x, y, z) { return this.G.sample(this.s.melt, this._d(x, y, z), this.uv) / 255; }
+  // (the cells' smooth blend: a melt pool one cell across read bilinearly was the cell's square)
+  meltSmooth(x, y, z) {
+    const m = this.s.melt;
+    if (!m) return 0;
+    const c = this._c16 || (this._c16 = new Int32Array(16)), w = this._w16 || (this._w16 = new Float64Array(16));
+    this.G.corners16(this._d(x, y, z), c, w, this.uv);
+    let s = 0;
+    for (let k = 0; k < 16; k++) s += m[c[k]] * w[k];
+    return s / 255;
+  }
   seaDist(x, y, z) { return this.G.sample(this.seaHops, this._d(x, y, z), this.uv); }   // (in cells)
   // the cell cell c drains into (-1 none)
   rcvOf(c) {

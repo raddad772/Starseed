@@ -911,7 +911,15 @@ export class TerrainGenerator {
       out[S_TEMP] = Ts - lapse * Math.max(h + out[S_WDEPTH], 0);
       out[S_MOIST] = dm.clamp(S.rain(x, y, z) / 1500, 0, 1);
     } else this.climate(x, y, z, h, out[S_INLAND], out);
-    out[S_LAVA] = S.melt(x, y, z);
+    // (a melt sheet's edge: the cells' smooth blend read a little off true, a shore that wanders
+    // as a lake's does (_lakeAt's warp), and sharpened so a pool has an edge, not a halo)
+    if (S.s.melt) {
+      const wk = 0.4 * S.G.spacing / R, wf = R / (S.G.spacing * 1.5);
+      let px = x + wk * this.nMisc.noise(x * wf + 3.1, y * wf, z * wf), py = y + wk * this.nMisc.noise(x * wf, y * wf + 5.3, z * wf), pz = z + wk * this.nMisc.noise(x * wf, y * wf, z * wf + 1.7);
+      const l = Math.sqrt(px * px + py * py + pz * pz); px /= l; py /= l; pz /= l;
+      const m = S.meltSmooth(px, py, pz);
+      out[S_LAVA] = m > 0 ? dm.smoothstep(0.15, 0.45, m) * Math.min(1, 1.6 * m + 0.2) : 0;
+    }
     if (p.liquid === 'lava' && h < 0) out[S_LAVA] = 1;
     return out;
   }

@@ -213,10 +213,14 @@ export function climate(G, opts) {
     const wind = windField(G, lat, itcz, nH, opts.locked ? opts.substellar : null, spin);
     rainMonth(G, geo, h, sea, Tmm, Tair, stab, wind, itcz, lat, Pm.subarray(m * n, (m + 1) * n), opts.locked, vegCover);
   }
-  // global scale: ~1000 mm/yr on an Earth, rising ~2.5%/K, with the sea's share
+  // global scale: ~1000 mm/yr on an Earth, rising ~2.5%/K, with the sea's share; the rise
+  // spent by ~330 K (a hothouse's rain is heavy, not millions of times Earth's), and none reaching
+  // the ground as the surface nears water's critical point (647 K: no liquid at any pressure; a
+  // 1,200 K greenhouse world drew e^24 times Earth's rain, all its land rainforest)
   let ocean = 0, tot = 0;
   for (let c = 0; c < n; c++) { tot += G.area[c]; if (sea[c]) ocean += G.area[c]; }
-  const want = 1000 / 12 * dm.exp(0.025 * ((opts.Tmean || 288) - 288)) * Math.sqrt(Math.max(0.02, ocean / tot) / 0.7) * Math.min(1, P / 0.2);
+  const Tm0 = opts.Tmean || 288;
+  const want = 1000 / 12 * dm.exp(0.025 * (Math.min(Tm0, 330) - 288)) * (1 - dm.smoothstep(400, 647, Tm0)) * Math.sqrt(Math.max(0.02, ocean / tot) / 0.7) * Math.min(1, P / 0.2);
   let have = 0;
   for (let m = 0; m < MONTHS; m++) for (let c = 0; c < n; c++) have += Pm[m * n + c] * G.area[c];
   have /= tot * MONTHS;
