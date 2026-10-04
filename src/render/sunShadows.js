@@ -20,6 +20,10 @@ export const SUN_SHADOW_UNIFORMS = {
   uSunShadowDir: { value: new THREE.Vector3(0, 1, 0) },
 };
 
+// the light's position and direction for the cascade being drawn: shared by every caster's shadow
+// material (this file's, and a caster's own: userData.shadowMat, e.g. render/rockRender.js)
+export const SHADOW_LIGHT_UNIFORMS = { uLightPos: { value: new THREE.Vector3() }, uLightDir: { value: new THREE.Vector3() } };
+
 // the casters' material: the distance from the light along the sun
 const DEPTH_VERT = /* glsl */`
 uniform vec3 uLightPos;
@@ -50,7 +54,7 @@ export class SunShadows {
       const t = new THREE.WebGLRenderTarget(c.size, c.size, { type: THREE.FloatType, format: THREE.RedFormat, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: true, generateMipmaps: false });
       return t;
     });
-    this.mat = new THREE.ShaderMaterial({ uniforms: { uLightPos: { value: new THREE.Vector3() }, uLightDir: { value: new THREE.Vector3() } }, vertexShader: DEPTH_VERT, fragmentShader: DEPTH_FRAG, side: THREE.DoubleSide });
+    this.mat = new THREE.ShaderMaterial({ uniforms: { ...SHADOW_LIGHT_UNIFORMS }, vertexShader: DEPTH_VERT, fragmentShader: DEPTH_FRAG, side: THREE.DoubleSide });
     SUN_SHADOW_UNIFORMS.tSunShadow0.value = this.targets[0].texture;
     SUN_SHADOW_UNIFORMS.tSunShadow1.value = this.targets[1].texture;
   }
@@ -60,8 +64,16 @@ export class SunShadows {
     const U = SUN_SHADOW_UNIFORMS;
     if (!this.on || !this.active) { U.uSunShadow.value.x = 0; return; }
     const s = this.sunDir, up = Math.abs(s.y) < 0.99 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
-    const prevTarget = renderer.getRenderTarget(), prevOverride = scene.overrideMaterial, prevClear = renderer.getClearColor(new THREE.Color()), prevAlpha = renderer.getClearAlpha();
-    scene.overrideMaterial = this.mat;
+    const prevTarget = renderer.getRenderTarget(), prevClear = renderer.getClearColor(new THREE.Color()), prevAlpha = renderer.getClearAlpha();
+    // (each caster drawn in its shadow material: its own where it has one, its shape made in its
+    // vertex shader; this one's otherwise)
+    const swapped = this._swapped || (this._swapped = []);
+    swapped.length = 0;
+    scene.traverse((o) => {
+      if (!o.isMesh || !o.layers.isEnabled(SHADOW_LAYER)) return;
+      swapped.push(o, o.material);
+      o.material = o.userData.shadowMat || this.mat;
+    });
     renderer.setClearColor(0xffffff, 1);
     CASCADES.forEach((c, i) => {
       const cam = this.cams[i], texel = 2 * c.far / c.size, D = c.far * 6 + 2000;
@@ -78,8 +90,8 @@ export class SunShadows {
       cam.left = -c.far; cam.right = c.far; cam.top = c.far; cam.bottom = -c.far;
       cam.near = 0; cam.far = D + c.far * 1.5;
       cam.updateProjectionMatrix();
-      this.mat.uniforms.uLightPos.value.copy(cam.position);
-      this.mat.uniforms.uLightDir.value.copy(s);
+      SHADOW_LIGHT_UNIFORMS.uLightPos.value.copy(cam.position);
+      SHADOW_LIGHT_UNIFORMS.uLightDir.value.copy(s);
       renderer.setRenderTarget(this.targets[i]);
       renderer.clear(true, true, false);
       renderer.render(scene, cam);
@@ -88,7 +100,8 @@ export class SunShadows {
     });
     U.uSunShadowDir.value.copy(s);
     U.uSunShadow.value.set(1, CASCADES[0].far, CASCADES[1].far, 0);
-    scene.overrideMaterial = prevOverride;
+    for (let i = 0; i < swapped.length; i += 2) swapped[i].material = swapped[i + 1];
+    swapped.length = 0;
     renderer.setClearColor(prevClear, prevAlpha);
     renderer.setRenderTarget(prevTarget);
   }

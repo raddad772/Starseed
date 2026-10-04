@@ -9,6 +9,7 @@ import { terrainPortrait } from '../gen/portrait.js';
 import { VolumeField, buildVolumeChunk, volumeTransferables } from '../gen/volume.js';
 import { TileSet } from '../gen/worldsim/refine.js';
 import { heightFace } from '../gen/heightmap.js';
+import { scatterStones } from '../gen/rocks.js';
 
 const params = new Map();
 const gens = new Map();
@@ -78,7 +79,7 @@ self.onmessage = (e) => {
       if (!g._species) g._species = floraSpecies(params.get(m.body));
       const r = scatterFlora(g, m.face, m.level, m.ix, m.iy, m.maxLevel, g._species);
       r.type = 'flora'; r.job = m.job;
-      self.postMessage(r, FLORA_KINDS.map((k) => r[k].buffer));
+      self.postMessage(r, [...FLORA_KINDS.map((k) => r[k].buffer), r.geo.buffer]);
       return;
     }
     if (m.type === 'portrait') {
@@ -86,6 +87,13 @@ self.onmessage = (e) => {
       if (m.terrain && !params.has(m.body)) params.set(m.body, m.terrain);
       const r = terrainPortrait(gen(m.body), m.options || {});
       self.postMessage({ type: 'portrait', job: m.job, px: r.px, size: r.size, cover: r.cover }, [r.px.buffer]);
+      return;
+    }
+    if (m.type === 'stones') {
+      // the small stones near the camera (gen/rocks.js)
+      const g = gen(m.body), sp = g._species || (g._species = floraSpecies(params.get(m.body)));
+      const r = scatterStones(g, m.face, m.level, m.ix, m.iy, m.maxLevel, sp.seed ^ 0x2545f491);
+      self.postMessage({ type: 'stones', job: m.job, origin: r.origin, geo: r.geo }, [r.geo.buffer]);
       return;
     }
     if (m.type === 'hface') {

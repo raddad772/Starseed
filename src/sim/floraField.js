@@ -15,6 +15,7 @@
 
 import { scatterFlora, floraSpecies } from '../gen/flora.js';
 import { faceUVFromDir } from '../gen/cubesphere.js';
+import { ROCK_STRIDE, rockShapeOf } from '../gen/rocks.js';
 
 const CELL = 16; // m: spatial hash cell (body-fixed)
 // trunk radius at the base, as a fraction of the tree's height (render/floraRender.js)
@@ -101,6 +102,18 @@ export class FloraField {
         // drawn sunk by a quarter of its size, a squashed sphere: its middle a little under the ground
         put({ kind: 'rock', x: x - x / l * 0.25 * s, y: y - y / l * 0.25 * s, z: z - z / l * 0.25 * s, ux: x / l, uy: y / l, uz: z / l, r, h: 0 });
       }
+    }
+    // the ground's own rocks (gen/rocks.js): a sphere through each, as tall as it stands out of the
+    // ground and centred where its middle is (render/rockRender.js draws the same shape)
+    const geo = data.geo;
+    if (geo) for (let i = 0; i < geo.length; i += ROCK_STRIDE) {
+      const rad = geo[i + 3];
+      if (rad < 0.3) continue;   // (pebbles: wheels roll over them)
+      const x = o[0] + geo[i], y = o[1] + geo[i + 1], z = o[2] + geo[i + 2];
+      if (cleared(x, y, z)) continue;
+      const l = Math.hypot(x, y, z), sh = rockShapeOf(geo[i + 6], geo[i + 9]);
+      const up = rad * sh.sy * (1 - 2 * sh.sink);   // (its middle above the ground)
+      put({ kind: 'rock', x: x + x / l * up, y: y + y / l * up, z: z + z / l * up, ux: x / l, uy: y / l, uz: z / l, r: rad * (0.55 + 0.35 * sh.sy), h: 0 });
     }
   }
 

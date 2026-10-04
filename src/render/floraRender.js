@@ -384,6 +384,7 @@ export class FloraSet {
   updateNode(group, dist) {
     for (const m of group.children) {
       const kind = m.userData.kind;
+      if (!(kind in this.kindDist)) continue;   // (another's: the ground's rocks fade themselves)
       m.visible = dist < this.kindDist[kind];
       if (kind === 'tree') m.geometry = dist < 450 ? this.geos.tree : this.treeFar;
     }

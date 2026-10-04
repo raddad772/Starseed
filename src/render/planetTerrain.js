@@ -9,6 +9,7 @@
 
 import * as THREE from 'three';
 import { SHADOW_LAYER } from './sunShadows.js';
+import { RockSet } from './rockRender.js';
 import { FACES, dirFromFaceUV, chunkArcSize } from '../gen/cubesphere.js';
 import { CHUNK_N, chunkIndices } from '../gen/chunkbuilder.js';
 import { makeTerrainMaterial, DETAIL_PERIOD } from './terrainMaterial.js';
@@ -24,6 +25,7 @@ function setClassAttrs(g, cls) {
 import { NEAR_RINGS } from '../sim/nearGround.js';
 
 const FLORA_DIST = 1600;
+const STONE_DIST = 120, STONE_DROP = 200;   // (the small stones near the camera: gen/rocks.js scatterStones)
 
 const SPLIT_K = 2.2;
 const MORPH_START = 0.62;
@@ -102,6 +104,8 @@ export class PlanetTerrain {
     this.visibleList.length = 0;
     this.deepest = 0; // finest level shown right under the camera
     for (const r of this.roots) this.select(r);
+    // (stones of nodes no longer near: dropped)
+    if (this.stoneNodes) for (const node of this.stoneNodes) if (node.stoneFrame !== this.frame) this.dropStones(node);
     // hide everything not selected this frame, recycle stale meshes
     this.collect();
     this.nearUpdate();
@@ -131,6 +135,7 @@ export class PlanetTerrain {
     if (!this.overHorizon(node)) return;
     const dist = this.nodeDistance(node);
     if (node.level === this.floraLevel && dist < FLORA_DIST) this.floraVisit(node, dist);
+    if (node.level === this.floraLevel + 2 && dist < STONE_DROP) this.stoneVisit(node, dist);
     const wantSplit = node.level < this.maxLevel && dist < SPLIT_K * node.arc;
     if (wantSplit) {
       if (!node.children) {
@@ -222,6 +227,9 @@ export class PlanetTerrain {
     if (this.floraSet) return;
     this.floraSet = new FloraSet(this.body, this.shared);
     this.floraSet.clearings = this.body.floraClearings || (this.body.floraClearings = []);
+    // (the ground's rocks: gen/rocks.js, carried with the flora; drawn in their node's flora group)
+    this.rockSet = new RockSet(this.body, this.shared);
+    this.rockSet.clearings = this.floraSet.clearings;
   }
 
   floraVisit(node, dist) {
@@ -240,11 +248,35 @@ export class PlanetTerrain {
       const field = floraOf(this.body);
       if (field) field.ingest(node.face, node.ix, node.iy, data);
       node.flora = this.floraSet.build(data);
+      const rocks = this.rockSet.build(data);
+      if (rocks) { node.flora.add(rocks); node.flora.userData.count += rocks.userData.count; }
       node.flora.visible = node.floraFrame === this.frame;
       this.floraSet.updateNode(node.flora, node.floraDist || 0);
       this.floraCount += node.flora.userData.count;
       this.group.add(node.flora);
     }, () => { node.floraJob = null; });
+  }
+
+  // the small stones of a node near the camera (one level finer than the flora's two)
+  stoneVisit(node, dist) {
+    node.stoneFrame = this.frame;
+    if (node.stones) { node.stones.visible = node.state === 2; return; }
+    if (node.stoneJob || dist >= STONE_DIST) return;
+    this.ensureFloraSet();
+    const gen = this.generation;
+    (this.stoneNodes || (this.stoneNodes = new Set())).add(node);
+    node.stoneJob = this.pool.submit({ type: 'stones', body: this.body.id, face: node.face, level: node.level, ix: node.ix, iy: node.iy, maxLevel: this.maxLevel }, this.priority(node, dist) + 5);
+    node.stoneJob.promise.then((data) => {
+      if (gen !== this.generation || !node.stoneJob) return;
+      node.stoneJob = null;
+      node.stones = this.rockSet.build(data);
+      if (node.stones) { node.stones.position.set(data.origin[0], data.origin[1], data.origin[2]); this.group.add(node.stones); }
+    }, () => { node.stoneJob = null; });
+  }
+  dropStones(node) {
+    if (node.stoneJob) { this.pool.cancel(node.stoneJob); node.stoneJob = null; }
+    if (node.stones) { this.group.remove(node.stones); node.stones.dispose(); node.stones = null; }
+    if (this.stoneNodes) this.stoneNodes.delete(node);
   }
 
   priority(node, dist) {
@@ -336,6 +368,7 @@ export class PlanetTerrain {
     }
     if (node.floraJob && !node.flora) this.pool.cancel(node.floraJob);
     node.floraJob = null;
+    this.dropStones(node);
     if (node.flora) {
       this.group.remove(node.flora);
       this.floraCount -= node.flora.userData.count;
@@ -353,6 +386,7 @@ export class PlanetTerrain {
     const field = floraOf(this.body);
     if (field) field.prune(posF.clone().setLength(this.R), r);
     const walk = (node) => {
+      if (node.stones && node.dir.clone().multiplyScalar(this.R).distanceTo(posF) < node.arc + r) this.dropStones(node);
       if (node.flora) {
         const c = node.dir.clone().multiplyScalar(this.R);
         if (c.distanceTo(posF) < node.arc + r) {
@@ -514,5 +548,6 @@ export class PlanetTerrain {
     this.generation++;
     for (const r of this.roots) this.disposeNode(r);
     this.disposeNear();
+    if (this.rockSet) this.rockSet.dispose();
   }
 }

@@ -9,6 +9,7 @@ import { analyzeSettlements } from '../gen/settlements.js';
 import { scatterFlora, floraSpecies } from '../gen/flora.js';
 import { terrainPortrait } from '../gen/portrait.js';
 import { heightFace } from '../gen/heightmap.js';
+import { scatterStones } from '../gen/rocks.js';
 
 export class WorkerPool {
   constructor(count, bodies) {
@@ -120,6 +121,7 @@ export class WorkerPool {
         r = scatterFlora(g, m.face, m.level, m.ix, m.iy, m.maxLevel, g._species); r.type = 'flora';
       }
       else if (m.type === 'hface') r = { type: 'hface', h: heightFace(g, m.face, m.size) };
+      else if (m.type === 'stones') { const sp = g._species || (g._species = floraSpecies(this.bodies.find((x) => x.id === m.body).terrain)); const st = scatterStones(g, m.face, m.level, m.ix, m.iy, m.maxLevel, sp.seed ^ 0x2545f491); r = { type: 'stones', origin: st.origin, geo: st.geo }; }
       else if (m.type === 'portrait') { const p = terrainPortrait(g, m.options || {}); r = { type: 'portrait', px: p.px, size: p.size, cover: p.cover }; }
       else r = { type: 'analyze', result: analyzeSettlements(g, m.options || {}) };
       this.pending.delete(e.job);

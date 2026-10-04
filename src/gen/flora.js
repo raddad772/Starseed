@@ -13,6 +13,7 @@ import { S_LEN, S_H, S_TEMP, S_MOIST, S_WDEPTH } from './terrain.js';
 import { cliffWeightAt } from './volume.js';
 import * as dm from '../core/dmath.js';
 import { CHUNK_N } from './chunkbuilder.js';
+import { scatterRocks } from './rocks.js';
 
 export const FLORA_KINDS = ['tree', 'shrub', 'plant', 'rock', 'boulder'];
 
@@ -205,14 +206,10 @@ export function scatterFlora(gen, face, level, ix, iy, maxLevel, species) {
       if (roll < pTree + pShrub * 0.6) { out.shrub.push(px, py, pz, rng.range(0.6, 1.4), rot, tint, slope, 1); continue; }
       if (roll < pTree + pShrub * 0.6 + pPlant * 0.6) { out.plant.push(px, py, pz, rng.range(0.6, 1.5), rot, tint, slope, 2); continue; }
     }
-    const pRock = (0.012 + rock * 0.12 + sand * 0.004) * species.densityRock * (snow > 0.7 ? 0.3 : 1) * (1 - 0.85 * meadow);
-    if (rng.next() < pRock) {
-      const big = rng.next() < 0.18 + rock * 0.2;
-      if (big) out.boulder.push(px, py, pz, rng.range(0.8, 2.6) * species.rockScale, rot, tint, slope, 4);
-      else out.rock.push(px, py, pz, rng.range(0.25, 0.9) * species.rockScale, rot, tint, slope, 3);
-    }
+    // (rocks and boulders: gen/rocks.js, where the ground's history put them; not the flora's own)
   }
   const res = { origin: [ox, oy, oz] };
   for (const k of FLORA_KINDS) res[k] = new Float32Array(out[k]);
+  res.geo = scatterRocks(gen, face, level, ix, iy, maxLevel, species.seed ^ 0x2545f491).rocks;
   return res;
 }
