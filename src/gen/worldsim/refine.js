@@ -298,8 +298,11 @@ export class RefineReader {
         let tile = null;
         if (this.sparse) { tile = R.tiles.get(T); if (!tile) continue; H = tile.h; RW = tile.rw; off = 0; }
         else { if (R.done && !R.done[T]) continue; H = R.h; RW = R.rw; off = T * KK; }
-        // (each tile weighs least at the edge of its kept square, fully a margin's width in)
-        const w = Math.min(1, (Math.min(fi, K - 1 - fi) - 1) / (2 * KEEP)) * Math.min(1, (Math.min(fj, K - 1 - fj) - 1) / (2 * KEEP));
+        // (each tile weighs nothing at the ends of what it can be read over (1 .. K - 3) and fully
+        // a margin's width in: so a neighbour's weight fades out before it drops, not by a step
+        // (it ended at 1/48, a step as tall as a 48th of where the two tiles part, a dark line on
+        // the ground's slope), and the two ramps across an overlap sum to one)
+        const w = Math.min(1, Math.min(fi - 1, K - 3 - fi) / (2 * KEEP - 4)) * Math.min(1, Math.min(fj - 1, K - 3 - fj) / (2 * KEEP - 4));
         if (w <= 0) continue;
         const i = Math.floor(fi), j = Math.floor(fj);
         bspline(fi - i, bx); bspline(fj - j, by); catrom(fi - i, cx); catrom(fj - j, cy);
