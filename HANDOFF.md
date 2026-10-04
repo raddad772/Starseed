@@ -74,6 +74,21 @@ small one: "I definitely like right a lot more", then "Yeah fix refine and optim
   an ice-sheet margin on Saeverkion LAB-162:5 shows grid-stepped parallel grooves; Coavre's ice cap
   shows a straight line at 3 km.
 
+- In-game renders (tools/scenic.js, d5fd0dc; sheet: scratchpad render_sheet.jpg): Earth, Seamibest
+  LAB-110:5, Saeverkion LAB-162:5, Vovuld LAB-122:4, Opaediss LAB-134:16, Ludrionar LAB-118:10, each from
+  space and at a landmark. Dave: "That's too much clouds, clouds don't cover the real earth like that".
+  Fixed (90e4b8d): the noise behind the cover sits in a narrow band (half of it 0.657 .. 0.705) and was
+  read by thresholds 0.6 .. 0.8, so every point was about a third covered, a veil over the whole globe.
+  Now one `cloudCover` (atmosphere.js) for the far shell, the near volume and the ground's cloud
+  shadows: the noise spread to the thresholds, its weather systems a fraction of the radius (`CLOUD_K`:
+  fronts a quarter of it across) and drawn out east-west, each octave faded to its mean where a pixel
+  spans its texels (no speckle from orbit), the climate's cloud map about its own mean (`uCloudMapMean`;
+  the world's cover sets the amount). Measured as the share of the lit disc that clouds brighten
+  (clouds off vs on): Earth 30% side-on, 29-53% face-on by longitude (mean 43%); Seamibest (cover
+  0.42) 28%. Seen and not fixed: dark dashes along the horizon (water and land, every world); flora as
+  black specks at range; a 1,240 K surface (Vovuld) renders black, no thermal glow; Vovuld's inner ring
+  from space (a circle at ~0.85 of the disc); stair-stepped cloud edges at the limb (the half-res sky).
+
 **What's still wrong / next:**
 - Snow covers most of a high mountain (the snowline reads the real height: physically right, maybe too
   white for Dave).
