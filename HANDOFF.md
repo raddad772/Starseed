@@ -120,6 +120,27 @@ small one: "I definitely like right a lot more", then "Yeah fix refine and optim
   Foliage (trees ending in a disc at 1.5 km, "cups" plants like stumps): NOT to fix, Dave: "we need to
   totally do foliage differently in the future".
 
+- Scanned ground materials (731f65e, 9ad8929; sheet: scratchpad materials_sheet.jpg). Dave: realistic
+  dirt/snow/ice, "both the 3 sample and 2 sample ways", keep the old mode; not for Xbox prod.
+  `?mat=3` triplanar (default), `?mat=2` biplanar, `?mat=0` the procedural detail; `setMatMode` live
+  (scenic.js `S.matMode(n)`). 12 classes (gen/matclasses.js) from CC0 scans (Poly Haven 11, ambientCG's
+  Ice002), `python3 tools/build-materials.py` (downloads to gitignored assets/materials/src; writes
+  three RGB webps a class, 2 m tile; albedo over its mean so the sim's colour stays the ground's).
+  terrain.js shade writes each class's share into mat[8..19] (MAT_N callers only), chunks carry them as
+  cls0..2. Shader: top two classes, near 2 m + far 16 m reads, height blend, GGX by roughness, wet
+  glossier, snow and quartz glints, ice blue. Sand: its ripples a layer of their own laid by the air
+  (`windRipple`: none airless, spacing by density, Mars ~0.9 m). Beach swash zone wet.
+  Still to do there: wind-sculpted snow on windy worlds; the ripple direction from the sim's winds
+  (it's the texture's axis now); wind speed locally (calm basins vs windy plateaus); per-class tile
+  sizes; a performance number (mode 3 vs 2 vs 0).
+- Dave's queue from the same burst (in order of asking): rocks and boulders on the ground where it
+  makes sense (talus, erratics, ejecta; collide; use the rock materials); a generic liquid shader (any
+  liquid by its optics; ocean swell, lake chop, river roughness, still pools, puddles; gravity, surface
+  tension, pressure; seasonal sea ice and frozen ponds by the current season; waterfalls with spray
+  and mist; ice floes separately later); terrain self-shadowing (cascaded sun shadows near, per-vertex
+  horizon angles far); an aurora-viewing catalogue item (landmarks: under the oval, high, clear,
+  long nights).
+
 **What's still wrong / next:**
 - Snow covers most of a high mountain (the snowline reads the real height: physically right, maybe too
   white for Dave).
