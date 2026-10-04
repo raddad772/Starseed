@@ -133,12 +133,23 @@ small one: "I definitely like right a lot more", then "Yeah fix refine and optim
   Still to do there: wind-sculpted snow on windy worlds; the ripple direction from the sim's winds
   (it's the texture's axis now); wind speed locally (calm basins vs windy plateaus); per-class tile
   sizes; a performance number (mode 3 vs 2 vs 0).
+- Terrain self-shadowing (e0e68b7, ccf696c; sheet: scratchpad shadows_sheet.jpg). Far: each pixel
+  marches toward the sun through a coarse height cube (gen/heightmap.js, 6 x 512^2, ~300 m texels on an
+  Earth, built by the terrain workers in ~20 s per world; render/terrainShadow.js); the air too (the
+  sky's and the near volume's march cut a sample's sun below the highest ground: Dave, "shadows need
+  to account for atmosphere"; the sky's light still fills every shadow; a thick air's diffuse light
+  makes them faint by itself). Near: two cascaded maps, 0..120 m and ..1.2 km, 2048^2, distance along
+  the sun in a float target (render/sunShadows.js; casters on SHADOW_LAYER: terrain, near volume,
+  plants; ships and rocks to add). Costs at 1280x720 (whole frame, GPU): mat 0 16 ms, mat 2 21, mat 3
+  23 (was 88 before skipping projections under 2%), near maps +5.5. ?hshadow=0, ?sunshadow=0.
+  To look at: a slope near Yotaxus went largely dark under the near maps at a 15 degree sun (a ridge's
+  shadow, it seemed; not proven); no shadow-map shimmer test yet while moving.
 - Dave's queue from the same burst (in order of asking): rocks and boulders on the ground where it
   makes sense (talus, erratics, ejecta; collide; use the rock materials); a generic liquid shader (any
   liquid by its optics; ocean swell, lake chop, river roughness, still pools, puddles; gravity, surface
   tension, pressure; seasonal sea ice and frozen ponds by the current season; waterfalls with spray
-  and mist; ice floes separately later); terrain self-shadowing (cascaded sun shadows near, per-vertex
-  horizon angles far); an aurora-viewing catalogue item (landmarks: under the oval, high, clear,
+  and mist; ice floes separately later); terrain self-shadowing (done, above); an aurora-viewing
+  catalogue item (landmarks: under the oval, high, clear,
   long nights).
 
 **What's still wrong / next:**
