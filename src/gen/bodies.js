@@ -331,7 +331,9 @@ function airGlow(b, star, h, atm, S) {
   const active = star.age < (star.activeGyr || 0) ? dm.sqrt(star.xuv || 1) : 1;
   const wind = dm.clamp(dm.sqrt(S * active), 0.03, 6);
   const field = h.field || 0;
-  const O = (c.O2 || 0) + 0.3 * (c.CO2 || 0) + 0.1 * (c.H2O || 0), N = 0.35 * (c.N2 || 0), Hy = 0.8 * (c.H2 || 0) + 0.1 * (c.CH4 || 0);
+  // (nitrogen's weight to Earth's: its aurora's oxygen green (557.7 nm) some 2-3 times as bright as
+  // nitrogen's violet (N2+ 427.8 nm) from air of 21% O2 and 78% N2)
+  const O = (c.O2 || 0) + 0.3 * (c.CO2 || 0) + 0.1 * (c.H2O || 0), N = 0.11 * (c.N2 || 0), Hy = 0.8 * (c.H2 || 0) + 0.1 * (c.CH4 || 0);
   const w = O + N + Hy + 1e-6;
   const mixc = (a, x, y, z) => [0, 1, 2].map((i) => (O * a[i] + N * x[i] + Hy * y[i] + z * [0.6, 0.6, 0.7][i]) / (w + z));
   const green = [0.12, 1.0, 0.25], violet = [0.35, 0.2, 1.0], pink = [1.0, 0.22, 0.32], red = [1.0, 0.12, 0.08];

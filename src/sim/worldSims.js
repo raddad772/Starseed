@@ -13,6 +13,7 @@
 // terrain workers (one copy: SharedArrayBuffers).
 
 import { SIM_VERSION, simNFor } from '../gen/worldsim/snapshot.js';
+import { auroraLandmark } from '../gen/worldsim/landmarks.js';
 import { TILE_VERSION } from '../gen/tileshape.js';
 import { refineLevelN } from '../gen/localsim.js';
 import { newRefine, putTile, complete, toStorable, fromStorable } from '../gen/worldsim/refine.js';
@@ -267,6 +268,11 @@ export class WorldSims {
   _apply(id, snap, fromCache) {
     this.status.set(id, 'ready');
     const g = this.game, b = g.system.bodies[id];
+    // (where to watch its aurora: read from the snapshot, so cached worlds have it too)
+    if (snap.landmarks && !snap.landmarks.some((l) => l.kind === 'aurora')) {
+      // (third in the list: the catalog shows the first few)
+      try { const a = auroraLandmark(snap, b, `${this.seed}|${id}`); if (a) snap.landmarks.splice(Math.min(2, snap.landmarks.length), 0, a); } catch (err) { console.warn('aurora landmark:', err); }
+    }
     b.terrain.snapshot = snap;
     const ub = g.universe.bodies.find((x) => x.data && x.data.id === id);
     if (ub) ub._gen = null;                          // (the physics' generator, rebuilt from it)

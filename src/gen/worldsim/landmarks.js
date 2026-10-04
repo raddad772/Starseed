@@ -5,6 +5,7 @@
 
 import { Rng } from '../../core/rng.js';
 import { makeName } from '../names.js';
+import { GridLite } from './grid.js';
 
 // each kind's forms (# is the name)
 const FORMS = {
@@ -78,4 +79,48 @@ export function landmarks(F, dry = false) {
   if (F.iceFields && F.iceFields[0]) add('ice', F.iceFields[0], `${F.iceFields[0].kind}, ${km(F.iceFields[0].areaKm2)} km²`);
   if (F.craters && F.craters[0]) add('crater', F.craters[0], `${km(F.craters[0].diameterKm)} km across`);
   return out;
+}
+
+// Where to watch the aurora: land under a magnetic pole's oval, where its arcs stand overhead (the
+// field's oval: bodies.js airGlow), dark (the winter's longest night, from the latitude and the axial
+// tilt), and clear (the clouds the game draws: snapshot.js's cloud, more where it rains): Abisko's,
+// Fairbanks'. Read from a world's snapshot (s) whenever it's applied, cached or new, so no world
+// needs simulating again for it. key: the landmarks' (seed and body). A landmark, or null (no
+// field, no air, no land under the oval)
+export function auroraLandmark(s, body, key) {
+  const atm = body.atmosphere, glow = atm && atm.render && atm.render.glow;
+  if (!glow || !(glow.ovalLat > 0) || !(glow.aurora > 0) || !s.h) return null;
+  // (on the climate grid, with its clouds; a world simulated without a climate, on its own grid,
+  // its skies not known)
+  const G = new GridLite(s.N, s.R), cl = !!(s.Nc && s.cloud), Gc = cl ? new GridLite(s.Nc, s.R) : G, m = Gc.n, ax = glow.magAxis, d = [0, 0, 0];
+  const obl = Math.abs((body.rotation && body.rotation.obliquity) || 0);
+  let best = null;
+  for (let c = 0; c < m; c += cl ? 1 : 3) {
+    Gc.centre(c, d);
+    const fc = cl ? G.cellAt(d[0], d[1], d[2]) : c;
+    if (!(s.h[fc] > 0) || (s.ice && s.ice[fc] > 0)) continue;
+    const mlat = Math.asin(Math.min(1, Math.abs(d[0] * ax[0] + d[1] * ax[1] + d[2] * ax[2])));
+    const u = (mlat - glow.ovalLat) / (1.5 * glow.ovalWidth), under = Math.exp(-u * u);
+    if (under < 0.3) continue;
+    // (the winter's longest night, its share of the day: polar night where the tilt brings it)
+    const t = Math.tan(Math.min(1.55, Math.abs(Math.asin(d[1])))) * Math.tan(Math.min(1.55, obl));
+    const night = t >= 1 ? 1 : 1 - Math.acos(Math.min(1, t)) / Math.PI;
+    const clear = cl ? 1 - s.cloud[c] : 0.7;
+    const score = under * (0.4 + night) * clear * clear;
+    if (!best || score > best.score) best = { score, night, clear, lat: Math.asin(d[1]) * 180 / Math.PI, lon: Math.atan2(d[2], d[0]) * 180 / Math.PI };
+  }
+  if (!best) return null;
+  const rng = Rng.fromString('landmarks|' + key).fork('aurora');
+  const forms = ['the # Lights', '# Skywatch', 'the # Overlook'];
+  // (its lights' colours: each the air's glow has strongly, bodies.js airGlow's low arcs)
+  let n = makeName(rng, 2, 2);
+  for (let k = 0; k < 4 && n.length > 9; k++) n = makeName(rng, 2, 2);
+  const lo = glow.colorLow || [0, 1, 0], mx = Math.max(lo[0], lo[1], lo[2], 1e-6);
+  const cols = [lo[1] > 0.75 * mx ? 'green' : null, lo[2] > 0.75 * mx ? 'violet' : null, lo[0] > 0.75 * mx ? 'red' : null].filter(Boolean);
+  const dark = best.night > 0.99 ? 'the sun stays down in midwinter' : `winter nights ${Math.round(best.night * 100)}% of the day`;
+  return {
+    kind: 'aurora', name: cap(forms[rng.int(0, forms.length - 1)].replace('#', n)),
+    text: `under the auroral oval, its lights ${cols.join(' and ')}; ${dark}${cl ? `, skies ${best.clear > 0.6 ? 'mostly clear' : best.clear > 0.4 ? 'often clear' : 'often clouded'}` : ''}`,
+    lat: best.lat, lon: best.lon,
+  };
 }
