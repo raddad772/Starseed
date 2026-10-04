@@ -75,6 +75,13 @@ export const GLSL_LIQUID = /* glsl */`
 uniform vec4 uLiquid;     // F0, the wind (m/s), wind waves (1 .. 0 a thick melt), the peak wavelength (m)
 uniform vec4 uLiquid2;    // gravity, how it foams (water most), the sea's freezing point under the fresh's (C), the sun's latitude now (sin)
 uniform vec4 uWaveK[${N_WAVE}];   // each wave's k (planet-fixed, rad/m), its phase now
+// the prevailing wind's way at upF (the belts the sim's climate has: the trades blowing west, the
+// westerlies east, the polar easterlies west): +1 toward the east, -1 toward the west, turning over
+// a few degrees between belts (shared with sand's ripples, materials.js)
+float windSense(vec3 upF) {
+  float al = abs(asin(clamp(upF.y, -1.0, 1.0)));
+  return -1.0 + 2.0 * smoothstep(0.49, 0.55, al) - 2.0 * smoothstep(1.02, 1.08, al);
+}
 // the waves' sum at fp: their slope (x, y, z, planet-fixed), each weighted (wt: kind's and the
 // wind's), how much of it the pixel resolves; crest: the resolved sum itself, in its own deviations
 struct Waves { vec3 g; float var; float var0; float res; float crest; };
@@ -116,10 +123,10 @@ void liquidSurface(vec3 fp, vec3 n, vec3 upF, float kind, float flow, float fetc
   float al = abs(asin(clamp(upF.y, -1.0, 1.0)));
   // the prevailing wind: trades toward the west, westerlies east, polar easterlies west; light in
   // the doldrums, strongest in the westerlies
-  float toward = al < 0.52 || al > 1.05 ? -1.0 : 1.0;
+  float toward = windSense(upF);
   float strength = al < 0.09 ? 0.45 : al < 0.52 ? 0.9 : al < 1.05 ? 1.25 : 0.8;
   vec3 east = cross(vec3(0.0, 1.0, 0.0), upF);
-  vec3 wd = length(east) > 1e-4 ? normalize(east) * toward : vec3(1.0, 0.0, 0.0);
+  vec3 wd = length(east) > 1e-4 ? normalize(east) * sign(toward + 1e-3) : vec3(1.0, 0.0, 0.0);
   bool river = kind > 0.55 && kind < 0.85, pond = kind > 0.85, sea = kind < 0.2;
   // (the crests bent by the smooth noise wn (-1..1, east and north), a tenth of the longest's length)
   vec3 e1 = length(east) > 1e-4 ? normalize(east) : vec3(1.0, 0.0, 0.0), e2 = cross(upF, e1);

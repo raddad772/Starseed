@@ -210,12 +210,33 @@ float grainGlint(vec3 p, vec3 N, vec3 H, float rare) {
 }
 // sand's wind ripples over normal n at p: their layer at the world's spacing (sp), near, and 8x that
 // (megaripples) further, each faded as a pixel (foot m) grows past a third of its spacing
-vec3 sandRippleN(vec3 p, vec3 dx, vec3 dy, vec3 n, float sp, float foot, float k) {
+// one scale of the ripples, read in the ground's own frame (e along the wind, c along the crests)
+// rather than along the texture's axes: their slopes along it
+vec3 rippleSlopes(vec3 p, vec3 dx, vec3 dy, vec3 e, vec3 c, float t) {
+  vec2 uv = vec2(dot(p, e), dot(p, c)) / t;
+  vec2 q = textureGrad(tMatN, vec3(uv, ${RIPPLE_LAYER}.0), vec2(dot(dx, e), dot(dx, c)) / t, vec2(dot(dy, e), dot(dy, c)) / t).xy * 2.0 - 1.0;
+  return e * q.x + c * q.y;
+}
+// sand's wind ripples: crests at right angles to the wind (Bagnold), along the local north under the
+// zonal winds, their steep lee side downwind (the texture's +u: so turned half round where it blows
+// west, the two read together over the few degrees between belts). east, up: planet-fixed, the
+// ground's smooth up (not its shaded normal: its grain, against coordinates kilometres long, would
+// scatter the read); sense: liquid.js windSense
+vec3 sandRippleN(vec3 p, vec3 dx, vec3 dy, vec3 n, float sp, float foot, float k, vec3 east, vec3 up, float sense) {
   float t = MAT_TILE * sp;
   float f1 = 1.0 - smoothstep(0.015 * sp, 0.06 * sp, foot), f2 = 1.0 - smoothstep(0.2 * sp, 0.5 * sp, foot);
-  vec3 r = n;
-  if (f1 > 0.0) r += (matSurf(${RIPPLE_LAYER}.0, p / t, dx / t, dy / t, n).n - n) * f1 * k;
-  if (f2 > 0.0) r += (matSurf(${RIPPLE_LAYER}.0, p / (t * 8.0) + 0.21, dx / (t * 8.0), dy / (t * 8.0), n).n - n) * f2 * k * 0.25;
-  return normalize(r);
+  vec3 e = east - up * dot(east, up);
+  e = length(e) > 1e-4 ? normalize(e) : normalize(cross(up, vec3(0.0, 0.0, 1.0)));
+  vec3 c = cross(up, e);
+  float wP = 0.5 + 0.5 * sense;
+  vec3 g = vec3(0.0);
+  for (int s = 0; s < 2; s++) {
+    float sc = s == 0 ? t : t * 8.0, f = s == 0 ? f1 : f2 * 0.25;
+    if (f <= 0.0) continue;
+    vec3 q = s == 0 ? p : p + 0.21 * t * 8.0;
+    if (wP > 0.01) g += rippleSlopes(q, dx, dy, e, c, sc) * wP * f;
+    if (wP < 0.99) g += rippleSlopes(q, dx, dy, -e, -c, sc) * (1.0 - wP) * f;
+  }
+  return normalize(n + g * k);
 }
 `;

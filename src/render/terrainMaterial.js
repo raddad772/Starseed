@@ -28,11 +28,13 @@ attribute vec4 cls2;
 uniform vec3 uCamLocal;
 uniform vec2 uMorph;
 uniform vec3 uOriginMod;
+uniform vec3 uOriginRel;   // (this mesh's origin less the terrain's near anchor: planetTerrain.js)
 uniform vec3 uNearOff;     // this mesh's origin less the near field's centre (body-fixed)
 uniform vec2 uNear;
 uniform vec3 uNearUp;
 uniform float uNearMode;
 varying vec3 vNearRel;
+varying vec3 vAnchorPos;
 varying float vOcc;
 varying vec3 vWorldPos;
 varying vec3 vNormal;
@@ -75,6 +77,7 @@ void main() {
   vFixedPos = uOriginMod + p;
   vFixedNormal = n;
   vNearRel = uNearOff + p;
+  vAnchorPos = uOriginRel + p;
   vOcc = occ;
   gl_Position = projectionMatrix * viewMatrix * wp;
   #include <logdepthbuf_vertex>
@@ -109,6 +112,7 @@ uniform vec3 uNearUp;      // the up at its centre: the cut is a vertical cylind
 uniform float uNearMode;
 uniform vec2 uNearBand;    // (a volume chunk) its ring's band from the centre
 varying vec3 vNearRel;
+varying vec3 vAnchorPos;
 varying float vOcc;
 varying vec3 vWorldPos;
 varying vec3 vNormal;
@@ -227,7 +231,10 @@ void main() {
     albedo *= mix(vec3(1.0), vec3(0.74, 0.88, 1.0), vCls2.w);
     gRough = ms.rough; gAO = ms.ao;
     // sand: the wind's ripples, as far as this world's air works its sand
-    if (vCls1.z > 0.05 && uWindRipple.x > 0.0) ms.n = sandRippleN(fp, dpx, dpy, ms.n, uWindRipple.y, foot, uWindRipple.x * min(vCls1.z * 1.5, 1.0));
+    if (vCls1.z > 0.05 && uWindRipple.x > 0.0) {
+      vec3 upL = uToFixed * up;
+      ms.n = sandRippleN(vAnchorPos, dpx, dpy, ms.n, uWindRipple.y, foot, uWindRipple.x * min(vCls1.z * 1.5, 1.0), cross(vec3(0.0, 1.0, 0.0), upL), upL, windSense(upL));
+    }
     N = normalize(mix(N, normalize(transpose(uToFixed) * ms.n), 0.9));
 #else
     // (d0: the detail's whole period, 4 km)
@@ -443,6 +450,7 @@ export function makeTerrainMaterial(shared) {
       uNearMode: { value: 0 },
       uNearBand: { value: new THREE.Vector2(0, 0) },
       // (this chunk's biggest fall, planetTerrain.js: its lip's radius (0 none), its foot (chunk-local), its width)
+      uOriginRel: { value: new THREE.Vector3() },
       uFallTop: { value: 0 },
       uFallFoot: { value: new THREE.Vector3() },
       uFallW: { value: 0 },

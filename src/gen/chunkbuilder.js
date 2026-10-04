@@ -62,8 +62,15 @@ function encodeColor(c) { return Math.max(0, Math.min(255, Math.round(Math.sqrt(
 function encodeWater(depth) { return depth > 0 ? Math.max(1, Math.min(255, Math.round(Math.sqrt(depth / 6000) * 255))) : 0; }
 // a vertex's height against the water, signed (m): its depth under it, or on land how far above
 // it (the sea's level; inland, a lake's or a river's unknown here, a little): the shader's shore is
-// where it crosses 0 between vertices, straight across a triangle, not stepping round its land corners
-function shoreDepth(depth, h) { return depth > 0 ? depth : -Math.min(2, Math.max(0.05, h)); }
+// where it crosses 0 between vertices, straight across a triangle, not stepping round its land
+// corners. Inland water as if deeper (kind: terrain.js _liquidSurface's): a lake's at least 2 m, a
+// river's, a creek's and a pond's 8, so a channel a vertex or two wide fills its triangles (its own
+// depth against the land's unknown height above it put the edge so near each water vertex that a
+// creek running across the mesh's diagonals came apart in dashes)
+function shoreDepth(depth, h, kind) {
+  if (!(depth > 0)) return -Math.min(2, Math.max(0.05, h));
+  return kind < 0.2 ? depth : kind < 0.55 ? Math.max(depth, 2) : Math.max(depth, 8);
+}
 // (into the normal's spare byte, companded: fine near the shore)
 function encodeShore(d) {
   const v = Math.round(Math.sign(d) * Math.sqrt(Math.min(Math.abs(d), 64) / 64) * 127);
@@ -174,7 +181,7 @@ export function buildChunk(gen, face, level, ix, iy, N = CHUNK_N) {
         nv[0] = nx; nv[1] = ny; nv[2] = nz;
         gen.shade(s, 1 - up, col, mat, nv);
         const oc = (j * CVi + i) * 4;
-        coarseCol[oc] = col[0]; coarseCol[oc + 1] = col[1]; coarseCol[oc + 2] = col[2]; coarseCol[oc + 3] = shoreDepth(mat[4], s[0]);
+        coarseCol[oc] = col[0]; coarseCol[oc + 1] = col[1]; coarseCol[oc + 2] = col[2]; coarseCol[oc + 3] = shoreDepth(mat[4], s[0], mat[0]);
       }
     }
   }
@@ -221,7 +228,7 @@ export function buildChunk(gen, face, level, ix, iy, N = CHUNK_N) {
       gen.shade(s, 1 - up, col, mat, nv);
       nrm[vi * 4] = Math.round(nx * 127); nrm[vi * 4 + 1] = Math.round(ny * 127); nrm[vi * 4 + 2] = Math.round(nz * 127);
       if (mat[4] > 0 && mat[0] > 0.55 && mat[0] < 0.85) { steepA[vi] = 1 - up; wdA[vi] = mat[4]; }
-      const sd = shoreDepth(mat[4], s[0]);
+      const sd = shoreDepth(mat[4], s[0], mat[0]);
       nrm[vi * 4 + 3] = encodeShore(sd);
       colA[vi * 4] = encodeColor(col[0]); colA[vi * 4 + 1] = encodeColor(col[1]); colA[vi * 4 + 2] = encodeColor(col[2]);
       colA[vi * 4 + 3] = encodeWater(mat[4]);

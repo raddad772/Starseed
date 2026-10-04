@@ -96,6 +96,13 @@ export class PlanetTerrain {
   update(camFixed, frustumCheck) {
     this.frame++;
     this.camLocal.copy(camFixed);
+    // (the ground's near anchor: a point by the camera every mesh measures itself from, in double
+    // precision here, so a pattern laid along the ground's own directions (sand's ripples across the
+    // wind) carries on unbroken from one mesh to the next; moved only when the camera's well away)
+    if (!this.anchor || this.anchor.distanceTo(camFixed) > 700) {
+      this.anchor = this.anchor || new THREE.Vector3();
+      this.anchor.set(Math.round(camFixed.x / 512) * 512, Math.round(camFixed.y / 512) * 512, Math.round(camFixed.z / 512) * 512);
+    }
     const camDist = camFixed.length();
     this.camDist = camDist;
     // horizon: angle from the sub-camera point at which the surface sphere is tangent
@@ -340,6 +347,7 @@ export class PlanetTerrain {
     const u = m.material.uniforms;
     const o = m.userData.origin;
     u.uCamLocal.value.set(this.camLocal.x - o[0], this.camLocal.y - o[1], this.camLocal.z - o[2]);
+    u.uOriginRel.value.set(o[0] - this.anchor.x, o[1] - this.anchor.y, o[2] - this.anchor.z);
     const end = SPLIT_K * node.arc * 2;
     if (node.level === 0) u.uMorph.value.set(1e30, 2e30);
     else u.uMorph.value.set(end * MORPH_START, end * 0.985);
@@ -496,6 +504,7 @@ export class PlanetTerrain {
       const o = ch.mesh.userData.origin, ring = NEAR_RINGS[ch.ring];
       const uu = ch.mesh.material.uniforms;
       uu.uNearOff.value.set(o[0] - c[0], o[1] - c[1], o[2] - c[2]);
+      uu.uOriginRel.value.set(o[0] - this.anchor.x, o[1] - this.anchor.y, o[2] - this.anchor.z);
       uu.uNearBand.value.set(ring.r0, ring.r1);
       ch.mesh.visible = ng.ready && this.ringShown[ch.ring] && ring.r1 <= cover;
     }
