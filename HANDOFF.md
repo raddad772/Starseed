@@ -70,6 +70,14 @@ small one: "I definitely like right a lot more", then "Yeah fix refine and optim
   planar between its 500 m cells. Fixed by starting the refinement and pyramid a little uneven
   (localsim.js seedRough 0.3 by default where water runs, TILE 45): the gullies branch into networks.
   At 1.0 the start's bumps outlast the run (lumpy). Survey sheets: scratchpad shots/roughness.jpg.
+- Each level's channels burned in as lines when it finishes (localsim.js burnChannels, TILE 47): a
+  channel crossing the grid diagonally joined its cells corner to corner and the cells beside each joint
+  stood as banks: a row of teeth along every diagonal channel (Dave's valley view: sharp spikes on the
+  river banks; survey views: ladder rungs, grid-squared "staple" grooves). Ground within 1.5 cells of a
+  channel (10+ cells' water) held to a V from its smooth line. Jaggedness down at every level (rms of
+  each cell less its neighbours' mean: 5.1/3.0/0.63 m -> 3.9/2.4/0.47 m at 38/9.6/2.4 m cells).
+  Not the beds, joints or dips (each switched off: the same grooves; `opts.beds false` stays as a switch).
+  Bed dips and folds back at real size (geology.js; the fault throw stays drawn by hScale).
 - Tried and dropped: each tile level faded out by the mesh's spacing (to cut chunk rebuilds and aliasing):
   the finest level (2.4 m) wears down sharp cones the 9.6 m level leaves (L+4 has ~5.6% of its cells
   steeper than 60 degrees), and without it they stood in the middle distance. Every level is read at

@@ -226,6 +226,50 @@ function tileHeightAt(T, u, v) {
   return (T.h[o] * (1 - a) + T.h[o + 1] * a) * (1 - b) + (T.h[o + K] * (1 - a) + T.h[o + K + 1] * a) * b;
 }
 
+// the ground near each channel (water >= Amin) held to a V from its line (prepareTile's finish)
+const BX = [-1, 0, 1, -1, 1, -1, 0, 1], BY = [-1, -1, -1, 0, 0, 1, 1, 1];
+function burnChannels(h, E, NG, Amin, wet) {
+  const n = NG * NG, A = E.A, rcv = E.rcv, out = Float64Array.from(h);
+  for (let c = 0; c < n; c++) {
+    if (A[c] < Amin || wet[c]) continue;
+    const r = rcv[c];
+    if (r < 0) continue;
+    const i = c % NG, j = (c - i) / NG;
+    if (i < 2 || j < 2 || i >= NG - 2 || j >= NG - 2) continue;
+    // (its main inflow, and how steeply its banks rise: m a cell, over the cells round it)
+    let u = c, ua = -1, ws = 0, wn = 0;
+    for (let k = 0; k < 8; k++) {
+      const q = c + BY[k] * NG + BX[k];
+      if (rcv[q] === c && A[q] > ua) { ua = A[q]; u = q; }
+      const dh = h[q] - h[c];
+      if (dh > 0) { ws += BX[k] && BY[k] ? dh * 0.7071067811865476 : dh; wn++; }
+    }
+    if (!wn) continue;
+    const cw = ws / wn, ui = u % NG, uj = (u - ui) / NG, ri = r % NG, rj = (r - ri) / NG;
+    const x0 = 0.5 * (ui + i), y0 = 0.5 * (uj + j), x2 = 0.5 * (i + ri), y2 = 0.5 * (j + rj);
+    const h0 = 0.5 * (h[u] + h[c]), h2 = 0.5 * (h[c] + h[r]);
+    for (let dj = -2; dj <= 2; dj++) for (let di = -2; di <= 2; di++) {
+      const q = c + dj * NG + di;
+      if (wet[q]) continue;
+      const fi = i + di, fj = j + dj;
+      // (the nearest point on the curve, over eight chords)
+      let px = x0, py = y0, bd = 1e9, bh = 0;
+      for (let t = 1; t <= 8; t++) {
+        const s = t / 8, a0 = (1 - s) * (1 - s), a1 = 2 * s * (1 - s), a2 = s * s;
+        const qx = a0 * x0 + a1 * i + a2 * x2, qy = a0 * y0 + a1 * j + a2 * y2, vx = qx - px, vy = qy - py, L2 = vx * vx + vy * vy;
+        const f = L2 > 0 ? Math.max(0, Math.min(1, ((fi - px) * vx + (fj - py) * vy) / L2)) : 0;
+        const ex = px + f * vx - fi, ey = py + f * vy - fj, d = Math.sqrt(ex * ex + ey * ey);
+        if (d < bd) { const tt = (t - 1 + f) / 8, b0 = (1 - tt) * (1 - tt), b1 = 2 * tt * (1 - tt), b2 = tt * tt; bd = d; bh = b0 * h0 + b1 * h[c] + b2 * h2; }
+        px = qx; py = qy;
+      }
+      if (bd >= 1.5) continue;
+      const v = bh + cw * bd;
+      if (v < out[q]) out[q] = v;
+    }
+  }
+  h.set(out);
+}
+
 // three passes of a box blur (about a Gaussian of sigma r), in place
 function blur(a, r, tmp) {
   for (let pass = 0; pass < 3; pass++) for (let axis = 0; axis < 2; axis++) {
@@ -459,7 +503,9 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
   // (a pyramid tile's: each cell's rock's suite of layers (the world's, geology.js), tilted and
   // folded, read at its height as it is now, so as valleys cut down through hard and soft beds,
   // cliff bands stand)
-  const suiteC = pyr ? new Uint8Array(n) : null, cols = pyr ? SUITES.map((su) => worldColumn((gen.p.seed && gen.p.seed[0]) | 0, su, 0.5 * cell)) : null;
+  // (opts.beds false: each column one hardness, its mean: to see what the beds do)
+  const colOf = (su) => { const c = worldColumn((gen.p.seed && gen.p.seed[0]) | 0, su, 0.5 * cell); if (opts.beds !== false) return c; let m = 0; for (const v of c.hard) m += v; m /= c.hard.length; return { ...c, hard: new Float32Array(c.hard.length).fill(m), at() { return m; } }; };
+  const suiteC = pyr ? new Uint8Array(n) : null, cols = pyr ? SUITES.map(colOf) : null;
   const readSuite = () => { for (let c = 0; c < n; c++) { const nm = ROCKS[rockC[c]].name; suiteC[c] = DEPOSITS.has(nm) ? 3 : Math.max(0, SUITES.indexOf(SUITE[nm] || 'loose')); } };
   const hardAt = refine ? (c) => ROCK_HD[rockC[c]] : pyr ? (c, z = h[c]) => cols[suiteC[c]].at(z + bedOff[c]) * (1 - 0.7 * weak[c]) : (c, z) => col.at(z + bedOff[c]) * (1 - 0.7 * weak[c]);
   // the starting surface, with a few centimetres of jitter (so water has a way to choose)
@@ -746,6 +792,14 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
     stampFolds(h, G, S.s.folds, R, cellL, pyr ? 4 * cellL : Infinity);
   }
   E.nStep = steps; E.route(); E.drain();
+  // its channels as lines: the run cuts a channel a cell wide, from cell to cell; one running
+  // diagonally across the grid joins its cells corner to corner, and the cells either side of each
+  // joint stay as high as the banks, a row of teeth along it (rungs in a view from above). Each
+  // channel (ten of this level's cells' water or more) is a smooth curve from halfway to its main
+  // inflow, through it, to halfway to its way down; the ground within a cell and a half of it held
+  // to a V from it, rising as its banks do (the mean rise to the cells round it): its walls run
+  // along the curve, whatever way it crosses the grid (refine.js creekAt reads a level's the same)
+  if (rf && K0 > 0 && opts.burn !== false) burnChannels(h, E, NG, 10 * cell * cell, wet);
   // a refinement's water: the sea where it reaches (below the datum and joined to the world
   // sim's sea through ground below it), its lakes; and its rock, with the alluvium laid down
   // where big flows slow on gentle ground

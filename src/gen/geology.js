@@ -91,7 +91,11 @@ export function regionStructure(gen, face, ri, rj) {
   const rng = new Rng([hashInts(face, ri), hashInts(rj, Lr), (gen.p.seed && gen.p.seed[0]) | 0, 0x5717c7]);
   dirFromFaceUV(face, uc, vc, _d);
   // (the relief here, real: what the deep time made; the structure is the same whatever the
-  // heights are drawn at. Its vertical sizes below (throws, dips, folds) are drawn, by hScale)
+  // heights are drawn at. The ground below the deep time is at true scale, so its beds' dips and
+  // folds are real shapes: a belt's beds tilt 20 degrees whatever its mountains are drawn at
+  // (flattened by hScale they lay level, and every hard bed stood as a ring of little cliffs round
+  // every knoll, each a few of the 9.6 m level's cells: grid-squared knobs, cones from the ground).
+  // A fault's throw is drawn by hScale: at real throws one scarp crossed a whole small range)
   const relReal = gen.snap ? gen.snap.relief(_d[0], _d[1], _d[2]) : (gen.p.relief || 3000) * 0.3, rel = relReal * gen.hScale, hs = gen.hScale;
   const rockName = gen.snap ? ROCKS[gen.snap.rock(_d[0], _d[1], _d[2])].name : 'granite';
   const suite = SUITE[rockName] || 'loose';
@@ -104,9 +108,9 @@ export function regionStructure(gen, face, ri, rj) {
   if (cl < 0.5) { cx = dm.cos(ca); cy = dm.sin(ca); } else { cx /= cl; cy /= cl; }
   // the beds' tilt (a few degrees off a belt, up to ~20 in one) and, in a belt, folds
   // with their axes across the compression
-  const dipA = dm.atan2(cy, cx) + rng.range(-0.5, 0.5), dip = (rng.range(0, 0.03) + belt * rng.range(0.05, 0.35)) * hs;
+  const dipA = dm.atan2(cy, cx) + rng.range(-0.5, 0.5), dip = rng.range(0, 0.03) + belt * rng.range(0.05, 0.35);
   const fold = belt > 0.15 ? { A: 0, lam: rng.range(700, 2600), ph: rng.range(0, dm.TWO_PI) } : null;
-  if (fold) fold.A = belt * rng.range(0.04, 0.12) * fold.lam * hs;
+  if (fold) fold.A = belt * rng.range(0.04, 0.12) * fold.lam;
   // faults: long, across the compression, each slipping once (its throw: the scarp and the
   // beds' offset) at its time in the run
   const faults = [];
