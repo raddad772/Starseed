@@ -14,6 +14,49 @@ import * as THREE from 'three';
 import { GLSL_RAY, GLSL_DEPTH, GLSL_ATMO_LUT, GLSL_NOISE, FULLSCREEN_VERT } from './glsl.js';
 import { atmoAlt } from '../gen/bodies.js';
 
+// the cloud cover's weather systems, as fractions of the world's radius (the noise tile; four lobes to
+// one): fronts and cyclones a quarter of the radius across, as Earth's are; then storms, then the
+// texture inside them. Fixed in drawn metres (140, 33 and 9 km) the fronts were a twentieth of the
+// radius at a tenth of Earth's size and a third of it at 1/64; a twentieth is popcorn from space, a
+// field of small puffs over the whole globe. Shared by the far shell (here), the near
+// volume (volume.js) and the ground's cloud shadows (terrainMaterial.js)
+export const CLOUD_K = [1.0, 0.236, 0.064];
+// the cover field from the noise texture's two octaves: they sit in a narrow band (median 0.682, the
+// middle half 0.657 .. 0.705: noise3d.js makeCloudNoise's Perlin-Worley), and the thresholds that read
+// them (0.6 .. 0.8, the cloud map and the cover moving them) were made for noise spread over 0..1: every
+// point came out about a third covered, a veil over the whole globe with no clear sky anywhere. Spread
+// to what the thresholds expect; an Earth (cover 0.52) shows about two fifths of its sky white from
+// space, its deserts' and trade winds' skies clear, its storm tracks and rain belts under cloud.
+// Each octave fades to its mean where a pixel (foot m across) spans a few of its texels (the noise has
+// no mip levels: from space they alias to speckle), and the threshold widens by the spread that took
+// away, so a far pixel shows the fraction of it covered. Needs tNoise, tCloudMap, uCloudMapMean, uRadius.
+export const GLSL_CLOUD_N = /* glsl */`
+float cloudN(float n) { return 0.55 + (n - 0.682) * 4.3; }
+// 0 where a pixel foot m across sees an octave of tile L m whole, 1 where it spans a few texels
+float cloudFade(float foot, float L) { return smoothstep(1.0, 4.0, foot * 64.0 / L); }
+// cover (0..1) at q (body-fixed m) in direction dirF; bias: the world's cover moving the threshold
+float cloudCover(vec3 q, vec3 dirF, float foot, float bias) {
+  float lat = asin(clamp(dirF.y, -1.0, 1.0));
+  float L0 = uRadius * ${CLOUD_K[0].toFixed(3)}, L1 = uRadius * ${CLOUD_K[1].toFixed(3)};
+  float f0 = cloudFade(foot, L0), f1 = cloudFade(foot, L1);
+  // (drawn out along the winds: the noise squeezed across the axis, its systems twice as long east-west)
+  vec3 qz = q * vec3(0.5, 1.0, 0.5);
+  float a = f0 > 0.999 ? 0.682 : mix(textureLod(tNoise, qz / L0, 0.0).r, 0.682, f0);
+  float b = f1 > 0.999 ? 0.682 : mix(textureLod(tNoise, qz / L1 + 0.5, 0.0).r, 0.682, f1);
+  float spread = length(vec2(0.124 * f0, 0.083 * f1));
+  float hadley = 0.12 * cos(abs(lat) * 6.0);
+  // (with the simulated climate's cloud map: it moves the clouds to where it rains, as strongly as the
+  // weather's own spread so the climate's belts read from space; about its own mean, the world's cover
+  // setting the amount: a dry world's map and its low cover had counted its dryness twice)
+  if (uCloudMapMean > 0.0) hadley = (texture(tCloudMap, vec2(atan(dirF.z, dirF.x) / 6.2832 + 0.5, lat / 3.14159 + 0.5)).r - uCloudMapMean) * 0.8;
+  return smoothstep(0.6 - bias - spread, 0.8 - bias + spread, cloudN(a * 0.6 + b * 0.4) + hadley);
+}
+// the fine texture inside covered areas (its mean far off)
+float cloudDetail(vec3 q, float foot) {
+  float L2 = uRadius * ${CLOUD_K[2].toFixed(3)}, f = cloudFade(foot, L2);
+  return f > 0.999 ? 0.682 : mix(textureLod(tNoise, q / L2, 0.0).r, 0.682, f);
+}`;
+
 export const GLSL_MEDIUM = /* glsl */`
 uniform float uRadius;      // datum radius (h = r - uRadius)
 uniform vec3 uRayleigh;
@@ -317,7 +360,7 @@ uniform vec4 uCloud;       // altitude, thickness, cover, scale
 uniform vec4 uCloudColor;  // rgb, opacity
 uniform float uCloudOn;
 uniform sampler2D tCloudMap;
-uniform float uCloudMapOn;
+uniform float uCloudMapMean;   // (0 without a cloud map, else its mean over the globe)
 uniform float uSteps;
 uniform float uExposureHint;
 varying vec2 vUv;
@@ -328,20 +371,14 @@ uniform sampler3D tNoise;
 uniform float uWindMax;
 ${GLSL_AIRLIGHT}
 vec3 gEm;   // (emitted light along the ray so far: not lit by the sun, so kept apart)
+${GLSL_CLOUD_N}
 // Same coverage field as the volumetric pass (render/volume.js, mode 1), so
 // switching between the far 2D shell and near 3D clouds is seamless.
-float cloudDensity(vec3 pFixedDir) {
+float gPixA;   // (the angle a pixel spans: set at the top of main, in uniform control flow)
+float cloudDensity(vec3 pFixedDir, float foot) {
   vec3 q = pFixedDir * uRadius;
-  float lat = asin(clamp(pFixedDir.y, -1.0, 1.0));
-  float n = texture(tNoise, q / 140000.0).r * 0.6 + texture(tNoise, q / 33000.0 + 0.5).r * 0.4;
-  float hadley = 0.12 * cos(abs(lat) * 6.0);
-  // (with the simulated climate's cloud map: its cover moves the clouds where it rains)
-  if (uCloudMapOn > 0.5) hadley = (texture(tCloudMap, vec2(atan(pFixedDir.z, pFixedDir.x) / 6.2832 + 0.5, lat / 3.14159 + 0.5)).r - 0.5) * 0.4;
-  float bias = (uCloud.z - 0.5) * 0.3;
-  float cov = smoothstep(0.6 - bias, 0.8 - bias, n + hadley);
-  // fine texture inside covered areas
-  float det = texture(tNoise, q / 9000.0).r;
-  return cov * smoothstep(0.15, 0.55, det * cov + 0.25);
+  float cov = cloudCover(q, pFixedDir, foot, (uCloud.z - 0.5) * 0.3);
+  return cov * smoothstep(0.15, 0.55, cloudDetail(q, foot) * cov + 0.25);
 }
 
 // march [t0,t1] accumulating in-scattering; positions via the perpendicular
@@ -375,6 +412,7 @@ void main() {
   vec2 ndc = vUv * 2.0 - 1.0;
   vec3 dView = normalize(vec3(ndc.x * uTanHalf.x, ndc.y * uTanHalf.y, -1.0));
   vec3 D = normalize(uCamRot * dView);
+  gPixA = length(fwidth(D));
   float depth = texture(tDepth, vUv).r;
   float sceneDist = isSkyDepth(depth) ? 1e30 : viewZFromDepth(depth) / max(-dView.z, 1e-4);
 
@@ -419,7 +457,7 @@ void main() {
   vec3 pc = (tc - tca) * D - perp;
   float rc = length(pc);
   vec3 up = pc / rc;
-  float dens = cloudDensity(normalize(uToFixed * up));
+  float dens = cloudDensity(normalize(uToFixed * up), tc * gPixA);
   float alpha = clamp(dens * uCloudColor.a, 0.0, 1.0);
   vec3 L2 = vec3(0.0), T2 = vec3(1.0);
   march(tc, t1, D, tca, perp, cosTheta, jitter, L2, T2, steps / 2 + 2);
@@ -627,7 +665,7 @@ export class Atmosphere {
       uCloud: { value: new THREE.Vector4(clouds ? cloudAlt(clouds.altitude) : 0, clouds ? cloudAlt(clouds.altitude + clouds.thickness) - cloudAlt(clouds.altitude) : 0, clouds ? clouds.cover : 0, clouds ? clouds.scale : 1) },
       uCloudColor: { value: new THREE.Vector4(clouds ? clouds.color[0] : 1, clouds ? clouds.color[1] : 1, clouds ? clouds.color[2] : 1, clouds ? clouds.opacity : 0) },
       uCloudOn: { value: clouds && !this.body.giant ? 1 : 0 },
-      tCloudMap: { value: blankCloudMap() }, uCloudMapOn: { value: 0 },
+      tCloudMap: { value: blankCloudMap() }, uCloudMapMean: { value: 0 },
       ...glowUniforms(this.body.atm.render.glow),
       uSteps: { value: 16 },
       tNoise: { value: null },

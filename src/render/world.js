@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import { PlanetTerrain } from './planetTerrain.js';
 import { cloudMapPixels } from '../gen/worldsim/snapshot.js';
-import { Atmosphere } from './atmosphere.js';
+import { Atmosphere, blankCloudMap } from './atmosphere.js';
 import { makeStarMesh } from './sky.js';
 import { makeGiantMesh, makeRingMesh } from './giant.js';
 import { VolumePass } from './volume.js';
@@ -41,8 +41,16 @@ export class WorldRenderer {
     const map = !snap ? null : snap.cloudPx ? { px: snap.cloudPx, w: snap.cloudW, h: snap.cloudW / 2 } : cloudMapPixels(snap, 256);
     if (map && it.atmo) {
       const tex = new THREE.DataTexture(map.px, map.w, map.h, THREE.RedFormat);
+      // (its mean over the globe, rows weighted by their area: the clouds move about it)
+      let sum = 0, wsum = 0;
+      for (let y = 0; y < map.h; y++) {
+        const w = Math.cos(((y + 0.5) / map.h - 0.5) * Math.PI);
+        for (let x = 0; x < map.w; x++) sum += w * map.px[y * map.w + x];
+        wsum += w * map.w;
+      }
+      const mean = Math.max(1e-3, sum / wsum / 255);
       tex.wrapS = THREE.RepeatWrapping; tex.magFilter = THREE.LinearFilter; tex.minFilter = THREE.LinearFilter; tex.needsUpdate = true;
-      for (const m of [it.atmo.material, it.volume && it.volume.material]) if (m && m.uniforms.tCloudMap) { m.uniforms.tCloudMap.value = tex; m.uniforms.uCloudMapOn.value = 1; }
+      for (const m of [it.atmo.material, it.volume && it.volume.material]) if (m && m.uniforms.tCloudMap) { m.uniforms.tCloudMap.value = tex; m.uniforms.uCloudMapMean.value = mean; }
     }
   }
 
@@ -79,6 +87,9 @@ export class WorldRenderer {
       uAmbientFloor: { value: new THREE.Vector3(0.0004, 0.0004, 0.0005) },
       uDebug: { value: 0 },
       tNoise: { value: this.cloudNoise },
+      // (the atmosphere's own: rebuildTerrain hands the climate's cloud map to all three)
+      tCloudMap: a ? a.material.uniforms.tCloudMap : { value: blankCloudMap() },
+      uCloudMapMean: a ? a.material.uniforms.uCloudMapMean : { value: 0 },
       uNear: { value: new THREE.Vector2(0, 0) },
       uNearUp: { value: new THREE.Vector3(0, 1, 0) },
     };

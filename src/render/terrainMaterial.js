@@ -1,7 +1,7 @@
 // Terrain surface shading.
 
 import * as THREE from 'three';
-import { GLSL_SURFACE_ATMO } from './atmosphere.js';
+import { GLSL_SURFACE_ATMO, GLSL_CLOUD_N } from './atmosphere.js';
 import { GLSL_NOISE } from './glsl.js';
 
 export const DETAIL_PERIOD = 4096; // metres; every detail tile period divides this
@@ -100,12 +100,11 @@ ${GLSL_SURFACE_ATMO}
 ${GLSL_NOISE}
 
 uniform sampler3D tNoise;
-float cloudDensityAt(vec3 fixedDir) {
-  vec3 q = fixedDir * uRadius;
-  float lat = asin(clamp(fixedDir.y, -1.0, 1.0));
-  float n = texture(tNoise, q / 140000.0).r * 0.6 + texture(tNoise, q / 33000.0 + 0.5).r * 0.4;
-  float bias = (uCloud.z - 0.5) * 0.3;
-  return smoothstep(0.6 - bias, 0.8 - bias, n + 0.12 * cos(abs(lat) * 6.0));
+uniform sampler2D tCloudMap;
+uniform float uCloudMapMean;
+${GLSL_CLOUD_N}
+float cloudDensityAt(vec3 fixedDir, float foot) {
+  return cloudCover(fixedDir * uRadius, fixedDir, foot, (uCloud.z - 0.5) * 0.3);
 }
 
 // detail texture: r = height noise, g/b = slope (encoded), a = secondary noise
@@ -129,6 +128,8 @@ vec3 triBump(vec3 p, vec3 n, vec3 w, float period, float strength) {
 
 void main() {
   #include <logdepthbuf_fragment>
+  // (a pixel's span on the ground: the cloud shadows' noise fades where it is finer)
+  float foot = length(fwidth(vWorldPos));
   vec3 albedo = vCol.rgb * vCol.rgb;
   float waterEnc = vCol.a;
   if (uNear.x > 0.5) {
@@ -151,7 +152,7 @@ void main() {
     float hc = uCloud.x - (r - uRadius);
     if (hc > 0.0) {
       vec3 pc = rel + uSunDir * hc / max(muS, 0.08);
-      float cd = cloudDensityAt(normalize(uToFixed * normalize(pc)));
+      float cd = cloudDensityAt(normalize(uToFixed * normalize(pc)), foot);
       sunT *= 1.0 - 0.8 * cd * uCloudOpacity;
     }
   }

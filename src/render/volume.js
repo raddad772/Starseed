@@ -12,7 +12,7 @@
 
 import * as THREE from 'three';
 import { GLSL_RAY, GLSL_DEPTH, GLSL_ATMO_LUT, FULLSCREEN_VERT } from './glsl.js';
-import { GLSL_MEDIUM, GLSL_AIRLIGHT, glowUniforms } from './atmosphere.js';
+import { GLSL_MEDIUM, GLSL_AIRLIGHT, glowUniforms, GLSL_CLOUD_N } from './atmosphere.js';
 
 const FRAG = /* glsl */`
 ${GLSL_RAY}
@@ -26,7 +26,7 @@ uniform sampler3D tNoise;
 uniform sampler2D tColor;
 uniform sampler2D tDepth;
 uniform sampler2D tCloudMap;
-uniform float uCloudMapOn;
+uniform float uCloudMapMean;
 uniform vec3 uCenter;
 uniform vec3 uSunDir;
 uniform vec3 uSunE;
@@ -91,8 +91,10 @@ vec3 palette(float t) {
   return mix(a, b, f);
 }
 
-// coverage of deck i (0..1) at body-fixed point q (metres) with direction dirF
-float coverage(int i, vec3 dirF, vec3 q) {
+${GLSL_CLOUD_N}
+float gPixA;   // (the angle a pixel spans: set at the top of main)
+// coverage of deck i (0..1) at body-fixed point q (metres) with direction dirF, a pixel foot m across
+float coverage(int i, vec3 dirF, vec3 q, float foot) {
   float lat = asin(clamp(dirF.y, -1.0, 1.0));
   if (uMode < 0.5) {
     float band = sin(lat * uBands * 2.0 + uJetPhase * 6.2832 + 0.6 * sin(lat * uBands * 0.7));
@@ -101,11 +103,7 @@ float coverage(int i, vec3 dirF, vec3 q) {
     if (i == 1) return smoothstep(-0.45, 0.45, n * 1.5 + 0.1 + uDeck[1].w);
     return smoothstep(0.2, 0.62, texture(tNoise, q / 42000.0 + 0.37).g + uDeck[2].w);
   }
-  float n = texture(tNoise, q / 140000.0).r * 0.6 + texture(tNoise, q / 33000.0 + 0.5).r * 0.4;
-  float hadley = 0.12 * cos(abs(lat) * 6.0);
-  // (with the simulated climate's cloud map: its cover moves the clouds where it rains)
-  if (uCloudMapOn > 0.5) hadley = (texture(tCloudMap, vec2(atan(dirF.z, dirF.x) / 6.2832 + 0.5, lat / 3.14159 + 0.5)).r - 0.5) * 0.4;
-  return smoothstep(0.6 - uDeck[i].w, 0.8 - uDeck[i].w, n + hadley);
+  return cloudCover(q, dirF, foot, uDeck[i].w);
 }
 
 // wind-advected body-fixed sample position
@@ -142,6 +140,7 @@ void main() {
   vec2 ndc = vUv * 2.0 - 1.0;
   vec3 dView = normalize(vec3(ndc.x * uTanHalf.x, ndc.y * uTanHalf.y, -1.0));
   vec3 D = normalize(uCamRot * dView);
+  gPixA = length(fwidth(D));
   float depth = texture(tDepth, vUv).r;
   float sceneDist = isSkyDepth(depth) ? 1e30 : viewZFromDepth(depth) / max(-dView.z, 1e-4);
   vec2 hit = raySphere(uCenter, uTop, D);
@@ -202,7 +201,7 @@ void main() {
         if (float(k) >= uNumDecks) break;
         vec4 dk = uDeck[k];
         if (h > dk.y) continue;
-        float cov = coverage(k, dirF, q);
+        float cov = coverage(k, dirF, q, t * gPixA);
         if (h < dk.x) { tauAbove += dk.z * cov * (dk.y - dk.x) * 0.4 * uSigma; continue; }
         if (seg != 1) continue;
         float fr;
@@ -321,7 +320,7 @@ export class VolumePass {
       tMS: { value: atmo.ms.texture },
       tNoise: { value: noiseTex },
       tColor: { value: null }, tDepth: { value: null },
-      tCloudMap: { value: atmo.material.uniforms.tCloudMap ? atmo.material.uniforms.tCloudMap.value : null }, uCloudMapOn: { value: 0 },
+      tCloudMap: { value: atmo.material.uniforms.tCloudMap ? atmo.material.uniforms.tCloudMap.value : null }, uCloudMapMean: { value: 0 },
       uCenter: { value: new THREE.Vector3() },
       uSunDir: { value: new THREE.Vector3(1, 0, 0) },
       uSunE: { value: new THREE.Vector3(1, 1, 1) },
