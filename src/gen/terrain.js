@@ -33,6 +33,7 @@ import { TRUE_SCALE } from './tileshape.js';
 import { meanderField } from './meanders.js';
 import { ROCKS, R as ROCK } from './worldsim/lithology.js';
 import { hexToLinear } from './color.js';
+import { HEIGHT_SCALE } from '../core/units.js';
 
 // Sample record layout
 export const S_H = 0;        // height above sea level / datum (m)
@@ -163,15 +164,16 @@ export class TerrainGenerator {
     this.p = p;
     this.R = p.R;
     // a simulated world (worldsim/snapshot.js): its heights and surfaces instead of noise
-    this.snap = p.snapshot ? new SnapshotSampler(p.snapshot) : null;
+    this.snap = p.snapshot ? new SnapshotSampler(p.snapshot, this.R) : null;
     // its refinement (worldsim/refine.js): the surface its water cut, the sea's reach, the rock
     if (this.snap && p.refine) this.snap.attachRefine(p.refine);
     if (this.snap && p.pyr) this.snap.attachPyr(p.pyr);
-    // heights are real on worlds drawn at a tenth of their size, which makes a small body's real
-    // relief a blob: it's held to ~6% of the drawn radius (no change for an Earth's or a Moon's)
+    // heights drawn at HEIGHT_SCALE of the real ones (units.js: a range drawn narrower can't stand
+    // as tall), unless the caller says (the world sim: real); and a small body's relief, a blob at
+    // that, held to ~6% of the drawn radius
     let rel = p.relief || 3000;
     if (p.snapshot) { rel = 0; for (const v of p.snapshot.h) { const a = Math.abs(v); if (a > rel) rel = a; } }
-    this.hScale = Math.min(1, RELIEF_MAX * this.R / Math.max(1, rel));
+    this.hScale = Math.min(p.heightScale ?? HEIGHT_SCALE, RELIEF_MAX * this.R / Math.max(1, rel));
     if (this.snap) this.snap._hs = this.hScale;   // (a refinement's heights are as drawn)
     // whether rivers and lakes hold anything now: a world too hot or cold for a surface liquid
     // keeps the valleys and basins its wetter past carved (dry channels, playas), empty
@@ -657,7 +659,9 @@ export class TerrainGenerator {
     // (at true scale (unless p.trueScale is false), the ground layer's own relief (ground.js: its span in ~20
     // km), at each wavelength by the roughness's scaling; else the world sim's cells' relief)
     const gT = (p.trueScale ?? TRUE_SCALE) && S.s.gLr ? S.ground(x, y, z, this._gro || (this._gro = {})) : null;
-    const amp = gT ? dm.clamp(gT.lr / 4 * dm.pow(S.G.spacing / 20000, 0.55), 3, 500) : dm.clamp(rel * 0.3, 12, 900);
+    // (the ground layer's relief is drawn metres, as the true scale is: by the height scale here, so
+    // it's as much once the heights are drawn)
+    const amp = gT ? dm.clamp(gT.lr / 4 * dm.pow(S.G.spacing / 20000, 0.55), 3, 500) / this.hScale : dm.clamp(rel * 0.3, 12, 900);
     let calm = 1;
     // hills from the grid's spacing down (derivative-damped: eroded-looking); with a
     // refinement, only those finer than it resolves
@@ -689,7 +693,7 @@ export class TerrainGenerator {
     {
       // (the ground's grain below what the terrain's levels simulate: none of its features)
       const df = R / this.lamDetail;
-      let fx = x * df, fy = y * df, fz = z * df, lam = this.lamDetail, a = (gT ? dm.clamp(gT.lr / 4 * dm.pow(this.lamDetail / 20000, 0.55), 1, 120) : (p.relief || 3000) * 0.006) * rough, sum = 0;
+      let fx = x * df, fy = y * df, fz = z * df, lam = this.lamDetail, a = (gT ? dm.clamp(gT.lr / 4 * dm.pow(this.lamDetail / 20000, 0.55), 1, 120) / this.hScale : (p.relief || 3000) * 0.006) * rough, sum = 0;
       for (let o = 0; o < 11; o++) {
         if (lam < minWavelength) break;
         const kp = keep(lam, true);

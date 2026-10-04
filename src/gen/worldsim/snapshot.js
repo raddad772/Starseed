@@ -53,7 +53,7 @@ export function packSnapshot(W, body) {
     let qn = 0;
     for (let c = 0; c < n; c++) if (!(gi[c] > 0)) { hops[c] = 0; q[qn++] = c; }
     for (let i = 0; i < qn; i++) { const c = q[i]; for (let e = G.nStart[c]; e < G.nStart[c + 1]; e++) { const o = G.nbr[e]; if (hops[o] < 0) { hops[o] = hops[c] + 1; q[qn++] = o; } } }
-    const scale = body.R && body.radiusM ? body.R / body.radiusM : 0.1, ty = 2 * 100e3 / (917 * (body.gravity || 9.81)) * G.spacing / scale;
+    const scale = body.radiusM ? G.R / body.radiusM : 0.1, ty = 2 * 100e3 / (917 * (body.gravity || 9.81)) * G.spacing / scale;
     const cap = (c) => hops[c] < 0 ? 1e9 : Math.sqrt(ty * (hops[c] - 0.5));
     for (let c = 0; c < n; c++) top[c] = W.h[c] + Math.min(gi[c], cap(c));
     for (let pass = 0; pass < 6; pass++) {
@@ -153,11 +153,21 @@ export function snapshotBuffers(s) {
 
 // reads a snapshot at any direction
 export class SnapshotSampler {
-  constructor(s) {
-    this.s = s;
+  // s: the snapshot (simulated at its own size, s.R); Rd: the radius it's drawn at (m), its grid
+  // laid on that globe, so whatever measures by the grid measures in drawn metres
+  constructor(s, Rd = s.R) {
+    // (its sizes across the ground in the sim's metres drawn at the drawn globe's: the craters', the
+    // tuyas'; the water its rivers bring in by area)
+    const k = Rd / s.R;
+    if (k !== 1) {
+      const c = s.crater;
+      s = { ...s, riverMax: s.riverMax && s.riverMax * k * k, tuyas: s.tuyas && s.tuyas.map((t) => ({ ...t, r: t.r * k })),
+        crater: c && { ...c, scale: c.scale * k, Dw: c.Dw * k, Dair: c.Dair * k, Drel: c.Drel * k } };
+    }
+    this.s = s; this.Rd = Rd; this.lenK = k;
     this.ref = null; this.refCell = 0; this._hs = 1; this.pyr = null; this._pyrN = -1; this._pyrR = [];
-    this.G = new GridLite(s.N, s.R);
-    this.Gc = s.Nc ? new GridLite(s.Nc, s.R) : null;
+    this.G = new GridLite(s.N, Rd);
+    this.Gc = s.Nc ? new GridLite(s.Nc, Rd) : null;
     this.nb = new Int32Array(8);
     this.cd = [0, 0, 0];
     // (whether there's any glacier ice: most worlds have none to read)
@@ -212,7 +222,7 @@ export class SnapshotSampler {
   attachRefine(R) {
     this.ref = R ? new RefineReader(R) : null;
     this.riv = R && R.riv ? R.riv : null;   // (its rivers, refine.js riverIndex)
-    this.refCell = R ? (Math.PI / 2) * this.s.R / (R.n * MT) : 0;
+    this.refCell = R ? (Math.PI / 2) * this.Rd / (R.n * MT) : 0;
   }
   // the terrain pyramid's finer levels near the player (gen/terrainTiles.js): a Map of level ->
   // TileSet, filled as tiles come in; their readers, coarse to fine, each with its cell size (m)
@@ -222,7 +232,7 @@ export class SnapshotSampler {
     if (!P || !P.size) return this._pyrR.length ? (this._pyrR = []) : this._pyrR;
     if (P.size !== this._pyrN) {
       this._pyrN = P.size;
-      this._pyrR = [...P.keys()].sort((a, b) => a - b).map((L) => { const r = new RefineReader(P.get(L)); r.cell = (Math.PI / 2) * this.s.R / ((1 << L) * MT); return r; });
+      this._pyrR = [...P.keys()].sort((a, b) => a - b).map((L) => { const r = new RefineReader(P.get(L)); r.cell = (Math.PI / 2) * this.Rd / ((1 << L) * MT); return r; });
     }
     return this._pyrR;
   }

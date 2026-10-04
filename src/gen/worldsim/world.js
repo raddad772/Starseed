@@ -34,6 +34,7 @@ import { climate, biomeOfKoppen } from './climate.js';
 import { soilAndWater } from './soil.js';
 import { LifeMap } from './life.js';
 import { Ground } from './ground.js';
+import { SIM_LEN } from '../../core/units.js';
 
 // river erosion (stream power) constants, deep time and the fine epoch: real K ~1e-6
 // m^0.1/yr for m = 0.45, x ~0.8 at the game's 1/10 scale (areas and lengths shrink)
@@ -111,8 +112,12 @@ export function wetWindow(H) {
   return a < 0 ? null : [s.t[a], s.t[b]];
 }
 
+// a body as the deep time simulates it: at SIM_LEN of its real size, whatever it's drawn at
+export const simBody = (b) => b.radiusM && b.R !== b.radiusM * SIM_LEN ? { ...b, R: b.radiusM * SIM_LEN } : b;
+
 // opts: { N (fine grid), Nt (plate grid), myr (plate epoch), steps, dt (fine epoch), host (a moon's planet), log }
 export function worldSim(body, star, opts = {}) {
+  body = simBody(body);
   const H = body.history, p = body.terrain;
   const log = opts.log || (() => {});
   const N = opts.N ?? 256;
@@ -268,7 +273,8 @@ export function worldSim(body, star, opts = {}) {
   }
 
   // ---- plates: the generator's continents as the starting crust
-  const gen = new TerrainGenerator(p);
+  // (at the sim's size, its heights real: the drawn ones are for drawing)
+  const gen = new TerrainGenerator({ ...p, R: body.R, heightScale: 1 });
   const s = new Float64Array(S_LEN);
   const Nt = opts.Nt ?? 128, myr = opts.myr ?? 300, tdt = 0.5;
   const Gt = new SimGrid(Nt, body.R);

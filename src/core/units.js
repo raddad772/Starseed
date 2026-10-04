@@ -7,8 +7,10 @@
 //   times     * sqrt(LEN_SCALE)            (orbital periods, day lengths)
 //   speeds    * sqrt(LEN_SCALE)            (orbital / escape velocities)
 //   mass ratios, eccentricities, angular sizes, sky appearance: unchanged.
-// Vertical atmosphere structure and terrain relief keep their real metres,
-// so skies look right and mountains stay mountain-sized.
+// The atmosphere keeps its real metres (squeezed only far up: bodies.js), so skies
+// look right. Terrain relief is drawn at HEIGHT_SCALE of its real height, and the
+// ground below the world sim's grid at true scale (a drawn metre a real one).
+// The deep time (worldsim) always runs at SIM_LEN, its world laid on the drawn globe.
 
 export const G = 6.6743e-11;
 export const AU = 1.495978707e11;
@@ -33,7 +35,18 @@ export const HOUR = 3600;
 export const DAY = 86400;
 export const YEAR = 3.15576e7;
 
-export const LEN_SCALE = 0.1;
+// (?len=k on the page, or STARSEED_LEN=k in Node, draws the worlds at k instead, to compare:
+// 0.0157 an Earth the size of England, ~100 km round)
+const lenQ = typeof location !== 'undefined' ? /[?&]len=([\d.]+)/.exec(location.search) : null;
+const lenE = typeof process !== 'undefined' && process.env ? +process.env.STARSEED_LEN : 0;
+export const LEN_SCALE = lenQ ? +lenQ[1] : lenE > 0 ? lenE : 0.1;
+// the size the deep time (worldsim: plates, climate, life) is simulated at, whatever the worlds
+// are drawn at: its world the same, laid out on the drawn globe
+export const SIM_LEN = 0.1;
+// drawn heights: the real ones (the deep time's) times this. A range drawn at LEN_SCALE of its
+// width can't stand its real height at real slopes; at sqrt it's a few times steeper than real,
+// still big mountains (the same rule as the upper air's squeeze)
+export const HEIGHT_SCALE = Math.sqrt(LEN_SCALE);
 export const TIME_SCALE = Math.sqrt(LEN_SCALE); // sqrt is correctly rounded: deterministic
 export const GM_SCALE = LEN_SCALE * LEN_SCALE;
 export const SPEED_SCALE = Math.sqrt(LEN_SCALE);

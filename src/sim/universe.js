@@ -51,7 +51,7 @@ export class BodyRuntime {
   }
 
   // its terrain's relief as drawn (m): a small body's is held to its size (TerrainGenerator.hScale)
-  get relief() { const t = this.data.terrain; return t ? Math.min(t.relief, RELIEF_MAX * this.R) : 0; }
+  get relief() { const t = this.data.terrain; return t ? Math.min(t.relief * U.HEIGHT_SCALE, RELIEF_MAX * this.R) : 0; }
 
   // Orientation at an arbitrary time
   orientationAt(t, out) {
