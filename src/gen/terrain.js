@@ -777,7 +777,15 @@ export class TerrainGenerator {
     // world sim's rivers): a channel along each of its drainage lines, as wide and deep as its
     // water (a creek of ~0.1 km^2 a metre wide, a stream of tens of km^2 ten or more), its banks
     // the ground along the line (the valley the tile's water cut), water in it where it lasts
-    if (finRd && finest <= 60 && !(rv && rv.dist < rv.w * 1.5) && finRd.creekAt(CREEK_A)) {
+    // (and first, its own channels read as lines: a channel running diagonally across its cells
+    // is read between them as a row of saddles (localsim.js reads the level above's the same
+    // way); near one the ground is held to a V from the line, rising as its banks do)
+    let crk = finRd && finest <= 60 && !(rv && rv.dist < rv.w * 1.5) && finRd.creekAt(Math.min(CREEK_A, 30 * finest * finest));
+    if (crk) {
+      if (finRd.cd < 1.5) h = Math.min(h, (finRd.ch + finRd.cwc * finRd.cd) / this.hScale);
+      if (finRd.cA < CREEK_A) crk = finRd.creekAt(CREEK_A);
+    }
+    if (crk) {
       const A = finRd.cA, k = dm.log(A / CREEK_A);
       const own = Math.min(0.45 * finest, 0.5 + 0.9 * dm.exp(0.45 * k)), dep = Math.min(3, 0.25 + 0.3 * dm.exp(0.3 * k));
       // (a creek with water in it drawn at least 0.75 of the sampling's spacing each side, as a

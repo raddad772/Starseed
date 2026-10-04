@@ -35,11 +35,13 @@ export const HOUR = 3600;
 export const DAY = 86400;
 export const YEAR = 3.15576e7;
 
-// (?len=k on the page, or STARSEED_LEN=k in Node, draws the worlds at k instead, to compare:
-// 0.0157 an Earth the size of England, ~100 km round)
+// The worlds are drawn at 1/64 of their real size: an Earth the size of England (~100 km
+// round), its deep time's continents and ranges on it, the ground below at true scale.
+// (?len=k on the page, or STARSEED_LEN=k in Node, draws them at k instead, to compare: 0.1 the
+// old size, two thirds of Australia)
 const lenQ = typeof location !== 'undefined' ? /[?&]len=([\d.]+)/.exec(location.search) : null;
 const lenE = typeof process !== 'undefined' && process.env ? +process.env.STARSEED_LEN : 0;
-export const LEN_SCALE = lenQ ? +lenQ[1] : lenE > 0 ? lenE : 0.1;
+export const LEN_SCALE = lenQ ? +lenQ[1] : lenE > 0 ? lenE : 1 / 64;
 // the size the deep time (worldsim: plates, climate, life) is simulated at, whatever the worlds
 // are drawn at: its world the same, laid out on the drawn globe
 export const SIM_LEN = 0.1;

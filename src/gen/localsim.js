@@ -297,6 +297,10 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
   // (the relief over a cell of the level above, from the world sim's: relief grows with scale
   // about as its 0.7th power)
   const relK = rf ? dm.pow(Math.min(1, (pyr ? 4 * cell : S.G.spacing) / S.G.spacing), 0.7) : 1, dd = [0, 0, 0], ctr = [0, 0, 0];
+  // (the level above's channels: those ten or more of its cells feed, the valleys that run on
+  // across many of them; a rill a few cells long read as a line scratched the ground with
+  // short dashes, and its beads are too small to see)
+  const pcA = 10 * (4 * cell) * (4 * cell);
   for (let j = 0; j < NG; j++) for (let i = 0; i < NG; i++) {
     const c = j * NG + i, u = G.u0 + (i + 0.5 + G.ju[c]) * G.du, v = G.v0 + (j + 0.5 + G.jv[c]) * G.du;
     X[c] = u * Mu; Y[c] = v * Mu; U[c] = u; V[c] = v;
@@ -308,6 +312,12 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
       if (parent.sampleUV(face, u, v) || parent.sample(dd)) {
         hb = parent.h;
         if (parent.lake > 0.5) wet[c] = 2; else if (parent.sea > 0.5 && hb < 0) wet[c] = 1;
+        // (its channels read as lines, not chains of cells: a channel running diagonally across
+        // its cells is read between them as a row of saddles (each corner's four cells blended,
+        // two of the floor and two of the banks), beads along the valley that this level's water
+        // ponds in and that its walls keep as rungs; so near one the ground is held to a V from
+        // the line, rising as the channel's banks do)
+        if (parent.creekAt(pcA)) hb = Math.min(hb, parent.ch + parent.cwc * parent.cd);
       } else { hb = S.h(dx, dy, dz) * hs; if (hb < 0 && S.seaDist(dx, dy, dz) < 1) wet[c] = 1; }
       B[c] = hb; relC[c] = S.relief(dx, dy, dz) * hs * relK;
     } else if (refine) {

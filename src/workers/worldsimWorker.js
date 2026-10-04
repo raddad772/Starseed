@@ -63,11 +63,16 @@ self.onmessage = async (e) => {
       }
       let src = gen._ref;
       if (m.parents.length) { src = new TileSet(m.L - 2); for (const p of m.parents) src.put(p.face, p.ti, p.tj, p); }
+      // (its time in each part, back with it: WorldSims.tileMs keeps the last few dozen)
+      let t = performance.now();
       const P = prepareTile(gen, m.face, m.ti, m.tj, { kind: 'pyr', L: m.L, parent: new RefineReader(src) }), I = P.ints(), G = m.gpu === false ? null : await gpu();
+      const ms = { setup: performance.now() - t, gpu: !!G }; t = performance.now();
       P.fromInts(G ? await G.run(I) : runInt(I));
+      ms.sim = performance.now() - t; t = performance.now();
       const T = P.finish(), rw = new Uint8Array(T.rockC.length);
       for (let o = 0; o < rw.length; o++) rw[o] = (T.rockC[o] & 31) | (T.water[o] << 5);
-      self.postMessage({ type: 'ptile', job: m.job, body: m.body, L: m.L, face: m.face, ti: m.ti, tj: m.tj, h: T.h, rw, fl: T.fl, rcv: T.rcv }, [T.h.buffer, rw.buffer, T.fl.buffer, T.rcv.buffer]);
+      ms.finish = performance.now() - t;
+      self.postMessage({ type: 'ptile', job: m.job, body: m.body, L: m.L, face: m.face, ti: m.ti, tj: m.tj, h: T.h, rw, fl: T.fl, rcv: T.rcv, ms }, [T.h.buffer, rw.buffer, T.fl.buffer, T.rcv.buffer]);
       return;
     }
     if (m.type !== 'sim') return;

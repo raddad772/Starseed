@@ -148,7 +148,7 @@ export class WorldSims {
     const snap = this.game.system.bodies[id].terrain.snapshot, refine = this.refine.get(id) && this.refine.get(id).R;
     if (!snap || !refine) return Promise.reject(new Error('no refinement yet'));
     return new Promise((resolve, reject) => {
-      this.queue.unshift({ kind: 'pyr', id, L, face, ti, tj, parents, snap, refine, resolve, reject });
+      this.queue.unshift({ kind: 'pyr', id, L, face, ti, tj, parents, snap, refine, resolve, reject, t0: performance.now() });
       this._next();
     });
   }
@@ -231,7 +231,12 @@ export class WorldSims {
       else if (job && job.kind === 'refine') this.refine.get(m.body).status = 'failed'; else this.status.set(m.body, 'failed');
       w.job = null; this._next(); return;
     }
-    if (m.type === 'ptile') { const job = w.job; w.job = null; job.resolve({ h: m.h, rw: m.rw, fl: m.fl, rcv: m.rcv }); this._next(); return; }
+    if (m.type === 'ptile') {
+      const job = w.job; w.job = null;
+      // (how long the tile took, by part, for tuning: the last few dozen)
+      if (m.ms) { (this.tileMs || (this.tileMs = [])).push({ L: m.L, wait: Math.round(performance.now() - job.t0), ...m.ms }); if (this.tileMs.length > 48) this.tileMs.shift(); }
+      job.resolve({ h: m.h, rw: m.rw, fl: m.fl, rcv: m.rcv }); this._next(); return;
+    }
     if (m.type === 'tile') { const st = this.refine.get(m.body); if (st && st.R) { putTile(st.R, m.tile); if (m.tile.riv) { m.tile.riv.at = (m.tile.face * 64 + m.tile.tj) * 64 + m.tile.ti; (st.riv || (st.riv = [])).push(m.tile.riv); } } return; }
     if (m.type === 'refined') {
       w.job = null;

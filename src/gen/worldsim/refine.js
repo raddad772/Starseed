@@ -255,9 +255,10 @@ export class RefineReader {
     this.sparse = src instanceof TileSet;
     this.s = 2 / src.n;
     this.du = this.s / MT;
-    this.h = 0; this.sea = 0; this.lake = 0; this.w = 0; this.tH = null; this.tRW = null; this.tOff = 0;
+    this.h = 0; this.sea = 0; this.lake = 0; this.w = 0; this.tH = null; this.tRW = null; this.tFL = null; this.tRC = null; this.tOff = 0;
     this.bx = new Float64Array(4); this.by = new Float64Array(4); this.cx = new Float64Array(4); this.cy = new Float64Array(4);
     this.rbx = new Float64Array(4); this.rby = new Float64Array(4); this.ri = 0; this.rj = 0;
+    this.cd = 0; this.cA = 0; this.ch = 0; this.cwc = 0;
   }
 
   sample(d) {
@@ -316,7 +317,7 @@ export class RefineReader {
           }
         }
         this._ws += w; this._hs += w * hh; this._ss += w * sea; this._ls += w * lake;
-        if (w > this._wb) { this._wb = w; this.tH = H; this.tRW = RW; this.tOff = off; this.ri = i; this.rj = j; this.rbx.set(bx); this.rby.set(by); this.tTile = tile; this.tfi = fi; this.tfj = fj; }
+        if (w > this._wb) { this._wb = w; this.tH = H; this.tRW = RW; this.tFL = tile ? tile.fl : R.fl; this.tRC = tile ? tile.rcv : R.rcv; this.tOff = off; this.ri = i; this.rj = j; this.rbx.set(bx); this.rby.set(by); this.tTile = tile; this.tfi = fi; this.tfj = fj; }
       }
     }
   }
@@ -324,30 +325,34 @@ export class RefineReader {
   // the nearest creek to the last sample: this level's drainage (its cells with at least
   // Acut m^2 of rain-weighted water, each a line to the cell it drains into, centre to centre)
   // within two cells: sets cd (distance, in cells), cA (its water, m^2), ch (the ground along it
-  // there, m), and returns whether there's one
+  // there, m), cwc (how steeply its banks rise from it: m a cell, over the cells round it), and
+  // returns whether there's one
   creekAt(Acut) {
-    const t = this.tTile;
-    if (!t || !t.fl || !t.rcv) return false;
+    const fl = this.tFL, rc = this.tRC, H = this.tH, off = this.tOff;
+    if (!H || !fl || !rc) return false;
     const fi = this.tfi, fj = this.tfj, i0 = Math.floor(fi), j0 = Math.floor(fj);
-    const thr = Math.max(0, Math.round(255 * dm.log(Acut) / LN_A)), fl = t.fl, rc = t.rcv, H = t.h;
+    const thr = Math.max(0, Math.round(255 * dm.log(Acut) / LN_A));
     // (a cell's neighbour by its slot 0..7: di, dj = -1..1 row by row, skipping itself)
     const nbI = (k) => { const kk = k >= 4 ? k + 1 : k; return (kk % 3) - 1; }, nbJ = (k) => { const kk = k >= 4 ? k + 1 : k; return ((kk / 3) | 0) - 1; };
     let bd = 2, found = false;
     for (let j = j0 - 1; j <= j0 + 2; j++) for (let i = i0 - 1; i <= i0 + 2; i++) {
       if (i < 2 || j < 2 || i >= K - 2 || j >= K - 2) continue;
-      const o = j * K + i, k = rc[o];
+      const o = off + j * K + i, k = rc[o];
       if (fl[o] < thr || k === 255) continue;
       // the line through it, smoothly: from halfway to its main inflow (the neighbour draining
       // into it with the most water), round it, to halfway to the cell it drains into
       const ri = i + nbI(k), rj = j + nbJ(k);
       let ui = i, uj = j, uf = -1;
       for (let q = 0; q < 8; q++) {
-        const ni = i + nbI(q), nj = j + nbJ(q), no = nj * K + ni, nk = rc[no];
+        const ni = i + nbI(q), nj = j + nbJ(q), no = off + nj * K + ni, nk = rc[no];
         if (nk === 255 || ni + nbI(nk) !== i || nj + nbJ(nk) !== j || fl[no] < thr) continue;
         if (fl[no] > uf) { uf = fl[no]; ui = ni; uj = nj; }
       }
       const x0 = (ui + i) / 2, y0 = (uj + j) / 2, x2 = (i + ri) / 2, y2 = (j + rj) / 2;
-      const h0 = (H[uj * K + ui] + H[o]) / 2, h2 = (H[o] + H[rj * K + ri]) / 2;
+      const h0 = (H[off + uj * K + ui] + H[o]) / 2, h2 = (H[o] + H[off + rj * K + ri]) / 2;
+      let ws = 0, wn = 0;
+      for (let q = 0; q < 8; q++) { const di = nbI(q), dj = nbJ(q), dh = H[off + (j + dj) * K + i + di] - H[o]; if (dh > 0) { ws += di && dj ? dh * 0.7071067811865476 : dh; wn++; } }
+      const cwc = wn ? ws / wn : 0;
       // (the nearest point on the curve, over eight chords each projected onto: not on its
       // nine points, between which a narrow creek drew dotted)
       let px = x0, py = y0;
@@ -358,7 +363,7 @@ export class RefineReader {
         const dx = px + f * ux - fi, dy = py + f * uy - fj, d = Math.sqrt(dx * dx + dy * dy);
         if (d < bd) {
           const tt = (q - 1 + f) / 8, b0 = (1 - tt) * (1 - tt), b1 = 2 * tt * (1 - tt), b2 = tt * tt;
-          bd = d; found = true; this.cd = d; this.cA = dm.exp(fl[o] / 255 * LN_A); this.ch = b0 * h0 + b1 * H[o] + b2 * h2;
+          bd = d; found = true; this.cd = d; this.cA = dm.exp(fl[o] / 255 * LN_A); this.ch = b0 * h0 + b1 * H[o] + b2 * h2; this.cwc = cwc;
         }
         px = qx; py = qy;
       }
