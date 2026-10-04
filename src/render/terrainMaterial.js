@@ -159,21 +159,26 @@ void main() {
   float farK = 1.0 - smoothstep(6000.0, 90000.0, dist);
   float isWater = step(0.004, waterEnc);
   if (isWater < 0.5) {
+    // (d0: the detail's whole period, 4 km)
+    vec4 d0 = tri(fp, w, ${DETAIL_PERIOD.toFixed(1)});
     vec4 d1 = tri(fp, w, 512.0);
     vec4 d2 = tri(fp, w, 64.0);
     vec4 d3 = tri(fp, w, 8.0);
     float grainK = 1.0 - smoothstep(8.0, 140.0, dist);
     vec4 d4 = grainK > 0.0 ? tri(fp, w, 1.0) : vec4(0.5);
     float rockAmt = clamp(rock + rough * 0.3, 0.0, 1.0);
-    // patchy ground cover: lush / dry swathes and bare soil in vegetated land
-    float cover = smoothstep(0.38, 0.66, d2.a) * midK;
+    // patchy ground cover: lush / dry swathes and bare soil in vegetated land: the 64 m tile's patches
+    // near, the 512 m tile's further off (the 64 m ones, alike every 64 m, read from a km off as a
+    // lattice of spots), both moved by the 4 km tile so no two neighbourhoods match
+    float pK = smoothstep(250.0, 1000.0, dist);
+    float cover = smoothstep(0.38, 0.66, mix(d2.a, d1.a, pK) + (d0.a - 0.5) * 0.8) * midK;
     albedo = mix(albedo, albedo * vec3(1.35, 1.12, 0.62), veg * cover * 0.55);
-    float bare = smoothstep(0.6, 0.78, d2.r) * veg * midK;
+    float bare = smoothstep(0.6, 0.78, mix(d2.r, d1.r, pK) + (d0.r - 0.5) * 0.8) * veg * midK;
     albedo = mix(albedo, albedo * vec3(1.9, 1.45, 1.1) + vec3(0.012, 0.009, 0.006), bare * 0.55);
     // snow thins out over rocks and in wind-scoured patches
     albedo = mix(albedo, albedo * 0.72, snow * smoothstep(0.55, 0.8, d3.a) * fineK * 0.6);
     // multi-scale brightness variation down to sub-metre grain
-    float v = (d1.r - 0.5) * 0.55 * farK + (d2.r - 0.5) * 0.45 * midK + (d3.a - 0.5) * 0.45 * fineK + (d4.r - 0.5) * 0.5 * grainK;
+    float v = (d0.r - 0.5) * 0.25 * midK + (d1.r - 0.5) * 0.55 * farK + (d2.r - 0.5) * 0.45 * midK * (0.4 + 1.2 * d0.a) + (d3.a - 0.5) * 0.45 * fineK + (d4.r - 0.5) * 0.5 * grainK;
     albedo *= 1.0 + v * mix(0.85, 1.35, rockAmt) * (1.0 - snow * 0.6);
     // bump detail: rock strong, vegetation soft, snow smooth
     vec3 nf = fn;
