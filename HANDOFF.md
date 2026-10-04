@@ -60,8 +60,20 @@ small one: "I definitely like right a lot more", then "Yeah fix refine and optim
 **What's still wrong / next:**
 - Snow covers most of a high mountain (the snowline reads the real height: physically right, maybe too
   white for Dave).
-- Done last: rock beds drawn at the height scale too (geology.js rockColumn/worldColumn `vs`, TILE 42):
-  cliff bands keep their proportion to the mountains (survey eng_beds vs eng_coast).
+- Rock beds stay at their real thickness (tried scaling them with the heights, TILE 42, reverted in
+  9713f52: true scale below the deep time means a 1 km mountain of 10 m beds is right, a Grand Canyon).
+- The world sim's rivers carved into the refinement's start now at the drawn size (their wobble and
+  widths were the old tenth-size worlds' drawn metres). TILE 44.
+- The straight parallel gullies on an even mountain front (survey 3 km views): NOT the joints (off: same),
+  NOT the world sim's one-cell valleys (filled before the run: same), NOT the refinement's run (off: the
+  L+2 level cuts them too). They are what the tile sims cut on a planar slope: the deep time's surface is
+  planar between its 500 m cells. Fixed by starting the refinement and pyramid a little uneven
+  (localsim.js seedRough 0.3 by default where water runs, TILE 45): the gullies branch into networks.
+  At 1.0 the start's bumps outlast the run (lumpy). Survey sheets: scratchpad shots/roughness.jpg.
+- Tried and dropped: each tile level faded out by the mesh's spacing (to cut chunk rebuilds and aliasing):
+  the finest level (2.4 m) wears down sharp cones the 9.6 m level leaves (L+4 has ~5.6% of its cells
+  steeper than 60 degrees), and without it they stood in the middle distance. Every level is read at
+  every sampling. The ground layer's youth isn't read by anything yet (no point calibrating it now).
 - The survey's pictures are the yardstick: `STARSEED_LEN` env for Node (default now 1/64),
   `tools/survey.mjs --at lat,lon --scales 8,3,1 --px 640 --pyrCache 1`; the scratchpad's eng_* dirs hold
   this session's runs; `?len=0.1` in the game shows the old size.

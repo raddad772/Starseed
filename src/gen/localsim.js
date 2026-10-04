@@ -473,14 +473,19 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
   // (opts.seedRough: the ground starts as uneven below the level above's cells as real ground is,
   // a share of the relief a cell of that level holds, rougher the bigger (fractal, H 0.7), for the
   // run's water to find its own ways through: the start only, the history shapes it)
-  if (opts.seedRough) {
+  // (on by default for the refinement and the pyramid at 0.3: on the deep time's surface, planar
+  // between its cells, the run cut straight parallel gullies down every even slope; with the start
+  // a little uneven its water finds branching ways, as real drainage does. At 1 the start's bumps
+  // outlast the run: lumpy ground. Where no water runs nothing would wear them: none)
+  const seedRough = opts.seedRough ?? (rf && fluvial ? 0.3 : 0);
+  if (seedRough) {
     const nz = _roughNz || (_roughNz = new Noise3(0x5eed0f)), lam0 = (pyr ? 4 : S.G.spacing / cell) * cell, Rr = R;
     for (let c = 0; c < n; c++) {
       if (wet[c]) continue;
       const x = G.dir[3 * c] * Rr / lam0, y = G.dir[3 * c + 1] * Rr / lam0, z = G.dir[3 * c + 2] * Rr / lam0;
       let s = 0, a = 1, f = 1, norm = 0;
       for (let o = 0; o < 6 && lam0 / f >= 1.5 * cell; o++) { s += a * nz.noise(x * f + 17.1 * o, y * f - 3.3 * o, z * f + 9.7 * o); norm += a * a; a *= dm.pow(0.5, 0.7); f *= 2; }
-      h[c] += opts.seedRough * relC[c] * s / Math.sqrt(norm || 1);
+      h[c] += seedRough * relC[c] * s / Math.sqrt(norm || 1);
     }
   }
   // (a pyramid tile's faults have slipped before its run: their scarps wear through it)
