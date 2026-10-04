@@ -177,6 +177,7 @@ float liquidIce(float Tm, float kind, float flow, vec3 upF) {
   float follow = kind < 0.2 ? 0.25 : kind < 0.55 ? 0.6 : kind < 0.85 ? 0.45 : 0.8;
   float Ts = Tm + 70.0 * uLiquid2.w * upF.y * follow;
   float Tf = (kind < 0.2 ? uLiquid2.z : 0.0) - (kind > 0.55 && kind < 0.85 ? 3.0 * flow : 0.0);
-  return 1.0 - smoothstep(Tf - 1.5, Tf + 1.5, Ts);
+  // (over a few degrees: the marginal ice)
+  return 1.0 - smoothstep(Tf - 4.0, Tf + 4.0, Ts);
 }
 `;

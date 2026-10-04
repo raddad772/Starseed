@@ -191,8 +191,9 @@ export function buildChunk(gen, face, level, ix, iy, N = CHUNK_N) {
   const matA = new Uint8Array(nVert * 4);
   const extA = new Uint8Array(nVert * 4);
   // (a liquid's surface, render/liquid.js: 1 where it's liquid, then what it is, its temperature, a
-  // river's flow or a lake's fetch; 0 on land, so a shore's triangles can take the water's own)
-  const liqA = new Uint8Array(nVert * 4);
+  // river's flow or a lake's fetch; 0 on land, so a shore's triangles can take the water's own. 16
+  // bits: the season's ice edge turns on a fraction of a degree, and gen/liquidice.js must agree)
+  const liqA = new Uint16Array(nVert * 4);
   // (each material class's share: matclasses.js, 12 a vertex)
   const NC = MAT_N - MAT_W0, clsA = new Uint8Array(nVert * NC);
   const col = [0, 0, 0], mat = new Float64Array(MAT_N);
@@ -222,8 +223,8 @@ export function buildChunk(gen, face, level, ix, iy, N = CHUNK_N) {
       colA[vi * 4] = encodeColor(col[0]); colA[vi * 4 + 1] = encodeColor(col[1]); colA[vi * 4 + 2] = encodeColor(col[2]);
       colA[vi * 4 + 3] = encodeWater(mat[4]);
       if (mat[4] > 0) {
-        liqA[vi * 4] = 255; liqA[vi * 4 + 1] = Math.round(mat[0] * 255); liqA[vi * 4 + 2] = Math.round(mat[1] * 255);
-        liqA[vi * 4 + 3] = Math.round((mat[0] > 0.55 && mat[0] < 0.85 ? mat[2] : mat[3]) * 255);
+        liqA[vi * 4] = 65535; liqA[vi * 4 + 1] = Math.round(mat[0] * 65535); liqA[vi * 4 + 2] = Math.round(mat[1] * 65535);
+        liqA[vi * 4 + 3] = Math.round((mat[0] > 0.55 && mat[0] < 0.85 ? mat[2] : mat[3]) * 65535);
       } else {
         matA[vi * 4] = Math.round(mat[0] * 255); matA[vi * 4 + 1] = Math.round(mat[1] * 255);
         matA[vi * 4 + 2] = Math.round(mat[2] * 255); matA[vi * 4 + 3] = Math.round(mat[3] * 255);

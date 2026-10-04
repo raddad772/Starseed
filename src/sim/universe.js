@@ -10,6 +10,7 @@ import { dirFromFaceUV, faceUVFromDir, chunkArcSize } from '../gen/cubesphere.js
 import { CHUNK_N } from '../gen/chunkbuilder.js';
 import * as U from '../core/units.js';
 import { atmoReal } from '../gen/bodies.js';
+import { frozenNow } from '../gen/liquidice.js';
 
 const _p = [0, 0, 0], _v = [0, 0, 0];
 const _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion();
@@ -157,14 +158,23 @@ export class BodyRuntime {
 
   isWaterAt(dirFixed) { return this.liquidDepthAt(dirFixed) > 0.3; }
 
-  // how deep the liquid is under a body-fixed direction (the sea, a lake, a river), 0 if dry
+  // how deep the liquid is under a body-fixed direction (the sea, a lake, a river), 0 if dry or
+  // frozen now (its ice drawn by the season: gen/liquidice.js)
   liquidDepthAt(dirFixed) {
     const gen = this.terrain;
     if (!gen || !gen.p.liquid) return 0;
     const d = this._wd || (this._wd = [0, 0, 0]);
     const l = dirFixed.length();
     d[0] = dirFixed.x / l; d[1] = dirFixed.y / l; d[2] = dirFixed.z / l;
-    return liquidDepthOf(gen, gen.sample(d[0], d[1], d[2], 50, this._scratch));
+    const s = gen.sample(d[0], d[1], d[2], 50, this._scratch);
+    const wd = liquidDepthOf(gen, s);
+    if (wd > 0 && gen.p.liquid !== 'lava') {
+      // (the sun's latitude now, in this world's frame: the season)
+      const sun = this._sunF || (this._sunF = new THREE.Vector3());
+      sun.copy(this.pos).negate().normalize().applyQuaternion(this.qInv);
+      if (frozenNow(gen, s, d, sun.y)) return 0;
+    }
+    return wd;
   }
 
   // ---------------------------------------------------------------- atmosphere

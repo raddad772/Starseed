@@ -7,6 +7,7 @@ import { MAT_UNIFORMS, GLSL_MATERIALS, trackMaterial } from './materials.js';
 import { GLSL_TERRAIN_SHADOW } from './terrainShadow.js';
 import { GLSL_SUN_SHADOW } from './sunShadows.js';
 import { GLSL_LIQUID } from './liquid.js';
+import { detailData } from '../gen/detail.js';
 
 export const DETAIL_PERIOD = 4096; // metres; every detail tile period divides this
 
@@ -306,7 +307,10 @@ void main() {
     float ice = liquidIce(Tm, kind, flow, upF);
     if (ice > 0.0) {
       vec4 dI = tri(fp, w, 512.0), dJ = tri(fp, w, 64.0);
-      if (kind < 0.2) ice = smoothstep(0.42, 0.58, ice + (dI.a - 0.5) * 0.9 + (dJ.r - 0.5) * 0.35) * smoothstep(0.0, 0.15, ice);
+      // (the floes' edges crisp, as sharp as the pixel can show; jagged by the 8 m tile: gen/liquidice.js
+      // reads the same, so where it's drawn is where it bears you)
+      float fw = clamp(foot / 30.0, 0.01, 0.08);
+      if (kind < 0.2) ice = smoothstep(0.5 - fw, 0.5 + fw, ice + (dI.a - 0.5) * 0.9 + (dJ.r - 0.5) * 0.35 + (tri(fp, w, 8.0).a - 0.5) * 0.12) * smoothstep(0.0, 0.15, ice);
       float snowy = smoothstep(0.3, 0.9, dJ.a + ice * 0.3);
       vec3 iceAlb = mix(vec3(0.42, 0.52, 0.6), vec3(0.82, 0.86, 0.9), snowy) * (0.9 + 0.2 * dI.r);
       vec3 N2 = normalize(mix(up, N, 0.5));
@@ -379,44 +383,9 @@ void main() {
 }
 `;
 
-// Tileable detail texture: value-noise fBm on a periodic lattice; g/b store slopes.
+// Tileable detail texture: value-noise fBm on a periodic lattice; g/b store slopes (gen/detail.js)
 export function makeDetailTexture(size = 256) {
-  const data = new Uint8Array(size * size * 4);
-  const h1 = new Float32Array(size * size);
-  const h2 = new Float32Array(size * size);
-  let seed = 1337;
-  const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
-  const lattice = (period) => { const a = new Float32Array(period * period); for (let i = 0; i < a.length; i++) a[i] = rnd(); return a; };
-  const sampleL = (lat, period, x, y) => {
-    const xi = Math.floor(x), yi = Math.floor(y), fx = x - xi, fy = y - yi;
-    const ux = fx * fx * (3 - 2 * fx), uy = fy * fy * (3 - 2 * fy);
-    const g = (i, j) => lat[((j % period + period) % period) * period + ((i % period + period) % period)];
-    return (g(xi, yi) * (1 - ux) + g(xi + 1, yi) * ux) * (1 - uy) + (g(xi, yi + 1) * (1 - ux) + g(xi + 1, yi + 1) * ux) * uy;
-  };
-  const fill = (out, base) => {
-    const lats = [];
-    for (let o = 0; o < 5; o++) lats.push(lattice(base << o));
-    for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
-      let s = 0, a = 0.5, n = 0;
-      for (let o = 0; o < 5; o++) {
-        const p = base << o;
-        s += a * sampleL(lats[o], p, x / size * p, y / size * p);
-        n += a; a *= 0.5;
-      }
-      out[y * size + x] = s / n;
-    }
-  };
-  fill(h1, 8);
-  fill(h2, 16);
-  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
-    const i = y * size + x;
-    const dx = h1[y * size + (x + 1) % size] - h1[y * size + (x - 1 + size) % size];
-    const dy = h1[((y + 1) % size) * size + x] - h1[((y - 1 + size) % size) * size + x];
-    data[i * 4] = Math.round(h1[i] * 255);
-    data[i * 4 + 1] = Math.max(0, Math.min(255, Math.round(128 + dx * 2200)));
-    data[i * 4 + 2] = Math.max(0, Math.min(255, Math.round(128 + dy * 2200)));
-    data[i * 4 + 3] = Math.round(h2[i] * 255);
-  }
+  const data = detailData(size);
   const tex = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   tex.magFilter = THREE.LinearFilter;
