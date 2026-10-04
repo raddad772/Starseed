@@ -57,6 +57,11 @@ small one: "I definitely like right a lot more", then "Yeah fix refine and optim
   the crater view is the mare's stamped wrinkle ridges (folds), concentric to the basin: by design.
   The survey's views beyond its single pyramid tile show that tile's edge (the game makes a 3x3).
 
+- SOL suite at the end of the second night (scratchpad shots/sol_final.jpg): all eight read as before.
+  Europa's views show groups of short parallel dashes aligned with the face grid (present before tonight
+  too; not the folds, which follow great circles; not yet traced). Europa's chaos rafts are still 600 m
+  drawn (terrain.js _chaosAt L), a size from the old tenth-size worlds.
+
 **What's still wrong / next:**
 - Snow covers most of a high mountain (the snowline reads the real height: physically right, maybe too
   white for Dave).
