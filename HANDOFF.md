@@ -62,6 +62,17 @@ small one: "I definitely like right a lot more", then "Yeah fix refine and optim
   too; not the folds, which follow great circles; not yet traced). Europa's chaos rafts are still 600 m
   drawn (terrain.js _chaosAt L), a size from the old tenth-size worlds.
 
+- Random-world survey (24 new worlds from LAB-100..180, all kinds; scratchpad shots/rand/*.jpg, survey
+  dirs rand0/1/2). Fixed from it: a sea-less world's playas (all a basin's sediment onto its one sink
+  cell: Vovuld LAB-122:4 reached +1,428 km), rain on hot worlds (e^24 x Earth's at 1,240 K), melt pools
+  as cell rectangles, tuya flanks (rectangular plateaus on icy worlds), hydrocarbon seas cut at a
+  latitude, 0 m "peaks" as landmarks, ammonia-water frozen-ocean worlds labelled "barren rock".
+  Seen and not fixed: about a third of "Temperate world with life" / "Ocean world" picks are 100% sea
+  (Quepavraith LAB-140:2, Hakrar LAB-171:7, Coavre LAB-178:15, Lanern LAB-118:7: water 2-27% by mass,
+  every continent drowned; may be right for water-rich worlds but makes most "living worlds" featureless);
+  an ice-sheet margin on Saeverkion LAB-162:5 shows grid-stepped parallel grooves; Coavre's ice cap
+  shows a straight line at 3 km.
+
 **What's still wrong / next:**
 - Snow covers most of a high mountain (the snowline reads the real height: physically right, maybe too
   white for Dave).
