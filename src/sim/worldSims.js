@@ -20,7 +20,7 @@ import { newRefine, putTile, complete, toStorable, fromStorable } from '../gen/w
 // a refinement's rivers indexed in a worker of their own (workers/riverIndexWorker.js)
 function indexRivers(parts, N, R) {
   return new Promise((resolve) => {
-    const w = new Worker(new URL('../workers/riverIndexWorker.js', import.meta.url), { type: 'module' });
+    const w = new Worker(new URL('../workers/riverIndexWorker.js' + location.search, import.meta.url), { type: 'module' });
     w.onmessage = (e) => { w.terminate(); if (e.data.error) { console.error('river index failed:', e.data.error); resolve(null); } else resolve(e.data.riv); };
     w.onerror = (e) => { w.terminate(); console.error('river index worker:', e.message); resolve(null); };
     w.postMessage({ parts, N, R }, parts.flatMap((p) => [p.rec.buffer, p.keys.buffer]));
@@ -88,7 +88,7 @@ export class WorldSims {
     // the refinements, never waiting behind a world's minute-long sim; two, so one's CPU work
     // overlaps the other's on the GPU)
     for (let i = 0; i < nw + 2; i++) {
-      const w = { worker: new Worker(new URL('../workers/worldsimWorker.js', import.meta.url), { type: 'module' }), job: null, role: i < nw ? 'sim' : 'tile' };
+      const w = { worker: new Worker(new URL('../workers/worldsimWorker.js' + location.search, import.meta.url), { type: 'module' }), job: null, role: i < nw ? 'sim' : 'tile' };
       w.worker.onmessage = (e) => this._onMessage(w, e.data);
       w.worker.onerror = (e) => {
         console.error('world-sim worker error', e.message || e);

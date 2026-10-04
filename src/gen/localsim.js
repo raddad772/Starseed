@@ -40,10 +40,11 @@ import { ROCKS, ROCK_UP } from './worldsim/lithology.js';
 import { Rng, hashInts } from '../core/rng.js';
 import { Noise3 } from '../core/noise.js';
 let _roughNz = null;
+const INT_CUT = 0.33;
 const _gr = { lr: 0, youth: 0, gx: 0, gy: 0, glac: 0, vsp: 0 };
 import * as dm from '../core/dmath.js';
 
-import { MT, MARGIN, KEEP, TILE_VERSION } from './tileshape.js';
+import { MT, MARGIN, KEEP, TILE_VERSION, TRUE_SCALE } from './tileshape.js';
 import { stampCraters, stampRidges, stampFolds, ridgeWidth, RIDGE } from './craters.js';
 import { craterFloor, worldCell, TILE_CELLS } from './worldsim/impacts.js';
 import { REGION_UP, tileLevel, regionLevel, faceMetres, SUITE, SUITES, DEPOSITS, rockColumn, regionStructure, jointAt, worldColumn, bedAt } from './geology.js';
@@ -289,7 +290,7 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
   // km apart, are real proportions on the drawn world; what this level adds below them is held to
   // real ground's relief at its scale (the ground layer's, ground.js), its slopes to what real
   // ground stands over its cells)
-  const ts = !!opts.trueScale, Bw = ts && refine ? new Float64Array(n) : null, lrC = ts && S && S.s.gLr ? new Float64Array(n) : null;
+  const ts = opts.trueScale ?? TRUE_SCALE, Bw = ts && refine ? new Float64Array(n) : null, lrC = ts && S && S.s.gLr ? new Float64Array(n) : null;
   // (the relief over a cell of the level above, from the world sim's: relief grows with scale
   // about as its 0.7th power)
   const relK = rf ? dm.pow(Math.min(1, (pyr ? 4 * cell : S.G.spacing) / S.G.spacing), 0.7) : 1, dd = [0, 0, 0], ctr = [0, 0, 0];
@@ -568,7 +569,7 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
       for (let c = 0; c < n; c++) if (!E.base[c]) h[c] -= 0.3 * mean[c];
     }
     if (lowstand && st === rise) for (let c = 0; c < n; c++) if (wet[c] === 1) E.base[c] = 1;
-    if (K0 > 0 && st % 2 === 0) { E.nStep = st; E.route(); E.drain(); }
+    if (K0 > 0 && st % (opts.routeEvery ?? 2) === 0) { E.nStep = st; E.route(); E.drain(); }
     if (rf && st % 10 === 9) { readRock(); if (pyr) readSuite(); }
     for (let c = 0; c < n; c++) hd[c] = hardAt(c, h[c]);
     // streams: implicit stream power, downstream first, each cell by the rock it's in
@@ -633,7 +634,14 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
       for (let c = 0; c < n; c++) { bedOffI[c] = Math.round(bedOff[c]); weakI[c] = Math.round(255 * weak[c]); }
       geo = { colHd, colLo: -3000, suite, bedOff: bedOffI, weak: weakI };
     }
-    return { NG, n, steps, rise: lowstand ? rise : -1, sz, flags, a, hd: hdI, h0, B: BI, aref, K0, kd0, sig, salt: jk, Acu, geo };
+    // (at true scale its streams cut at INT_CUT of the floating-point sim's rate (opts.intCut sets
+    // it): run for run, at every level (1.1 km, 284 m and 71 m cells), the integer sim leaves
+    // ~2.5x the relief at its cells' scale with the same K0. About half of that is the
+    // floating-point sim routing its water every other step (it cuts along stale ways between,
+    // skipping cells that came level; opts.routeEvery 1: 17 -> 31 m rms over two 71 m cells,
+    // against the integer sim's 44); the rest is unexplained (not the lake fill's passes, the
+    // collapse's, the hardness). Scaled so the two leave alike relief: the softer look)
+    return { NG, n, steps, rise: lowstand ? rise : -1, sz, flags, a, hd: hdI, h0, B: BI, aref, K0: K0 * (opts.intCut ?? (ts ? INT_CUT : 1)), kd0, scK, sig, salt: jk, Acu, geo };
   };
   const out0 = {};
   const fromInts = (r) => { for (let c = 0; c < n; c++) { h[c] = r.h[c] / 4096; talus[c] = r.talus[c] / 4096; } };
@@ -857,7 +865,7 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
   }
   return out;
   };
-  return { steps: stepsFloat, ints, fromInts, finish };
+  return { steps: stepsFloat, ints, fromInts, finish, debug: () => ({ E, h, B, AcC }) };
 }
 
 export function tileTransferables(t) { return [t.h.buffer, t.hard.buffer, t.talus.buffer, t.flow.buffer, t.rcv.buffer, ...(t.rockC ? [t.rockC.buffer, t.water.buffer] : [])]; }

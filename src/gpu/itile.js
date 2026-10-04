@@ -44,14 +44,15 @@ export function apowIndex(A) {
 }
 
 // the tables by hardness (0..255): stream power's rock factor (x2048), creep's rate (16-bit
-// fraction), the slope a rock holds (x Q/1000 x 64: the drop per 64 mm)
-export function hardTables(kd0) {
+// fraction), the slope a rock holds (x Q/1000 x 64: the drop per 64 mm; scK: how much of a hard
+// rock's steepness stands over one of the level's cells, localsim.js trueScale)
+export function hardTables(kd0, scK = 1) {
   const KH = new Uint32Array(256), KD = new Uint32Array(256), SC = new Uint32Array(256);
   for (let i = 0; i < 256; i++) {
     const hd = i / 255, soft = 1 - hd;
     KH[i] = Math.round(2048 * (0.1 + 1.6 * soft * soft));
     KD[i] = Math.min(5400, Math.round(65536 * kd0 * (0.03 + 1.2 * soft) * 0.25));
-    SC[i] = Math.round((0.65 + 3.4 * hd * hd) * Q / 1000 * 64);
+    SC[i] = Math.round((0.65 + 3.4 * hd * hd * scK) * Q / 1000 * 64);
   }
   return { KH, KD, SC };
 }
@@ -92,7 +93,7 @@ export function gridTables(T) {
 // (Int32Arrays: Q units)
 export function runInt(T) {
   const { NG, n, a, B } = T;
-  const { D, W, CM, CE } = gridTables(T), { KH, KD, SC } = hardTables(T.kd0), AP = apowTable();
+  const { D, W, CM, CE } = gridTables(T), { KH, KD, SC } = hardTables(T.kd0, T.scK ?? 1), AP = apowTable();
   // (compiled where it can be: native/sim.c's run_int is this, pass for pass)
   const nat = runIntNative(T, { D, W, CM, CE, KH, KD, SC, AP });
   if (nat) return nat;
@@ -249,6 +250,7 @@ export function runInt(T) {
       const t = h; h = h2; h2 = t;
     }
   }
+  if (T.debugA) return { h, talus, A, rcv: Uint8Array.from(rcv), aunit: T.aref / 16 };
   return { h, talus };
 
   // (the slopes down the filled surface to each neighbour: drop x 1024 / distance, capped)

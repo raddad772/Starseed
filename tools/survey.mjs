@@ -42,10 +42,10 @@ const args = process.argv.slice(2), opt = {}, worlds = [];
 for (let i = 0; i < args.length; i++) { if (args[i].startsWith('--')) opt[args[i].slice(2)] = args[++i]; else worlds.push(args[i]); }
 const OUT = opt.out || 'survey', CACHE = opt.cache || OUT, W = +(opt.W || 1200), MARKS = +(opt.marks || 6);
 const FLOAT = opt.float === '1', THREADS = +(opt.threads || Math.min(4, os.cpus().length));
-// (--trueScale 1: the levels below the deep time at true scale (localsim.js trueScale), each
-// level's channels from --heads cells' water; its own caches)
-const TILE_OPTS = opt.trueScale === '1' ? { trueScale: true, ...(opt.heads ? { headCells: +opt.heads } : {}) } : (opt.heads ? { headCells: +opt.heads } : {});
-const TS_TAG = (opt.trueScale === '1' ? '-ts' : '') + (opt.heads ? '-h' + opt.heads : '');
+// (--trueScale 0: the levels below the deep time as they were, heights exaggerated (localsim.js
+// trueScale, on by default); --heads N: each level's channels from N cells' water; own caches)
+const TILE_OPTS = { ...(opt.trueScale === '0' ? { trueScale: false } : {}), ...(opt.heads ? { headCells: +opt.heads } : {}), ...(opt.intCut ? { intCut: +opt.intCut } : {}) };
+const TS_TAG = (opt.trueScale === '0' ? '-ex' : '') + (opt.heads ? '-h' + opt.heads : '') + (opt.intCut ? '-k' + opt.intCut : '');
 fs.mkdirSync(OUT, { recursive: true }); fs.mkdirSync(CACHE, { recursive: true });
 const TY = { h: Float32Array, water: Float32Array, rock: Uint8Array, ice: Uint16Array, river: Uint8Array, melt: Uint8Array, relief: Uint16Array, rcv: Uint8Array, Tsea: Float32Array, P: Float32Array, cover: Float32Array, forest: Float32Array, open: Float32Array, cloud: Float32Array, cloudPx: Uint8Array, crat: Uint8Array, dunes: Uint8Array, gorge: Uint16Array, gLr: Uint16Array, gVsp: Uint16Array, gYouth: Uint8Array, gGx: Uint8Array, gGy: Uint8Array, gGlac: Uint8Array };
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
@@ -88,7 +88,7 @@ for (const w of worlds) {
     log(`  refinement (${6 * n * n} tiles) in ${((performance.now() - t0) / 1000).toFixed(0)} s`);
   }
   const pyr = new Map();
-  gen = new TerrainGenerator({ ...b.terrain, snapshot: snap, refine: R, pyr, ...(TILE_OPTS.trueScale ? { trueScale: true } : {}) });
+  gen = new TerrainGenerator({ ...b.terrain, snapshot: snap, refine: R, pyr, ...(TILE_OPTS.trueScale === false ? { trueScale: false } : {}) });
   const entry = list[tag] = { seed, body: b.name, label: b.label || '', world: `${tag}-world.png`, marks: [] };
   // the whole world
   {

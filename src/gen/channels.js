@@ -1,0 +1,229 @@
+// Rivers' channels as lines: each river record's stretch of channel, the meander trace
+// (meanders.js) laid along its river's smoothed line by its phase, built once and kept, so the
+// river, its floodplain and its canyon all read the one line. Each point carries the channel's
+// half width, its banks' level and where it was moving (the meander model's migration), and the
+// trace's cut-off loops (oxbows) come along as their own pieces.
+//
+// Points are kept as the line's place (on its river's smoothed line) and its swing off it, so a
+// river seen from afar is drawn nearer its line from the same build: its loops only where the
+// sampling can see them (minW under ~6 widths), so they never alias.
+//
+// A record's channel: { pts (Float32: base x, y, z, swing x, y, z), at (Float32: half width
+// (m), banks' ground (m, as drawn), migration x, y, z (per channel width: which way and how far,
+// the model's root mean square 1), t along the record's frame, the channel's width (m)), pc (each piece's first point, and the end), kind (0 channel,
+// 1 oxbow), age (an oxbow's), groups (bounds of runs of up to 8 segments: x, y, z, radius; and
+// gi: piece, first point, segments), bound (x, y, z, radius), maxHalf, fr (its frame), J0, J1,
+// W0, W1, sw (the swing's three values and its ends' fades) }
+
+import * as dm from '../core/dmath.js';
+import { meanderField } from './meanders.js';
+import { RIVER_REC } from './worldsim/refine.js';
+
+const GROUP = 8;
+
+// the swing (how much of the trace's sway: 0..1) at t along a record's frame
+export function chanSwing(ch, t) {
+  const s = ch.sw, Ae = t < 0.5 ? s[0] : s[2];
+  return (Ae + (s[1] - Ae) * (t < 0.5 ? 2 * t : 2 - 2 * t)) * (s[3] ? 1 : dm.smoothstep(0, 1, t)) * (s[4] ? 1 : dm.smoothstep(0, 1, 1 - t));
+}
+
+// record r's channel, built (gen: the terrain generator: its snapshot's river index, links,
+// swing and frames)
+export function buildChannel(gen, r, building) {
+  const Rv = gen.snap.riv, rec = Rv.rec, b = r * RIVER_REC, R = gen.R, Lk = gen._rivLinks(), MA = gen._meanderA();
+  const F = gen._mf || (gen._mf = meanderField()), L0 = F.lines[0], P = F.P, n0 = L0.x.length;
+  const dnOf = (q) => { const n = Lk.dn[q]; return n >= 0 && Lk.up[n] === q ? n : -1; };
+  const fr = gen._meanderFrame(r, new Float64Array(9));
+  const up = Lk.up[r], dn = dnOf(r), wq = 2 * Rv.half[r], ph0 = Rv.phase ? Rv.phase[r] : NaN;
+  const len = Math.sqrt((fr[6] - fr[0]) ** 2 + (fr[7] - fr[1]) ** 2 + (fr[8] - fr[2]) ** 2) * R;
+  // (its phase where it meets the record up its river and the one down it, shared with them; and
+  // its width there, so the channel carries on from one to the next without a step)
+  const phU = up >= 0 && Rv.phase ? 0.5 * (Rv.phase[up] + ph0) : NaN, phD = dn >= 0 && Rv.phase ? 0.5 * (ph0 + Rv.phase[dn]) : NaN;
+  let J0 = phU === phU ? phU : phD === phD ? 2 * ph0 - phD : ph0 + 0.5 * len / wq, J1 = phD === phD ? phD : 2 * ph0 - J0;
+  if (!(J0 === J0)) { J0 = 0.5 * len / wq; J1 = -J0; }
+  const W0 = up >= 0 ? 0.5 * (wq + 2 * Rv.half[up]) : wq, W1 = dn >= 0 ? 0.5 * (wq + 2 * Rv.half[dn]) : wq;
+  const Aq = Rv.phase ? MA[r] : 0;
+  const sw = [up >= 0 ? 0.5 * (Aq + MA[up]) : Aq, Aq, dn >= 0 ? 0.5 * (Aq + MA[dn]) : Aq, up >= 0 ? 1 : 0, dn >= 0 ? 1 : 0];
+  const ch = { pts: null, at: null, pc: null, kind: null, age: null, groups: null, gi: null, bound: new Float64Array(4), maxHalf: 0, fr, J0, J1, W0, W1, sw };
+  // (a river's source: it starts narrow, its width growing over its first record)
+  const head = up < 0;
+  const P3 = [], A6 = [], pcs = [], kinds = [], ages = [];
+  let open = false;
+  const hsOf = (t) => { const u = 1 - t; return (u * u * rec[b + 9] + 2 * t * u * rec[b + 10] + t * t * rec[b + 11]) / gen.hScale; };
+  const emit = (X, Y, mx, my) => {
+    const t = Math.max(0, Math.min(1, (X - J0) / (J1 - J0))), u = 1 - t, a0 = u * u, a1 = 2 * t * u, a2 = t * t;
+    let px = a0 * fr[0] + a1 * fr[3] + a2 * fr[6], py = a0 * fr[1] + a1 * fr[4] + a2 * fr[7], pz = a0 * fr[2] + a1 * fr[5] + a2 * fr[8];
+    const pl = Math.sqrt(px * px + py * py + pz * pz); px /= pl; py /= pl; pz /= pl;
+    const tx = 2 * (u * (fr[3] - fr[0]) + t * (fr[6] - fr[3])), ty = 2 * (u * (fr[4] - fr[1]) + t * (fr[7] - fr[4])), tz = 2 * (u * (fr[5] - fr[2]) + t * (fr[8] - fr[5]));
+    // (across it: up crossed with its way down, the side the trace's +y lies)
+    let nx = py * tz - pz * ty, ny = pz * tx - px * tz, nz = px * ty - py * tx;
+    const nl = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1; nx /= nl; ny /= nl; nz /= nl;
+    const a = chanSwing(ch, t), wm = W0 + (W1 - W0) * t, off = a * wm * (Y - F.mid) / R;
+    P3.push(px, py, pz, nx * off, ny * off, nz * off);
+    // (where the channel was moving there, per channel width: along the valley (x, up it) and
+    // across (y), as the trace lies on the ground)
+    const dX = 1 / (J1 - J0), tl = R * dX, gx = a * mx * tl, gy = my * a;
+    const half = 0.5 * wm * (head ? 0.15 + 0.85 * dm.smoothstep(0, 0.9, t) : 1);
+    A6.push(half, hsOf(t), (gx * tx + gy * nx * wm) / wm, (gx * ty + gy * ny * wm) / wm, (gx * tz + gy * nz * wm) / wm, t, wm);
+  };
+  const end = () => {
+    if (!open) return;
+    open = false;
+    // (a piece of one point is none)
+    if (P3.length / 6 - pcs[pcs.length - 1] < 2) { const s = pcs.pop(); P3.length = s * 6; A6.length = s * 7; kinds.pop(); ages.pop(); }
+    else pcs.push(P3.length / 6);
+  };
+  const begin = (kind, age) => { end(); pcs.push(P3.length / 6); kinds.push(kind); ages.push(age); open = true; };
+  // the stretch of a line (x: unwrapped, y, mx, my per point, n points; closed: the trace, whose
+  // last point runs on into the first of the next period) whose phases lie between the record's ends
+  const lo = Math.min(J0, J1), hi = Math.max(J0, J1);
+  const lay = (xu, y, mx, my, n, closed, kind, age) => {
+    const span = closed ? xu[n] - xu[0] : 0, nseg = closed ? n : n - 1;
+    let pa = 0, pb = 0;
+    if (closed) { pa = Math.floor((lo - xu[0]) / span) - 1; pb = Math.ceil((hi - xu[0]) / span) + 1; }
+    else {
+      // (an oxbow lies in one period of the trace: the copies of it near the record's phases)
+      let mn = Infinity, mxX = -Infinity;
+      for (let k = 0; k < n; k++) { mn = Math.min(mn, xu[k]); mxX = Math.max(mxX, xu[k]); }
+      pa = Math.floor((lo - mxX) / P); pb = Math.ceil((hi - mn) / P);
+    }
+    for (let p = pa; p <= pb; p++) {
+      const sh = closed ? p * span : p * P;
+      for (let k = 0; k < nseg; k++) {
+        const k1 = k + 1, Xa = xu[k] + sh, Xb = xu[k1] + sh, i1 = closed ? k1 % n : k1;
+        const dX = Xb - Xa;
+        let f0 = 0, f1 = 1;
+        if (dX !== 0) { const fl = (lo - Xa) / dX, fh = (hi - Xa) / dX; f0 = Math.max(0, Math.min(fl, fh)); f1 = Math.min(1, Math.max(fl, fh)); }
+        else if (Xa < lo || Xa > hi) f1 = -1;
+        if (f0 > f1) { end(); continue; }
+        const at = (f) => emit(Xa + dX * f, y[k] + (y[i1] - y[k]) * f, mx ? mx[k] + (mx[i1] - mx[k]) * f : 0, my ? my[k] + (my[i1] - my[k]) * f : 0);
+        if (!open || f0 > 0) { end(); begin(kind, age); at(f0); }
+        at(f1);
+        if (f1 < 1) end();
+      }
+      if (!closed) end();
+    }
+    end();
+  };
+  if (!F.xu) {
+    const xu = new Float64Array(n0 + 1);
+    xu[0] = L0.x[0];
+    for (let k = 0; k < n0; k++) { let dx = L0.x[(k + 1) % n0] - L0.x[k]; if (dx < -P / 2) dx += P; if (dx > P / 2) dx -= P; xu[k + 1] = xu[k] + dx; }
+    F.xu = xu;
+    F.oxu = F.lines.slice(1).map((L) => { const n = L.x.length, o = new Float64Array(n); o[0] = L.x[0]; for (let k = 1; k < n; k++) { let dx = L.x[k] - L.x[k - 1]; if (dx < -P / 2) dx += P; if (dx > P / 2) dx -= P; o[k] = o[k - 1] + dx; } return o; });
+  }
+  if (hi - lo > 1e-6) {
+    lay(F.xu, L0.y, L0.mx, L0.my, n0, true, 0, 0);
+    // (its cut-off loops: lakes while young, swales once filled; only where it swings freely)
+    if (Math.max(sw[0], sw[1], sw[2]) > 0.3) F.lines.forEach((L, li) => { if (li && L.age < 0.8) lay(F.oxu[li - 1], L.y, null, null, L.x.length, false, 1, L.age); });
+  } else {
+    begin(0, 0); emit(J0, F.mid, 0, 0); emit(J1, F.mid, 0, 0); end();
+  }
+  // (where it runs into another river, on to that one's channel: it ends on its own valley's
+  // line, and the other's channel may swing well off its own)
+  const into = Lk.dn[r];
+  if (dn < 0 && into >= 0 && building && !building.has(into)) {
+    // (its channel's last point: where the channel piece reaching t = 1 ends)
+    let e = -1;
+    for (let q = 0; q < pcs.length; q += 2) if (kinds[q / 2] === 0) { const last = pcs[q + 1] - 1; if (A6[last * 7 + 5] > 0.999) e = last; }
+    if (e >= 0) {
+      const ex = P3[e * 6] + P3[e * 6 + 3], ey = P3[e * 6 + 1] + P3[e * 6 + 4], ez = P3[e * 6 + 2] + P3[e * 6 + 5];
+      // (the nearest point of its channel, as its line's place and its swing off it, so the join
+      // follows it when it's drawn nearer its line)
+      let best = Infinity, bb = null, bo = null, bh = 0, bw = 0;
+      for (const q of [into, Lk.up[into], dnOf(into)]) {
+        if (q < 0 || q === r || building.has(q)) continue;
+        const och = gen._chan(q, building);
+        if (!och) continue;
+        const o = chanNearest(och, ex, ey, ez, 0, _cn, 0);
+        if (o.d2 < best) {
+          best = o.d2;
+          const k = o.p * 6, f = o.f, g = 1 - f, Q = och.pts;
+          bb = [g * Q[k] + f * Q[k + 6], g * Q[k + 1] + f * Q[k + 7], g * Q[k + 2] + f * Q[k + 8]];
+          bo = [o.x - bb[0], o.y - bb[1], o.z - bb[2]]; bh = o.hs; bw = o.wm;
+        }
+      }
+      const gap = Math.sqrt(best) * R, half = A6[e * 7], wi = 2 * Rv.half[into];
+      if (bb && gap < 2 * F.half * wi + 3 * W1 && gap > 0.5) {
+        begin(0, 0);
+        P3.push(P3[e * 6], P3[e * 6 + 1], P3[e * 6 + 2], P3[e * 6 + 3], P3[e * 6 + 4], P3[e * 6 + 5]); A6.push(half, A6[e * 7 + 1], 0, 0, 0, 1, A6[e * 7 + 6]);
+        P3.push(bb[0], bb[1], bb[2], bo[0], bo[1], bo[2]); A6.push(half, Math.min(bh, A6[e * 7 + 1]), 0, 0, 0, 1, bw);
+        end();
+      }
+    }
+  }
+  ch.pts = Float32Array.from(P3); ch.at = Float32Array.from(A6);
+  ch.pc = Int32Array.from(pcs); ch.kind = Uint8Array.from(kinds); ch.age = Float32Array.from(ages);
+  // (bounds of each run of up to eight segments, over the line and its swing both, so any
+  // nearness drawn between them is inside; and the whole)
+  const gb = [], gi = [], np = ch.pts.length / 6;
+  let mh = 0;
+  for (let q = 0; q < ch.kind.length; q++) {
+    const p0 = ch.pc[2 * q], p1 = ch.pc[2 * q + 1];
+    for (let s = p0; s < p1 - 1; s += GROUP) {
+      const s1 = Math.min(p1 - 1, s + GROUP);
+      let cx = 0, cy = 0, cz = 0, k = 0, m = 0, gh = 0;
+      for (let p = s; p <= s1; p++) { const o = p * 6; cx += 2 * ch.pts[o] + ch.pts[o + 3]; cy += 2 * ch.pts[o + 1] + ch.pts[o + 4]; cz += 2 * ch.pts[o + 2] + ch.pts[o + 5]; k += 2; gh = Math.max(gh, ch.at[p * 7]); }
+      cx /= k; cy /= k; cz /= k;
+      for (let p = s; p <= s1; p++) {
+        const o = p * 6;
+        for (let f = 0; f <= 1; f++) { const dx = ch.pts[o] + f * ch.pts[o + 3] - cx, dy = ch.pts[o + 1] + f * ch.pts[o + 4] - cy, dz = ch.pts[o + 2] + f * ch.pts[o + 5] - cz; m = Math.max(m, dx * dx + dy * dy + dz * dz); }
+      }
+      gb.push(cx, cy, cz, Math.sqrt(m) * 1.0001 + 1e-9); gi.push(q, s, s1 - s);
+      mh = Math.max(mh, gh);
+    }
+  }
+  ch.groups = Float64Array.from(gb); ch.gi = Int32Array.from(gi); ch.maxHalf = mh; ch.nOx = ch.kind.reduce((a, k) => a + k, 0); ch.r = r;
+  {
+    let cx = 0, cy = 0, cz = 0, m = 0;
+    for (let p = 0; p < np; p++) { cx += ch.pts[p * 6]; cy += ch.pts[p * 6 + 1]; cz += ch.pts[p * 6 + 2]; }
+    if (np) { cx /= np; cy /= np; cz /= np; }
+    const G = ch.groups;
+    for (let g = 0; g < G.length; g += 4) { const dx = G[g] - cx, dy = G[g + 1] - cy, dz = G[g + 2] - cz; m = Math.max(m, Math.sqrt(dx * dx + dy * dy + dz * dz) + G[g + 3]); }
+    ch.bound[0] = cx; ch.bound[1] = cy; ch.bound[2] = cz; ch.bound[3] = m * 1.0001 + 1e-9;
+  }
+  return ch;
+}
+
+// the nearest point of a channel's kind-k pieces (0 the channel, 1 its oxbows) to (x, y, z),
+// sampled minW apart (its swing drawn where its loops can be seen: full at 2 widths, none past 6):
+// into out { d2 (squared, unit sphere), p (segment's first point), f (along it), x, y, z, half,
+// hs, mx, my, mz, t, wm, age, ch }. With keep, out is left alone unless something is nearer
+// than out.d2 already is (so several channels can be searched in turn)
+const nfOf = (wm, minW) => minW <= 2 * wm ? 1 : minW >= 6 * wm ? 0 : dm.smoothstep(6 * wm, 2 * wm, minW);
+const _cn = { d2: Infinity, p: -1, f: 0, x: 0, y: 0, z: 0, half: 0, hs: 0, mx: 0, my: 0, mz: 0, t: 0, wm: 0, age: 0, ch: null };
+export function chanNearest(ch, x, y, z, minW, out, kind = 0, keep = false) {
+  if (!keep) { out.d2 = Infinity; out.ch = null; }
+  const G = ch.groups, gi = ch.gi, P = ch.pts, A = ch.at;
+  let bd = out.d2, bp = -1, bf = 0;
+  for (let g = 0, q = 0; g < G.length; g += 4, q += 3) {
+    if (ch.kind[gi[q]] !== kind) continue;
+    const dx = G[g] - x, dy = G[g + 1] - y, dz = G[g + 2] - z, lb = Math.sqrt(dx * dx + dy * dy + dz * dz) - G[g + 3];
+    if (lb > 0 && lb * lb >= bd) continue;
+    const s0 = gi[q + 1], s1 = s0 + gi[q + 2];
+    let o = s0 * 6, nf = nfOf(A[s0 * 7 + 6], minW), ax = P[o] + nf * P[o + 3], ay = P[o + 1] + nf * P[o + 4], az = P[o + 2] + nf * P[o + 5];
+    for (let s = s0; s < s1; s++) {
+      o += 6; nf = nfOf(A[(s + 1) * 7 + 6], minW);
+      const bx = P[o] + nf * P[o + 3], by = P[o + 1] + nf * P[o + 4], bz = P[o + 2] + nf * P[o + 5];
+      const ux = bx - ax, uy = by - ay, uz = bz - az, L2 = ux * ux + uy * uy + uz * uz;
+      const f = L2 > 0 ? Math.max(0, Math.min(1, ((x - ax) * ux + (y - ay) * uy + (z - az) * uz) / L2)) : 0;
+      const ex = ax + f * ux - x, ey = ay + f * uy - y, ez = az + f * uz - z, d2 = ex * ex + ey * ey + ez * ez;
+      if (d2 < bd) { bd = d2; bp = s; bf = f; }
+      ax = bx; ay = by; az = bz;
+    }
+  }
+  if (bp < 0) return out;
+  const o = bp * 6, oa = bp * 7, f = bf, g = 1 - f, n0 = nfOf(A[oa + 6], minW), n1 = nfOf(A[oa + 13], minW);
+  out.d2 = bd; out.p = bp; out.f = bf; out.ch = ch;
+  out.x = g * (P[o] + n0 * P[o + 3]) + f * (P[o + 6] + n1 * P[o + 9]);
+  out.y = g * (P[o + 1] + n0 * P[o + 4]) + f * (P[o + 7] + n1 * P[o + 10]);
+  out.z = g * (P[o + 2] + n0 * P[o + 5]) + f * (P[o + 8] + n1 * P[o + 11]);
+  out.half = g * A[oa] + f * A[oa + 7]; out.hs = g * A[oa + 1] + f * A[oa + 8];
+  out.mx = g * A[oa + 2] + f * A[oa + 9]; out.my = g * A[oa + 3] + f * A[oa + 10]; out.mz = g * A[oa + 4] + f * A[oa + 11];
+  out.t = g * A[oa + 5] + f * A[oa + 12]; out.wm = g * A[oa + 6] + f * A[oa + 13];
+  // (which piece: an oxbow's age)
+  if (kind) { let q = 0; while (q + 1 < ch.kind.length && ch.pc[2 * q + 1] <= bp) q++; out.age = ch.age[q]; }
+  return out;
+}
+// a fresh out for chanNearest
+export const nearOut = () => ({ d2: Infinity, p: -1, f: 0, x: 0, y: 0, z: 0, half: 0, hs: 0, mx: 0, my: 0, mz: 0, t: 0, wm: 0, age: 0, ch: null });

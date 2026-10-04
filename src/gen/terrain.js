@@ -23,12 +23,14 @@ import * as dm from '../core/dmath.js';
 import { fibonacciSphere, faceUVFromDir, FACES } from './cubesphere.js';
 import { patchAt } from './dunes.js';
 import { CraterField, VEXAG } from './craters.js';
-import { SUITE, DEPOSITS, worldColumn, bedAt, faceMetres } from './geology.js';
-import { canyonTable, canyonAt, canyonWedge, canyonHalfWidth } from './canyon.js';
+import { SUITE, SUITES, DEPOSITS, worldColumn, bedAt, faceMetres } from './geology.js';
+import { canyonTable, wallSet, wallFit, wallAt, wallReach } from './canyon.js';
+import { buildChannel, chanNearest, chanSwing, nearOut } from './channels.js';
 import { craterFloor, TILE_CELLS } from './worldsim/impacts.js';
 import { SnapshotSampler } from './worldsim/snapshot.js';
 import { RIVER_REC, BIG_REC } from './worldsim/refine.js';
-import { meanderField, meanderNearA } from './meanders.js';
+import { TRUE_SCALE } from './tileshape.js';
+import { meanderField } from './meanders.js';
 import { ROCKS, R as ROCK } from './worldsim/lithology.js';
 import { hexToLinear } from './color.js';
 
@@ -65,6 +67,16 @@ const CREEK_A = 6e4, CREEK_WET = 2.5e5;
 export const RELIEF_MAX = 0.06;
 
 const tmp4 = new Float64Array(4);
+
+// canyons: where their walls' rock is read (side, share of d1 out), and how far a river moves
+// across while it cuts down, by its rock (per metre down, at the meander model's mean rate): a
+// soft bedded rock's bends grow as they deepen (ingrown meanders, slip-off slopes), a massive
+// one's are held where they were (entrenched: both walls steep)
+const SUITE_AT = [[1, 0.5], [1, 1], [-1, 0.5], [-1, 1]];
+const KAPPA = [1.2, 0.8, 0.3, 1.5];   // (SUITES: sed, volc, xtal, loose)
+// what the refinement's cells resolve of a canyon (cells across): its profile averaged that wide
+// is the levels' dip
+const CANYON_LAM = 1.5;
 
 function smin(a, b, k) { const h = dm.clamp(0.5 + 0.5 * (b - a) / k, 0, 1); return b + (a - b) * h - k * h * (1 - h); }
 function smax(a, b, k) { return -smin(-a, -b, k); }
@@ -613,28 +625,46 @@ export class TerrainGenerator {
     // (the world's refinement where it has one: the world sim's surface with what its water cut)
     const ref = S.ref && S.ref.sample(S._d(x, y, z)) ? S.ref : null;
     let h = ref ? ref.h / this.hScale : S.h(x, y, z);
+    const hRef = h;
     // (and the finer levels of the terrain's tiles where there are any, each blended in by how
     // fully it covers the point: they fade into the coarser at the edges of what's been made)
     let sea = ref ? ref.sea : -1, lakeF = ref ? ref.lake : -1, finest = ref ? S.refCell : 0, finRd = null;
+    // (each level's cut (twice its cell: the wavelengths it simulates) and how fully it covers
+    // the point, for the detail below to leave out what it holds by as much: at a tile's edge the
+    // detail fades in as the tile fades out, not all at once along a line)
+    const cuts = this._cuts || (this._cuts = new Float64Array(8)), cw = this._cw || (this._cw = new Float64Array(8));
+    let nc = 0;
+    if (ref) { cuts[0] = 2 * S.refCell; cw[0] = 1; nc = 1; }
     if (S.pyr) for (const rd of S.pyrReaders()) {
       if (!rd.sample(S._d(x, y, z))) continue;
       h += (rd.h / this.hScale - h) * rd.w;
       sea = sea < 0 ? rd.sea : sea + (rd.sea - sea) * rd.w;
       lakeF = lakeF < 0 ? rd.lake : lakeF + (rd.lake - lakeF) * rd.w;
       if (rd.w > 0.5) { finest = rd.cell; finRd = rd; }
+      if (nc < 8) { cuts[nc] = 2 * rd.cell; cw[nc++] = rd.w; }
     }
+    // (how much of the octave at lam the levels leave to the detail: soft, faded over the octave
+    // below each cut, as the grain is; else all of those at or past a cut held by it)
+    const keep = (lam, soft) => {
+      let k = 1;
+      for (let i = 0; i < nc; i++) k *= 1 - cw[i] * (soft ? 1 - dm.smoothstep(cuts[i], 0.5 * cuts[i], lam) : lam >= cuts[i] ? 1 : 0);
+      return k;
+    };
     const h0 = h;
     const rel = S.relief(x, y, z);
     const mMask = dm.smoothstep(400, 2500, rel);
     out[S_MOUNT] = mMask;
-    const amp = dm.clamp(rel * 0.3, 12, 900);
+    // (at true scale (unless p.trueScale is false), the ground layer's own relief (ground.js: its span in ~20
+    // km), at each wavelength by the roughness's scaling; else the world sim's cells' relief)
+    const gT = (p.trueScale ?? TRUE_SCALE) && S.s.gLr ? S.ground(x, y, z, this._gro || (this._gro = {})) : null;
+    const amp = gT ? dm.clamp(gT.lr / 4 * dm.pow(S.G.spacing / 20000, 0.55), 3, 500) : dm.clamp(rel * 0.3, 12, 900);
     let calm = 1;
     // hills from the grid's spacing down (derivative-damped: eroded-looking); with a
     // refinement, only those finer than it resolves
     {
       // (none on a sand sea: blown sand is smooth)
       if (S.s.dunes) calm = 1 - dm.smoothstep(0.15, 0.5, S.duneMask(x, y, z));
-      const lam0 = S.G.spacing, lamCut = finest ? 2 * finest : 1e30;
+      const lam0 = S.G.spacing;
       const hf = R / lam0;
       let fx = x * hf, fy = y * hf, fz = z * hf, nxs = x, nys = y, nzs = z;
       let sum = 0, a = 1, dx = 0, dy = 0, dz = 0, lam = lam0;
@@ -644,7 +674,8 @@ export class TerrainGenerator {
         this.nHill.noised(fx, fy, fz, tmp4);
         const dr = tmp4[1] * nxs + tmp4[2] * nys + tmp4[3] * nzs;
         dx += tmp4[1] - dr * nxs; dy += tmp4[2] - dr * nys; dz += tmp4[3] - dr * nzs;
-        if (lam < lamCut) sum += a * tmp4[0] * fade / (1 + 1.6 * (dx * dx + dy * dy + dz * dz));
+        const kp = keep(lam, false);
+        if (kp > 0) sum += a * tmp4[0] * fade * kp / (1 + 1.6 * (dx * dx + dy * dy + dz * dz));
         a *= 0.5; lam *= 0.5;
         const nx = ROT[0] * fx + ROT[1] * fy + ROT[2] * fz, ny = ROT[3] * fx + ROT[4] * fy + ROT[5] * fz, nz = ROT[6] * fx + ROT[7] * fy + ROT[8] * fz;
         fx = nx * 2.0 + 1.3; fy = ny * 2.0 + 2.9; fz = nz * 2.0 - 4.1;
@@ -657,11 +688,12 @@ export class TerrainGenerator {
     out[S_ROUGH] = rough;
     {
       // (the ground's grain below what the terrain's levels simulate: none of its features)
-      const df = R / this.lamDetail, lamCut = finest ? 2 * finest : 1e30;
-      let fx = x * df, fy = y * df, fz = z * df, lam = this.lamDetail, a = (p.relief || 3000) * 0.006 * rough, sum = 0;
+      const df = R / this.lamDetail;
+      let fx = x * df, fy = y * df, fz = z * df, lam = this.lamDetail, a = (gT ? dm.clamp(gT.lr / 4 * dm.pow(this.lamDetail / 20000, 0.55), 1, 120) : (p.relief || 3000) * 0.006) * rough, sum = 0;
       for (let o = 0; o < 11; o++) {
         if (lam < minWavelength) break;
-        if (lam < lamCut) sum += a * this.nDetail.noise(fx, fy, fz) * dm.smoothstep(minWavelength, minWavelength * 2, lam) * dm.smoothstep(lamCut, 0.5 * lamCut, lam);
+        const kp = keep(lam, true);
+        if (kp > 0) sum += a * this.nDetail.noise(fx, fy, fz) * dm.smoothstep(minWavelength, minWavelength * 2, lam) * kp;
         a *= 0.57; lam *= 0.5;
         const nx = ROT[0] * fx + ROT[1] * fy + ROT[2] * fz, ny = ROT[3] * fx + ROT[4] * fy + ROT[5] * fz, nz = ROT[6] * fx + ROT[7] * fy + ROT[8] * fz;
         fx = nx * 2.0 - 0.7; fy = ny * 2.0 + 1.1; fz = nz * 2.0 + 2.3;
@@ -694,7 +726,9 @@ export class TerrainGenerator {
     const rvK = rv && this.wetNow && rv.hs < 0 ? 1 - dm.smoothstep(0, 3, -rv.hs) : 1;
     if (rvK <= 0) rv = null;
     // rivers entrenched in a dry land: canyons (_canyons)
-    if (S.riv && S.ref && iceH <= 30) { h = this._canyons(h, h0, minWavelength, x, y, z); if (finRd) finRd.sample(S._d(x, y, z)); }
+    // (inside one, its floor is the river's floodplain: it lays none of its own, nor oxbows)
+    let cyK = 0;
+    if (S.riv && S.ref && iceH <= 30) { h = this._canyons(h, h0, hRef, minWavelength, x, y, z); cyK = this._cyK; if (finRd) finRd.sample(S._d(x, y, z)); }
     // (the wet ground along it, for the shading: only where water runs now; a dry world's old
     // channels are valleys in its dust, not dark strokes)
     // (a river narrower than the sampling's spacing is drawn as wide as it, below, so it shows as
@@ -709,12 +743,12 @@ export class TerrainGenerator {
       // (a meandering river's floodplain: the belt it has swung across, laid level near its banks;
       // and the loops it cut off, lakes while young, swales once filled)
       const bank0 = this._bankOf(rv);
-      if (rv.belt > 0 && rv.axis < 1.3 * rv.belt) h += rvK * this._levelled(rv, bank0 + 0.5 - h) * 0.85 * dm.smoothstep(1.3 * rv.belt, 0.85 * rv.belt, rv.axis);
+      if (rv.belt > 0 && rv.axis < 1.3 * rv.belt && cyK < 1) h += rvK * (1 - cyK) * this._levelled(rv, bank0 + 0.5 - h) * 0.85 * dm.smoothstep(1.3 * rv.belt, 0.85 * rv.belt, rv.axis);
       const oh = 0.5 * (rv.oxW || rv.w);
-      if (rv.ox < oh && rv.oxAge < 0.8) {
+      if (rv.ox < oh && rv.oxAge < 0.8 && cyK < 0.5) {
         const q = 1 - (rv.ox / oh) * (rv.ox / oh), dep = rv.depth * 0.6 * (1 - rv.oxAge);
-        h += rvK * (Math.min(h, bank0 - dep * q) - h);
-        if (this.wetNow && rv.oxAge < 0.5 && rvK >= 1) wl = Math.max(wl, bank0 - 0.8 - 0.3 * dep);
+        h += rvK * (1 - 2 * cyK) * (Math.min(h, bank0 - dep * q) - h);
+        if (this.wetNow && rv.oxAge < 0.5 && rvK >= 1 && cyK < 0.05) wl = Math.max(wl, bank0 - 0.8 - 0.3 * dep);
       }
     }
     if (rv) {
@@ -728,7 +762,7 @@ export class TerrainGenerator {
       const half = rvWide, flank = Math.max(rv.w * 1.5 + S.G.spacing * (0.02 + 0.12 * rv.k), 1.25 * half);
       if (rv.dist < flank) {
         const bank = this._bankOf(rv);
-        h += rvK * this._levelled(rv, bank - h) * dm.smoothstep(flank, half * 1.2, rv.dist);
+        h += rvK * (1 - cyK) * this._levelled(rv, bank - h) * dm.smoothstep(flank, half * 1.2, rv.dist);
         if (rv.dist < half && rvFade < 1) {
           h += rvK * (1 - rvFade) * (Math.min(h, bank - rv.depth * (1 - (rv.dist / half) * (rv.dist / half))) - h);
           if (this.wetNow && rvK >= 1) wl = rvWl = Math.max(bank - 0.6 - 0.03 * rv.depth, 0.3);
@@ -747,8 +781,11 @@ export class TerrainGenerator {
       // line); one more than 4 times narrower than that isn't drawn at all)
       const wide = this.wetNow && A > CREEK_WET ? Math.max(own, 0.75 * minWavelength) : own, seen = wide <= 4 * own;
       const half = seen ? wide : own;
-      const dist = finRd.cd * finest, flank = half * 3;
+      const dist = finRd.cd * finest, flank = half * 3, fin = dm.smoothstep(0.5, 0.9, finRd.w);
       if (dist < flank) {
+        // (by how fully its level covers the point: at a tile's edge, where the level below takes
+        // over, the creek fades out, not stops at a line)
+        const h1 = h;
         // (with water in it the banks are laid to the line, so it runs downhill; a dry world's
         // gully only cuts down: two creeks a cell or two apart, their lines at different heights,
         // would otherwise step the ground between them in rungs)
@@ -756,8 +793,9 @@ export class TerrainGenerator {
         h += (this.wetNow ? pull : Math.min(0, pull)) * dm.smoothstep(flank, half * 1.2, dist);
         if (dist < half) {
           h = Math.min(h, bank - dep * (1 - (dist / half) * (dist / half)));
-          if (this.wetNow && A > CREEK_WET && seen) wl = Math.max(wl, bank - 0.25 - 0.1 * dep);
+          if (this.wetNow && A > CREEK_WET && seen && fin > 0.5) wl = Math.max(wl, bank - 0.25 - 0.1 * dep);
         }
+        h = h1 + (h - h1) * fin;
       }
     }
     if (flooded && this.wetNow && lk.L > wl) wl = lk.L;
@@ -910,124 +948,123 @@ export class TerrainGenerator {
   _levelled(rv, pull) { return pull >= 0 ? pull : pull * (1 - dm.smoothstep(2 * rv.depth + 3, 8 * rv.depth + 10, -pull)); }
 
   // Rivers entrenched in a dry land (cutting down faster than their walls weather back: an
-  // antecedent river through a rising plateau, the Colorado's): canyons, their walls each bed's
-  // own slope (canyon.js: cliffs and benches in bedded rock, one wall in massive). The terrain's
-  // levels hold one as a dip a cell or two across, sharper than its valley's sides: those sides,
-  // carried on in to its line, are the ground it's cut into (a V valley's sides meet at its
-  // river: no canyon), and the rock missing below them is what it took out, so its walls stand
-  // back from the river as far as that needs (its floor wider), and seen from afar it is the
-  // levels' dip again (_canyonRec, along each river record). Each river's canyon near (from its
-  // nearest record) fills its dip and cuts its walls, averaged over the sampling (minW across):
-  // from afar the dip, close up its cliffs, fading in as the sampling begins to resolve them so
-  // they never pop. Where two meet (a side canyon) the ground is the lower of their cuts, down
-  // to a floor that is the rivers' levels blended by how near they are
-  _canyons(h, h0, minW, x, y, z) {
-    const S = this.snap, Rv = S.riv, R = this.R, cell = S.refCell || 1000, d1 = 1.5 * cell, d2 = 2.5 * cell;
-    const fadeIn = 1 - dm.smoothstep(d1, 3 * d1, minW);
+  // antecedent river through a rising plateau, the Colorado's): canyons, cut along the river's
+  // own channel (channels.js: where it winds its canyon winds, entrenched meanders), their walls
+  // its rock's (canyon.js: each bed's own slope, worn back the more the softer it is and the
+  // longer it has stood, as far as takes out the rock the terrain's levels have missing there; on
+  // the inside of a bend, the slope the river left as it moved across while it cut down). The
+  // levels hold a canyon as a dip a cell or two across, sharper than its valley's sides: those
+  // sides, carried on in to its line, are the ground it's cut into (a V valley's sides meet at its
+  // river: no canyon).
+  // What a canyon adds to the levels is itself less itself as they see it: its profile averaged
+  // over the sampling (minW across: from afar its walls' mean slope, close up each cliff) less
+  // its profile averaged over what the refinement's cells resolve (LAM across, along its valley's
+  // line). So everything else the levels hold stays (the side valleys running into it), and from
+  // afar, where the sampling is as coarse as the cells, it adds nothing: no fading in, no
+  // popping. Inside it the pyramid's finer tiles give way to the refinement (their own cut of
+  // the river's valley is its walls' to make). Where two meet (a side canyon) the ground is the
+  // lower of their cuts. hRef: the refinement's ground here. Sets _cyK: how much the ground here
+  // is a canyon's floor or walls (its river lays no floodplain of its own)
+  _canyons(h, h0, hRef, minW, x, y, z) {
+    const S = this.snap, Rv = S.riv, R = this.R, cell = S.refCell || 1000, d1 = 1.5 * cell, d2 = 2.5 * cell, LAM = CANYON_LAM * cell;
+    this._cyK = 0;
+    const fadeIn = 1 - dm.smoothstep(0.7 * LAM, LAM, minW);
     if (fadeIn <= 0) return h;
     // (a dry land: weathering slow, the walls standing)
     const P = S.Gc ? S.rain(x, y, z) : 0, dry = fadeIn * (1 - dm.smoothstep(500, 1200, P ?? 0));
     if (dry <= 0) return h;
-    const rec = Rv.rec, G = S.G, nb = S.nb, hs = this.hScale;
+    const G = S.G, nb = S.nb, hs = this.hScale, Lk = this._rivLinks(), Fr = this._frames(), FB = Fr.B, FF = Fr.F;
     const c0 = G.cellAt(x, y, z), nn = G.nbrs(c0, nb);
-    const bnd = Rv._bnd || (Rv._bnd = riverBounds(Rv));
-    const N = 256, cr = this._ccr || (this._ccr = new Int32Array(N)), cdd = this._ccd || (this._ccd = new Float64Array(N)), ct = this._cct || (this._cct = new Float64Array(N));
-    const sd9 = this._csd || (this._csd = new Float64Array(5 * N)), sf9 = this._csf || (this._csf = new Float64Array(5 * N));
-    // (the rivers that may reach: none of them with a canyon, nothing to do)
+    // (the records that may reach, and their rivers: none with a canyon, nothing to do)
+    const N = 64, cr = this._ccr || (this._ccr = new Int32Array(N));
     let nr = 0, any = false;
     for (let q = -1; q < nn; q++) {
       const c = q < 0 ? c0 : nb[q];
       for (let e = Rv.start[c]; e < Rv.start[c + 1] && nr < N; e++) {
-        const r = Rv.idx[e], o = r * 4, ex = bnd[o] - x, ey = bnd[o + 1] - y, ez = bnd[o + 2] - z;
-        if ((Math.sqrt(ex * ex + ey * ey + ez * ez) - bnd[o + 3]) * R >= d2) continue;
-        cr[nr++] = r;
-        if (!any && this._canyonRec(r)) any = true;
+        const r = Rv.idx[e], o = r * 4, ex = FB[o] - x, ey = FB[o + 1] - y, ez = FB[o + 2] - z;
+        if (Rv.big && Rv.big.has[r]) continue;
+        if ((Math.sqrt(ex * ex + ey * ey + ez * ez) - FB[o + 3]) * R >= d2) continue;
+        if (!this._canyonRec(r)) continue;
+        cr[nr++] = r; any = true;
       }
     }
     if (!any) return h;
-    // the rivers near: each one's nearest point, and its curve's points with their levels
-    const nc0 = nr;
-    let dn = 1e30, fnn = 0, wn = 0, ds = 1e30;
-    nr = 0;
-    for (let i = 0; i < nc0; i++) {
-      const r = cr[i];
-      const b = r * RIVER_REC, bdt = nearestOnCurveFine(rec, b, x, y, z), d = Math.sqrt(bdt[0]) * R, t = bdt[1];
-      if (d >= d2) continue;
-      if (d < dn) { dn = d; wn = 2 * Rv.half[r]; const a0 = (1 - t) * (1 - t), a1 = 2 * t * (1 - t), a2 = t * t; fnn = (a0 * rec[b + 9] + a1 * rec[b + 10] + a2 * rec[b + 11]) / hs; }
-      for (let k = 0; k <= 4; k++) {
-        const tk = k / 4, a0 = (1 - tk) * (1 - tk), a1 = 2 * tk * (1 - tk), a2 = tk * tk;
-        const px = a0 * rec[b] + a1 * rec[b + 3] + a2 * rec[b + 6] - x, py = a0 * rec[b + 1] + a1 * rec[b + 4] + a2 * rec[b + 7] - y, pz = a0 * rec[b + 2] + a1 * rec[b + 5] + a2 * rec[b + 8] - z;
-        const dk = Math.sqrt(px * px + py * py + pz * pz) * R;
-        sd9[5 * nr + k] = dk; sf9[5 * nr + k] = (a0 * rec[b + 9] + a1 * rec[b + 10] + a2 * rec[b + 11]) / hs;
-        if (dk < ds) ds = dk;
-      }
-      cr[nr] = r; cdd[nr] = d; ct[nr++] = t;
-    }
-    if (!nr) return h;
-    // (the floor: the rivers' levels near, weighted by how near, so it has no steps where the
-    // nearest point of a river jumps (round a bend, at a side canyon's mouth); by its water's
-    // edge the nearest river's own level)
-    const un = dn / Math.max(wn, 1);
-    let sw = 100 * Math.exp(-un * un), sf = sw * fnn;
-    const sg = 50 + 0.5 * dn;
-    for (let k = 0; k < 5 * nr; k++) { const u = (sd9[k] - ds) / sg, w = Math.exp(-u * u); sw += w; sf += w * sf9[k]; }
-    const fs = sf / sw;
-    // each river's canyon, where it has one: its walls rising from the floor
-    const cut = this._ccut || (this._ccut = new Float64Array(N)), cf = this._ccf || (this._ccf = new Float64Array(N));
-    let nc = 0, sa = 0, swt = 0;
-    const Lk = this._rivLinks();
+    const cn = this._ccn || (this._ccn = nearOut()), wl = this._cwl || (this._cwl = {});
+    const seed = (this.p.seed && this.p.seed[0]) | 0, off = this._bedOff(x, y, z), MF = this._mf || (this._mf = meanderField());
+    let mf = Infinity, mc = Infinity, wc = 0, cyK = 0;
+    // each record's canyon, from its own stretch of channel and of valley line, the lowest of them
+    // (along a river they carry on into each other; past a record's ends its own rises away)
     for (let i = 0; i < nr; i++) {
-      // (a river's canyon from its nearest record: its records carry on into each other, so the
-      // nearest point along it moves smoothly from one to the next)
-      let near = true;
-      for (let j = 0; j < nr && near; j++) if (j !== i && Lk.river[cr[j]] === Lk.river[cr[i]] && (cdd[j] < cdd[i] || cdd[j] === cdd[i] && j < i)) near = false;
-      if (!near) continue;
-      const cp = this._canyonRec(cr[i]);
+      const r = cr[i], cp = this._canyonRec(r);
       if (!cp) continue;
-      const r = cr[i], b = r * RIVER_REC, d = cdd[i], t = ct[i], a0 = (1 - t) * (1 - t), a1 = 2 * t * (1 - t), a2 = t * t, u = 1 - t;
-      // (which side: the curve's direction there against the way to the point, about up)
-      const px = a0 * rec[b] + a1 * rec[b + 3] + a2 * rec[b + 6], py = a0 * rec[b + 1] + a1 * rec[b + 4] + a2 * rec[b + 7], pz = a0 * rec[b + 2] + a1 * rec[b + 5] + a2 * rec[b + 8];
-      const tx = u * (rec[b + 3] - rec[b]) + t * (rec[b + 6] - rec[b + 3]), ty = u * (rec[b + 4] - rec[b + 1]) + t * (rec[b + 7] - rec[b + 4]), tz = u * (rec[b + 5] - rec[b + 2]) + t * (rec[b + 8] - rec[b + 5]);
+      const ch = this._chan(r);
+      chanNearest(ch, x, y, z, minW, cn, 0);
+      if (!cn.ch) continue;
+      const d = Math.sqrt(cn.d2) * R;
+      // (its valley's line, the river's smoothed line: which side of it the point is, and how far)
+      const fb = 9 * r, nt = nearestOnCurveFine(FF, fb, x, y, z), ta = nt[1], da = Math.sqrt(nt[0]) * R, ua = 1 - ta;
+      if (Math.min(d, da) >= d2) continue;
+      const px = ua * ua * FF[fb] + 2 * ta * ua * FF[fb + 3] + ta * ta * FF[fb + 6], py = ua * ua * FF[fb + 1] + 2 * ta * ua * FF[fb + 4] + ta * ta * FF[fb + 7], pz = ua * ua * FF[fb + 2] + 2 * ta * ua * FF[fb + 5] + ta * ta * FF[fb + 8];
+      const tx = ua * (FF[fb + 3] - FF[fb]) + ta * (FF[fb + 6] - FF[fb + 3]), ty = ua * (FF[fb + 4] - FF[fb + 1]) + ta * (FF[fb + 7] - FF[fb + 4]), tz = ua * (FF[fb + 5] - FF[fb + 2]) + ta * (FF[fb + 8] - FF[fb + 5]);
       const qx = x - px, qy = y - py, qz = z - pz, sd = (ty * qz - tz * qy) * x + (tz * qx - tx * qz) * y + (tx * qy - ty * qx) * z;
-      // (its side's ground carried on in, where along it the point is)
-      const sb = sd < 0 ? 6 : 0, kf = t * 4, k0 = Math.min(3, Math.floor(kf)), f = kf - k0, A = cp.p, i0 = k0 * 12 + sb, i1 = i0 + 12;
-      const ok = A[i0 + 4] + f * (A[i1 + 4] - A[i0 + 4]);
-      if (ok <= 0.05) continue;
-      const h1 = A[i0] + f * (A[i1] - A[i0]), sl = A[i0 + 1] + f * (A[i1 + 1] - A[i0 + 1]), Wf = A[i0 + 2] + f * (A[i1 + 2] - A[i0 + 2]), off = A[i0 + 3] + f * (A[i1 + 3] - A[i0 + 3]);
-      const top0 = h1 - sl * d1, g = A[i0 + 5] + f * (A[i1 + 5] - A[i0 + 5]), Tr = fs + g * (top0 - fs);
-      const T = sd < 0 ? cp.T1 : cp.T0, entr = dm.smoothstep(30, 80, top0 - fs) * dm.smoothstep(0.05, 0.6, ok);
-      // (seen from as far as its walls' reach, the levels' dip: a sampling coarser than that
-      // sees both its sides at once)
-      const W = canyonHalfWidth(T, fs * hs, Tr * hs, Wf, off);
-      // (past an end of its river (its source, its mouth), not much further)
-      const tl = Math.sqrt(tx * tx + ty * ty + tz * tz) || 1;
-      const past = t <= 0 && Lk.up[r] < 0 ? -(qx * tx + qy * ty + qz * tz) / tl * R : t >= 1 && (Lk.dn[r] < 0 || Lk.up[Lk.dn[r]] !== r) ? (qx * tx + qy * ty + qz * tz) / tl * R : 0;
-      const fade = dry * entr * (1 - dm.smoothstep(W, 3 * W, minW)) * (1 - dm.smoothstep(0, 0.3 * W, past));
-      if (fade <= 0 || d > Math.max(W, d1)) continue;
-      // (the ground it's cut into, in place of the levels' near it (their finer grain kept): a
-      // gorge in a plateau, the side carried on in, the levels' dip filled; one whose rim is
-      // lowered, cut into a broader valley, the levels' valley as it is, the gorge in its floor)
-      const top = Math.min(h1, top0 + sl * d), wt = (1 - dm.smoothstep(0.75 * d1, d1, d)) * fade * dm.smoothstep(0.5, 0.9, g);
-      sa += wt * (top - h0); swt += wt;
-      // (its walls, cut down into that from the floor)
-      cut[nc] = canyonAt(T, fs * hs, (Math.max(top, h) + 50) * hs, Wf, off, d, minW) / hs;
-      cf[nc++] = fade;
+      // (the canyon there: each side's ground carried on in, and what's missing below it; the two
+      // sides blended across the belt the river swings over, so where it swings off its line the
+      // ground between doesn't step)
+      const A = cp.p, kf = ta * 4, k0 = Math.min(3, Math.floor(kf)), f = kf - k0, i0 = k0 * 12, i1 = i0 + 12;
+      const lp = (o) => A[i0 + o] + f * (A[i1 + o] - A[i0 + o]);
+      const wm = ch.W0 + (ch.W1 - ch.W0) * ta, Bs = Math.max(50, chanSwing(ch, ta) * MF.half * wm + wm), sg = dm.smoothstep(-Bs, Bs, sd < 0 ? -da : da);
+      const sd2 = (o) => lp(4 + o) + sg * (lp(o) - lp(4 + o));
+      const h1 = sd2(0), sl = sd2(1), gone = sd2(2), wt = sd2(3);
+      // (its floor: the river's banks along its channel)
+      const depth = 3 + 25 * Rv.size[r], F = (this.wetNow ? Math.max(cn.hs, 0) : cn.hs) + 1 + 0.05 * depth;
+      const top0 = h1 - sl * d1, fade = dry * wt * dm.smoothstep(30, 80, top0 - F);
+      if (fade <= 1e-3) continue;
+      const top = Math.min(h1, top0 + sl * da), Wf = Math.max(4, 1.8 * cn.half);
+      // (its walls: the rock suites there, the two weighing most, each worn back to take out what's
+      // missing; on the inside of a bend no steeper than the slope the river left moving across)
+      let s1 = -1, s2 = -1, w1 = 0, w2 = 0;
+      for (let s = 0; s < 4; s++) { const ws = lp(8 + s); if (ws > w1) { s2 = s1; w2 = w1; s1 = s; w1 = ws; } else if (ws > w2) { s2 = s; w2 = ws; } }
+      const mig = Math.sqrt(cn.mx * cn.mx + cn.my * cn.my + cn.mz * cn.mz), inner = (x - cn.x) * cn.mx + (y - cn.y) * cn.my + (z - cn.z) * cn.mz < 0;
+      let cv = 0, cc = 0, cw = 0, W = 0;
+      for (let si = 0; si < 2; si++) {
+        const s = si ? s2 : s1, ws = si ? w2 : w1;
+        if (s < 0 || ws <= 0.05 * w1) continue;
+        const T = canyonTable(worldColumn(seed, SUITES[s], 0));
+        wallSet(wl, T, F * hs, Wf, off, 0);
+        const iT = top0 * hs + off - T.lo, iTop = top * hs + off - T.lo;
+        wl.mu = wallFit(wl, iT, gone * hs, 0.95 * d1);
+        const k = inner && mig > 1e-3 ? hs / (KAPPA[s] * mig) : 0;
+        cv += ws * wallAt(wl, d, minW, iTop, k) / hs;
+        cc += ws * wallAt(wl, da, LAM, iTop, 0) / hs;
+        W += ws * wallReach(wl, iT); cw += ws;
+      }
+      if (!cw) continue;
+      cv /= cw; cc /= cw; W /= cw;
+      mf = Math.min(mf, top + fade * (cv - top)); mc = Math.min(mc, top + fade * (cc - top));
+      wc = Math.max(wc, fade * (1 - dm.smoothstep(W + 0.5 * LAM, W + LAM, d)));
+      if (d < W) cyK = Math.max(cyK, fade);
     }
-    if (!nc) return h;
-    const ground = h + sa / Math.max(1, swt);
-    let v = ground;
-    for (let k = 0; k < nc; k++) v = Math.min(v, ground + Math.min(0, cut[k] - ground) * cf[k]);
-    return v;
+    this._cyK = cyK;
+    if (mf === Infinity) return h;
+    return h + wc * (hRef - h0) + (mf - mc);
+  }
+  // the beds' offset at a place (geology.js bedAt: the regions' structure there)
+  _bedOff(x, y, z) {
+    const d = this._bd || (this._bd = [0, 0, 0]), uv = this._buv || (this._buv = { face: 0, u: 0, v: 0 }), bo = this._bbo || (this._bbo = { bed: 0, weak: 0 }), Mu = faceMetres(this.R);
+    d[0] = x; d[1] = y; d[2] = z;
+    faceUVFromDir(d, uv);
+    return bedAt(this, uv.face, uv.u, uv.v, uv.u * Mu, uv.v * Mu, 0, bo).bed;
   }
 
-  // a river record's canyon, along it (kept): at five points along its curve, for each side, the
-  // levels' ground off its line (at d1, and its slope out to d2), its floor's half width, the
-  // beds' offset, how much it's a canyon there and its rim's share of the way up (A: [h1, slope,
-  // Wf, off, ok, g] by point and side); and each side's rock column
-  // (canyon.js's table). Each smoothed along its river over the records either side of it (the
-  // levels read along a line across a river that turns as its cells do: their reading wanders,
-  // and its walls would with it): within two records of each point, so where one record gives
-  // way to the next both read alike. Null where no part of it is entrenched
+  // a river record's canyon, along it (kept): at five points along its frame, for each side the
+  // levels' ground off its line (at d1, and its slope out to d2), the rock missing below that
+  // carried on in, and how much it's a canyon there; and the rock suites its walls stand in
+  // (p: by point, [h1, slope, gone, wt] the + side then the - side, then the suites' shares).
+  // Smoothed along its river over the three records either side (the levels read along a line
+  // across a river that turns as its cells do: their reading wanders, and its walls would with
+  // it), so where one record gives way to the next both read alike, and it fades out toward its
+  // river's source and its mouth. Null where neither it nor any near it along its river is
+  // entrenched
   _canyonRec(r) {
     const C = this._cyc || (this._cyc = new Map());
     let cp = C.get(r);
@@ -1036,26 +1073,28 @@ export class TerrainGenerator {
     const raw = this._canyonRaw(r), Bg = this.snap.riv.big;
     cp = null;
     // (not a great river's: its channel winds across a belt round a line its records don't follow)
-    if (raw.any && !(Bg && Bg.has[r])) {
-      // (the records up and down the river: two each way, along its own stem (a side stream ends
-      // at its mouth); past its source or its mouth, no canyon: it fades out toward either)
+    if (!(Bg && Bg.has[r])) {
       const L = this._rivLinks(), ch = [raw], at = [0];
-      let nUp = 0, nDn = 0;
-      for (let k = 1, u = r; k <= 2 && (u = L.up[u]) >= 0; k++) { ch.push(this._canyonRaw(u)); at.push(-k); nUp++; }
-      for (let k = 1, dn = r; k <= 2; k++) { const nx = L.dn[dn]; if (nx < 0 || L.up[nx] !== dn) break; dn = nx; ch.push(this._canyonRaw(dn)); at.push(k); nDn++; }
-      const A = new Float32Array(60), Wmin = raw.Wmin;
-      for (let k = 0; k <= 4; k++) for (let si = 0; si < 2; si++) {
-        let sw = 0, s1 = 0, s2 = 0, s3 = 0, s4 = 0, swW = 0, sW = 0, sG = 0;
-        for (let c = 0; c < ch.length; c++) for (let k2 = 0; k2 <= 4; k2++) {
-          const dj = (at[c] * 4 + k2 - k) / 4, w = dj * dj < 4 ? (1 - dj * dj / 4) ** 2 : 0, B = ch[c].A, o = k2 * 12 + si * 6;
-          sw += w; s1 += w * B[o]; s2 += w * B[o + 1]; s3 += w * B[o + 3]; s4 += w * B[o + 4];
-          if (B[o + 4] > 0) { swW += w; sW += w * B[o + 2]; sG += w * B[o + 5]; }
+      let nUp = 0, nDn = 0, near = raw.any;
+      for (let k = 1, u = r; k <= 3 && (u = L.up[u]) >= 0; k++) { const c = this._canyonRaw(u); ch.push(c); at.push(-k); nUp++; near = near || c.any; }
+      for (let k = 1, dn = r; k <= 3; k++) { const nx = L.dn[dn]; if (nx < 0 || L.up[nx] !== dn) break; dn = nx; const c = this._canyonRaw(dn); ch.push(c); at.push(k); nDn++; near = near || c.any; }
+      if (near) {
+        const A = new Float32Array(60);
+        for (let k = 0; k <= 4; k++) {
+          let sw = 0;
+          const o = k * 12;
+          for (let c = 0; c < ch.length; c++) for (let k2 = 0; k2 <= 4; k2++) {
+            const dj = (at[c] * 4 + k2 - k) / 4, w = dj * dj < 9 ? (1 - dj * dj / 9) ** 2 : 0, B = ch[c].A, ob = k2 * 12;
+            if (!w) continue;
+            sw += w;
+            for (let q = 0; q < 12; q++) A[o + q] += w * B[ob + q];
+          }
+          for (let q = 0; q < 12; q++) A[o + q] /= sw;
+          const taper = (nUp >= 3 ? 1 : dm.smoothstep(0, 3, nUp + k / 4)) * (nDn >= 3 ? 1 : dm.smoothstep(0, 3, nDn + 1 - k / 4));
+          A[o + 3] *= taper; A[o + 7] *= taper;
         }
-        const o = k * 12 + si * 6, taper = (nUp >= 2 ? 1 : dm.smoothstep(0, 2, nUp + k / 4)) * (nDn >= 2 ? 1 : dm.smoothstep(0, 2, nDn + 1 - k / 4));
-        A[o] = s1 / sw; A[o + 1] = s2 / sw; A[o + 3] = s3 / sw; A[o + 4] = s4 / sw * taper;
-        A[o + 2] = swW > 0 ? Math.max(Wmin, sW / swW) : Wmin; A[o + 5] = swW > 0 ? sG / swW : 1;
+        cp = { p: A };
       }
-      cp = { p: A, T0: raw.T0, T1: raw.T1 };
     }
     C.set(r, cp);
     return cp;
@@ -1089,57 +1128,45 @@ export class TerrainGenerator {
     let cr = C.get(r);
     if (cr) return cr;
     if (C.size > 50000) C.clear();
-    const S = this.snap, Rv = S.riv, rec = Rv.rec, R = this.R, b = r * RIVER_REC, hs = this.hScale;
-    const cell = S.refCell || 1000, d1 = 1.5 * cell, d2 = 2.5 * cell, w = 2 * Rv.half[r];
-    // (its floor at least the river and the belt it may swing across, _meander)
-    const F = this._mf || (this._mf = meanderField());
-    const Wmin = Math.max(8, 0.75 * w, this._meanderA()[r] * F.half * w + 0.6 * w);
-    const A = new Float32Array(60), q = [0, 0, 0], uv = { face: 0, u: 0, v: 0 }, bo = { bed: 0, weak: 0 }, Mu = faceMetres(R);
-    const seed = (this.p.seed && this.p.seed[0]) | 0, Ts = [null, null];
+    const S = this.snap, Rv = S.riv, rec = Rv.rec, R = this.R, b = r * RIVER_REC, hs = this.hScale, FF = this._frames().F, fb = 9 * r;
+    const cell = S.refCell || 1000, d1 = 1.5 * cell, d2 = 2.5 * cell;
+    const A = new Float32Array(60), q = [0, 0, 0];
     let any = false;
     for (let k = 0; k <= 4; k++) {
-      const t = k / 4, a0 = (1 - t) * (1 - t), a1 = 2 * t * (1 - t), a2 = t * t, u = 1 - t;
-      const px = a0 * rec[b] + a1 * rec[b + 3] + a2 * rec[b + 6], py = a0 * rec[b + 1] + a1 * rec[b + 4] + a2 * rec[b + 7], pz = a0 * rec[b + 2] + a1 * rec[b + 5] + a2 * rec[b + 8];
-      const tx = u * (rec[b + 3] - rec[b]) + t * (rec[b + 6] - rec[b + 3]), ty = u * (rec[b + 4] - rec[b + 1]) + t * (rec[b + 7] - rec[b + 4]), tz = u * (rec[b + 5] - rec[b + 2]) + t * (rec[b + 8] - rec[b + 5]);
-      // (across it, on the ground: the point's up crossed with its direction)
+      const t = k / 4, u = 1 - t, a0 = u * u, a1 = 2 * t * u, a2 = t * t;
+      let px = a0 * FF[fb] + a1 * FF[fb + 3] + a2 * FF[fb + 6], py = a0 * FF[fb + 1] + a1 * FF[fb + 4] + a2 * FF[fb + 7], pz = a0 * FF[fb + 2] + a1 * FF[fb + 5] + a2 * FF[fb + 8];
+      const pl = Math.sqrt(px * px + py * py + pz * pz); px /= pl; py /= pl; pz /= pl;
+      const tx = u * (FF[fb + 3] - FF[fb]) + t * (FF[fb + 6] - FF[fb + 3]), ty = u * (FF[fb + 4] - FF[fb + 1]) + t * (FF[fb + 7] - FF[fb + 4]), tz = u * (FF[fb + 5] - FF[fb + 2]) + t * (FF[fb + 8] - FF[fb + 5]);
+      // (across it, on the ground: up crossed with its way down; the + side)
       let nx = py * tz - pz * ty, ny = pz * tx - px * tz, nz = px * ty - py * tx;
       const nl = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
       nx /= nl; ny /= nl; nz /= nl;
-      const floor = (a0 * rec[b + 9] + a1 * rec[b + 10] + a2 * rec[b + 11]) / hs;
+      const floor = (a0 * rec[b + 9] + a1 * rec[b + 10] + a2 * rec[b + 11]) / hs, o = k * 12;
+      const at = (sg, s) => { q[0] = px + sg * nx * s / R; q[1] = py + sg * ny * s / R; q[2] = pz + sg * nz * s / R; const l = Math.sqrt(q[0] * q[0] + q[1] * q[1] + q[2] * q[2]); q[0] /= l; q[1] /= l; q[2] /= l; return this._levelsH(q, false); };
+      // (the rock its walls stand in: the suites either side, near its line and at d1 (the
+      // refinement's rock, not whichever finer tiles are made); a canyon's two walls are the
+      // same beds, so both sides share them)
+      for (const [sg, s] of SUITE_AT) {
+        const hq = at(sg, s * d1), rt = S.rockAt(q[0], q[1], q[2], hq, 0), nm = ROCKS[rt] && ROCKS[rt].name;
+        A[o + 8 + SUITES.indexOf(nm && !DEPOSITS.has(nm) && SUITE[nm] || 'loose')] += 0.25;
+      }
       // (a greater river near, not this one further down: the dip is its valley, this one a side
       // stream in it, no canyon of its own)
       const own = !this._greaterNear(r, px, py, pz, d1);
       for (let si = 0; si < 2; si++) {
-        const sg = si ? -1 : 1, o = k * 12 + si * 6;
-        const at = (s) => { q[0] = px + sg * nx * s / R; q[1] = py + sg * ny * s / R; q[2] = pz + sg * nz * s / R; const l = Math.sqrt(q[0] * q[0] + q[1] * q[1] + q[2] * q[2]); q[0] /= l; q[1] /= l; q[2] /= l; return this._levelsH(q, false); };
-        const h2 = at(d2), h1 = at(d1), sl = (h2 - h1) / (d2 - d1), top0 = h1 - Math.max(0, sl) * d1;
-        // (the beds the side stands in at d1, their column the record's middle's: the refinement's
-        // rock, not whichever finer tiles are made)
-        faceUVFromDir(q, uv);
-        const off = bedAt(this, uv.face, uv.u, uv.v, uv.u * Mu, uv.v * Mu, 0, bo).bed;
-        if (k === 2 || !Ts[si]) {
-          const rt = S.rockAt(q[0], q[1], q[2], h1, 0), nm = ROCKS[rt] && ROCKS[rt].name;
-          Ts[si] = canyonTable(worldColumn(seed, nm && !DEPOSITS.has(nm) && SUITE[nm] || 'loose', 0));
-        }
-        A[o] = h1; A[o + 1] = Math.max(0, sl); A[o + 3] = off;
-        // (a plateau's edge, not a ridge's: the ground beyond d1 not falling away; and deep)
-        if (!own || top0 - floor < 30 || sl < -0.03) { A[o + 2] = 0; continue; }
-        // (the rock the levels have missing below the side's ground, out to d1)
+        const sg = si ? -1 : 1, oo = o + si * 4;
+        const h1 = at(sg, d1), h2 = at(sg, d2), sl = (h2 - h1) / (d2 - d1), slp = Math.max(0, sl), top0 = h1 - slp * d1;
+        // (the rock the levels have missing below the side's ground carried in, out to d1)
         let gone = 0;
-        for (let j = 0; j < 4; j++) { const s = j * d1 / 4; gone += Math.max(0, top0 + Math.max(0, sl) * s - at(s)) * (j ? 1 : 0.5); }
+        for (let j = 0; j < 4; j++) { const s = j * d1 / 4; gone += Math.max(0, top0 + slp * s - at(sg, s)) * (j ? 1 : 0.5); }
         gone *= d1 / 4;
-        // (the floor no wider than the river swings across, more where the walls fall back faster:
-        // soft beds under sandstone sapped, flows' columns toppling; massive rock holds its walls
-        // in close. What else the levels have missing is a broader valley it's cut into: its rim
-        // lowered, the ground rising from it to the side's at d1 (_canyonFit))
-        const T = Ts[si], su = T.suite, Wf = Wmin * (su === 'sed' ? 4 : su === 'volc' ? 3 : 2);
-        const fit = this._canyonFit(T, floor * hs, top0 * hs, Wf, off, d1, gone * hs);
-        A[o + 2] = fit.Wf; A[o + 5] = fit.g;
-        A[o + 4] = 1;
-        any = true;
+        // (deep, and a plateau's edge, not a ridge's: the ground beyond d1 not falling away)
+        const wt = own ? dm.smoothstep(30, 80, top0 - floor) * dm.smoothstep(-0.06, -0.02, sl) : 0;
+        A[oo] = h1; A[oo + 1] = slp; A[oo + 2] = gone; A[oo + 3] = wt;
+        if (wt > 0) any = true;
       }
     }
-    C.set(r, cr = { A, T0: Ts[0], T1: Ts[1], any, Wmin });
+    C.set(r, cr = { A, any });
     return cr;
   }
   // whether a river half as wide again as record r's, on another river, comes within reach (m) of
@@ -1158,27 +1185,6 @@ export class TerrainGenerator {
       }
     }
     return false;
-  }
-  // a canyon's floor half width and its rim, as its rock stands, to take out what the levels
-  // have missing (D, m² per metre along it, below a side at Tp out to d1; drawn heights): a
-  // gorge of floor Wf with walls up to its rim Tr, the ground above rising in a line from the
-  // walls' top to Tp at d1. With the rim at Tp it is all gorge (and if that is more than the
-  // levels have, so be it: the side's ground stands a little higher by it); lowered, more of it
-  // is valley; at the floor, a valley with a floor, widened if still not enough. { Wf, g: the
-  // rim's share of the way up (Tr - F) / (Tp - F) }
-  _canyonFit(T, F, Tp, Wf, off, d1, D) {
-    const o = this._cfit || (this._cfit = { Wf: 0, g: 1 }), dep = Tp - F;
-    const lost = (Tr) => {
-      const Ww = Math.min(d1, canyonHalfWidth(T, F, Tr, Wf, off));
-      return Wf * dep + (Tp - Tr) * (Ww - Wf) + canyonWedge(T, F, Tr, off) + 0.5 * (d1 - Ww) * (Tp - Tr);
-    };
-    o.Wf = Wf; o.g = 1;
-    if (D <= lost(Tp)) return o;
-    if (D >= lost(F)) { o.g = 0; o.Wf = Math.min(d1, Math.max(Wf, 2 * D / Math.max(1, dep) - d1)); return o; }
-    let lo = F, hi = Tp;
-    for (let it = 0; it < 16; it++) { const m = 0.5 * (lo + hi); if (lost(m) > D) lo = m; else hi = m; }
-    o.g = (0.5 * (lo + hi) - F) / Math.max(1, dep);
-    return o;
   }
   // the terrain's levels' ground at a direction (the refinement, and with pyr its finer tiles)
   _levelsH(q, pyr = true) {
@@ -1310,39 +1316,70 @@ export class TerrainGenerator {
   }
 
   // the nearest river of the world's refinement (its own drainage: refine.js tileRivers), among
-  // the world sim's cell here and its neighbours': { dist (m), w, depth, k, hs } as _riverAt's
+  // the world sim's cell here and its neighbours': { dist (m, to its channel), w, depth, k, hs,
+  // r, t, axis (m, to its valley's line), belt (the half width it swings across there), ox, oxAge,
+  // oxW (its nearest cut-off loop), ax, ay, az (its channel's nearest point) }. A river runs in its
+  // channel (channels.js: the meander trace laid along its smoothed line, its loops drawn where
+  // the sampling sees them, nearer its line from afar); a great river in its built one (refine.js
+  // bigChannels)
   _refRiverAt(x, y, z) {
-    const S = this.snap, Rv = S.riv, rec = Rv.rec, G = S.G, R = this.R, nb = S.nb;
+    const S = this.snap, Rv = S.riv, rec = Rv.rec, G = S.G, R = this.R, nb = S.nb, minW = this._minW || 0;
     const c0 = G.cellAt(x, y, z), nn = G.nbrs(c0, nb);
-    // (each curve's bounds: a circle round its middle holding its control points, so a curve
-    // that can't come nearer than the best so far is passed over)
-    const bnd = Rv._bnd || (Rv._bnd = riverBounds(Rv));
-    let best = null, bs = 1e30;
+    const Fr = this._frames(), FB = Fr.B, MF = this._mf || (this._mf = meanderField()), MA = this._meanderA(), Lk = this._rivLinks();
+    const cn = this._rcn || (this._rcn = nearOut()), ox = this._rox || (this._rox = nearOut());
+    let best = null, bs = 1e30, bch = null;
+    ox.d2 = Infinity; ox.ch = null;
     for (let q = -1; q < nn; q++) {
       const c = q < 0 ? c0 : nb[q];
       for (let e = Rv.start[c]; e < Rv.start[c + 1]; e++) {
-        const r = Rv.idx[e], b = r * RIVER_REC, half = Rv.half[r];
+        const r = Rv.idx[e], wq = 2 * Rv.half[r];
         if (Rv.big && Rv.big.has[r]) continue;   // (a great river's own winding channel, below)
-        const o = r * 4, ex = bnd[o] - x, ey = bnd[o + 1] - y, ez = bnd[o + 2] - z;
-        if ((Math.sqrt(ex * ex + ey * ey + ez * ez) - bnd[o + 3]) * R - 2 * half >= bs) continue;
-        // (its curve: from halfway to its main inflow, through its cell, to halfway on; the
-        // nearest point on it, not on its eight-point sketch: between the sketch's points the
-        // distance to them swelled past a narrow river's banks, and it drew dotted)
-        const bdt = nearestOnCurve(rec, b, x, y, z), bd = bdt[0], bt = bdt[1];
-        const dist = Math.sqrt(bd) * R, w = 2 * half;
-        if (dist - w < bs) {
-          bs = dist - w;
-          const a0 = (1 - bt) * (1 - bt), a1 = 2 * bt * (1 - bt), a2 = bt * bt, k = Rv.size[r];
-          best = this._rv || (this._rv = { dist: 0, w: 0, depth: 0, k: 0, hs: 0, r: 0, t: 0, axis: 0, belt: 0, ox: 1e9, oxAge: 1 });
-          best.dist = dist; best.w = w; best.k = k; best.depth = 3 + 25 * k;
-          best.hs = (a0 * rec[b + 9] + a1 * rec[b + 10] + a2 * rec[b + 11]) / this.hScale;
-          best.r = r; best.t = bt; best.axis = dist; best.belt = 0;
-          // (the nearest point of its valley's line: a canyon's walls stand either side of it)
-          best.ax = a0 * rec[b] + a1 * rec[b + 3] + a2 * rec[b + 6]; best.ay = a0 * rec[b + 1] + a1 * rec[b + 4] + a2 * rec[b + 7]; best.az = a0 * rec[b + 2] + a1 * rec[b + 5] + a2 * rec[b + 8];
+        // (its loops drawn only where the sampling sees them; how far its channel may stand off
+        // its line then (its neighbours' widths and swings shared at its ends): its frame's bounds
+        // that much wider, so a channel that can't come nearer than the best so far is passed over)
+        const loops = Rv.phase && minW < 9 * wq, reach = loops ? 1.5 * wq * (MF.half * Math.max(MA[r], 0.05) + 2) : 2 * wq;
+        const o = r * 4, ex = FB[o] - x, ey = FB[o + 1] - y, ez = FB[o + 2] - z;
+        if ((Math.sqrt(ex * ex + ey * ey + ez * ez) - FB[o + 3]) * R - reach >= bs) continue;
+        if (loops) {
+          const ch = this._chan(r);
+          chanNearest(ch, x, y, z, minW, cn, 0);
+          if (!cn.ch) continue;
+          if (ch.nOx) chanNearest(ch, x, y, z, minW, ox, 1, true);
+          const dist = Math.sqrt(cn.d2) * R, w = 2 * cn.half;
+          if (dist - w < bs) {
+            bs = dist - w; bch = ch;
+            best = this._rv || (this._rv = { dist: 0, w: 0, depth: 0, k: 0, hs: 0, r: 0, t: 0, axis: 0, belt: 0, ox: 1e9, oxAge: 1, oxW: 0, ax: 0, ay: 0, az: 0 });
+            best.dist = dist; best.w = w; best.k = Rv.size[r]; best.depth = 3 + 25 * best.k; best.hs = cn.hs;
+            best.r = r; best.t = cn.t; best.ax = cn.x; best.ay = cn.y; best.az = cn.z;
+          }
+        } else {
+          // (from afar, its line: as its channel drawn with no swing)
+          const bdt = nearestOnCurveFine(Fr.F, 9 * r, x, y, z), dist = Math.sqrt(bdt[0]) * R, t = bdt[1];
+          const w = wq * (Lk.up[r] < 0 ? 0.15 + 0.85 * dm.smoothstep(0, 0.9, t) : 1);
+          if (dist - w < bs) {
+            bs = dist - w; bch = null;
+            const a0 = (1 - t) * (1 - t), a1 = 2 * t * (1 - t), a2 = t * t, b = r * RIVER_REC, fb = 9 * r, F = Fr.F;
+            best = this._rv || (this._rv = { dist: 0, w: 0, depth: 0, k: 0, hs: 0, r: 0, t: 0, axis: 0, belt: 0, ox: 1e9, oxAge: 1, oxW: 0, ax: 0, ay: 0, az: 0 });
+            best.dist = dist; best.w = w; best.k = Rv.size[r]; best.depth = 3 + 25 * best.k;
+            best.hs = (a0 * rec[b + 9] + a1 * rec[b + 10] + a2 * rec[b + 11]) / this.hScale;
+            best.r = r; best.t = t;
+            best.ax = a0 * F[fb] + a1 * F[fb + 3] + a2 * F[fb + 6]; best.ay = a0 * F[fb + 1] + a1 * F[fb + 4] + a2 * F[fb + 7]; best.az = a0 * F[fb + 2] + a1 * F[fb + 5] + a2 * F[fb + 8];
+          }
         }
       }
     }
-    if (best && Rv.phase) this._meander(best, x, y, z);
+    if (best) {
+      best.axis = best.dist; best.belt = 0; best.ox = 1e9; best.oxAge = 1; best.oxW = 0;
+      if (bch) {
+        // (its valley's line: how far off it, and the belt its channel swings across there)
+        const nt = nearestOnCurveFine(Fr.F, 9 * best.r, x, y, z), ta = nt[1], wm = bch.W0 + (bch.W1 - bch.W0) * ta, A = chanSwing(bch, ta);
+        best.axis = Math.sqrt(nt[0]) * R;
+        best.belt = A * MF.half * wm * (minW <= 2 * wm ? 1 : dm.smoothstep(6 * wm, 2 * wm, minW));
+        // (its cut-off loops only where it swings freely: a river held nearer its line cuts few,
+        // and those soon filled)
+        if (ox.ch) { best.ox = Math.sqrt(ox.d2) * R; best.oxW = ox.wm; best.oxAge = 1 - (1 - ox.age) * dm.smoothstep(0.5, 0.85, A); }
+      }
+    }
     // (the great rivers' channels, built winding: refine.js bigChannels)
     const Bg = Rv.big;
     let oxD = 1e9, oxA = 1, oxW = 0;
@@ -1379,62 +1416,34 @@ export class TerrainGenerator {
     return best;
   }
 
-  // a river on a gentle floodplain winds through its belt (meanders.js: a simulated meander
-  // trace laid along it by its phase, scaled to its width; the oxbows it cut off beside it):
-  // rv.dist becomes the distance to the winding channel, rv.axis the distance to the valley's
-  // line and rv.belt the belt's half width (0 where the river runs straight)
-  _meander(rv, x, y, z) {
-    const Rv = this.snap.riv, R = this.R, w = rv.w;
-    rv.axis = rv.dist; rv.belt = 0; rv.ox = 1e9; rv.oxW = 0;
-    const F = this._mf || (this._mf = meanderField());
-    // (how far it may swing, _meanderA: along it smoothly, each record's from its middle to the
-    // next's; and only where the ground is sampled finely enough to show its loops: from afar it
-    // runs along its valley's line)
-    const MA = this._meanderA(), Lk = this._rivLinks(), near = dm.smoothstep(6 * w, 2 * w, this._minW || 0);
-    const dnOf = (q) => { const n = Lk.dn[q]; return n >= 0 && Lk.up[n] === q ? n : -1; };
-    // (none at its source, or at its mouth into another: its loops grow from nothing over its
-    // first record and die away over its last, not cut off where it starts or ends)
-    const swing = (q, t) => {
-      const u = Lk.up[q], d = dnOf(q), Aq = MA[q], Ae = t < 0.5 ? 0.5 * (Aq + (u >= 0 ? MA[u] : Aq)) : 0.5 * (Aq + (d >= 0 ? MA[d] : Aq));
-      return (Ae + (Aq - Ae) * (t < 0.5 ? 2 * t : 2 - 2 * t)) * near * (u >= 0 ? 1 : dm.smoothstep(0, 1, t)) * (d >= 0 ? 1 : dm.smoothstep(0, 1, 1 - t));
-    };
-    if (swing(rv.r, rv.t) < 0.02) return;
-    // (the trace is laid along its river's smoothed line (_meanderFrame), not its cells' zigzag:
-    // the nearest point of that, on this record's frame or the next one's up or down it)
-    const fr = this._mfr || (this._mfr = new Float64Array(9)), r0 = rv.r, u1 = Lk.up[r0], d1 = dnOf(r0);
-    let q = -1, t = 0, bd = Infinity;
-    // (two each way: where it doubles back the nearest of its records may be two along it)
-    for (const c of [r0, u1, u1 >= 0 ? Lk.up[u1] : -1, d1, d1 >= 0 ? dnOf(d1) : -1]) {
-      if (c < 0) continue;
-      this._meanderFrame(c, fr);
-      const nt = nearestOnCurveFine(fr, 0, x, y, z);
-      if (nt[0] < bd) { bd = nt[0]; t = nt[1]; q = c; }
+  // a river record's channel (channels.js), kept (the ones near where the ground is sampled)
+  _chan(r, building) {
+    const C = this._chC || (this._chC = new Map());
+    let ch = C.get(r);
+    if (ch !== undefined) return ch;
+    if (C.size > 12000) C.clear();
+    const bset = building || new Set();
+    bset.add(r);
+    ch = buildChannel(this, r, bset);
+    bset.delete(r);
+    C.set(r, ch);
+    return ch;
+  }
+  // every river record's frame (_meanderFrame: F, nine a record) and its bounds (B: a circle round
+  // its middle holding its three points, four a record), kept
+  _frames() {
+    const Rv = this.snap.riv;
+    if (Rv._fr) return Rv._fr;
+    const m = Rv.rec.length / RIVER_REC, F = new Float64Array(9 * m), B = new Float64Array(4 * m), fr = new Float64Array(9);
+    for (let r = 0; r < m; r++) {
+      this._meanderFrame(r, fr);
+      F.set(fr, 9 * r);
+      const cx = 0.25 * (fr[0] + 2 * fr[3] + fr[6]), cy = 0.25 * (fr[1] + 2 * fr[4] + fr[7]), cz = 0.25 * (fr[2] + 2 * fr[5] + fr[8]);
+      let mm = 0;
+      for (let k = 0; k < 9; k += 3) { const dx = fr[k] - cx, dy = fr[k + 1] - cy, dz = fr[k + 2] - cz; mm = Math.max(mm, dx * dx + dy * dy + dz * dz); }
+      B[4 * r] = cx; B[4 * r + 1] = cy; B[4 * r + 2] = cz; B[4 * r + 3] = Math.sqrt(mm) * 1.0001;
     }
-    this._meanderFrame(q, fr);
-    const a0 = (1 - t) * (1 - t), a1 = 2 * t * (1 - t), a2 = t * t, u = 1 - t, qb = q * RIVER_REC, rec = Rv.rec;
-    // (its banks' level there, along the same frame: so the floodplain is laid to one level
-    // where the nearest of its records changes, not a step)
-    rv.hs = (a0 * rec[qb + 9] + a1 * rec[qb + 10] + a2 * rec[qb + 11]) / this.hScale;
-    const px = a0 * fr[0] + a1 * fr[3] + a2 * fr[6], py = a0 * fr[1] + a1 * fr[4] + a2 * fr[7], pz = a0 * fr[2] + a1 * fr[5] + a2 * fr[8];
-    // (which side: the curve's direction there against the way to the point, about up)
-    const tx = u * (fr[3] - fr[0]) + t * (fr[6] - fr[3]), ty = u * (fr[4] - fr[1]) + t * (fr[7] - fr[4]), tz = u * (fr[5] - fr[2]) + t * (fr[8] - fr[5]);
-    const qx = x - px, qy = y - py, qz = z - pz, side = (ty * qz - tz * qy) * x + (tz * qx - tx * qz) * y + (tx * qy - ty * qx) * z;
-    const across = Math.sqrt(qx * qx + qy * qy + qz * qz) * R * (side < 0 ? -1 : 1);
-    // (its phase there, up the river in widths, and the width the trace is laid to: each from
-    // where it meets the record up the river to where it meets the one down it, the same there
-    // for both, so the channel carries on from one to the next without a step. Its phase is at
-    // its cell; where it meets the next, halfway to the next's)
-    const up = Lk.up[q], dn = dnOf(q), wq = 2 * Rv.half[q], ph0 = Rv.phase[q];
-    const phU = up >= 0 ? 0.5 * (Rv.phase[up] + ph0) : NaN, phD = dn >= 0 ? 0.5 * (ph0 + Rv.phase[dn]) : NaN;
-    const len = Math.sqrt((fr[6] - fr[0]) ** 2 + (fr[7] - fr[1]) ** 2 + (fr[8] - fr[2]) ** 2) * R;
-    const J0 = phU === phU ? phU : phD === phD ? 2 * ph0 - phD : ph0 + 0.5 * len / wq, J1 = phD === phD ? phD : 2 * ph0 - J0;
-    const W0 = up >= 0 ? 0.5 * (wq + 2 * Rv.half[up]) : wq, W1 = dn >= 0 ? 0.5 * (wq + 2 * Rv.half[dn]) : wq;
-    const ph = J0 + (J1 - J0) * t, wm = W0 + (W1 - W0) * t, A = swing(q, t);
-    const mn = meanderNearA(F, ph, across / wm, A, this._mn || (this._mn = { d: 0, ox: 0, oxAge: 0 }));
-    rv.dist = mn.d * wm; rv.belt = A * F.half * wm;
-    // (its cut-off loops only where it swings freely: a river held nearer its line cuts few, and
-    // those soon filled)
-    rv.ox = mn.ox * wm; rv.oxAge = 1 - (1 - mn.oxAge) * dm.smoothstep(0.5, 0.85, A);
+    return (Rv._fr = { F, B });
   }
 
   // a river record's frame for its meanders (into fr: three points, as a record's own): its cell's

@@ -4,4 +4,8 @@
 export const MT = 512;             // a tile's cells per side
 export const MARGIN = 48;          // cells simulated round it
 export const KEEP = MARGIN / 2;    // of which kept
-export const TILE_VERSION = 31;
+// the levels below the deep time at true scale (localsim.js trueScale, terrain.js), unless a
+// caller says otherwise. ?ts=0 on the page: today's scale, to compare (the workers get the page's
+// query; its tiles are kept apart)
+export const TRUE_SCALE = !/[?&]ts=0(&|$)/.test(globalThis.location ? globalThis.location.search : '');
+export const TILE_VERSION = 33 + (TRUE_SCALE ? 0 : 1000);

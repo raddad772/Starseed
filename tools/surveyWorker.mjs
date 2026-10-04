@@ -13,7 +13,7 @@ import { dunePatches } from '../src/gen/dunes.js';
 const { seed, body, snap, float, tileOpts } = workerData;
 const b = generateSystem(seed).bodies[body];
 if (snap.dunes) snap.dunePatch = dunePatches();
-const gen = new TerrainGenerator({ ...b.terrain, snapshot: snap, ...(tileOpts && tileOpts.trueScale ? { trueScale: true } : {}) });
+const gen = new TerrainGenerator({ ...b.terrain, snapshot: snap, ...(tileOpts && tileOpts.trueScale === false ? { trueScale: false } : {}) });
 
 parentPort.on('message', ([f, ti, tj]) => {
   const P = prepareTile(gen, f, ti, tj, { kind: 'refine', ...(tileOpts || {}) });

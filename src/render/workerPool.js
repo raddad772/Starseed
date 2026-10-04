@@ -21,7 +21,7 @@ export class WorkerPool {
     this.bodies = bodies;
     try {
       for (let i = 0; i < count; i++) {
-        const w = new Worker(new URL('../workers/terrainWorker.js', import.meta.url), { type: 'module' });
+        const w = new Worker(new URL('../workers/terrainWorker.js' + location.search, import.meta.url), { type: 'module' });
         w.onmessage = (e) => this._onMessage(w, e.data);
         w.onerror = (e) => { console.error('terrain worker error', e.message || e); };
         w.postMessage({ type: 'bodies', bodies });

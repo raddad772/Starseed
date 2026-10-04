@@ -247,7 +247,7 @@ export class ITileGPU {
   async run(T) {
     const dev = this.device, { NG, n } = T;
     this.bgCache.clear();
-    const { D, W, CM, CE } = gridTables(T), { KH, KD, SC } = hardTables(T.kd0), AP = apowTable();
+    const { D, W, CM, CE } = gridTables(T), { KH, KD, SC } = hardTables(T.kd0, T.scK ?? 1), AP = apowTable();
     const PB = T.sig <= 6 ? 4 : 8, NB = Math.ceil(NG / PB), RB = Math.max(1, Math.round(T.sig / PB));
     const put = (name, arr) => { const b = this._buf(name, arr.byteLength); dev.queue.writeBuffer(b, 0, arr); return b; };
     const info = new Uint32Array(n);

@@ -132,6 +132,34 @@ export function meanderTrace(opts = {}) {
   return { P, x: Float64Array.from(x), y: Float64Array.from(y), oxbows };
 }
 
+// the model's velocity at each point of a closed centreline (x wrapping at P): { x, y }, widths a
+// step (meanderTrace's migration, without its cap)
+export function migration(x, y, P) {
+  const n = x.length, Omega = -1, Gamma = 2.5, alpha = 0.5;
+  const C = new Float64Array(n), nx = new Float64Array(n), ny = new Float64Array(n), L = new Float64Array(n);
+  for (let k = 0; k < n; k++) {
+    const a = (k + n - 1) % n, b = (k + 1) % n;
+    let dxa = x[k] - x[a], dxb = x[b] - x[k];
+    if (dxa < -P / 2) dxa += P; if (dxa > P / 2) dxa -= P;
+    if (dxb < -P / 2) dxb += P; if (dxb > P / 2) dxb -= P;
+    const dya = y[k] - y[a], dyb = y[b] - y[k];
+    const la = Math.sqrt(dxa * dxa + dya * dya), lb = Math.sqrt(dxb * dxb + dyb * dyb);
+    let dth = dm.atan2(dyb, dxb) - dm.atan2(dya, dxa);
+    if (dth > dm.PI) dth -= dm.TWO_PI; if (dth < -dm.PI) dth += dm.TWO_PI;
+    C[k] = dth / (0.5 * (la + lb));
+    const tx = dxa / la + dxb / lb, ty = dya / la + dyb / lb, tl = Math.sqrt(tx * tx + ty * ty) || 1;
+    nx[k] = -ty / tl; ny[k] = tx / tl; L[k] = lb;
+  }
+  const vx = new Float64Array(n), vy = new Float64Array(n);
+  for (let k = 0; k < n; k++) {
+    let s = 0, w = 0, d = 0;
+    for (let j = 1; j < 40; j++) { const q = (k - j + n) % n; d += L[q]; const g = dm.exp(-alpha * d); s += C[q] * g; w += g; }
+    const Rm = Omega * C[k] + Gamma * s / w;
+    vx[k] = -Rm * nx[k]; vy[k] = -Rm * ny[k];
+  }
+  return { x: vx, y: vy };
+}
+
 // ---- the trace the rivers wear (made once by tools/build-meanders.mjs: meanders.data.js),
 // with a grid of its segments for finding the nearest: distances in channel widths
 export const MEANDER = { P: 240, iters: 6000, seed: 7, version: 1 };
@@ -150,6 +178,18 @@ export function meanderField() {
   // (and its loops pressed a little flatter across: the model's grow ~twice as tall as a river's)
   const SQ = 0.6;
   const lines = [{ x: Array.from(T.x), y: Array.from(T.y, (v, k) => SQ * (v - drift(T.x[k]))), closed: true, age: 0 }];
+  // (where each point of the channel is moving, as the model moves it: toward its outer bank, the
+  // faster where the bends upstream turn harder; pressed as the trace is, and scaled so that its
+  // root mean square is 1: how far a river's banks have moved while it cut down, its share here)
+  {
+    const mv = migration(T.x, T.y, P), n = T.x.length;
+    let ss = 0;
+    for (let k = 0; k < n; k++) { mv.y[k] *= SQ; ss += mv.x[k] * mv.x[k] + mv.y[k] * mv.y[k]; }
+    // (a few points at the tightest bends run far faster: held to 3)
+    const rms = Math.sqrt(ss / n) || 1;
+    for (let k = 0; k < n; k++) { const f = Math.min(1 / rms, 3 / (Math.sqrt(mv.x[k] * mv.x[k] + mv.y[k] * mv.y[k]) || 1)); mv.x[k] *= f; mv.y[k] *= f; }
+    lines[0].mx = mv.x; lines[0].my = mv.y;
+  }
   // (the oxbows: the more recent kept, as lakes; the rest filled to swales)
   const nOx = T.oxbows.length;
   T.oxbows.forEach((o, k) => lines.push({ x: Array.from(o.x), y: Array.from(o.y, (v, q) => SQ * (v - drift(o.x[q]))), closed: false, age: (nOx - k) / Math.max(1, nOx) }));
