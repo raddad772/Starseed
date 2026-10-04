@@ -7,7 +7,8 @@
 //
 // (--gorges N: also views at the world's N deepest canyon-country gorges, world.js, first;
 // --gorgeRock a,b: only those cut in these rocks, e.g. sandstone,shale,limestone;
-// --at lat,lon/lat,lon: views at these places too, first; --pyr 0: no pyramid tiles, the
+// --at lat,lon/lat,lon: views at these places too, first; --scales 12,4,1.5: the views' widths (km)
+// instead of 400,60,12; --px 640: their pixels (320); --pyr 0: no pyramid tiles, the
 // refinement alone; --pyrN 3: a 3x3 block of tiles at each level, not one; --pyrCache 1: the
 // pyramid's tiles kept in the cache, for views redrawn after changes to the sampler only)
 //
@@ -44,8 +45,8 @@ const OUT = opt.out || 'survey', CACHE = opt.cache || OUT, W = +(opt.W || 1200),
 const FLOAT = opt.float === '1', THREADS = +(opt.threads || Math.min(4, os.cpus().length));
 // (--trueScale 0: the levels below the deep time as they were, heights exaggerated (localsim.js
 // trueScale, on by default); --heads N: each level's channels from N cells' water; own caches)
-const TILE_OPTS = { ...(opt.trueScale === '0' ? { trueScale: false } : {}), ...(opt.heads ? { headCells: +opt.heads } : {}), ...(opt.intCut ? { intCut: +opt.intCut } : {}) };
-const TS_TAG = (opt.trueScale === '0' ? '-ex' : '') + (opt.heads ? '-h' + opt.heads : '') + (opt.intCut ? '-k' + opt.intCut : '');
+const TILE_OPTS = { ...(opt.trueScale === '0' ? { trueScale: false } : {}), ...(opt.heads ? { headCells: +opt.heads } : {}), ...(opt.intCut ? { intCut: +opt.intCut } : {}), ...(opt.hw ? { headWidth: +opt.hw } : {}), ...(opt.rough ? { seedRough: +opt.rough } : {}), ...(opt.steps ? { steps: +opt.steps } : {}) };
+const TS_TAG = (opt.trueScale === '0' ? '-ex' : '') + (opt.heads ? '-h' + opt.heads : '') + (opt.intCut ? '-k' + opt.intCut : '') + (opt.hw ? '-hw' + opt.hw : '') + (opt.rough ? '-sr' + opt.rough : '') + (opt.steps ? '-st' + opt.steps : '');
 fs.mkdirSync(OUT, { recursive: true }); fs.mkdirSync(CACHE, { recursive: true });
 const TY = { h: Float32Array, water: Float32Array, rock: Uint8Array, ice: Uint16Array, river: Uint8Array, melt: Uint8Array, relief: Uint16Array, rcv: Uint8Array, Tsea: Float32Array, P: Float32Array, cover: Float32Array, forest: Float32Array, open: Float32Array, cloud: Float32Array, cloudPx: Uint8Array, crat: Uint8Array, dunes: Uint8Array, gorge: Uint16Array, gLr: Uint16Array, gVsp: Uint16Array, gYouth: Uint8Array, gGx: Uint8Array, gGy: Uint8Array, gGlac: Uint8Array };
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
@@ -66,7 +67,7 @@ for (const w of worlds) {
     const Wd = worldSim(b, sys.bodies[0], { N, myr: 150, steps: 40, ...simOptsFor(b, sys), log: () => {} });
     snap = packSnapshot(Wd, b);
     try {
-      const F = findFeatures(Wd.G, Wd.h, { E: Wd.E, scale: b.R / b.radiusM, craters: Wd.craters || [], volcanoes: Wd.volcanoes, tuyas: Wd.tuyas, glaciers: Wd.glaciers, coasts: Wd.coasts, rock: Wd.rock, rockNames: ROCKS.map((r) => r.name), climate: Wd.climate, Gc: Wd.Gc, dunes: Wd.dunes, mesas: Wd.mesas, soil: Wd.soil, drowned: Wd.drowned, top: 5 });
+      const F = findFeatures(Wd.G, Wd.h, { E: Wd.E, scale: Wd.G.R / b.radiusM, craters: Wd.craters || [], volcanoes: Wd.volcanoes, tuyas: Wd.tuyas, glaciers: Wd.glaciers, coasts: Wd.coasts, rock: Wd.rock, rockNames: ROCKS.map((r) => r.name), climate: Wd.climate, Gc: Wd.Gc, dunes: Wd.dunes, mesas: Wd.mesas, soil: Wd.soil, drowned: Wd.drowned, top: 5 });
       const dry = !b.terrain.liquid || b.terrain.liquid === 'lava';
       snap.landmarks = landmarks(nameLandmarks(F, `${seed}|${b.id}`, dry), dry);
     } catch (e) { snap.landmarks = []; }
@@ -162,7 +163,7 @@ for (const w of worlds) {
     const mk = { name: lm.name, kind: lm.kind, text: lm.text, lat: lm.lat, lon: lm.lon, maps: [] };
     for (const km of (opt.scales ? opt.scales.split(",").map(Number) : [400, 60, 12])) {
       const file = `${tag}-${m}-${lm.kind}-${km}km.png`;
-      mapAt(gen, b, d, km * 1000, 320, path.join(OUT, file));
+      mapAt(gen, b, d, km * 1000, +(opt.px || 320), path.join(OUT, file));
       mk.maps.push({ km, file });
     }
     entry.marks.push(mk);

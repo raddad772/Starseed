@@ -40,7 +40,10 @@ import { ROCKS, ROCK_UP } from './worldsim/lithology.js';
 import { Rng, hashInts } from '../core/rng.js';
 import { Noise3 } from '../core/noise.js';
 let _roughNz = null;
-const INT_CUT = 0.33;
+// (the integer sim's streams at their full rate at true scale: it's the canonical sim, and on an
+// England-sized SOL Earth a third of it (to match the floating-point sim's relief) left the mountains
+// smooth; at the full rate its flanks are cut into gullies and spurs)
+const INT_CUT = 1;
 const _gr = { lr: 0, youth: 0, gx: 0, gy: 0, glac: 0, vsp: 0 };
 import * as dm from '../core/dmath.js';
 
@@ -290,7 +293,7 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
   // km apart, are real proportions on the drawn world; what this level adds below them is held to
   // real ground's relief at its scale (the ground layer's, ground.js), its slopes to what real
   // ground stands over its cells)
-  const ts = opts.trueScale ?? TRUE_SCALE, Bw = ts && refine ? new Float64Array(n) : null, lrC = ts && S && S.s.gLr ? new Float64Array(n) : null;
+  const ts = opts.trueScale ?? TRUE_SCALE, Bw = ts && refine ? new Float64Array(n) : null, lrC = ts && S && S.s.gLr ? new Float64Array(n) : null, vspC = lrC ? new Float64Array(n) : null;
   // (the relief over a cell of the level above, from the world sim's: relief grows with scale
   // about as its 0.7th power)
   const relK = rf ? dm.pow(Math.min(1, (pyr ? 4 * cell : S.G.spacing) / S.G.spacing), 0.7) : 1, dd = [0, 0, 0], ctr = [0, 0, 0];
@@ -314,7 +317,7 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
       let hb = S.hSmooth(dx, dy, dz) * hs;
       // (canyon country: the plateau's level round a great river's gorge, for it to cut here)
       if (S.s.gorge) hb += S.gorgeSmooth(dx, dy, dz) * hs;
-      if (Bw) { Bw[c] = hb; if (lrC && S.ground(dx, dy, dz, _gr)) lrC[c] = _gr.lr; }
+      if (Bw) { Bw[c] = hb; if (lrC && S.ground(dx, dy, dz, _gr)) { lrC[c] = _gr.lr; vspC[c] = _gr.vsp; } }
       // (its rivers' courses, a cell or so wide, for the water here to find)
       const rv = gen._riverAt(dx, dy, dz);
       if (rv && rv.dist < 1.5 * cell) hb = Math.min(hb, (Math.max(rv.hs, 0) + 1 - 0.5 * rv.depth) * hs);
@@ -343,7 +346,7 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
     const P = gen.snap ? (gen.snap.Gc ? gen.snap.rain(dx, dy, dz) : (gen.snap.s.wetRain || 0) * 1000) : 800;
     rain[c] = Math.max(0.02, Math.min(3, (P ?? 800) / 1000));
   }
-  if (lrC && pyr) for (let c = 0; c < n; c++) { if (S.ground(G.dir[3 * c], G.dir[3 * c + 1], G.dir[3 * c + 2], _gr)) lrC[c] = _gr.lr; }
+  if (lrC && pyr) for (let c = 0; c < n; c++) { if (S.ground(G.dir[3 * c], G.dir[3 * c + 1], G.dir[3 * c + 2], _gr)) { lrC[c] = _gr.lr; vspC[c] = _gr.vsp; } }
   // the craters the refinement's cells draw round and the world sim's couldn't (craters.js): on
   // the ground it starts from, so the run wears them and the mean is held to them (the finer
   // ones the sampler draws, where the ground is seen: no tile edges among them)
@@ -533,7 +536,12 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
       // (and at least a few cells' worth: where a cell is bigger than a channel head every one of
       // them would cut, rills one cell apart combing every slope; a level cuts only where its
       // water gathers, the finer levels' cells the rills between)
-      AcC[c] = opts.Ac ?? Math.max(dm.clamp(3e4 * rockF[rt] * rp, 3e3, 1e6), rf ? (opts.headCells ?? 3) * G.area[c] : 0);
+      // (opts.headWidth k: by the water each metre of slope gathers instead, as channel heads
+      // form: a channel where k x half the ground layer's valley spacing of slope drains through a
+      // cell's width; so on a smooth slope they start that far below the divide at every level,
+      // not only where the level above already gathers its water)
+      const hw = opts.headWidth ?? 0, ah = hw > 0 && vspC && vspC[c] > 0 ? hw * 0.5 * vspC[c] * Math.sqrt(G.area[c]) : 0;
+      AcC[c] = opts.Ac ?? Math.max(ah > 0 ? ah : dm.clamp(3e4 * rockF[rt] * rp, 3e3, 1e6), rf ? (opts.headCells ?? 3) * G.area[c] : 0);
       // the ground's roughness (Hurst exponent H; its surface's fractal dimension 3 - H): rough
       // where mountains are young and high, the rock hard and the climate dry; smoother where
       // the land is old and worn, soft, and wet enough for soil to creep
@@ -635,7 +643,7 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
       geo = { colHd, colLo: -3000, suite, bedOff: bedOffI, weak: weakI };
     }
     // (at true scale its streams cut at INT_CUT of the floating-point sim's rate (opts.intCut sets
-    // it): run for run, at every level (1.1 km, 284 m and 71 m cells), the integer sim leaves
+    // it; 1 now): run for run, at every level (1.1 km, 284 m and 71 m cells), the integer sim leaves
     // ~2.5x the relief at its cells' scale with the same K0. About half of that is the
     // floating-point sim routing its water every other step (it cuts along stale ways between,
     // skipping cells that came level; opts.routeEvery 1: 17 -> 31 m rms over two 71 m cells,
