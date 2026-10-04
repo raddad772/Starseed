@@ -117,6 +117,7 @@ ${GLSL_CLOUD_N}
 ${GLSL_CLOUD_SHADOW}
 ${GLSL_THERMAL}
 #if MAT_MODE > 0
+uniform vec2 uWindRipple;   // sand's ripples on this world: strength, spacing over Earth's (materials.js)
 ${GLSL_MATERIALS}
 #endif
 
@@ -198,6 +199,8 @@ void main() {
     // (glacier ice: its body blue)
     albedo *= mix(vec3(1.0), vec3(0.74, 0.88, 1.0), vCls2.w);
     gRough = ms.rough; gAO = ms.ao;
+    // sand: the wind's ripples, as far as this world's air works its sand
+    if (vCls1.z > 0.05 && uWindRipple.x > 0.0) ms.n = sandRippleN(fp, dpx, dpy, ms.n, uWindRipple.y, foot, uWindRipple.x * min(vCls1.z * 1.5, 1.0));
     N = normalize(mix(N, normalize(transpose(uToFixed) * ms.n), 0.9));
 #else
     // (d0: the detail's whole period, 4 km)

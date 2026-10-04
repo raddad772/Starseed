@@ -128,18 +128,6 @@ def build(name, src, asset, size_m):
         rough = retile(load(m['rough'], 'L')[..., None], size_m)[..., 0]
         ao = retile(load(m['ao'], 'L')[..., None], size_m)[..., 0] if 'ao' in m else np.ones_like(rough)
     disp = retile(load(m['disp'], 'L')[..., None], size_m)[..., 0]
-    if name == 'sand':
-        # sand's own structure is its wind's ripples (the scan's is trampled lumps): ripple normals,
-        # the scan's grain over them, and the ripples as its height
-        h, gx, gy = ripples(SIZE)
-        k = 0.008   # (ripple height over the tile: ~1.6 cm on a 12.5 cm spacing)
-        rx, ry = -gx * k * 2.0, -gy * k * 2.0
-        sx, sy = (nor[..., 0] * 2 - 1) * 0.35, (nor[..., 1] * 2 - 1) * 0.35
-        nx, ny = rx + sx, ry + sy
-        nz = np.sqrt(np.clip(1 - nx * nx - ny * ny, 0.05, 1))
-        l = np.sqrt(nx * nx + ny * ny + nz * nz)
-        nor = np.dstack([nx / l * 0.5 + 0.5, ny / l * 0.5 + 0.5, nz / l * 0.5 + 0.5])
-        disp = 0.75 * h + 0.25 * disp
     mean = diff.reshape(-1, 3).mean(axis=0)
     # (by its luminance, with a third of its own colour's variation: per channel, a dark or strongly
     # tinted scan's thin channels (dark_rock's blue, 0.009) were mostly its noise, multiplied up)
@@ -159,6 +147,20 @@ def build(name, src, asset, size_m):
             'meanAlbedo': [round(float(x), 4) for x in mean], 'roughness': round(float(rough.mean()), 3), 'clipped': round(clipped, 4)}
 
 
+def build_ripples():
+    """sand's wind ripples, a layer of their own (the shader lays them on sand as far as the world's
+    air moves it, spaced by its density): neutral albedo, the ripple field's normals and height"""
+    h, gx, gy = ripples(SIZE)
+    k = 0.008   # (ripple height over the tile: ~1.6 cm on a 12.5 cm spacing)
+    nx, ny = -gx * k * 2.0, -gy * k * 2.0
+    nz = np.sqrt(np.clip(1 - nx * nx - ny * ny, 0.05, 1))
+    l = np.sqrt(nx * nx + ny * ny + nz * nz)
+    save = lambda a, tag, q: Image.fromarray((np.clip(a, 0, 1) * 255 + 0.5).astype(np.uint8), 'RGB').save(os.path.join(ROOT, f'ripples_{tag}.webp'), quality=q, method=6)
+    save(np.full((SIZE, SIZE, 3), 0.4), 'a', 92)
+    save(np.dstack([nx / l * 0.5 + 0.5, ny / l * 0.5 + 0.5, np.full_like(h, 0.85)]), 'n', 94)
+    save(np.dstack([h, np.ones_like(h), h]), 'h', 92)
+
+
 if __name__ == '__main__':
     os.makedirs(ROOT, exist_ok=True)
     only = sys.argv[1:]
@@ -167,6 +169,8 @@ if __name__ == '__main__':
         if only and c[0] not in only: continue
         print(c[0], c[2])
         info.append(build(*c))
+    if not only or 'ripples' in only:
+        build_ripples()
     if not only:
         json.dump({'tileM': TILE_M, 'size': SIZE, 'classes': info}, open(os.path.join(ROOT, 'materials.json'), 'w'), indent=1)
     print('done')

@@ -7,7 +7,7 @@ import { Atmosphere, blankCloudMap, thermalUniform } from './atmosphere.js';
 import { makeStarMesh } from './sky.js';
 import { makeGiantMesh, makeRingMesh } from './giant.js';
 import { VolumePass } from './volume.js';
-import { loadMaterials } from './materials.js';
+import { loadMaterials, windRipple } from './materials.js';
 import * as U from '../core/units.js';
 
 const _v = new THREE.Vector3(), _v2 = new THREE.Vector3();
@@ -94,6 +94,7 @@ export class WorldRenderer {
       tCloudMap: a ? a.material.uniforms.tCloudMap : { value: blankCloudMap() },
       uCloudMapMean: a ? a.material.uniforms.uCloudMapMean : { value: 0 },
       uThermal: a ? a.material.uniforms.uThermal : { value: thermalUniform(b) },
+      uWindRipple: { value: windRipple(b) },
       uNear: { value: new THREE.Vector2(0, 0) },
       uNearUp: { value: new THREE.Vector3(0, 1, 0) },
     };

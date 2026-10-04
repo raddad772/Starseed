@@ -10,10 +10,13 @@ const q = typeof location !== 'undefined' ? /[?&]mat=(\d)/.exec(location.search)
 let mode = q && [0, 2, 3].includes(+q[1]) ? +q[1] : 3;
 export const matMode = () => mode;
 
+// the layers: each class, then sand's wind ripples (laid over sand by the world's air: windRipple)
+export const MAT_LAYERS = [...MAT_CLASSES, 'ripples'];
+export const RIPPLE_LAYER = MAT_CLASSES.length;
 // the textures, shared by every terrain material; a neutral stand-in (ratio 1, flat, matte) until
 // the scans arrive
 const flat = (rgba) => {
-  const n = MAT_CLASSES.length, d = new Uint8Array(4 * n);
+  const n = MAT_LAYERS.length, d = new Uint8Array(4 * n);
   for (let i = 0; i < n; i++) d.set(rgba, i * 4);
   const t = new THREE.DataArrayTexture(d, 1, 1, n);
   t.needsUpdate = true;
@@ -39,6 +42,17 @@ export function setMatMode(m) {
   return mode;
 }
 
+// sand's ripples on a world: x how strongly its air works sand (none without air; full by about
+// Mars' density), y their spacing over Earth's (saltation runs further in thin air: ~1 m on Mars,
+// as its large ripples are; finer in Titan's dense air), from the air's density at the ground
+export function windRipple(b) {
+  const a = b && b.data && b.data.atmosphere, P = a ? a.pressure || 0 : 0;
+  if (!(P > 0)) return new THREE.Vector2(0, 1);
+  const rho = (P / 1.013) * (288 / Math.max(b.data.Tsurf || 288, 30)) * ((a.mu || 29) / 29);
+  const k = Math.min(1, Math.max(0, (rho - 0.0015) / 0.006));
+  return new THREE.Vector2(k, Math.min(10, Math.max(0.4, 1 / Math.sqrt(rho))));
+}
+
 let loading = null;
 // the scans into two RGBA array textures: A (albedo ratio x0.4, height), N (normal x, y, roughness,
 // occlusion); resolves when they're in use
@@ -53,8 +67,8 @@ export function loadMaterials(renderer, base = 'assets/materials/') {
     return x.getImageData(0, 0, bm.width, bm.height);
   };
   loading = (async () => {
-    const n = MAT_CLASSES.length;
-    const sets = await Promise.all(MAT_CLASSES.map((c) => Promise.all(['a', 'n', 'h'].map((t) => img(`${c}_${t}.webp`)))));
+    const n = MAT_LAYERS.length;
+    const sets = await Promise.all(MAT_LAYERS.map((c) => Promise.all(['a', 'n', 'h'].map((t) => img(`${c}_${t}.webp`)))));
     const S = sets[0][0].width, layer = S * S * 4;
     const A = new Uint8Array(layer * n), N = new Uint8Array(layer * n);
     sets.forEach(([a, nm, h], i) => {
@@ -156,9 +170,9 @@ MatS matGround(vec4 c0, vec4 c1, vec4 c2, vec3 p, vec3 dpx, vec3 dpy, vec3 n, fl
   if (kM > 0.0) { aM = matSurf(float(ia), pm, dxm, dym, n); if (wb > 0.02) bM = matSurf(float(ib), pm, dxm, dym, n); }
   // (each: the near tile over the far one: the ratios multiply, the normals' tilts add; by class,
   // how much relief each read carries: magnified 8x, a soft ground's lumps become drifts (sand's
-  // ripples, 8x, are its megaripples); rock's cracks and beds stay)
-  const float NF[12] = float[12](1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.8, 0.8, 0.6);
-  const float NM[12] = float[12](0.7, 0.7, 0.7, 0.7, 0.5, 0.5, 0.5, 0.6, 0.6, 0.4, 0.3, 0.3);
+  // trampled lumps made swirls that crossed its ripples); rock's cracks and beds stay)
+  const float NF[12] = float[12](1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.45, 1.0, 1.0, 0.8, 0.8, 0.6);
+  const float NM[12] = float[12](0.7, 0.7, 0.7, 0.7, 0.5, 0.5, 0.1, 0.6, 0.6, 0.4, 0.3, 0.3);
   float fA = kF * NF[ia], mA = kM * NM[ia], fB = kF * NF[ib], mB = kM * NM[ib];
   vec3 rA = mix(vec3(1.0), a.ratio, kF) * mix(vec3(1.0), aM.ratio, kM * min(1.0, NM[ia] * 1.4));
   vec3 rB = mix(vec3(1.0), b.ratio, kF) * mix(vec3(1.0), bM.ratio, kM * min(1.0, NM[ib] * 1.4));
@@ -190,5 +204,15 @@ float grainGlint(vec3 p, vec3 N, vec3 H, float rare) {
   if (float(hh >> 22) / 1023.0 < rare) return 0.0;
   vec3 rv = vec3(float(hh & 1023u), float((hh >> 10) & 1023u), float((hh >> 3) & 1023u)) / 1023.0 - 0.5;
   return pow(max(dot(normalize(N + rv * 0.8), H), 0.0), 3000.0);
+}
+// sand's wind ripples over normal n at p: their layer at the world's spacing (sp), near, and 8x that
+// (megaripples) further, each faded as a pixel (foot m) grows past a third of its spacing
+vec3 sandRippleN(vec3 p, vec3 dx, vec3 dy, vec3 n, float sp, float foot, float k) {
+  float t = MAT_TILE * sp;
+  float f1 = 1.0 - smoothstep(0.015 * sp, 0.06 * sp, foot), f2 = 1.0 - smoothstep(0.2 * sp, 0.5 * sp, foot);
+  vec3 r = n;
+  if (f1 > 0.0) r += (matSurf(${RIPPLE_LAYER}.0, p / t, dx / t, dy / t, n).n - n) * f1 * k;
+  if (f2 > 0.0) r += (matSurf(${RIPPLE_LAYER}.0, p / (t * 8.0) + 0.21, dx / (t * 8.0), dy / (t * 8.0), n).n - n) * f2 * k * 0.25;
+  return normalize(r);
 }
 `;

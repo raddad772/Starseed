@@ -113,6 +113,15 @@ export function view(id, lat, lon, o = {}) {
   return { sunElev: +sun.elev.toFixed(1), head: Math.round(head), pitch: +pitch.toFixed(1), hTarget: Math.round(hT), hCam: Math.round(hC) };
 }
 
+// view, then once the ground has come in (its finer tiles raise it), the same view again at the same
+// time of day, so the camera stands where asked above the ground as it now is
+export async function viewSettled(id, lat, lon, o = {}, maxS = 150) {
+  view(id, lat, lon, o);
+  await drain(maxS);
+  const v = view(id, lat, lon, { ...o, t: pin() });
+  return { ...v, d: await drain(maxS) };
+}
+
 // run frames until the terrain under the camera is in (tiles and chunks), up to maxS seconds
 export async function drain(maxS = 30) {
   const gm = g(), t0 = performance.now(), b = gm.universe.dominantBody(gm.camPos);
