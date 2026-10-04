@@ -130,9 +130,8 @@ small one: "I definitely like right a lot more", then "Yeah fix refine and optim
   cls0..2. Shader: top two classes, near 2 m + far 16 m reads, height blend, GGX by roughness, wet
   glossier, snow and quartz glints, ice blue. Sand: its ripples a layer of their own laid by the air
   (`windRipple`: none airless, spacing by density, Mars ~0.9 m). Beach swash zone wet.
-  Still to do there: wind-sculpted snow on windy worlds; the ripple direction from the sim's winds
-  (it's the texture's axis now); wind speed locally (calm basins vs windy plateaus); per-class tile
-  sizes; a performance number (mode 3 vs 2 vs 0).
+  Still to do there: wind-sculpted snow on windy worlds; wind speed locally (calm basins vs windy
+  plateaus); per-class tile sizes; a performance number (mode 3 vs 2 vs 0). (Ripple direction: done.)
 - Terrain self-shadowing (e0e68b7, ccf696c; sheet: scratchpad shadows_sheet.jpg). Far: each pixel
   marches toward the sun through a coarse height cube (gen/heightmap.js, 6 x 512^2, ~300 m texels on an
   Earth, built by the terrain workers in ~20 s per world; render/terrainShadow.js); the air too (the
@@ -151,6 +150,42 @@ small one: "I definitely like right a lot more", then "Yeah fix refine and optim
   and mist; ice floes separately later); terrain self-shadowing (done, above); an aurora-viewing
   catalogue item (landmarks: under the oval, high, clear,
   long nights).
+
+**The queue worked through (2026-10-04, Dave: "yeah do it all"), all committed:**
+- Rocks and boulders (088998b, gen/rocks.js + render/rockRender.js): talus, frost-shattered blocks,
+  erratics, stream cobbles, ejecta; power-law sizes, half buried, collide.
+- Any liquid in one shader (b9e2426, render/liquid.js): optics from materials.js (index -> Fresnel),
+  waves by the dispersion relation (gravity, surface tension over density), wind from sunlight and the
+  air's density (Earth ~8 m/s, Titan ~1.4), 12 octaves x 3 directions, Cox-Munk slopes, crests bent by
+  noise; unresolved waves become GGX roughness (the glitter path). Sea / lake (fetch) / river (chop
+  carried down it) / pond (near mirror). Whitecaps by Monahan's coverage; shore foam lines torn to lace.
+  New vertex attribute `liq` (16-bit: 1 on water, kind, temperature over freezing, flow or fetch; 0 on
+  land) and a signed shore height in nrm.w (the shore where it crosses 0: no more stair-stepped coasts).
+- Seasonal ice (6530c62): the shader freezes by the annual mean, the sun's latitude now and how fast
+  each water follows (sea slowest; salt, a hydrocarbon mixture's ~20 K, a river's flow keep them open);
+  ragged floe edges; `Body.liquidDepthAt` returns 0 where it's frozen now (gen/liquidice.js mirrors the
+  shader's sums and the same detail noise, gen/detail.js): CPU and GPU agree to within the edge's own
+  anti-aliasing (checked at the Southern Ocean's edge from 40 m). Floes as bodies: still separate.
+- Falls (6e80d26): river profiles by the rock their bed crosses (channels.js riverProfile: stream power,
+  slope ~ erodibility^-1; caprock over softer rock undercut, its drop at its downstream edge; heights held
+  at the ends of 16-reach windows). Dave asked whether this was real data: an earlier version (steps by
+  hash) was reverted; this one has no tuned heights, only the k contrast 1.5 and the window length.
+  SOL Earth: 36 steps over 0.5 m in ~2600 land reaches, tallest 9.7 m (14.02 N 52.33 E, river r 7340).
+  The sheet at sqrt(2 g z) to a few times its drops' terminal speed, aerating as it falls; spray and mist
+  particles (render/falls.js) by gravity and the air (Stokes settling, Weber breakup, none in vacuum),
+  rainbow at the liquid's own angle. Creek water is running water now (it was shaded as ponds).
+- Aurora-viewing spots (33023ba): from each snapshot as it's applied (no re-sim), third in the catalog's
+  list. And the aurora's nitrogen calibrated to Earth (green 2-3x violet; it rendered teal).
+- Sand ripples across the wind (7b0ac01): crests at right angles to the zonal belts, read from a near
+  anchor shared by every mesh (fixed the rectangular ripple seams, pre-existing: each mesh's 4 km-wrapped
+  coordinates jump where levels meet). Inland water's shore filled as before the signed shore.
+- Not done / found: wind-sculpted snow (a stretched ripple field read as corduroy, reverted: sastrugi
+  need their own field); the Yotaxus slope dark under the near shadow maps, the maps' shimmer while
+  moving and their edge jaggies; the land's vertex-colour saw-tooth contacts; creeks narrower than the
+  mesh drawn as dashes (pre-existing: the creek's water samples aren't neighbours at that spacing); the
+  white Iophaubro beach plain (sand albedo ~0.7, reads as snow from above); the near-field volume's
+  staircase where its land meets the heightfield's water; the materials' 2 m tiling visible on snow;
+  real falls are rare and small at this size (the rivers' drops per km are small in drawn metres).
 
 **What's still wrong / next:**
 - Snow covers most of a high mountain (the snowline reads the real height: physically right, maybe too
