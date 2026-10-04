@@ -67,9 +67,10 @@ small one: "I definitely like right a lot more", then "Yeah fix refine and optim
   cell: Vovuld LAB-122:4 reached +1,428 km), rain on hot worlds (e^24 x Earth's at 1,240 K), melt pools
   as cell rectangles, tuya flanks (rectangular plateaus on icy worlds), hydrocarbon seas cut at a
   latitude, 0 m "peaks" as landmarks, ammonia-water frozen-ocean worlds labelled "barren rock".
-  Seen and not fixed: about a third of "Temperate world with life" / "Ocean world" picks are 100% sea
-  (Quepavraith LAB-140:2, Hakrar LAB-171:7, Coavre LAB-178:15, Lanern LAB-118:7: water 2-27% by mass,
-  every continent drowned; may be right for water-rich worlds but makes most "living worlds" featureless);
+  Not a bug: the 100%-sea "Temperate world with life" / "Ocean world" picks (Quepavraith LAB-140:2,
+  Hakrar LAB-171:7, Coavre LAB-178:15, Lanern LAB-118:7) are planned that way by the system generator
+  (2-50% water by mass, ocean fraction 1.0; Earth is 0.03%); the deep time follows the plan.
+  Seen and not fixed:
   an ice-sheet margin on Saeverkion LAB-162:5 shows grid-stepped parallel grooves; Coavre's ice cap
   shows a straight line at 3 km.
 
