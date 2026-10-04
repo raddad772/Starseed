@@ -16,6 +16,8 @@ import { MT, KEEP, TILE_VERSION } from '../tileshape.js';
 import * as dm from '../../core/dmath.js';
 
 const K = MT + 2 * KEEP, KK = K * K, QPI = Math.PI / 4, LN_A = 25.328436022934504;   // (ln 1e11: the drainage's scale)
+// (a cell's neighbour by its slot 0..7: di, dj = -1..1 row by row, skipping itself)
+const NB_I = Int8Array.from([0, 1, 2, 3, 4, 5, 6, 7], (k) => ((k >= 4 ? k + 1 : k) % 3) - 1), NB_J = Int8Array.from([0, 1, 2, 3, 4, 5, 6, 7], (k) => (((k >= 4 ? k + 1 : k) / 3) | 0) - 1);
 const canShare = typeof SharedArrayBuffer !== 'undefined' && (typeof crossOriginIsolated === 'undefined' || crossOriginIsolated);
 
 function alloc(Type, n, shared) {
@@ -331,9 +333,8 @@ export class RefineReader {
     const fl = this.tFL, rc = this.tRC, H = this.tH, off = this.tOff;
     if (!H || !fl || !rc) return false;
     const fi = this.tfi, fj = this.tfj, i0 = Math.floor(fi), j0 = Math.floor(fj);
-    const thr = Math.max(0, Math.round(255 * dm.log(Acut) / LN_A));
-    // (a cell's neighbour by its slot 0..7: di, dj = -1..1 row by row, skipping itself)
-    const nbI = (k) => { const kk = k >= 4 ? k + 1 : k; return (kk % 3) - 1; }, nbJ = (k) => { const kk = k >= 4 ? k + 1 : k; return ((kk / 3) | 0) - 1; };
+    const thr = this._thrA === Acut ? this._thr : (this._thrA = Acut, this._thr = Math.max(0, Math.round(255 * dm.log(Acut) / LN_A)));
+    const nbI = NB_I, nbJ = NB_J;
     let bd = 2, found = false;
     for (let j = j0 - 1; j <= j0 + 2; j++) for (let i = i0 - 1; i <= i0 + 2; i++) {
       if (i < 2 || j < 2 || i >= K - 2 || j >= K - 2) continue;
@@ -341,17 +342,17 @@ export class RefineReader {
       if (fl[o] < thr || k === 255) continue;
       // the line through it, smoothly: from halfway to its main inflow (the neighbour draining
       // into it with the most water), round it, to halfway to the cell it drains into
-      const ri = i + nbI(k), rj = j + nbJ(k);
+      const ri = i + nbI[k], rj = j + nbJ[k];
       let ui = i, uj = j, uf = -1;
       for (let q = 0; q < 8; q++) {
-        const ni = i + nbI(q), nj = j + nbJ(q), no = off + nj * K + ni, nk = rc[no];
-        if (nk === 255 || ni + nbI(nk) !== i || nj + nbJ(nk) !== j || fl[no] < thr) continue;
+        const ni = i + nbI[q], nj = j + nbJ[q], no = off + nj * K + ni, nk = rc[no];
+        if (nk === 255 || ni + nbI[nk] !== i || nj + nbJ[nk] !== j || fl[no] < thr) continue;
         if (fl[no] > uf) { uf = fl[no]; ui = ni; uj = nj; }
       }
       const x0 = (ui + i) / 2, y0 = (uj + j) / 2, x2 = (i + ri) / 2, y2 = (j + rj) / 2;
       const h0 = (H[off + uj * K + ui] + H[o]) / 2, h2 = (H[o] + H[off + rj * K + ri]) / 2;
       let ws = 0, wn = 0;
-      for (let q = 0; q < 8; q++) { const di = nbI(q), dj = nbJ(q), dh = H[off + (j + dj) * K + i + di] - H[o]; if (dh > 0) { ws += di && dj ? dh * 0.7071067811865476 : dh; wn++; } }
+      for (let q = 0; q < 8; q++) { const di = nbI[q], dj = nbJ[q], dh = H[off + (j + dj) * K + i + di] - H[o]; if (dh > 0) { ws += di && dj ? dh * 0.7071067811865476 : dh; wn++; } }
       const cwc = wn ? ws / wn : 0;
       // (the nearest point on the curve, over eight chords each projected onto: not on its
       // nine points, between which a narrow creek drew dotted)

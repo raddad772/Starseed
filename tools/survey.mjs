@@ -7,6 +7,7 @@
 //
 // (--gorges N: also views at the world's N deepest canyon-country gorges, world.js, first;
 // --gorgeRock a,b: only those cut in these rocks, e.g. sandstone,shale,limestone;
+// --o k=v,k2=v2: any of prepareTile's options for the tile levels (own caches);
 // --at lat,lon/lat,lon: views at these places too, first; --scales 12,4,1.5: the views' widths (km)
 // instead of 400,60,12; --px 640: their pixels (320); --pyr 0: no pyramid tiles, the
 // refinement alone; --pyrN 3: a 3x3 block of tiles at each level, not one; --pyrCache 1: the
@@ -45,8 +46,10 @@ const OUT = opt.out || 'survey', CACHE = opt.cache || OUT, W = +(opt.W || 1200),
 const FLOAT = opt.float === '1', THREADS = +(opt.threads || Math.min(4, os.cpus().length));
 // (--trueScale 0: the levels below the deep time as they were, heights exaggerated (localsim.js
 // trueScale, on by default); --heads N: each level's channels from N cells' water; own caches)
-const TILE_OPTS = { ...(opt.trueScale === '0' ? { trueScale: false } : {}), ...(opt.heads ? { headCells: +opt.heads } : {}), ...(opt.intCut ? { intCut: +opt.intCut } : {}), ...(opt.hw ? { headWidth: +opt.hw } : {}), ...(opt.rough ? { seedRough: +opt.rough } : {}), ...(opt.steps ? { steps: +opt.steps } : {}) };
-const TS_TAG = (opt.trueScale === '0' ? '-ex' : '') + (opt.heads ? '-h' + opt.heads : '') + (opt.intCut ? '-k' + opt.intCut : '') + (opt.hw ? '-hw' + opt.hw : '') + (opt.rough ? '-sr' + opt.rough : '') + (opt.steps ? '-st' + opt.steps : '');
+const TILE_OPTS = { ...(opt.trueScale === '0' ? { trueScale: false } : {}), ...(opt.heads ? { headCells: +opt.heads } : {}), ...(opt.intCut ? { intCut: +opt.intCut } : {}), ...(opt.hw ? { headWidth: +opt.hw } : {}), ...(opt.rough ? { seedRough: +opt.rough } : {}), ...(opt.steps ? { steps: +opt.steps } : {}), ...(opt.joints === '0' ? { joints: false } : {}), ...Object.fromEntries((opt.o || '').split(',').filter(Boolean).map((kv) => { const [k, v] = kv.split('='); return [k, v === 'false' ? false : v === 'true' ? true : +v]; })) };
+// (--ro k=v,...: options for the refinement's tiles only, e.g. steps=0: no run, its finish alone)
+const REF_OPTS = Object.fromEntries((opt.ro || '').split(',').filter(Boolean).map((kv) => { const [k, v] = kv.split('='); return [k, v === 'false' ? false : v === 'true' ? true : +v]; }));
+const TS_TAG = (opt.ro ? '-ro' + opt.ro.replace(/[=,]/g, '') : '') + (opt.trueScale === '0' ? '-ex' : '') + (opt.heads ? '-h' + opt.heads : '') + (opt.intCut ? '-k' + opt.intCut : '') + (opt.hw ? '-hw' + opt.hw : '') + (opt.rough ? '-sr' + opt.rough : '') + (opt.steps ? '-st' + opt.steps : '') + (opt.joints === '0' ? '-nj' : '') + (opt.o ? '-o' + opt.o.replace(/[=,]/g, '') : '');
 fs.mkdirSync(OUT, { recursive: true }); fs.mkdirSync(CACHE, { recursive: true });
 const TY = { h: Float32Array, water: Float32Array, rock: Uint8Array, ice: Uint16Array, river: Uint8Array, melt: Uint8Array, relief: Uint16Array, rcv: Uint8Array, Tsea: Float32Array, P: Float32Array, cover: Float32Array, forest: Float32Array, open: Float32Array, cloud: Float32Array, cloudPx: Uint8Array, crat: Uint8Array, dunes: Uint8Array, gorge: Uint16Array, gLr: Uint16Array, gVsp: Uint16Array, gYouth: Uint8Array, gGx: Uint8Array, gGy: Uint8Array, gGlac: Uint8Array };
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
@@ -215,7 +218,7 @@ function refineTiles(seed, body, snap, n, put) {
     const ws = [];
     const give = (w) => { if (next < jobs.length) { w.job = next++; w.postMessage(jobs[w.job]); } };
     for (let k = 0; k < Math.min(THREADS, jobs.length); k++) {
-      const w = new Worker(new URL('./surveyWorker.mjs', import.meta.url), { workerData: { seed, body, snap: sn, float: FLOAT, tileOpts: TILE_OPTS } });
+      const w = new Worker(new URL('./surveyWorker.mjs', import.meta.url), { workerData: { seed, body, snap: sn, float: FLOAT, tileOpts: { ...TILE_OPTS, ...REF_OPTS } } });
       w.on('message', ({ p, riv }) => {
         put(p); parts[w.job] = riv;
         if (++done === jobs.length) { for (const x of ws) x.terminate(); resolve(parts); } else give(w);

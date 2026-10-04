@@ -377,7 +377,7 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
   // it rained (wetFrac))
   const wetK = !S || S.Gc ? 1 : (S.s.wetFrac || 0), fluvial = wetK > 0;
   const rng = new Rng([hashInts(face, ti), hashInts(tj, region ? 0x7e60 : 0x7e11), (gen.p.seed && gen.p.seed[0]) | 0, 0x10ca1]);
-  const col = rockColumn(ST.rock, new Rng([hashInts(face, ST.ri), hashInts(ST.rj, 0xc01), (gen.p.seed && gen.p.seed[0]) | 0, 0x5eb]), gen.hScale);
+  const col = rockColumn(ST.rock, new Rng([hashInts(face, ST.ri), hashInts(ST.rj, 0xc01), (gen.p.seed && gen.p.seed[0]) | 0, 0x5eb]));
   // the beds' offset (how far a bed is from where the column has it) and how broken the rock
   // is: joints and the faults' zones
   const bedOff = new Float64Array(n), weak = new Float64Array(n);
@@ -459,7 +459,7 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
   // (a pyramid tile's: each cell's rock's suite of layers (the world's, geology.js), tilted and
   // folded, read at its height as it is now, so as valleys cut down through hard and soft beds,
   // cliff bands stand)
-  const suiteC = pyr ? new Uint8Array(n) : null, cols = pyr ? SUITES.map((su) => worldColumn((gen.p.seed && gen.p.seed[0]) | 0, su, 0.5 * cell, gen.hScale)) : null;
+  const suiteC = pyr ? new Uint8Array(n) : null, cols = pyr ? SUITES.map((su) => worldColumn((gen.p.seed && gen.p.seed[0]) | 0, su, 0.5 * cell)) : null;
   const readSuite = () => { for (let c = 0; c < n; c++) { const nm = ROCKS[rockC[c]].name; suiteC[c] = DEPOSITS.has(nm) ? 3 : Math.max(0, SUITES.indexOf(SUITE[nm] || 'loose')); } };
   const hardAt = refine ? (c) => ROCK_HD[rockC[c]] : pyr ? (c, z = h[c]) => cols[suiteC[c]].at(z + bedOff[c]) * (1 - 0.7 * weak[c]) : (c, z) => col.at(z + bedOff[c]) * (1 - 0.7 * weak[c]);
   // the starting surface, with a few centimetres of jitter (so water has a way to choose)

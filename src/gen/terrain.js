@@ -638,6 +638,8 @@ export class TerrainGenerator {
     let nc = 0;
     if (ref) { cuts[0] = 2 * S.refCell; cw[0] = 1; nc = 1; }
     if (S.pyr) for (const rd of S.pyrReaders()) {
+      // (every level at every sampling, however coarse: a finer level wears down the sharp points
+      // the level above leaves at its cells' scale, and read from afar without it they stood as cones)
       if (!rd.sample(S._d(x, y, z))) continue;
       h += (rd.h / this.hScale - h) * rd.w;
       sea = sea < 0 ? rd.sea : sea + (rd.sea - sea) * rd.w;
@@ -1041,7 +1043,7 @@ export class TerrainGenerator {
       for (let si = 0; si < 2; si++) {
         const s = si ? s2 : s1, ws = si ? w2 : w1;
         if (s < 0 || ws <= 0.05 * w1) continue;
-        const T = canyonTable(worldColumn(seed, SUITES[s], 0, hs));
+        const T = canyonTable(worldColumn(seed, SUITES[s], 0));
         wallSet(wl, T, F * hs, Wf, off, 0);
         const iT = top0 * hs + off - T.lo, iTop = top * hs + off - T.lo;
         wl.mu = wallFit(wl, iT, gone * hs, 0.95 * d1);
@@ -1212,8 +1214,8 @@ export class TerrainGenerator {
     if (S.riv) return this._refRiverAt(x, y, z);
     if (!s.rcv) return null;
     const G = S.G, R = this.R, c0 = G.cellAt(x, y, z);
-    // (meanders: the point pushed about on a few-km scale)
-    const mf = R / 6000, mk = 2500 / R;
+    // (meanders: the point pushed about on the scale of a few of the world sim's cells, as drawn)
+    const lk = S.lenK || 1, mf = R / (6000 * lk), mk = 2500 * lk / R;
     const px = x + mk * this.nMisc.noise(x * mf + 11, y * mf, z * mf), py = y + mk * this.nMisc.noise(x * mf, y * mf + 13, z * mf), pz = z + mk * this.nMisc.noise(x * mf, y * mf, z * mf + 17);
     let best = null;
     const A = this._ra || (this._ra = [0, 0, 0]), B = this._rb || (this._rb = [0, 0, 0]);
@@ -1230,7 +1232,9 @@ export class TerrainGenerator {
       const dx = px - (ax + bx * t), dy = py - (ay + by * t), dz = pz - (az + bz * t);
       const dist = Math.sqrt(dx * dx + dy * dy + dz * dz) * R;
       const k = (r - 0.55) / 0.45;   // (0 a stream, 1 the greatest river)
-      const w = 40 + 1800 * k * k, depth = 3 + 25 * k;
+      // (its width as its water makes it: the world sim's catchments drawn at lenK of their width
+      // hold lenK^2 of the water, a river's width going as its root)
+      const w = (40 + 1800 * k * k) * lk, depth = 3 + 25 * k;
       if (!best || dist - w < best.dist - best.w) best = { dist, w, depth, k, hs: s.h[c] + (s.h[to] - s.h[c]) * t };
     };
     test(c0);
@@ -1702,7 +1706,7 @@ export class TerrainGenerator {
     faceUVFromDir(d, uv);
     const Mu = this._Mu || (this._Mu = faceMetres(this.R));
     const o = bedAt(this, uv.face, uv.u, uv.v, uv.u * Mu, uv.v * Mu, 0, this._bo || (this._bo = { bed: 0, weak: 0 }));
-    return worldColumn((this.p.seed && this.p.seed[0]) | 0, su, 0.25 * (this._minW || 0), this.hScale).typeAt(h + o.bed);
+    return worldColumn((this.p.seed && this.p.seed[0]) | 0, su, 0.25 * (this._minW || 0)).typeAt(h + o.bed);
   }
 
   shadeNoise(s, slope, col, mat) {
