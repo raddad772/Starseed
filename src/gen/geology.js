@@ -23,7 +23,9 @@ const hu = (a, b, c, d) => hashInts(a, b, c, d) / 4294967296;    // a hash in [0
 export const SUITE = { sandstone: 'sed', shale: 'sed', limestone: 'sed', chalk: 'sed', salt: 'sed', basalt: 'volc', andesite: 'volc', granite: 'xtal' };
 
 const RI = Object.fromEntries(ROCKS.map((r, i) => [r.name, i]));
-export function rockColumn(rockName, rng) {
+// (vs: the beds' thicknesses drawn at vs of their real metres, as the heights are (units.js
+// HEIGHT_SCALE), so cliff bands keep their proportion to the mountains they stand in)
+export function rockColumn(rockName, rng, vs = 1) {
   const suite = SUITE[rockName] || 'loose';
   const lo = -3000, n = 15000;                       // 1 m steps, -3 km .. 12 km
   const hard = new Float32Array(n), type = new Uint8Array(n);
@@ -38,11 +40,12 @@ export function rockColumn(rockName, rng) {
       else { t = rng.range(10, 28); hd = rng.range(0.8, 0.95); ty = RI.limestone; }            // a massive cap
     } else if (suite === 'volc') {
       // a flow: its broken top soft, its core hard
-      const top = rng.range(1, 3), core = rng.range(5, 18);
+      const top = rng.range(1, 3), core = rng.range(5, 18) * vs;
       for (let k = 0; k < core && z < n; k++) { type[z] = RI.basalt; hard[z++] = 0.9; }
       t = top; hd = 0.25; ty = RI.regolith;
     } else if (suite === 'xtal') { t = rng.range(150, 600); hd = rng.range(0.865, 0.875); ty = RI.granite; }   // (massive: no beds)
     else { t = rng.range(3, 12); hd = rng.range(0.05, 0.3); ty = RI.alluvium; }
+    t *= vs;
     for (let k = 0; k < t && z < n; k++) { type[z] = ty; hard[z++] = hd; }
   }
   const idx = (h) => { const i = Math.round(h - lo); return i < 0 ? 0 : i >= n ? n - 1 : i; };
@@ -159,15 +162,15 @@ export function jointAt(J, X, Y, cell) {
 // ---- each suite's column for a world (seed: the world's), as cells win m apart see it (made
 // once a process for each window)
 const _cols = new Map();
-export function worldColumn(seed, su, win) {
+export function worldColumn(seed, su, win, vs = 1) {
   // (the window to the nearest power of two: a few of them serve every level and sampling)
   let w2 = 1;
   while (w2 * 1.5 < win) w2 *= 2;
-  const key = seed + '|' + su + '|' + (win < 0.75 ? 0 : w2);
+  const key = seed + '|' + su + '|' + (win < 0.75 ? 0 : w2) + '|' + vs;
   let c = _cols.get(key);
   if (!c) {
     if (_cols.size > 64) _cols.clear();
-    const raw = rockColumn(SUITE_ROCK[su], new Rng([hashInts(0x5eb, SUITES.indexOf(su)), seed | 0, 0xc01]));
+    const raw = rockColumn(SUITE_ROCK[su], new Rng([hashInts(0x5eb, SUITES.indexOf(su)), seed | 0, 0xc01]), vs);
     _cols.set(key, c = win < 0.75 ? raw : smoothColumn(raw, w2));
   }
   return c;

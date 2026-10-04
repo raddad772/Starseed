@@ -1041,7 +1041,7 @@ export class TerrainGenerator {
       for (let si = 0; si < 2; si++) {
         const s = si ? s2 : s1, ws = si ? w2 : w1;
         if (s < 0 || ws <= 0.05 * w1) continue;
-        const T = canyonTable(worldColumn(seed, SUITES[s], 0));
+        const T = canyonTable(worldColumn(seed, SUITES[s], 0, hs));
         wallSet(wl, T, F * hs, Wf, off, 0);
         const iT = top0 * hs + off - T.lo, iTop = top * hs + off - T.lo;
         wl.mu = wallFit(wl, iT, gone * hs, 0.95 * d1);
@@ -1702,7 +1702,7 @@ export class TerrainGenerator {
     faceUVFromDir(d, uv);
     const Mu = this._Mu || (this._Mu = faceMetres(this.R));
     const o = bedAt(this, uv.face, uv.u, uv.v, uv.u * Mu, uv.v * Mu, 0, this._bo || (this._bo = { bed: 0, weak: 0 }));
-    return worldColumn((this.p.seed && this.p.seed[0]) | 0, su, 0.25 * (this._minW || 0)).typeAt(h + o.bed);
+    return worldColumn((this.p.seed && this.p.seed[0]) | 0, su, 0.25 * (this._minW || 0), this.hScale).typeAt(h + o.bed);
   }
 
   shadeNoise(s, slope, col, mat) {

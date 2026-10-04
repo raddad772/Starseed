@@ -59,8 +59,9 @@ small one: "I definitely like right a lot more", then "Yeah fix refine and optim
 
 **What's still wrong / next:**
 - Snow covers most of a high mountain (the snowline reads the real height: physically right, maybe too
-  white for Dave). Bed thicknesses (geology columns, metres) aren't scaled with the heights: cliff bands
-  are 8x thicker in proportion than real.
+  white for Dave).
+- Done last: rock beds drawn at the height scale too (geology.js rockColumn/worldColumn `vs`, TILE 42):
+  cliff bands keep their proportion to the mountains (survey eng_beds vs eng_coast).
 - The survey's pictures are the yardstick: `STARSEED_LEN` env for Node (default now 1/64),
   `tools/survey.mjs --at lat,lon --scales 8,3,1 --px 640 --pyrCache 1`; the scratchpad's eng_* dirs hold
   this session's runs; `?len=0.1` in the game shows the old size.
