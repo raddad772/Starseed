@@ -34,16 +34,36 @@ small one: "I definitely like right a lot more", then "Yeah fix refine and optim
 - Air squeezed above a ~12 km knee by sqrt(LEN_SCALE) (4328686): from orbit the small planet reads as a
   planet with a thick sky, which Dave accepted ("daytime stars make sense from very high up").
 
+**Overnight (2026-10-04, "fix refine and optimize", then "continue through the night"):**
+- Fault throws, bed dips and fold amplitudes drawn by hScale; a belt is a belt by its real relief
+  (geology.js). The summit's straight scarp is gone (survey eng_coast spot 2).
+- The refinement's shore as a line (localsim.js finish): the wave rules decide each cell, and stepped the
+  ground between them; now a +1/-1 field blurred over a cell crosses zero along a smooth coast and the
+  cells near it slope through zero along it. Reef coast views: eng_reef vs sol_eng. TILE 40.
+- The crater record read where each crater falls (craters.js latticeCraters: the cell draws at the most
+  the record gives anywhere in it, each crater kept by the record where it lies) and blended between the
+  world sim's cells (SnapshotSampler.crat): a resurfaced plain's edge was a staircase of lattice cells
+  (Venus's peak view). TILE 41. Venus check: scratchpad venus_edge.
+- The big ships' orbit offsets scaled with the drawn size (game.js FLEET_K). Smoke test at the new size
+  in a hidden tab: opening orbit 62 km up, tender/carrier at 64/94 km, orbit at 15 km, entry at 3 km, no
+  NaNs; days 2.99 h.
+- The SOL suite at the new size (scratchpad sol_eng, 8 worlds): all read as before, scaled. FSPB-8DTW's
+  start moon (R 35 km) too.
+- Pass counts are not slack: PASSES 6,10,9 changes 43% of a tile's cells (up to 580 m) against 8,16,12
+  (scratchpad passes.mjs). GPU time per tile stays ~6 s alone; a real gain needs merged passes in the
+  shaders or routing every other step in all three sims, with a visual check.
+- Not done: the chunk-rebuild storm (~140 chunks per tile), setup ~2.4 s / finish ~1 s per tile in the
+  worker (creekAt ~180 ms, bedAt ~170 ms, parent.rockAt ~180 ms in Node). Mercury's "straight line" in
+  the crater view is the mare's stamped wrinkle ridges (folds), concentric to the basin: by design.
+  The survey's views beyond its single pyramid tile show that tile's edge (the game makes a 3x3).
+
 **What's still wrong / next:**
-- A tile's GPU time is ~5,800 small dispatches (fill 8 + accum 16 + jump 12 passes a step); the GPU is
-  not saturated alone (6 s), so fewer passes or routing every other step would help, but PASSES are shared
-  by the JS/C/GPU sims (bit-identical) and need a visual check. Setup ~2.4 s and finish ~1 s per tile in
-  the worker (0.9 / 0.35 in Node: CPU contention with the chunk-rebuild storm, ~140 chunks per tile).
-- The straight fault scarp on the summit: fault throws (geology.js, up to ~165 m) aren't scaled with
-  HEIGHT_SCALE. Snow covers most of the mountain (snowline on the real height, not the drawn).
-- Coastlines look blocky from orbit at this size (the world sim's 0.5 km cells). The survey's pictures
-  are the yardstick: `STARSEED_LEN` env for Node, `tools/survey.mjs --at lat,lon --scales 8,3,1 --px 640
-  --pyrCache 1`; the scratchpad's eng_* dirs hold this session's runs.
+- Snow covers most of a high mountain (the snowline reads the real height: physically right, maybe too
+  white for Dave). Bed thicknesses (geology columns, metres) aren't scaled with the heights: cliff bands
+  are 8x thicker in proportion than real.
+- The survey's pictures are the yardstick: `STARSEED_LEN` env for Node (default now 1/64),
+  `tools/survey.mjs --at lat,lon --scales 8,3,1 --px 640 --pyrCache 1`; the scratchpad's eng_* dirs hold
+  this session's runs; `?len=0.1` in the game shows the old size.
 - Older queue: ground-layer youth calibration, nutrient factor for life origin, life map through the
   last 10 Myr, the integer-vs-float gap's other half.
 

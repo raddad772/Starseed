@@ -11,4 +11,4 @@ export const KEEP = MARGIN / 2;    // of which kept
 // query; its tiles are kept apart)
 export const TRUE_SCALE = !/[?&]ts=0(&|$)/.test(globalThis.location ? globalThis.location.search : '');
 // (and each drawn size's tiles apart: units.js LEN_SCALE)
-export const TILE_VERSION = 40 + (TRUE_SCALE ? 0 : 1000) + 10000 * Math.round(1 / LEN_SCALE);
+export const TILE_VERSION = 41 + (TRUE_SCALE ? 0 : 1000) + 10000 * Math.round(1 / LEN_SCALE);

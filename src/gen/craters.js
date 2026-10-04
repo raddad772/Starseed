@@ -45,13 +45,20 @@ export function latticeCraters(f, i, j, D0, D1, nL, S, seed, R, Dair = 0) {
   const cx = ay * bz - az * by, cy = az * bx - ax * bz, cz = ax * by - ay * bx;
   const area = 0.5 * Math.sqrt(cx * cx + cy * cy + cz * cz) * R * R;
   dirFromFaceUV(f, u0 + sL / 2, v0 + sL / 2, _d);
-  const lam = S.crat(_d[0], _d[1], _d[2]) * rate * area;
+  // (the record read where each crater falls, not once a cell: a cell straddling the edge of a
+  // resurfaced plain drew craters up to the cell's edge, so the plain's edge was a staircase of
+  // cells; the cell draws as many as the most the record gives anywhere in it, and keeps each by
+  // the record where it lies)
+  const cMax = Math.max(S.crat(_d[0], _d[1], _d[2]), S.crat(_d00[0], _d00[1], _d00[2]), S.crat(_d10[0], _d10[1], _d10[2]), S.crat(_d01[0], _d01[1], _d01[2]), S.crat(_d11[0], _d11[1], _d11[2]));
+  const lam = cMax * rate * area;
   if (!(lam > 1e-9)) return out;
   const rng = new Rng([hashInts(f, i, j, D0 | 0), seed >>> 0, 0xc7a7e2, nL]);
   let k = poisson(rng, lam);
   while (k-- > 0) {
     const at = dirFromFaceUV(f, u0 + sL * rng.next(), v0 + sL * rng.next(), [0, 0, 0]);
+    const keep = rng.next() < S.crat(at[0], at[1], at[2]) / cMax;
     const D = 1 / Math.sqrt(1 / (D0 * D0) - rng.next() * rate), age = rng.next(), key = rng.u32();
+    if (!keep) continue;
     // (the air broke up most of the small ones)
     if (Dair > 0 && (hashInts(key, 0xa12) >>> 0) / 4294967296 >= airKeep(D, Dair)) continue;
     out.push({ at, D, age, key });

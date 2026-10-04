@@ -423,7 +423,9 @@ export class SnapshotSampler {
     return s / 255;
   }
   // the crater record there (craters.js): N(>= D) per m^2 is this / D^2 (D in m as drawn)
-  crat(x, y, z) { const q = this.s.crat ? this.s.crat[this.G.cellAt(x, y, z)] : 0; return q ? dm.pow(10, q / 20 - 12) : 0; }
+  // (the record blended between the cells, so a resurfaced plain's edge is a contour between
+  // them, not their outline)
+  crat(x, y, z) { const q = this.s.crat ? this.G.sample(this.s.crat, this._d(x, y, z), this.uv) : 0; return q > 0.5 ? dm.pow(10, q / 20 - 12) : 0; }
   cover(x, y, z) { return this.Gc && this.s.cover ? this._gcRead(this.s.cover, x, y, z) : 0; }
   forest(x, y, z) { return this.Gc && this.s.forest ? this._gcRead(this.s.forest, x, y, z) : 0; }
   open(x, y, z) { return this.Gc && this.s.open ? this._gcRead(this.s.open, x, y, z) : 0; }
