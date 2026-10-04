@@ -8,6 +8,7 @@ import { makeStarMesh } from './sky.js';
 import { makeGiantMesh, makeRingMesh } from './giant.js';
 import { VolumePass } from './volume.js';
 import { loadMaterials, windRipple } from './materials.js';
+import { HeightCube } from './terrainShadow.js';
 import * as U from '../core/units.js';
 
 const _v = new THREE.Vector3(), _v2 = new THREE.Vector3();
@@ -38,6 +39,7 @@ export class WorldRenderer {
     it.terrain.dispose();
     it.terrain = new PlanetTerrain(it.body, this.pool, it.shared);
     it.group.add(it.terrain.group);
+    if (it.heightCube) it.heightCube.invalidate();
     // its clouds where its climate puts them
     const snap = it.body.data.terrain && it.body.data.terrain.snapshot;
     // (baked with the snapshot; a snapshot cached before that, baked here, coarser)
@@ -69,6 +71,10 @@ export class WorldRenderer {
     // atmosphere first (surfaces sample its LUTs)
     if (b.atm && b.atm.render) it.atmo = new Atmosphere(this.engine.renderer, b);
     const a = it.atmo;
+    // (the ground's shadows on itself: its coarse heights, built when it's near: terrainShadow.js)
+    if (b.solid) it.heightCube = new HeightCube(b, this.pool);
+    // (and the air's: its shadows in the haze, the sky pass's and the near volume's)
+    if (it.heightCube && a) for (const k of ['tHeightCube', 'uHeightCube']) a.material.uniforms[k] = it.heightCube.uniforms[k];
     it.shared = {
       uSunDir: { value: new THREE.Vector3(1, 0, 0) },
       uSunE: { value: new THREE.Vector3(1, 1, 1) },
@@ -95,6 +101,7 @@ export class WorldRenderer {
       uCloudMapMean: a ? a.material.uniforms.uCloudMapMean : { value: 0 },
       uThermal: a ? a.material.uniforms.uThermal : { value: thermalUniform(b) },
       uWindRipple: { value: windRipple(b) },
+      ...(it.heightCube ? it.heightCube.uniforms : {}),
       uNear: { value: new THREE.Vector2(0, 0) },
       uNearUp: { value: new THREE.Vector3(0, 1, 0) },
     };
@@ -102,6 +109,7 @@ export class WorldRenderer {
       const clouds = b.data.atmosphere && b.data.atmosphere.clouds;
       if (b.giant) it.volume = new VolumePass(b, a, this.cloudNoise, 0);
       else if (clouds && clouds.type !== 'sulfuric') it.volume = new VolumePass(b, a, this.cloudNoise, 1);
+      if (it.volume && it.heightCube) for (const k of ['tHeightCube', 'uHeightCube']) it.volume.material.uniforms[k] = it.heightCube.uniforms[k];
       // (the far shell's cover reads the noise on every world: bound only beside a near volume, a
       // sulfuric deck, which has none, read nothing and was never drawn, its world a ball of haze)
       a.material.uniforms.tNoise.value = this.cloudNoise;
@@ -155,6 +163,7 @@ export class WorldRenderer {
         _v2.copy(camWorld).sub(b.pos).applyQuaternion(b.qInv);
         it.group.visible = angular > 0.6;
         if (it.group.visible) it.terrain.update(_v2);
+        if (it.heightCube && it.heightCube.state === 0 && angular > 40) it.heightCube.build();
       }
       if (it.mesh && b.giant) {
         it.mesh.visible = angular > 0.6;

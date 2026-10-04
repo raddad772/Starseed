@@ -14,6 +14,7 @@ import * as THREE from 'three';
 import { GLSL_RAY, GLSL_DEPTH, GLSL_ATMO_LUT, GLSL_NOISE, FULLSCREEN_VERT } from './glsl.js';
 import { atmoAlt } from '../gen/bodies.js';
 import * as U from '../core/units.js';
+import { GLSL_TERRAIN_SHADOW } from './terrainShadow.js';
 
 // the cloud cover's weather systems, as fractions of the world's radius (the noise tile; four lobes to
 // one): fronts and cyclones a quarter of the radius across, as Earth's are; then storms, then the
@@ -421,6 +422,7 @@ uniform sampler3D tNoise;
 uniform float uWindMax;
 ${GLSL_AIRLIGHT}
 ${GLSL_THERMAL}
+${GLSL_TERRAIN_SHADOW}
 vec3 gEm;   // (emitted light along the ray so far: not lit by the sun, so kept apart)
 ${GLSL_CLOUD_N}
 // Same coverage field as the volumetric pass (render/volume.js, mode 1), so
@@ -446,6 +448,8 @@ void march(float t0, float t1, vec3 D, float tca, vec3 perp, float cosTheta, flo
     mediumAt(r, sR, sM, e);
     float muS = dot(p, uSunDir) / r;
     vec3 sunT = sunTransmittance(r, muS);
+    // (air in a mountain's shadow: terrainShadow.js)
+    if (uHeightCube.x > 0.5 && r < uRadius + uHeightCube.z) sunT *= airShadow(uToFixed * p, uToFixed * uSunDir, uRadius);
     vec3 ms = multiScatter(r, muS);
     vec3 S = sR * (sunT * pR + ms) + sM * (sunT * pM + ms);
     vec3 Ts = exp(-e * dt);
@@ -623,6 +627,8 @@ export class Atmosphere {
       uAbsExp: { value: a.absorptionExp ? 1 : 0 },
       uGroundAlbedo: { value: new THREE.Vector3(0.18, 0.18, 0.18) },
       uThermal: { value: thermalUniform(body) },
+      // (the ground's heights for the air's shadows: world.js hands over its cube's uniforms)
+      tHeightCube: { value: null }, uHeightCube: { value: new THREE.Vector4(0, 1, 0, 1) },
     };
     if (d.terrain) {
       const p = d.terrain.palette;

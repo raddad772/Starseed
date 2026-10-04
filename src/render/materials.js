@@ -128,13 +128,15 @@ MatS matSurf(float layer, vec3 p, vec3 dx, vec3 dy, vec3 n) {
   vec4 A, B; vec3 wn;
   vec4 sA = vec4(0.0), sB = vec4(0.0); vec3 sn = vec3(0.0);
 #if MAT_MODE == 3
+  // (a projection with under 2% of the weight not read: most ground faces mostly one way, and
+  // reading all three every time made this mode three times the biplanar one, not one and a half)
   vec3 w = pow(abs(n), vec3(6.0));
   w /= w.x + w.y + w.z;
-  for (int a = 0; a < 3; a++) {
-    float wa = a == 0 ? w.x : a == 1 ? w.y : w.z;
-    matPlane(a, p, dx, dy, n, layer, A, B, wn);
-    sA += A * wa; sB += B * wa; sn += wn * wa;
-  }
+  w = w * step(0.02, w);
+  w /= w.x + w.y + w.z;
+  if (w.x > 0.0) { matPlane(0, p, dx, dy, n, layer, A, B, wn); sA += A * w.x; sB += B * w.x; sn += wn * w.x; }
+  if (w.y > 0.0) { matPlane(1, p, dx, dy, n, layer, A, B, wn); sA += A * w.y; sB += B * w.y; sn += wn * w.y; }
+  if (w.z > 0.0) { matPlane(2, p, dx, dy, n, layer, A, B, wn); sA += A * w.z; sB += B * w.z; sn += wn * w.z; }
 #else
   // (the two axes the surface faces most, weighted so the third's share, gone, leaves no seam)
   vec3 an = abs(n);
@@ -144,8 +146,9 @@ MatS matSurf(float layer, vec3 p, vec3 dx, vec3 dy, vec3 n) {
   float w0 = ma == 0 ? an.x : ma == 1 ? an.y : an.z, w1 = me == 0 ? an.x : me == 1 ? an.y : an.z;
   vec2 bw = clamp((vec2(w0, w1) - 0.5773) / (1.0 - 0.5773), 0.0, 1.0);
   bw = bw.x + bw.y < 1e-4 ? vec2(1.0, 0.0) : bw / (bw.x + bw.y);   // (exactly diagonal: both 0)
+  if (bw.y < 0.02) bw = vec2(1.0, 0.0);
   matPlane(ma, p, dx, dy, n, layer, A, B, wn); sA += A * bw.x; sB += B * bw.x; sn += wn * bw.x;
-  matPlane(me, p, dx, dy, n, layer, A, B, wn); sA += A * bw.y; sB += B * bw.y; sn += wn * bw.y;
+  if (bw.y > 0.0) { matPlane(me, p, dx, dy, n, layer, A, B, wn); sA += A * bw.y; sB += B * bw.y; sn += wn * bw.y; }
 #endif
   return MatS(sA.rgb * 2.5, sA.a, normalize(sn), sB.b, sB.a);
 }

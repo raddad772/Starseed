@@ -13,6 +13,7 @@
 import * as THREE from 'three';
 import { GLSL_RAY, GLSL_DEPTH, GLSL_ATMO_LUT, FULLSCREEN_VERT } from './glsl.js';
 import { GLSL_MEDIUM, GLSL_AIRLIGHT, GLSL_THERMAL, glowUniforms, GLSL_CLOUD_N, cloudBias } from './atmosphere.js';
+import { GLSL_TERRAIN_SHADOW } from './terrainShadow.js';
 
 const FRAG = /* glsl */`
 ${GLSL_RAY}
@@ -50,6 +51,7 @@ uniform vec3 uPal[6];
 uniform float uFade;
 ${GLSL_AIRLIGHT}
 ${GLSL_THERMAL}
+${GLSL_TERRAIN_SHADOW}
 uniform vec2 uShape;   // base shape scale, detail scale (metres)
 layout(location = 0) out highp vec4 outL;
 layout(location = 1) out highp vec4 outT;
@@ -231,6 +233,7 @@ void main() {
       tauAbove /= max(muS, 0.06);
       float shade = exp(-tauAbove);
       vec3 sunT = sunTransmittance(r, muS) * shade;
+      if (uHeightCube.x > 0.5 && r < uRadius + uHeightCube.z) sunT *= airShadow(uToFixed * p, uToFixed * uSunDir, uRadius);
       vec3 ms = multiScatter(r, muS) * (0.2 + 0.8 * shade);
       vec3 S = sR * (sunT * pR + ms) + sM * (sunT * pM + ms);
       if (cd > 0.0) {

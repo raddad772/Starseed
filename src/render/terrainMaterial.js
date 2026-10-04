@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { GLSL_SURFACE_ATMO, GLSL_CLOUD_N, GLSL_CLOUD_SHADOW, GLSL_THERMAL } from './atmosphere.js';
 import { GLSL_NOISE } from './glsl.js';
 import { MAT_UNIFORMS, GLSL_MATERIALS, trackMaterial } from './materials.js';
+import { GLSL_TERRAIN_SHADOW } from './terrainShadow.js';
 
 export const DETAIL_PERIOD = 4096; // metres; every detail tile period divides this
 
@@ -116,6 +117,7 @@ uniform float uCloudMapMean;
 ${GLSL_CLOUD_N}
 ${GLSL_CLOUD_SHADOW}
 ${GLSL_THERMAL}
+${GLSL_TERRAIN_SHADOW}
 #if MAT_MODE > 0
 uniform vec2 uWindRipple;   // sand's ripples on this world: strength, spacing over Earth's (materials.js)
 ${GLSL_MATERIALS}
@@ -164,6 +166,9 @@ void main() {
   vec3 sunT = atmoSunTransmittance(r, muS);
 
   sunT *= cloudShadow(rel, r, muS, foot);
+  // (the ground's own shadows: a ridge's across the valley)
+  vec3 pF = uToFixed * rel;
+  sunT *= terrainShadow(pF, normalize(pF), uToFixed * uSunDir, uRadius);
   vec3 skyE = atmoSkyIrradiance(r, muS);
 
   // ---- detail (planet-fixed, precision-safe coordinates)

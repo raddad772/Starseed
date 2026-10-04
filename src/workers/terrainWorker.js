@@ -8,6 +8,7 @@ import { scatterFlora, floraSpecies, FLORA_KINDS } from '../gen/flora.js';
 import { terrainPortrait } from '../gen/portrait.js';
 import { VolumeField, buildVolumeChunk, volumeTransferables } from '../gen/volume.js';
 import { TileSet } from '../gen/worldsim/refine.js';
+import { heightFace } from '../gen/heightmap.js';
 
 const params = new Map();
 const gens = new Map();
@@ -85,6 +86,12 @@ self.onmessage = (e) => {
       if (m.terrain && !params.has(m.body)) params.set(m.body, m.terrain);
       const r = terrainPortrait(gen(m.body), m.options || {});
       self.postMessage({ type: 'portrait', job: m.job, px: r.px, size: r.size, cover: r.cover }, [r.px.buffer]);
+      return;
+    }
+    if (m.type === 'hface') {
+      // a cube face of the world's coarse heights, for its shadows (render/terrainShadow.js)
+      const h = heightFace(gen(m.body), m.face, m.size);
+      self.postMessage({ type: 'hface', job: m.job, h }, [h.buffer]);
       return;
     }
     if (m.type === 'analyze') {

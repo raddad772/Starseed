@@ -8,6 +8,7 @@ import { buildChunk } from '../gen/chunkbuilder.js';
 import { analyzeSettlements } from '../gen/settlements.js';
 import { scatterFlora, floraSpecies } from '../gen/flora.js';
 import { terrainPortrait } from '../gen/portrait.js';
+import { heightFace } from '../gen/heightmap.js';
 
 export class WorkerPool {
   constructor(count, bodies) {
@@ -118,6 +119,7 @@ export class WorkerPool {
         if (!g._species) g._species = floraSpecies(this.bodies.find((x) => x.id === m.body).terrain);
         r = scatterFlora(g, m.face, m.level, m.ix, m.iy, m.maxLevel, g._species); r.type = 'flora';
       }
+      else if (m.type === 'hface') r = { type: 'hface', h: heightFace(g, m.face, m.size) };
       else if (m.type === 'portrait') { const p = terrainPortrait(g, m.options || {}); r = { type: 'portrait', px: p.px, size: p.size, cover: p.cover }; }
       else r = { type: 'analyze', result: analyzeSettlements(g, m.options || {}) };
       this.pending.delete(e.job);
