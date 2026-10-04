@@ -110,9 +110,15 @@ small one: "I definitely like right a lot more", then "Yeah fix refine and optim
   - Ground cover patches came from the 64 m detail tile alone and from a km off read as a lattice of
     spots; 512 m tile's patches beyond ~500 m, both moved by the 4 km tile (one more tri() per pixel).
   - Half-res sky upsample: depth weight with a 2% tolerance (cloud edges came in 2-pixel steps).
-  Seen, not fixed: beach sand lies only on gentle slopes, so every rill's banks on a beach show as dark
-  soil streaks (Seamibest's Iophoaris Sands); trees end in a disc at 1.5 km; the "cups" plants read as
-  stumps; the far sky's jitter shows faintly as a hatch in flat skies.
+  - Then "Fix" (631e2a7): beaches stay sand down their runnels (the fine tiles' rills cut through the
+    beach's few metres of sand and their banks showed soil, plants and rock; now, below 14 m by the
+    water, where the level below the fine tiles holds beach sand, sand); a hot world's ground gives
+    back its air's glow under an opaque sky (Vovuld's ground near the air's brightness, cooler highs
+    redder).
+  Seen, not fixed: the far sky's jitter shows faintly as a hatch in flat skies; a beach's edge against
+  the land is stair-stepped (the refinement level's cells; there before the beach fix too).
+  Foliage (trees ending in a disc at 1.5 km, "cups" plants like stumps): NOT to fix, Dave: "we need to
+  totally do foliage differently in the future".
 
 **What's still wrong / next:**
 - Snow covers most of a high mountain (the snowline reads the real height: physically right, maybe too
