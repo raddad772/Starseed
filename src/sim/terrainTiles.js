@@ -21,6 +21,9 @@ export class TerrainTiles {
   constructor(game) {
     this.game = game;
     this.pending = new Set();   // keys being made
+    // (at once: two, so one's CPU work overlaps the other's on the GPU; more only shared the
+    // GPU and made every tile late, the one under the camera with the rest)
+    this.maxPending = 2;
     this.missing = 0;           // tiles wanted and not here yet
     this.missingCore = 0;       // of them, those under the camera (the descent waits for these)
     this.t = 1;
@@ -70,16 +73,18 @@ export class TerrainTiles {
         const du = Math.max(u0 - uv.u, 0, uv.u - u0 - s), dv = Math.max(v0 - uv.v, 0, uv.v - v0 - s);
         if (Math.hypot(du, dv) <= reach) list.push({ L, ti, tj, dist: Math.hypot(du, dv) });
       }
-      list.sort((a, c) => a.dist - c.dist);
       for (const t of list) want.push(t);
     }
+    // (nearest first across the levels: the ground under the camera at every level before the
+    // ring round it at any; a finer level's tile waits for its parent anyway)
+    want.sort((a, c) => a.dist - c.dist || a.L - c.L);
     for (const t of want) {
       const set = pyr.get(t.L), T = (uv.face * (1 << t.L) + t.tj) * (1 << t.L) + t.ti;
       if (set && set.tiles.has(T)) continue;
       this.missing++;
       if (t.dist === 0) this.missingCore++;
       const key = this.key(b.data.id, t.L, uv.face, t.ti, t.tj);
-      if (this.pending.has(key) || this.pending.size >= 4) continue;
+      if (this.pending.has(key) || this.pending.size >= this.maxPending) continue;
       // its parent: the refinement, or the tile of the level above it lies in (made first)
       let parents = [];
       if (t.L > R.L + 2) {

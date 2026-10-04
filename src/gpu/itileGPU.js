@@ -245,7 +245,10 @@ export class ITileGPU {
 
   // runs T (localsim's ints()) on the GPU; resolves to { h, talus } as runInt returns
   async run(T) {
-    const dev = this.device, { NG, n } = T;
+    // (steps submitted between waits for the GPU: at 2, a tile alone took 21 s, three quarters
+    // of it waiting; at 8, 6 s. Each step is one command buffer, so the game's frames wait behind
+    // at most one step however many are queued. ?gpubatch=k to compare)
+    const dev = this.device, { NG, n } = T, BATCH = Math.max(1, +((/[?&]gpubatch=(\d+)/.exec(globalThis.location ? globalThis.location.search : '') || [])[1] || 8));
     this.bgCache.clear();
     const { D, W, CM, CE } = gridTables(T), { KH, KD, SC } = hardTables(T.kd0, T.scK ?? 1), AP = apowTable();
     const PB = T.sig <= 6 ? 4 : 8, NB = Math.ceil(NG / PB), RB = Math.max(1, Math.round(T.sig / PB));
@@ -307,9 +310,8 @@ export class ITileGPU {
       for (let p = 0; p < PASSES.collapse; p++) { pass('collapse', { 1: hb(), 2: hb2(), 8: B.info, 11: B.DW, 13: B.TB, 20: B.talus }, wgN); hc = 1 - hc; }
       cp.end();
       dev.queue.submit([enc.finish()]);
-      // (a couple of steps at a time, then wait for them: the game draws on the same GPU, and
-      // a queue full of steps would hold its frames back)
-      if (st % 2 === 1) await dev.queue.onSubmittedWorkDone();
+      // (a few steps at a time, then wait for them: the game draws on the same GPU)
+      if (st % BATCH === BATCH - 1) await dev.queue.onSubmittedWorkDone();
     }
     // the result back
     const rb = (src) => { const b = dev.createBuffer({ size: n * 4, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST }); const e = dev.createCommandEncoder(); e.copyBufferToBuffer(src, 0, b, 0, n * 4); dev.queue.submit([e.finish()]); return b; };
