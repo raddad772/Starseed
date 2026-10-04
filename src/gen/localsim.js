@@ -848,6 +848,24 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
         else if (!water[c] && land <= 9 && h[c] < 8 * waveH) { water[c] = 1; h[c] = Math.min(h[c], -2); }
       }
     }
+    // the shore read as a line, not a staircase of cells: the rules above decide each cell, sea or
+    // land, and step the ground across the cell between them (land at 1 m, sea at -2), so the coast
+    // drawn through the cells' heights ran along their edges, blocky from orbit. A field of +1 land
+    // and -1 sea blurred over a cell or so crosses zero along a smooth coast; the cells near it take
+    // their side from it and slope through zero along it, so their heights' blend crosses zero where
+    // the field does, between the cells
+    {
+      const phi = new Float64Array(n);
+      for (let c = 0; c < n; c++) phi[c] = water[c] === 1 ? -1 : 1;
+      blur(phi, 1, btmp);
+      for (let c = 0; c < n; c++) {
+        if (wet[c] === 2 || edge(c)) continue;
+        const f = phi[c];
+        if (f <= -0.9 || f >= 0.9) continue;
+        if (f < 0) { water[c] = 1; h[c] = Math.min(h[c], -0.3 + 4 * f); }
+        else { if (water[c] === 1) { water[c] = 0; rockC[c] = SAND; } h[c] = Math.max(h[c], 0.3 + 4 * f); }
+      }
+    }
     // (below the datum and cut off from the sea: a dry basin, its floor just above it; a world
     // with no liquid has no datum, its craters and basins as deep as they are)
     if (gen.p.liquid) for (let c = 0; c < n; c++) if (!water[c] && h[c] < 0.5) h[c] = 0.5 - 0.02 * h[c];

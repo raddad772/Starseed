@@ -90,10 +90,12 @@ export function regionStructure(gen, face, ri, rj) {
   const uc = -1 + (ri + 0.5) * s, vc = -1 + (rj + 0.5) * s, size = s * Mu;
   const rng = new Rng([hashInts(face, ri), hashInts(rj, Lr), (gen.p.seed && gen.p.seed[0]) | 0, 0x5717c7]);
   dirFromFaceUV(face, uc, vc, _d);
-  const rel = (gen.snap ? gen.snap.relief(_d[0], _d[1], _d[2]) : (gen.p.relief || 3000) * 0.3) * gen.hScale;
+  // (the relief here, real: what the deep time made; the structure is the same whatever the
+  // heights are drawn at. Its vertical sizes below (throws, dips, folds) are drawn, by hScale)
+  const relReal = gen.snap ? gen.snap.relief(_d[0], _d[1], _d[2]) : (gen.p.relief || 3000) * 0.3, rel = relReal * gen.hScale, hs = gen.hScale;
   const rockName = gen.snap ? ROCKS[gen.snap.rock(_d[0], _d[1], _d[2])].name : 'granite';
   const suite = SUITE[rockName] || 'loose';
-  const belt = dm.smoothstep(300, 2000, rel);   // how much of a mountain belt it is
+  const belt = dm.smoothstep(300, 2000, relReal);   // how much of a mountain belt it is
   // the compression: across the slope of the world's surface (a range's flanks face it);
   // on level ground, wherever the region's history had it
   const e = s * 0.6;
@@ -102,9 +104,9 @@ export function regionStructure(gen, face, ri, rj) {
   if (cl < 0.5) { cx = dm.cos(ca); cy = dm.sin(ca); } else { cx /= cl; cy /= cl; }
   // the beds' tilt (a few degrees off a belt, up to ~20 in one) and, in a belt, folds
   // with their axes across the compression
-  const dipA = dm.atan2(cy, cx) + rng.range(-0.5, 0.5), dip = rng.range(0, 0.03) + belt * rng.range(0.05, 0.35);
+  const dipA = dm.atan2(cy, cx) + rng.range(-0.5, 0.5), dip = (rng.range(0, 0.03) + belt * rng.range(0.05, 0.35)) * hs;
   const fold = belt > 0.15 ? { A: 0, lam: rng.range(700, 2600), ph: rng.range(0, dm.TWO_PI) } : null;
-  if (fold) fold.A = belt * rng.range(0.04, 0.12) * fold.lam;
+  if (fold) fold.A = belt * rng.range(0.04, 0.12) * fold.lam * hs;
   // faults: long, across the compression, each slipping once (its throw: the scarp and the
   // beds' offset) at its time in the run
   const faults = [];
@@ -114,7 +116,7 @@ export function regionStructure(gen, face, ri, rj) {
     faults.push({
       x: (uc + rng.range(-0.45, 0.45) * s) * Mu, y: (vc + rng.range(-0.45, 0.45) * s) * Mu,
       tx: dm.cos(a), ty: dm.sin(a), len: rng.range(0.5, 1.4) * size,
-      dz: rng.sign() * (rng.range(4, 25) + belt * rng.range(15, 140)), t: rng.range(0.15, 0.75), w: rng.range(5, 14),
+      dz: rng.sign() * (rng.range(4, 25) + belt * rng.range(15, 140)) * hs, t: rng.range(0.15, 0.75), w: rng.range(5, 14),
     });
   }
   // joints: one set along the compression (its planes hold it: their normals across it), one

@@ -47,6 +47,9 @@ import * as U from './core/units.js';
 import { TerrainTiles } from './sim/terrainTiles.js';
 
 export const WARP_LEVELS = [1, 2, 4, 10, 50, 100, 1000, 10000, 100000];
+// (the big ships' orbits above the FTL lock were laid out in km at the old tenth-size worlds: the
+// same places on worlds drawn at any size)
+const FLEET_K = U.LEN_SCALE / 0.1;
 const PHYS_DT = 1 / 120;
 const _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3();
 const _q1 = new THREE.Quaternion();
@@ -589,8 +592,8 @@ export class Game {
   resetFleet() {
     const b = this.startBody;
     for (const v of this.vessels) { v.ftl.state = 'idle'; v.ftl.speed = 0; }
-    if (this.tender) this.placeInOrbit(this.tender, b, lockRadius(b) - b.R + 90000, 0.35);
-    if (this.carrier) this.placeInOrbit(this.carrier, b, lockRadius(b) - b.R + 280000, -0.45);
+    if (this.tender) this.placeInOrbit(this.tender, b, lockRadius(b) - b.R + 90000 * FLEET_K, 0.35);
+    if (this.carrier) this.placeInOrbit(this.carrier, b, lockRadius(b) - b.R + 280000 * FLEET_K, -0.45);
     this.dockCarried();
   }
 
@@ -836,8 +839,8 @@ export class Game {
       this.carrier = this.addVessel('carrier', 'Bastion', 'CV-01');
     }
     const lockAlt = lockRadius(b) - b.R;
-    this.placeInOrbit(this.tender, b, lockAlt + 90000, 0.35);
-    this.placeInOrbit(this.carrier, b, lockAlt + 280000, -0.45);
+    this.placeInOrbit(this.tender, b, lockAlt + 90000 * FLEET_K, 0.35);
+    this.placeInOrbit(this.carrier, b, lockAlt + 280000 * FLEET_K, -0.45);
     this.dockCarried();
     // compile the big ships' shaders now, not the first time one comes into view
     const r = this.engine.renderer;
@@ -2246,8 +2249,8 @@ export class Game {
     for (const v of this.vessels) { v.ftl.state = 'idle'; v.ftl.speed = 0; }
     this.landShipAt(b, ri.dir, null);
     // lost big ships are replaced on their old orbits
-    if (this.tender && this.tender.dead) this.placeInOrbit(this.tender, b, lockRadius(b) - b.R + 90000, 0.35);
-    if (this.carrier && this.carrier.dead) { this.placeInOrbit(this.carrier, b, lockRadius(b) - b.R + 280000, -0.45); this.dockCarried(); }
+    if (this.tender && this.tender.dead) this.placeInOrbit(this.tender, b, lockRadius(b) - b.R + 90000 * FLEET_K, 0.35);
+    if (this.carrier && this.carrier.dead) { this.placeInOrbit(this.carrier, b, lockRadius(b) - b.R + 280000 * FLEET_K, -0.45); this.dockCarried(); }
     this.ship.rampTarget = 1; this.ship.ramp = 1;
     const p = this.players[0];
     p.vessel = this.ship;
