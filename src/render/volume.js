@@ -299,7 +299,9 @@ void main() {
     vec2 uv = (i + c + 0.5) / uLowSize;
     float zc = linZ(uv);
     float wb = (c.x > 0.5 ? f.x : 1.0 - f.x) * (c.y > 0.5 ? f.y : 1.0 - f.y);
-    float wd = 1.0 / (1e-3 + abs(z0 - zc) / max(z0, 1e-3));
+    // (a 2% tolerance: across one surface the four blend smoothly; at 0.1% the ground's relief under a
+    // far deck picked one of four, the clouds' edges in 2-pixel steps from orbit)
+    float wd = 1.0 / (0.02 + abs(z0 - zc) / max(z0, 1e-3));
     float w = wb * wd + 1e-6;
     L += texture(tL, uv).rgb * w;
     T += texture(tT, uv).rgb * w;
