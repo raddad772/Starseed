@@ -6,6 +6,7 @@ import { GLSL_NOISE } from './glsl.js';
 import { MAT_UNIFORMS, GLSL_MATERIALS, trackMaterial } from './materials.js';
 import { GLSL_TERRAIN_SHADOW } from './terrainShadow.js';
 import { GLSL_SUN_SHADOW } from './sunShadows.js';
+import { GLSL_LIQUID } from './liquid.js';
 
 export const DETAIL_PERIOD = 4096; // metres; every detail tile period divides this
 
@@ -18,6 +19,7 @@ attribute vec4 col;
 attribute vec4 mcol;
 attribute vec4 mat;
 attribute vec4 ext;
+attribute vec4 liq;        // (a liquid's surface: chunkbuilder.js; 0 on land)
 attribute float occ;       // (volume chunks: how much rock overhangs; 0 where absent)
 attribute vec4 cls0;       // each material class's share (gen/matclasses.js: 0..3, 4..7, 8..11)
 attribute vec4 cls1;
@@ -38,6 +40,8 @@ varying vec3 vFixedNormal;
 varying vec4 vCol;
 varying vec4 vMat;
 varying vec4 vExt;
+varying vec4 vLiq;
+varying float vShore;
 varying float vMorphK;
 varying vec4 vCls0;
 varying vec4 vCls1;
@@ -52,6 +56,9 @@ void main() {
   vCol = mix(col, mcol, m);
   vMat = mat;
   vExt = ext;
+  vLiq = liq;
+  // (its height against the water, signed: chunkbuilder.js; > 0 under it)
+  vShore = mix(nrm.w, mnrm.w, m);
   vCls0 = cls0; vCls1 = cls1; vCls2 = cls2;
   vMorphK = m;
   // (a heightfield mesh reaches a little way in under the near field's last ring, a little
@@ -103,6 +110,8 @@ varying vec3 vFixedNormal;
 varying vec4 vCol;
 varying vec4 vMat;
 varying vec4 vExt;
+varying vec4 vLiq;
+varying float vShore;
 varying float vMorphK;
 varying vec4 vCls0;
 varying vec4 vCls1;
@@ -120,6 +129,7 @@ ${GLSL_CLOUD_SHADOW}
 ${GLSL_THERMAL}
 ${GLSL_TERRAIN_SHADOW}
 ${GLSL_SUN_SHADOW}
+${GLSL_LIQUID}
 #if MAT_MODE > 0
 uniform vec2 uWindRipple;   // sand's ripples on this world: strength, spacing over Earth's (materials.js)
 ${GLSL_MATERIALS}
@@ -154,7 +164,7 @@ void main() {
   float waterEnc = vCol.a;
   if (uNear.x > 0.5) {
     float dn = length(vNearRel - uNearUp * dot(vNearRel, uNearUp));
-    if (uNearMode < 0.5) { if (dn < NEAR_OVERLAP * uNear.y && waterEnc < 0.004) discard; }
+    if (uNearMode < 0.5) { if (dn < NEAR_OVERLAP * uNear.y && vShore <= 0.0) discard; }
     else if (dn < uNearBand.x || dn > uNearBand.y) discard;
   }
   float veg = vMat.r, snow = vMat.g, rock = vMat.b, sand = vMat.a;
@@ -183,7 +193,8 @@ void main() {
   float fineK = 1.0 - smoothstep(60.0, 900.0, dist);
   float midK = 1.0 - smoothstep(600.0, 9000.0, dist);
   float farK = 1.0 - smoothstep(6000.0, 90000.0, dist);
-  float isWater = step(0.004, waterEnc);
+  // (the shore: where the vertices' signed height against the water crosses 0)
+  float isWater = vShore > 0.0 ? 1.0 : 0.0;
   float gRough = 0.8, gAO = 1.0;   // (the scanned surfaces' roughness and occlusion: materials.js)
   if (isWater < 0.5) {
 #if MAT_MODE > 0
@@ -247,26 +258,65 @@ void main() {
 
   float ndl = max(dot(N, uSunDir), 0.0);
   vec3 color;
+  vec3 dbgW = vec3(-1.0);
   if (isWater > 0.5) {
-    // ---- water: depth-tinted body + Fresnel sky reflection + sun glint
+    // ---- an open liquid (liquid.js): its waves by the wind, the sun's glitter on them by what the
+    // pixel resolves, the sky's reflection by the liquid's own index, its body's colour by depth,
+    // foam; frozen by the season
     vec3 V = normalize(-vWorldPos);
-    vec2 wv = vec2(0.0);
-    vec3 wn = fn;
-    float waveK = 1.0 - smoothstep(200.0, 6000.0, dist);
-    vec3 fpw = fp + vec3(uTime * 0.4, 0.0, uTime * 0.27);
-    wn = triBump(fpw, wn, w, 32.0, 0.25 * waveK);
-    wn = triBump(fp - vec3(uTime * 0.3, uTime * 0.2, 0.0), wn, w, 8.0, 0.18 * waveK);
-    vec3 Nw = normalize(transpose(uToFixed) * wn);
-    Nw = normalize(mix(up, Nw, 0.9));
-    float NdV = max(dot(Nw, V), 0.0);
-    float F = 0.02 + 0.98 * pow(1.0 - NdV, 5.0);
-    vec3 H = normalize(V + uSunDir);
-    float NdH = max(dot(Nw, H), 0.0);
-    float shin = mix(80.0, 900.0, waveK);
-    float spec = pow(NdH, shin) * (shin + 8.0) / 25.0;
+    vec3 upF = uToFixed * up;
+    // (its own values, a shore's triangle's land vertices left out: they hold none)
+    vec3 lq = vLiq.x > 0.02 ? vLiq.yzw / vLiq.x : vec3(0.0, 0.75, 1.0);
+    float kind = lq.x, Tm = lq.y * 120.0 - 60.0;
+    bool river = kind > 0.55 && kind < 0.85;
+    float flow = river ? lq.z : 0.0;
+    float fetch = kind < 0.2 ? 1.0 : river ? 0.2 : kind > 0.85 ? 0.05 : lq.z;
+    float depthW = vShore * vShore * 64.0;
+    // (smooth noise for the waves: their crests' bends, from the 512 m tile, and their groups' heights)
+    vec4 nW = tri(fp, w, 512.0), nG = tri(fp, w, 64.0);
+    vec2 wn = vec2(nW.r - 0.5, nW.a - 0.5) * 2.0;
+    vec4 grp = clamp(vec4(nG.r, nG.a, nW.a, nW.r) * 1.6 - 0.3, 0.0, 1.0);
+    vec3 nF; float wr, foam;
+    liquidSurface(fp, fn, upF, kind, flow, fetch, depthW, foot, wn, grp, nF, wr, foam);
+    vec3 Nw = normalize(transpose(uToFixed) * nF);
+    // (the waves' normal can face away from a grazing eye: lean it back)
+    Nw = normalize(Nw + V * max(0.0, 0.02 - dot(Nw, V)));
+    float NdV = max(dot(Nw, V), 1e-3), ndlW = max(dot(Nw, uSunDir), 0.0);
+    float F0 = uLiquid.x;
+    float F = F0 + (max(1.0 - wr, F0) - F0) * pow(1.0 - NdV, 5.0);
+    // the sky in the reflected direction: its light, brighter toward the horizon, and the sun's aureole
+    vec3 R = reflect(-V, Nw);
+    float el = max(dot(R, up), 0.0);
+    vec3 skyRefl = uSunE * skyE / PI * (0.7 + 1.1 * pow(1.0 - el, 3.0)) + uSunE * sunT * 0.05 * pow(max(dot(R, uSunDir), 0.0), 12.0);
     vec3 body = albedo / PI * (uSunE * sunT * max(muS, 0.0) * 0.6 + uSunE * skyE * 0.5);
-    vec3 skyRefl = uSunE * skyE / PI * mix(0.7, 1.6, pow(1.0 - NdV, 2.0));
-    color = body * (1.0 - F) + skyRefl * F + uSunE * sunT * spec * F * step(0.0, muS);
+    // the sun's glitter: GGX by the waves the pixel can't resolve
+    vec3 H = normalize(V + uSunDir);
+    float a2 = wr * wr * wr * wr, a2s = max(a2, 1e-7);
+    float NdH = max(dot(Nw, H), 0.0), VdH = max(dot(V, H), 0.0);
+    float Dg = a2s / (PI * pow(NdH * NdH * (a2s - 1.0) + 1.0, 2.0));
+    float kg = (wr + 1.0) * (wr + 1.0) / 8.0;
+    float Gg = NdV / (NdV * (1.0 - kg) + kg) * ndlW / (ndlW * (1.0 - kg) + kg);
+    float Fs = F0 + (1.0 - F0) * pow(1.0 - VdH, 5.0);
+    color = body * (1.0 - F) + skyRefl * F + uSunE * sunT * Dg * Gg * Fs / (4.0 * NdV) * step(0.0, muS);
+    // foam: white, matte
+    vec3 lit = uSunE * sunT * max(dot(up, uSunDir), 0.0) + uSunE * skyE;
+    color = mix(color, vec3(0.75) / PI * lit, clamp(foam, 0.0, 1.0));
+    // frozen: the sea's ice ragged at its edge (floes to come); a lake's and a pond's whole, under
+    // snow where it's long frozen
+    float ice = liquidIce(Tm, kind, flow, upF);
+    if (ice > 0.0) {
+      vec4 dI = tri(fp, w, 512.0), dJ = tri(fp, w, 64.0);
+      if (kind < 0.2) ice = smoothstep(0.42, 0.58, ice + (dI.a - 0.5) * 0.9 + (dJ.r - 0.5) * 0.35) * smoothstep(0.0, 0.15, ice);
+      float snowy = smoothstep(0.3, 0.9, dJ.a + ice * 0.3);
+      vec3 iceAlb = mix(vec3(0.42, 0.52, 0.6), vec3(0.82, 0.86, 0.9), snowy) * (0.9 + 0.2 * dI.r);
+      vec3 N2 = normalize(mix(up, N, 0.5));
+      vec3 iceCol = iceAlb / PI * (uSunE * sunT * max(dot(N2, uSunDir), 0.0) + uSunE * skyE * (0.5 + 0.5 * dot(N2, up)));
+      float NdH2 = max(dot(N2, H), 0.0);
+      iceCol += uSunE * sunT * pow(NdH2, mix(400.0, 40.0, snowy)) * 0.04 * step(0.0, muS);
+      color = mix(color, iceCol, ice);
+      albedo = mix(albedo, iceAlb, ice);
+    }
+    dbgW = uDebug < 2.5 ? vec3(ice) : uDebug < 3.5 ? vec3(Tm / 40.0) : uDebug < 4.5 ? vec3(foam) : uDebug < 5.5 ? vLiq.xyz : vec3(wr * 4.0);
   } else {
     float wrap = 0.5 + 0.5 * dot(N, up);
     vec3 direct = uSunE * sunT * ndl;
@@ -323,7 +373,8 @@ void main() {
     float crust = smoothstep(0.35, 0.65, tri(fp, w, 128.0).a);
     color += uLavaColor * emissive * flick * mix(1.0, 0.15, crust * (1.0 - emissive * 0.5));
   }
-  if (uDebug > 0.5) color = mix(color, vec3(vMorphK, 1.0 - vMorphK, 0.0) * 0.2, 0.5);
+  if (uDebug > 1.5) color = dbgW.x < 0.0 ? vec3(0.5, 0.0, 0.5) * waterEnc * 50.0 : dbgW;
+  else if (uDebug > 0.5) color = mix(color, vec3(vMorphK, 1.0 - vMorphK, 0.0) * 0.2, 0.5);
   gl_FragColor = vec4(color, 1.0);
 }
 `;

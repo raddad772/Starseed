@@ -10,6 +10,7 @@ import { VolumePass } from './volume.js';
 import { loadMaterials, windRipple } from './materials.js';
 import { HeightCube } from './terrainShadow.js';
 import { SUN_SHADOW_UNIFORMS } from './sunShadows.js';
+import { Liquid } from './liquid.js';
 import * as U from '../core/units.js';
 
 const _v = new THREE.Vector3(), _v2 = new THREE.Vector3();
@@ -74,6 +75,8 @@ export class WorldRenderer {
     const a = it.atmo;
     // (the ground's shadows on itself: its coarse heights, built when it's near: terrainShadow.js)
     if (b.solid) it.heightCube = new HeightCube(b, this.pool);
+    // (its seas', lakes' and rivers' liquid: liquid.js)
+    if (b.solid) it.liquid = new Liquid(b, b.data.insolation || this.u.sunIlluminance(b.pos));
     // (and the air's: its shadows in the haze, the sky pass's and the near volume's)
     if (it.heightCube && a) for (const k of ['tHeightCube', 'uHeightCube']) a.material.uniforms[k] = it.heightCube.uniforms[k];
     it.shared = {
@@ -103,6 +106,7 @@ export class WorldRenderer {
       uThermal: a ? a.material.uniforms.uThermal : { value: thermalUniform(b) },
       uWindRipple: { value: windRipple(b) },
       ...(it.heightCube ? it.heightCube.uniforms : {}),
+      ...(it.liquid ? it.liquid.uniforms : {}),
       ...SUN_SHADOW_UNIFORMS,
       uNear: { value: new THREE.Vector2(0, 0) },
       uNearUp: { value: new THREE.Vector3(0, 1, 0) },
@@ -167,6 +171,7 @@ export class WorldRenderer {
       _m4.makeRotationFromQuaternion(b.qInv);
       sh.uToFixed.value.setFromMatrix4(_m4);
       sh.uTime.value = this.timeSec;
+      if (it.liquid) it.liquid.update(this.timeSec, _v2.copy(sh.uSunDir.value).applyMatrix3(sh.uToFixed.value));
       const angular = (b.R + (it.atmo ? it.atmo.top - b.R : 0)) / Math.max(dist, 1) * pxPerRad;
       if (it.terrain) {
         _v2.copy(camWorld).sub(b.pos).applyQuaternion(b.qInv);

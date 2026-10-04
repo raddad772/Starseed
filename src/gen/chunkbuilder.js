@@ -60,6 +60,15 @@ function edgeVertexLists(N) {
 
 function encodeColor(c) { return Math.max(0, Math.min(255, Math.round(Math.sqrt(Math.max(c, 0)) * 255))); }
 function encodeWater(depth) { return depth > 0 ? Math.max(1, Math.min(255, Math.round(Math.sqrt(depth / 6000) * 255))) : 0; }
+// a vertex's height against the water, signed (m): its depth under it, or on land how far above
+// it (the sea's level; inland, a lake's or a river's unknown here, a little): the shader's shore is
+// where it crosses 0 between vertices, straight across a triangle, not stepping round its land corners
+function shoreDepth(depth, h) { return depth > 0 ? depth : -Math.min(2, Math.max(0.05, h)); }
+// (into the normal's spare byte, companded: fine near the shore)
+function encodeShore(d) {
+  const v = Math.round(Math.sign(d) * Math.sqrt(Math.min(Math.abs(d), 64) / 64) * 127);
+  return d > 0 ? Math.max(1, v) : Math.min(-1, v);
+}
 
 // scratch buffers reused between chunks
 let scratchN = 0, fineS, fineP, coarseS, coarseP, fineNrm, coarseNrm, coarseCol;
@@ -165,7 +174,7 @@ export function buildChunk(gen, face, level, ix, iy, N = CHUNK_N) {
         nv[0] = nx; nv[1] = ny; nv[2] = nz;
         gen.shade(s, 1 - up, col, mat, nv);
         const oc = (j * CVi + i) * 4;
-        coarseCol[oc] = col[0]; coarseCol[oc + 1] = col[1]; coarseCol[oc + 2] = col[2]; coarseCol[oc + 3] = mat[4];
+        coarseCol[oc] = col[0]; coarseCol[oc + 1] = col[1]; coarseCol[oc + 2] = col[2]; coarseCol[oc + 3] = shoreDepth(mat[4], s[0]);
       }
     }
   }
@@ -181,6 +190,9 @@ export function buildChunk(gen, face, level, ix, iy, N = CHUNK_N) {
   const mcolA = new Uint8Array(nVert * 4);
   const matA = new Uint8Array(nVert * 4);
   const extA = new Uint8Array(nVert * 4);
+  // (a liquid's surface, render/liquid.js: 1 where it's liquid, then what it is, its temperature, a
+  // river's flow or a lake's fetch; 0 on land, so a shore's triangles can take the water's own)
+  const liqA = new Uint8Array(nVert * 4);
   // (each material class's share: matclasses.js, 12 a vertex)
   const NC = MAT_N - MAT_W0, clsA = new Uint8Array(nVert * NC);
   const col = [0, 0, 0], mat = new Float64Array(MAT_N);
@@ -205,10 +217,17 @@ export function buildChunk(gen, face, level, ix, iy, N = CHUNK_N) {
       nv[0] = nx; nv[1] = ny; nv[2] = nz;
       gen.shade(s, 1 - up, col, mat, nv);
       nrm[vi * 4] = Math.round(nx * 127); nrm[vi * 4 + 1] = Math.round(ny * 127); nrm[vi * 4 + 2] = Math.round(nz * 127);
+      const sd = shoreDepth(mat[4], s[0]);
+      nrm[vi * 4 + 3] = encodeShore(sd);
       colA[vi * 4] = encodeColor(col[0]); colA[vi * 4 + 1] = encodeColor(col[1]); colA[vi * 4 + 2] = encodeColor(col[2]);
       colA[vi * 4 + 3] = encodeWater(mat[4]);
-      matA[vi * 4] = Math.round(mat[0] * 255); matA[vi * 4 + 1] = Math.round(mat[1] * 255);
-      matA[vi * 4 + 2] = Math.round(mat[2] * 255); matA[vi * 4 + 3] = Math.round(mat[3] * 255);
+      if (mat[4] > 0) {
+        liqA[vi * 4] = 255; liqA[vi * 4 + 1] = Math.round(mat[0] * 255); liqA[vi * 4 + 2] = Math.round(mat[1] * 255);
+        liqA[vi * 4 + 3] = Math.round((mat[0] > 0.55 && mat[0] < 0.85 ? mat[2] : mat[3]) * 255);
+      } else {
+        matA[vi * 4] = Math.round(mat[0] * 255); matA[vi * 4 + 1] = Math.round(mat[1] * 255);
+        matA[vi * 4 + 2] = Math.round(mat[2] * 255); matA[vi * 4 + 3] = Math.round(mat[3] * 255);
+      }
       extA[vi * 4] = Math.round(Math.min(1, mat[5]) * 255);
       extA[vi * 4 + 1] = Math.round(Math.min(1, mat[6]) * 255);
       extA[vi * 4 + 2] = Math.round(Math.min(1, s[12] / 1.4) * 255); // roughness
@@ -219,7 +238,7 @@ export function buildChunk(gen, face, level, ix, iy, N = CHUNK_N) {
       let mx, my, mz, mnx, mny, mnz, mr, mg, mb, mw;
       if (!hasParent) {
         mx = px; my = py; mz = pz; mnx = nx; mny = ny; mnz = nz;
-        mr = col[0]; mg = col[1]; mb = col[2]; mw = mat[4];
+        mr = col[0]; mg = col[1]; mb = col[2]; mw = sd;
       } else {
         const ei = (i & 1) === 0, ej = (j & 1) === 0;
         let a0, a1, b0, b1;
@@ -239,6 +258,7 @@ export function buildChunk(gen, face, level, ix, iy, N = CHUNK_N) {
       }
       morph[vi * 3] = mx - ox; morph[vi * 3 + 1] = my - oy; morph[vi * 3 + 2] = mz - oz;
       mnrm[vi * 4] = Math.round(mnx * 127); mnrm[vi * 4 + 1] = Math.round(mny * 127); mnrm[vi * 4 + 2] = Math.round(mnz * 127);
+      mnrm[vi * 4 + 3] = encodeShore(mw);
       mcolA[vi * 4] = encodeColor(mr); mcolA[vi * 4 + 1] = encodeColor(mg); mcolA[vi * 4 + 2] = encodeColor(mb);
       mcolA[vi * 4 + 3] = encodeWater(mw);
     }
@@ -261,7 +281,7 @@ export function buildChunk(gen, face, level, ix, iy, N = CHUNK_N) {
       for (let c = 0; c < 4; c++) {
         nrm[dst * 4 + c] = nrm[src * 4 + c]; mnrm[dst * 4 + c] = mnrm[src * 4 + c];
         colA[dst * 4 + c] = colA[src * 4 + c]; mcolA[dst * 4 + c] = mcolA[src * 4 + c];
-        matA[dst * 4 + c] = matA[src * 4 + c]; extA[dst * 4 + c] = extA[src * 4 + c];
+        matA[dst * 4 + c] = matA[src * 4 + c]; extA[dst * 4 + c] = extA[src * 4 + c]; liqA[dst * 4 + c] = liqA[src * 4 + c];
       }
       for (let k = 0; k < NC; k++) clsA[dst * NC + k] = clsA[src * NC + k];
     }
@@ -279,12 +299,12 @@ export function buildChunk(gen, face, level, ix, iy, N = CHUNK_N) {
   }
   return {
     origin: [ox, oy, oz],
-    position, morph, nrm, mnrm, col: colA, mcol: mcolA, mat: matA, ext: extA, cls: clsA,
+    position, morph, nrm, mnrm, col: colA, mcol: mcolA, mat: matA, ext: extA, liq: liqA, cls: clsA,
     minH, maxH,
     bsphere: [bx, by, bz, Math.sqrt(br)],
   };
 }
 
 export function chunkTransferables(r) {
-  return [r.position.buffer, r.morph.buffer, r.nrm.buffer, r.mnrm.buffer, r.col.buffer, r.mcol.buffer, r.mat.buffer, r.ext.buffer, r.cls.buffer];
+  return [r.position.buffer, r.morph.buffer, r.nrm.buffer, r.mnrm.buffer, r.col.buffer, r.mcol.buffer, r.mat.buffer, r.ext.buffer, r.liq.buffer, r.cls.buffer];
 }

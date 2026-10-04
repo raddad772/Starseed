@@ -294,6 +294,7 @@ export class PlanetTerrain {
     g.setAttribute('mcol', new THREE.BufferAttribute(d.mcol, 4, true));
     g.setAttribute('mat', new THREE.BufferAttribute(d.mat, 4, true));
     g.setAttribute('ext', new THREE.BufferAttribute(d.ext, 4, true));
+    g.setAttribute('liq', new THREE.BufferAttribute(d.liq, 4, true));
     setClassAttrs(g, d.cls);
     g.setIndex(indexAttr());
     g.boundingSphere = new THREE.Sphere(new THREE.Vector3(d.bsphere[0], d.bsphere[1], d.bsphere[2]), d.bsphere[3]);

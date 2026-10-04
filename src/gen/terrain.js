@@ -35,6 +35,7 @@ import { ROCKS, R as ROCK } from './worldsim/lithology.js';
 import { hexToLinear } from './color.js';
 import { HEIGHT_SCALE } from '../core/units.js';
 import { MC, MAT_W0, MAT_N, LITH_CLASS } from './matclasses.js';
+import { MATERIALS } from './worldsim/materials.js';
 
 // Sample record layout
 export const S_H = 0;        // height above sea level / datum (m)
@@ -58,6 +59,7 @@ export const S_WET = 19;     // a river's wet ground beside it 0..1
 export const S_RFADE = 20;   // how far a river's water here has faded out, seen from afar 0..1
 export const S_LEN = 21;
 // (each rock's cohesion as a mass, Pa: how tall a sheer face of it stands: canyon walls)
+const FREEZE_MIX = { methane: 20, ethane: 20 };   // (K: a mixture's freezing point under its main liquid's)
 const ORGANIC_SAND = [0.075, 0.055, 0.035];   // (linear: tholin sand, dark brown)
 const LAG_DUST = [0.13, 0.11, 0.09];           // (linear: an old icy surface's dark lag, ~0.2 albedo)
 
@@ -1558,6 +1560,20 @@ export class TerrainGenerator {
     return S.lakeLevel(px, py, pz, this._lk || (this._lk = { L: 0, own: false, q: 0 }));
   }
 
+  // a liquid's surface for the shader (render/liquid.js), in the slots the ground's own shading uses
+  // and water's doesn't: what water it is (0 the sea, 0.4 a lake, 0.7 a river, 1 a pond), its annual
+  // mean temperature over its freezing point ((dT + 60) / 120: the shader freezes it by the season),
+  // a river's flow (0..1), how open it is to the wind (0 a pond .. 1 the open sea)
+  _liquidSurface(mat, kind, Tc, flow, fetch) {
+    mat[0] = kind; mat[1] = Math.min(1, Math.max(0, (Tc - this._freezeC() + 60) / 120)); mat[2] = flow; mat[3] = fetch;
+  }
+  // (its freezing point, C: materials.js's triple point; a hydrocarbon sea's, a mixture's (methane,
+  // ethane and the nitrogen dissolved in them: Titan's), some 20 K under either's own)
+  _freezeC() {
+    if (this._tf === undefined) { const M = MATERIALS[this.p.liquid]; this._tf = M ? M.Tt - 273.15 - (FREEZE_MIX[this.p.liquid] || 0) : 0; }
+    return this._tf;
+  }
+
   // the ground's material classes (matclasses.js) into mat[MAT_W0..] when the caller has room for
   // them: the rock showing (its two rocks by their mix, a dune's or a beach's sand over them), the
   // ground between (soil; an airless world's regolith, or its frost on an icy one), plants' cover,
@@ -1602,7 +1618,14 @@ export class TerrainGenerator {
       col[1] = (P.waterShallow[1] + (P.waterDeep[1] - P.waterShallow[1]) * k) * dim;
       col[2] = (P.waterShallow[2] + (P.waterDeep[2] - P.waterShallow[2]) * k) * dim;
       mat[4] = wd;
-      if (Tc < -2) { col[0] = P.snow[0] * 0.92; col[1] = P.snow[1] * 0.95; col[2] = P.snow[2]; mat[1] = 1; mat[4] = 0; }
+      // (frozen the whole year round: ice to stand on; colder than that only in winter, the shader's)
+      if (Tc - this._freezeC() < -8) { col[0] = P.snow[0] * 0.92; col[1] = P.snow[1] * 0.95; col[2] = P.snow[2]; mat[1] = 1; mat[4] = 0; return; }
+      // (a river: its channel's water where it runs (S_WET's banks), its flow by how steep its valley
+      // (a lowland river's smooth, a mountain torrent white); a lake under a few metres deep: a pond)
+      const river = s[S_WET] > 0.2 || s[S_RFADE] > 0;
+      if (river) this._liquidSurface(mat, 0.7, Tc, dm.smoothstep(0.01, 0.2, slope), 0.2);
+      else if (wd < 3) this._liquidSurface(mat, 1, Tc, 0, 0.05);
+      else this._liquidSurface(mat, 0.4, Tc, 0, dm.smoothstep(3, 40, wd) * 0.7 + 0.1);
       return;
     }
     // (a glacier's ice: its surface is the ground here, sampleSnap)
@@ -1784,7 +1807,8 @@ export class TerrainGenerator {
         mat[4] = 0;
         return;
       }
-      const frozen = p.liquid === 'water' && Tc < -2;
+      // (frozen the whole year round; colder than its freezing point only in winter, the shader's)
+      const frozen = p.liquid === 'water' && Tc < -10;
       if (frozen || (p.frozenOcean && p.liquid !== 'methane')) {
         col[0] = P.snow[0] * 0.92; col[1] = P.snow[1] * 0.95; col[2] = P.snow[2];
         mat[1] = 1; mat[6] = 0.4;
@@ -1795,12 +1819,14 @@ export class TerrainGenerator {
       col[1] = P.waterShallow[1] + (P.waterDeep[1] - P.waterShallow[1]) * k;
       col[2] = P.waterShallow[2] + (P.waterDeep[2] - P.waterShallow[2]) * k;
       mat[4] = Math.max(depth, 0.01);
+      this._liquidSurface(mat, 0, Tc, 0, 1);
       // sea ice at the poles
-      if (p.liquid === 'water' && Tc < 1) {
-        const ice = dm.smoothstep(1, -4, Tc);
+      // (pack ice the year round where the sea's annual mean is well below freezing; seasonal ice the
+      // shader's: render/liquid.js)
+      if (p.liquid === 'water' && Tc < -6) {
+        const ice = dm.smoothstep(-6, -10, Tc);
         col[0] += (0.85 - col[0]) * ice; col[1] += (0.88 - col[1]) * ice; col[2] += (0.92 - col[2]) * ice;
-        mat[1] = ice;
-        if (ice > 0.5) mat[4] = 0;
+        if (ice > 0.5) { mat[1] = ice; mat[4] = 0; }
       }
       return;
     }
