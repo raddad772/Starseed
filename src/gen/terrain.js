@@ -1600,7 +1600,18 @@ export class TerrainGenerator {
     // (a hydrocarbon world's dunes are its haze's organics: dark brown sand, Titan's ~0.1 albedo)
     if (s[S_SAND] > 0) { const sc = p.liquid === 'methane' || p.liquid === 'ethane' ? ORGANIC_SAND : this.rockLin[ROCK['quartz sand']]; if (sc) for (let k = 0; k < 3; k++) rc[k] += (sc[k] - rc[k]) * s[S_SAND]; }
     // (how much of it is sand: quartz, coral, black sand, lithology.js; no bedrock shows there)
-    const sandW = Math.max((rt >= 11 ? 1 - mix : 0) + (r2 >= 11 ? mix : 0), s[S_SAND]);
+    let sandW = Math.max((rt >= 11 ? 1 - mix : 0) + (r2 >= 11 ? mix : 0), s[S_SAND]);
+    // (a beach's runnels stay sand: the fine tiles' rills cut through its few metres of sand to the
+    // beds below, and their banks showed soil, plants and rock, dark streaks down every beach face;
+    // waves rework a beach faster than that. Where the level below the fine tiles holds beach sand,
+    // on low ground by the water, sand)
+    if (sandW < 1 && h < 14 && h > -2 && p.liquid === 'water' && S.rockPyr) {
+      const rb = S.rockAt(x, y, z, h / this.hScale, 0);
+      if (rb >= 11) {
+        const k = dm.smoothstep(14, 6, h);
+        if (k > sandW) { const sc = this.rockLin[rb]; if (sc) for (let i = 0; i < 3; i++) rc[i] += (sc[i] - rc[i]) * (k - sandW) / (1 - sandW); sandW = k; }
+      }
+    }
     // bare rock on steep ground; soil (or regolith) on gentle
     const rockW = (1 - sandW) * dm.clamp(dm.smoothstep(0.12, 0.38, slope) + 0.3 * s[S_MOUNT] * dm.smoothstep(0.06, 0.2, slope), 0, 1);
     let ground = P.soil || P.regolith;

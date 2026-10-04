@@ -232,8 +232,14 @@ void main() {
     float sp = pow(max(dot(N, H), 0.0), mix(20.0, 120.0, snow)) * (0.03 + 0.25 * snow + 0.3 * wet) * (uHasAtmo > 0.5 ? 1.0 : 0.1);
     color += uSunE * sunT * sp * ndl;
   }
-  // a hot world's ground glows at its own temperature (emissivity 1 - albedo), less the higher it stands
-  if (uThermal.x > 0.0) color += (vec3(1.0) - clamp(albedo, 0.0, 1.0)) * blackbodyGlow(uThermal.x - uThermal.y * (r - uRadius));
+  // a hot world's ground glows at its own temperature (emissivity 1 - albedo), less the higher it
+  // stands; and under a sky its air makes opaque, it gives back the air's glow from all round (albedo
+  // x the air's light: without it the ground read darker than the air, which an oven's walls don't)
+  if (uThermal.x > 0.0) {
+    vec3 a = clamp(albedo, 0.0, 1.0);
+    color += (vec3(1.0) - a) * blackbodyGlow(uThermal.x - uThermal.y * (r - uRadius));
+    color += a * (vec3(1.0) - atmoSunTransmittance(r, 1.0)) * blackbodyGlow(uThermal.x - uThermal.z * max(r - uRadius, 0.0));
+  }
   // molten rock glows regardless of lighting
   if (emissive > 0.01) {
     float flick = 0.85 + 0.15 * sin(uTime * 1.7 + vFixedPos.x * 0.05 + vFixedPos.z * 0.07);
