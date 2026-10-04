@@ -39,7 +39,7 @@ import { Erosion } from './worldsim/erosion.js';
 import { ROCKS, ROCK_UP } from './worldsim/lithology.js';
 import { Rng, hashInts } from '../core/rng.js';
 import { Noise3 } from '../core/noise.js';
-let _roughNz = null;
+let _roughNz = null, _rockNz = null;
 // (the integer sim's streams at their full rate at true scale: it's the canonical sim, and on an
 // England-sized SOL Earth a third of it (to match the floating-point sim's relief) left the mountains
 // smooth; at the full rate its flanks are cut into gullies and spurs)
@@ -820,9 +820,13 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
       for (let c = 0; c < n; c++) { hl[c] = h[c] - sm[c]; rl[c] = hl[c] * hl[c]; }
       blur(rl, 6, btmp);
       const DEP = new Set(['alluvium', 'salt', 'quartz sand', 'coral sand', 'black sand'].map((x) => ROCKS.findIndex((r) => r.name === x)));
+      // (read a little off true, about a parent cell, so a contact the parent's cells drew as a
+      // staircase of them bends between its steps rather than keeping them, level after level)
+      const wq = 0.5 * 4 * G.du, wf = 1 / (2 * 4 * G.du), wn = _rockNz || (_rockNz = new Noise3(0x70c5));
       if (pyr) for (let c = 0; c < n; c++) {
         dd[0] = G.dir[c * 3]; dd[1] = G.dir[c * 3 + 1]; dd[2] = G.dir[c * 3 + 2];
-        if (parent.sampleUV(face, U[c], V[c]) || parent.sample(dd)) rockC[c] = parent.rockAt(h[c], rkOut, dm.clamp(hl[c] / (1.5 * Math.sqrt(rl[c]) + 0.05), -1, 1), DEP);
+        const u = U[c] + wq * wn.noise(U[c] * wf, V[c] * wf, face * 7.1), v = V[c] + wq * wn.noise(U[c] * wf + 17.3, V[c] * wf, face * 7.1);
+        if (parent.sampleUV(face, u, v) || parent.sample(dd)) rockC[c] = parent.rockAt(h[c], rkOut, dm.clamp(hl[c] / (1.5 * Math.sqrt(rl[c]) + 0.05), -1, 1), DEP);
       }
       else {
       const cc = new Int32Array(16), ww = new Float64Array(16), uv = { face: 0, u: 0, v: 0 }, dd = [0, 0, 0], wd = [0, 0, 0], sr = S.s.rock, sh = S.s.h;

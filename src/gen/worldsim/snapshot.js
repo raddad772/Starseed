@@ -310,9 +310,15 @@ export class SnapshotSampler {
   // few scales, so a contact the cells would draw straight (along a column of them) is as ragged
   // as real ones are below the grid's scale; the finer levels' rises and hollows bend it further
   // (the refinement's rock rule reads through it too, localsim.js). Into out
+  // (two scales: the cells' contacts swung about over several cells, and bent within each cell:
+  // with the first alone a contact ran straight along a cell's edge for its whole length, half a
+  // km of ruler line across a plain where nothing else bends it)
   rockWarp(x, y, z, out) {
     const nz = this._rnz || (this._rnz = new Noise3(0x70c4 ^ (this.s.N * 7919))), f = this.s.N * 0.16, sp = 0.9 * this.G.spacing / this.G.R;
-    out[0] = x + sp * nz.fbm(x * f, y * f, z * f, 3); out[1] = y + sp * nz.fbm(x * f + 31.7, y * f, z * f, 3); out[2] = z + sp * nz.fbm(x * f, y * f + 57.1, z * f, 3);
+    const f2 = this.G.R / (1.3 * this.G.spacing), sp2 = 0.6 * this.G.spacing / this.G.R;
+    out[0] = x + sp * nz.fbm(x * f, y * f, z * f, 3) + sp2 * nz.fbm(x * f2 + 7.3, y * f2, z * f2, 4);
+    out[1] = y + sp * nz.fbm(x * f + 31.7, y * f, z * f, 3) + sp2 * nz.fbm(x * f2, y * f2 + 19.9, z * f2, 4);
+    out[2] = z + sp * nz.fbm(x * f, y * f + 57.1, z * f, 3) + sp2 * nz.fbm(x * f2, y * f2, z * f2 + 41.3, 4);
     const l = Math.sqrt(out[0] * out[0] + out[1] * out[1] + out[2] * out[2]);
     out[0] /= l; out[1] /= l; out[2] /= l;
     return out;

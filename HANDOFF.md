@@ -81,8 +81,11 @@ small one: "I definitely like right a lot more", then "Yeah fix refine and optim
 - Tile sims run 60 steps at twice the stream and creep rates (localsim.js, TILE 48): the survey's views
   alike at 8/3/1 km on Earth, Mars and Titan, the sim time halved (Node/wasm: refinement tile 7.4 -> 4.0 s,
   L3 6.7 -> 3.6 s, L5 12.7 -> 6.2 s). A chunk rebuild costs 10-15 ms (not the bottleneck).
-- Seen, not fixed: rock-colour patches with straight cell edges at the 3 km view of a delta (Ciadairon
-  River mouth, sand/alluvium classes per refinement cell).
+- Rock contacts bent at every scale (TILE 51): the world sim's rock warp got a second, cell-scale part
+  (snapshot.js rockWarp: 4 octaves from 1.3 cells' wavelength; its first part varies over ~14 km, so a
+  contact ran straight along a cell edge for half a km), and each pyramid level reads its parent's rock
+  about half a parent cell off true (localsim.js finish): the parent's staircase of cells bends. Delta
+  views (scratchpad shots/delta_cmp3.jpg): contacts in lobes and tongues, no ruler lines.
 - Tried and dropped: each tile level faded out by the mesh's spacing (to cut chunk rebuilds and aliasing):
   the finest level (2.4 m) wears down sharp cones the 9.6 m level leaves (L+4 has ~5.6% of its cells
   steeper than 60 degrees), and without it they stood in the middle distance. Every level is read at
