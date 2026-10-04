@@ -21,7 +21,7 @@ import { MATERIALS } from '../gen/worldsim/materials.js';
 const N_OCT = 12, N_DIR = 3, N_WAVE = N_OCT * N_DIR;
 // (surface tension, N/m, near each one's own temperatures; the rest from materials.js: the index,
 // density, viscosity, triple point)
-const SIGMA = { water: 0.072, brine: 0.075, 'ammonia-water': 0.06, methane: 0.017, ethane: 0.03, nitrogen: 0.009, CO2: 0.012, ammonia: 0.034, SO2: 0.025, sulfur: 0.06, lava: 0.35 };
+export const SIGMA = { water: 0.072, brine: 0.075, 'ammonia-water': 0.06, methane: 0.017, ethane: 0.03, nitrogen: 0.009, CO2: 0.012, ammonia: 0.034, SO2: 0.025, sulfur: 0.06, lava: 0.35 };
 // (the sea's freezing point under the fresh's, C: its salt)
 const SALT = { water: -1.8 };
 

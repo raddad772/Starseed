@@ -194,6 +194,8 @@ export function buildChunk(gen, face, level, ix, iy, N = CHUNK_N) {
   // river's flow or a lake's fetch; 0 on land, so a shore's triangles can take the water's own. 16
   // bits: the season's ice edge turns on a fraction of a degree, and gen/liquidice.js must agree)
   const liqA = new Uint16Array(nVert * 4);
+  // (where a river's water runs steep: its fall, and how deep it runs there; findFalls)
+  const steepA = new Float32Array(V * V), wdA = new Float32Array(V * V);
   // (each material class's share: matclasses.js, 12 a vertex)
   const NC = MAT_N - MAT_W0, clsA = new Uint8Array(nVert * NC);
   const col = [0, 0, 0], mat = new Float64Array(MAT_N);
@@ -218,6 +220,7 @@ export function buildChunk(gen, face, level, ix, iy, N = CHUNK_N) {
       nv[0] = nx; nv[1] = ny; nv[2] = nz;
       gen.shade(s, 1 - up, col, mat, nv);
       nrm[vi * 4] = Math.round(nx * 127); nrm[vi * 4 + 1] = Math.round(ny * 127); nrm[vi * 4 + 2] = Math.round(nz * 127);
+      if (mat[4] > 0 && mat[0] > 0.55 && mat[0] < 0.85) { steepA[vi] = 1 - up; wdA[vi] = mat[4]; }
       const sd = shoreDepth(mat[4], s[0]);
       nrm[vi * 4 + 3] = encodeShore(sd);
       colA[vi * 4] = encodeColor(col[0]); colA[vi * 4 + 1] = encodeColor(col[1]); colA[vi * 4 + 2] = encodeColor(col[2]);
@@ -288,6 +291,8 @@ export function buildChunk(gen, face, level, ix, iy, N = CHUNK_N) {
     }
   }
 
+  const falls = spacing < 40 ? findFalls(V, position, steepA, wdA, ox, oy, oz, spacing) : null;
+
   // bounding sphere in chunk-local coordinates
   let bx = 0, by = 0, bz = 0;
   for (let v = 0; v < V * V; v++) { bx += position[v * 3]; by += position[v * 3 + 1]; bz += position[v * 3 + 2]; }
@@ -300,12 +305,48 @@ export function buildChunk(gen, face, level, ix, iy, N = CHUNK_N) {
   }
   return {
     origin: [ox, oy, oz],
-    position, morph, nrm, mnrm, col: colA, mcol: mcolA, mat: matA, ext: extA, liq: liqA, cls: clsA,
+    position, morph, nrm, mnrm, col: colA, mcol: mcolA, mat: matA, ext: extA, liq: liqA, cls: clsA, falls,
     minH, maxH,
     bsphere: [bx, by, bz, Math.sqrt(br)],
   };
 }
 
 export function chunkTransferables(r) {
-  return [r.position.buffer, r.morph.buffer, r.nrm.buffer, r.mnrm.buffer, r.col.buffer, r.mcol.buffer, r.mat.buffer, r.ext.buffer, r.liq.buffer, r.cls.buffer];
+  const t = [r.position.buffer, r.morph.buffer, r.nrm.buffer, r.mnrm.buffer, r.col.buffer, r.mcol.buffer, r.mat.buffer, r.ext.buffer, r.liq.buffer, r.cls.buffer];
+  if (r.falls) t.push(r.falls.buffer);
+  return t;
+}
+
+// A chunk's falls: each run of river vertices steeper than ~37 degrees (joined to its neighbours) one
+// fall, from its highest vertex (the lip) to its lowest (its foot, where it lands). Returns
+// FALL_STRIDE floats a fall (render/falls.js): its foot (chunk-local), the lip's and the foot's
+// radius, how wide it runs (m), the river's depth there; or null
+export const FALL_STRIDE = 7;
+function findFalls(V, position, steepA, wdA, ox, oy, oz, spacing) {
+  const seen = new Uint8Array(V * V), stack = [], out = [];
+  const rad = (v) => { const x = position[v * 3] + ox, y = position[v * 3 + 1] + oy, z = position[v * 3 + 2] + oz; return Math.sqrt(x * x + y * y + z * z); };
+  for (let v0 = 0; v0 < V * V; v0++) {
+    if (seen[v0] || steepA[v0] < 0.2) continue;
+    let top = -Infinity, bot = Infinity, foot = v0, n = 0, wd = 0;
+    seen[v0] = 1; stack.push(v0);
+    while (stack.length) {
+      const v = stack.pop(), r = rad(v);
+      n++; wd = Math.max(wd, wdA[v]);
+      if (r > top) top = r;
+      if (r < bot) { bot = r; foot = v; }
+      const i = v % V, j = (v / V) | 0;
+      for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+        const a = i + di, b = j + dj;
+        if (a < 0 || b < 0 || a >= V || b >= V) continue;
+        const w = b * V + a;
+        if (!seen[w] && steepA[w] >= 0.2) { seen[w] = 1; stack.push(w); }
+      }
+    }
+    const drop = top - bot;
+    if (drop < 2) continue;
+    // (its width: the run's vertices over its length down the face)
+    const width = Math.max(spacing, n * spacing * spacing / Math.max(drop, spacing));
+    out.push(position[foot * 3], position[foot * 3 + 1], position[foot * 3 + 2], top, bot, width, wd);
+  }
+  return out.length ? Float32Array.from(out) : null;
 }

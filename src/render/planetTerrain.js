@@ -11,7 +11,8 @@ import * as THREE from 'three';
 import { SHADOW_LAYER } from './sunShadows.js';
 import { RockSet } from './rockRender.js';
 import { FACES, dirFromFaceUV, chunkArcSize } from '../gen/cubesphere.js';
-import { CHUNK_N, chunkIndices } from '../gen/chunkbuilder.js';
+import { CHUNK_N, chunkIndices, FALL_STRIDE } from '../gen/chunkbuilder.js';
+import { FallFx } from './falls.js';
 import { makeTerrainMaterial, DETAIL_PERIOD } from './terrainMaterial.js';
 import { FloraSet } from './floraRender.js';
 import { floraOf } from '../sim/floraField.js';
@@ -211,7 +212,7 @@ export class PlanetTerrain {
       node.refreshJob = null;
       if (gen !== this.generation || node.state !== 2 || !node.mesh) return;
       const old = node.mesh, shown = old.visible;
-      this.group.remove(old); old.geometry.dispose(); old.material.dispose(); this.meshCount--;
+      this.group.remove(old); old.geometry.dispose(); old.material.dispose(); disposeKids(old); this.meshCount--;
       this.buildMesh(node, data);
       node.mesh.visible = shown;
       if (node.flora) {
@@ -308,6 +309,19 @@ export class PlanetTerrain {
     const om = m.material.uniforms.uOriginMod.value;
     const P = DETAIL_PERIOD;
     om.set(((d.origin[0] % P) + P) % P, ((d.origin[1] % P) + P) % P, ((d.origin[2] % P) + P) % P);
+    // (its falls: the sheet's speed by how far it has fallen from the biggest one's lip, and their
+    // spray and mist: falls.js)
+    if (d.falls && this.shared.uFall1) {
+      let best = 0, bw = -1;
+      for (let f = 0; f < d.falls.length; f += FALL_STRIDE) { const w = (d.falls[f + 3] - d.falls[f + 4]) * d.falls[f + 5]; if (w > bw) { bw = w; best = f; } }
+      const u = m.material.uniforms;
+      u.uFallTop.value = d.falls[best + 3];
+      u.uFallFoot.value.set(d.falls[best], d.falls[best + 1], d.falls[best + 2]);
+      u.uFallW.value = d.falls[best + 5];
+      this.fallFx = this.fallFx || new FallFx(this.shared);
+      const fx = this.fallFx.make(d.falls, d.origin);
+      if (fx) m.add(fx);
+    }
     node.mesh = m;
     node.minH = d.minH; node.maxH = d.maxH;
     if (node.children) for (const c of node.children) if (c.state !== 2) { c.minH = d.minH; c.maxH = d.maxH; }
@@ -364,6 +378,7 @@ export class PlanetTerrain {
       this.group.remove(node.mesh);
       node.mesh.geometry.dispose();
       node.mesh.material.dispose();
+      disposeKids(node.mesh);
       node.mesh = null;
       this.meshCount--;
     }
@@ -550,5 +565,11 @@ export class PlanetTerrain {
     for (const r of this.roots) this.disposeNode(r);
     this.disposeNear();
     if (this.rockSet) this.rockSet.dispose();
+    if (this.fallFx) this.fallFx.material.dispose();
   }
+}
+
+// (a chunk mesh's children: its falls' spray and mist, their material the world's own)
+function disposeKids(m) {
+  for (const c of m.children) { c.geometry.dispose(); if (!c.userData.sharedMaterial) c.material.dispose(); }
 }

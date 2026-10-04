@@ -94,6 +94,12 @@ uniform vec4 uCloud;
 uniform float uCloudOn;
 uniform float uCloudOpacity;
 uniform vec3 uLavaColor;
+uniform vec3 uOriginMod;
+uniform float uFallTop;     // (this chunk's biggest fall: falls.js; 0 none)
+uniform vec3 uFallFoot;
+uniform float uFallW;
+uniform vec4 uFall1;
+uniform vec4 uFall2;
 uniform vec3 uAmbientFloor;
 uniform float uDebug;
 // the near field (volume.js): x on, y its radius; uNearMode 0 a heightfield mesh (gives way to
@@ -301,6 +307,35 @@ void main() {
     color = body * (1.0 - F) + skyRefl * F + uSunE * sunT * Dg * Gg * Fs / (4.0 * NdV) * step(0.0, muS);
     // foam: white, matte
     vec3 lit = uSunE * sunT * max(dot(up, uSunDir), 0.0) + uSunE * skyE;
+    // a fall (falls.js): where a river runs steep, a sheet down the face, as fast as it has fallen
+    // (sqrt(2 g z) from its lip, to what the air lets it), streaked by the detail noise drawn out down
+    // it and carried at that speed (two phases faded in turn, so a speed that grows down it doesn't
+    // shear them), white as far as the air breaks it up; and churned white where it lands
+    float fallK = river ? smoothstep(0.13, 0.3, 1.0 - dot(fn, upF)) : 0.0, dbgWhite = 0.0;
+    if (fallK > 0.0) {
+      vec3 dn = upF - fn * dot(upF, fn);
+      vec3 down = -dn / max(length(dn), 1e-4), acr = normalize(cross(fn, down));
+      float zf = uFallTop > 0.0 ? max(uFallTop - r, 0.0) : 4.0;
+      float v = min(sqrt(2.0 * uFall1.x * zf) + 0.3, uFall1.y);
+      float L = 1.0 + 0.35 * v;
+      float t1 = fract(uTime * 0.4), t2 = fract(uTime * 0.4 + 0.5), wa = 1.0 - abs(2.0 * t1 - 1.0);
+      vec2 q = vec2(dot(fp, acr) * 0.18, dot(fp, down) * 0.18 / L);
+      float sA = texture(tDetail, q - vec2(0.0, v * t1 * 2.5 * 0.18 / L)).r;
+      float sB = texture(tDetail, q + vec2(0.37, 0.0) - vec2(0.0, v * t2 * 2.5 * 0.18 / L)).r;
+      float st = mix(sB, sA, wa);
+      // (glassy at its lip, breaking up as it falls: the sooner the denser the air)
+      float aer = mix(0.25, 0.95, uFall2.y) * smoothstep(0.5, 6.0, v) * smoothstep(0.0, 1.0 + 4.0 * (1.0 - uFall2.y), zf);
+      float white = clamp(aer * (0.8 + 2.2 * (st - 0.5)) + 0.08, 0.0, 1.0);
+      dbgWhite = white;
+      vec3 nS = normalize(Nw + transpose(uToFixed) * acr * (st - 0.5) * 0.8);
+      vec3 litS = uSunE * sunT * max(dot(nS, uSunDir), 0.0) + uSunE * skyE * 0.6;
+      color = mix(color, mix(color * 0.8, vec3(0.8) / PI * litS, white), fallK);
+      foam *= 1.0 - fallK;
+    }
+    if (uFallTop > 0.0) {
+      float dF = length(vFixedPos - uOriginMod - uFallFoot) / max(uFallW * 1.2 + 2.0, 2.0);
+      foam = max(foam, (1.0 - smoothstep(0.25, 1.0, dF)) * mix(0.35, 0.95, uFall2.y) * (0.6 + 0.8 * (grp.x - 0.5)) * (1.0 - fallK));
+    }
     color = mix(color, vec3(0.75) / PI * lit, clamp(foam, 0.0, 1.0));
     // frozen: the sea's ice ragged at its edge (floes to come); a lake's and a pond's whole, under
     // snow where it's long frozen
@@ -320,7 +355,7 @@ void main() {
       color = mix(color, iceCol, ice);
       albedo = mix(albedo, iceAlb, ice);
     }
-    dbgW = uDebug < 2.5 ? vec3(ice) : uDebug < 3.5 ? vec3(Tm / 40.0) : uDebug < 4.5 ? vec3(foam) : uDebug < 5.5 ? vLiq.xyz : vec3(wr * 4.0);
+    dbgW = uDebug > 6.5 ? vec3(fallK, dbgWhite, river ? 1.0 : 0.0) : uDebug < 2.5 ? vec3(ice) : uDebug < 3.5 ? vec3(Tm / 40.0) : uDebug < 4.5 ? vec3(foam) : uDebug < 5.5 ? vLiq.xyz : vec3(wr * 4.0);
   } else {
     float wrap = 0.5 + 0.5 * dot(N, up);
     vec3 direct = uSunE * sunT * ndl;
@@ -407,6 +442,10 @@ export function makeTerrainMaterial(shared) {
       uNearOff: { value: new THREE.Vector3() },
       uNearMode: { value: 0 },
       uNearBand: { value: new THREE.Vector2(0, 0) },
+      // (this chunk's biggest fall, planetTerrain.js: its lip's radius (0 none), its foot (chunk-local), its width)
+      uFallTop: { value: 0 },
+      uFallFoot: { value: new THREE.Vector3() },
+      uFallW: { value: 0 },
     },
     vertexShader: VERT,
     fragmentShader: FRAG,

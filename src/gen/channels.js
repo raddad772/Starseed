@@ -21,6 +21,113 @@ import { RIVER_REC } from './worldsim/refine.js';
 
 const GROUP = 8;
 
+// A river's profile by the rock its bed crosses. Stream power at steady state has a channel's slope
+// go as its rock's erodibility to the -1/n (n ~ 1: Whipple and Tucker 1999), so a river stands
+// steeper over a resistant bed and gentler over a soft one. And where a resistant bed lies over a
+// markedly softer one (the soft eroding at half its rate or more: lithology.js's k), the plunge pool
+// undercuts the soft beneath it and the cap breaks back with its face standing (Niagara's dolostone
+// over shale: Gilbert 1907; Lamb and Dietrich 2009): the drop the cap's run would carry stands at
+// its downstream edge, a fall, its top a lip near level; where a river leaves hard rock for its own
+// alluvium, the same (a fall line). Loose ground erodes alike: a lowland river stays smooth.
+// The world sim's heights hold at the ends of windows WIN_RECS reaches long (~2-3 km: the scale a
+// river's knickzones gather its relief over; Niagara's falls carry half the drop between its lakes,
+// 58 km apart, so this is if anything short), and within one the drop goes where the rock puts it.
+// Each window worked out once, for every reach in it (gen._rivWin). Returns t -> m for reach r, or
+// null (none of this: its smooth profile)
+const WIN_RECS = 16, NSEG = 16;
+function riverProfile(gen, r) {
+  const Lk = gen._rivLinks(), up = Lk.up, dn = Lk.dn;
+  const dnOf = (q) => { const n = dn[q]; return n >= 0 && up[n] === q ? n : -1; };
+  const upOf = (q) => { const u = up[q]; return u >= 0 && dn[u] === q ? u : -1; };
+  // (its place along its stretch of river, from the stretch's head: the window it's in)
+  let head = r, pos = 0;
+  for (let g = 0; g < 100000; g++) { const u = upOf(head); if (u < 0 || u === r) break; head = u; pos++; }
+  const w0 = pos - (pos % WIN_RECS);
+  const C = gen._rivWin || (gen._rivWin = new Map()), key = head * 65536 + (w0 / WIN_RECS);
+  let W = C.get(key);
+  if (!W) {
+    if (C.size > 4000) C.clear();
+    // (the window's reaches, downstream)
+    const recs = [];
+    let q = head;
+    for (let i = 0; i < w0 && q >= 0; i++) q = dnOf(q);
+    for (let i = 0; i < WIN_RECS && q >= 0; i++) { recs.push(q); q = dnOf(q); }
+    W = windowProfile(gen, recs);
+    C.set(key, W);
+  }
+  const P = W && W.get(r);
+  if (!P) return null;
+  const { H, steps, len } = P, n = NSEG;
+  return (t) => {
+    const f = Math.min(n - 1e-9, Math.max(0, t * n)), i = Math.floor(f);
+    let h = H[i] + (H[i + 1] - H[i]) * (f - i);
+    for (let j = 0; j < steps.length; j += 2) {
+      // (its face: steep, a few metres across at most, in the ground's metres)
+      const e = Math.max(1, 0.1 * Math.abs(steps[j + 1]) * gen.hScale) / Math.max(len, 1);
+      h -= steps[j + 1] * dm.smoothstep(steps[j] - e, steps[j] + e, t);
+    }
+    return h;
+  };
+}
+// a window's reaches' profiles: Map(reach -> { H (NSEG + 1 heights, the sim's m), steps (t, drop
+// pairs), len }), or null
+function windowProfile(gen, recs) {
+  const Rv = gen.snap.riv, rec = Rv.rec, m = recs.length;
+  if (!m) return null;
+  const N = m * NSEG, k = new Float64Array(N), drop = new Float64Array(N), lens = new Float64Array(m);
+  const fr = new Float64Array(9);
+  const hsAt = (q, t) => { const b = q * RIVER_REC, u = 1 - t; return (u * u * rec[b + 9] + 2 * t * u * rec[b + 10] + t * t * rec[b + 11]) / gen.hScale; };
+  const D = hsAt(recs[0], 0) - hsAt(recs[m - 1], 1);
+  if (!(D > 0.5)) return null;
+  for (let j = 0; j < m; j++) {
+    const q = recs[j];
+    gen._meanderFrame(q, fr);
+    lens[j] = Math.sqrt((fr[6] - fr[0]) ** 2 + (fr[7] - fr[1]) ** 2 + (fr[8] - fr[2]) ** 2) * gen.R;
+    for (let i = 0; i < NSEG; i++) {
+      const t = (i + 0.5) / NSEG, u = 1 - t, a0 = u * u, a1 = 2 * t * u, a2 = t * t;
+      const x = a0 * fr[0] + a1 * fr[3] + a2 * fr[6], y = a0 * fr[1] + a1 * fr[4] + a2 * fr[7], z = a0 * fr[2] + a1 * fr[5] + a2 * fr[8];
+      const l = Math.sqrt(x * x + y * y + z * z);
+      // (its bed's rock: a little under its banks, in the ground's metres (hs: the sim's, hScale to them))
+      k[j * NSEG + i] = gen._channelRockK(x / l, y / l, z / l, hsAt(q, t) * gen.hScale - 1);
+      // (each piece's drop as the smooth profile has it; a rise (the sim's sampling) none)
+      drop[j * NSEG + i] = Math.max(0, hsAt(q, i / NSEG) - hsAt(q, (i + 1) / NSEG)) / k[j * NSEG + i];
+    }
+  }
+  // (caps: each run of one rock with markedly softer rock just below it, in the window)
+  const steps = [];
+  for (let a = 0; a < N;) {
+    let b = a;
+    while (b + 1 < N && k[b + 1] === k[a]) b++;
+    if (b + 1 < N && k[b + 1] >= 1.5 * k[a]) {
+      let run = 0;
+      for (let i = a; i <= b; i++) { run += 0.9 * drop[i]; drop[i] *= 0.1; }
+      steps.push(b + 1, run);
+    }
+    a = b + 1;
+  }
+  let total = 0;
+  for (let i = 0; i < N; i++) total += drop[i];
+  for (let j = 1; j < steps.length; j += 2) total += steps[j];
+  if (!(total > 1e-9)) return null;
+  const sc = D / total, out = new Map();
+  let h = hsAt(recs[0], 0), si = 0;
+  for (let j = 0; j < m; j++) {
+    const H = new Float64Array(NSEG + 1), st = [];
+    H[0] = h;
+    for (let i = 0; i < NSEG; i++) {
+      // (a step at this piece's upstream edge: within this reach, just inside it)
+      while (si < steps.length && steps[si] === j * NSEG + i) { st.push(Math.max(i / NSEG, 0.5 / NSEG / 4), steps[si + 1] * sc); si += 2; }
+      H[i + 1] = H[i] - drop[j * NSEG + i] * sc;
+    }
+    // (H: the reach's heights without its steps; riverProfile takes them off where they stand)
+    out.set(recs[j], { H, steps: st, len: lens[j] });
+    let stepSum = 0;
+    for (let s = 1; s < st.length; s += 2) stepSum += st[s];
+    h = H[NSEG] - stepSum;
+  }
+  return out;
+}
+
 // the swing (how much of the trace's sway: 0..1) at t along a record's frame
 export function chanSwing(ch, t) {
   const s = ch.sw, Ae = t < 0.5 ? s[0] : s[2];
@@ -49,7 +156,8 @@ export function buildChannel(gen, r, building) {
   const head = up < 0;
   const P3 = [], A6 = [], pcs = [], kinds = [], ages = [];
   let open = false;
-  const hsOf = (t) => { const u = 1 - t; return (u * u * rec[b + 9] + 2 * t * u * rec[b + 10] + t * t * rec[b + 11]) / gen.hScale; };
+  const hsSmooth = (t) => { const u = 1 - t; return (u * u * rec[b + 9] + 2 * t * u * rec[b + 10] + t * t * rec[b + 11]) / gen.hScale; };
+  const hsOf = (gen._channelRockK && gen.snap && riverProfile(gen, r)) || hsSmooth;
   const emit = (X, Y, mx, my) => {
     const t = Math.max(0, Math.min(1, (X - J0) / (J1 - J0))), u = 1 - t, a0 = u * u, a1 = 2 * t * u, a2 = t * t;
     let px = a0 * fr[0] + a1 * fr[3] + a2 * fr[6], py = a0 * fr[1] + a1 * fr[4] + a2 * fr[7], pz = a0 * fr[2] + a1 * fr[5] + a2 * fr[8];

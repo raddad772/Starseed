@@ -810,7 +810,8 @@ export class TerrainGenerator {
         h += (this.wetNow ? pull : Math.min(0, pull)) * dm.smoothstep(flank, half * 1.2, dist);
         if (dist < half) {
           h = Math.min(h, bank - dep * (1 - (dist / half) * (dist / half)));
-          if (this.wetNow && A > CREEK_WET && seen && fin > 0.5) wl = Math.max(wl, bank - 0.25 - 0.1 * dep);
+          // (its water running water: render/liquid.js's river, not a still pond)
+          if (this.wetNow && A > CREEK_WET && seen && fin > 0.5) { wl = Math.max(wl, bank - 0.25 - 0.1 * dep); out[S_WET] = Math.max(out[S_WET], 0.5); }
         }
         h = h1 + (h - h1) * fin;
       }
@@ -1770,6 +1771,20 @@ export class TerrainGenerator {
     // (the ground's northward direction is (0, 1, 0) less its part along up, length cos(lat))
     const north = (n[1] - dn * y) / Math.sqrt(cl2);
     return (y >= 0 ? 1 : -1) * north * Math.min(1, 2 * Math.abs(y));
+  }
+
+  // the erodibility (lithology.js's k) of the rock a river's bed cuts at (x, y, z), h (m) (channels.js
+  // lays its profile by it): the world sim's own rock there and its beds at that height, as the
+  // ground shows them (not the finer tiles': they come and go with the camera, and a river's
+  // profile mustn't change as they do)
+  _channelRockK(x, y, z, h) {
+    const S = this.snap;
+    const rock = S.rockAtWarped(S.rockWarp(x, y, z, this._cw || (this._cw = [0, 0, 0])), h / this.hScale);
+    const mw = this._minW;
+    this._minW = 0;
+    const r = this._bedRock(x, y, z, h, rock);
+    this._minW = mw;
+    return ROCKS[r] ? ROCKS[r].k : 1;
   }
 
   // the rock at (x, y, z), standing at h, where no tile of the terrain's has laid out the beds:

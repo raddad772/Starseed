@@ -11,6 +11,7 @@ import { loadMaterials, windRipple } from './materials.js';
 import { HeightCube } from './terrainShadow.js';
 import { SUN_SHADOW_UNIFORMS } from './sunShadows.js';
 import { Liquid } from './liquid.js';
+import { fallPhysics } from './falls.js';
 import * as U from '../core/units.js';
 
 const _v = new THREE.Vector3(), _v2 = new THREE.Vector3();
@@ -107,6 +108,7 @@ export class WorldRenderer {
       uWindRipple: { value: windRipple(b) },
       ...(it.heightCube ? it.heightCube.uniforms : {}),
       ...(it.liquid ? it.liquid.uniforms : {}),
+      ...(it.liquid ? (it.falls = fallPhysics(b, it.liquid.U)).uniforms : {}),
       ...SUN_SHADOW_UNIFORMS,
       uNear: { value: new THREE.Vector2(0, 0) },
       uNearUp: { value: new THREE.Vector3(0, 1, 0) },
