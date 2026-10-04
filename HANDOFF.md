@@ -85,9 +85,34 @@ small one: "I definitely like right a lot more", then "Yeah fix refine and optim
   spans its texels (no speckle from orbit), the climate's cloud map about its own mean (`uCloudMapMean`;
   the world's cover sets the amount). Measured as the share of the lit disc that clouds brighten
   (clouds off vs on): Earth 30% side-on, 29-53% face-on by longitude (mean 43%); Seamibest (cover
-  0.42) 28%. Seen and not fixed: dark dashes along the horizon (water and land, every world); flora as
-  black specks at range; a 1,240 K surface (Vovuld) renders black, no thermal glow; Vovuld's inner ring
-  from space (a circle at ~0.85 of the disc); stair-stepped cloud edges at the limb (the half-res sky).
+  0.42) 28%.
+- Dave: "Fix and make it better" (03737f8, f5b21bc, d393ca8; sheet: scratchpad render_fixes.jpg):
+  - Dark dashes along the skyline: the half-res sky traced each fragment's ray through its 2x2 block's
+    centre but read one of its four depths, so where a horizon crossed a block a sky-labelled sample took
+    a ground-length path (dark) and the sky pixels beside took it up. Now ray and depth come from one
+    full-res pixel (`depthPixel`, glsl.js) in the sky, the volume and the composite; a pixel with no
+    sample at its depth takes the nearest of 16. Any dashes left are real: land over a 2.4 km horizon.
+  - Vovuld's ring: the cloud noise was bound to the far sky only beside a near volume, and a sulfuric
+    deck has none, so its deck read zero and was never drawn (the world a haze ball, the solid planet's
+    edge a ring). Bound always now; Venus-likes show a pale yellow deck. `cloudBias`: cover 1 closes a
+    deck, 0 clears it (the middle unchanged); the deck's tops thin with height (soft limb).
+  - Hot worlds glow: `blackbodyGlow` (Planck through the eye's response, 256 cd/m^2 at 1,240 K, game
+    radiance 1 = ~127,000 cd/m^2), `uThermal` from Tsurf (>650 K) with the dry adiabat (ground by real
+    height, air by drawn). Ground emits (1 - albedo) x glow; each air step adds glow x (1 - its
+    transmittance), taken one optical depth in (at the jittered sample it dithered). Vovuld's surface
+    is an orange oven, visibility a few hundred metres. Not done: the ground doesn't reflect the air's
+    glow (so it reads darker than the air: physically all would be near one brightness); day/night T
+    on thin-air hot worlds; the lava's own (tuned, ~170x physical) glow left as it was.
+  - Aurora from orbit drew as rows of dots (a curtain thinner than the ray's run between its 28 shells):
+    each sample's arc widened by that run and the pixel, its light kept.
+  - Plants: shrunk into the ground over their last 30% of range (the screen-door dither left dark
+    specks) and in the clouds' shadow (`cloudShadow`, shared with the ground).
+  - Ground cover patches came from the 64 m detail tile alone and from a km off read as a lattice of
+    spots; 512 m tile's patches beyond ~500 m, both moved by the 4 km tile (one more tri() per pixel).
+  - Half-res sky upsample: depth weight with a 2% tolerance (cloud edges came in 2-pixel steps).
+  Seen, not fixed: beach sand lies only on gentle slopes, so every rill's banks on a beach show as dark
+  soil streaks (Seamibest's Iophoaris Sands); trees end in a disc at 1.5 km; the "cups" plants read as
+  stumps; the far sky's jitter shows faintly as a hatch in flat skies.
 
 **What's still wrong / next:**
 - Snow covers most of a high mountain (the snowline reads the real height: physically right, maybe too
