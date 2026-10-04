@@ -14,6 +14,12 @@ import { makeTerrainMaterial, DETAIL_PERIOD } from './terrainMaterial.js';
 import { FloraSet } from './floraRender.js';
 import { floraOf } from '../sim/floraField.js';
 import { VCHUNK } from '../gen/volume.js';
+
+// each material class's share (12 a vertex, matclasses.js) as three vec4 attributes over one buffer
+function setClassAttrs(g, cls) {
+  const ib = new THREE.InterleavedBuffer(cls, 12);
+  for (let k = 0; k < 3; k++) g.setAttribute('cls' + k, new THREE.InterleavedBufferAttribute(ib, 4, k * 4, true));
+}
 import { NEAR_RINGS } from '../sim/nearGround.js';
 
 const FLORA_DIST = 1600;
@@ -255,6 +261,7 @@ export class PlanetTerrain {
     g.setAttribute('mcol', new THREE.BufferAttribute(d.mcol, 4, true));
     g.setAttribute('mat', new THREE.BufferAttribute(d.mat, 4, true));
     g.setAttribute('ext', new THREE.BufferAttribute(d.ext, 4, true));
+    setClassAttrs(g, d.cls);
     g.setIndex(indexAttr());
     g.boundingSphere = new THREE.Sphere(new THREE.Vector3(d.bsphere[0], d.bsphere[1], d.bsphere[2]), d.bsphere[3]);
     const m = new THREE.Mesh(g, makeTerrainMaterial(this.shared));
@@ -467,6 +474,7 @@ export class PlanetTerrain {
     g.setAttribute('col', col); g.setAttribute('mcol', col);
     g.setAttribute('mat', new THREE.BufferAttribute(d.mat, 4, true));
     g.setAttribute('ext', new THREE.BufferAttribute(d.ext, 4, true));
+    setClassAttrs(g, d.cls);
     g.setAttribute('occ', new THREE.BufferAttribute(d.occ, 1, true));
     g.setIndex(new THREE.BufferAttribute(d.index, 1));
     g.computeBoundingSphere();

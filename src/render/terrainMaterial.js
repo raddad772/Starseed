@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { GLSL_SURFACE_ATMO, GLSL_CLOUD_N, GLSL_CLOUD_SHADOW, GLSL_THERMAL } from './atmosphere.js';
 import { GLSL_NOISE } from './glsl.js';
+import { MAT_UNIFORMS, GLSL_MATERIALS, trackMaterial } from './materials.js';
 
 export const DETAIL_PERIOD = 4096; // metres; every detail tile period divides this
 
@@ -16,6 +17,9 @@ attribute vec4 mcol;
 attribute vec4 mat;
 attribute vec4 ext;
 attribute float occ;       // (volume chunks: how much rock overhangs; 0 where absent)
+attribute vec4 cls0;       // each material class's share (gen/matclasses.js: 0..3, 4..7, 8..11)
+attribute vec4 cls1;
+attribute vec4 cls2;
 uniform vec3 uCamLocal;
 uniform vec2 uMorph;
 uniform vec3 uOriginMod;
@@ -33,6 +37,9 @@ varying vec4 vCol;
 varying vec4 vMat;
 varying vec4 vExt;
 varying float vMorphK;
+varying vec4 vCls0;
+varying vec4 vCls1;
+varying vec4 vCls2;
 #include <common>
 #include <logdepthbuf_pars_vertex>
 void main() {
@@ -43,6 +50,7 @@ void main() {
   vCol = mix(col, mcol, m);
   vMat = mat;
   vExt = ext;
+  vCls0 = cls0; vCls1 = cls1; vCls2 = cls2;
   vMorphK = m;
   // (a heightfield mesh reaches a little way in under the near field's last ring, a little
   // low: wherever the two surfaces' heights differ at the ring's edge, one covers the joint)
@@ -94,6 +102,9 @@ varying vec4 vCol;
 varying vec4 vMat;
 varying vec4 vExt;
 varying float vMorphK;
+varying vec4 vCls0;
+varying vec4 vCls1;
+varying vec4 vCls2;
 #include <common>
 #include <logdepthbuf_pars_fragment>
 ${GLSL_SURFACE_ATMO}
@@ -105,6 +116,9 @@ uniform float uCloudMapMean;
 ${GLSL_CLOUD_N}
 ${GLSL_CLOUD_SHADOW}
 ${GLSL_THERMAL}
+#if MAT_MODE > 0
+${GLSL_MATERIALS}
+#endif
 
 // detail texture: r = height noise, g/b = slope (encoded), a = secondary noise
 vec4 tri(vec3 p, vec3 w, float period) {
@@ -129,6 +143,8 @@ void main() {
   #include <logdepthbuf_fragment>
   // (a pixel's span on the ground: the cloud shadows' noise fades where it is finer)
   float foot = length(fwidth(vWorldPos));
+  // (the scanned surfaces' screen derivatives, here in uniform control flow: read in branches)
+  vec3 dpx = dFdx(vFixedPos), dpy = dFdy(vFixedPos);
   vec3 albedo = vCol.rgb * vCol.rgb;
   float waterEnc = vCol.a;
   if (uNear.x > 0.5) {
@@ -158,7 +174,32 @@ void main() {
   float midK = 1.0 - smoothstep(600.0, 9000.0, dist);
   float farK = 1.0 - smoothstep(6000.0, 90000.0, dist);
   float isWater = step(0.004, waterEnc);
+  float gRough = 0.8, gAO = 1.0;   // (the scanned surfaces' roughness and occlusion: materials.js)
   if (isWater < 0.5) {
+#if MAT_MODE > 0
+    // the scanned surfaces (materials.js), over the large patches and brightness the 4 km and 512 m
+    // detail tiles give: the near tile within a few hundred metres, the 16 m one out to ~3 km
+    vec4 d0 = tri(fp, w, ${DETAIL_PERIOD.toFixed(1)});
+    vec4 d1 = tri(fp, w, 512.0);
+    float rockAmt = clamp(rock + rough * 0.3, 0.0, 1.0);
+    float cover = smoothstep(0.38, 0.66, d1.a + (d0.a - 0.5) * 0.8) * midK;
+    albedo = mix(albedo, albedo * vec3(1.35, 1.12, 0.62), veg * cover * 0.55);
+    float bare = smoothstep(0.6, 0.78, d1.r + (d0.r - 0.5) * 0.8) * veg * midK;
+    albedo = mix(albedo, albedo * vec3(1.9, 1.45, 1.1) + vec3(0.012, 0.009, 0.006), bare * 0.55);
+    // (and the tens of metres between the scans' 16 m and the 512 m tile: the 64 m tile, moved by the
+    // 4 km one so it makes no lattice)
+    vec4 d2 = tri(fp, w, 64.0);
+    float v = (d0.r - 0.5) * 0.25 * midK + (d1.r - 0.5) * 0.55 * farK + (d2.r - 0.5) * 0.3 * midK * (0.4 + 1.2 * d0.a);
+    albedo *= 1.0 + v * mix(0.85, 1.35, rockAmt) * (1.0 - snow * 0.6);
+    float kF = 1.0 - smoothstep(60.0, 260.0, dist);
+    float kM = (1.0 - smoothstep(1800.0, 3500.0, dist)) * mix(0.6, 1.0, smoothstep(5.0, 60.0, dist));
+    MatS ms = matGround(vCls0, vCls1, vCls2, fp, dpx, dpy, fn, kF, kM);
+    albedo *= ms.ratio;
+    // (glacier ice: its body blue)
+    albedo *= mix(vec3(1.0), vec3(0.74, 0.88, 1.0), vCls2.w);
+    gRough = ms.rough; gAO = ms.ao;
+    N = normalize(mix(N, normalize(transpose(uToFixed) * ms.n), 0.9));
+#else
     // (d0: the detail's whole period, 4 km)
     vec4 d0 = tri(fp, w, ${DETAIL_PERIOD.toFixed(1)});
     vec4 d1 = tri(fp, w, 512.0);
@@ -189,6 +230,7 @@ void main() {
     // planet-fixed -> world: apply the same rotation as the geometry
     vec3 nWorld = normalize(transpose(uToFixed) * nf);
     N = normalize(mix(N, nWorld, 0.85));
+#endif
   }
 
   float ndl = max(dot(N, uSunDir), 0.0);
@@ -222,15 +264,38 @@ void main() {
     float farK = smoothstep(1500.0, 12000.0, dist);
     float hidden = max(clamp(0.25 + 0.55 * rough + 0.35 * rock, 0.0, 1.0) * (1.0 - 0.6 * snow), veg * 0.85);
     albedo *= 1.0 - farK * hidden * (0.25 + 0.35 * (1.0 - clamp(muS, 0.0, 1.0)));
+#if MAT_MODE > 0
+    color = albedo / PI * (direct * mix(1.0, gAO, 0.35) + ambient * gAO);
+#else
     color = albedo / PI * (direct + ambient);
+#endif
     // (under overhangs and in caves: little sky and less sun)
     color *= 1.0 - 0.94 * vOcc;
-    // wet / icy sheen
     vec3 V = normalize(-vWorldPos);
     vec3 H = normalize(V + uSunDir);
+#if MAT_MODE > 0
+    // the sun's gloss (GGX) by the surface's own roughness, a film of water glossier; ice's index
+    // lower than rock's
+    float rg = clamp(mix(gRough, 0.12, wet * 0.8), 0.05, 1.0), a2 = rg * rg * rg * rg;
+    float NdH = max(dot(N, H), 0.0), NdV = max(dot(N, V), 1e-3), VdH = max(dot(V, H), 0.0);
+    float Dg = a2 / (PI * pow(NdH * NdH * (a2 - 1.0) + 1.0, 2.0));
+    float kk = (rg + 1.0) * (rg + 1.0) / 8.0;
+    float Gg = NdV / (NdV * (1.0 - kk) + kk) * ndl / (ndl * (1.0 - kk) + kk);
+    float F0 = 0.04 - 0.02 * vCls2.w;
+    float Fs = F0 + (1.0 - F0) * pow(1.0 - VdH, 5.0);
+    color += uSunE * sunT * Dg * Gg * Fs / (4.0 * NdV);
+    // glints: snow's grains, and quartz sand's, fewer, near enough to tell apart
+    float gw = vCls2.z + 0.6 * vCls1.z;
+    if (gw > 0.05 && dist < 60.0 && muS > 0.0) {
+      float g = grainGlint(fp, N, H, mix(0.9, 0.97, vCls1.z / max(gw, 1e-3)));
+      color += uSunE * sunT * g * 25.0 * gw * (1.0 - smoothstep(15.0, 60.0, dist));
+    }
+#else
+    // wet / icy sheen
     // (an airless world's ground is regolith, frost included: matte, no gloss)
     float sp = pow(max(dot(N, H), 0.0), mix(20.0, 120.0, snow)) * (0.03 + 0.25 * snow + 0.3 * wet) * (uHasAtmo > 0.5 ? 1.0 : 0.1);
     color += uSunE * sunT * sp * ndl;
+#endif
   }
   // a hot world's ground glows at its own temperature (emissivity 1 - albedo), less the higher it
   // stands; and under a sky its air makes opaque, it gives back the air's glow from all round (albedo
@@ -300,9 +365,10 @@ export function makeDetailTexture(size = 256) {
 }
 
 export function makeTerrainMaterial(shared) {
-  return new THREE.ShaderMaterial({
+  return trackMaterial(new THREE.ShaderMaterial({
     uniforms: {
       ...shared,
+      ...MAT_UNIFORMS,
       uCamLocal: { value: new THREE.Vector3() },
       uMorph: { value: new THREE.Vector2(1e9, 2e9) },
       uOriginMod: { value: new THREE.Vector3() },
@@ -312,5 +378,5 @@ export function makeTerrainMaterial(shared) {
     },
     vertexShader: VERT,
     fragmentShader: FRAG,
-  });
+  }));
 }

@@ -1,0 +1,162 @@
+{
+ "tileM": 2.0,
+ "size": 1024,
+ "classes": [
+  {
+   "class": "igneous",
+   "source": "Poly Haven",
+   "asset": "rock_face",
+   "license": "CC0",
+   "meanAlbedo": [
+    0.1214,
+    0.0615,
+    0.0319
+   ],
+   "roughness": 0.835,
+   "clipped": 0.0002
+  },
+  {
+   "class": "basalt",
+   "source": "Poly Haven",
+   "asset": "dark_rock",
+   "license": "CC0",
+   "meanAlbedo": [
+    0.0156,
+    0.012,
+    0.0091
+   ],
+   "roughness": 0.797,
+   "clipped": 0.0119
+  },
+  {
+   "class": "layered",
+   "source": "Poly Haven",
+   "asset": "rock_06",
+   "license": "CC0",
+   "meanAlbedo": [
+    0.2458,
+    0.1372,
+    0.0672
+   ],
+   "roughness": 0.518,
+   "clipped": 0.0149
+  },
+  {
+   "class": "carbonate",
+   "source": "Poly Haven",
+   "asset": "marble_rock_01",
+   "license": "CC0",
+   "meanAlbedo": [
+    0.3338,
+    0.2752,
+    0.21
+   ],
+   "roughness": 0.902,
+   "clipped": 0.0
+  },
+  {
+   "class": "gravel",
+   "source": "Poly Haven",
+   "asset": "dry_river_pebbles",
+   "license": "CC0",
+   "meanAlbedo": [
+    0.2301,
+    0.1625,
+    0.0982
+   ],
+   "roughness": 0.812,
+   "clipped": 0.0274
+  },
+  {
+   "class": "regolith",
+   "source": "Poly Haven",
+   "asset": "moon_01",
+   "license": "CC0",
+   "meanAlbedo": [
+    0.2079,
+    0.1838,
+    0.1523
+   ],
+   "roughness": 0.961,
+   "clipped": 0.0
+  },
+  {
+   "class": "sand",
+   "source": "Poly Haven",
+   "asset": "sand_03",
+   "license": "CC0",
+   "meanAlbedo": [
+    0.1505,
+    0.1178,
+    0.0781
+   ],
+   "roughness": 0.835,
+   "clipped": 0.0
+  },
+  {
+   "class": "crust",
+   "source": "Poly Haven",
+   "asset": "mud_cracked_dry_03",
+   "license": "CC0",
+   "meanAlbedo": [
+    0.6342,
+    0.4032,
+    0.2256
+   ],
+   "roughness": 0.756,
+   "clipped": 0.0
+  },
+  {
+   "class": "soil",
+   "source": "Poly Haven",
+   "asset": "dirt",
+   "license": "CC0",
+   "meanAlbedo": [
+    0.126,
+    0.0858,
+    0.0492
+   ],
+   "roughness": 0.944,
+   "clipped": 0.0025
+  },
+  {
+   "class": "cover",
+   "source": "Poly Haven",
+   "asset": "sparse_grass",
+   "license": "CC0",
+   "meanAlbedo": [
+    0.0816,
+    0.0491,
+    0.0087
+   ],
+   "roughness": 0.943,
+   "clipped": 0.0107
+  },
+  {
+   "class": "snow",
+   "source": "Poly Haven",
+   "asset": "snow_02",
+   "license": "CC0",
+   "meanAlbedo": [
+    0.379,
+    0.3786,
+    0.3886
+   ],
+   "roughness": 0.801,
+   "clipped": 0.0
+  },
+  {
+   "class": "ice",
+   "source": "ambientCG",
+   "asset": "Ice002",
+   "license": "CC0",
+   "meanAlbedo": [
+    0.1424,
+    0.2154,
+    0.1799
+   ],
+   "roughness": 0.208,
+   "clipped": 0.0351
+  }
+ ]
+}

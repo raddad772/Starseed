@@ -7,6 +7,7 @@ import { Atmosphere, blankCloudMap, thermalUniform } from './atmosphere.js';
 import { makeStarMesh } from './sky.js';
 import { makeGiantMesh, makeRingMesh } from './giant.js';
 import { VolumePass } from './volume.js';
+import { loadMaterials } from './materials.js';
 import * as U from '../core/units.js';
 
 const _v = new THREE.Vector3(), _v2 = new THREE.Vector3();
@@ -19,6 +20,8 @@ export class WorldRenderer {
     this.u = universe;
     this.pool = pool;
     this.detailTex = detailTex;
+    // (the ground's scanned materials: a neutral stand-in until they arrive)
+    loadMaterials(engine.renderer).catch((e) => console.warn('ground materials:', e.message));
     this.items = [];
     const starColor = universe.system.star.color;
     this.starColor = new THREE.Vector3(starColor[0], starColor[1], starColor[2]);

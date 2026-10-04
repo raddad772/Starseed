@@ -145,6 +145,14 @@ export async function shot(name, q = 0.9) {
   return r.text();
 }
 
+// the ground's materials: 3 triplanar scans, 2 biplanar, 0 the procedural detail (render/materials.js)
+export async function matMode(m) {
+  const M = await import('/src/render/materials.js');
+  if (m != null) M.setMatMode(m);
+  await M.loadMaterials(g().engine.renderer);
+  return M.matMode();
+}
+
 export function landmarks(id) {
   const s = body(id).data.terrain.snapshot;
   return (s && s.landmarks || []).map((l) => ({ kind: l.kind, name: l.name, text: l.text, lat: +l.lat.toFixed(3), lon: +l.lon.toFixed(3) }));

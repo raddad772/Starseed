@@ -9,6 +9,7 @@
 
 import { dirFromFaceUV, chunkUVBounds, chunkArcSize } from './cubesphere.js';
 import { S_LEN, surfaceOf } from './terrain.js';
+import { MAT_W0, MAT_N } from './matclasses.js';
 
 export const CHUNK_N = 32; // quads per side (even)
 
@@ -180,7 +181,9 @@ export function buildChunk(gen, face, level, ix, iy, N = CHUNK_N) {
   const mcolA = new Uint8Array(nVert * 4);
   const matA = new Uint8Array(nVert * 4);
   const extA = new Uint8Array(nVert * 4);
-  const col = [0, 0, 0], mat = new Float64Array(8);
+  // (each material class's share: matclasses.js, 12 a vertex)
+  const NC = MAT_N - MAT_W0, clsA = new Uint8Array(nVert * NC);
+  const col = [0, 0, 0], mat = new Float64Array(MAT_N);
   const CVi = CN + 1;
   const cp = (ci, cj, out, o) => { // coarse interior vertex position -> out[o..o+2]
     const k = (cj + 1) * CV + (ci + 1);
@@ -210,6 +213,7 @@ export function buildChunk(gen, face, level, ix, iy, N = CHUNK_N) {
       extA[vi * 4 + 1] = Math.round(Math.min(1, mat[6]) * 255);
       extA[vi * 4 + 2] = Math.round(Math.min(1, s[12] / 1.4) * 255); // roughness
       extA[vi * 4 + 3] = Math.round((0.5 + 0.5 * s[10]) * 255);    // mineral variant
+      for (let k = 0; k < NC; k++) clsA[vi * NC + k] = Math.round(Math.min(1, mat[MAT_W0 + k]) * 255);
 
       // morph target
       let mx, my, mz, mnx, mny, mnz, mr, mg, mb, mw;
@@ -259,6 +263,7 @@ export function buildChunk(gen, face, level, ix, iy, N = CHUNK_N) {
         colA[dst * 4 + c] = colA[src * 4 + c]; mcolA[dst * 4 + c] = mcolA[src * 4 + c];
         matA[dst * 4 + c] = matA[src * 4 + c]; extA[dst * 4 + c] = extA[src * 4 + c];
       }
+      for (let k = 0; k < NC; k++) clsA[dst * NC + k] = clsA[src * NC + k];
     }
   }
 
@@ -274,12 +279,12 @@ export function buildChunk(gen, face, level, ix, iy, N = CHUNK_N) {
   }
   return {
     origin: [ox, oy, oz],
-    position, morph, nrm, mnrm, col: colA, mcol: mcolA, mat: matA, ext: extA,
+    position, morph, nrm, mnrm, col: colA, mcol: mcolA, mat: matA, ext: extA, cls: clsA,
     minH, maxH,
     bsphere: [bx, by, bz, Math.sqrt(br)],
   };
 }
 
 export function chunkTransferables(r) {
-  return [r.position.buffer, r.morph.buffer, r.nrm.buffer, r.mnrm.buffer, r.col.buffer, r.mcol.buffer, r.mat.buffer, r.ext.buffer];
+  return [r.position.buffer, r.morph.buffer, r.nrm.buffer, r.mnrm.buffer, r.col.buffer, r.mcol.buffer, r.mat.buffer, r.ext.buffer, r.cls.buffer];
 }

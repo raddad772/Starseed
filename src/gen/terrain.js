@@ -34,6 +34,7 @@ import { meanderField } from './meanders.js';
 import { ROCKS, R as ROCK } from './worldsim/lithology.js';
 import { hexToLinear } from './color.js';
 import { HEIGHT_SCALE } from '../core/units.js';
+import { MC, MAT_W0, MAT_N, LITH_CLASS } from './matclasses.js';
 
 // Sample record layout
 export const S_H = 0;        // height above sea level / datum (m)
@@ -1557,6 +1558,22 @@ export class TerrainGenerator {
     return S.lakeLevel(px, py, pz, this._lk || (this._lk = { L: 0, own: false, q: 0 }));
   }
 
+  // the ground's material classes (matclasses.js) into mat[MAT_W0..] when the caller has room for
+  // them: the rock showing (its two rocks by their mix, a dune's or a beach's sand over them), the
+  // ground between (soil; an airless world's regolith, or its frost on an icy one), plants' cover,
+  // fresh basalt, snow over all
+  _matWeights(mat, show, rt, r2, mix, sand, ground, veg, volc, snow) {
+    for (let i = MAT_W0; i < MAT_N; i++) mat[i] = 0;
+    const keep = 1 - snow, bare = (1 - veg) * (1 - volc) * keep, rock = show * bare;
+    mat[MAT_W0 + LITH_CLASS[rt]] += rock * (1 - mix) * (1 - sand);
+    mat[MAT_W0 + LITH_CLASS[r2]] += rock * mix * (1 - sand);
+    mat[MAT_W0 + MC.sand] += rock * sand;
+    mat[MAT_W0 + ground] += (1 - show) * bare;
+    mat[MAT_W0 + MC.cover] += veg * (1 - volc) * keep;
+    mat[MAT_W0 + MC.basalt] += volc * keep;
+    mat[MAT_W0 + MC.snow] += snow;
+  }
+
   // the sim's surfaces: the exposed rock in its own colour (soil over it where gentle),
   // beach sands, ice, lakes, plant cover from the life map (forest in the world's
   // foliage colour, open country drier), wet ground along rivers, a glowing melt sheet
@@ -1564,6 +1581,7 @@ export class TerrainGenerator {
     const p = this.p, P = p.palette, S = this.snap;
     const x = s[S_DX], y = s[S_DY], z = s[S_DZ], h = s[S_H];
     for (let i = 0; i < 7; i++) mat[i] = 0;
+    if (mat.length >= MAT_N) for (let i = MAT_W0; i < MAT_N; i++) mat[i] = 0;
     const Tc = s[S_TEMP] - 273.15;
     // lakes and rivers: water over the ground, tinted by its depth (frozen when cold); the sea
     const wd = s[S_WDEPTH];
@@ -1588,7 +1606,12 @@ export class TerrainGenerator {
       return;
     }
     // (a glacier's ice: its surface is the ground here, sampleSnap)
-    if (s[S_ICE] > 0.5) { col[0] = P.snow[0]; col[1] = P.snow[1]; col[2] = P.snow[2]; mat[1] = 1; mat[6] = 0.3; return; }
+    if (s[S_ICE] > 0.5) {
+      col[0] = P.snow[0]; col[1] = P.snow[1]; col[2] = P.snow[2]; mat[1] = 1; mat[6] = 0.3;
+      // (bare ice where it melts, its ablation zone; firn and snow above)
+      if (mat.length >= MAT_N) { for (let i = MAT_W0; i < MAT_N; i++) mat[i] = 0; const ice = dm.smoothstep(-14, -3, Tc); mat[MAT_W0 + MC.ice] = ice; mat[MAT_W0 + MC.snow] = 1 - ice; }
+      return;
+    }
     // the rock (or sand) showing, and across a contact on even ground the other one, mixed
     let rt = S.rockAt(x, y, z, h / this.hScale), r2 = S.rock2;
     const mix = S.rockMix;
@@ -1600,7 +1623,7 @@ export class TerrainGenerator {
     // (a hydrocarbon world's dunes are its haze's organics: dark brown sand, Titan's ~0.1 albedo)
     if (s[S_SAND] > 0) { const sc = p.liquid === 'methane' || p.liquid === 'ethane' ? ORGANIC_SAND : this.rockLin[ROCK['quartz sand']]; if (sc) for (let k = 0; k < 3; k++) rc[k] += (sc[k] - rc[k]) * s[S_SAND]; }
     // (how much of it is sand: quartz, coral, black sand, lithology.js; no bedrock shows there)
-    let sandW = Math.max((rt >= 11 ? 1 - mix : 0) + (r2 >= 11 ? mix : 0), s[S_SAND]);
+    let sandW = Math.max((rt >= 11 ? 1 - mix : 0) + (r2 >= 11 ? mix : 0), s[S_SAND]), sandOver = s[S_SAND];
     // (a beach's runnels stay sand: the fine tiles' rills cut through its few metres of sand to the
     // beds below, and their banks showed soil, plants and rock, dark streaks down every beach face;
     // waves rework a beach faster than that. Where the level below the fine tiles holds beach sand,
@@ -1609,7 +1632,7 @@ export class TerrainGenerator {
       const rb = S.rockAt(x, y, z, h / this.hScale, 0);
       if (rb >= 11) {
         const k = dm.smoothstep(14, 6, h);
-        if (k > sandW) { const sc = this.rockLin[rb]; if (sc) for (let i = 0; i < 3; i++) rc[i] += (sc[i] - rc[i]) * (k - sandW) / (1 - sandW); sandW = k; }
+        if (k > sandW) { const sc = this.rockLin[rb]; if (sc) for (let i = 0; i < 3; i++) rc[i] += (sc[i] - rc[i]) * (k - sandW) / (1 - sandW); sandW = k; sandOver = Math.max(sandOver, k); }
       }
     }
     // bare rock on steep ground; soil (or regolith) on gentle
@@ -1671,6 +1694,11 @@ export class TerrainGenerator {
     }
     // rivers: wet darker ground on the floodplain (the water itself is above)
     if (s[S_WET] > 0) { const k = 0.3 * s[S_WET]; r *= 1 - k; g *= 1 - k * 0.8; b *= 1 - k * 0.6; mat[6] = Math.max(mat[6], k); }
+    // (the swash zone: sand the sea's waves wet, darker and glossy, up to two metres above the water)
+    if (p.liquid === 'water' && this.contThreshold > -1e8 && h < 2 && sandW > 0) {
+      const k = dm.smoothstep(2, 0.3, h) * sandW;
+      if (k > 0) { r *= 1 - 0.3 * k; g *= 1 - 0.27 * k; b *= 1 - 0.22 * k; mat[6] = Math.max(mat[6], k); }
+    }
     // the cracks' reddish-brown stains
     if (s[S_LINEAE] > 0) { const l = 0.7 * s[S_LINEAE]; r += (0.42 - r) * l; g += (0.25 - g) * l; b += (0.13 - b) * l; }
     // snow where it's cold, if there's water to fall as snow (a water cycle, or an ice inventory);
@@ -1691,6 +1719,11 @@ export class TerrainGenerator {
     if (p.iceCover > 0 && !p.icy && !S.Gc) snow = Math.max(snow, dm.smoothstep(this.iceCapCut - 0.03, this.iceCapCut + 0.03, this.iceCapMetric(s)));
     snow = dm.clamp(snow, 0, 1);
     if (snow > 0) { r += (P.snow[0] - r) * snow; g += (P.snow[1] - g) * snow; b += (P.snow[2] - b) * snow; mat[1] = snow; }
+    if (mat.length >= MAT_N) {
+      const airless = !p.liquid && !(p.airP > 0.001);
+      const gc = airless ? (p.icy ? MC.snow : MC.regolith) : dusty > 0.5 ? MC.regolith : MC.soil;
+      this._matWeights(mat, show, rt, r2, mix, sandOver, gc, mat[0], volc, snow);
+    }
     col[0] = r; col[1] = g; col[2] = b;
     // young craters' ejecta and rays: fresh rock, not yet darkened by the sun's wind
     if (s[S_RAY] > 0) { const k = 0.6 * s[S_RAY]; col[0] += (Math.min(1, col[0] * 1.9 + 0.05) - col[0]) * k; col[1] += (Math.min(1, col[1] * 1.9 + 0.05) - col[1]) * k; col[2] += (Math.min(1, col[2] * 1.9 + 0.05) - col[2]) * k; }
@@ -1739,6 +1772,7 @@ export class TerrainGenerator {
     const W = s[S_MOIST];
     const variant = s[S_VARIANT];
     for (let i = 0; i < 7; i++) mat[i] = 0;
+    if (mat.length >= MAT_N) for (let i = MAT_W0; i < MAT_N; i++) mat[i] = 0;
 
     const hasLiquid = p.liquid && this.contThreshold > -1e8;
     if (hasLiquid && h < 0) {
@@ -1842,6 +1876,12 @@ export class TerrainGenerator {
     mat[3] = sandW * (1 - snow);
     mat[5] = s[S_LAVA] * 0.8;
     mat[6] = hasLiquid && h < 4 ? 0.5 : 0;
+    // (a world without a simulated history: its rock one generic hard rock, dark where volcanic)
+    if (mat.length >= MAT_N) {
+      const airless = !p.liquid && !(p.airP > 0.001), rockShow = Math.min(1, rockW + sandW);
+      const lith = Math.max(s[S_VOLC], s[S_MARE]) > 0.3 ? ROCK.basalt : ROCK.granite;
+      this._matWeights(mat, rockShow, lith, lith, 0, rockShow > 0 ? sandW / rockShow : 0, airless ? (p.icy ? MC.snow : MC.regolith) : MC.soil, veg * (1 - rockW), 0, snow);
+    }
   }
 
   // 0..1 "coldness" whose area distribution is uniform on the sphere, so a

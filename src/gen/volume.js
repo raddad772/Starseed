@@ -26,6 +26,7 @@ import { Noise3 } from '../core/noise.js';
 import { Rng, hashInts } from '../core/rng.js';
 import { S_LEN, S_H, S_WDEPTH, S_MOUNT, S_ROUGH, S_SAND, S_ICE } from './terrain.js';
 import { ROCKS } from './worldsim/lithology.js';
+import { MAT_W0, MAT_N } from './matclasses.js';
 
 export const VCHUNK = 32;          // cells per chunk side (1 m cells)
 const MINW = 2;                    // the heightfield's band limit for the base surface (m)
@@ -367,7 +368,8 @@ export function buildVolumeChunk(field, ci, cj, ck, level = 0) {
   // to body-fixed axes, relative to the chunk's corner; colour and occlusion per vertex
   const ox = a.o[0] + S * (i0 * a.e[0] + j0 * a.u[0] + k0 * a.n[0]), oy = a.o[1] + S * (i0 * a.e[1] + j0 * a.u[1] + k0 * a.n[1]), oz = a.o[2] + S * (i0 * a.e[2] + j0 * a.u[2] + k0 * a.n[2]);
   const position = new Float32Array(nv * 3), nrm = new Int8Array(nv * 4), col = new Uint8Array(nv * 4), mat = new Uint8Array(nv * 4), ext = new Uint8Array(nv * 4), occ = new Uint8Array(nv);
-  const s = new Float64Array(S_LEN), cc = [0, 0, 0], mm = new Float64Array(8), nrmV = [0, 0, 0];
+  const NC = MAT_N - MAT_W0, cls = new Uint8Array(nv * NC);
+  const s = new Float64Array(S_LEN), cc = [0, 0, 0], mm = new Float64Array(MAT_N), nrmV = [0, 0, 0];
   let minR = Infinity, maxR = -Infinity;
   for (let v = 0; v < nv; v++) {
     const lx = P[v * 3] * S, ly = P[v * 3 + 1] * S, lz = P[v * 3 + 2] * S;
@@ -397,6 +399,7 @@ export function buildVolumeChunk(field, ci, cj, ck, level = 0) {
     mat[v * 4] = Math.round(mm[0] * 255); mat[v * 4 + 1] = Math.round(mm[1] * 255); mat[v * 4 + 2] = Math.round(mm[2] * 255); mat[v * 4 + 3] = Math.round(mm[3] * 255);
     ext[v * 4] = Math.round(Math.min(1, mm[5]) * 255); ext[v * 4 + 1] = Math.round(Math.min(1, mm[6]) * 255);
     ext[v * 4 + 2] = Math.round(Math.min(1, s[12] / 1.4) * 255); ext[v * 4 + 3] = Math.round((0.5 + 0.5 * s[10]) * 255);
+    for (let k = 0; k < NC; k++) cls[v * NC + k] = Math.round(Math.min(1, mm[MAT_W0 + k]) * 255);
     // sky: how much rock overhangs this point (probes straight up; caves and overhangs dark;
     // the far rings hold neither)
     let o = 0;
@@ -410,12 +413,12 @@ export function buildVolumeChunk(field, ci, cj, ck, level = 0) {
     occ[v] = Math.round(Math.min(1, o) * 255);
   }
   return {
-    origin: [ox, oy, oz], position, nrm, col, mat, ext, occ,
+    origin: [ox, oy, oz], position, nrm, col, mat, ext, occ, cls,
     index: nv < 65536 ? Uint16Array.from(idx) : Uint32Array.from(idx),
     minH: minR, maxH: maxR,
   };
 }
 
 export function volumeTransferables(r) {
-  return r ? [r.position.buffer, r.nrm.buffer, r.col.buffer, r.mat.buffer, r.ext.buffer, r.occ.buffer, r.index.buffer] : [];
+  return r ? [r.position.buffer, r.nrm.buffer, r.col.buffer, r.mat.buffer, r.ext.buffer, r.occ.buffer, r.cls.buffer, r.index.buffer] : [];
 }
