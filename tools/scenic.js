@@ -127,7 +127,14 @@ export async function drain(maxS = 30) {
   const gm = g(), t0 = performance.now(), b = gm.universe.dominantBody(gm.camPos);
   const it = gm.world.items.find((i) => i.body === b) || gm.world.items.find((i) => i.body && i.body.data === b.data);
   const pt = it && it.terrain;
-  do { await window.debugRun(2000, 16); } while ((gm.pool.pending.size || (pt && pt.pendingCount) || (gm.tiles && (gm.tiles.missing || gm.tiles.pending.size))) && performance.now() - t0 < maxS * 1000);
+  // (a frame, then the next worker's reply: in a hidden tab a tight frame loop starves their replies)
+  const busy = () => gm.pool.pending.size || (pt && pt.pendingCount) || (gm.tiles && (gm.tiles.missing || gm.tiles.pending.size));
+  do {
+    await window.debugRun(1, 1);
+    const fl = [];
+    for (const e of gm.pool.pending.values()) if (e.dispatched) fl.push(e.promise);
+    await Promise.race([Promise.race(fl).catch(() => 0), new Promise((r) => setTimeout(r, fl.length ? 1500 : 50))]);
+  } while (busy() && performance.now() - t0 < maxS * 1000);
   return { pool: gm.pool.pending.size, chunks: pt ? pt.pendingCount : -1, tiles: gm.tiles ? gm.tiles.missing : -1, s: Math.round((performance.now() - t0) / 1000) };
 }
 export const settled = (d) => !d.pool && d.chunks <= 0 && !d.tiles;

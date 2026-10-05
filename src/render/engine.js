@@ -299,7 +299,7 @@ export class EngineView {
   }
 
   dispose() {
-    for (const t of [this.rtScene, this.rtA, this.rtB, this.rtLum, ...this.rtAdapt, this.rtVolume, this.fxTarget, this.out, ...this.bloomLevels, ...this.bloomUp]) if (t) t.dispose();
+    for (const t of [this.rtScene, this.rtA, this.rtB, this.rtLum, ...this.rtAdapt, this.rtVolume, this.fxTarget, this.rtWaterDepth, this.out, ...this.bloomLevels, ...this.bloomUp]) if (t) t.dispose();
     this.depthTex.dispose();
   }
 }
@@ -340,6 +340,18 @@ export class Engine {
     this.scene = new THREE.Scene();
     this.scene.matrixWorldAutoUpdate = true;
     this.transparentScene = new THREE.Scene();
+    // soft particles (falls' spray and mist: render/falls.js): drawn into the image after the air,
+    // each its owner's place (userData.owner), tested and faded against the scene's depth by hand
+    // (no hard line where a puff meets the ground or the water)
+    this.softScene = new THREE.Scene();
+    this.softScene.matrixWorldAutoUpdate = false;
+    this.softUniforms = { tSceneDepth: { value: null }, uDepthMode: { value: 0 }, uNear: { value: this.near }, uFar: { value: this.far }, uLogDepthFC: { value: 1 } };
+    // the rivers' water (terrainMaterial.js's RIBBON): drawn over the opaque scene, depth-tested and
+    // writing its depth, each its chunk's place (userData.owner), reading copies of the image and its
+    // depth under it (its bed through it, the banks in it)
+    this.waterScene = new THREE.Scene();
+    this.waterScene.matrixWorldAutoUpdate = false;
+    this.waterUniforms = { tOpaque: { value: null }, tWaterDepth: { value: null }, uZMode: { value: 0 }, uZNear: { value: this.near }, uZFar: { value: this.far }, uZLogFC: { value: 1 } };
     this.atmospheres = []; // {atmo, active} set per frame
     this.bloomStrength = 0.9;
     this.whiteBalance = new THREE.Vector3(1, 1, 1);
@@ -557,6 +569,20 @@ export class Engine {
     this.gpuEnd();
   }
 
+  // a scene of things drawn where their owners are (userData.owner: shown as it is, at its place);
+  // whether any is shown
+  syncOwned(scene) {
+    let any = false;
+    for (const o of scene.children) {
+      const ow = o.userData.owner;
+      let vis = !!(ow && ow.parent);
+      for (let q = ow; q && vis; q = q.parent) if (!q.visible) vis = false;
+      o.visible = vis;
+      if (vis) { o.matrixWorld.copy(ow.matrixWorld); any = true; }
+    }
+    return any;
+  }
+
   _render(dt, sky, atmos, animate) {
     const r = this.renderer;
     const V = this.view;
@@ -575,6 +601,26 @@ export class Engine {
     r.clear(true, true, false);
     r.render(this.scene, cam);
     this.passEnd();
+
+    // 1b. the rivers' water
+    if (this.waterScene.children.length && this.syncOwned(this.waterScene)) {
+      this.passBegin('water');
+      // (copies of the image and its depth: read where the water's drawn, into the image itself)
+      this._copyMat = this._copyMat || new THREE.ShaderMaterial({ uniforms: { tSrc: { value: null } }, vertexShader: FULLSCREEN_VERT, fragmentShader: 'uniform sampler2D tSrc; varying vec2 vUv; void main(){ gl_FragColor = texture(tSrc, vUv); }', depthTest: false, depthWrite: false });
+      this._depthCopyMat = this._depthCopyMat || new THREE.ShaderMaterial({ uniforms: { tSrc: { value: null } }, vertexShader: FULLSCREEN_VERT, fragmentShader: 'uniform sampler2D tSrc; void main(){ gl_FragColor = vec4(texelFetch(tSrc, ivec2(gl_FragCoord.xy), 0).r, 0.0, 0.0, 1.0); }', depthTest: false, depthWrite: false });
+      if (!V.rtWaterDepth) V.rtWaterDepth = new THREE.WebGLRenderTarget(V.width, V.height, { type: THREE.FloatType, format: THREE.RedFormat, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: false, stencilBuffer: false, generateMipmaps: false });
+      if (V.rtWaterDepth.width !== V.width || V.rtWaterDepth.height !== V.height) V.rtWaterDepth.setSize(V.width, V.height);
+      this._copyMat.uniforms.tSrc.value = V.rtScene.texture;
+      renderFullscreen(r, this._copyMat, V.rtA);
+      this._depthCopyMat.uniforms.tSrc.value = V.depthTex;
+      renderFullscreen(r, this._depthCopyMat, V.rtWaterDepth);
+      const wu = this.waterUniforms;
+      wu.tOpaque.value = V.rtA.texture; wu.tWaterDepth.value = V.rtWaterDepth.texture;
+      wu.uZMode.value = this.depthMode; wu.uZNear.value = this.near; wu.uZFar.value = this.far; wu.uZLogFC.value = Math.log2(this.far + 1);
+      r.setRenderTarget(V.rtScene);
+      r.render(this.waterScene, cam);
+      this.passEnd();
+    }
 
     // 2. background where nothing was drawn
     const bg = this.bgMat.uniforms;
@@ -614,6 +660,16 @@ export class Engine {
       } else renderFullscreen(r, a.material, dst);
       this.passEnd();
       const t = src; src = dst; dst = t;
+    }
+
+    // 3a. soft particles, by hand against the scene's depth (src has none attached: no feedback)
+    if (this.softScene.children.length && this.syncOwned(this.softScene)) {
+      this.passBegin('soft');
+      const su = this.softUniforms;
+      su.tSceneDepth.value = V.depthTex; su.uDepthMode.value = this.depthMode; su.uNear.value = this.near; su.uFar.value = this.far; su.uLogDepthFC.value = Math.log2(this.far + 1);
+      r.setRenderTarget(src);
+      r.render(this.softScene, cam);
+      this.passEnd();
     }
 
     // 3b. additive / transparent effects (plumes, particles) on top, depth-tested

@@ -7,11 +7,15 @@
 // toward the morph target with distance, so a chunk is geometrically identical
 // to its parent at the moment they swap: no popping, no T-junction cracks.
 
-import { dirFromFaceUV, chunkUVBounds, chunkArcSize } from './cubesphere.js';
-import { S_LEN, surfaceOf } from './terrain.js';
+import { dirFromFaceUV, faceUVFromDir, chunkUVBounds, chunkArcSize } from './cubesphere.js';
+import { S_LEN, S_WLVL, S_FLX, S_FLV, S_RIVR, S_RFADE, S_WDEPTH, S_TEMP, surfaceOf } from './terrain.js';
 import { MAT_W0, MAT_N } from './matclasses.js';
 
 export const CHUNK_N = 32; // quads per side (even)
+// rivers drawn as a surface of their own (terrain.js riverRibbons; terrainMaterial.js's RIBBON) in
+// chunks finer than this (m between vertices): their shore where the ground rises out of the water,
+// to the pixel, not along the mesh's triangles; the mesh there their bed
+export const RIBBON_SPACING = 40;
 
 const indexCache = new Map();
 // Shared index buffer: grid triangles + skirt quads
@@ -61,15 +65,13 @@ function edgeVertexLists(N) {
 function encodeColor(c) { return Math.max(0, Math.min(255, Math.round(Math.sqrt(Math.max(c, 0)) * 255))); }
 function encodeWater(depth) { return depth > 0 ? Math.max(1, Math.min(255, Math.round(Math.sqrt(depth / 6000) * 255))) : 0; }
 // a vertex's height against the water, signed (m): its depth under it, or on land how far above
-// it (the sea's level; inland, a lake's or a river's unknown here, a little): the shader's shore is
-// where it crosses 0 between vertices, straight across a triangle, not stepping round its land
-// corners. Inland water as if deeper (kind: terrain.js _liquidSurface's): a lake's at least 2 m, a
-// river's, a creek's and a pond's 8, so a channel a vertex or two wide fills its triangles (its own
-// depth against the land's unknown height above it put the edge so near each water vertex that a
-// creek running across the mesh's diagonals came apart in dashes)
-function shoreDepth(depth, h, kind) {
-  if (!(depth > 0)) return -Math.min(2, Math.max(0.05, h));
-  return kind < 0.2 ? depth : kind < 0.55 ? Math.max(depth, 2) : Math.max(depth, 8);
+// the water beside it (a river's, a creek's or a lake's level where the sample has one: terrain.js
+// S_WLVL; else the sea's): the shader's shore is where it crosses 0 between vertices, so the edge
+// lies where the ground meets the water, straight across a triangle, not stepping round its land
+// corners. (Inland water at least 0.3 m deep there: a film shallower than the mesh can show)
+function shoreDepth(depth, h, kind, wl) {
+  if (!(depth > 0)) return -Math.min(2, Math.max(0.02, wl > -1e8 ? h - wl : h));
+  return kind < 0.2 ? depth : Math.max(depth, 0.3);
 }
 // (into the normal's spare byte, companded: fine near the shore)
 function encodeShore(d) {
@@ -78,7 +80,7 @@ function encodeShore(d) {
 }
 
 // scratch buffers reused between chunks
-let scratchN = 0, fineS, fineP, coarseS, coarseP, fineNrm, coarseNrm, coarseCol;
+let scratchN = 0, fineS, fineP, coarseS, coarseP, fineNrm, coarseNrm, coarseCol, rivWd;
 
 export function buildChunk(gen, face, level, ix, iy, N = CHUNK_N) {
   const R = gen.R;
@@ -95,6 +97,7 @@ export function buildChunk(gen, face, level, ix, iy, N = CHUNK_N) {
     fineNrm = new Float64Array(V * V * 3);
     coarseNrm = new Float64Array((CN + 1) * (CN + 1) * 3);
     coarseCol = new Float64Array((CN + 1) * (CN + 1) * 4);
+    rivWd = new Float64Array(FV * FV);
   }
   const { u0, v0, size } = chunkUVBounds(level, ix, iy);
   const du = size / N;
@@ -102,6 +105,16 @@ export function buildChunk(gen, face, level, ix, iy, N = CHUNK_N) {
   const spacing = arc / N;
   const minW = spacing * 2;
   const coarseMinW = spacing * 4;
+  // (a river's water, where the ribbons draw it: the mesh its bed, the water's depth kept for its falls.
+  // Not where it's frozen the year round: ice, the ground's. The parent's grid, the morph's, bed
+  // wherever it's a river's, so a mesh morphed toward it doesn't rise through its ribbon)
+  const ribbons = spacing < RIBBON_SPACING && gen.riverRibbons && gen.snap && gen.snap.riv, frz = ribbons ? gen._freezeC() : 0;
+  const bed = (s, coarse) => {
+    if (!ribbons || !(s[S_RIVR] > 0) || !(s[S_WDEPTH] > 0) || (!coarse && s[S_RFADE] > 0) || s[S_TEMP] - 273.15 - frz < -8) return 0;
+    const wd = s[S_WDEPTH];
+    s[S_WDEPTH] = 0;
+    return wd;
+  };
 
   // chunk origin: centre direction at datum radius
   const cdir = [0, 0, 0];
@@ -120,6 +133,7 @@ export function buildChunk(gen, face, level, ix, iy, N = CHUNK_N) {
       const k = j * FV + i;
       const s = fineS.subarray(k * S_LEN, k * S_LEN + S_LEN);
       gen.sample(dir[0], dir[1], dir[2], minW, s);
+      rivWd[k] = bed(s, false);
       const h = surfaceOf(gen, s);
       const r = R + h;
       fineP[k * 3] = dir[0] * r; fineP[k * 3 + 1] = dir[1] * r; fineP[k * 3 + 2] = dir[2] * r;
@@ -155,6 +169,7 @@ export function buildChunk(gen, face, level, ix, iy, N = CHUNK_N) {
         const k = j * CV + i;
         const s = coarseS.subarray(k * S_LEN, k * S_LEN + S_LEN);
         gen.sample(dir[0], dir[1], dir[2], coarseMinW, s);
+        bed(s, true);
         const h = surfaceOf(gen, s);
         const r = R + h;
         coarseP[k * 3] = dir[0] * r; coarseP[k * 3 + 1] = dir[1] * r; coarseP[k * 3 + 2] = dir[2] * r;
@@ -181,7 +196,7 @@ export function buildChunk(gen, face, level, ix, iy, N = CHUNK_N) {
         nv[0] = nx; nv[1] = ny; nv[2] = nz;
         gen.shade(s, 1 - up, col, mat, nv);
         const oc = (j * CVi + i) * 4;
-        coarseCol[oc] = col[0]; coarseCol[oc + 1] = col[1]; coarseCol[oc + 2] = col[2]; coarseCol[oc + 3] = shoreDepth(mat[4], s[0], mat[0]);
+        coarseCol[oc] = col[0]; coarseCol[oc + 1] = col[1]; coarseCol[oc + 2] = col[2]; coarseCol[oc + 3] = shoreDepth(mat[4], s[0], mat[0], s[S_WLVL]);
       }
     }
   }
@@ -201,6 +216,9 @@ export function buildChunk(gen, face, level, ix, iy, N = CHUNK_N) {
   // river's flow or a lake's fetch; 0 on land, so a shore's triangles can take the water's own. 16
   // bits: the season's ice edge turns on a fraction of a degree, and gen/liquidice.js must agree)
   const liqA = new Uint16Array(nVert * 4);
+  // (running water's way down, planet-fixed, and its speed / 9 m/s: terrain.js S_FLX..S_FLV; 0 still
+  // and on land)
+  const flwA = new Int8Array(nVert * 4);
   // (where a river's water runs steep: its fall, and how deep it runs there; findFalls)
   const steepA = new Float32Array(V * V), wdA = new Float32Array(V * V);
   // (each material class's share: matclasses.js, 12 a vertex)
@@ -228,10 +246,14 @@ export function buildChunk(gen, face, level, ix, iy, N = CHUNK_N) {
       gen.shade(s, 1 - up, col, mat, nv);
       nrm[vi * 4] = Math.round(nx * 127); nrm[vi * 4 + 1] = Math.round(ny * 127); nrm[vi * 4 + 2] = Math.round(nz * 127);
       if (mat[4] > 0 && mat[0] > 0.55 && mat[0] < 0.85) { steepA[vi] = 1 - up; wdA[vi] = mat[4]; }
-      const sd = shoreDepth(mat[4], s[0], mat[0]);
+      const sd = shoreDepth(mat[4], s[0], mat[0], s[S_WLVL]);
       nrm[vi * 4 + 3] = encodeShore(sd);
       colA[vi * 4] = encodeColor(col[0]); colA[vi * 4 + 1] = encodeColor(col[1]); colA[vi * 4 + 2] = encodeColor(col[2]);
       colA[vi * 4 + 3] = encodeWater(mat[4]);
+      if (mat[4] > 0 && s[S_FLV] > 0) {
+        flwA[vi * 4] = Math.round(s[S_FLX] * 127); flwA[vi * 4 + 1] = Math.round(s[S_FLX + 1] * 127); flwA[vi * 4 + 2] = Math.round(s[S_FLX + 2] * 127);
+        flwA[vi * 4 + 3] = Math.round(Math.min(1, s[S_FLV] / 9) * 127);
+      }
       if (mat[4] > 0) {
         liqA[vi * 4] = 65535; liqA[vi * 4 + 1] = Math.round(mat[0] * 65535); liqA[vi * 4 + 2] = Math.round(mat[1] * 65535);
         liqA[vi * 4 + 3] = Math.round((mat[0] > 0.55 && mat[0] < 0.85 ? mat[2] : mat[3]) * 65535);
@@ -292,13 +314,24 @@ export function buildChunk(gen, face, level, ix, iy, N = CHUNK_N) {
       for (let c = 0; c < 4; c++) {
         nrm[dst * 4 + c] = nrm[src * 4 + c]; mnrm[dst * 4 + c] = mnrm[src * 4 + c];
         colA[dst * 4 + c] = colA[src * 4 + c]; mcolA[dst * 4 + c] = mcolA[src * 4 + c];
-        matA[dst * 4 + c] = matA[src * 4 + c]; extA[dst * 4 + c] = extA[src * 4 + c]; liqA[dst * 4 + c] = liqA[src * 4 + c];
+        matA[dst * 4 + c] = matA[src * 4 + c]; extA[dst * 4 + c] = extA[src * 4 + c]; liqA[dst * 4 + c] = liqA[src * 4 + c]; flwA[dst * 4 + c] = flwA[src * 4 + c];
       }
       for (let k = 0; k < NC; k++) clsA[dst * NC + k] = clsA[src * NC + k];
     }
   }
 
-  const falls = spacing < 40 ? findFalls(V, position, steepA, wdA, ox, oy, oz, spacing) : null;
+  // the rivers' water (riverRibbons), its falls with it; the temperature the nearest vertex's
+  let rib = null;
+  if (ribbons) {
+    const uv = { face: 0, u: 0, v: 0 }, d = [0, 0, 0];
+    const tempAt = (x, y, z) => {
+      d[0] = x; d[1] = y; d[2] = z; faceUVFromDir(d, uv);
+      const i = Math.max(0, Math.min(FV - 1, Math.round((uv.u - u0) / du) + 1)), j = Math.max(0, Math.min(FV - 1, Math.round((uv.v - v0) / du) + 1));
+      return fineS[(j * FV + i) * S_LEN + S_TEMP] - 273.15;
+    };
+    rib = gen.riverRibbons(face, u0, v0, size, N, spacing, ox, oy, oz, tempAt);
+  }
+  const falls = rib ? rib.falls : spacing < 40 ? findFalls(V, position, steepA, wdA, ox, oy, oz, spacing) : null;
 
   // bounding sphere in chunk-local coordinates
   let bx = 0, by = 0, bz = 0;
@@ -312,15 +345,16 @@ export function buildChunk(gen, face, level, ix, iy, N = CHUNK_N) {
   }
   return {
     origin: [ox, oy, oz],
-    position, morph, nrm, mnrm, col: colA, mcol: mcolA, mat: matA, ext: extA, liq: liqA, cls: clsA, falls,
+    position, morph, nrm, mnrm, col: colA, mcol: mcolA, mat: matA, ext: extA, liq: liqA, flw: flwA, cls: clsA, falls, rib,
     minH, maxH,
     bsphere: [bx, by, bz, Math.sqrt(br)],
   };
 }
 
 export function chunkTransferables(r) {
-  const t = [r.position.buffer, r.morph.buffer, r.nrm.buffer, r.mnrm.buffer, r.col.buffer, r.mcol.buffer, r.mat.buffer, r.ext.buffer, r.liq.buffer, r.cls.buffer];
+  const t = [r.position.buffer, r.morph.buffer, r.nrm.buffer, r.mnrm.buffer, r.col.buffer, r.mcol.buffer, r.mat.buffer, r.ext.buffer, r.liq.buffer, r.flw.buffer, r.cls.buffer];
   if (r.falls) t.push(r.falls.buffer);
+  if (r.rib) for (const k of ['pos', 'nrm', 'flow', 'liq', 'rib', 'index']) t.push(r.rib[k].buffer);
   return t;
 }
 

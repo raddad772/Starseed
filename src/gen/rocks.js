@@ -150,6 +150,8 @@ export function scatterStones(gen, face, level, ix, iy, maxLevel, seed) {
     gen.sample(dir[0], dir[1], dir[2], minW, s);
     const h = s[S_H], r = R + h;
     const rad = Math.min(0.35, 0.05 * Math.pow(1 - r2 * 0.999, -1 / 1.7));
+    // (one that's rolled in at a shore lies on the bed, seen through the water: the ground's colour)
+    s[S_WDEPTH] = 0;
     gen.shade(s, 1, col, mat, null);
     out.push(dir[0] * r - ox, dir[1] * r - oy, dir[2] * r - oz, rad, rng.next() * dm.TWO_PI, (rng.next() - 0.5) * 0.7, rng.next(), cells[c + 1], 0.15 + 0.25 * rng.next(), 0.3, col[0], col[1], col[2]);
   }

@@ -13,7 +13,7 @@ import { RockSet } from './rockRender.js';
 import { FACES, dirFromFaceUV, chunkArcSize } from '../gen/cubesphere.js';
 import { CHUNK_N, chunkIndices, FALL_STRIDE } from '../gen/chunkbuilder.js';
 import { FallFx } from './falls.js';
-import { makeTerrainMaterial, DETAIL_PERIOD } from './terrainMaterial.js';
+import { makeTerrainMaterial, makeRibbonMaterial, RIBBON_PASS, DETAIL_PERIOD } from './terrainMaterial.js';
 import { FloraSet } from './floraRender.js';
 import { floraOf } from '../sim/floraField.js';
 import { VCHUNK } from '../gen/volume.js';
@@ -303,6 +303,7 @@ export class PlanetTerrain {
     g.setAttribute('mat', new THREE.BufferAttribute(d.mat, 4, true));
     g.setAttribute('ext', new THREE.BufferAttribute(d.ext, 4, true));
     g.setAttribute('liq', new THREE.BufferAttribute(d.liq, 4, true));
+    g.setAttribute('flw', new THREE.BufferAttribute(d.flw, 4, true));
     setClassAttrs(g, d.cls);
     g.setIndex(indexAttr());
     g.boundingSphere = new THREE.Sphere(new THREE.Vector3(d.bsphere[0], d.bsphere[1], d.bsphere[2]), d.bsphere[3]);
@@ -327,7 +328,24 @@ export class PlanetTerrain {
       u.uFallW.value = d.falls[best + 5];
       this.fallFx = this.fallFx || new FallFx(this.shared);
       const fx = this.fallFx.make(d.falls, d.origin);
-      if (fx) m.add(fx);
+      // (drawn in the engine's soft-particle pass, where its chunk is: falls.js FallFx.soft)
+      if (fx && FallFx.soft) { fx.userData.owner = m; m.userData.fx = fx; FallFx.soft.scene.add(fx); }
+    }
+    // (its rivers' water, a surface of its own (gen/terrain.js riverRibbons): drawn in the engine's
+    // water pass where its chunk is)
+    if (d.rib && RIBBON_PASS.scene) {
+      const rg = new THREE.BufferGeometry(), W = d.rib;
+      rg.setAttribute('position', new THREE.BufferAttribute(W.pos, 3));
+      rg.setAttribute('nrm', new THREE.BufferAttribute(W.nrm, 3, true));
+      rg.setAttribute('liq', new THREE.BufferAttribute(W.liq, 4, true));
+      rg.setAttribute('flw', new THREE.BufferAttribute(W.flow, 4));
+      rg.setAttribute('rib', new THREE.BufferAttribute(W.rib, 2));
+      rg.setIndex(new THREE.BufferAttribute(W.index, 1));
+      rg.computeBoundingSphere();
+      const wm = new THREE.Mesh(rg, makeRibbonMaterial(m.material));
+      wm.matrixAutoUpdate = false;
+      wm.userData.owner = m; m.userData.water = wm;
+      RIBBON_PASS.scene.add(wm);
     }
     node.mesh = m;
     node.minH = d.minH; node.maxH = d.maxH;
@@ -578,7 +596,12 @@ export class PlanetTerrain {
   }
 }
 
-// (a chunk mesh's children: its falls' spray and mist, their material the world's own)
+// (a chunk mesh's children, its falls' spray and mist in the soft-particle pass (their material the
+// world's own), and its rivers' water in the water pass)
 function disposeKids(m) {
   for (const c of m.children) { c.geometry.dispose(); if (!c.userData.sharedMaterial) c.material.dispose(); }
+  const fx = m.userData.fx;
+  if (fx) { if (fx.parent) fx.parent.remove(fx); fx.geometry.dispose(); m.userData.fx = null; }
+  const w = m.userData.water;
+  if (w) { if (w.parent) w.parent.remove(w); w.geometry.dispose(); w.material.dispose(); m.userData.water = null; }
 }

@@ -11,7 +11,8 @@ import { loadMaterials, windRipple } from './materials.js';
 import { HeightCube } from './terrainShadow.js';
 import { SUN_SHADOW_UNIFORMS } from './sunShadows.js';
 import { Liquid } from './liquid.js';
-import { fallPhysics } from './falls.js';
+import { fallPhysics, FallFx } from './falls.js';
+import { RIBBON_PASS } from './terrainMaterial.js';
 import * as U from '../core/units.js';
 
 const _v = new THREE.Vector3(), _v2 = new THREE.Vector3();
@@ -23,6 +24,8 @@ export class WorldRenderer {
     this.cloudNoise = cloudNoise;
     this.u = universe;
     this.pool = pool;
+    FallFx.soft = { scene: engine.softScene, uniforms: engine.softUniforms };
+    RIBBON_PASS.scene = engine.waterScene; RIBBON_PASS.uniforms = engine.waterUniforms;
     this.detailTex = detailTex;
     // (the ground's scanned materials: a neutral stand-in until they arrive)
     loadMaterials(engine.renderer).catch((e) => console.warn('ground materials:', e.message));

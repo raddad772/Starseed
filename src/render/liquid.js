@@ -22,6 +22,11 @@ const N_OCT = 12, N_DIR = 3, N_WAVE = N_OCT * N_DIR;
 // (surface tension, N/m, near each one's own temperatures; the rest from materials.js: the index,
 // density, viscosity, triple point)
 export const SIGMA = { water: 0.072, brine: 0.075, 'ammonia-water': 0.06, methane: 0.017, ethane: 0.03, nitrogen: 0.009, CO2: 0.012, ammonia: 0.034, SO2: 0.025, sulfur: 0.06, lava: 0.35 };
+// (each one's absorption, 1/m, at the red, green and blue the image draws (~610, 545, 465 nm): pure
+// water's (Pope and Fry 1997), its red lost over a few metres, its blue over a hundred; liquid
+// methane's and ethane's far weaker in the visible, their bands in the near infrared (a deep
+// methane sea still reddish-dark: its 619 nm band); the rest as water)
+const ABSORB = { water: [0.25, 0.05, 0.01], brine: [0.25, 0.05, 0.01], methane: [0.03, 0.006, 0.004], ethane: [0.02, 0.005, 0.004] };
 // (the sea's freezing point under the fresh's, C: its salt)
 const SALT = { water: -1.8 };
 
@@ -60,6 +65,10 @@ export class Liquid {
     this.uniforms = {
       uLiquid: { value: new THREE.Vector4(F0, U, waves, lamP) },
       uLiquid2: { value: new THREE.Vector4(g, foams, SALT[name] || 0, 0) },
+      // (and on a living world its rivers' dissolved organic matter, the tea its plants' soils wash
+      // into them: absorbing ~1-10 /m at 440 nm in rivers (a blackwater river's more), falling ~1.5%
+      // a nm toward the red (Bricaud et al. 1981); by how much its land grows)
+      uLiquid3: { value: new THREE.Vector4(...(ABSORB[name] || ABSORB.water), (name === 'water' || name === 'brine') && d.life ? 2.5 * (d.life.density || 0) : 0) },
       uWaveK: { value: K },
     };
   }
@@ -74,6 +83,7 @@ export class Liquid {
 export const GLSL_LIQUID = /* glsl */`
 uniform vec4 uLiquid;     // F0, the wind (m/s), wind waves (1 .. 0 a thick melt), the peak wavelength (m)
 uniform vec4 uLiquid2;    // gravity, how it foams (water most), the sea's freezing point under the fresh's (C), the sun's latitude now (sin)
+uniform vec4 uLiquid3;    // its absorption (1/m: red, green, blue), its rivers' dissolved organic matter's at 440 nm (1/m)
 uniform vec4 uWaveK[${N_WAVE}];   // each wave's k (planet-fixed, rad/m), its phase now
 // the prevailing wind's way at upF (the belts the sim's climate has: the trades blowing west, the
 // westerlies east, the polar easterlies west): +1 toward the east, -1 toward the west, turning over
@@ -118,8 +128,9 @@ Waves liquidWaves(vec3 fp, vec3 n, vec3 wd, float lmax, bool river, float foot, 
 // the roughness its unresolved waves leave (GGX alpha), its foam; kind 0 the sea, 0.4 a lake, 0.7 a
 // river, 1 a pond; flow a river's (0..1), fetch how open to the wind (0..1), depth (m), foot a
 // pixel's span (m)
+// (a river's: fdir its way down (planet-fixed, along the ground; 0 still), fv its speed (m/s))
 void liquidSurface(vec3 fp, vec3 n, vec3 upF, float kind, float flow, float fetch, float depth, float foot,
-    vec2 wn, vec4 grp, out vec3 nF, out float rough, out float foam) {
+    vec2 wn, vec4 grp, vec3 fdir, float fv, out vec3 nF, out float rough, out float foam) {
   float al = abs(asin(clamp(upF.y, -1.0, 1.0)));
   // the prevailing wind: trades toward the west, westerlies east, polar easterlies west; light in
   // the doldrums, strongest in the westerlies
@@ -134,21 +145,24 @@ void liquidSurface(vec3 fp, vec3 n, vec3 upF, float kind, float flow, float fetc
   float U = uLiquid.y * strength * (sea ? 1.0 : mix(0.3, 1.0, fetch));
   // the slopes' variance: the sea's measured (Cox and Munk); a lake's a little calmer; a river's by
   // its flow; a pond's near a mirror's
-  float s2 = sea ? 0.003 * step(0.01, U) + 0.00512 * U : pond ? 0.0003 + 0.0003 * U : river ? 0.002 + 0.04 * flow : 0.001 + 0.00512 * U;
+  // (a river's surface by how it runs: its Froude number, its speed over a shallow wave's on its
+  // depth, sets how rough the turbulence leaves it (a lowland river's boils at ~0.1, a rapid's
+  // standing waves near 1), a little wind ripple on top)
+  float Fr = river ? fv / sqrt(uLiquid2.x * max(depth, 0.3)) : 0.0;
+  float s2 = sea ? 0.003 * step(0.01, U) + 0.00512 * U : pond ? 0.0003 + 0.0003 * U : river ? 0.0012 + 0.035 * min(Fr * Fr, 2.0) + 0.0015 * U : 0.001 + 0.00512 * U;
   s2 *= uLiquid.z;
   // (the longest waves it can hold: the open sea's the wind's own peak; a lake's by its fetch; a
-  // river's and a pond's short)
-  float lmax = sea ? 1e9 : river ? 1.2 : pond ? 1.0 : 25.0 + 400.0 * fetch;
+  // river's its standing waves' (2 pi v^2 / g) and its depth's eddies; a pond's short)
+  float lmax = sea ? 1e9 : river ? clamp(6.2832 * fv * fv / uLiquid2.x + depth, 0.6, 8.0) : pond ? 1.0 : 25.0 + 400.0 * fetch;
   Waves W;
+  vec3 fd = fdir - upF * dot(fdir, upF);
+  fd = length(fd) > 0.05 ? normalize(fd) : vec3(0.0);
+  float ta = fract(uTime / 3.0), tb = fract(uTime / 3.0 + 0.5), wa = 1.0 - abs(2.0 * ta - 1.0);
   if (river) {
-    // a river's chop carried down it (two phases of the pattern, each drawn along and faded at its
-    // ends, so it moves without ever stretching)
-    vec3 dn = n - upF * dot(n, upF);
-    vec3 fd = length(dn) > 1e-4 ? normalize(dn) : vec3(0.0);
-    float v = 0.4 + 2.6 * flow, t1 = fract(uTime * 0.25), t2 = fract(uTime * 0.25 + 0.5);
-    Waves A = liquidWaves(fp - fd * v * 4.0 * t1, n, wd, lmax, true, foot, warp * 0.05, grp);
-    Waves B = liquidWaves(fp - fd * v * 4.0 * t2 + 0.37, n, wd, lmax, true, foot, warp * 0.05, grp);
-    float wa = 1.0 - abs(2.0 * t1 - 1.0);
+    // a river's surface carried down it at its speed (two phases of the pattern, each drawn along
+    // and faded at its ends, so it moves without ever stretching)
+    Waves A = liquidWaves(fp - fd * fv * 3.0 * ta, n, wd, lmax, true, foot, warp * 0.05, grp);
+    Waves B = liquidWaves(fp - fd * fv * 3.0 * tb + 0.37, n, wd, lmax, true, foot, warp * 0.05, grp);
     W = A; W.g = A.g * wa + B.g * (1.0 - wa); W.crest = A.crest * wa + B.crest * (1.0 - wa);
   } else W = liquidWaves(fp, n, wd, lmax, false, foot, warp, grp);
   // (scaled to the slopes' variance, the groups left to vary it from place to place)
@@ -173,8 +187,29 @@ void liquidSurface(vec3 fp, vec3 n, vec3 upF, float kind, float flow, float fetc
     float sh = (1.0 - smoothstep(0.05, 1.6, depth)) * smoothstep(0.75, 0.97, sw) * lace + (1.0 - smoothstep(0.0, 0.15, depth)) * (0.4 + 0.6 * lace);
     foam = max(foam, clamp(sh, 0.0, 1.0) * smoothstep(0.5, 4.0, U) * 0.75);
   }
-  // a river's white water where it runs fast
-  if (river) foam = smoothstep(0.6, 0.95, flow) * smoothstep(0.5, 1.6, W.crest) * 0.7;
+  // a river's: white water where it runs near critical, its standing waves breaking (patches of the
+  // flow round the bed's roughness gone supercritical: none on a smooth run, more as its Froude number
+  // nears 1, all of it at a hydraulic jump's ~1.5), laid as patches drawn out down the current and
+  // carried with it (the detail noise, two scales, read in two phases as the waves are), whitest on
+  // the resolved waves' crests; and on a rough run thin lines of foam, the convergences its bubbles
+  // gather into
+  if (river && length(fd) > 0.0) {
+    vec3 ac = cross(upF, fd);
+    float cov = clamp((Fr - 0.6) / 0.9, 0.0, 1.0);
+    cov *= cov;
+    if (cov > 0.0) {
+      vec2 q = vec2(dot(fp, ac) * 0.15, dot(fp, fd) * 0.04);
+      vec2 qa = q - vec2(0.0, fv * 3.0 * ta * 0.04), qb = q + vec2(0.41, 0.0) - vec2(0.0, fv * 3.0 * tb * 0.04);
+      float na = 0.65 * texture(tDetail, qa).a + 0.35 * texture(tDetail, qa * 3.1 + 0.3).r;
+      float nb = 0.65 * texture(tDetail, qb).a + 0.35 * texture(tDetail, qb * 3.1 + 0.3).r;
+      float th = mix(0.75, 0.28, cov);
+      foam = smoothstep(th - 0.02, th + 0.1, mix(nb, na, wa) + 0.06 * W.crest) * 0.85;
+    }
+    vec2 q = vec2(dot(fp, ac) * 0.2, dot(fp, fd) * 0.004);
+    float sa = texture(tDetail, q - vec2(0.0, fv * 3.0 * ta * 0.004)).a, sb = texture(tDetail, q + vec2(0.43, 0.0) - vec2(0.0, fv * 3.0 * tb * 0.004)).a;
+    float streak = smoothstep(0.7, 0.8, mix(sb, sa, wa)) * smoothstep(0.6, 1.2, Fr);
+    foam = max(foam, streak * 0.3);
+  }
   foam *= uLiquid2.y;
 }
 // how much of it is frozen now: its annual mean (Tm, C over its freezing point) moved by the season

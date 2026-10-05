@@ -18,6 +18,7 @@ import { MATERIALS } from '../gen/worldsim/materials.js';
 import { SIGMA } from './liquid.js';
 import { GLSL_SURFACE_ATMO } from './atmosphere.js';
 import { FALL_STRIDE } from '../gen/chunkbuilder.js';
+import { GLSL_DEPTH } from './glsl.js';
 
 // the world's falls' physics: uFall1 (g, the sheet's top speed, its drops' terminal speed, their drag
 // time), uFall2 (the mist's settling speed, how much of a fall the air turns to mist, the rainbow's
@@ -72,8 +73,8 @@ varying float vA;
 varying vec2 vUv;
 varying float vMist;
 varying vec2 vS;
+varying float vZ;
 #include <common>
-#include <logdepthbuf_pars_vertex>
 ${GLSL_SURFACE_ATMO}
 void main() {
   bool mist = aFall.w > 0.5;
@@ -139,8 +140,8 @@ void main() {
   vS = aSeed.zw;
   vec4 mv = viewMatrix * wp;
   mv.xy += corner * size;
+  vZ = -mv.z;
   gl_Position = projectionMatrix * mv;
-  #include <logdepthbuf_vertex>
 }
 `;
 
@@ -151,13 +152,19 @@ varying float vA;
 varying vec2 vUv;
 varying float vMist;
 varying vec2 vS;
+varying float vZ;
+uniform sampler2D tSceneDepth;
+${GLSL_DEPTH}
 #include <common>
-#include <logdepthbuf_pars_fragment>
 void main() {
-  #include <logdepthbuf_fragment>
   float r = length(vUv);
   if (r > 1.0) discard;
-  float a = vA * (1.0 - smoothstep(vMist > 0.5 ? 0.2 : 0.5, 1.0, r));
+  // (behind the scene's surface: hidden; near it: faded over a metre or so (a drop's spray less))
+  float dRaw = texelFetch(tSceneDepth, ivec2(gl_FragCoord.xy), 0).r;
+  float zs = isSkyDepth(dRaw) ? 1e30 : viewZFromDepth(dRaw);
+  if (vZ > zs) discard;
+  float soft = clamp((zs - vZ) / (vMist > 0.5 ? 1.5 : 0.2), 0.0, 1.0);
+  float a = vA * soft * (1.0 - smoothstep(vMist > 0.5 ? 0.2 : 0.5, 1.0, r));
   // (a puff of mist uneven within)
   if (vMist > 0.5) a *= 0.4 + 1.2 * texture(tDetail, vUv * 0.25 + vS).a;
   gl_FragColor = vec4(vCol, a);
@@ -167,10 +174,12 @@ void main() {
 // a world's falls' spray and mist: one material, a set of particles for each chunk with falls (a child
 // of its mesh, shown and dropped with it)
 export class FallFx {
+  // (world.js: the engine's soft-particle scene and its depth uniforms)
+  static soft = null;
   constructor(shared) {
     this.material = new THREE.ShaderMaterial({
-      uniforms: { ...shared }, vertexShader: VERT, fragmentShader: FRAG,
-      transparent: true, depthWrite: false,
+      uniforms: { ...shared, ...(FallFx.soft ? FallFx.soft.uniforms : {}) }, vertexShader: VERT, fragmentShader: FRAG,
+      transparent: true, depthWrite: false, depthTest: false,
     });
   }
   // falls: chunkbuilder.js's (FALL_STRIDE floats each); origin: the chunk's (the planet's frame)
@@ -205,6 +214,7 @@ export class FallFx {
     geo.instanceCount = n;
     const m = new THREE.Mesh(geo, this.material);
     m.frustumCulled = false;
+    m.matrixAutoUpdate = false;
     m.userData.sharedMaterial = true;
     return m;
   }

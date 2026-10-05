@@ -21,6 +21,7 @@ attribute vec4 mcol;
 attribute vec4 mat;
 attribute vec4 ext;
 attribute vec4 liq;        // (a liquid's surface: chunkbuilder.js; 0 on land)
+attribute vec4 flw;        // (running water's way down and speed / 9 m/s)
 attribute float occ;       // (volume chunks: how much rock overhangs; 0 where absent)
 attribute vec4 cls0;       // each material class's share (gen/matclasses.js: 0..3, 4..7, 8..11)
 attribute vec4 cls1;
@@ -44,6 +45,7 @@ varying vec4 vCol;
 varying vec4 vMat;
 varying vec4 vExt;
 varying vec4 vLiq;
+varying vec4 vFlw;
 varying float vShore;
 varying float vMorphK;
 varying vec4 vCls0;
@@ -60,6 +62,7 @@ void main() {
   vMat = mat;
   vExt = ext;
   vLiq = liq;
+  vFlw = flw;
   // (its height against the water, signed: chunkbuilder.js; > 0 under it)
   vShore = mix(nrm.w, mnrm.w, m);
   vCls0 = cls0; vCls1 = cls1; vCls2 = cls2;
@@ -79,6 +82,54 @@ void main() {
   vNearRel = uNearOff + p;
   vAnchorPos = uOriginRel + p;
   vOcc = occ;
+  gl_Position = projectionMatrix * viewMatrix * wp;
+  #include <logdepthbuf_vertex>
+}
+`;
+
+// the rivers' water (gen/terrain.js riverRibbons): a surface of its own at its level, its chunk's
+// place; the terrain's varyings as its water has them
+const RIBBON_VERT = /* glsl */`
+attribute vec4 nrm;
+attribute vec4 liq;
+attribute vec4 flw;
+attribute vec2 rib;        // across it (-1..1), its mean depth (m)
+uniform vec3 uOriginMod;
+uniform vec3 uOriginRel;
+uniform vec3 uNearOff;
+varying vec3 vNearRel;
+varying vec3 vAnchorPos;
+varying float vOcc;
+varying vec3 vWorldPos;
+varying vec3 vNormal;
+varying vec3 vFixedPos;
+varying vec3 vFixedNormal;
+varying vec4 vCol;
+varying vec4 vMat;
+varying vec4 vExt;
+varying vec4 vLiq;
+varying vec4 vFlw;
+varying float vShore;
+varying float vMorphK;
+varying vec4 vCls0;
+varying vec4 vCls1;
+varying vec4 vCls2;
+varying vec2 vRib;
+#include <common>
+#include <logdepthbuf_pars_vertex>
+void main() {
+  vec3 n = normalize(nrm.xyz);
+  vCol = vec4(0.0); vMat = vec4(0.0); vExt = vec4(0.0, 1.0, 0.0, 0.5);
+  vLiq = liq; vFlw = flw; vRib = rib;
+  vShore = 1.0; vMorphK = 0.0; vOcc = 0.0;
+  vCls0 = vec4(0.0); vCls1 = vec4(0.0); vCls2 = vec4(0.0);
+  vec4 wp = modelMatrix * vec4(position, 1.0);
+  vWorldPos = wp.xyz;
+  vNormal = normalize(mat3(modelMatrix) * n);
+  vFixedPos = uOriginMod + position;
+  vFixedNormal = n;
+  vNearRel = uNearOff + position;
+  vAnchorPos = uOriginRel + position;
   gl_Position = projectionMatrix * viewMatrix * wp;
   #include <logdepthbuf_vertex>
 }
@@ -122,6 +173,7 @@ varying vec4 vCol;
 varying vec4 vMat;
 varying vec4 vExt;
 varying vec4 vLiq;
+varying vec4 vFlw;
 varying float vShore;
 varying float vMorphK;
 varying vec4 vCls0;
@@ -141,6 +193,26 @@ ${GLSL_THERMAL}
 ${GLSL_TERRAIN_SHADOW}
 ${GLSL_SUN_SHADOW}
 ${GLSL_LIQUID}
+#ifdef RIBBON
+// a river's water over what's drawn (engine.js's water pass): the image so far and its depth,
+// copied, read under it; the camera's projection for where a ray lands on the screen
+uniform sampler2D tOpaque;
+uniform sampler2D tWaterDepth;
+uniform float uZMode, uZNear, uZFar, uZLogFC;
+uniform mat4 projectionMatrix;
+varying vec2 vRib;
+// (the depth there as the eye's distance along its axis: engine.js's reversed or logarithmic depth)
+float sceneZ(vec2 uv) {
+  float d = texelFetch(tWaterDepth, ivec2(uv * vec2(textureSize(tWaterDepth, 0))), 0).r;
+  if (uZMode < 0.5) return d <= 0.0 ? 1e9 : (uZFar * uZNear / (uZFar - uZNear)) / max(d + uZNear / (uZFar - uZNear), 1e-30);
+  return d >= 1.0 ? 1e9 : exp2(d * uZLogFC) - 1.0;
+}
+// (a point's place on the screen, and how far along the eye's axis)
+vec3 onScreen(vec3 p) {
+  vec4 c = projectionMatrix * viewMatrix * vec4(p, 1.0);
+  return vec3(c.xy / max(c.w, 1e-6) * 0.5 + 0.5, c.w);
+}
+#endif
 #if MAT_MODE > 0
 uniform vec2 uWindRipple;   // sand's ripples on this world: strength, spacing over Earth's (materials.js)
 ${GLSL_MATERIALS}
@@ -173,11 +245,13 @@ void main() {
   vec3 dpx = dFdx(vFixedPos), dpy = dFdy(vFixedPos);
   vec3 albedo = vCol.rgb * vCol.rgb;
   float waterEnc = vCol.a;
+#ifndef RIBBON
   if (uNear.x > 0.5) {
     float dn = length(vNearRel - uNearUp * dot(vNearRel, uNearUp));
     if (uNearMode < 0.5) { if (dn < NEAR_OVERLAP * uNear.y && vShore <= 0.0) discard; }
     else if (dn < uNearBand.x || dn > uNearBand.y) discard;
   }
+#endif
   float veg = vMat.r, snow = vMat.g, rock = vMat.b, sand = vMat.a;
   float emissive = vExt.r, wet = vExt.g, rough = vExt.b;
   vec3 rel = vWorldPos - uCenter;
@@ -285,13 +359,34 @@ void main() {
     bool river = kind > 0.55 && kind < 0.85;
     float flow = river ? lq.z : 0.0;
     float fetch = kind < 0.2 ? 1.0 : river ? 0.2 : kind > 0.85 ? 0.05 : lq.z;
+#ifdef RIBBON
+    // (how deep it is here: down to the bed the eye sees through it, the image's depth behind it)
+    vec3 sc = onScreen(vWorldPos);
+    float zW = sc.z, zB = sceneZ(gl_FragCoord.xy / vec2(textureSize(tWaterDepth, 0)));
+    float depthW = min(max(dot(vWorldPos - vWorldPos * (zB / zW), up), 0.0), 60.0);
+#else
     float depthW = vShore * vShore * 64.0;
+#endif
     // (smooth noise for the waves: their crests' bends, from the 512 m tile, and their groups' heights)
     vec4 nW = tri(fp, w, 512.0), nG = tri(fp, w, 64.0);
     vec2 wn = vec2(nW.r - 0.5, nW.a - 0.5) * 2.0;
     vec4 grp = clamp(vec4(nG.r, nG.a, nW.a, nW.r) * 1.6 - 0.3, 0.0, 1.0);
     vec3 nF; float wr, foam;
-    liquidSurface(fp, fn, upF, kind, flow, fetch, depthW, foot, wn, grp, nF, wr, foam);
+    // (how it runs: chunkbuilder.js's flw, slower toward its banks where the land's zero comes in)
+    float fv = max(vFlw.w, 0.0) * 9.0;
+#ifdef RIBBON
+    // (across it, as Manning's has it at each depth: slower in its shallows toward the banks; and no
+    // faster than critical for its depth: a mobile bed's riffles and bars rise and fall until the flow
+    // over them stays about there (Grant 1997), its surface over a riffle higher than a smooth level)
+    fv *= pow(clamp(depthW / max(vRib.y, 0.05), 0.0, 2.0), 0.667);
+    fv = min(fv, sqrt(uLiquid2.x * max(depthW, 0.05)));
+#endif
+    liquidSurface(fp, fn, upF, kind, flow, fetch, depthW, foot, wn, grp, vFlw.xyz, fv, nF, wr, foam);
+    // (a river's water carries silt, the more the faster it runs: a water world's rivers browner
+    // than its lakes)
+#ifndef RIBBON
+    if (river && uLiquid2.y > 0.9) albedo = mix(albedo, vec3(0.055, 0.045, 0.025), clamp(0.25 + 0.3 * fv, 0.0, 0.75));
+#endif
     vec3 Nw = normalize(transpose(uToFixed) * nF);
     // (the waves' normal can face away from a grazing eye: lean it back)
     Nw = normalize(Nw + V * max(0.0, 0.02 - dot(Nw, V)));
@@ -302,7 +397,69 @@ void main() {
     vec3 R = reflect(-V, Nw);
     float el = max(dot(R, up), 0.0);
     vec3 skyRefl = uSunE * skyE / PI * (0.7 + 1.1 * pow(1.0 - el, 3.0)) + uSunE * sunT * 0.05 * pow(max(dot(R, uSunDir), 0.0), 12.0);
+#ifdef RIBBON
+    vec3 body;
+    {
+      // ---- what's under it, seen through it. The bed (the image drawn so far) where the eye's ray,
+      // bent at the surface (Snell, by the liquid's index), reaches it; dimmed over the light's way
+      // down to it and back up by what the water absorbs and its silt scatters back (K ~ a + bb), and
+      // the light its silt scatters back up added (a deep column's reflectance ~0.33 bb / (a + bb):
+      // Gordon et al. 1975). The silt's load by how fast it runs (a suspended-sediment rating curve,
+      // C ~ Q^1-2, and at a section v ~ Q^0.34: ~v^3), some 30 g/m^3 at 1 m/s; its scattering
+      // 0.25 m^2/g, 2% of it back; its absorption a mineral's, yellow-brown (more in the blue). And
+      // its dissolved organic matter's (liquid.js uLiquid3.w), at the image's 610, 545 and 465 nm
+      float nI = (1.0 - sqrt(F0)) > 0.0 ? (1.0 + sqrt(F0)) / (1.0 - sqrt(F0)) : 1.33;
+      vec3 Tr = refract(-V, Nw, 1.0 / nI);
+      float cT = max(-dot(Tr, up), 0.2);
+      vec3 sb = onScreen(vWorldPos + Tr * (depthW / cT));
+      vec2 uvB = clamp(sb.xy, vec2(0.0), vec2(1.0));
+      // (not something above the water the bend looked across to)
+      if (sceneZ(uvB) < zW) uvB = sc.xy;
+      vec3 bed = texture(tOpaque, uvB).rgb;
+      float ssc = clamp(30.0 * fv * fv * fv, 0.5, 3000.0);
+      vec3 a = uLiquid3.rgb + ssc * vec3(0.012, 0.02, 0.035) + uLiquid3.w * vec3(0.078, 0.207, 0.687);
+      vec3 bb = vec3(0.019 * 0.25 * ssc);
+      vec3 K = a + bb;
+      float cS = sqrt(max(1.0 - (1.0 - muS * muS) / (nI * nI), 0.04));
+      vec3 Tb = exp(-K * depthW * (1.0 / cT + 1.0 / cS));
+      vec3 Ed = uSunE * sunT * max(muS, 0.0) + uSunE * skyE;
+      body = bed * Tb + 0.33 * bb / K / PI * Ed * (1.0 - exp(-K * depthW * (1.0 / cT + 1.0)));
+    }
+    // ---- what it reflects: the banks and trees drawn (a ray marched across the image's depth),
+    // else the sky
+    {
+      vec3 Rf = reflect(-V, Nw);
+      float hitK = 0.0;
+      vec3 hitC = vec3(0.0);
+      if (dot(Rf, up) > 0.0) {
+        float t0 = 0.0, t = 0.3 + 0.01 * zW;
+        for (int i = 0; i < 24; i++) {
+          vec3 q = onScreen(vWorldPos + Rf * t);
+          if (q.z <= 0.0 || q.x < 0.0 || q.y < 0.0 || q.x > 1.0 || q.y > 1.0) break;
+          float zs = sceneZ(q.xy);
+          if (q.z > zs && q.z - zs < max(0.6, 0.35 * t)) {
+            // (found between t0 and t: narrowed)
+            float lo = t0, hi = t;
+            for (int k = 0; k < 5; k++) {
+              float tm = 0.5 * (lo + hi);
+              vec3 qm = onScreen(vWorldPos + Rf * tm);
+              if (qm.z > sceneZ(qm.xy)) hi = tm; else lo = tm;
+            }
+            vec3 qh = onScreen(vWorldPos + Rf * hi);
+            vec2 e = min(qh.xy, 1.0 - qh.xy);
+            hitK = smoothstep(0.0, 0.08, min(e.x, e.y));
+            hitC = texture(tOpaque, qh.xy).rgb;
+            break;
+          }
+          t0 = t;
+          t *= 1.3;
+        }
+      }
+      skyRefl = mix(skyRefl, hitC, hitK);
+    }
+#else
     vec3 body = albedo / PI * (uSunE * sunT * max(muS, 0.0) * 0.6 + uSunE * skyE * 0.5);
+#endif
     // the sun's glitter: GGX by the waves the pixel can't resolve
     vec3 H = normalize(V + uSunDir);
     float a2 = wr * wr * wr * wr, a2s = max(a2, 1e-7);
@@ -326,10 +483,11 @@ void main() {
       float v = min(sqrt(2.0 * uFall1.x * zf) + 0.3, uFall1.y);
       float L = 1.0 + 0.35 * v;
       float t1 = fract(uTime * 0.4), t2 = fract(uTime * 0.4 + 0.5), wa = 1.0 - abs(2.0 * t1 - 1.0);
-      vec2 q = vec2(dot(fp, acr) * 0.18, dot(fp, down) * 0.18 / L);
-      float sA = texture(tDetail, q - vec2(0.0, v * t1 * 2.5 * 0.18 / L)).r;
-      float sB = texture(tDetail, q + vec2(0.37, 0.0) - vec2(0.0, v * t2 * 2.5 * 0.18 / L)).r;
-      float st = mix(sB, sA, wa);
+      // (jets a metre or two across, white water between: the noise at two scales across the face)
+      vec2 q = vec2(dot(fp, acr) * 0.07, dot(fp, down) * 0.07 / L);
+      float sA = texture(tDetail, q - vec2(0.0, v * t1 * 2.5 * 0.07 / L)).r + 0.5 * texture(tDetail, q * 3.0 - vec2(0.0, v * t1 * 7.5 * 0.07 / L)).a;
+      float sB = texture(tDetail, q + vec2(0.37, 0.0) - vec2(0.0, v * t2 * 2.5 * 0.07 / L)).r + 0.5 * texture(tDetail, q * 3.0 + vec2(0.11, 0.0) - vec2(0.0, v * t2 * 7.5 * 0.07 / L)).a;
+      float st = 0.5 + (mix(sB, sA, wa) - 0.75) * 1.6;
       // (glassy at its lip, breaking up as it falls: the sooner the denser the air)
       float aer = mix(0.25, 0.95, uFall2.y) * smoothstep(0.5, 6.0, v) * smoothstep(0.0, 1.0 + 4.0 * (1.0 - uFall2.y), zf);
       float white = clamp(aer * (0.8 + 2.2 * (st - 0.5)) + 0.08, 0.0, 1.0);
@@ -436,6 +594,19 @@ export function makeDetailTexture(size = 256) {
   tex.anisotropy = 8;
   tex.needsUpdate = true;
   return tex;
+}
+
+// a chunk's rivers' water (planetTerrain.js): its chunk's material's uniforms (its place, its falls),
+// and the water pass's (engine.js: the image and its depth under it)
+export const RIBBON_PASS = { scene: null, uniforms: null };
+export function makeRibbonMaterial(chunkMat) {
+  const m = new THREE.ShaderMaterial({
+    uniforms: { ...chunkMat.uniforms, ...RIBBON_PASS.uniforms },
+    vertexShader: RIBBON_VERT,
+    fragmentShader: FRAG,
+  });
+  m.defines = { RIBBON: 1 };
+  return trackMaterial(m);
 }
 
 export function makeTerrainMaterial(shared) {

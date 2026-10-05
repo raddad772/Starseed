@@ -58,16 +58,20 @@ function riverProfile(gen, r) {
   const P = W && W.get(r);
   if (!P) return null;
   const { H, steps, len } = P, n = NSEG;
-  return (t) => {
+  // (each face: steep, a few metres across at most, in the ground's metres: its top's t and its foot's)
+  const faces = [];
+  for (let j = 0; j < steps.length; j += 2) {
+    const e = Math.max(1, 0.1 * Math.abs(steps[j + 1]) * gen.hScale) / Math.max(len, 1);
+    faces.push(steps[j] - e, steps[j] + e);
+  }
+  const fn = (t) => {
     const f = Math.min(n - 1e-9, Math.max(0, t * n)), i = Math.floor(f);
     let h = H[i] + (H[i + 1] - H[i]) * (f - i);
-    for (let j = 0; j < steps.length; j += 2) {
-      // (its face: steep, a few metres across at most, in the ground's metres)
-      const e = Math.max(1, 0.1 * Math.abs(steps[j + 1]) * gen.hScale) / Math.max(len, 1);
-      h -= steps[j + 1] * dm.smoothstep(steps[j] - e, steps[j] + e, t);
-    }
+    for (let j = 0; j < steps.length; j += 2) h -= steps[j + 1] * dm.smoothstep(faces[j], faces[j + 1], t);
     return h;
   };
+  fn.faces = faces;
+  return fn;
 }
 // a window's reaches' profiles: Map(reach -> { H (NSEG + 1 heights, the sim's m), steps (t, drop
 // pairs), len }), or null
@@ -227,6 +231,33 @@ export function buildChannel(gen, r, building) {
   } else {
     begin(0, 0); emit(J0, F.mid, 0, 0); emit(J1, F.mid, 0, 0); end();
   }
+  // (where its profile steps (a fall: riverProfile), points at each face's top and foot, so its
+  // channel drops there, over the face's few metres, not across the trace's whole segment)
+  if (hsOf.faces && hsOf.faces.length) {
+    const F = hsOf.faces, P2 = [], A2 = [], pc2 = [];
+    for (let q = 0; q < pcs.length; q += 2) {
+      pc2.push(P2.length / 6);
+      for (let k = pcs[q]; k < pcs[q + 1]; k++) {
+        if (k > pcs[q] && kinds[q / 2] === 0) {
+          const ta = A6[(k - 1) * 7 + 5], tb = A6[k * 7 + 5], lo = Math.min(ta, tb), hi = Math.max(ta, tb), ins = [];
+          for (const te of F) if (te > lo && te < hi) ins.push(te);
+          ins.sort((x, y) => (ta < tb ? x - y : y - x));
+          for (const te of ins) {
+            const f = (te - ta) / (tb - ta), a = (k - 1) * 6, b = k * 6, c = (k - 1) * 7, d = k * 7;
+            for (let i = 0; i < 6; i++) P2.push(P3[a + i] + f * (P3[b + i] - P3[a + i]));
+            A2.push(A6[c] + f * (A6[d] - A6[c]), hsOf(te), A6[c + 2] + f * (A6[d + 2] - A6[c + 2]), A6[c + 3] + f * (A6[d + 3] - A6[c + 3]), A6[c + 4] + f * (A6[d + 4] - A6[c + 4]), te, A6[c + 6] + f * (A6[d + 6] - A6[c + 6]));
+          }
+        }
+        for (let i = 0; i < 6; i++) P2.push(P3[k * 6 + i]);
+        for (let i = 0; i < 7; i++) A2.push(A6[k * 7 + i]);
+      }
+      pc2.push(P2.length / 6);
+    }
+    P3.length = 0; A6.length = 0; pcs.length = 0;
+    for (const v of P2) P3.push(v);
+    for (const v of A2) A6.push(v);
+    for (const v of pc2) pcs.push(v);
+  }
   // (where it runs into another river, on to that one's channel: it ends on its own valley's
   // line, and the other's channel may swing well off its own)
   const into = Lk.dn[r];
@@ -298,8 +329,26 @@ export function buildChannel(gen, r, building) {
 // into out { d2 (squared, unit sphere), p (segment's first point), f (along it), x, y, z, half,
 // hs, mx, my, mz, t, wm, age, ch }. With keep, out is left alone unless something is nearer
 // than out.d2 already is (so several channels can be searched in turn)
-const nfOf = (wm, minW) => minW <= 2 * wm ? 1 : minW >= 6 * wm ? 0 : dm.smoothstep(6 * wm, 2 * wm, minW);
+export const nfOf = (wm, minW) => minW <= 2 * wm ? 1 : minW >= 6 * wm ? 0 : dm.smoothstep(6 * wm, 2 * wm, minW);
 const _cn = { d2: Infinity, p: -1, f: 0, x: 0, y: 0, z: 0, half: 0, hs: 0, mx: 0, my: 0, mz: 0, t: 0, wm: 0, age: 0, ch: null };
+// the way the water runs at the point chanNearest last found (out): down its channel (unit,
+// planet-fixed, into d: the way its t grows, a record running downstream from its start), and the
+// water's slope there (the sim's heights over the ground's metres), or -1 where it can't be told.
+// R: the world's radius (m)
+export function chanFlow(out, R, d) {
+  const ch = out.ch, p = out.p;
+  if (!ch || !(p >= 0)) return -1;
+  const P = ch.pts, A = ch.at, n = A.length / 7;
+  if (p + 1 >= n) return -1;
+  const o = p * 6, oa = p * 7;
+  const dx = P[o + 6] + P[o + 9] - P[o] - P[o + 3], dy = P[o + 7] + P[o + 10] - P[o + 1] - P[o + 4], dz = P[o + 8] + P[o + 11] - P[o + 2] - P[o + 5];
+  const L = Math.sqrt(dx * dx + dy * dy + dz * dz);
+  if (!(L > 0)) return -1;
+  const sg = A[oa + 12] >= A[oa + 5] ? 1 : -1;
+  d[0] = sg * dx / L; d[1] = sg * dy / L; d[2] = sg * dz / L;
+  return Math.abs(A[oa + 8] - A[oa + 1]) / (L * R);
+}
+
 export function chanNearest(ch, x, y, z, minW, out, kind = 0, keep = false) {
   if (!keep) { out.d2 = Infinity; out.ch = null; }
   const G = ch.groups, gi = ch.gi, P = ch.pts, A = ch.at;

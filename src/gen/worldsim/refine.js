@@ -319,7 +319,7 @@ export class RefineReader {
           }
         }
         this._ws += w; this._hs += w * hh; this._ss += w * sea; this._ls += w * lake;
-        if (w > this._wb) { this._wb = w; this.tH = H; this.tRW = RW; this.tFL = tile ? tile.fl : R.fl; this.tRC = tile ? tile.rcv : R.rcv; this.tOff = off; this.ri = i; this.rj = j; this.rbx.set(bx); this.rby.set(by); this.tTile = tile; this.tfi = fi; this.tfj = fj; }
+        if (w > this._wb) { this._wb = w; this.tH = H; this.tRW = RW; this.tFL = tile ? tile.fl : R.fl; this.tRC = tile ? tile.rcv : R.rcv; this.tOff = off; this.ri = i; this.rj = j; this.rbx.set(bx); this.rby.set(by); this.tTile = tile; this.tfi = fi; this.tfj = fj; this.tF = f; this.tU = u; this.tV = v; }
       }
     }
   }
@@ -365,6 +365,9 @@ export class RefineReader {
         if (d < bd) {
           const tt = (q - 1 + f) / 8, b0 = (1 - tt) * (1 - tt), b1 = 2 * tt * (1 - tt), b2 = tt * tt;
           bd = d; found = true; this.cd = d; this.cA = dm.exp(fl[o] / 255 * LN_A); this.ch = b0 * h0 + b1 * H[o] + b2 * h2; this.cwc = cwc;
+          // (its way down there, in this level's cells, and its fall along its line: m a cell)
+          const gx = 2 * (1 - tt) * (i - x0) + 2 * tt * (x2 - i), gy = 2 * (1 - tt) * (j - y0) + 2 * tt * (y2 - j), gl = Math.sqrt(gx * gx + gy * gy) || 1;
+          this.cdi = gx / gl; this.cdj = gy / gl; this.cfall = (h0 - h2) / Math.max(1e-6, Math.sqrt((x2 - x0) ** 2 + (y2 - y0) ** 2));
         }
         px = qx; py = qy;
       }

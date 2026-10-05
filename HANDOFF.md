@@ -187,6 +187,42 @@ small one: "I definitely like right a lot more", then "Yeah fix refine and optim
   staircase where its land meets the heightfield's water; the materials' 2 m tiling visible on snow;
   real falls are rare and small at this size (the rivers' drops per km are small in drawn metres).
 
+**Rivers as their own water (2026-10-04, Dave: "natural rivers and edges to the rivers"; "a very
+distinct stair step in the river edge ... is it not using actual geometry"):**
+- Why the stair-steps: a river's water was the terrain mesh's own, each pixel water or land by its
+  triangle's vertices, so its edge could only follow the triangles (and near the camera the near
+  field's ground met that coarse water).
+- Now (chunks finer than 40 m between vertices, `RIBBON_SPACING`): `TerrainGenerator.riverRibbons`
+  builds each chunk's rivers' water as strips along their channels (channels.js traces, great rivers'
+  segments too) at the water's level, reaching a little past the channel under its banks; the mesh
+  there is the bed (`S_RIVR` vertices take their ground height, shaded as land). The shore is where the
+  ground rises out of the water, to the pixel. Each quad belongs to the chunk its middle lies in.
+  Drawn in the engine's water pass (engine.js 1b: copies of the image and its depth, then the strips
+  into the image, depth-tested and writing depth), with terrainMaterial.js's `RIBBON` variant: the
+  terrain's own lighting, shadows and waves, plus the bed seen through it (refracted by the liquid's
+  index, Beer-Lambert over the light's way down and back, silt scattering back: Gordon's 0.33 bb/(a+bb)),
+  screen-space reflections of the banks and trees (sky where they miss), and the current slower in the
+  shallows (Manning by local depth).
+- What it carries (liquid.js `uLiquid3`): the liquid's own absorption (water Pope and Fry; methane and
+  ethane far clearer), silt by speed (~30 g/m^3 at 1 m/s, ~v^3), and on living worlds dissolved
+  organic matter by how much grows (a440 ~2 /m on Earth: rivers tea-brown, not Caribbean).
+- `_riverWater`: one cross-section for sampler and strips. Stage from the channel's depth before its
+  riffles and pools (the water's level smooth down the river; the bed carries them); speed from the
+  river's size (Leopold-Maddock: Q = (w/4.8)^2 at bankfull, at-a-station depth ~Q^0.4, speed ~Q^0.34;
+  ~1 m/s for SOL's 75 m river, which Manning on the profile's near-level runs had at 0.09) or Manning
+  where steeper; through riffles and pools by continuity.
+- Bends: the bed's deepest toward the outer bank, a point bar shelving up the inner (`_bedShape`, by the
+  migration). Wet ground only up to ~0.5 m above the water (it was a band 2.5 widths wide).
+- Falls: channels.js now puts points at each profile step's face top and foot, so the bed and the water
+  drop over the face's few metres (they ramped across a whole trace segment, ~30 degrees: no sheet).
+  Strips find their own falls; the sheet is the water's width; the face isn't counted in the river's
+  speed. Still a straight lip: a horseshoe (the lip retreating fastest where the flow is deepest) needs
+  the profile read across the channel too.
+- Canyons: the floor beside a canyon river narrows on a bend's outer side by how hard it's cutting there
+  (`_canyons` Wf; it was 1.8 half widths both sides everywhere: Dave's "straight and uniform" banks).
+- Testing note: in a hidden pane, `debugRun`'s MessageChannel loop starves the workers' replies (a
+  chunk job takes 2.7 s instead of ~50 ms): drain by running a frame and awaiting the next reply.
+
 **What's still wrong / next:**
 - Snow covers most of a high mountain (the snowline reads the real height: physically right, maybe too
   white for Dave).

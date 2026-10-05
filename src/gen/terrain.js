@@ -20,12 +20,12 @@
 import { Noise3, ROT } from '../core/noise.js';
 import { Rng, hash3i } from '../core/rng.js';
 import * as dm from '../core/dmath.js';
-import { fibonacciSphere, faceUVFromDir, FACES } from './cubesphere.js';
+import { fibonacciSphere, faceUVFromDir, FACES, dirFromFaceUV } from './cubesphere.js';
 import { patchAt } from './dunes.js';
 import { CraterField, VEXAG } from './craters.js';
 import { SUITE, SUITES, DEPOSITS, worldColumn, bedAt, faceMetres } from './geology.js';
 import { canyonTable, wallSet, wallFit, wallAt, wallReach } from './canyon.js';
-import { buildChannel, chanNearest, chanSwing, nearOut } from './channels.js';
+import { buildChannel, chanNearest, chanSwing, nearOut, chanFlow, nfOf } from './channels.js';
 import { craterFloor, TILE_CELLS } from './worldsim/impacts.js';
 import { SnapshotSampler } from './worldsim/snapshot.js';
 import { RIVER_REC, BIG_REC } from './worldsim/refine.js';
@@ -57,7 +57,11 @@ export const S_SAND = 17;    // wind-blown sand (a dune sea's) 0..1
 export const S_ICE = 18;     // glacier ice over the ground here (m; S_H is its surface)
 export const S_WET = 19;     // a river's wet ground beside it 0..1
 export const S_RFADE = 20;   // how far a river's water here has faded out, seen from afar 0..1
-export const S_LEN = 21;
+export const S_WLVL = 21;    // the water's level nearby, a river's, a creek's or a lake's (m, as S_H; -1e9 none): the shore
+export const S_FLX = 22, S_FLY = 23, S_FLZ = 24; // running water's way down (unit, planet-fixed; 0 still)
+export const S_FLV = 25;     // and its speed (m/s: Manning's, by its depth and slope)
+export const S_RIVR = 26;    // 1 where the water is a world-sim river's channel (riverRibbons draws it near)
+export const S_LEN = 27;
 // (each rock's cohesion as a mass, Pa: how tall a sheer face of it stands: canyon walls)
 const FREEZE_MIX = { methane: 20, ethane: 20 };   // (K: a mixture's freezing point under its main liquid's)
 const ORGANIC_SAND = [0.075, 0.055, 0.035];   // (linear: tholin sand, dark brown)
@@ -312,7 +316,7 @@ export class TerrainGenerator {
   // Full sample. minWavelength (m) band-limits the fine octaves.
   sample(x, y, z, minWavelength, out) {
     const o = this.snap ? this.sampleSnap(x, y, z, minWavelength, out) : this.sampleNoise(x, y, z, minWavelength, out);
-    if (this.hScale < 1) { o[S_H] *= this.hScale; o[S_WDEPTH] *= this.hScale; }
+    if (this.hScale < 1) { o[S_H] *= this.hScale; o[S_WDEPTH] *= this.hScale; if (o[S_WLVL] > -1e8) o[S_WLVL] *= this.hScale; }
     return o;
   }
 
@@ -321,7 +325,7 @@ export class TerrainGenerator {
     const R = this.R;
     const relief = this.relief;
     for (let i = 0; i < S_LEN; i++) out[i] = 0;
-    out[S_DX] = x; out[S_DY] = y; out[S_DZ] = z;
+    out[S_DX] = x; out[S_DY] = y; out[S_DZ] = z; out[S_WLVL] = -1e9;
 
     const c = this.continentalness(x, y, z, out);
     const qx = this._qx, qy = this._qy, qz = this._qz;
@@ -626,7 +630,7 @@ export class TerrainGenerator {
     const p = this.p, S = this.snap, R = this.R;
     this._minW = minWavelength;   // (the rivers' meanders: only where they can be seen)
     for (let i = 0; i < S_LEN; i++) out[i] = 0;
-    out[S_DX] = x; out[S_DY] = y; out[S_DZ] = z;
+    out[S_DX] = x; out[S_DY] = y; out[S_DZ] = z; out[S_WLVL] = -1e9;
     // (the world's refinement where it has one: the world sim's surface with what its water cut)
     const ref = S.ref && S.ref.sample(S._d(x, y, z)) ? S.ref : null;
     let h = ref ? ref.h / this.hScale : S.h(x, y, z);
@@ -724,6 +728,7 @@ export class TerrainGenerator {
       else h += Math.max(0, lk.L + 2 - h) * dm.smoothstep(0.55, 0.95, lk.q);
     }
     const flooded = lk && h < lk.L;
+    if (lk && this.wetNow) out[S_WLVL] = lk.L;
     // rivers: a channel along the sim's river lines (meandering), as wide and deep as its
     // water, in a valley that levels off to its banks; the banks (and the water a little
     // below them) follow the sim's heights along the line, so the water only runs downhill
@@ -746,13 +751,12 @@ export class TerrainGenerator {
     // every stream on the land as a vein of water)
     const rvOwn = rv ? rv.w * 0.5 : 0, rvWide = rv && this.wetNow ? Math.max(rvOwn, 0.75 * minWavelength) : rvOwn;
     const rvFade = rv && this.wetNow ? dm.smoothstep(4, 16, rvWide / Math.max(rvOwn, 1e-3)) : 0;
-    let rvWl = -1e9;
-    if (rv && this.wetNow && rv.dist < rv.w * 2.5) out[S_WET] = rvK * (1 - rvFade) * dm.smoothstep(rv.w * 2.5, rv.w * 0.6, rv.dist);
+    let rvWl = -1e9, rvSt = -1e9;
     if (rv) {
       // (a meandering river's floodplain: the belt it has swung across, laid level near its banks;
       // and the loops it cut off, lakes while young, swales once filled)
       const bank0 = this._bankOf(rv);
-      if (rv.belt > 0 && rv.axis < 1.3 * rv.belt && cyK < 1) h += rvK * (1 - cyK) * this._levelled(rv, bank0 + 0.5 - h) * 0.85 * dm.smoothstep(1.3 * rv.belt, 0.85 * rv.belt, rv.axis);
+      if (rv.belt > 0 && rv.axis < 1.3 * rv.belt && cyK < 1) h += rvK * (1 - cyK) * this._flooded(rv, bank0 + 0.5 - h) * 0.85 * dm.smoothstep(1.3 * rv.belt, 0.85 * rv.belt, rv.axis);
       const oh = 0.5 * (rv.oxW || rv.w);
       if (rv.ox < oh && rv.oxAge < 0.8 && cyK < 0.5) {
         const q = 1 - (rv.ox / oh) * (rv.ox / oh), dep = rv.depth * 0.6 * (1 - rv.oxAge);
@@ -771,10 +775,21 @@ export class TerrainGenerator {
       const half = rvWide, flank = Math.max(rv.w * 1.5 + S.G.spacing * (0.02 + 0.12 * rv.k), 1.25 * half);
       if (rv.dist < flank) {
         const bank = this._bankOf(rv);
-        h += rvK * (1 - cyK) * this._levelled(rv, bank - h) * dm.smoothstep(flank, half * 1.2, rv.dist);
+        h += rvK * (1 - cyK) * this._banked(rv, bank - h, x, y, z, half) * dm.smoothstep(flank, half * 1.2, rv.dist);
+        // (its water's level, beside it too: where the shore meets it. A river runs below its banks
+        // most of the time: its usual stage about half its channel's depth, so its water fills ~70% of
+        // the channel's width, the channel's own banks and bars standing above it)
+        const stage = Math.max(bank - 0.45 * (rv.depth0 || rv.depth) - 0.3, 0.3);
+        if (this.wetNow) rvSt = stage;
+        if (this.wetNow && rvK >= 1) out[S_WLVL] = Math.max(out[S_WLVL], stage);
         if (rv.dist < half && rvFade < 1) {
-          h += rvK * (1 - rvFade) * (Math.min(h, bank - rv.depth * (1 - (rv.dist / half) * (rv.dist / half))) - h);
-          if (this.wetNow && rvK >= 1) wl = rvWl = Math.max(bank - 0.6 - 0.03 * rv.depth, 0.3);
+          h += rvK * (1 - rvFade) * (Math.min(h, bank - rv.depth * this._bedShape(rv, x, y, z, half)) - h);
+          if (this.wetNow && rvK >= 1) {
+            wl = rvWl = stage;
+            // (and how it runs: down its channel, at its section's speed: _riverWater)
+            out[S_FLX] = rv.fx || 0; out[S_FLY] = rv.fy || 0; out[S_FLZ] = rv.fz || 0;
+            out[S_FLV] = this._riverWater(0.5 * rv.w / (1 + 0.12 * (rv.c || 0)), rv.c || 0, rv.hs, rv.slope || 0, this._rwS || (this._rwS = {})).v;
+          }
         }
       }
     }
@@ -808,10 +823,24 @@ export class TerrainGenerator {
         // would otherwise step the ground between them in rungs)
         const bank = finRd.ch / this.hScale + 0.2, pull = bank - h;
         h += (this.wetNow ? pull : Math.min(0, pull)) * dm.smoothstep(flank, half * 1.2, dist);
+        const wet = this.wetNow && A > CREEK_WET && seen && fin > 0.5;
+        // (its water's level, beside it too: where the shore meets it)
+        if (wet) out[S_WLVL] = Math.max(out[S_WLVL], bank - 0.25 - 0.1 * dep);
         if (dist < half) {
           h = Math.min(h, bank - dep * (1 - (dist / half) * (dist / half)));
-          // (its water running water: render/liquid.js's river, not a still pond)
-          if (this.wetNow && A > CREEK_WET && seen && fin > 0.5) { wl = Math.max(wl, bank - 0.25 - 0.1 * dep); out[S_WET] = Math.max(out[S_WET], 0.5); }
+          // (its water running water: render/liquid.js's river, not a still pond; down its line at
+          // Manning's speed for its depth and the fall along it; heights in the sim's metres)
+          if (wet) {
+            wl = Math.max(wl, bank - 0.25 - 0.1 * dep); out[S_WET] = Math.max(out[S_WET], 0.5);
+            if (finRd.tF !== undefined && finRd.cdi !== undefined) {
+              const q0 = this._cq0 || (this._cq0 = [0, 0, 0]), q1 = this._cq1 || (this._cq1 = [0, 0, 0]), e = 0.25 * finRd.du;
+              dirFromFaceUV(finRd.tF, finRd.tU, finRd.tV, q0); dirFromFaceUV(finRd.tF, finRd.tU + finRd.cdi * e, finRd.tV + finRd.cdj * e, q1);
+              const fx = q1[0] - q0[0], fy = q1[1] - q0[1], fz = q1[2] - q0[2], fl = Math.sqrt(fx * fx + fy * fy + fz * fz) || 1;
+              const Rh = Math.max(0.05, 0.6 * dep * this.hScale), sl = Math.max(1e-4, finRd.cfall / Math.max(finest, 1e-3));
+              out[S_FLX] = fx / fl; out[S_FLY] = fy / fl; out[S_FLZ] = fz / fl;
+              out[S_FLV] = Math.min(9, Math.max(0.05, Math.pow(Rh, 2 / 3) * Math.sqrt(sl) / 0.035));
+            }
+          }
         }
         h = h1 + (h - h1) * fin;
       }
@@ -906,7 +935,12 @@ export class TerrainGenerator {
       }
     }
     out[S_H] = h;
-    if (wl > h) { out[S_WDEPTH] = wl - h; if (wl === rvWl) out[S_RFADE] = rvFade; }
+    // (the ground a river wets: under it, and above it as far as its water reaches up the bank, the
+    // capillary fringe in its sand and silt and its level's day-to-day rise, ~half a metre; the banks
+    // above dry. Only where water runs now: a dry world's old channels are valleys in its dust)
+    if (rvSt > -1e8) out[S_WET] = Math.max(out[S_WET], rvK * (1 - rvFade) * (1 - dm.smoothstep(0.05, 0.6, (h - rvSt) * this.hScale)));
+    // (a river's: its water drawn as a surface of its own near, riverRibbons, where it isn't faded)
+    if (wl > h) { out[S_WDEPTH] = wl - h; if (wl === rvWl) { out[S_RFADE] = rvFade; out[S_RIVR] = 1; } }
     out[S_INLAND] = h > 0 ? 1 : 0;
     out[S_VARIANT] = this.nClimate.fbm(x * 6 + 3, y * 6, z * 6, 3);
     const Ts = S.Tsea(x, y, z);
@@ -968,13 +1002,261 @@ export class TerrainGenerator {
     return o;
   }
 
+  // the rivers' water as a surface of its own (terrainMaterial.js's RIBBON) for a chunk of the cube
+  // (face f, its u, v square from u0, v0, size across; N quads across it spacing m apart; origin o):
+  // along each channel there, a strip at its water's level (its stage: _riverWater, as sampleSnap
+  // has it) reaching a little past its channel's edges, under its banks, so where the ground rises
+  // out of it is its shore, to the pixel, not along the mesh's triangles. A channel as sampleSnap
+  // draws it at this spacing: its loops as far as they can be seen, as wide as the spacing shows it
+  // (and none faded from afar: the terrain's own there). Each quad the chunk's whose middle lies in
+  // its square, so each is drawn once at a level. Frozen the year round, none: ice, the ground's.
+  // tempAt(x, y, z): the air's mean temperature (C) there. Returns { pos (chunk-local), nrm, flow
+  // (way down, unit; speed / 9 m/s), liq (as chunkbuilder.js's), rib (across -1..1, mean depth m),
+  // index, falls (FALL_STRIDE a fall, as chunkbuilder.js findFalls) } or null
+  riverRibbons(f, u0, v0, size, N, spacing, ox, oy, oz, tempAt) {
+    const S = this.snap;
+    if (!S || !S.riv || !this.wetNow) return null;
+    const Rv = S.riv, G = S.G, R = this.R, hs = this.hScale, minW = 2 * spacing, frz = this._freezeC();
+    // (the world sim's cells under the chunk, and round them: every record its samples could find)
+    const cd = [0, 0, 0], nb = new Int32Array(32), core = new Set(), cells = new Set();
+    const n = Math.min(48, Math.ceil(spacing * N / G.spacing) + 1);
+    for (let a = 0; a <= n; a++) for (let b = 0; b <= n; b++) {
+      dirFromFaceUV(f, u0 + size * a / n, v0 + size * b / n, cd);
+      const c = G.cellAt(cd[0], cd[1], cd[2]);
+      if (core.has(c)) continue;
+      core.add(c); cells.add(c);
+      const k = G.nbrs(c, nb);
+      for (let q = 0; q < k; q++) cells.add(nb[q]);
+    }
+    const out = { pos: [], nrm: [], flow: [], liq: [], rib: [], index: [], falls: [] };
+    const uv = { face: 0, u: 0, v: 0 }, W = this._rwS2 || (this._rwS2 = {});
+    const mine = (x, y, z) => {
+      cd[0] = x; cd[1] = y; cd[2] = z; faceUVFromDir(cd, uv);
+      return uv.face === f && uv.u >= u0 && uv.u < u0 + size && uv.v >= v0 && uv.v < v0 + size;
+    };
+    // a run of m points along a channel: X its places (unit), ST its stage (the sim's m), HW the half
+    // width drawn (m), XW its water's (m), DM its mean depth (m), V its speed (m/s), TT its t (the
+    // way down: t grows downstream; NaN for a run laid down its river), ok drawn there
+    const strip = (m, X, ST, HW, XW, DM, V, TT, ok) => {
+      const P = new Float64Array(3 * m), Ac = new Float64Array(3 * m);
+      for (let i = 0; i < m; i++) { const r = R + ST[i] * hs; P[3 * i] = X[3 * i] * r; P[3 * i + 1] = X[3 * i + 1] * r; P[3 * i + 2] = X[3 * i + 2] * r; }
+      for (let i = 0; i < m; i++) {
+        // (across it: up crossed with its way along, the same for the two quads that meet there)
+        const i0 = Math.max(0, i - 1), i1 = Math.min(m - 1, i + 1);
+        const tx = P[3 * i1] - P[3 * i0], ty = P[3 * i1 + 1] - P[3 * i0 + 1], tz = P[3 * i1 + 2] - P[3 * i0 + 2];
+        const ux = X[3 * i], uy = X[3 * i + 1], uz = X[3 * i + 2];
+        let ax = uy * tz - uz * ty, ay = uz * tx - ux * tz, az = ux * ty - uy * tx;
+        const al = Math.sqrt(ax * ax + ay * ay + az * az) || 1;
+        Ac[3 * i] = ax / al; Ac[3 * i + 1] = ay / al; Ac[3 * i + 2] = az / al;
+      }
+      let fall = null;
+      const endFall = () => {
+        if (fall && fall.top - fall.bot >= 2) out.falls.push(fall.fx - ox, fall.fy - oy, fall.fz - oz, fall.top, fall.bot, fall.w, fall.wd);
+        fall = null;
+      };
+      for (let i = 0; i + 1 < m; i++) {
+        if (!ok[i] || !ok[i + 1]) { endFall(); continue; }
+        const j = i + 1, mx = X[3 * i] + X[3 * j], my = X[3 * i + 1] + X[3 * j + 1], mz = X[3 * i + 2] + X[3 * j + 2];
+        if (!mine(mx, my, mz)) { endFall(); continue; }
+        const ml = Math.sqrt(mx * mx + my * my + mz * mz), Tc = tempAt(mx / ml, my / ml, mz / ml);
+        if (Tc - frz < -8) { endFall(); continue; }
+        let dx = P[3 * j] - P[3 * i], dy = P[3 * j + 1] - P[3 * i + 1], dz = P[3 * j + 2] - P[3 * i + 2];
+        const L = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
+        dx /= L; dy /= L; dz /= L;
+        // (its way down: the way its t grows, or for a great river's run, laid up its stem, back)
+        const sg = TT[i] === TT[i] ? (TT[j] >= TT[i] ? 1 : -1) : -1;
+        // (its surface's normal: along it crossed with across, up)
+        const cx = Ac[3 * i] + Ac[3 * j], cy = Ac[3 * i + 1] + Ac[3 * j + 1], cz = Ac[3 * i + 2] + Ac[3 * j + 2];
+        let nx = dy * cz - dz * cy, ny = dz * cx - dx * cz, nz = dx * cy - dy * cx;
+        const nl = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
+        nx /= nl; ny /= nl; nz /= nl;
+        if (nx * mx + ny * my + nz * mz < 0) { nx = -nx; ny = -ny; nz = -nz; }
+        const up = (nx * mx + ny * my + nz * mz) / ml;
+        // (its liquid as the terrain's: a river (kind 0.7), its temperature, its flow by how steep)
+        const lq = [65535, Math.round(0.7 * 65535), Math.round(Math.min(1, Math.max(0, (Tc - frz + 60) / 120)) * 65535), Math.round(dm.smoothstep(0.01, 0.2, 1 - up) * 65535)];
+        const b = out.pos.length / 3;
+        for (const k of [i, j]) for (const sd of [1, -1]) {
+          const w = HW[k] * sd;
+          out.pos.push(P[3 * k] + Ac[3 * k] * w - ox, P[3 * k + 1] + Ac[3 * k + 1] * w - oy, P[3 * k + 2] + Ac[3 * k + 2] * w - oz);
+          out.nrm.push(nx, ny, nz);
+          out.flow.push(sg * dx, sg * dy, sg * dz, V[k] / 9);
+          out.liq.push(lq[0], lq[1], lq[2], lq[3]);
+          out.rib.push(sd, DM[k]);
+        }
+        out.index.push(b, b + 1, b + 2, b + 1, b + 3, b + 2);
+        // (a fall: where the water drops steeper than ~37 degrees, from the top of a run of such to its foot)
+        const drop = Math.abs(ST[j] - ST[i]) * hs;
+        if (drop > 0.75 * L * Math.sqrt(1 - Math.min(1, (drop / L) ** 2)) && drop > 0.3) {
+          const lo = ST[j] < ST[i] ? j : i, hi = lo === j ? i : j, rl = R + ST[lo] * hs, rh = R + ST[hi] * hs;
+          if (!fall) fall = { top: rh, bot: rl, fx: P[3 * lo], fy: P[3 * lo + 1], fz: P[3 * lo + 2], w: 0, wd: 0 };
+          if (rh > fall.top) fall.top = rh;
+          if (rl < fall.bot) { fall.bot = rl; fall.fx = P[3 * lo]; fall.fy = P[3 * lo + 1]; fall.fz = P[3 * lo + 2]; }
+          fall.w = Math.max(fall.w, 2 * Math.min(XW[i], XW[j])); fall.wd = Math.max(fall.wd, DM[i], DM[j]);
+        } else endFall();
+      }
+      endFall();
+    };
+    const drawn = (own) => 0.75 * minW <= 4 * own;   // (sampleSnap's rvFade 0)
+    const halfW = (own) => 1.04 * Math.max(own, 0.75 * minW) + 0.5 * spacing;
+    // the rivers' channels (channels.js), each record's once
+    const recs = new Set(), big = Rv.big;
+    for (const c of cells) for (let e = Rv.start[c]; e < Rv.start[c + 1]; e++) { const r = Rv.idx[e]; if (!(big && big.has[r])) recs.add(r); }
+    for (const r of recs) {
+      const ch = this._chan(r), P = ch.pts, A = ch.at;
+      if (!ch.kind) continue;
+      for (let q = 0; q < ch.kind.length; q++) {
+        if (ch.kind[q] !== 0) continue;
+        const s0 = ch.pc[2 * q], m = ch.pc[2 * q + 1] - s0;
+        if (m < 2) continue;
+        const X = new Float64Array(3 * m), ST = new Float64Array(m), HW = new Float64Array(m), XW = new Float64Array(m), DM = new Float64Array(m), V = new Float64Array(m), TT = new Float64Array(m), ok = new Uint8Array(m);
+        for (let i = 0; i < m; i++) {
+          const k = s0 + i, p = k * 6, a = k * 7, nf = nfOf(A[a + 6], minW);
+          let x = P[p] + nf * P[p + 3], y = P[p + 1] + nf * P[p + 4], z = P[p + 2] + nf * P[p + 5];
+          const l = Math.sqrt(x * x + y * y + z * z); X[3 * i] = x / l; X[3 * i + 1] = y / l; X[3 * i + 2] = z / l;
+          TT[i] = A[a + 5];
+        }
+        // (its slope: the water's over the segments either side, a fall's face left out: the water
+        // comes to its lip at its reach's speed, and what it gains falling the pool below takes up)
+        const SL = new Float64Array(m);
+        for (let i = 0; i + 1 < m; i++) {
+          const lh = Math.sqrt((X[3 * i + 3] - X[3 * i]) ** 2 + (X[3 * i + 4] - X[3 * i + 1]) ** 2 + (X[3 * i + 5] - X[3 * i + 2]) ** 2) * R;
+          SL[i] = lh > 0 ? Math.abs(A[(s0 + i + 1) * 7 + 1] - A[(s0 + i) * 7 + 1]) * hs / lh : 0;
+        }
+        for (let i = 0; i < m; i++) {
+          const k = s0 + i, a = k * 7;
+          const half = A[a], c = Math.cos(dm.TWO_PI * (ch.J0 + (ch.J1 - ch.J0) * A[a + 5]) / 6);
+          let sl = 0, ns = 0;
+          for (const j of [i - 1, i]) if (j >= 0 && j + 1 < m && SL[j] < 0.75) { sl += SL[j]; ns++; }
+          this._riverWater(half, c, A[a + 1], ns ? sl / ns : 0, W);
+          const own = half * (1 + 0.12 * c);
+          // (over a fall's face the sheet as wide as the water: the ground's face beside it, drawn at the
+          // mesh's spacing, is softer than its own)
+          const face = (i > 0 && SL[i - 1] >= 0.75) || (i + 1 < m && SL[i] >= 0.75);
+          ST[i] = W.stage; HW[i] = face ? Math.max(W.xw, 0.5) : halfW(own); XW[i] = W.xw; DM[i] = W.dm; V[i] = W.v;
+          ok[i] = A[a + 1] >= 0 && drawn(own) ? 1 : 0;
+        }
+        strip(m, X, ST, HW, XW, DM, V, TT, ok);
+      }
+    }
+    // the great rivers' (refine.js bigChannels: segments laid up their stems, end to end), in runs
+    if (big) {
+      const sg = big.seg, segs = [];
+      const seen = new Set();
+      for (const c of cells) for (let e = big.start[c]; e < big.start[c + 1]; e++) { const q = big.idx[e]; if (sg[q * BIG_REC + 9] === 0 && !seen.has(q)) { seen.add(q); segs.push(q); } }
+      segs.sort((a, b) => a - b);
+      const joins = (q) => { const a = q * BIG_REC, b = (q + 1) * BIG_REC; return sg[a + 3] === sg[b] && sg[a + 4] === sg[b + 1] && sg[a + 5] === sg[b + 2]; };
+      for (let s = 0; s < segs.length;) {
+        // (a run: consecutive segments, each ending where the next begins; and one each side beyond,
+        // so its ends' edges are shared with the chunks next to it)
+        let e = s;
+        while (e + 1 < segs.length && segs[e + 1] === segs[e] + 1 && joins(segs[e])) e++;
+        let q0 = segs[s], q1 = segs[e];
+        const nSeg = (sg.length / BIG_REC) | 0;
+        if (q0 > 0 && sg[(q0 - 1) * BIG_REC + 9] === 0 && joins(q0 - 1)) q0--;
+        if (q1 + 1 < nSeg && sg[(q1 + 1) * BIG_REC + 9] === 0 && joins(q1)) q1++;
+        const m = q1 - q0 + 2;
+        const X = new Float64Array(3 * m), ST = new Float64Array(m), HW = new Float64Array(m), XW = new Float64Array(m), DM = new Float64Array(m), V = new Float64Array(m), TT = new Float64Array(m).fill(NaN), ok = new Uint8Array(m);
+        for (let i = 0; i < m; i++) {
+          // (point i: segment q0 + i's start, the last one's end; its values the two segments' it joins)
+          const qa = Math.min(q0 + i, q1), o = qa * BIG_REC + (i === m - 1 ? 3 : 0);
+          const l = Math.sqrt(sg[o] ** 2 + sg[o + 1] ** 2 + sg[o + 2] ** 2);
+          X[3 * i] = sg[o] / l; X[3 * i + 1] = sg[o + 1] / l; X[3 * i + 2] = sg[o + 2] / l;
+          const qs = [q0 + i - 1, q0 + i].filter((qq) => qq >= q0 && qq <= q1);
+          let half = 0, hsv = 0;
+          for (const qq of qs) { half += sg[qq * BIG_REC + 6] / qs.length; hsv += sg[qq * BIG_REC + 8] / hs / qs.length; }
+          this._riverWater(half, 0, hsv, 1e-4, W);
+          ST[i] = W.stage; HW[i] = halfW(half); XW[i] = W.xw; DM[i] = W.dm; V[i] = W.v;
+          ok[i] = hsv >= 0 && drawn(half) ? 1 : 0;
+        }
+        strip(m, X, ST, HW, XW, DM, V, TT, ok);
+        s = e + 1;
+      }
+    }
+    if (!out.index.length) return null;
+    return {
+      pos: Float32Array.from(out.pos), nrm: Int8Array.from(out.nrm, (v) => Math.round(v * 127)),
+      flow: Float32Array.from(out.flow), liq: Uint16Array.from(out.liq), rib: Float32Array.from(out.rib),
+      index: Uint32Array.from(out.index), falls: out.falls.length ? Float32Array.from(out.falls) : null,
+    };
+  }
+
+  // a river channel's depth at its banks' brim (the sim's metres) for its width w (the ground's m):
+  // hydraulic geometry down rivers (Leopold and Maddock 1953): width ~4.8 Q^0.5, depth ~0.3 Q^0.4
+  // (m, m^3/s), so depth 0.3 (w / 4.8)^0.8: a 10 m stream ~0.5 m deep, a 50 m river ~2 m, 200 m ~6
+  _chanDepth(w) { return 0.3 * Math.pow(Math.max(w, 1) / 4.8, 0.8) / this.hScale; }
   // a river's banks along it: its line's height (on a world with a sea, no lower than the datum it
-  // runs out to; a world without one has none, and a channel below the datum stays there)
-  _bankOf(rv) { return (this.wetNow ? Math.max(rv.hs, 0) : rv.hs) + 1 + 0.05 * rv.depth; }
+  // runs out to; a world without one has none, and a channel below the datum stays there); by its
+  // depth through riffles and pools alike, so its water's level runs smooth down it
+  _bankOf(rv) { return (this.wetNow ? Math.max(rv.hs, 0) : rv.hs) + 1 + 0.05 * (rv.depth0 || rv.depth); }
+  // a river's water at a point of its channel (o): its stage (its usual level, the sim's m: about
+  // half its channel's depth, so it fills ~70% of the channel's width, its banks and bars standing
+  // above it), how far each side it stands (xw, m), its mean depth (dm, m) and how fast it runs (v,
+  // m/s). half: the channel's half width (m) before its riffles and pools; c: where it is between
+  // them (+1 a riffle: wider, shallower; -1 a pool); hsv: its banks' line (the sim's m); slope: the
+  // water's (m/m). The channel's bed a parabola below its banks (sampleSnap), so its wet section is
+  // 4/3 xw (D - its stage's depth below the banks). Its speed through the mean section: what its
+  // size carries (hydraulic geometry, Leopold and Maddock 1953: a channel w wide full at Q = (w /
+  // 4.8)^2 m^3/s, through its section at bankfull; at its usual stage, its depth that fraction of
+  // bankfull, as rivers go at a station: depth ~Q^0.40, speed ~Q^0.34), or where it runs steeper
+  // than that, Manning's for its slope (v = R^(2/3) S^(1/2) / n, a natural channel's n ~0.035, R ~
+  // its mean depth): a torrent's. Through a riffle or a pool by continuity, the same water through
+  // a smaller or a larger section
+  _riverWater(half, c, hsv, slope, o) {
+    const hs = this.hScale, D0 = this._chanDepth(2 * half), D = D0 * (1 - 0.25 * c), h = half * (1 + 0.12 * c);
+    const bank = Math.max(hsv, 0) + 1 + 0.05 * D0, stage = Math.max(bank - 0.45 * D0 - 0.3, 0.3), dl = bank - stage;
+    const xw0 = half * Math.sqrt(Math.max(0, 1 - dl / D0)), A0 = 4 / 3 * xw0 * Math.max(D0 - dl, 0) * hs;
+    const xw = h * Math.sqrt(Math.max(0, 1 - dl / D)), A = 4 / 3 * xw * Math.max(D - dl, 0) * hs;
+    const w = 2 * half, vbf = (w / 4.8) ** 2 / (2 / 3 * w * D0 * hs), vHG = vbf * Math.pow(Math.max(0.05, (D0 - dl) / D0), 0.85);
+    const dm0 = Math.max(0.05, 2 / 3 * (D0 - dl) * hs), v0 = Math.max(vHG, Math.pow(dm0, 2 / 3) * Math.sqrt(Math.max(1e-5, slope)) / 0.035);
+    o.stage = stage; o.xw = xw; o.dm = A > 0 ? A / (2 * xw) : 0; o.D = D;
+    o.v = Math.min(9, Math.max(0.05, v0 * A0 / Math.max(A, 0.25 * A0, 1e-6)));
+    return o;
+  }
   // how far ground beside a river is laid to its banks (pull: bank - ground): all the way across
   // its floodplain (ground a few metres above it, or below it: raised, so the water stays in its
   // bed), none of a gorge's or a valley's walls standing far above it: they rise from its banks
   _levelled(rv, pull) { return pull >= 0 ? pull : pull * (1 - dm.smoothstep(2 * rv.depth + 3, 8 * rv.depth + 10, -pull)); }
+  // a river's floodplain: ground below its banks raised to them (its water held in its bed), and
+  // ground above them laid to them only within a flood's reach (bankfull and a little over: 1.5 m
+  // and a tenth of its depth), so the floodplain's edge follows the ground's own contours (ground
+  // higher is a terrace, or the valley's side). pull: bank - ground (m)
+  _flooded(rv, pull) {
+    if (pull >= 0) return pull;
+    // (heights in the sim's metres: the ground's are hScale of them)
+    const fp = 1.5 / this.hScale + 0.1 * rv.depth;
+    return pull * (1 - dm.smoothstep(0.5 * fp, fp, -pull));
+  }
+  // a river's bed across its channel (0 at its banks, 1 its deepest): a parabola, on a straight reach
+  // its deepest in the middle; in a bend toward the outer bank, the one it's cutting into, a point
+  // bar shelving up from the inner (the flow round a bend sweeps the bed outward: Dietrich 1987),
+  // the more the sharper it bends, read from how fast it's moving there (the meander model's
+  // migration grows with the bend's curvature: Ikeda et al. 1981): its deepest half way to the outer
+  // bank at a typical bend. half: the channel's half width there (m)
+  _bedShape(rv, x, y, z, half) {
+    const mig = Math.sqrt((rv.mx || 0) ** 2 + (rv.my || 0) ** 2 + (rv.mz || 0) ** 2);
+    let xs = Math.min(rv.dist, half);
+    if (mig > 1e-3 && (x - rv.ax) * rv.mx + (y - rv.ay) * rv.my + (z - rv.az) * rv.mz < 0) xs = -xs;
+    const xt = 0.5 * half * Math.tanh(mig), q = xs >= xt ? (xs - xt) / (half - xt) : (xt - xs) / (half + xt);
+    return 1 - q * q;
+  }
+  // and its banks: ground above them rising from the channel's edge no steeper than the bank holds:
+  // a cut bank where the channel moves into it (cohesive, near sheer: ~58 degrees), a point bar
+  // where it moves away (~9), on a straight reach its sediment's rest (~31); beyond that the
+  // ground's own. So the bank's top wanders with the ground beside it, high where a hill comes down
+  // to the river, low across its floodplain, not a line drawn alongside it. half: the channel's half
+  // width there (m)
+  _banked(rv, pull, x, y, z, half) {
+    if (pull >= 0) return pull;
+    const mig = Math.sqrt((rv.mx || 0) ** 2 + (rv.my || 0) ** 2 + (rv.mz || 0) ** 2);
+    const inner = mig > 1e-3 && (x - rv.ax) * rv.mx + (y - rv.ay) * rv.my + (z - rv.az) * rv.mz < 0;
+    const tanB = mig > 1e-3 ? (inner ? 0.15 : 1.6) : 0.6;
+    // (its height above the bank, capped by the bank's slope, then laid level within a flood's reach;
+    // heights in the sim's metres, the ground's hScale of them, distances the ground's)
+    const upO = -pull, fp = 1.5 / this.hScale + 0.1 * rv.depth;
+    let up = Math.min(upO, tanB / this.hScale * Math.max(0, rv.dist - half));
+    up *= dm.smoothstep(0.5 * fp, fp, up);
+    return up - upO;
+  }
 
   // Rivers entrenched in a dry land (cutting down faster than their walls weather back: an
   // antecedent river through a rising plateau, the Colorado's): canyons, cut along the river's
@@ -1045,15 +1327,19 @@ export class TerrainGenerator {
       const sd2 = (o) => lp(4 + o) + sg * (lp(o) - lp(4 + o));
       const h1 = sd2(0), sl = sd2(1), gone = sd2(2), wt = sd2(3);
       // (its floor: the river's banks along its channel)
-      const depth = 3 + 25 * Rv.size[r], F = (this.wetNow ? Math.max(cn.hs, 0) : cn.hs) + 1 + 0.05 * depth;
+      const depth = this._chanDepth(2 * cn.half), F = (this.wetNow ? Math.max(cn.hs, 0) : cn.hs) + 1 + 0.05 * depth;
       const top0 = h1 - sl * d1, fade = dry * wt * dm.smoothstep(30, 80, top0 - F);
       if (fade <= 1e-3) continue;
-      const top = Math.min(h1, top0 + sl * da), Wf = Math.max(4, 1.8 * cn.half);
+      // (its floor beside the channel: its banks' strip down a straight reach and on a bend's inner
+      // side; on its outer side narrower the harder the river is cutting into its wall there (how
+      // fast it's moving, the meander model's migration), the wall's foot at the water's edge at a
+      // sharp bend: its cut bank the wall itself)
+      const mig = Math.sqrt(cn.mx * cn.mx + cn.my * cn.my + cn.mz * cn.mz), inner = (x - cn.x) * cn.mx + (y - cn.y) * cn.my + (z - cn.z) * cn.mz < 0;
+      const top = Math.min(h1, top0 + sl * da), Wf = Math.max(4, cn.half * (inner || mig <= 1e-3 ? 1.8 : 1.8 - 0.8 * Math.tanh(mig)));
       // (its walls: the rock suites there, the two weighing most, each worn back to take out what's
       // missing; on the inside of a bend no steeper than the slope the river left moving across)
       let s1 = -1, s2 = -1, w1 = 0, w2 = 0;
       for (let s = 0; s < 4; s++) { const ws = lp(8 + s); if (ws > w1) { s2 = s1; w2 = w1; s1 = s; w1 = ws; } else if (ws > w2) { s2 = s; w2 = ws; } }
-      const mig = Math.sqrt(cn.mx * cn.mx + cn.my * cn.my + cn.mz * cn.mz), inner = (x - cn.x) * cn.mx + (y - cn.y) * cn.my + (z - cn.z) * cn.mz < 0;
       let cv = 0, cc = 0, cw = 0, W = 0;
       for (let si = 0; si < 2; si++) {
         const s = si ? s2 : s1, ws = si ? w2 : w1;
@@ -1379,9 +1665,17 @@ export class TerrainGenerator {
           const dist = Math.sqrt(cn.d2) * R, w = 2 * cn.half;
           if (dist - w < bs) {
             bs = dist - w; bch = ch;
-            best = this._rv || (this._rv = { dist: 0, w: 0, depth: 0, k: 0, hs: 0, r: 0, t: 0, axis: 0, belt: 0, ox: 1e9, oxAge: 1, oxW: 0, ax: 0, ay: 0, az: 0 });
-            best.dist = dist; best.w = w; best.k = Rv.size[r]; best.depth = 3 + 25 * best.k; best.hs = cn.hs;
+            best = this._rv || (this._rv = { dist: 0, w: 0, depth: 0, depth0: 0, c: 0, k: 0, hs: 0, r: 0, t: 0, axis: 0, belt: 0, ox: 1e9, oxAge: 1, oxW: 0, ax: 0, ay: 0, az: 0 });
+            best.dist = dist; best.w = w; best.k = Rv.size[r]; best.depth = this._chanDepth(w); best.hs = cn.hs;
+            // (riffles and pools down it, one of each every ~6 widths, along its meander phase (in
+            // widths, shared across its records): a riffle wider and shallower, a pool narrower and
+            // deeper; the same water through both)
+            { const c = Math.cos(dm.TWO_PI * (ch.J0 + (ch.J1 - ch.J0) * cn.t) / 6); best.c = c; best.depth0 = best.depth; best.w *= 1 + 0.12 * c; best.depth *= 1 - 0.25 * c; }
             best.r = r; best.t = cn.t; best.ax = cn.x; best.ay = cn.y; best.az = cn.z;
+            best.mx = cn.mx; best.my = cn.my; best.mz = cn.mz;
+            // (its way down and slope there: the water's running, channels.js chanFlow)
+            const fd = this._fd || (this._fd = [0, 0, 0]), sl = chanFlow(cn, R, fd);
+            best.fx = sl >= 0 ? fd[0] : 0; best.fy = sl >= 0 ? fd[1] : 0; best.fz = sl >= 0 ? fd[2] : 0; best.slope = sl >= 0 ? sl * this.hScale : 0;
           }
         } else {
           // (from afar, its line: as its channel drawn with no swing)
@@ -1390,11 +1684,18 @@ export class TerrainGenerator {
           if (dist - w < bs) {
             bs = dist - w; bch = null;
             const a0 = (1 - t) * (1 - t), a1 = 2 * t * (1 - t), a2 = t * t, b = r * RIVER_REC, fb = 9 * r, F = Fr.F;
-            best = this._rv || (this._rv = { dist: 0, w: 0, depth: 0, k: 0, hs: 0, r: 0, t: 0, axis: 0, belt: 0, ox: 1e9, oxAge: 1, oxW: 0, ax: 0, ay: 0, az: 0 });
-            best.dist = dist; best.w = w; best.k = Rv.size[r]; best.depth = 3 + 25 * best.k;
+            best = this._rv || (this._rv = { dist: 0, w: 0, depth: 0, depth0: 0, c: 0, k: 0, hs: 0, r: 0, t: 0, axis: 0, belt: 0, ox: 1e9, oxAge: 1, oxW: 0, ax: 0, ay: 0, az: 0 });
+            best.dist = dist; best.w = w; best.k = Rv.size[r]; best.depth = best.depth0 = this._chanDepth(w); best.c = 0;
             best.hs = (a0 * rec[b + 9] + a1 * rec[b + 10] + a2 * rec[b + 11]) / this.hScale;
             best.r = r; best.t = t;
             best.ax = a0 * F[fb] + a1 * F[fb + 3] + a2 * F[fb + 6]; best.ay = a0 * F[fb + 1] + a1 * F[fb + 4] + a2 * F[fb + 7]; best.az = a0 * F[fb + 2] + a1 * F[fb + 5] + a2 * F[fb + 8];
+            best.mx = best.my = best.mz = 0;
+            // (its way down: its frame's tangent, the record running downstream; its slope end to end)
+            {
+              const u = 1 - t, tx = u * (F[fb + 3] - F[fb]) + t * (F[fb + 6] - F[fb + 3]), ty = u * (F[fb + 4] - F[fb + 1]) + t * (F[fb + 7] - F[fb + 4]), tz = u * (F[fb + 5] - F[fb + 2]) + t * (F[fb + 8] - F[fb + 5]);
+              const tl = Math.sqrt(tx * tx + ty * ty + tz * tz) || 1, len = Math.sqrt((F[fb + 6] - F[fb]) ** 2 + (F[fb + 7] - F[fb + 1]) ** 2 + (F[fb + 8] - F[fb + 2]) ** 2) * R;
+              best.fx = tx / tl; best.fy = ty / tl; best.fz = tz / tl; best.slope = len > 0 ? Math.abs(rec[b + 9] - rec[b + 11]) / len : 0;
+            }
           }
         }
       }
@@ -1435,10 +1736,14 @@ export class TerrainGenerator {
         if (dist - 2 * half < bs) {
           bs = dist - 2 * half;
           const k = sg[sb + 7];
-          best = this._rv || (this._rv = { dist: 0, w: 0, depth: 0, k: 0, hs: 0, r: 0, t: 0, axis: 0, belt: 0, ox: 1e9, oxAge: 1 });
-          best.dist = dist; best.w = 2 * half; best.k = k; best.depth = 3 + 25 * k; best.hs = sg[sb + 8] / this.hScale;
+          best = this._rv || (this._rv = { dist: 0, w: 0, depth: 0, depth0: 0, c: 0, k: 0, hs: 0, r: 0, t: 0, axis: 0, belt: 0, ox: 1e9, oxAge: 1, oxW: 0, ax: 0, ay: 0, az: 0 });
+          best.dist = dist; best.w = 2 * half; best.k = k; best.depth = best.depth0 = this._chanDepth(2 * half); best.c = 0; best.hs = sg[sb + 8] / this.hScale;
           best.axis = dist; best.belt = 0; best.ox = 1e9; best.oxW = 0;
           best.ax = sg[sb] + t * ax; best.ay = sg[sb + 1] + t * ay; best.az = sg[sb + 2] + t * az;
+          best.mx = best.my = best.mz = 0;
+          // (a great river's segments laid up its stem: its way down the other way; its slope a
+          // great river's, ~1e-4)
+          { const al = Math.sqrt(L2) || 1; best.fx = -ax / al; best.fy = -ay / al; best.fz = -az / al; best.slope = 1e-4; }
         }
       }
       }
