@@ -7,6 +7,7 @@
 // stepped on one clock, parents before children.
 
 import { WorldSims } from './sim/worldSims.js';
+import { WorldClock } from './sim/worldClock.js';
 import { NearGround } from './sim/nearGround.js';
 import { findCliffCountry, gentleNear } from './gen/volume.js';
 import * as THREE from 'three';
@@ -76,7 +77,10 @@ export class Game {
     // simulated worlds (WORLDSIM.md step 7; ?worldsim=0 for the noise worlds, to compare)
     if (opts.worldsim) { this.worldSims = new WorldSims(this, { N: opts.simN, workers: opts.simWorkers, gpu: opts.tileGPU !== false }); this.tiles = new TerrainTiles(this); }
     this.lights = new LightRig(this.engine);
-    this.t = 0;
+    // the world's clock: everyone's (sim/worldClock.js); this client's universe time from it
+    this.clock = new WorldClock();
+    this.t = this.clock.now();
+    this.universe.update(this.t);
     this.warpIndex = 0;
     this.freecam = new FreeCam(this);
     this.vessels = [];
@@ -450,7 +454,10 @@ export class Game {
     this.loadText = `Surveying ${b.data.name} for a landing site`;
     this.screenHud.setLoading(this.loadText, 0);
     this.requestSurvey(b, -50).then((res) => {
-      const site = res && res.sites && res.sites[0];
+      // (the world as it is now, on the shared clock: of the survey's sites, the best one in daylight)
+      this.t = this.clock.now();
+      this.universe.update(this.t);
+      const site = res && res.sites && this.daySite(b, res.sites);
       this.placeStart(b, site ? new THREE.Vector3(...site.dir) : this.fallbackSite(b), site);
     }, (err) => {
       console.error(err);
@@ -499,10 +506,22 @@ export class Game {
     return t0;
   }
 
+  // the best ranked of a survey's sites with the sun 10 degrees up or more there now; else the one
+  // where it stands highest
+  daySite(b, sites) {
+    let best = null, bestE = -2;
+    for (const st of sites) {
+      const e = this.sunElevation(b, new THREE.Vector3(...st.dir).normalize());
+      if (e >= 0.17) return st;
+      if (e > bestE) { bestE = e; best = st; }
+    }
+    return best;
+  }
+
   placeStart(b, dirF, site) {
     this.site = site;
     this.startDir = dirF.clone().normalize();
-    this.t = this.findMorning(b, this.startDir, 30);
+    this.t = this.clock.now();
     this.universe.update(this.t);
     this.landShipAt(b, this.startDir, null);
     this.spawnFleet(b);
@@ -522,10 +541,10 @@ export class Game {
     const s = this.ship, p = this.players[0];
     this.respawnInfo = { body: b, dir: dir.clone() };
     const here = s.landed && !s.parent && s.body === b && s.landedPosF.clone().normalize().dot(dir) > 0.99999;
-    if (!here) {
-      if (this.sunElevation(b, dir) < 0.17) { this.t = this.findMorning(b, dir, 30, this.t); this.universe.update(this.t); }
-      this.landShipAt(b, dir, null);
-    }
+    // (the time is the world's: at night it's night there, and the sun's rising time said)
+    if (!here) this.landShipAt(b, dir, null);
+    const dark = this.sunElevation(b, dir) < 0;
+    const rise = dark ? this.findMorning(b, dir, 0, this.t) - this.t : 0;
     const sp = s.landedPosF.clone();
     const sq = s.landedQuatF.clone();
     const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(sq);
@@ -547,6 +566,7 @@ export class Game {
       this.message(`${name}: ${b.data.label}`, 'nav');
       if (spot) this.message(`${spot.label} · ${spot.biome} · ${spot.temperatureC} °C · ${spot.elevation.toLocaleString()} m`);
       else if (site) this.message(`Landing site: ${site.biome}, ${site.reasons.slice(0, 2).join(', ')}`);
+      if (rise > 0) this.message(`Night here · sunrise in ${rise >= 3600 ? `${Math.floor(rise / 3600)} h ` : ''}${Math.round((rise % 3600) / 60)} min`, 'nav');
     });
   }
 
@@ -662,7 +682,7 @@ export class Game {
   // testing launch spots (?test=): 'river' beside the biggest river on the start world (or,
   // when that's dry, on the nearest world with a liquid at its surface); 'cliffs' starts on the
   // start world's steepest hard-rock
-  // country below 2.5 km (gen/volume.js: cliffs, overhangs, caves), in the morning, beside the
+  // country below 2.5 km (gen/volume.js: cliffs, overhangs, caves), beside the
   // ship; once that world's sim is in (from the cache at once, else when it's done)
   async goTestSpot(kind, token) {
     let b = this.startBody;

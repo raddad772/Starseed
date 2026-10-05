@@ -16,8 +16,8 @@ import { GLSL_MEDIUM, GLSL_AIRLIGHT, GLSL_THERMAL, glowUniforms, GLSL_CLOUD_N, c
 import { GLSL_TERRAIN_SHADOW } from './terrainShadow.js';
 
 // the decks' shapes, shared by the volume pass and the ground's cloud shadows (cloudShadow.js): their
-// coverage, wind-carried coordinates and density. Needs GLSL_CLOUD_N, tNoise, uDeck, uMode, uBands,
-// uJetPhase, uEqJet, uWindMax, uTime, uShape
+// coverage and density, over the clouds' generations on the world's clock (atmosphere.js cloudGens,
+// each carried on its wind). Needs GLSL_CLOUD_N, tNoise, uDeck, uMode, uBands, uJetPhase, uShape
 export const GLSL_DECKS = /* glsl */`
 // coverage of deck i (0..1) at body-fixed point q (metres) with direction dirF, a pixel foot m across
 float coverage(int i, vec3 dirF, vec3 q, float foot) {
@@ -30,14 +30,6 @@ float coverage(int i, vec3 dirF, vec3 q, float foot) {
     return smoothstep(0.2, 0.62, texture(tNoise, q / 42000.0 + 0.37).g + uDeck[2].w);
   }
   return cloudCover(q, dirF, foot, uDeck[i].w);
-}
-// wind-advected body-fixed sample position, from a body-fixed point pf at radius r
-vec3 cloudCoordF(vec3 pf, float r, out vec3 dirF, out float lat) {
-  dirF = pf / r;
-  lat = asin(clamp(dirF.y, -1.0, 1.0));
-  float U = uWindMax * (sin(lat * uBands * 2.0 + uJetPhase * 6.2832) + uEqJet * exp(-lat * lat * 40.0));
-  vec3 east = normalize(vec3(-dirF.z, 0.0, dirF.x) + vec3(1e-6, 0.0, 0.0));
-  return pf + east * U * uTime;
 }
 // density of deck i at q (height h); cov precomputed; detail adds erosion
 float deckDensity(int i, vec3 q, float h, float cov, bool detail, out float frac) {
@@ -57,6 +49,20 @@ float deckDensity(int i, vec3 q, float h, float cov, bool detail, out float frac
     d = clamp((d - er) / max(1.0 - er, 0.05), 0.0, 1.0);
   }
   return d * dk.z;
+}
+// the generations' coverage of deck i at body-fixed pf (dirF its way), each carried on its wind
+// (atmosphere.js cloudGens: gA, gB): (A's, B's)
+vec2 deckCovG(int i, vec3 pf, vec3 dirF, float foot, vec3 gA, vec3 gB) {
+  return vec2(gA.x > 0.005 ? coverage(i, dirF, cloudAdvect(pf, dirF, gA), foot) : 0.0,
+              gB.x > 0.005 ? coverage(i, dirF, cloudAdvect(pf, dirF, gB), foot) : 0.0);
+}
+// deck i's density at pf over the generations (height h; each its coverage cv; frac the weightier's)
+float deckDenG(int i, vec3 pf, vec3 dirF, float h, vec2 cv, vec3 gA, vec3 gB, bool detail, out float frac) {
+  float d = 0.0, fa = 0.5, fb = 0.5;
+  if (gA.x > 0.005) d += gA.x * deckDensity(i, cloudAdvect(pf, dirF, gA), h, cv.x, detail, fa);
+  if (gB.x > 0.005) d += gB.x * deckDensity(i, cloudAdvect(pf, dirF, gB), h, cv.y, detail, fb);
+  frac = gA.x >= gB.x ? fa : fb;
+  return d;
 }
 `;
 
@@ -141,8 +147,6 @@ vec3 palette(float t) {
 
 ${GLSL_CLOUD_N}
 ${GLSL_DECKS}
-// wind-advected body-fixed sample position
-vec3 cloudCoord(vec3 p, float r, out vec3 dirF, out float lat) { return cloudCoordF(uToFixed * p, r, dirF, lat); }
 
 void main() {
   // (the ray through the one full-resolution pixel whose depth this half-resolution fragment reads:
@@ -207,17 +211,20 @@ void main() {
       float tauAbove = 0.0;
       float cd = 0.0, frac = 0.5;
       vec3 cc = vec3(1.0);
-      vec3 dirF; float lat;
-      vec3 q = cloudCoord(p, r, dirF, lat);
+      // (the clouds' generations here on the world's clock, each carried on its wind: atmosphere.js)
+      vec3 pf = uToFixed * p, dirF = pf / r, gA, gB;
+      float lat = asin(clamp(dirF.y, -1.0, 1.0));
+      cloudGens(dirF, gA, gB);
       for (int k = 0; k < 3; k++) {
         if (float(k) >= uNumDecks) break;
         vec4 dk = uDeck[k];
         if (h > dk.y) continue;
-        float cov = coverage(k, dirF, q, t * gPixA);
+        vec2 cv = deckCovG(k, pf, dirF, t * gPixA, gA, gB);
+        float cov = gA.x * cv.x + gB.x * cv.y;
         if (h < dk.x) { tauAbove += dk.z * cov * (dk.y - dk.x) * 0.4 * uSigma; continue; }
         if (seg != 1) continue;
         float fr;
-        float d = deckDensity(k, q, h, cov, true, fr);
+        float d = deckDenG(k, pf, dirF, h, cv, gA, gB, true, fr);
         tauAbove += dk.z * cov * (dk.y - h) * 0.25 * uSigma;
         if (d > cd) {
           cd = d; frac = fr; cc = uDeckCol[k];
@@ -225,12 +232,12 @@ void main() {
           // short light march toward the sun through this deck: directional self-shadowing
           float tl = 0.0;
           float ds = 350.0;
-          vec3 qs = q;
+          vec3 ps = pf;
           for (int j = 0; j < 3; j++) {
-            qs += sunDirF * ds;
+            ps += sunDirF * ds;
             float hs = h + muS * ds * float(j + 1);
             float frs;
-            tl += deckDensity(k, qs, hs, cov, false, frs) * ds;
+            tl += deckDenG(k, ps, dirF, hs, cv, gA, gB, false, frs) * ds;
             ds *= 3.2;
           }
           tauAbove += tl * uSigma * 0.8;

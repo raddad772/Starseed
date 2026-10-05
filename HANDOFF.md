@@ -381,6 +381,31 @@ rivers that are straighter where they should be?"):**
   dm.hypot added). Other generation files still have ~40 (bodies, star, settlements, worldsim barren,
   landmarks, stagnant, snapshot, grid, world, sim floraField...): queued as its own task.
 
+- **One world clock** (Dave: "start simulating time. And have an agreed upon start time ... It would also
+  sync clouds up between clients"): sim/worldClock.js. Universe time counts from WORLD_EPOCH (2026-10-05
+  00:00 UTC) at the game's pace (game s = real s; days and years scaled by TIME_SCALE: SOL Earth's day 3 h,
+  its year 45.7 real days, a season ~11). game.js starts the world at it (no more jumping the clock to a
+  morning): the start takes the best ranked survey site with the sun 10 degrees up (daySite); a respawn
+  or a picked spot lands at whatever time it is there ("Night here · sunrise in ..."). ?date=2027-01-15
+  (or ...T06:00, UTC) or ?clock=+30d / -6h for trying seasons (a test's own offset). The pause screen's
+  catalog shows the shared date and each of this system's worlds' season (seasonText: where the sun is
+  overhead, heading north or south). Warp still runs this client's clock ahead (the offset shown).
+- **Clouds on the world's clock** (atmosphere.js cloudGens / cloudAdvect / cloudCoverG; volume.js
+  deckCovG / deckDenG; cloudShadow.js): each generation lives T = cloudLife(winds, R), about 1 / its
+  winds' steepest shear (SOL Earth ~23 min: a 1/64 world with Earth's winds shears fast; a 2 h life
+  smeared the drawn noise into streaks and blocks: shots ice_space_a vs b), drifts on its latitude's wind
+  for its age, and hands over to the next over a fifth of its life; two series half a life apart, each
+  place turning over at its own time (a front sweeping round the world). Its own place in the noise from
+  an integer hash of its index. The far shell, the near volume, the shadow map and the ground's
+  cloudLight all read the same generations, so near and far clouds agree (they drifted apart by tens of
+  km an hour before) and every client on the shared clock draws the same sky. Costs: the hand-over's
+  second lookups on a fifth of the sky.
+- Sea ice already follows the season (liquid.js liquidIce, gen/liquidice.js frozenNow: the sun's
+  latitude now), so on the shared clock it comes and goes for everyone alike. SOL Earth 2026-10-19 (late
+  southern winter): the edge at 51-53 S, a marginal zone of floes and leads ~2 degrees wide (shots
+  ice_space_b, ice_edge_partial). Seasonal snow and leaf colour still from the annual means (next: the
+  climate's monthly cycle to the snapshot, SIM_VERSION bump: every world re-sims once).
+
 **What's still wrong / next:**
 - Snow covers most of a high mountain (the snowline reads the real height: physically right, maybe too
   white for Dave).

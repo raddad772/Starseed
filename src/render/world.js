@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import { PlanetTerrain } from './planetTerrain.js';
 import { cloudMapPixels } from '../gen/worldsim/snapshot.js';
-import { Atmosphere, blankCloudMap, thermalUniform } from './atmosphere.js';
+import { Atmosphere, blankCloudMap, thermalUniform, cloudLife } from './atmosphere.js';
 import { makeStarMesh } from './sky.js';
 import { makeGiantMesh, makeRingMesh } from './giant.js';
 import { VolumePass } from './volume.js';
@@ -122,6 +122,12 @@ export class WorldRenderer {
       if (b.giant) it.volume = new VolumePass(b, a, this.cloudNoise, 0);
       else if (clouds && clouds.type !== 'sulfuric') it.volume = new VolumePass(b, a, this.cloudNoise, 1);
       if (it.volume && it.heightCube) for (const k of ['tHeightCube', 'uHeightCube']) it.volume.material.uniforms[k] = it.heightCube.uniforms[k];
+      // (the clouds' wind, the near volume's, and the world's clock: every shader drawing them, the sky's,
+      // the volume's, their shadows' and the ground's, reads the same generations)
+      const vu = it.volume && it.volume.material.uniforms, w = it.cloudWind = { value: vu ? new THREE.Vector4(vu.uWindMax.value, vu.uBands.value, vu.uJetPhase.value, vu.uEqJet.value) : new THREE.Vector4(12, 3, 0, 0) };
+      // (and the world's clock as they read it, set each frame: its generations as long as its winds' shear lets them last)
+      it.cloudClock = { value: new THREE.Vector4(0, 0, cloudLife(w.value.x, w.value.y, w.value.w, b.R), 0) };
+      for (const Uf of [it.shared, a.material.uniforms, vu]) if (Uf) { Uf.uCloudClock = it.cloudClock; Uf.uCloudWind = it.cloudWind; }
       // (its clouds' shadows and overcast light on the ground near the camera, from the near volume's decks)
       if (it.volume && !b.giant) it.cloudShadow = new CloudShadow(it.volume, b.R, clouds);
       // (the far shell's cover reads the noise on every world: bound only beside a near volume, a
@@ -180,6 +186,7 @@ export class WorldRenderer {
       _m4.makeRotationFromQuaternion(b.qInv);
       sh.uToFixed.value.setFromMatrix4(_m4);
       sh.uTime.value = this.timeSec;
+      if (it.cloudClock) { const c = it.cloudClock.value, t = this.u.t, Y = Math.floor(t / c.z); c.set(t - Y * c.z, Y + 1048576, c.z, 0); }
       if (it.liquid) it.liquid.update(this.timeSec, _v2.copy(sh.uSunDir.value).applyMatrix3(sh.uToFixed.value));
       const angular = (b.R + (it.atmo ? it.atmo.top - b.R : 0)) / Math.max(dist, 1) * pxPerRad;
       if (it.terrain) {

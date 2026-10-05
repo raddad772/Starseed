@@ -35,6 +35,16 @@ export const CLOUD_K = [1.0, 0.236, 0.064];
 // cloudBias's twin for the near volume's decks (their bias a uniform)
 const sstep = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 export const cloudBias = (cover) => (cover - 0.5) * 0.3 + 0.5 * sstep(0.8, 1.0, cover) - 0.5 * (1 - sstep(0.0, 0.2, cover));
+// how long a generation of clouds lives on the world's clock (s): about as long as its winds' shear
+// takes to tear a pattern apart, 1 / (dU/dy) at its steepest (a cloud system carried on a sheared wind
+// lasts about that long before it's drawn out into streaks; given longer, the drawn noise smeared into
+// bands and blocks). The winds as the near volume has them (cloudAdvect: the most, the bands, the
+// equator's jet) on a world of radius R; between 5 minutes and 2 hours. A small world drawn at
+// LEN_SCALE with Earth's winds shears fast: ~25 min
+export function cloudLife(windMax, bands, eqJet, R) {
+  const shear = Math.abs(windMax) * (2 * bands + 5.42 * Math.abs(eqJet)) / Math.max(R, 1);
+  return Math.min(7200, Math.max(300, shear > 0 ? 1 / shear : 7200));
+}
 export const GLSL_CLOUD_N = /* glsl */`
 float cloudN(float n) { return 0.55 + (n - 0.682) * 4.3; }
 // how far a world's cover (0..1) moves the threshold: gently through the middle (an Earth's 0.52),
@@ -64,6 +74,49 @@ float cloudCover(vec3 q, vec3 dirF, float foot, float bias) {
 float cloudDetail(vec3 q, float foot) {
   float L2 = uRadius * ${CLOUD_K[2].toFixed(3)}, f = cloudFade(foot, L2);
   return f > 0.999 ? 0.682 : mix(textureLod(tNoise, q / L2, 0.0).r, 0.682, f);
+}
+// ---- the clouds on the world's clock (sim/worldClock.js; world.js sets uCloudClock each frame): each
+// generation of them lives T (uCloudClock.z: cloudLife, the world's winds' shear) of the clock, forms, drifts on its latitude's wind
+// (uCloudWind: the most, the bands, their phase, the equator's jet: the near volume's) and gives way to
+// the next. Two series half a life apart; each place turns over at its own time (the turn-over sweeping
+// round the world like a front), the hand-over a fifth of a life, so most places draw one generation.
+// Every client on the shared clock draws the same sky. Each generation's drift stays within half a
+// life's wind: a pattern carried on the wind for months smears into bands, and its float positions
+// lose their metres
+uniform vec4 uCloudClock;   // time into the clock's period T (s), periods before it (kept positive), T (s: cloudLife)
+uniform vec4 uCloudWind;
+// the two generations at body-fixed direction dirF: each (weight, age from its mid-life (s), index)
+void cloudGens(vec3 dirF, out vec3 gA, out vec3 gB) {
+  float T = uCloudClock.z;
+  if (T <= 0.0) { gA = vec3(1.0, 0.0, 0.0); gB = vec3(0.0); return; }
+  float ph = 1.1 * dirF.x + 0.7 * dirF.z - 0.5 * dirF.y + 0.35 * sin(2.3 * dirF.y + 1.7 * dirF.x - 0.9 * dirF.z);
+  float s = uCloudClock.x / T + ph + 4.0;
+  float a = floor(s), fa = s - a, b = floor(s + 0.5), fb = s + 0.5 - b;
+  float wa = smoothstep(0.4, 0.6, 1.0 - abs(2.0 * fa - 1.0));
+  gA = vec3(wa, (fa - 0.5) * T, 2.0 * (uCloudClock.y + a));
+  gB = vec3(1.0 - wa, (fb - 0.5) * T, 2.0 * (uCloudClock.y + b) + 1.0);
+}
+// a generation's own place in the noise: an integer hash of its index (the same on every GPU)
+vec3 cloudGenOff(float idx) {
+  uint h = uint(idx) * 2654435761u;
+  h ^= h >> 15u; h *= 2246822519u; h ^= h >> 13u;
+  return (vec3(float(h & 1023u), float((h >> 10u) & 1023u), float((h >> 20u) & 1023u)) / 1024.0 - 0.5) * 4.0e5;
+}
+// where generation g has carried body-fixed pf (dirF its way): on its latitude's wind for its age
+vec3 cloudAdvect(vec3 pf, vec3 dirF, vec3 g) {
+  float lat = asin(clamp(dirF.y, -1.0, 1.0));
+  float U = uCloudWind.x * (sin(lat * uCloudWind.y * 2.0 + uCloudWind.z * 6.2832) + uCloudWind.w * exp(-lat * lat * 40.0));
+  vec3 east = normalize(vec3(-dirF.z, 0.0, dirF.x) + vec3(1e-6, 0.0, 0.0));
+  return pf + east * U * g.y + cloudGenOff(g.z);
+}
+// cloudCover over the generations at body-fixed pf
+float cloudCoverG(vec3 pf, vec3 dirF, float foot, float bias) {
+  vec3 gA, gB;
+  cloudGens(dirF, gA, gB);
+  float c = 0.0;
+  if (gA.x > 0.005) c += gA.x * cloudCover(cloudAdvect(pf, dirF, gA), dirF, foot, bias);
+  if (gB.x > 0.005) c += gB.x * cloudCover(cloudAdvect(pf, dirF, gB), dirF, foot, bias);
+  return c;
 }`;
 
 // the cloud deck's light at rel (from the world's centre, world axes; r = |rel|): returns the share of
@@ -102,9 +155,10 @@ float cloudLight(vec3 rel, float r, float muS, float foot, vec3 sunAbove, inout 
   // (the far shell's cover: on the sun's way up at the deck, and overhead over the dome a point sees)
   float hc = uCloud.x - (r - uRadius);
   if (hc > 0.0 && w < 1.0) {
-    float cs = muS > -0.05 ? cloudCover(normalize(uToFixed * normalize(rel + uSunDir * hc / max(muS, 0.08))) * uRadius, normalize(uToFixed * normalize(rel + uSunDir * hc / max(muS, 0.08))), foot, cloudBias(uCloud.z)) * uCloudOpacity : 0.0;
+    vec3 ds = normalize(uToFixed * normalize(rel + uSunDir * hc / max(muS, 0.08)));
+    float cs = muS > -0.05 ? cloudCoverG(ds * uRadius, ds, foot, cloudBias(uCloud.z)) * uCloudOpacity : 0.0;
     vec3 dz = normalize(uToFixed * rel);
-    float cz = cloudCover(dz * uRadius, dz, max(foot, 3.5 * hc), cloudBias(uCloud.z)) * uCloudOpacity;
+    float cz = cloudCoverG(dz * uRadius, dz, max(foot, 3.5 * hc), cloudBias(uCloud.z)) * uCloudOpacity;
     Tdir = 1.0 - cs + cs * exp(-uCloudTau / mu);
     Ttot = 1.0 - cz + cz / (1.0 + 0.1125 * uCloudTau);
     Dup = 1.0 - cz + cz * exp(-uCloudTau / mu);
@@ -464,9 +518,17 @@ ${GLSL_CLOUD_N}
 // Same coverage field as the volumetric pass (render/volume.js, mode 1), so
 // switching between the far 2D shell and near 3D clouds is seamless.
 float cloudDensity(vec3 pFixedDir, float foot) {
-  vec3 q = pFixedDir * uRadius;
-  float cov = cloudCover(q, pFixedDir, foot, cloudBias(uCloud.z));
-  return cov * smoothstep(0.15, 0.55, cloudDetail(q, foot) * cov + 0.25);
+  vec3 pf = pFixedDir * uRadius, gA, gB;
+  cloudGens(pFixedDir, gA, gB);
+  float d = 0.0;
+  for (int j = 0; j < 2; j++) {
+    vec3 g = j == 0 ? gA : gB;
+    if (g.x <= 0.005) continue;
+    vec3 q = cloudAdvect(pf, pFixedDir, g);
+    float cov = cloudCover(q, pFixedDir, foot, cloudBias(uCloud.z));
+    d += g.x * cov * smoothstep(0.15, 0.55, cloudDetail(q, foot) * cov + 0.25);
+  }
+  return d;
 }
 
 // march [t0,t1] accumulating in-scattering; positions via the perpendicular

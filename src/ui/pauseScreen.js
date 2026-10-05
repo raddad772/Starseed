@@ -12,6 +12,7 @@ import { generateSystem } from '../gen/system.js';
 import { giantPortrait, portraitLook } from '../gen/portrait.js';
 import { drawSchematic } from './briefing.js';
 import { normalizeSeed, randomSeedString } from '../core/rng.js';
+import { clockText, seasonText } from '../sim/worldClock.js';
 
 const TABS = [['map', 'Map'], ['planets', 'Planets'], ['settings', 'Settings'], ['controls', 'Controls']];
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
@@ -157,7 +158,7 @@ export class PauseScreen {
     for (const pl of sys.bodies.filter((b) => b.kind === 'planet')) order.push(pl, ...sys.bodies.filter((b) => b.kind === 'moon' && b.parentId === pl.id));
     return `<div class="cat">
       <div class="catHead">
-        <div><div class="label">${current ? 'This system' : 'Another system'}</div>
+        <div><div class="label">${current ? `This system · ${esc(clockText(this.game.t))}` : 'Another system'}</div>
           <h3>${esc(s.name)} <span>${s.catalog} · ${s.spectral} · ${s.luminosity.toFixed(2)} L☉ · ${Math.round(s.teff)} K · ${s.age.toFixed(1)} Gyr · ${order.filter((b) => b.kind === 'planet').length} planets, ${order.filter((b) => b.kind === 'moon').length} moons</span></h3></div>
         <div class="seedrow"><label class="label" for="catSeed">Seed</label><input id="catSeed" value="${esc(seed)}" spellcheck="false" aria-label="System seed">
           <button id="catLook" type="button">Look up</button><button id="catRandom" type="button">Random</button>
@@ -177,6 +178,9 @@ export class PauseScreen {
     if (b.kind === 'moon') row('Orbit', `${Math.round(b.orbit.a / 1000).toLocaleString()} km${b.eclipse >= 0.01 ? ` · in its planet's shadow ${(b.eclipse * 100).toFixed(b.eclipse < 0.1 ? 1 : 0)}% of the time` : ''}`);
     else row('Orbit', `${b.aAU.toFixed(2)} AU · ${b.insolation >= 0.1 ? b.insolation.toFixed(2) : b.insolation.toFixed(3)}× Earth's sunlight`);
     row('Day', b.rotation.locked ? 'tidally locked' : `${b.rotation.periodRealH.toFixed(1)} h`);
+    // (its season now, on the world's clock: this system's worlds only)
+    const g = current && this.game, lb = g && g.universe.bodies[b.id], season = lb && seasonText(g.universe, lb, g.t);
+    if (season) row('Season', esc(season));
     if (b.solid) row('Surface', `${fmtT(b.Tsurf)} (${fmtT(b.Tmin)} to ${fmtT(b.Tmax)})`);
     else row('Cloud tops', `${Math.round(b.Teq)} K`);
     const gee = b.gravity / 9.81;

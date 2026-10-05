@@ -1,6 +1,6 @@
 // The clouds' light on the ground near the camera: a map, over a square of the ground round the point
 // under the camera, of how much of the sun gets through the near volume's decks (volume.js: the clouds
-// the sky draws there, their shapes and their wind) and how much of the sky's light the cloud overhead
+// the sky draws there, their shapes and their wind, their generations on the world's clock) and how much of the sky's light the cloud overhead
 // lets down. The ground's, the plants' and the rocks' shaders read it (atmosphere.js cloudLight);
 // beyond it, the far shell's cover.
 //
@@ -40,7 +40,6 @@ uniform float uBands;
 uniform float uJetPhase;
 uniform float uEqJet;
 uniform float uWindMax;
-uniform float uTime;
 uniform vec3 uO;      // the patch's middle (body-fixed, on the datum)
 uniform vec3 uE;      // its axes
 uniform vec3 uN;
@@ -52,19 +51,19 @@ ${GLSL_CLOUD_N}
 ${GLSL_DECKS}
 // the distance from p (inside the sphere of radius rr) along unit d to it
 float toRadius(vec3 p, vec3 d, float rr) { float b = dot(p, d), c = dot(p, p) - rr * rr; return -b + sqrt(max(b * b - c, 0.0)); }
-// the decks' optical depth over n steps from p along d between distances t0 and t1
-float tauAlong(vec3 p, vec3 d, float t0, float t1, float foot) {
+// the decks' optical depth over n steps from p along d between distances t0 and t1 (the clouds'
+// generations gA, gB: the ground point's)
+float tauAlong(vec3 p, vec3 d, float t0, float t1, float foot, vec3 gA, vec3 gB) {
   const int N = 8;
   float dt = (t1 - t0) / float(N), tau = 0.0;
   for (int s = 0; s < N; s++) {
     vec3 x = p + d * (t0 + (float(s) + 0.5) * dt);
-    float r = length(x), h = r - uRadius, lat, fr;
-    vec3 dirF;
-    vec3 q = cloudCoordF(x, r, dirF, lat);
+    float r = length(x), h = r - uRadius, fr;
+    vec3 dirF = x / r;
     for (int k = 0; k < 3; k++) {
       if (float(k) >= uNumDecks) break;
       if (h < uDeck[k].x || h > uDeck[k].y) continue;
-      tau += deckDensity(k, q, h, coverage(k, dirF, q, foot), false, fr) * uSigmaG * dt;
+      tau += deckDenG(k, x, dirF, h, deckCovG(k, x, dirF, foot, gA, gB), gA, gB, false, fr) * uSigmaG * dt;
     }
   }
   return tau;
@@ -75,10 +74,12 @@ void main() {
   float sb = 1e9, st = -1e9;
   for (int i = 0; i < 3; i++) { if (float(i) >= uNumDecks) break; sb = min(sb, uDeck[i].x); st = max(st, uDeck[i].y); }
   float foot = uL / ${CS_SIZE}.0, muS = dot(g, uSunF);
+  vec3 gA, gB;
+  cloudGens(g, gA, gB);
   // (the sun's way up through the decks; none from below the horizon)
-  float tauS = muS > 0.0 ? tauAlong(G, uSunF, toRadius(G, uSunF, uRadius + max(sb, 0.0)), toRadius(G, uSunF, uRadius + st), foot) : 30.0;
+  float tauS = muS > 0.0 ? tauAlong(G, uSunF, toRadius(G, uSunF, uRadius + max(sb, 0.0)), toRadius(G, uSunF, uRadius + st), foot, gA, gB) : 30.0;
   // (and straight up)
-  float tauU = tauAlong(G, g, max(sb, 0.0), st, foot);
+  float tauU = tauAlong(G, g, max(sb, 0.0), st, foot, gA, gB);
   outC = vec4(exp(-tauS), 1.0 / (1.0 + 0.1125 * tauU), exp(-tauU / max(muS, 0.05)), 1.0);
 }
 `;
@@ -95,7 +96,7 @@ export class CloudShadow {
     });
     const own = { uO: { value: new THREE.Vector3() }, uE: { value: new THREE.Vector3() }, uN: { value: new THREE.Vector3() }, uL: { value: 20000 }, uSunF: { value: new THREE.Vector3() }, uSigmaG: { value: sigmaG } };
     const uniforms = { ...own };
-    for (const k of ['tNoise', 'tCloudMap', 'uCloudMapMean', 'uRadius', 'uDeck', 'uNumDecks', 'uMode', 'uShape', 'uBands', 'uJetPhase', 'uEqJet', 'uWindMax', 'uTime']) uniforms[k] = vu[k];
+    for (const k of ['tNoise', 'tCloudMap', 'uCloudMapMean', 'uRadius', 'uDeck', 'uNumDecks', 'uMode', 'uShape', 'uBands', 'uJetPhase', 'uEqJet', 'uWindMax', 'uCloudClock', 'uCloudWind']) uniforms[k] = vu[k];
     this.own = own;
     this.material = new THREE.ShaderMaterial({ uniforms, vertexShader: FULLSCREEN_VERT, fragmentShader: CLOUD_SHADOW_FRAG, depthTest: false, depthWrite: false, glslVersion: THREE.GLSL3 });
     this.quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.material);
