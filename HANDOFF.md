@@ -349,6 +349,37 @@ rivers that are straighter where they should be?"):**
   riverIndex marks a river's records from its first below the datum on `drown` (SOL: 8795 of 16978,
   the low sea's shelf rivers) and leaves them out of the cells' index (RIVER_VERSION 5), and sampleSnap
   raises no floodplain or banks where a river's line is under the sea (`drowned`).
+- **The white crescents across braided threads were waterfalls** (braid_e: one at the same place along
+  the valley on every thread): channels.js windowProfile read the bed from the rock column under the
+  river, and LAB-44's flood basalt alternates flows (k 0.6) with weathered interbeds (regolith 2.2), so
+  every flow over an interbed stood as a fall, under a river whose record says it runs on alluvium. A
+  reach on its own deposits (its record's rock in geology.js DEPOSITS) or one that braids (`_meanderB`
+  > 0: a gravel bed its water moves) now takes the deposit's k: no caps in it (5e4a297; braid_g). Threads
+  narrow to nothing where they part (no cut ends); their drift carries on across trace periods. Tried
+  and dropped: skipping a thread inside the first's banks (blunt ends; the crescents weren't that).
+- Great rivers (refine.js bigChannels) take every point of the trace (every other drew a great river's
+  bends as corners from 12 km; RIVER_VERSION 6). riverRibbons takes a strip's way from the points either
+  side (a piece a few cm long tilted any way, read as a fall). cloudLight reads the map first and skips
+  the far shell where the map covers (same output, less work).
+- **Corestones** (Dave: "How do boulder-y steep slopes like this form and why don't we have them?", a
+  photo of granite tors): rocks.js scatters cores where a granite or basalt has rotted from its joints
+  in (spheroidal weathering; Linton 1955, Twidale 1982). The blocks are a joint system: the region's two
+  master sets (geology.js structure: granite 18-45 m apart), between each two a compartment with its own
+  spacing (0.4-1.6 of the rock's mean, 3.2 m granite, 1.6 m basalt), its planes spaced negative
+  exponentially (Priest and Hudson 1976); a block keeps a core where its least half-size beats the rot
+  (deeper the warmer, 2.5x against a master joint), so massive compartments leave big cores and close
+  ones rot to grus. Shown as the slope strips the grus (0.2 to 1 over slope 0.08-0.5), none under snow
+  or on frozen ground. LAB-44 -17.25, -16.89 (core_a: the first try, an even carpet of eggs; core_b/c:
+  scattered, sizes varied). Not yet: tors as stacks (the sheeting layers exhumed in a column), cores
+  piled downslope, and big tors and domes (10-50 m) need the volumetric detail (terrain-beyond-
+  heightmap). Found on the way: rocks.js's bedrock cue reads the ground layer's `lr` as "metres of loose
+  ground" but it is local relief (hundreds of m), so its `loose` is ~1 everywhere and bedrock blocks
+  are a fifth as common as written; left as is (changing it multiplies them 5x everywhere: needs a look).
+- **Deterministic math** (Dave: "This is all deterministic so identical across clients right?"): the
+  generation files of this work (terrain, rocks, flora, geology, localsim, channels) now use dmath for
+  every transcendental (Math.pow/log/exp/sin/cos/atan/tanh/hypot/cbrt differ by an ulp between engines;
+  dm.hypot added). Other generation files still have ~40 (bodies, star, settlements, worldsim barren,
+  landmarks, stagnant, snapshot, grid, world, sim floraField...): queued as its own task.
 
 **What's still wrong / next:**
 - Snow covers most of a high mountain (the snowline reads the real height: physically right, maybe too

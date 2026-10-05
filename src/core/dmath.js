@@ -109,6 +109,8 @@ export function powFixed(m) {
 }
 
 export function cbrt(x) { return x < 0 ? -pow(-x, 1 / 3) : pow(x, 1 / 3); }
+// (Math.hypot isn't required to be correctly rounded: from + * and sqrt, which are)
+export function hypot(x, y, z = 0) { return Math.sqrt(x * x + y * y + z * z); }
 
 // fdlibm-style 3-part pi/2 for Cody-Waite argument reduction
 const PIO2_1 = 1.57079632673412561417e+00;

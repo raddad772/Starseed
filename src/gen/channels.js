@@ -336,7 +336,7 @@ export function buildChannel(gen, r, building) {
       const t0 = hsOf.faces[j], t1 = hsOf.faces[j + 1], half = 0.5 * (W0 + (W1 - W0) * t0);
       if (gen._riverWater) gen._riverWater(half, 0, hsOf(t0), 0, W); else { W.xw = half; W.v = 1; W.dm = 0.5; }
       const xw = Math.max(0.5, W.xw), dmax = HORSESHOE * 2 * xw, q = Math.max(1e-3, W.v * W.dm);
-      const vb = q / (0.715 * Math.cbrt(q * q / g)), drop = Math.max(0, (hsOf(t0) - hsOf(t1)) * gen.hScale), xl = vb * Math.sqrt(2 * drop / g);
+      const vb = q / (0.715 * dm.cbrt(q * q / g)), drop = Math.max(0, (hsOf(t0) - hsOf(t1)) * gen.hScale), xl = vb * Math.sqrt(2 * drop / g);
       ch.zones.push(Math.max(0, t0 - (dmax + 1) / L), Math.min(1, t1 + (xl + 2) / L), t0, t1, dmax, xw, vb, xl);
     }
     const F = [...hsOf.faces];

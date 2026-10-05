@@ -78,7 +78,7 @@ function broadSlope(gen, d, s2) {
   const R = gen.R;
   const ax = Math.abs(d[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
   let t1x = ax[1] * d[2] - ax[2] * d[1], t1y = ax[2] * d[0] - ax[0] * d[2], t1z = ax[0] * d[1] - ax[1] * d[0];
-  const l1 = Math.hypot(t1x, t1y, t1z); t1x /= l1; t1y /= l1; t1z /= l1;
+  const l1 = dm.hypot(t1x, t1y, t1z); t1x /= l1; t1y /= l1; t1z /= l1;
   const t2x = d[1] * t1z - d[2] * t1y, t2y = d[2] * t1x - d[0] * t1z, t2z = d[0] * t1y - d[1] * t1x;
   const e = 30 / R;
   const hs = (x, y, z) => gen.sample(d[0] + x * e, d[1] + y * e, d[2] + z * e, 40, s2)[S_H];
@@ -102,7 +102,7 @@ function meadowCell(gen, species, ci, cj, ck) {
       const px = (ci + hash3f(ci, cj, ck * 7 + k, seed ^ 0x1111)) * MEADOW_CELL;
       const py = (cj + hash3f(ci, cj, ck * 7 + k, seed ^ 0x2222)) * MEADOW_CELL;
       const pz = (ck + hash3f(ci, cj, ck * 7 + k, seed ^ 0x3333)) * MEADOW_CELL;
-      const l = Math.hypot(px, py, pz);
+      const l = dm.hypot(px, py, pz);
       const d = [px / l, py / l, pz / l];
       if (Math.floor(d[0] * R / MEADOW_CELL) !== ci || Math.floor(d[1] * R / MEADOW_CELL) !== cj || Math.floor(d[2] * R / MEADOW_CELL) !== ck) continue;
       const h = gen.sample(d[0], d[1], d[2], 40, s2)[S_H];
@@ -144,9 +144,9 @@ export function meadowsNear(gen, species, dir, radius) {
   for (let a = -n; a <= n; a++) for (let b = -n; b <= n; b++) for (let c = -n; c <= n; c++) {
     // (only cells near the surface hold any)
     const cx = (ci + a + 0.5) * MEADOW_CELL, cy = (cj + b + 0.5) * MEADOW_CELL, cz = (ck + c + 0.5) * MEADOW_CELL;
-    if (Math.abs(Math.hypot(cx, cy, cz) - R) > MEADOW_CELL || Math.hypot(cx - x, cy - y, cz - z) > radius + MEADOW_CELL) continue;
+    if (Math.abs(dm.hypot(cx, cy, cz) - R) > MEADOW_CELL || dm.hypot(cx - x, cy - y, cz - z) > radius + MEADOW_CELL) continue;
     const md = meadowCell(gen, species, ci + a, cj + b, ck + c);
-    if (md && Math.hypot(md.x * R - x, md.y * R - y, md.z * R - z) < radius) out.push({ dir: [md.x, md.y, md.z], r: md.r });
+    if (md && dm.hypot(md.x * R - x, md.y * R - y, md.z * R - z) < radius) out.push({ dir: [md.x, md.y, md.z], r: md.r });
   }
   return out;
 }

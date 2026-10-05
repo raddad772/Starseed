@@ -12,7 +12,7 @@ import { Rng, hashInts } from '../core/rng.js';
 import * as dm from '../core/dmath.js';
 
 export const REGION_UP = 2;        // a region tile is 2^REGION_UP local tiles across
-export function tileLevel(R) { return Math.max(REGION_UP, Math.round(Math.log2(chunkArcSize(0, R) / 2000))); }
+export function tileLevel(R) { return Math.max(REGION_UP, Math.round(dm.log2(chunkArcSize(0, R) / 2000))); }
 export function regionLevel(R) { return tileLevel(R) - REGION_UP; }
 // metres per unit of a face's u (or v): its arc over its two units (near enough: the
 // gnomonic stretch across a face is no matter to where a fault or a joint runs)

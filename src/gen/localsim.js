@@ -57,7 +57,7 @@ const NG = MT + 2 * MARGIN;        // the simulated grid per side
 // the tile level for a world: 2^L tiles across a face, each about 2 km; its regions'
 // the world's refinement: tiles a few times finer than its world sim's grid, over the whole
 // world (simulated with the world sim, from orbit down to where the regions take over)
-export function refineLevelN(N) { return Math.max(0, Math.round(Math.log2(N * 4 / MT))); }
+export function refineLevelN(N) { return Math.max(0, Math.round(dm.log2(N * 4 / MT))); }
 export function refineLevel(gen) { return refineLevelN(gen.snap.s.N); }
 
 // which tile (of level L) a face position is in, and where in it (cells from its corner)
@@ -131,8 +131,8 @@ function riverInflow(S, G, face, rain) {
   const QPI = Math.PI / 4, ij = (d) => {
     const dn = d[0] * F.N[0] + d[1] * F.N[1] + d[2] * F.N[2];
     if (dn <= 0.05) return null;
-    const u = Math.atan((d[0] * F.U[0] + d[1] * F.U[1] + d[2] * F.U[2]) / dn) / QPI;
-    const v = Math.atan((d[0] * F.V[0] + d[1] * F.V[1] + d[2] * F.V[2]) / dn) / QPI;
+    const u = dm.atan((d[0] * F.U[0] + d[1] * F.U[1] + d[2] * F.U[2]) / dn) / QPI;
+    const v = dm.atan((d[0] * F.V[0] + d[1] * F.V[1] + d[2] * F.V[2]) / dn) / QPI;
     return [(u - G.u0) / G.du - 0.5, (v - G.v0) / G.du - 0.5];
   };
   const on = (g) => g && g[0] >= 0 && g[1] >= 0 && g[0] <= NG - 1 && g[1] <= NG - 1;
@@ -148,7 +148,7 @@ function riverInflow(S, G, face, rain) {
     for (let e = 0; e < k; e++) {
       const p = nb[e];
       if (inside.has(p) || !S.s.river[p] || S.rcvOf(p) !== r) continue;
-      const Ap = S.s.riverMax * 1e-4 * Math.pow(10, 4 * S.s.river[p] / 255);
+      const Ap = S.s.riverMax * 1e-4 * dm.pow(10, 4 * S.s.river[p] / 255);
       if (Ap < RIVER_IN) continue;
       // along the line from its middle to the cell it drains into, the first point on the grid
       S.G.centre(p, a); S.G.centre(r, b);
