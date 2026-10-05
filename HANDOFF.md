@@ -479,9 +479,9 @@ rivers that are straighter where they should be?"):**
   deep time is chaotic in its climate (rain -> erosion -> T.stepEroded -> the plates), so the eccentricity
   alone gives another world (node, N 64, the same sim with and without it: 23% of the land land in both,
   heights 3 km apart on average). The rng streams are forked per subsystem; it's the physics coupling.
-  Every old test site (SOL Earth -51.8 -76's floes, 58 N 112's snow) is elsewhere now. A question for
-  Dave: should a climate tweak re-roll the continents (the plates' story kept apart from erosion's
-  feedback, or their events drawn on a schedule the surface can't move)?
+  Every old test site (SOL Earth -51.8 -76's floes, 58 N 112's snow) is elsewhere now. Fine (Dave: "Yes,
+  this is r&d, there are no worlds someone could miss"): a sim fix may re-roll the continents; pick new
+  test sites rather than keeping the geography.
 - Snow covers most of a high mountain (the snowline reads the real height: physically right, maybe too
   white for Dave).
 - Rock beds stay at their real thickness (tried scaling them with the heights, TILE 42, reverted in
