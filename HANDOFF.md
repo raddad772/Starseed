@@ -458,7 +458,13 @@ rivers that are straighter where they should be?"):**
   through air over ~0.03 bar (snowsBySeason; Mars keeps its cold-trap rule, Titan none). SOL Earth: 58 N
   late winter all white to the floes, spring melt opening on the sun-facing slopes first, summer tundra
   brown with snow only on the 2+ km plateaus (true-scale heights: a hill drawn 250 m is 2 km up in the
-  climate, ~-20 C). Lake and sea ice on it too (liquid.js liquidIce, gen/liquidice.js frozenNow the same
+  climate, ~-20 C). Rocks under it too (rockRender.js, the same snowpack: render/season.js GLSL_SEASON
+  shared with the ground; each rock carries its place's annual temperature, ROCK_STRIDE 14): the snow
+  banked round a rock's foot as deep as it lies there (its water x 1/0.3, settled snow's density, Sturm
+  et al. 2010), so a pebble is a white mound and a boulder stands out of it, and on what faces up. A
+  glacier's bare ice (its ablation zone) is under a winter's snow too (it showed blue in midwinter: its
+  year-round snow counted as cover). tools/glslcheck.mjs checks the rock shaders as well.
+  Lake and sea ice on it too (liquid.js liquidIce, gen/liquidice.js frozenNow the same
   sums): the water's annual mean plus its place's swing now, the sea's its own (the climate's sea keeps
   its heat: 3-5 C at the ice edge), a lake's 0.8 of the air's, a river's 0.7, a pond's the air's; the old
   sun's-latitude rule only where a world keeps no year. The sun's place in the year is one method,

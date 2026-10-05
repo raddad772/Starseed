@@ -11,7 +11,7 @@
 // power law (many small, few large); half buried (more for old erratics); the rock the ground's own.
 // Per rock (ROCK_STRIDE floats): x, y, z (from the node's origin), radius (m), yaw, tilt, seed,
 // material class (gen/matclasses.js), roundness (0 angular .. 1 rounded), sink (fraction of radius),
-// r, g, b (linear colour).
+// r, g, b (linear colour), the year's mean temperature there (C: the seasons' snow on it, render/season.js).
 import { Rng, hashInts } from '../core/rng.js';
 import { dirFromFaceUV, chunkUVBounds, chunkArcSize } from './cubesphere.js';
 import { S_LEN, S_H, S_WDEPTH, S_TEMP, S_SAND, S_CRATER, S_WET } from './terrain.js';
@@ -20,7 +20,7 @@ import { CHUNK_N } from './chunkbuilder.js';
 import { structureOf, regionLevel, faceMetres } from './geology.js';
 import * as dm from '../core/dmath.js';
 
-export const ROCK_STRIDE = 13;
+export const ROCK_STRIDE = 14;
 const ROCK_CLASSES = [MC.igneous, MC.basalt, MC.layered, MC.carbonate, MC.gravel, MC.regolith, MC.crust];
 
 export function scatterRocks(gen, face, level, ix, iy, maxLevel, seed) {
@@ -100,7 +100,7 @@ export function scatterRocks(gen, face, level, ix, iy, maxLevel, seed) {
     // the rock's own, read as the ground would show bare rock here
     gen.shade(s, 1, col2, mat2, null);
     const r = R + h;
-    out.push(dir[0] * r - ox, dir[1] * r - oy, dir[2] * r - oz, rad, r3 * dm.TWO_PI, (rng.next() - 0.5) * 0.5, rng.next(), cls, round, sink, col2[0], col2[1], col2[2]);
+    out.push(dir[0] * r - ox, dir[1] * r - oy, dir[2] * r - oz, rad, r3 * dm.TWO_PI, (rng.next() - 0.5) * 0.5, rng.next(), cls, round, sink, col2[0], col2[1], col2[2], s[S_TEMP] - 273.15);
   }
   // corestones: a granite (or a basalt) weathers from its joints in, the water working down each
   // crack and rotting the rock to grus, fastest at a block's corners and edges, so each block's fresh
@@ -198,7 +198,7 @@ export function scatterRocks(gen, face, level, ix, iy, maxLevel, seed) {
         // each at any height, from a cap showing to all but its foot out (one that far out has no grus
         // left to hold it: it sits). Upright, not tilted with the slope: the uphill side deeper in)
         const round = 0.35 + 0.55 * dm.smoothstep(0, 1, d / Math.min(h1, h2, h3));
-        out.push(sub[0] * r - ox, sub[1] * r - oy, sub[2] * r - oz, rad, A.a + 0.3 * (rb.next() - 0.5), (rb.next() - 0.5) * 0.15, rb.next(), cls, round, 0.1 + 0.8 * rb.next(), col2[0], col2[1], col2[2]);
+        out.push(sub[0] * r - ox, sub[1] * r - oy, sub[2] * r - oz, rad, A.a + 0.3 * (rb.next() - 0.5), (rb.next() - 0.5) * 0.15, rb.next(), cls, round, 0.1 + 0.8 * rb.next(), col2[0], col2[1], col2[2], Tc);
       }
     }
   }
@@ -254,7 +254,7 @@ export function scatterStones(gen, face, level, ix, iy, maxLevel, seed) {
     // (one that's rolled in at a shore lies on the bed, seen through the water: the ground's colour)
     s[S_WDEPTH] = 0;
     gen.shade(s, 1, col, mat, null);
-    out.push(dir[0] * r - ox, dir[1] * r - oy, dir[2] * r - oz, rad, rng.next() * dm.TWO_PI, (rng.next() - 0.5) * 0.7, rng.next(), cells[c + 1], 0.15 + 0.25 * rng.next(), 0.3, col[0], col[1], col[2]);
+    out.push(dir[0] * r - ox, dir[1] * r - oy, dir[2] * r - oz, rad, rng.next() * dm.TWO_PI, (rng.next() - 0.5) * 0.7, rng.next(), cells[c + 1], 0.15 + 0.25 * rng.next(), 0.3, col[0], col[1], col[2], s[S_TEMP] - 273.15);
   }
   return { origin: [ox, oy, oz], geo: new Float32Array(out) };
 }

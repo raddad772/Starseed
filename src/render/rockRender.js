@@ -11,11 +11,13 @@ import { GLSL_TERRAIN_SHADOW } from './terrainShadow.js';
 import { GLSL_SUN_SHADOW, SHADOW_LAYER, SHADOW_LIGHT_UNIFORMS } from './sunShadows.js';
 import { MAT_UNIFORMS, GLSL_MATERIALS, trackMaterial } from './materials.js';
 import { ROCK_STRIDE } from '../gen/rocks.js';
+import { GLSL_SEASON } from './season.js';
 
 // the shape: shared by the drawn rock and its shadow
 const GLSL_ROCK_SHAPE = /* glsl */`
 attribute vec4 rA;   // seed, material class, roundness, sink
 attribute vec4 rB;   // radius (m), colour r, g, b
+attribute float rC;  // the year's mean temperature there (C)
 uniform float uRockFar;
 float h1(float x) { return fract(sin(x * 91.3458) * 47453.5453); }
 vec3 h3(float x) { return vec3(h1(x), h1(x + 17.13), h1(x + 41.71)); }
@@ -55,6 +57,7 @@ varying vec3 vAy;
 varying vec3 vAz;
 varying vec4 vR;
 varying vec3 vCol;
+varying float vTa;
 #include <common>
 #include <logdepthbuf_pars_vertex>
 void main() {
@@ -70,6 +73,7 @@ void main() {
   vAx = R3[0]; vAy = R3[1]; vAz = R3[2];
   vR = rA;
   vCol = rB.yzw;
+  vTa = rC;
   gl_Position = projectionMatrix * viewMatrix * wp;
   #include <logdepthbuf_vertex>
 }
@@ -96,8 +100,10 @@ varying vec3 vAy;
 varying vec3 vAz;
 varying vec4 vR;
 varying vec3 vCol;
+varying float vTa;
 #include <common>
 #include <logdepthbuf_pars_fragment>
+${GLSL_SEASON}
 ${GLSL_SURFACE_ATMO}
 ${GLSL_CLOUD_N}
 ${GLSL_CLOUD_SHADOW}
@@ -129,6 +135,17 @@ void main() {
   vec3 rel = vWorld - uCenter;
   float r = length(rel);
   vec3 up = rel / r;
+  // the seasons' snow on it (season.js, the ground's snowpack): banked round its foot as deep as the
+  // snow lies there (a pebble under it), and on what faces up; thin snow only on its tops
+  if (uSeason.z > 0.5) {
+    float swe = seasonSWE(uToFixed * up, vTa), cov = 1.0 - exp(-swe / 12.0);
+    float depth = min(swe, 3000.0) * SNOW_DEPTH_PER_MM;
+    float bank = 1.0 - smoothstep(depth - 0.04, depth + 0.04, vLocal.y);
+    float sk = cov * max(bank, smoothstep(0.55, 0.85, dot(N, up)));
+    albedo = mix(albedo, uSnowCol, sk);
+    rough = mix(rough, 0.75, sk);
+    ao = mix(ao, 1.0, sk);
+  }
   float muS = dot(up, uSunDir);
   vec3 pF = uToFixed * rel;
   vec3 sunA = atmoSunTransmittance(r, muS), skyE = atmoSkyIrradiance(r, muS);
@@ -148,6 +165,9 @@ void main() {
   gl_FragColor = vec4(color, 1.0);
 }
 `;
+
+// (for tools/glslcheck.mjs)
+export const ROCK_SHADERS = { get vertexShader() { return VERT; }, get fragmentShader() { return FRAG; } };
 
 // its shadow: the same shape, the distance from the light (sunShadows.js)
 const SHADOW_VERT = /* glsl */`
@@ -203,7 +223,7 @@ export class RockSet {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', this.proto.attributes.position.clone());
     g.setIndex(this.proto.index.clone());
-    const A = new Float32Array(n * 4), B = new Float32Array(n * 4);
+    const A = new Float32Array(n * 4), B = new Float32Array(n * 4), C = new Float32Array(n);
     const mesh = new THREE.InstancedMesh(g, this.material, n);
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), qr = new THREE.Quaternion(), up = new THREE.Vector3(), pos = new THREE.Vector3(), sc = new THREE.Vector3(), wp = new THREE.Vector3();
     const Y = new THREE.Vector3(0, 1, 0), X = new THREE.Vector3(1, 0, 0);
@@ -222,9 +242,11 @@ export class RockSet {
       mesh.setMatrixAt(i, m4);
       A[i * 4] = a[k + 6]; A[i * 4 + 1] = a[k + 7]; A[i * 4 + 2] = a[k + 8]; A[i * 4 + 3] = a[k + 9];
       B[i * 4] = Math.max(rad, 1e-3); B[i * 4 + 1] = a[k + 10]; B[i * 4 + 2] = a[k + 11]; B[i * 4 + 3] = a[k + 12];
+      C[i] = a[k + 13];
     }
     g.setAttribute('rA', new THREE.InstancedBufferAttribute(A, 4));
     g.setAttribute('rB', new THREE.InstancedBufferAttribute(B, 4));
+    g.setAttribute('rC', new THREE.InstancedBufferAttribute(C, 1));
     mesh.instanceMatrix.needsUpdate = true;
     mesh.frustumCulled = false;
     mesh.layers.enable(SHADOW_LAYER);

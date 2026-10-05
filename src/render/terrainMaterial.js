@@ -8,7 +8,7 @@ import { GLSL_TERRAIN_SHADOW } from './terrainShadow.js';
 import { GLSL_SUN_SHADOW } from './sunShadows.js';
 import { GLSL_LIQUID } from './liquid.js';
 import { detailData } from '../gen/detail.js';
-import { SUBLIM_YR } from '../gen/worldsim/season.js';
+import { GLSL_SEASON } from './season.js';
 
 export const DETAIL_PERIOD = 4096; // metres; every detail tile period divides this
 
@@ -189,57 +189,7 @@ ${GLSL_NOISE}
 uniform sampler3D tNoise;
 uniform sampler2D tCloudMap;
 uniform float uCloudMapMean;
-// ---- the seasons' snow on the land (world.js setSeasonMap; worldsim/season.js): each place's year as its
-// climate has it, by latitude and longitude: its temperature's swing about the year's mean (r, g: a1, b1
-// of a1 cos L + b1 sin L, K / 100 + 0.5) and the cold half's precipitation (b: sqrt(mm a month / 600));
-// uSeason x: where the sun stands in the year (L, rad from the northern spring equinox), y: the melt
-// over the year per degree above freezing (mm), z: on
-uniform sampler2D tSeasonMap;
-uniform vec4 uSeason;
-uniform vec3 uSnowCol;
-// the snow's water on the ground now (mm), at a place (dirF its direction, planet-fixed) whose year's mean
-// is Ta (C): a snowpack by degree days through its year, in closed form. Its warmth T = Ta + A cos x, x
-// the year's phase from its warmest; snow falls while T < 0, at the cold half's rate, from the autumn's
-// freeze (x = th) to the spring's thaw (x = -th, a year on), and melts from there at DDF_SNOW mm a day
-// per degree until it's gone; where a year's thaw and the air's sublimation can't take off a winter's
-// fall, it lasts the year (1e4: the ground's own year-round snow, season.js snowYear, the same sums)
-// (a place's year from the map: a1, b1 (K), the cold half's precipitation (mm a month))
-vec3 seasonYear(vec3 dirF) {
-  vec4 m = texture(tSeasonMap, vec2(atan(dirF.z, dirF.x) / 6.28319 + 0.5, asin(clamp(dirF.y, -1.0, 1.0)) / 3.14159 + 0.5));
-  return vec3((m.r - 0.5) * 100.0, (m.g - 0.5) * 100.0, m.b * m.b * 600.0);
-}
-float seasonSWE(vec3 dirF, float Ta) {
-  vec3 yr = seasonYear(dirF);
-  float a1 = yr.x, b1 = yr.y, P = yr.z;
-  float A = length(vec2(a1, b1));
-  if (Ta >= A) return 0.0;
-  float th = Ta <= -A ? 0.0 : acos(clamp(-Ta / A, -1.0, 1.0));
-  // (a winter's fall, mm per radian of the year: twelve months' at the cold half's rate)
-  float acc = 12.0 * P / 6.28319, fall = acc * (6.28319 - 2.0 * th);
-  // (the melt, mm per degree per radian; a whole thaw's, and from its start to x)
-  float mr = uSeason.y / 6.28319;
-  float thaw = mr * (2.0 * Ta * th + 2.0 * A * sin(th));
-  if (thaw + ${SUBLIM_YR.toFixed(1)} <= fall) return 1e4;
-  if (th <= 0.0) return 0.0;
-  float x = uSeason.x - atan(b1, a1);
-  x -= 6.28319 * floor((x + 3.14159) / 6.28319);
-  if (x > th) return acc * (x - th);
-  if (x < -th) return acc * (x + 6.28319 - th);
-  return max(0.0, fall - mr * (Ta * (x + th) + A * (sin(x) + sin(th))));
-}
-// how much of the ground the seasons' snow covers (0..1): its water (seasonSWE) against how much a
-// cover takes, a few cm of it (~20 mm of water hides grass and stones; a thin fall lies in patches, and
-// the last of a spring's melt in the hollows and the lee: n, the ground's own 64 m / 512 m tiles), less
-// on a slope that faces the sun's mean path (its year a few degrees warmer: terrain.js _shadeAspect, the
-// year-round snow's own), and none on a cliff (steeper than ~50 degrees it sloughs off)
-float seasonSnow(vec3 dirF, vec3 fn, float Ta, float n) {
-  float dn = dot(fn, dirF), cl2 = 1.0 - dirF.y * dirF.y;
-  float shade = cl2 > 1e-6 ? sign(dirF.y) * (fn.y - dn * dirF.y) / sqrt(cl2) * min(1.0, 2.0 * abs(dirF.y)) : 0.0;
-  float swe = seasonSWE(dirF, Ta - 8.0 * shade);
-  float c = 1.0 - exp(-swe / 12.0);
-  c = smoothstep(n - 0.25, n + 0.25, c * 1.2 - 0.1);
-  return c * (1.0 - 0.75 * smoothstep(0.35, 0.65, 1.0 - dn));
-}
+${GLSL_SEASON}
 ${GLSL_CLOUD_N}
 ${GLSL_CLOUD_SHADOW}
 ${GLSL_THERMAL}
@@ -356,12 +306,15 @@ void main() {
     if (uSeason.z > 0.5) {
       float sn = seasonSnow(uToFixed * up, fn, vExt.a * 120.0 - 60.0, mix(d2.r, d1.r, smoothstep(250.0, 1000.0, dist)) * 0.7 + d0.a * 0.3);
       sn *= (1.0 - smoothstep(0.0, 0.02, waterEnc)) * (1.0 - smoothstep(0.0, 0.1, emissive));
-      if (sn > snow) {
-        float k = (1.0 - sn) / max(1.0 - snow, 1e-3);
-        albedo = mix(albedo, uSnowCol, (sn - snow) / max(1.0 - snow, 1e-3));
+      // (the year-round snow showing: a glacier's bare ice, its ablation zone, isn't; a winter's snow
+      // covers it too)
+      float snow0 = snow * (1.0 - c2.w);
+      if (sn > snow0) {
+        float k = (1.0 - sn) / max(1.0 - snow0, 1e-3);
+        albedo = mix(albedo, uSnowCol, (sn - snow0) / max(1.0 - snow0, 1e-3));
         veg *= k; rock *= k; sand *= k;
-        c0 *= k; c1 *= k; c2 = vec4(c2.xy * k, c2.z + (sn - snow), c2.w * k);
-        snow = sn;
+        c0 *= k; c1 *= k; c2 = vec4(c2.xy * k, c2.z + (sn - snow0), c2.w * k);
+        snow = max(snow, sn);
       }
     }
 #if MAT_MODE > 0
