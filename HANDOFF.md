@@ -319,6 +319,21 @@ rivers that are straighter where they should be?"):**
   sampleSnap: the plain between threads at bar level (banks less a quarter of the depth). LAB-44
   -45.67, -20.78 (braid_a/b). ~45% of LAB-44's records braid (steep drawn slopes, sand and gravel).
   Great rivers (bigChannels) don't braid yet.
+- **Straight coasts at a fine level's edge** (SOL 5.98 S 25.88 E, sol_mouth_e / mouth_nw: land in front
+  ending at a ruler line, sea floor beyond): a pyramid tile seeded its sea only where the level above was
+  half sea, so a coast's shallows the level above held as sea were this level's dry basins, lifted to
+  +0.5 m, and the shore ran along the fine level's coverage edge. Now seeded at the sampler's 2%
+  (localsim.js, TILE 58). Verify at that view.
+- **Cloud shadows and overcast light** (Dave: "cloud shadows on landscape and overcast dimming?"): the
+  ground's cloud shadow was the far shell's 2D cover (no shapes the sky shows near, 80% off at most) and
+  the sky's light was the clear sky's under any overcast. Now cloudShadow.js: a 256^2 map over a patch
+  round the point under the camera (16-96 km, texel-snapped), redrawn each frame while the sky draws
+  the near volume's decks: per texel the sun's way up through the decks marched (volume.js's own
+  GLSL_DECKS: coverage, wind, density; their extinction uSigma), exp(-tau), and the column overhead's
+  total transmission 1 / (1 + 3 (1 - g) tau / 4) (Bohren 1987, g 0.85) and direct exp(-tau / mu);
+  mipmapped, a level the sky dome's width read for the diffuse. atmosphere.js `cloudLight` (terrain,
+  plants, rocks): the direct share, and skyE through the cloud plus the sunlight it scatters down;
+  beyond the map the far shell's cover with the deck's optical depth (uCloudTau).
 - Not in, and why: vegetation's bank strength and a dry climate's flashy floods. Candel et al. 2021
   (the bank-strength predictor, silt-plus-clay as its proxy: in, as Schumm's M) leave vegetation as
   future work; Millar 2000's friction angle and Eaton 2010's mu' values for vegetated banks couldn't be

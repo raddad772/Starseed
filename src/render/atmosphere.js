@@ -66,16 +66,52 @@ float cloudDetail(vec3 q, float foot) {
   return f > 0.999 ? 0.682 : mix(textureLod(tNoise, q / L2, 0.0).r, 0.682, f);
 }`;
 
-// the share of the sun's light the cloud deck lets through at rel (from the world's centre, world
-// axes; r = |rel|), its cover read where the ray toward the sun crosses the deck: the ground's and the
-// plants' cloud shadows alike. Needs GLSL_CLOUD_N, uSunDir, uToFixed, uCloud, uCloudOn, uCloudOpacity.
+// the cloud deck's light at rel (from the world's centre, world axes; r = |rel|): returns the share of
+// the sun's direct light it lets through, and makes skyE (the sky's light, irradiance per the sun's) what
+// reaches under it: the blue sky's through the cloud overhead, and the sunlight the cloud scatters down,
+// white (sunAbove: the sun's light above it). Near the camera from the near volume's own decks
+// (cloudShadow.js's map: their shapes, carried on the wind); further off, the far shell's cover with a
+// deck's optical depth (uCloudTau). A cloud of optical depth tau lets the sun through directly as
+// exp(-tau / mu) and in all about 1 / (1 + 3 (1 - g) tau / 4) (Bohren 1987; g ~0.85), so under an
+// overcast the light is dim, shadowless and grey-white; under broken cloud the shadows move with it.
+// Needs GLSL_CLOUD_N, uSunDir, uToFixed, uCloud, uCloudOn, uCloudOpacity
 export const GLSL_CLOUD_SHADOW = /* glsl */`
-float cloudShadow(vec3 rel, float r, float muS, float foot) {
-  if (uCloudOn < 0.5 || muS <= -0.05) return 1.0;
+uniform sampler2D tCloudShadow;
+uniform vec3 uCSOrigin;
+uniform vec3 uCSE;
+uniform vec3 uCSN;
+uniform float uCSInvL;
+uniform float uCSLod;
+uniform float uCSOn;
+uniform float uCloudTau;
+float cloudLight(vec3 rel, float r, float muS, float foot, vec3 sunAbove, inout vec3 skyE) {
+  if (uCloudOn < 0.5) return 1.0;
+  float mu = max(muS, 0.05);
+  float Tdir = 1.0, Ttot = 1.0, Dup = 1.0;
+  // (the far shell's cover: on the sun's way up at the deck, and overhead over the dome a point sees)
   float hc = uCloud.x - (r - uRadius);
-  if (hc <= 0.0) return 1.0;
-  vec3 d = normalize(uToFixed * normalize(rel + uSunDir * hc / max(muS, 0.08)));
-  return 1.0 - 0.8 * cloudCover(d * uRadius, d, foot, cloudBias(uCloud.z)) * uCloudOpacity;
+  if (hc > 0.0) {
+    float cs = muS > -0.05 ? cloudCover(normalize(uToFixed * normalize(rel + uSunDir * hc / max(muS, 0.08))) * uRadius, normalize(uToFixed * normalize(rel + uSunDir * hc / max(muS, 0.08))), foot, cloudBias(uCloud.z)) * uCloudOpacity : 0.0;
+    vec3 dz = normalize(uToFixed * rel);
+    float cz = cloudCover(dz * uRadius, dz, max(foot, 3.5 * hc), cloudBias(uCloud.z)) * uCloudOpacity;
+    Tdir = 1.0 - cs + cs * exp(-uCloudTau / mu);
+    Ttot = 1.0 - cz + cz / (1.0 + 0.1125 * uCloudTau);
+    Dup = 1.0 - cz + cz * exp(-uCloudTau / mu);
+  }
+  // (near: the map; a point above the datum reads it where its own sun ray, carried down to the datum,
+  // lands; faded into the far shell's over its last twelfth)
+  if (uCSOn > 0.5) {
+    vec3 pf = uToFixed * rel, upF = pf / r, sF = uToFixed * uSunDir;
+    vec3 d = pf - uCSOrigin - (sF - upF * dot(sF, upF)) * (r - uRadius) / max(dot(sF, upF), 0.1);
+    vec2 uv = vec2(dot(d, uCSE), dot(d, uCSN)) * uCSInvL + 0.5;
+    float w = smoothstep(0.0, 0.08, min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y)));
+    if (w > 0.0) {
+      vec4 m0 = textureLod(tCloudShadow, uv, 0.0), m1 = textureLod(tCloudShadow, uv, uCSLod);
+      Tdir = mix(Tdir, m0.r, w); Ttot = mix(Ttot, m1.g, w); Dup = mix(Dup, m1.b, w);
+    }
+  }
+  skyE = skyE * Ttot + sunAbove * max(muS, 0.0) * max(Ttot - Dup, 0.0);
+  return muS > -0.05 ? Tdir : 1.0;
 }`;
 
 // a hot world's own light. blackbodyGlow: a blackbody's visible light at T K in the scene's radiance

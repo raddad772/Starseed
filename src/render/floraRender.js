@@ -266,8 +266,8 @@ void main() {
   vec3 up = rel / r;
   float muS = dot(up, uSunDir);
   vec3 pF = uToFixed * rel;
-  vec3 sunT = atmoSunTransmittance(r, muS) * cloudShadow(rel, r, muS, foot) * terrainShadow(pF, normalize(pF), uToFixed * uSunDir, uRadius) * sunShadowMap(vWorld, N);
-  vec3 skyE = atmoSkyIrradiance(r, muS);
+  vec3 sunA = atmoSunTransmittance(r, muS), skyE = atmoSkyIrradiance(r, muS);
+  vec3 sunT = sunA * cloudLight(rel, r, muS, foot, sunA, skyE) * terrainShadow(pF, normalize(pF), uToFixed * uSunDir, uRadius) * sunShadowMap(vWorld, N);
   vec3 albedo = vPart < 0.5 ? uTrunk : vTint;
   float ndl = max(dot(N, uSunDir), 0.0);
   float trans = vPart > 0.5 && vPart < 1.5 ? max(0.0, -dot(N, uSunDir)) * 0.35 : 0.0;

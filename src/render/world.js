@@ -7,6 +7,7 @@ import { Atmosphere, blankCloudMap, thermalUniform } from './atmosphere.js';
 import { makeStarMesh } from './sky.js';
 import { makeGiantMesh, makeRingMesh } from './giant.js';
 import { VolumePass } from './volume.js';
+import { CloudShadow, noCloudShadow } from './cloudShadow.js';
 import { loadMaterials, windRipple } from './materials.js';
 import { HeightCube } from './terrainShadow.js';
 import { SUN_SHADOW_UNIFORMS } from './sunShadows.js';
@@ -15,7 +16,7 @@ import { fallPhysics, FallFx } from './falls.js';
 import { RIBBON_PASS } from './terrainMaterial.js';
 import * as U from '../core/units.js';
 
-const _v = new THREE.Vector3(), _v2 = new THREE.Vector3();
+const _v = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3(), _v4 = new THREE.Vector3();
 const _m4 = new THREE.Matrix4();
 
 export class WorldRenderer {
@@ -121,10 +122,13 @@ export class WorldRenderer {
       if (b.giant) it.volume = new VolumePass(b, a, this.cloudNoise, 0);
       else if (clouds && clouds.type !== 'sulfuric') it.volume = new VolumePass(b, a, this.cloudNoise, 1);
       if (it.volume && it.heightCube) for (const k of ['tHeightCube', 'uHeightCube']) it.volume.material.uniforms[k] = it.heightCube.uniforms[k];
+      // (its clouds' shadows and overcast light on the ground near the camera, from the near volume's decks)
+      if (it.volume && !b.giant) it.cloudShadow = new CloudShadow(it.volume, b.R);
       // (the far shell's cover reads the noise on every world: bound only beside a near volume, a
       // sulfuric deck, which has none, read nothing and was never drawn, its world a ball of haze)
       a.material.uniforms.tNoise.value = this.cloudNoise;
     }
+    Object.assign(it.shared, it.cloudShadow ? it.cloudShadow.uniforms : noCloudShadow(b.data.atmosphere && b.data.atmosphere.clouds));
     if (b.solid) {
       it.terrain = new PlanetTerrain(b, this.pool, it.shared);
       it.group.add(it.terrain.group);
@@ -183,6 +187,14 @@ export class WorldRenderer {
         it.group.visible = angular > 0.6;
         if (it.group.visible) it.terrain.update(_v2);
         if (it.heightCube && it.heightCube.state === 0 && angular > 40) it.heightCube.build();
+      }
+      // (the clouds' shadows and the overcast's light on the ground near the camera, when it's low enough
+      // to see the ground under them: cloudShadow.js, the near volume's decks on the wind)
+      if (it.cloudShadow) {
+        const camF = _v3.copy(camWorld).sub(b.pos).applyQuaternion(b.qInv), top = it.volume.decks.reduce((m, d) => Math.max(m, d.top), 0);
+        const on = it.group.visible && camF.length() - b.R < top + 22000;   // (where the sky draws the near volume's decks)
+        if (on) it.volume.material.uniforms.uTime.value = this.timeSec;
+        it.cloudShadow.update(this.engine.renderer, camF, _v4.copy(sh.uSunDir.value).applyMatrix3(sh.uToFixed.value).normalize(), on);
       }
       if (it.mesh && b.giant) {
         it.mesh.visible = angular > 0.6;

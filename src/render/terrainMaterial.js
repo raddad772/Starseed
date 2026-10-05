@@ -262,14 +262,15 @@ void main() {
   vec3 N = normalize(vNormal);
   float muS = dot(up, uSunDir);
   vec3 sunT = atmoSunTransmittance(r, muS);
+  vec3 skyE = atmoSkyIrradiance(r, muS);
 
-  sunT *= cloudShadow(rel, r, muS, foot);
+  // (the clouds': their shadows, and the sky's light under them)
+  sunT *= cloudLight(rel, r, muS, foot, sunT, skyE);
   // (the ground's own shadows: a ridge's across the valley)
   vec3 pF = uToFixed * rel;
   sunT *= terrainShadow(pF, normalize(pF), uToFixed * uSunDir, uRadius);
   // (and finer near the camera: the sun's shadow maps)
   sunT *= sunShadowMap(vWorldPos, N);
-  vec3 skyE = atmoSkyIrradiance(r, muS);
 
   // ---- detail (planet-fixed, precision-safe coordinates)
   vec3 fp = vFixedPos;

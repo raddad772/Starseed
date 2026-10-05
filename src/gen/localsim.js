@@ -441,7 +441,11 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
       let hb;
       if (parent.sampleUV(face, u, v) || parent.sample(dd)) {
         hb = parent.h;
-        if (parent.lake > 0.5) wet[c] = 2; else if (parent.sea > 0.5 && hb < 0) wet[c] = 1;
+        // (its sea wherever the level above has any of it and the ground's below the datum: the sampler's
+        // rule (terrain.js dryDip, 2%). Seeded only where the level above was half sea, a coast's shallows
+        // the level above had as sea were this level's dry basins, lifted to land, and where this level
+        // gave way to that one the shore ran straight along its edge)
+        if (parent.lake > 0.5) wet[c] = 2; else if (parent.sea >= 0.02 && hb < 0) wet[c] = 1;
         // (its channels read as lines, not chains of cells: a channel running diagonally across
         // its cells is read between them as a row of saddles (each corner's four cells blended,
         // two of the floor and two of the banks), beads along the valley that this level's water

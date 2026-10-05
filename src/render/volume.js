@@ -15,6 +15,51 @@ import { GLSL_RAY, GLSL_DEPTH, GLSL_ATMO_LUT, FULLSCREEN_VERT } from './glsl.js'
 import { GLSL_MEDIUM, GLSL_AIRLIGHT, GLSL_THERMAL, glowUniforms, GLSL_CLOUD_N, cloudBias } from './atmosphere.js';
 import { GLSL_TERRAIN_SHADOW } from './terrainShadow.js';
 
+// the decks' shapes, shared by the volume pass and the ground's cloud shadows (cloudShadow.js): their
+// coverage, wind-carried coordinates and density. Needs GLSL_CLOUD_N, tNoise, uDeck, uMode, uBands,
+// uJetPhase, uEqJet, uWindMax, uTime, uShape
+export const GLSL_DECKS = /* glsl */`
+// coverage of deck i (0..1) at body-fixed point q (metres) with direction dirF, a pixel foot m across
+float coverage(int i, vec3 dirF, vec3 q, float foot) {
+  float lat = asin(clamp(dirF.y, -1.0, 1.0));
+  if (uMode < 0.5) {
+    float band = sin(lat * uBands * 2.0 + uJetPhase * 6.2832 + 0.6 * sin(lat * uBands * 0.7));
+    float n = texture(tNoise, q / 70000.0).r - 0.5;
+    if (i == 0) return smoothstep(-0.1, 0.7, band * 0.8 + n * 1.3 + uDeck[0].w);
+    if (i == 1) return smoothstep(-0.45, 0.45, n * 1.5 + 0.1 + uDeck[1].w);
+    return smoothstep(0.2, 0.62, texture(tNoise, q / 42000.0 + 0.37).g + uDeck[2].w);
+  }
+  return cloudCover(q, dirF, foot, uDeck[i].w);
+}
+// wind-advected body-fixed sample position, from a body-fixed point pf at radius r
+vec3 cloudCoordF(vec3 pf, float r, out vec3 dirF, out float lat) {
+  dirF = pf / r;
+  lat = asin(clamp(dirF.y, -1.0, 1.0));
+  float U = uWindMax * (sin(lat * uBands * 2.0 + uJetPhase * 6.2832) + uEqJet * exp(-lat * lat * 40.0));
+  vec3 east = normalize(vec3(-dirF.z, 0.0, dirF.x) + vec3(1e-6, 0.0, 0.0));
+  return pf + east * U * uTime;
+}
+// density of deck i at q (height h); cov precomputed; detail adds erosion
+float deckDensity(int i, vec3 q, float h, float cov, bool detail, out float frac) {
+  vec4 dk = uDeck[i];
+  float base = texture(tNoise, q / uShape.x).r;
+  float tower = texture(tNoise, q / (uShape.x * 4.0) + 0.21).g;
+  // the deck top rises and falls: convective towers and troughs
+  float top = dk.y - (dk.y - dk.x) * 0.55 * (1.0 - tower);
+  float x = (h - dk.x) / max(top - dk.x, 1.0);
+  frac = clamp(x, 0.0, 1.0);
+  if (x < 0.0 || x > 1.0) return 0.0;
+  float prof = smoothstep(0.0, 0.08, x) * smoothstep(1.0, 0.6, x);
+  float d = clamp((base * prof - (1.0 - cov)) / max(cov, 0.05), 0.0, 1.0);
+  if (detail && d > 0.001) {
+    vec4 det = texture(tNoise, q / uShape.y);
+    float er = (det.g * 0.625 + det.b * 0.25 + det.a * 0.125) * 0.55 * (1.0 - d);
+    d = clamp((d - er) / max(1.0 - er, 0.05), 0.0, 1.0);
+  }
+  return d * dk.z;
+}
+`;
+
 const FRAG = /* glsl */`
 ${GLSL_RAY}
 ${GLSL_DEPTH}
@@ -95,48 +140,9 @@ vec3 palette(float t) {
 }
 
 ${GLSL_CLOUD_N}
-// coverage of deck i (0..1) at body-fixed point q (metres) with direction dirF, a pixel foot m across
-float coverage(int i, vec3 dirF, vec3 q, float foot) {
-  float lat = asin(clamp(dirF.y, -1.0, 1.0));
-  if (uMode < 0.5) {
-    float band = sin(lat * uBands * 2.0 + uJetPhase * 6.2832 + 0.6 * sin(lat * uBands * 0.7));
-    float n = texture(tNoise, q / 70000.0).r - 0.5;
-    if (i == 0) return smoothstep(-0.1, 0.7, band * 0.8 + n * 1.3 + uDeck[0].w);
-    if (i == 1) return smoothstep(-0.45, 0.45, n * 1.5 + 0.1 + uDeck[1].w);
-    return smoothstep(0.2, 0.62, texture(tNoise, q / 42000.0 + 0.37).g + uDeck[2].w);
-  }
-  return cloudCover(q, dirF, foot, uDeck[i].w);
-}
-
+${GLSL_DECKS}
 // wind-advected body-fixed sample position
-vec3 cloudCoord(vec3 p, float r, out vec3 dirF, out float lat) {
-  vec3 pf = uToFixed * p;
-  dirF = pf / r;
-  lat = asin(clamp(dirF.y, -1.0, 1.0));
-  float U = uWindMax * (sin(lat * uBands * 2.0 + uJetPhase * 6.2832) + uEqJet * exp(-lat * lat * 40.0));
-  vec3 east = normalize(vec3(-dirF.z, 0.0, dirF.x) + vec3(1e-6, 0.0, 0.0));
-  return pf + east * U * uTime;
-}
-
-// density of deck i at q (height h); cov precomputed; detail adds erosion
-float deckDensity(int i, vec3 q, float h, float cov, bool detail, out float frac) {
-  vec4 dk = uDeck[i];
-  float base = texture(tNoise, q / uShape.x).r;
-  float tower = texture(tNoise, q / (uShape.x * 4.0) + 0.21).g;
-  // the deck top rises and falls: convective towers and troughs
-  float top = dk.y - (dk.y - dk.x) * 0.55 * (1.0 - tower);
-  float x = (h - dk.x) / max(top - dk.x, 1.0);
-  frac = clamp(x, 0.0, 1.0);
-  if (x < 0.0 || x > 1.0) return 0.0;
-  float prof = smoothstep(0.0, 0.08, x) * smoothstep(1.0, 0.6, x);
-  float d = clamp((base * prof - (1.0 - cov)) / max(cov, 0.05), 0.0, 1.0);
-  if (detail && d > 0.001) {
-    vec4 det = texture(tNoise, q / uShape.y);
-    float er = (det.g * 0.625 + det.b * 0.25 + det.a * 0.125) * 0.55 * (1.0 - d);
-    d = clamp((d - er) / max(1.0 - er, 0.05), 0.0, 1.0);
-  }
-  return d * dk.z;
-}
+vec3 cloudCoord(vec3 p, float r, out vec3 dirF, out float lat) { return cloudCoordF(uToFixed * p, r, dirF, lat); }
 
 void main() {
   // (the ray through the one full-resolution pixel whose depth this half-resolution fragment reads:
