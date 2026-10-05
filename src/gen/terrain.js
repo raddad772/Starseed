@@ -751,7 +751,7 @@ export class TerrainGenerator {
     // every stream on the land as a vein of water)
     const rvOwn = rv ? rv.w * 0.5 : 0, rvWide = rv && this.wetNow ? Math.max(rvOwn, 0.75 * minWavelength) : rvOwn;
     const rvFade = rv && this.wetNow ? dm.smoothstep(4, 16, rvWide / Math.max(rvOwn, 1e-3)) : 0;
-    let rvWl = -1e9, rvSt = -1e9, ckWl = -1e9;
+    let rvWl = -1e9, rvSt = -1e9, ckWl = -1e9, drowned = false;
     const hPreRv = h;
     if (rv) {
       // (a meandering river's floodplain: the belt it has swung across, laid level near its banks;
@@ -762,7 +762,10 @@ export class TerrainGenerator {
       // with every wobble of the ground's heights, in teeth the mesh's size)
       const brK = dm.smoothstep(0, 1, rv.nb || 0), brDrop = brK * 0.25 * (rv.depth0 || rv.depth);
       const bank0 = this._bankOf(rv) - brDrop - 0.5 * brK;
-      if (rv.belt > 0 && rv.axis < 1.3 * rv.belt && cyK < 1) h += rvK * (1 - cyK) * this._flooded(rv, bank0 + 0.5 - h) * 0.85 * dm.smoothstep(1.3 * rv.belt, 0.85 * rv.belt, rv.axis);
+      // (where its line has gone under the sea it builds nothing there: no floodplain or banks laid up
+      // to the datum (they stood as levees across the shelf), only its channel cut into the sea's floor)
+      drowned = this.wetNow && rv.hs < 0 && !!p.liquid && this.contThreshold > -1e8;
+      if (!drowned && rv.belt > 0 && rv.axis < 1.3 * rv.belt && cyK < 1) h += rvK * (1 - cyK) * this._flooded(rv, bank0 + 0.5 - h) * 0.85 * dm.smoothstep(1.3 * rv.belt, 0.85 * rv.belt, rv.axis);
       const oh = 0.5 * (rv.oxW || rv.w);
       if (rv.ox < oh && rv.oxAge < 0.8 && cyK < 0.5) {
         const q = 1 - (rv.ox / oh) * (rv.ox / oh), dep = rv.depth * 0.6 * (1 - rv.oxAge);
@@ -781,7 +784,7 @@ export class TerrainGenerator {
       const half = rvWide, flank = Math.max(rv.w * 1.5 + S.G.spacing * (0.02 + 0.12 * rv.k), 1.25 * half);
       if (rv.dist < flank) {
         const bank = this._bankOf(rv), brB = dm.smoothstep(0, 1, rv.nb || 0) * 0.25 * (rv.depth0 || rv.depth);
-        h += rvK * (1 - cyK) * this._banked(rv, bank - brB - h, x, y, z, half) * dm.smoothstep(flank, half * 1.2, rv.dist);
+        if (!drowned) h += rvK * (1 - cyK) * this._banked(rv, bank - brB - h, x, y, z, half) * dm.smoothstep(flank, half * 1.2, rv.dist);
         // (its water's level, beside it too: where the shore meets it. A river runs below its banks
         // most of the time: its usual stage about half its channel's depth, so its water fills ~70% of
         // the channel's width, the channel's own banks and bars standing above it)
@@ -811,7 +814,12 @@ export class TerrainGenerator {
     // (and first, its own channels read as lines: a channel running diagonally across its cells
     // is read between them as a row of saddles (localsim.js reads the level above's the same
     // way); near one the ground is held to a V from the line, rising as its banks do)
-    let crk = finRd && finest <= 60 && ckNear > 0 && finRd.creekAt(Math.min(CREEK_A, 30 * finest * finest));
+    // (and none under the sea: the finest tiles route their own water across the drowned shelf as across
+    // land, and its creeks there, not the sea's floor, left holes along them in the sea's surface, the
+    // floor showing through as strips of sand out in the water. The sea where the dips below the datum
+    // are its: dryDip's rule, below)
+    const seaOver = h < 0 && !lk && p.liquid && this.contThreshold > -1e8 && (sea >= 0 ? sea >= 0.02 : !(h0 > 1.5 * amp || S.seaDist(x, y, z) > 1.5));
+    let crk = finRd && finest <= 60 && ckNear > 0 && !seaOver && finRd.creekAt(Math.min(CREEK_A, 30 * finest * finest));
     if (crk) {
       if (finRd.cd < 1.5) h -= Math.max(0, h - (finRd.ch + finRd.cwc * finRd.cd) / this.hScale - rvRise) * ckNear;
       if (finRd.cA < CREEK_A) crk = finRd.creekAt(CREEK_A);
@@ -1304,6 +1312,8 @@ export class TerrainGenerator {
           for (let j = cj0; j <= cj1; j++) for (let i = ci0; i <= ci1; i++) {
             const o = j * K + i, kr = rc[o];
             if (fl[o] < thrW || kr === 255) continue;
+            // (none on the drowned shelf: the sea's floor there, sampleSnap's seaOver)
+            if (H[o] < 0 && this.p.liquid && this.contThreshold > -1e8) continue;
             // (this level the finest holding the ground here, as sampleSnap reads it; no river beside it)
             dirFromFaceUV(f, tu0 + (i + 0.5) * du, tv0 + (j + 0.5) * du, d);
             let fin = null;

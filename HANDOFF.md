@@ -325,9 +325,15 @@ rivers that are straighter where they should be?"):**
   read (publisher pages closed). Badlands' banded gully walls (pond_c left) are older, not rivers'.
 - Seen: SOL Earth 23.07 N 7.43 E (shots/sol_mea_b.jpg), a savanna river meandering ~2 downstream,
   gentler up; Earth's swings spread 0.3-0.9 (the most sinuous near the coasts, on the lowest slopes).
-- Uncommitted in terrain.js: `drowned` (no floodplain or banks raised where a river's line is under
-  the sea). Unverified: the sand strips across SOL's shelf (sol_mea_a.jpg) may be the shore rules
-  barring drowned rivers' mouths (now kept open: check at TILE 57).
+- **The sand strips across SOL's shelf** (sol_mea_a, shelf_nw: with the water pass hidden, ribbons of
+  creek water standing on the sea floor): the finest tiles route their own water across the drowned
+  shelf as across land, and sampleSnap drew creeks there (S_RIVR 2 at -13 m); the sea's level water
+  skips triangles whose corners are all creek, so its surface had holes along them and the floor
+  showed through as sand. Now no creek where the sea covers the ground (`seaOver`, dryDip's rule) and
+  no creek strips on the shelf; gone (shelf_cd). Also: a river ends where it reaches the sea: refine.js
+  riverIndex marks a river's records from its first below the datum on `drown` (SOL: 8795 of 16978,
+  the low sea's shelf rivers) and leaves them out of the cells' index (RIVER_VERSION 5), and sampleSnap
+  raises no floodplain or banks where a river's line is under the sea (`drowned`).
 
 **What's still wrong / next:**
 - Snow covers most of a high mountain (the snowline reads the real height: physically right, maybe too

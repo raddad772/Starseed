@@ -95,7 +95,7 @@ export function tileRivers(T) {
 // it starts as, narrowing as its water does (a river began full width where its water passed
 // RIVER_A, nothing feeding it). Each a record as tileRivers' (the same keys, so they chain); one
 // part, in the grid's order (every client's the same). Kept with the refinement, RIVER_VERSION
-export const SOURCE_A = 1e6, RIVER_VERSION = 4;
+export const SOURCE_A = 1e6, RIVER_VERSION = 5;
 export function worldRivers(R) {
   const n = R.n, gn = n * MT, fl = R.fl, rc = R.rcv, H = R.h;
   const thr = Math.max(0, Math.round(255 * dm.log(RIVER_A) / LN_A)), thrS = Math.max(0, Math.round(255 * dm.log(SOURCE_A) / LN_A));
@@ -164,11 +164,7 @@ export function riverIndex(parts, N, Rw) {
   const rec = new Float32Array(total), keys = new Float64Array(2 * total / RIVER_REC), rock = new Uint8Array(total / RIVER_REC).fill(255);
   let o = 0, ok = 0;
   for (const p of parts) { if (p.rock) rock.set(p.rock, o / RIVER_REC); rec.set(p.rec, o); o += p.rec.length; keys.set(p.keys, ok); ok += p.keys.length; }
-  const G = new GridLite(N, Rw), m = total / RIVER_REC, cellOf = new Int32Array(m), start = new Int32Array(G.n + 1);
-  for (let r = 0; r < m; r++) { const b = r * RIVER_REC + 3; cellOf[r] = G.cellAt(rec[b], rec[b + 1], rec[b + 2]); start[cellOf[r] + 1]++; }
-  for (let c = 0; c < G.n; c++) start[c + 1] += start[c];
-  const fill = start.slice(0, G.n), idx = new Int32Array(m);
-  for (let r = 0; r < m; r++) idx[fill[cellOf[r]]++] = r;
+  const G = new GridLite(N, Rw), m = total / RIVER_REC;
   // (each one's half width, m, as the creeks': a stream of 1e8 m^2 ~25 m, the greatest ~600 m;
   // and its size 0..1)
   const half = new Float32Array(m), size = new Float32Array(m), lo = dm.log(RIVER_A), span = dm.log(1e11) - lo;
@@ -203,7 +199,19 @@ export function riverIndex(parts, N, Rw) {
   const dn = new Int32Array(m).fill(-1), up = new Int32Array(m).fill(-1);
   for (let r = 0; r < m; r++) { const d = byKey.get(keys[2 * r + 1]); if (d !== undefined && d !== r) dn[r] = d; }
   for (let r = 0; r < m; r++) { const d = dn[r]; if (d >= 0 && (up[d] < 0 || size[r] > size[up[d]])) up[d] = r; }
-  return { version: RIVER_VERSION, rec, start, idx, half, size, phase, rock, big: bigChannels(rec, half, size, phase, dn, up, G, Rw, rock) };
+  // (a river ends where it reaches the sea: from its first record below the datum on, the way the
+  // refinement routes its water across the drowned shelf (as land: its low sea's valleys), in and out
+  // of the water over the shelf's banks, is no river's; drawn, its banks stood as strips of sand out
+  // in the sea. Kept for the phases, left out of the cells' index: no sampler finds them)
+  const drown = new Uint8Array(m);
+  for (let r = 0; r < m; r++) if (rec[r * RIVER_REC + 10] < 0 && !drown[r]) for (let q = r, g = 0; q >= 0 && !drown[q] && g < m; g++) { drown[q] = 1; q = dn[q]; }
+  // (the records by the world sim's cell they lie in)
+  const cellOf = new Int32Array(m), start = new Int32Array(G.n + 1);
+  for (let r = 0; r < m; r++) { if (drown[r]) continue; const b = r * RIVER_REC + 3; cellOf[r] = G.cellAt(rec[b], rec[b + 1], rec[b + 2]); start[cellOf[r] + 1]++; }
+  for (let c = 0; c < G.n; c++) start[c + 1] += start[c];
+  const fill = start.slice(0, G.n), idx = new Int32Array(start[G.n]);
+  for (let r = 0; r < m; r++) if (!drown[r]) idx[fill[cellOf[r]]++] = r;
+  return { version: RIVER_VERSION, rec, start, idx, half, size, phase, rock, drown, big: bigChannels(rec, half, size, phase, dn, up, G, Rw, rock, drown) };
 }
 
 // ---- the great rivers' winding channels: a river too wide for its meander belt to be found
@@ -220,12 +228,12 @@ export function riverIndex(parts, N, Rw) {
 export const contactW = (sp, cell) => Math.max(0.12, sp > 0 && cell > 0 ? 1.5 * sp / cell : 0);
 
 export const BIG_W = 250, BIG_REC = 11;
-function bigChannels(rec, half, size, phase, dn, up, G, Rw, rock) {
+function bigChannels(rec, half, size, phase, dn, up, G, Rw, rock, drown) {
   const F = meanderField(), m = half.length, segs = [], P = F.P, has = new Uint8Array(m);
   // (its younger oxbows, every other point of each: a segment about a width long)
   const thin = (L) => ({ ...L, x: L.x.filter((v, k) => k % 2 === 0), y: L.y.filter((v, k) => k % 2 === 0) });
   const oxbows = F.lines.slice(1).filter((L) => L.age < 0.5).map(thin);
-  const isBig = (r) => r >= 0 && 2 * half[r] >= BIG_W;
+  const isBig = (r) => r >= 0 && 2 * half[r] >= BIG_W && !(drown && drown[r]);
   // (the river's line smoothed over ~10 widths along its main stem: the belt follows the
   // valley, not every turn of the cells (each about a width). Over two meander wavelengths, as
   // it was, it cut across the valley's own bends: the channel ran over the hills in straight
