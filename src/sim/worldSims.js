@@ -16,15 +16,16 @@ import { SIM_VERSION, simNFor } from '../gen/worldsim/snapshot.js';
 import { auroraLandmark } from '../gen/worldsim/landmarks.js';
 import { TILE_VERSION } from '../gen/tileshape.js';
 import { refineLevelN } from '../gen/localsim.js';
-import { newRefine, putTile, complete, toStorable, fromStorable } from '../gen/worldsim/refine.js';
+import { newRefine, putTile, complete, toStorable, fromStorable, RIVER_VERSION } from '../gen/worldsim/refine.js';
 
-// a refinement's rivers indexed in a worker of their own (workers/riverIndexWorker.js)
-function indexRivers(parts, N, R) {
+// a refinement's rivers made from it whole and indexed (refine.js worldRivers: each river's source
+// stream with it), in a worker of their own; its arrays shared, or copied
+function indexWorld(Rf, N, R) {
   return new Promise((resolve) => {
     const w = new Worker(new URL('../workers/riverIndexWorker.js' + location.search, import.meta.url), { type: 'module' });
     w.onmessage = (e) => { w.terminate(); if (e.data.error) { console.error('river index failed:', e.data.error); resolve(null); } else resolve(e.data.riv); };
     w.onerror = (e) => { w.terminate(); console.error('river index worker:', e.message); resolve(null); };
-    w.postMessage({ parts, N, R }, parts.flatMap((p) => [p.rec.buffer, p.keys.buffer]));
+    w.postMessage({ ref: { L: Rf.L, n: Rf.n, h: Rf.h, fl: Rf.fl, rcv: Rf.rcv }, N, R });
   });
 }
 
@@ -160,7 +161,16 @@ export class WorldSims {
     const st = { R: null, done: 0, total: 0, status: 'queued' };
     this.refine.set(id, st);
     const cached = await dbGet(await this.dbP, this.refKey(id));
-    if (cached && cached.version === TILE_VERSION) { st.R = fromStorable(cached); this._applyRefine(id, st, true); return; }
+    if (cached && cached.version === TILE_VERSION) {
+      st.R = fromStorable(cached);
+      // (its rivers made again where they were made another way: the refinement itself kept)
+      if (!st.R.riv || st.R.riv.version !== RIVER_VERSION) {
+        const snap = this.game.system.bodies[id].terrain.snapshot;
+        if (snap) { st.R.riv = await indexWorld(st.R, snap.N, snap.R); dbPut(await this.dbP, this.refKey(id), toStorable(st.R)); }
+      }
+      this._applyRefine(id, st, true);
+      return;
+    }
     st.R = newRefine(refineLevelN(snap.N));
     st.t0 = performance.now();
     // (a tile a job: each a second or two, so a worker's soon free for the pyramid's tiles)
@@ -238,7 +248,7 @@ export class WorldSims {
       if (m.ms) { (this.tileMs || (this.tileMs = [])).push({ L: m.L, wait: Math.round(performance.now() - job.t0), ...m.ms }); if (this.tileMs.length > 48) this.tileMs.shift(); }
       job.resolve({ h: m.h, rw: m.rw, fl: m.fl, rcv: m.rcv }); this._next(); return;
     }
-    if (m.type === 'tile') { const st = this.refine.get(m.body); if (st && st.R) { putTile(st.R, m.tile); if (m.tile.riv) { m.tile.riv.at = (m.tile.face * 64 + m.tile.tj) * 64 + m.tile.ti; (st.riv || (st.riv = [])).push(m.tile.riv); } } return; }
+    if (m.type === 'tile') { const st = this.refine.get(m.body); if (st && st.R) putTile(st.R, m.tile); return; }
     if (m.type === 'refined') {
       w.job = null;
       this._next();   // (the worker's free while the last tile's rivers are indexed)
@@ -249,8 +259,7 @@ export class WorldSims {
         // (its rivers, indexed by the world sim's cells: in a worker of their own, a few hundred ms;
         // in tile order, not the order they came back in, so every client's index is the same)
         const snap = this.game.system.bodies[m.body].terrain.snapshot;
-        if (st.riv && snap) st.R.riv = await indexRivers(st.riv.sort((a, b) => a.at - b.at), snap.N, snap.R);
-        st.riv = null;
+        if (snap) st.R.riv = await indexWorld(st.R, snap.N, snap.R);
         dbPut(await this.dbP, this.refKey(m.body), toStorable(st.R));
         this._applyRefine(m.body, st, false);
       }

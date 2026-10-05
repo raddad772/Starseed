@@ -376,13 +376,14 @@ continuous" and "Canyons".
   - canyons appear in dry plateaus: walls from the rock column, volume matched to the coarse
     levels, tapering at river ends. They're modest now; granite valleys stay V valleys.
 - **Open, in order:**
-  1. **River heads.** Dave: "Should it just like...end like that?" No. A river appears at full
-     width (~50 m) where its catchment passes RIVER_A = 1e8 m², a blunt blob with nothing feeding
-     it; creeks only draw on tiles with cells of 60 m or less. Plan:
-     - taper the width over the first record or two;
-     - extend a thin stream upstream along the refinement's fl/rcv below the threshold;
-     - make sure pyramid creeks join it.
-     See -40.764, -31.155 on LAB-44:5.
+  1. **River heads: done (2026-10-05, rivers session as Starseed).** The width tapers over a head's
+     first record (60093b7), and every river now has its source stream: refine.js `worldRivers`
+     makes the rivers from the whole refinement once it's done (or once on load from the cache,
+     RIVER_VERSION), each head followed up its main inflow, across tiles, to SOURCE_A = 1e6 m²
+     (~7 m wide there, widening as its water does). Records 3x (LAB-44:5 3636 -> 10808, SOL:3 9009
+     -> 17140); chunk builds unchanged (~40-70 ms). The per-tile tileRivers is no longer used.
+     Still to check: pyramid creeks meeting the new streams; the meander model's long parallel
+     finger loops (seen on LAB-44:5 near -49.50, 24.96 and SOL r 334).
   2. **Canyon leftovers** at the sandstone site (-40.77, -31.18): one stray wall arc, and a dark
      diagonal seam by the river head.
   3. **In-game check** of rivers and canyons with the chase camera: test tab, `?workers=2`, message

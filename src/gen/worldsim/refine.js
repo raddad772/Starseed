@@ -88,6 +88,70 @@ export function tileRivers(T) {
   }
   return { rec: Float32Array.from(out), keys: Float64Array.from(keys) };
 }
+// The world's rivers from its whole refinement at once (R: every tile done): its rivers' cells (at
+// least RIVER_A m^2), and from each river's head up its main inflow (the cell draining into it
+// with the most water), cell by cell and across the tiles, as far as SOURCE_A gathers: the stream
+// it starts as, narrowing as its water does (a river began full width where its water passed
+// RIVER_A, nothing feeding it). Each a record as tileRivers' (the same keys, so they chain); one
+// part, in the grid's order (every client's the same). Kept with the refinement, RIVER_VERSION
+export const SOURCE_A = 1e6, RIVER_VERSION = 2;
+export function worldRivers(R) {
+  const n = R.n, gn = n * MT, fl = R.fl, rc = R.rcv, H = R.h;
+  const thr = Math.max(0, Math.round(255 * dm.log(RIVER_A) / LN_A)), thrS = Math.max(0, Math.round(255 * dm.log(SOURCE_A) / LN_A));
+  const nbI = (k) => { const kk = k >= 4 ? k + 1 : k; return (kk % 3) - 1; }, nbJ = (k) => { const kk = k >= 4 ? k + 1 : k; return ((kk / 3) | 0) - 1; };
+  // (a cell of a face's whole grid: its place in the arrays, the tile whose own square holds it)
+  const off = (f, gi, gj) => { const ti = (gi / MT) | 0, tj = (gj / MT) | 0; return tileIndex(R, f, ti, tj) * KK + (gj - tj * MT + KEEP) * K + (gi - ti * MT + KEEP); };
+  const inF = (gi, gj) => gi >= 0 && gj >= 0 && gi < gn && gj < gn;
+  // (whether cell (gi + di, gj + dj) drains into (gi, gj))
+  const drainsIn = (f, gi, gj, di, dj) => { const a = gi + di, b = gj + dj; if (!inF(a, b)) return false; const k = rc[off(f, a, b)]; return k !== 255 && a + nbI(k) === gi && b + nbJ(k) === gj; };
+  const mark = new Uint8Array(6 * gn * gn), gx = (f, gi, gj) => (f * gn + gj) * gn + gi;
+  for (let f = 0; f < 6; f++) for (let gj = 0; gj < gn; gj++) for (let gi = 0; gi < gn; gi++) {
+    const o = off(f, gi, gj);
+    if (fl[o] >= thr && rc[o] !== 255) mark[gx(f, gi, gj)] = 1;
+  }
+  // (each river's head, and up from it)
+  for (let f = 0; f < 6; f++) for (let gj = 0; gj < gn; gj++) for (let gi = 0; gi < gn; gi++) {
+    if (mark[gx(f, gi, gj)] !== 1) continue;
+    let head = true;
+    for (let q = 0; q < 8 && head; q++) { const di = nbI(q), dj = nbJ(q); if (inF(gi + di, gj + dj) && mark[gx(f, gi + di, gj + dj)] === 1 && drainsIn(f, gi, gj, di, dj)) head = false; }
+    if (!head) continue;
+    let ci = gi, cj = gj;
+    for (let step = 0; step < gn * 4; step++) {
+      let bi = -1, bj = -1, bf = -1;
+      for (let q = 0; q < 8; q++) {
+        const di = nbI(q), dj = nbJ(q), a = ci + di, b = cj + dj;
+        if (!drainsIn(f, ci, cj, di, dj)) continue;
+        const v = fl[off(f, a, b)];
+        if (v >= thrS && v > bf) { bf = v; bi = a; bj = b; }
+      }
+      if (bi < 0 || mark[gx(f, bi, bj)]) break;
+      mark[gx(f, bi, bj)] = 2;
+      ci = bi; cj = bj;
+    }
+  }
+  // (the records: each marked cell a curve from halfway to its main marked inflow, through it, to
+  // halfway to the cell it drains into)
+  const out = [], keys = [], d = [0, 0, 0], s = 2 / n, du = s / MT;
+  const at = (f, x, y) => { dirFromFaceUV(f, -1 + (x + 0.5) * du, -1 + (y + 0.5) * du, d); out.push(d[0], d[1], d[2]); };
+  const hAt = (f, gi, gj) => inF(gi, gj) ? H[off(f, gi, gj)] : H[off(f, Math.max(0, Math.min(gn - 1, gi)), Math.max(0, Math.min(gn - 1, gj)))];
+  for (let f = 0; f < 6; f++) for (let gj = 0; gj < gn; gj++) for (let gi = 0; gi < gn; gi++) {
+    if (!mark[gx(f, gi, gj)]) continue;
+    const o = off(f, gi, gj), k = rc[o], ri = gi + nbI(k), rj = gj + nbJ(k);
+    let ui = gi, uj = gj, uf = -1;
+    for (let q = 0; q < 8; q++) {
+      const di = nbI(q), dj = nbJ(q), a = gi + di, b = gj + dj;
+      if (!inF(a, b) || !mark[gx(f, a, b)] || !drainsIn(f, gi, gj, di, dj)) continue;
+      const v = fl[off(f, a, b)];
+      if (v > uf) { uf = v; ui = a; uj = b; }
+    }
+    at(f, (ui + gi) / 2, (uj + gj) / 2); at(f, gi, gj); at(f, (gi + ri) / 2, (gj + rj) / 2);
+    out.push((hAt(f, ui, uj) + H[o]) / 2, H[o], (H[o] + hAt(f, ri, rj)) / 2, dm.exp(fl[o] / 255 * LN_A));
+    // (off the face's edge, nothing to chain to: its key would be another cell's)
+    keys.push(gx(f, gi, gj), inF(ri, rj) ? gx(f, ri, rj) : -1);
+  }
+  return { rec: Float32Array.from(out), keys: Float64Array.from(keys) };
+}
+
 // the tiles' rivers gathered and indexed by the world sim's cells (N a face, world radius Rw):
 // { rec, start, idx } (the records of cell c: idx[start[c] .. start[c + 1]])
 export function riverIndex(parts, N, Rw) {
@@ -135,7 +199,7 @@ export function riverIndex(parts, N, Rw) {
   const dn = new Int32Array(m).fill(-1), up = new Int32Array(m).fill(-1);
   for (let r = 0; r < m; r++) { const d = byKey.get(keys[2 * r + 1]); if (d !== undefined && d !== r) dn[r] = d; }
   for (let r = 0; r < m; r++) { const d = dn[r]; if (d >= 0 && (up[d] < 0 || size[r] > size[up[d]])) up[d] = r; }
-  return { rec, start, idx, half, size, phase, big: bigChannels(rec, half, size, phase, dn, up, G, Rw) };
+  return { version: RIVER_VERSION, rec, start, idx, half, size, phase, big: bigChannels(rec, half, size, phase, dn, up, G, Rw) };
 }
 
 // ---- the great rivers' winding channels: a river too wide for its meander belt to be found

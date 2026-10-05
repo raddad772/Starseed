@@ -10,7 +10,7 @@ import { nameLandmarks, landmarks } from '../gen/worldsim/landmarks.js';
 import { ROCKS } from '../gen/worldsim/lithology.js';
 import { TerrainGenerator } from '../gen/terrain.js';
 import { prepareTile, refineLevel } from '../gen/localsim.js';
-import { packTile, RefineReader, TileSet, tileRivers } from '../gen/worldsim/refine.js';
+import { packTile, RefineReader, TileSet } from '../gen/worldsim/refine.js';
 import { runInt } from '../gpu/itile.js';
 import { ITileGPU } from '../gpu/itileGPU.js';
 
@@ -42,8 +42,8 @@ self.onmessage = async (e) => {
       const G = m.gpu === false ? null : await gpu(), P = prepareTile(gen, m.face, m.ti, m.tj, { kind: 'refine' }), I = P.ints();
       P.fromInts(G ? await G.run(I) : runInt(I));
       const T = P.finish(), p = packTile(T);
-      p.riv = tileRivers(T);
-      self.postMessage({ type: 'tile', job: m.job, body: m.body, tile: p }, [p.h.buffer, p.rw.buffer, p.fl.buffer, p.rcv.buffer, p.riv.rec.buffer, p.riv.keys.buffer]);
+      // (its rivers are made from the whole refinement once it's done: worldSims.js indexWorld)
+      self.postMessage({ type: 'tile', job: m.job, body: m.body, tile: p }, [p.h.buffer, p.rw.buffer, p.fl.buffer, p.rcv.buffer]);
       self.postMessage({ type: 'refined', job: m.job, body: m.body, face: m.face });
       return;
     }
