@@ -70,7 +70,11 @@ export function scatterRocks(gen, face, level, ix, iy, maxLevel, seed) {
     // the cues
     let pBed = 0, pTalus = 0, pErr = 0, pStream = 0, pEj = 0;
     const g = S && S.ground ? S.ground(dir[0], dir[1], dir[2], gl) : null;
-    const loose = g ? dm.smoothstep(0.3, 3, g.lr) : 0.5;         // (metres of loose ground over the rock)
+    // (metres of loose ground over the rock: a hillslope's soil where its making from the rock below
+    // keeps up with its wearing away, h* ln(P0 / E), P0 77 m/Myr and h* 0.32 m (Heimsath et al. 1997);
+    // its wear from the local relief, 0.1535 m/Myr per metre (Ahnert 1970): ~0.9 m on low ground,
+    // ~0.3 m at 200 m of relief, bare from ~500 m)
+    const loose = g ? dm.smoothstep(0.3, 3, 0.32 * Math.max(0, dm.log(77 / Math.max(0.1535 * g.lr, 1)))) : 0.5;
     pBed = rockSh * (1 - 0.8 * loose) * 0.7;
     // talus: the ground rising steeply above here (upslope, 15 and 35 m on)
     if (slope > 0.05) {

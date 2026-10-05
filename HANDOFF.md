@@ -358,7 +358,10 @@ rivers that are straighter where they should be?"):**
   narrow to nothing where they part (no cut ends); their drift carries on across trace periods. Tried
   and dropped: skipping a thread inside the first's banks (blunt ends; the crescents weren't that).
 - Great rivers (refine.js bigChannels) take every point of the trace (every other drew a great river's
-  bends as corners from 12 km; RIVER_VERSION 6; not yet looked at from there). riverRibbons takes a strip's way from the points either
+  bends as corners from 12 km; RIVER_VERSION 6). Not yet seen from 12 km: after the SIM 61/62 re-rolls
+  neither SOL Earth (widest 191 m) nor LAB-44:5 (183 m) has a river of BIG_W 250 m (an England-sized
+  globe's basins are small: great rivers are rare). By the numbers, points 0.3 widths apart turn ~10
+  degrees each, ~75 m segments (~5 px from 12 km). Look when a world with one turns up. riverRibbons takes a strip's way from the points either
   side (a piece a few cm long tilted any way, read as a fall). cloudLight reads the map first and skips
   the far shell where the map covers (same output, less work).
 - **Corestones** (Dave: "How do boulder-y steep slopes like this form and why don't we have them?", a
@@ -372,9 +375,12 @@ rivers that are straighter where they should be?"):**
   or on frozen ground. LAB-44 -17.25, -16.89 (core_a: the first try, an even carpet of eggs; core_b/c:
   scattered, sizes varied). Not yet: tors as stacks (the sheeting layers exhumed in a column), cores
   piled downslope, and big tors and domes (10-50 m) need the volumetric detail (terrain-beyond-
-  heightmap). Found on the way: rocks.js's bedrock cue reads the ground layer's `lr` as "metres of loose
-  ground" but it is local relief (hundreds of m), so its `loose` is ~1 everywhere and bedrock blocks
-  are a fifth as common as written; left as is (changing it multiplies them 5x everywhere: needs a look).
+  heightmap). Found on the way: rocks.js's bedrock cue read the ground layer's `lr` (local relief, hundreds
+  of m) as metres of loose ground, so `loose` was ~1 everywhere and bedrock blocks a fifth as common as
+  written. Fixed (Dave: "Do it"): the soil from the relief, h* ln(P0 / E) (Heimsath et al. 1997: P0 77
+  m/Myr, h* 0.32 m) with E 0.1535 m/Myr per m of relief (Ahnert 1970): ~0.9 m on low ground, 0.3 m at
+  200 m of relief, bare from ~500 m. LAB-44:5 (re-rolled) -17 62, a 2 km tropical range: boulders over
+  its slopes, scattered, no carpet.
 - **Deterministic math** (Dave: "This is all deterministic so identical across clients right?"): the
   generation files of this work (terrain, rocks, flora, geology, localsim, channels) now use dmath for
   every transcendental (Math.pow/log/exp/sin/cos/atan/tanh/hypot/cbrt differ by an ulp between engines;
