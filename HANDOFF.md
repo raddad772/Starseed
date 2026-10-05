@@ -403,8 +403,9 @@ rivers that are straighter where they should be?"):**
 - Sea ice already follows the season (liquid.js liquidIce, gen/liquidice.js frozenNow: the sun's
   latitude now), so on the shared clock it comes and goes for everyone alike. SOL Earth 2026-10-19 (late
   southern winter): the edge at 51-53 S, a marginal zone of floes and leads ~2 degrees wide (shots
-  ice_space_b, ice_edge_partial). Seasonal snow and leaf colour still from the annual means (next: the
-  climate's monthly cycle to the snapshot, SIM_VERSION bump: every world re-sims once).
+  ice_space_b, ice_edge_partial). Lake and sea ice still by that rough rule (the sun's latitude); the
+  land's snow now by each place's own year (below). Leaf colour waits for life (Dave: leaf colour from the
+  world's history and environment, tree size from gravity; not yet).
 - **Sea ice as floes** (Dave: "we want better floes"): liquid.js seaFloes (gen/liquidice.js seaFloe the same
   sums, so the floe you see is the floe you stand on). Cells of a 3D partition (feature points an integer
   hash of their lattice cell, whole cycles of the 4096 m detail period: the same on every GPU and in JS),
@@ -434,8 +435,37 @@ rivers that are straighter where they should be?"):**
   stretched 3x in the distances (a 3D lattice's cells far above or below the sea's slice touch it only in
   slivers).
   The CPU twin maps a sea patch top-down for checking: tools/floemap.mjs (shots floemap*.png).
+  Cheaper far off: a pixel 64 m or wider returns the far fade's values at once (no cell searches); the
+  floe's age, rim and middle cover fade to them over 16-64 m with its cover, so there's no ring there.
+- **Seasons on the land: snow through the year** (Dave: "see seasonal changes"; "refine and add"; not
+  living things yet). worldsim/season.js: each world's year by climate cell, its temperature's first
+  harmonic about the mean (a1 cos L + b1 sin L, L the solar longitude from the northern spring equinox,
+  the climate's months') and its cold half's precipitation, kept in the snapshot (snap.season, and baked
+  for the render as snap.seasonPx like the clouds' map). Worked out from the snapshot's own surface
+  (seasonsFor: the climate run once more on it, ~0.7 s in the sim worker), so a world cached before
+  seasons were kept gets the very same on load (worldSims.js: a worker, then the cache updated, before
+  the world is shown); no SIM_VERSION bump, every client alike. A snowpack by degree days in closed form:
+  T = Ta + A cos x; it snows while T < 0 at the cold half's rate, melts at DDF_SNOW 4 mm/day/C (Hock 2003),
+  the air takes SUBLIM_YR 50 mm a year. The ground's year-round snow (terrain.js shadeSnap) is now where
+  a year's thaw can't melt a winter's fall (snowYear >= 1); it was smoothstep(-2, -10) of the annual mean,
+  which kept tundra white all summer (at -10 C mean with a 23 C swing, July is +13). The seasons' snow over
+  the rest is the shader's (terrainMaterial.js seasonSnow, by uSeason.x, the sun's longitude in the year,
+  world.js solarLongitude from the sun against the spin axis and the orbit's plane; checked against
+  seasonText's subsolar latitude): the local annual temperature rides in ext.a (was an unused mineral
+  variant), a slope facing the sun's mean path ~8 C warmer as the CPU's aspect rule, none on cliffs over
+  ~50 degrees, patchy where thin (the 64/512 m tiles: hollows keep it, the last of a melt lies in them);
+  white over the albedo and the snow class weight raised in the scanned materials. Only where water snows
+  through air over ~0.03 bar (snowsBySeason; Mars keeps its cold-trap rule, Titan none). SOL Earth: 58 N
+  late winter all white to the floes, spring melt opening on the sun-facing slopes first, summer tundra
+  brown with snow only on the 2+ km plateaus (true-scale heights: a hill drawn 250 m is 2 km up in the
+  climate, ~-20 C). Lake and sea ice not yet on it (liquidIce: the sun's latitude, rough).
 
 **What's still wrong / next:**
+- climate.js climateOpts (moved from world.js): `ecc` and `perihelion` sit inside the comment on the
+  line above them, so every world's climate has run with a circular orbit. Fixing it changes every
+  eccentric world's climate (Mars e 0.09 most): a SIM_VERSION bump, every world re-sims once. Check the
+  perihelion's convention against world.js solarLongitude first. Not done: Dave's call on the re-sim.
+- Lake and sea ice onto the seasons' own year (liquidIce reads the sun's latitude x a follow factor).
 - Snow covers most of a high mountain (the snowline reads the real height: physically right, maybe too
   white for Dave).
 - Rock beds stay at their real thickness (tried scaling them with the heights, TILE 42, reverted in

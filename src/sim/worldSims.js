@@ -14,6 +14,8 @@
 
 import { SIM_VERSION, simNFor } from '../gen/worldsim/snapshot.js';
 import { auroraLandmark } from '../gen/worldsim/landmarks.js';
+import { climateOpts } from '../gen/worldsim/climate.js';
+import { SEASON_W, SEASON_H } from '../gen/worldsim/season.js';
 import { TILE_VERSION } from '../gen/tileshape.js';
 import { refineLevelN } from '../gen/localsim.js';
 import { newRefine, putTile, complete, toStorable, fromStorable, RIVER_VERSION } from '../gen/worldsim/refine.js';
@@ -28,6 +30,18 @@ function indexWorld(Rf, N, R) {
     w.onmessage = (e) => { w.terminate(); if (e.data.error) { console.error('river index failed:', e.data.error); resolve(null); } else resolve(e.data.riv); };
     w.onerror = (e) => { w.terminate(); console.error('river index worker:', e.message); resolve(null); };
     w.postMessage({ ref: { L: Rf.L, n: Rf.n, h: Rf.h, rw: Rf.rw, fl: Rf.fl, rcv: Rf.rcv }, N, R });
+  });
+}
+
+// a world's seasons (worldsim/season.js: its climate's year, for the ground's snow through it) for a
+// snapshot cached before they were kept, in a worker of their own: the snapshot's surface and the body's
+// orbit and spin
+function seasonsOf(snap, opts) {
+  return new Promise((resolve) => {
+    const w = new Worker(new URL('../workers/seasonWorker.js' + location.search, import.meta.url), { type: 'module' });
+    w.onmessage = (e) => { w.terminate(); if (e.data.error) { console.error('seasons failed:', e.data.error); resolve(null); } else resolve(e.data.r); };
+    w.onerror = (e) => { w.terminate(); console.error('seasons worker:', e.message); resolve(null); };
+    w.postMessage({ snap: { N: snap.N, R: snap.R, Nc: snap.Nc, h: snap.h, water: snap.water, ocean: snap.ocean, cover: snap.cover, forest: snap.forest }, opts });
   });
 }
 
@@ -141,7 +155,16 @@ export class WorldSims {
     if (this.status.has(id)) return;
     this.status.set(id, 'queued');
     const cached = await dbGet(await this.dbP, this.key(id));
-    if (cached) { this._apply(id, cached, true); return; }
+    if (cached) {
+      // (one cached before its seasons were kept: worked out once, kept, and the world shown with them)
+      if (cached.Nc && !cached.season) {
+        const b = this.game.system.bodies[id], host = b.kind === 'moon' ? this.game.system.bodies[b.parentId] : null;
+        const r = await seasonsOf(cached, climateOpts(b, this.game.system.bodies[0], host));
+        if (r) { Object.assign(cached, r); dbPut(await this.dbP, this.key(id), cached); }
+      }
+      this._apply(id, cached, true);
+      return;
+    }
     this.queue.push({ kind: 'sim', id, N: this.nFor(id) });
     this._next();
   }
@@ -289,6 +312,8 @@ export class WorldSims {
     if (ub) ub._gen = null;                          // (the physics' generator, rebuilt from it)
     g.pool.setSnapshot(id, snap);                    // (the terrain workers')
     if (g.world.rebuildTerrain) g.world.rebuildTerrain(id);
+    // (and its seasons, kept with it, for its land's snow through the year)
+    if (snap.seasonPx && g.world.setSeasonMap) g.world.setSeasonMap(id, { px: snap.seasonPx, w: SEASON_W, h: SEASON_H, yearDays: snap.yearDays || 365 });
     console.log(`world sim ${fromCache ? 'from cache' : `done in ${((snap.ms || 0) / 1000).toFixed(1)} s`}: ${b.name} (${snap.path}, N ${snap.N})`);
     if (this.onReady) this.onReady(id, snap);
     this.requestRefine(id, snap);

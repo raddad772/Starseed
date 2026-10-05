@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { PlanetTerrain } from './planetTerrain.js';
 import { cloudMapPixels } from '../gen/worldsim/snapshot.js';
+import { DDF_SNOW, snowsBySeason } from '../gen/worldsim/season.js';
 import { Atmosphere, blankCloudMap, thermalUniform, cloudLife } from './atmosphere.js';
 import { makeStarMesh } from './sky.js';
 import { makeGiantMesh, makeRingMesh } from './giant.js';
@@ -17,7 +18,10 @@ import { RIBBON_PASS } from './terrainMaterial.js';
 import * as U from '../core/units.js';
 
 const _v = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3(), _v4 = new THREE.Vector3();
-const _m4 = new THREE.Matrix4();
+const _m4 = new THREE.Matrix4(), _sl = new THREE.Vector3();
+// (a world's seasons before its climate's year arrives: none)
+const _blankSeason = (() => { const t = new THREE.DataTexture(new Uint8Array([128, 128, 0, 255]), 1, 1, THREE.RGBAFormat); t.needsUpdate = true; return t; })();
+function blankSeasonMap() { return _blankSeason; }
 
 export class WorldRenderer {
   constructor(engine, universe, pool, detailTex, cloudNoise) {
@@ -64,6 +68,42 @@ export class WorldRenderer {
       tex.wrapS = THREE.RepeatWrapping; tex.magFilter = THREE.LinearFilter; tex.minFilter = THREE.LinearFilter; tex.needsUpdate = true;
       for (const m of [it.atmo.material, it.volume && it.volume.material]) if (m && m.uniforms.tCloudMap) { m.uniforms.tCloudMap.value = tex; m.uniforms.uCloudMapMean.value = mean; }
     }
+  }
+
+  // a world's seasons arrived (worldSims.js: worldsim/season.js seasonMap, its climate's year by place):
+  // its land's snow follows them from here
+  setSeasonMap(bodyId, map) {
+    const it = this.items.find((x) => x.body.data && x.body.data.id === bodyId);
+    if (!it || !it.shared || !it.shared.tSeasonMap) return;
+    const tex = new THREE.DataTexture(map.px, map.w, map.h, THREE.RGBAFormat);
+    tex.wrapS = THREE.RepeatWrapping; tex.magFilter = THREE.LinearFilter; tex.minFilter = THREE.LinearFilter; tex.needsUpdate = true;
+    const old = it.shared.tSeasonMap.value;
+    it.shared.tSeasonMap.value = tex;
+    if (old && old !== _blankSeason) old.dispose();
+    // (y: the snow's melt over the year per degree above freezing, mm: its degree-day factor times its
+    // year's days)
+    // (z: on, where its snow comes and goes with them)
+    const p = it.body.data.terrain;
+    it.shared.uSeason.value.set(0, DDF_SNOW * map.yearDays, p && snowsBySeason(p) ? 1 : 0, 0);
+  }
+
+  // where the sun stands in a world's year (rad): its longitude along the world's sky from the northern
+  // spring equinox, the climate's months' own (climate.js: 0 the equinox, pi/2 the north's midsummer),
+  // from the sun's direction against the spin axis and the orbit's plane (a moon's: its planet's)
+  solarLongitude(it) {
+    const b = it.body, host = b.data.kind === 'moon' && b.parent ? b.parent : b;
+    if (!it.orbitN) {
+      const p = new THREE.Vector3(), v = new THREE.Vector3();
+      this.u.bodyStateAt(host, this.u.t, p, v);
+      it.orbitN = p.cross(v).normalize();
+    }
+    const ax = _v3.set(0, 1, 0).applyQuaternion(b.q);
+    // (N: the spring equinox, where the sun crosses the equator heading north; M a quarter on)
+    const N = _v4.copy(ax).cross(it.orbitN);
+    if (N.lengthSq() < 1e-12) return 0;
+    N.normalize();
+    const s = it.shared.uSunDir.value, M = _sl.copy(it.orbitN).cross(N);
+    return Math.atan2(s.dot(M), s.dot(N));
   }
 
   makeItem(b) {
@@ -116,6 +156,11 @@ export class WorldRenderer {
       ...SUN_SHADOW_UNIFORMS,
       uNear: { value: new THREE.Vector2(0, 0) },
       uNearUp: { value: new THREE.Vector3(0, 1, 0) },
+      // (the seasons on its land: its climate's year by place, setSeasonMap; where the sun stands in its
+      // year, set each frame: terrainMaterial.js seasonSnow)
+      tSeasonMap: { value: blankSeasonMap() },
+      uSeason: { value: new THREE.Vector4(0, 0, 0, 0) },
+      uSnowCol: { value: new THREE.Vector3(...(b.data.terrain && b.data.terrain.palette && b.data.terrain.palette.snow || [0.85, 0.87, 0.9])) },
     };
     if (a) {
       const clouds = b.data.atmosphere && b.data.atmosphere.clouds;
@@ -187,6 +232,7 @@ export class WorldRenderer {
       sh.uToFixed.value.setFromMatrix4(_m4);
       sh.uTime.value = this.timeSec;
       if (it.cloudClock) { const c = it.cloudClock.value, t = this.u.t, Y = Math.floor(t / c.z); c.set(t - Y * c.z, Y + 1048576, c.z, 0); }
+      if (sh.uSeason && sh.uSeason.value.z > 0) sh.uSeason.value.x = this.solarLongitude(it);
       if (it.liquid) it.liquid.update(this.timeSec, _v2.copy(sh.uSunDir.value).applyMatrix3(sh.uToFixed.value));
       const angular = (b.R + (it.atmo ? it.atmo.top - b.R : 0)) / Math.max(dist, 1) * pxPerRad;
       if (it.terrain) {

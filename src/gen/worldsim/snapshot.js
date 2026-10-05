@@ -21,6 +21,7 @@ import * as dm from '../../core/dmath.js';
 import { Noise3 } from '../../core/noise.js';
 import { dunePatches } from '../dunes.js';
 import { ROCK_UP } from './lithology.js';
+import { seasonsFor } from './season.js';
 
 export const SIM_VERSION = 60;
 
@@ -143,12 +144,16 @@ export function packSnapshot(W, body) {
     const cm = cloudMapPixels(out, 512);
     out.cloudPx = cm.px; out.cloudW = cm.w;
   }
+  // the year by place (season.js): its swing and its cold half's snow, for the ground's snow through it,
+  // and baked for the render as the clouds' are; worked out from the snapshot's own surface, so a world
+  // cached before they were kept gets the very same (worldSims.js)
+  if (out.Nc && W.climOpts) Object.assign(out, seasonsFor(out, W.climOpts));
   return out;
 }
 
 // the arrays a snapshot carries (for transfer lists and caching)
 export function snapshotBuffers(s) {
-  return ['h', 'water', 'rock', 'ice', 'river', 'melt', 'relief', 'rcv', 'Tsea', 'P', 'cover', 'forest', 'open', 'cloud', 'cloudPx', 'crat', 'dunes', 'gorge', 'ocean', 'mareLv'].filter((k) => s[k]).map((k) => s[k].buffer);
+  return ['h', 'water', 'rock', 'ice', 'river', 'melt', 'relief', 'rcv', 'Tsea', 'P', 'cover', 'forest', 'open', 'cloud', 'cloudPx', 'season', 'seasonPx', 'crat', 'dunes', 'gorge', 'ocean', 'mareLv'].filter((k) => s[k]).map((k) => s[k].buffer);
 }
 
 // reads a snapshot at any direction
@@ -430,6 +435,15 @@ export class SnapshotSampler {
     return this._tmin;
   }
   rain(x, y, z) { return this.Gc ? this._gcRead(this.s.P, x, y, z) : null; }
+  // the year there (season.js): its temperature's swing about the mean (a1, b1, K) and its cold half's
+  // precipitation (mm a month) into out; false where the world keeps none
+  season(x, y, z, out) {
+    const f = this.s.season;
+    if (!this.Gc || !f) return false;
+    if (!this._sea) { const m = this.Gc.n; this._sea = [f.subarray(0, m), f.subarray(m, 2 * m), f.subarray(2 * m, 3 * m)]; }
+    out[0] = this._gcRead(this._sea[0], x, y, z); out[1] = this._gcRead(this._sea[1], x, y, z); out[2] = this._gcRead(this._sea[2], x, y, z);
+    return true;
+  }
   // how much of a sand sea it is there (0..1: its cells blended, so the edges thin out)
   duneMask(x, y, z) {
     if (!this.s.dunes) return 0;

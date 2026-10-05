@@ -396,6 +396,30 @@ function koppenOf(c, n, Tm, Pm, north) {
   return (tMin > -3 ? 'C' : 'D') + season + sub;
 }
 
+// the climate's inputs from the body and its star
+export function climateOpts(body, star, host) {
+  const cl = body.terrain.climate, r = body.rotation;
+  return {
+    S: body.insolation * (1 - (body.eclipse || 0)), obliquity: r.obliquity,   // (a moon: less its time in its planet's shadow) ecc: body.orbitE || 0, perihelion: (body.orbit ? body.orbit.w : 0) - (r.tiltAzimuth || 0),
+    // (a moon locked to its planet still sees its star rise and set: its day is its orbit)
+    locked: !!cl.locked && body.kind !== 'moon', substellar: cl.substellar, rotH: r.locked ? (body.kind === 'moon' && host && body.orbit && body.orbit.aReal ? 2 * Math.PI * Math.sqrt(body.orbit.aReal ** 3 / (6.674e-11 * host.massEarth * 5.972e24)) / 3600 : 1e4) : Math.abs(r.periodRealH || 24), retro: !!r.retrograde, hadley: cl.hadley,
+    pressure: body.atmosphere ? body.atmosphere.pressure : 0, Tmean: body.Tsurf, albedo: body.albedo, lapse: cl.lapse,
+    yearDays: 365.25 * Math.sqrt(body.aAU * body.aAU * body.aAU / star.mass),
+  };
+}
+// run it on heights from another grid (seaSrc: which source cells are sea, else below sea level)
+export function climateOn(Gc, Gsrc, hsrc, o, seaSrc, veg) {
+  const hc = new Float64Array(Gc.n), d = [0, 0, 0], uv = { face: 0, u: 0, v: 0 };
+  const sea = seaSrc ? new Uint8Array(Gc.n) : null;
+  for (let c = 0; c < Gc.n; c++) {
+    d[0] = Gc.dir[c * 3]; d[1] = Gc.dir[c * 3 + 1]; d[2] = Gc.dir[c * 3 + 2]; hc[c] = Gsrc.sample(hsrc, d, uv);
+    if (sea) sea[c] = seaSrc[Gsrc.cellAt(d[0], d[1], d[2])];
+  }
+  const out = climate(Gc, { ...o, h: hc, sea, cover: veg ? veg.cover : null, forest: veg ? veg.forest : null });
+  out.h = hc;
+  return out;
+}
+
 // the broad biome of a Köppen class
 export function biomeOfKoppen(k) {
   if (k === 'sea') return 'sea';

@@ -29,6 +29,7 @@ import { buildChannel, chanNearest, chanSwing, chanBraid, nearOut, chanFlow, nfO
 import { craterFloor, TILE_CELLS } from './worldsim/impacts.js';
 import { SnapshotSampler } from './worldsim/snapshot.js';
 import { RIVER_REC, BIG_REC } from './worldsim/refine.js';
+import { snowYear, snowsBySeason } from './worldsim/season.js';
 import { TRUE_SCALE, MT, KEEP } from './tileshape.js';
 import { meanderField, riverPattern } from './meanders.js';
 import { ROCKS, R as ROCK } from './worldsim/lithology.js';
@@ -2291,7 +2292,14 @@ export class TerrainGenerator {
     const thinK = 1 - dm.clamp((dm.log10(Math.max(p.airP ?? 1, 1e-6)) + 2) / 1, 0, 1), cl0 = p.climate;
     const tMinC = S.TseaMin != null ? S.TseaMin - 273.15 : cl0 && !cl0.locked ? cl0.Tmean * dm.pow(Math.max(1 + cl0.s2 * cl0.transport, 0.002), 0.25) - 273.15 : -90;
     const sHi = -2 + (Math.min(-2, tMinC + 14) + 2) * thinK, sLo = -10 + (Math.min(-10, tMinC + 6) + 10) * thinK;
-    let snow = waterCycle || (p.iceCover > 0 && S.Gc) ? dm.smoothstep(sHi, sLo, Ta) * (1 - 0.5 * rockW) : 0;
+    let snow = 0;
+    if (waterCycle || (p.iceCover > 0 && S.Gc)) {
+      // (where the world keeps its year, season.js: the year-round snow where a year's thaw can't melt
+      // a winter's fall, the seasons' over the rest the shader's, by the date; in thin air, the cold trap)
+      const yr = this._yr || (this._yr = [0, 0, 0]);
+      if (snowsBySeason(p) && S.season(x, y, z, yr)) snow = dm.smoothstep(1, 1.25, snowYear(Ta, yr[0], yr[1], yr[2], S.s.yearDays || 365)) * (1 - 0.5 * rockW);
+      else snow = dm.smoothstep(sHi, sLo, Ta) * (1 - 0.5 * rockW);
+    }
     if (p.icy) snow = Math.max(snow, 0.3 * (1 - lag) * (0.5 + 0.5 * s[S_VARIANT]) * (1 - 0.5 * dm.smoothstep(0.3, 0.6, slope)) * (1 - s[S_LINEAE]));
     if (p.iceCover > 0 && !p.icy && !S.Gc) snow = Math.max(snow, dm.smoothstep(this.iceCapCut - 0.03, this.iceCapCut + 0.03, this.iceCapMetric(s)));
     snow = dm.clamp(snow, 0, 1);

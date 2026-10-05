@@ -24,7 +24,7 @@
 import * as dm from '../core/dmath.js';
 import { Noise3 } from '../core/noise.js';
 import { Rng, hashInts } from '../core/rng.js';
-import { S_LEN, S_H, S_WDEPTH, S_MOUNT, S_ROUGH, S_SAND, S_ICE } from './terrain.js';
+import { S_LEN, S_H, S_WDEPTH, S_MOUNT, S_ROUGH, S_SAND, S_ICE, S_TEMP } from './terrain.js';
 import { ROCKS } from './worldsim/lithology.js';
 import { MAT_W0, MAT_N } from './matclasses.js';
 
@@ -398,7 +398,7 @@ export function buildVolumeChunk(field, ci, cj, ck, level = 0) {
     col[v * 4] = encodeColor(cc[0]); col[v * 4 + 1] = encodeColor(cc[1]); col[v * 4 + 2] = encodeColor(cc[2]); col[v * 4 + 3] = 0;
     mat[v * 4] = Math.round(mm[0] * 255); mat[v * 4 + 1] = Math.round(mm[1] * 255); mat[v * 4 + 2] = Math.round(mm[2] * 255); mat[v * 4 + 3] = Math.round(mm[3] * 255);
     ext[v * 4] = Math.round(Math.min(1, mm[5]) * 255); ext[v * 4 + 1] = Math.round(Math.min(1, mm[6]) * 255);
-    ext[v * 4 + 2] = Math.round(Math.min(1, s[12] / 1.4) * 255); ext[v * 4 + 3] = Math.round((0.5 + 0.5 * s[10]) * 255);
+    ext[v * 4 + 2] = Math.round(Math.min(1, s[12] / 1.4) * 255); ext[v * 4 + 3] = Math.round(Math.min(1, Math.max(0, (s[S_TEMP] - 273.15 + 60) / 120)) * 255);
     for (let k = 0; k < NC; k++) cls[v * NC + k] = Math.round(Math.min(1, mm[MAT_W0 + k]) * 255);
     // sky: how much rock overhangs this point (probes straight up; caves and overhangs dark;
     // the far rings hold neither)

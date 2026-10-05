@@ -311,7 +311,9 @@ export function buildChunk(gen, face, level, ix, iy, N = CHUNK_N) {
       extA[vi * 4] = Math.round(Math.min(1, mat[5]) * 255);
       extA[vi * 4 + 1] = Math.round(Math.min(1, mat[6]) * 255);
       extA[vi * 4 + 2] = Math.round(Math.min(1, s[12] / 1.4) * 255); // roughness
-      extA[vi * 4 + 3] = Math.round((0.5 + 0.5 * s[10]) * 255);    // mineral variant
+      // (the year's mean temperature here, C: -60..60 over the byte, the seasons' snow reckoned from it in
+      // the shader: terrainMaterial.js seasonSnow)
+      extA[vi * 4 + 3] = Math.round(Math.min(1, Math.max(0, (s[S_TEMP] - 273.15 + 60) / 120)) * 255);
       for (let k = 0; k < NC; k++) clsA[vi * NC + k] = Math.round(Math.min(1, mat[MAT_W0 + k]) * 255);
 
       // morph target

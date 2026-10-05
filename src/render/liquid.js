@@ -388,6 +388,8 @@ vec4 floeState(uint id, vec3 gc, vec3 w, float ice, float S) {
 // spill across its old outline whole, further apart toward its edge where the waves work it
 vec4 seaFloes(vec3 p, vec3 up, vec3 w, float ice, float cPix, float foot) {
   if (cPix <= 0.0 && ice <= 0.0) return vec4(0.0);
+  // (a pixel 64 m across or more sees the share of it there only: no floes to find, the far fade's whole)
+  if (foot >= 64.0) return vec4(cPix, 0.0, 0.7, cPix);
   uint id;
   float e, fw = max(foot, 0.03);
   vec3 gc;
@@ -409,8 +411,10 @@ vec4 seaFloes(vec3 p, vec3 up, vec3 w, float ice, float cPix, float foot) {
       if (x2 > x) { x = x2; rim = 1.0 - smoothstep(g2, g2 + 0.4 + fw, e2); age = 0.3 * float(id2 & 65535u) / 65536.0; cf = O.x; }
     }
   }
-  // (from far off, the share of it there)
-  x = mix(x, cPix, smoothstep(16.0, 64.0, foot));
-  return vec4(x, rim * x, age, cf);
+  // (from far off, the share of it there, of a mean age, its rims too fine to see: from 64 m pixels on,
+  // the early way out's)
+  float kFar = smoothstep(16.0, 64.0, foot);
+  x = mix(x, cPix, kFar);
+  return vec4(x, rim * x * (1.0 - kFar), mix(age, 0.7, kFar), mix(cf, cPix, kFar));
 }
 `;
