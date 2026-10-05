@@ -364,6 +364,13 @@ void main() {
     vec3 sc = onScreen(vWorldPos);
     float zW = sc.z, zB = sceneZ(gl_FragCoord.xy / vec2(textureSize(tWaterDepth, 0)));
     float depthW = min(max(dot(vWorldPos - vWorldPos * (zB / zW), up), 0.0), 60.0);
+    // (over a fall's face, the sheet's own thickness: its unit discharge over its speed there, a few
+    // tenths of a metre; the rock behind it seen through where it isn't broken white)
+    float fallK0 = smoothstep(0.13, 0.3, 1.0 - dot(normalize(vFixedNormal), uToFixed * up));
+    if (fallK0 > 0.0) {
+      float zf0 = uFallTop > 0.0 ? max(uFallTop - r, 0.0) : 4.0;
+      depthW = mix(depthW, clamp(max(vRib.y, 0.1) * max(vFlw.w * 9.0, 0.5) / (sqrt(2.0 * uLiquid2.x * zf0) + 0.5), 0.03, 1.0), fallK0);
+    }
 #else
     float depthW = vShore * vShore * 64.0;
 #endif
@@ -459,6 +466,12 @@ void main() {
     }
 #else
     vec3 body = albedo / PI * (uSunE * sunT * max(muS, 0.0) * 0.6 + uSunE * skyE * 0.5);
+    // (a river drawn by the mesh, from afar: its water as the near surface's (RIBBON), deep, its bed unseen)
+    if (river && uLiquid2.y > 0.9) {
+      float ssc = clamp(30.0 * fv * fv * fv, 0.5, 3000.0);
+      vec3 a = uLiquid3.rgb + ssc * vec3(0.012, 0.02, 0.035) + uLiquid3.w * vec3(0.078, 0.207, 0.687), bb = vec3(0.019 * 0.25 * ssc);
+      body = 0.33 * bb / (a + bb) / PI * (uSunE * sunT * max(muS, 0.0) + uSunE * skyE);
+    }
 #endif
     // the sun's glitter: GGX by the waves the pixel can't resolve
     vec3 H = normalize(V + uSunDir);
@@ -488,9 +501,16 @@ void main() {
       float sA = texture(tDetail, q - vec2(0.0, v * t1 * 2.5 * 0.07 / L)).r + 0.5 * texture(tDetail, q * 3.0 - vec2(0.0, v * t1 * 7.5 * 0.07 / L)).a;
       float sB = texture(tDetail, q + vec2(0.37, 0.0) - vec2(0.0, v * t2 * 2.5 * 0.07 / L)).r + 0.5 * texture(tDetail, q * 3.0 + vec2(0.11, 0.0) - vec2(0.0, v * t2 * 7.5 * 0.07 / L)).a;
       float st = 0.5 + (mix(sB, sA, wa) - 0.75) * 1.6;
-      // (glassy at its lip, breaking up as it falls: the sooner the denser the air)
+      // (glassy at its lip, breaking up as it falls: the sooner the denser the air; in jets, white
+      // where the noise has it thick, glassy between; its water thinner toward its sides, torn there)
+#ifdef RIBBON
+      float edge = 1.0 - vRib.x * vRib.x;
+#else
+      float edge = 1.0;
+#endif
       float aer = mix(0.25, 0.95, uFall2.y) * smoothstep(0.5, 6.0, v) * smoothstep(0.0, 1.0 + 4.0 * (1.0 - uFall2.y), zf);
-      float white = clamp(aer * (0.8 + 2.2 * (st - 0.5)) + 0.08, 0.0, 1.0);
+      float jets = smoothstep(0.32, 0.62, st + 0.3 * (edge - 1.0));
+      float white = clamp(aer * (0.1 + 1.0 * jets) + 0.04, 0.0, 1.0);
       dbgWhite = white;
       vec3 nS = normalize(Nw + transpose(uToFixed) * acr * (st - 0.5) * 0.8);
       vec3 litS = uSunE * sunT * max(dot(nS, uSunDir), 0.0) + uSunE * skyE * 0.6;
@@ -577,7 +597,7 @@ void main() {
     float crust = smoothstep(0.35, 0.65, tri(fp, w, 128.0).a);
     color += uLavaColor * emissive * flick * mix(1.0, 0.15, crust * (1.0 - emissive * 0.5));
   }
-  if (uDebug > 1.5) color = dbgW.x < 0.0 ? vec3(0.5, 0.0, 0.5) * waterEnc * 50.0 : dbgW;
+  if (uDebug > 1.5) color = (dbgW.x < 0.0 ? vec3(0.5, 0.0, 0.5) * waterEnc * 50.0 : dbgW) * (uDebug > 7.5 ? 0.02 : 1.0);
   else if (uDebug > 0.5) color = mix(color, vec3(vMorphK, 1.0 - vMorphK, 0.0) * 0.2, 0.5);
   gl_FragColor = vec4(color, 1.0);
 }
