@@ -16,7 +16,7 @@
 // W0, W1, sw (the swing's three values and its ends' fades) }
 
 import * as dm from '../core/dmath.js';
-import { meanderField } from './meanders.js';
+import { meanderField, meanderPoint } from './meanders.js';
 import { RIVER_REC } from './worldsim/refine.js';
 
 const GROUP = 8;
@@ -147,7 +147,7 @@ export function chanSwing(ch, t) {
 // swing and frames)
 export function buildChannel(gen, r, building) {
   const Rv = gen.snap.riv, rec = Rv.rec, b = r * RIVER_REC, R = gen.R, Lk = gen._rivLinks(), MA = gen._meanderA();
-  const F = gen._mf || (gen._mf = meanderField()), L0 = F.lines[0], P = F.P, n0 = L0.x.length;
+  const F = gen._mf || (gen._mf = meanderField()), P = F.P;
   const dnOf = (q) => { const n = Lk.dn[q]; return n >= 0 && Lk.up[n] === q ? n : -1; };
   const fr = gen._meanderFrame(r, new Float64Array(9));
   const up = Lk.up[r], dn = dnOf(r), wq = 2 * Rv.half[r], ph0 = Rv.phase ? Rv.phase[r] : NaN;
@@ -175,11 +175,11 @@ export function buildChannel(gen, r, building) {
     // (across it: up crossed with its way down, the side the trace's +y lies)
     let nx = py * tz - pz * ty, ny = pz * tx - px * tz, nz = px * ty - py * tx;
     const nl = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1; nx /= nl; ny /= nl; nz /= nl;
-    const a = chanSwing(ch, t), wm = W0 + (W1 - W0) * t, off = a * wm * (Y - F.mid) / R;
+    const wm = W0 + (W1 - W0) * t, off = wm * Y / R;
     P3.push(px, py, pz, nx * off, ny * off, nz * off);
     // (where the channel was moving there, per channel width: along the valley (x, up it) and
     // across (y), as the trace lies on the ground)
-    const dX = 1 / (J1 - J0), tl = R * dX, gx = a * mx * tl, gy = my * a;
+    const dX = 1 / (J1 - J0), tl = R * dX, gx = mx * tl, gy = my;
     const half = 0.5 * wm * (head ? 0.15 + 0.85 * dm.smoothstep(0, 0.9, t) : 1);
     A6.push(half, hsOf(t), (gx * tx + gy * nx * wm) / wm, (gx * ty + gy * ny * wm) / wm, (gx * tz + gy * nz * wm) / wm, t, wm);
   };
@@ -191,23 +191,49 @@ export function buildChannel(gen, r, building) {
     else pcs.push(P3.length / 6);
   };
   const begin = (kind, age) => { end(); pcs.push(P3.length / 6); kinds.push(kind); ages.push(age); open = true; };
-  // the stretch of a line (x: unwrapped, y, mx, my per point, n points; closed: the trace, whose
-  // last point runs on into the first of the next period) whose phases lie between the record's ends
+  // (how freely it swings at phase X: chanSwing between its ends, and past them on toward the swing of
+  // the record up or down its river, as that record has it: a segment of the channel crossing from
+  // one record into the next has its ends where both put them, so their channels meet)
   const lo = Math.min(J0, J1), hi = Math.max(J0, J1);
-  const lay = (xu, y, mx, my, n, closed, kind, age) => {
-    const span = closed ? xu[n] - xu[0] : 0, nseg = closed ? n : n - 1;
+  const phUp = up >= 0 && Rv.phase ? Rv.phase[up] : NaN, phDn = dn >= 0 && Rv.phase ? Rv.phase[dn] : NaN;
+  const aOfX = (X) => {
+    const t = (X - J0) / (J1 - J0);
+    if (t < 0 && phUp === phUp && phUp !== J0) return dm.clamp(sw[0] + (MA[up] - sw[0]) * Math.min(1, (X - J0) / (phUp - J0)), 0, 1);
+    if (t > 1 && phDn === phDn && phDn !== J1) return dm.clamp(sw[2] + (MA[dn] - sw[2]) * Math.min(1, (X - J1) / (phDn - J1)), 0, 1);
+    return chanSwing(ch, dm.clamp(t, 0, 1));
+  };
+  // the channel's points in period p: each the family's (meanders.js) at the swing its own phase has
+  // (found by turns: a point's phase moves with its swing, slowly)
+  const fpt = {}, n0 = F.n;
+  const family = (p) => {
+    const sh = p * P, X = new Float64Array(n0 + 1), Y = new Float64Array(n0 + 1), MX = new Float64Array(n0 + 1), MY = new Float64Array(n0 + 1);
+    for (let k = 0; k <= n0; k++) {
+      // (a point whose every swing puts it well outside the record's phases: any of them will do)
+      const xa = F.xlo[k] + sh, xb = F.xhi[k] + sh;
+      let a = sw[1];
+      if (xb > lo - 2 && xa < hi + 2) for (let it = 0; it < 3; it++) { meanderPoint(F, k, a, fpt); a = aOfX(fpt.x + sh); }
+      meanderPoint(F, k, a, fpt);
+      X[k] = fpt.x + sh; Y[k] = fpt.y; MX[k] = fpt.mx; MY[k] = fpt.my;
+    }
+    return { X, Y, MX, MY };
+  };
+  // the stretch of a line (closed: the channel, its points per period from family(); else an oxbow:
+  // x unwrapped, y, n points) whose phases lie between the record's ends
+  const lay = (xu0, y0, n, closed, kind, age) => {
+    const nseg = closed ? n : n - 1;
     let pa = 0, pb = 0;
-    if (closed) { pa = Math.floor((lo - xu[0]) / span) - 1; pb = Math.ceil((hi - xu[0]) / span) + 1; }
+    if (closed) { pa = Math.floor((lo - F.xhi[0]) / P) - 1; pb = Math.ceil((hi - F.xlo[0]) / P) + 1; }
     else {
       // (an oxbow lies in one period of the trace: the copies of it near the record's phases)
       let mn = Infinity, mxX = -Infinity;
-      for (let k = 0; k < n; k++) { mn = Math.min(mn, xu[k]); mxX = Math.max(mxX, xu[k]); }
+      for (let k = 0; k < n; k++) { mn = Math.min(mn, xu0[k]); mxX = Math.max(mxX, xu0[k]); }
       pa = Math.floor((lo - mxX) / P); pb = Math.ceil((hi - mn) / P);
     }
     for (let p = pa; p <= pb; p++) {
-      const sh = closed ? p * span : p * P;
+      let xu, y, mx = null, my = null, sh = 0;
+      if (closed) { const q = family(p); xu = q.X; y = q.Y; mx = q.MX; my = q.MY; } else { xu = xu0; y = y0; sh = p * P; }
       for (let k = 0; k < nseg; k++) {
-        const k1 = k + 1, Xa = xu[k] + sh, Xb = xu[k1] + sh, i1 = closed ? k1 % n : k1;
+        const k1 = k + 1, Xa = xu[k] + sh, Xb = xu[k1] + sh, i1 = k1;
         const dX = Xb - Xa;
         let f0 = 0, f1 = 1;
         if (dX !== 0) { const fl = (lo - Xa) / dX, fh = (hi - Xa) / dX; f0 = Math.max(0, Math.min(fl, fh)); f1 = Math.min(1, Math.max(fl, fh)); }
@@ -222,19 +248,19 @@ export function buildChannel(gen, r, building) {
     }
     end();
   };
-  if (!F.xu) {
-    const xu = new Float64Array(n0 + 1);
-    xu[0] = L0.x[0];
-    for (let k = 0; k < n0; k++) { let dx = L0.x[(k + 1) % n0] - L0.x[k]; if (dx < -P / 2) dx += P; if (dx > P / 2) dx -= P; xu[k + 1] = xu[k] + dx; }
-    F.xu = xu;
+  if (!F.oxu) {
     F.oxu = F.lines.slice(1).map((L) => { const n = L.x.length, o = new Float64Array(n); o[0] = L.x[0]; for (let k = 1; k < n; k++) { let dx = L.x[k] - L.x[k - 1]; if (dx < -P / 2) dx += P; if (dx > P / 2) dx -= P; o[k] = o[k - 1] + dx; } return o; });
+    // (each point's phase over the family: the least and most any swing puts it at)
+    F.xlo = new Float64Array(n0 + 1); F.xhi = new Float64Array(n0 + 1);
+    for (let k = 0; k <= n0; k++) { let a = Infinity, z = -Infinity; for (const Lv of F.levels) { a = Math.min(a, Lv.xu[k]); z = Math.max(z, Lv.xu[k]); } F.xlo[k] = a; F.xhi[k] = z; }
   }
   if (hi - lo > 1e-6) {
-    lay(F.xu, L0.y, L0.mx, L0.my, n0, true, 0, 0);
-    // (its cut-off loops: lakes while young, swales once filled; only where it swings freely)
-    if (Math.max(sw[0], sw[1], sw[2]) > 0.3) F.lines.forEach((L, li) => { if (li && L.age < 0.8) lay(F.oxu[li - 1], L.y, null, null, L.x.length, false, 1, L.age); });
+    lay(null, null, n0, true, 0, 0);
+    // (its cut-off loops: lakes while young, swales once filled; only where it has grown its loops
+    // whole, the trace's own (they're its))
+    if (Math.max(sw[0], sw[1], sw[2]) > 0.9) F.lines.forEach((L, li) => { if (li && L.age < 0.8) lay(F.oxu[li - 1], L.y, L.x.length, false, 1, L.age); });
   } else {
-    begin(0, 0); emit(J0, F.mid, 0, 0); emit(J1, F.mid, 0, 0); end();
+    begin(0, 0); emit(J0, 0, 0, 0); emit(J1, 0, 0, 0); end();
   }
   // (where its profile steps (a fall: riverProfile), points at each face's top and foot, so its
   // channel drops there, over the face's few metres, not across the trace's whole segment. And each

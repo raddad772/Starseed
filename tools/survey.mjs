@@ -32,7 +32,7 @@ import { prepareTile, refineLevel, tileAt } from '../src/gen/localsim.js';
 import { runInt } from '../src/gpu/itile.js';
 import { Worker } from 'worker_threads';
 import os from 'os';
-import { newRefine, putTile, toStorable, fromStorable, TileSet, RefineReader, riverIndex } from '../src/gen/worldsim/refine.js';
+import { newRefine, putTile, toStorable, fromStorable, TileSet, RefineReader, riverIndex, worldRivers, RIVER_VERSION } from '../src/gen/worldsim/refine.js';
 import v8 from 'v8';
 import { TILE_VERSION } from '../src/gen/tileshape.js';
 import { dunePatches } from '../src/gen/dunes.js';
@@ -82,12 +82,16 @@ for (const w of worlds) {
   // its refinement, cached
   const rf = path.join(CACHE, `ref-${seed}-${b.id}-N${N}-v${SIM_VERSION}-r${TILE_VERSION}${FLOAT ? 'f' : 'i'}${TS_TAG}`);
   let R;
-  if (fs.existsSync(rf + '.v8')) R = fromStorable(v8.deserialize(fs.readFileSync(rf + '.v8')));
+  if (fs.existsSync(rf + '.v8')) {
+    R = fromStorable(v8.deserialize(fs.readFileSync(rf + '.v8')));
+    // (its rivers indexed again from it whole when the index is older than the code: as the game does)
+    if (!R.riv || R.riv.version !== RIVER_VERSION) { R.riv = riverIndex([worldRivers(R)], snap.N, gen.R); fs.writeFileSync(rf + '.v8', v8.serialize(toStorable(R))); }
+  }
   else {
     const t0 = performance.now(), L = refineLevel(gen), n = 1 << L;
     R = newRefine(L, false);
     const parts = await refineTiles(seed, b.id, snap, n, (p) => putTile(R, p));
-    R.riv = riverIndex(parts, snap.N, snap.R);
+    R.riv = riverIndex(parts, snap.N, gen.R);
     fs.writeFileSync(rf + '.v8', v8.serialize(toStorable(R)));
     log(`  refinement (${6 * n * n} tiles) in ${((performance.now() - t0) / 1000).toFixed(0)} s`);
   }

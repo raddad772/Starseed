@@ -257,6 +257,52 @@ distinct stair step in the river edge ... is it not using actual geometry"):**
 - Testing note: in a hidden pane, `debugRun`'s MessageChannel loop starves the workers' replies (a
   chunk job takes 2.7 s instead of ~50 ms): drain by running a frame and awaiting the next reply.
 
+**Stairs, tiling and meanders (2026-10-05; Dave: "stair stepping rock differences", "can we do
+something about that tiling on the ground and water", "Is that meandering realistic? Do we have
+rivers that are straighter where they should be?"):**
+- Rock contacts (d926b5b): graded over about a vertex spacing of the mesh reading them (refine.js
+  `contactW`, `gen._shadeSp` from chunkbuilder.js); they were a tenth of a cell sharp and the far
+  chunks' triangles drew them as staircases (LAB-44's gravel patches: scratchpad shots/rock_ab.jpg).
+- Ground scans: stochastic tiling (materials.js `matRead`: Quilez's third way, eight offsets picked by a
+  per-tile noise, blended by the texels' heights; periodic with the 4096 m detail wrap).
+- River surfaces: gradient-noise ripples carried down the flow (liquid.js `riverRipples`, 0.25-2 m,
+  biplanar) instead of three wave directions an octave, which summed to a lattice (the checkerboard
+  glint: shots/w_bd.jpg). Every wave in groups (an envelope along its turned k) for the sea and lakes.
+  Foam lines wander across (they were ruler-straight).
+- Meanders: the one trace was squashed across for a gentler river (the "fingers"). Now meanders.js
+  `meanderField` holds a family (`MEANDER_NL` 11): the trace's bend angles times a (Langbein and
+  Leopold's sine-generated idea: a gentle river's bends are a mature one's turned less), each over the
+  same period at the same points, sinuosity 1.00/1.03/1.24/1.56/1.83/2.85 at a 0/.2/.5/.7/.8/1; and the
+  trace scaled whole by `MEANDER_U` 0.62 (bends ~11 widths apart, Leopold and Wolman 1960; it was ~18).
+  channels.js lays the family at each point's own swing (aOfX: chanSwing, carried on toward the
+  neighbours' past a record's ends so channels meet); refine.js bigChannels likewise (RIVER_VERSION 3).
+- What sets the swing: `riverSinuosity(S, W, rock)`: bankfull Q from the regime width (W = 4.8 Q^0.5),
+  van den Berg's potential stream power 2.1 S Q^0.5 kW/m^2 against the bed's grain (materials.js
+  `grain`): laterally inactive under 90 D50^0.42 W/m^2, braided over 900 D50^0.42 (Kleinhans and van
+  den Berg 2011), between them Schumm's P = 0.94 M^0.25 for the banks' silt and clay (`fines`). The
+  record's rock comes from its refinement cell (river index `rock`). Not in yet: vegetation's bank
+  strength and a dry climate's flashy floods (no published numbers in hand: Millar 2000's friction
+  angle, Eaton 2010's mu'); braided rivers aren't drawn as braids (low sinuosity for now). The slope
+  read over ~15 widths up and down the river and the swing smoothed over ~10 widths (a record's own
+  slope flipped it between loops and straight every few hundred metres).
+- **The hairpins' real cause**: riverIndex measured lengths along the rivers with the world sim's
+  radius (SIM_LEN, 6.4x the drawn globe's at LEN_SCALE 1/64), so the meander phase ran 6.4x too fast:
+  every bend squeezed along its valley into a hairpin across it; the great rivers' offsets 6.4x too
+  small. worldSims.js indexWorld now passes the body's drawn R (survey.mjs too); RIVER_VERSION 4.
+  LAB-44 before/after: scratchpad shots/rock_b.jpg (fingers) vs rock_i.jpg (a sinuous river).
+- Banks: `_banked`'s point-bar/cut-bank slope (0.15/1.6) chosen by a sign flipped where the bends turn
+  over; graded now (it stepped the ground metres at a line). Creeks within a river's raised floodplain
+  raised with it (`rvRise`) and faded out over its width beside it (they were cut at their own level,
+  trenches metres deep in it, switched on at 1.5 widths: the sawtooth walls of shots/rock_g.jpg).
+  Their water strips (riverRibbons) still sit at their own level there: under the ground, dry-looking.
+- **Perched rivers (open, the next big one)**: the refinement routes water across closed depressions
+  to their spill without lakes there (a river cell's receiver up to 30 m above it while a lower
+  neighbour exists: LAB-44 r 5537 59 -> 75 m), so a river's cells rise and fall along it, and
+  channels.js windowProfile (heights held at 16-record window ends, the drop between spread
+  monotonically) bridges the dips: the river stands metres above its valley, its floodplain a raised
+  platform. Fix in the refinement: a depression a river crosses is a lake to its spill (or the river
+  ends in it, a dry world's terminal basin), and the profile follows the filled surface.
+
 **What's still wrong / next:**
 - Snow covers most of a high mountain (the snowline reads the real height: physically right, maybe too
   white for Dave).

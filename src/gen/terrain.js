@@ -30,7 +30,7 @@ import { craterFloor, TILE_CELLS } from './worldsim/impacts.js';
 import { SnapshotSampler } from './worldsim/snapshot.js';
 import { RIVER_REC, BIG_REC } from './worldsim/refine.js';
 import { TRUE_SCALE, MT, KEEP } from './tileshape.js';
-import { meanderField } from './meanders.js';
+import { meanderField, riverSinuosity } from './meanders.js';
 import { ROCKS, R as ROCK } from './worldsim/lithology.js';
 import { hexToLinear } from './color.js';
 import { HEIGHT_SCALE } from '../core/units.js';
@@ -752,6 +752,7 @@ export class TerrainGenerator {
     const rvOwn = rv ? rv.w * 0.5 : 0, rvWide = rv && this.wetNow ? Math.max(rvOwn, 0.75 * minWavelength) : rvOwn;
     const rvFade = rv && this.wetNow ? dm.smoothstep(4, 16, rvWide / Math.max(rvOwn, 1e-3)) : 0;
     let rvWl = -1e9, rvSt = -1e9, ckWl = -1e9;
+    const hPreRv = h;
     if (rv) {
       // (a meandering river's floodplain: the belt it has swung across, laid level near its banks;
       // and the loops it cut off, lakes while young, swales once filled)
@@ -793,6 +794,11 @@ export class TerrainGenerator {
         }
       }
     }
+    // (how far the river raised the ground here, its floodplain and banks built up to its level: the
+    // creeks crossing them are built up with them, as a floodplain's tributaries are; cut at their own
+    // level they stood in trenches metres deep through it. And they give way to it over a width or so
+    // beside it (none within its width: switched off at a line, the ground stepped there))
+    const rvRise = Math.max(0, h - hPreRv), ckNear = rv ? dm.smoothstep(rv.w, 2 * rv.w, rv.dist) : 1;
     // creeks: where the finest level of the terrain's tiles gathers its own water (finer than the
     // world sim's rivers): a channel along each of its drainage lines, as wide and deep as its
     // water (a creek of ~0.1 km^2 a metre wide, a stream of tens of km^2 ten or more), its banks
@@ -800,9 +806,9 @@ export class TerrainGenerator {
     // (and first, its own channels read as lines: a channel running diagonally across its cells
     // is read between them as a row of saddles (localsim.js reads the level above's the same
     // way); near one the ground is held to a V from the line, rising as its banks do)
-    let crk = finRd && finest <= 60 && !(rv && rv.dist < rv.w * 1.5) && finRd.creekAt(Math.min(CREEK_A, 30 * finest * finest));
+    let crk = finRd && finest <= 60 && ckNear > 0 && finRd.creekAt(Math.min(CREEK_A, 30 * finest * finest));
     if (crk) {
-      if (finRd.cd < 1.5) h = Math.min(h, (finRd.ch + finRd.cwc * finRd.cd) / this.hScale);
+      if (finRd.cd < 1.5) h -= Math.max(0, h - (finRd.ch + finRd.cwc * finRd.cd) / this.hScale - rvRise) * ckNear;
       if (finRd.cA < CREEK_A) crk = finRd.creekAt(CREEK_A);
     }
     if (crk) {
@@ -821,7 +827,7 @@ export class TerrainGenerator {
         // (with water in it the banks are laid to the line, so it runs downhill; a dry world's
         // gully only cuts down: two creeks a cell or two apart, their lines at different heights,
         // would otherwise step the ground between them in rungs)
-        const bank = finRd.ch / this.hScale + 0.2, pull = bank - h;
+        const bank = finRd.ch / this.hScale + 0.2 + rvRise, pull = bank - h;
         h += (this.wetNow ? pull : Math.min(0, pull)) * dm.smoothstep(flank, half * 1.2, dist);
         const wet = this.wetNow && A > CREEK_WET && seen && fin > 0.5;
         // (its water's level, beside it too: where the shore meets it)
@@ -842,7 +848,7 @@ export class TerrainGenerator {
             }
           }
         }
-        h = h1 + (h - h1) * fin;
+        h = h1 + (h - h1) * fin * ckNear;
       }
     }
     // (in a lake, its level: a river or a creek that runs into one is at the lake's level there, not
@@ -1414,9 +1420,13 @@ export class TerrainGenerator {
   // width there (m)
   _banked(rv, pull, x, y, z, half) {
     if (pull >= 0) return pull;
+    // (the side it's moving away from, a point bar's gentle slope; the side it's cutting into, a steep
+    // bank; a straight reach between. Graded across: where the bends turn over the side flips, and
+    // chosen one or the other the ground there stepped metres at a line, out across the floodplain)
     const mig = Math.sqrt((rv.mx || 0) ** 2 + (rv.my || 0) ** 2 + (rv.mz || 0) ** 2);
-    const inner = mig > 1e-3 && (x - rv.ax) * rv.mx + (y - rv.ay) * rv.my + (z - rv.az) * rv.mz < 0;
-    const tanB = mig > 1e-3 ? (inner ? 0.15 : 1.6) : 0.6;
+    const ex = x - rv.ax, ey = y - rv.ay, ez = z - rv.az, el = Math.sqrt(ex * ex + ey * ey + ez * ez);
+    const cosM = mig > 1e-9 && el > 1e-12 ? (ex * rv.mx + ey * rv.my + ez * rv.mz) / (mig * el) : 0;
+    const tanB = 0.6 + (0.15 + 1.45 * dm.smoothstep(-0.35, 0.35, cosM) - 0.6) * dm.smoothstep(0, 0.3, mig);
     // (its height above the bank, capped by the bank's slope, then laid level within a flood's reach;
     // heights in the sim's metres, the ground's hScale of them, distances the ground's)
     const upO = -pull, fp = 1.5 / this.hScale + 0.1 * rv.depth;
@@ -1490,7 +1500,7 @@ export class TerrainGenerator {
       // ground between doesn't step)
       const A = cp.p, kf = ta * 4, k0 = Math.min(3, Math.floor(kf)), f = kf - k0, i0 = k0 * 12, i1 = i0 + 12;
       const lp = (o) => A[i0 + o] + f * (A[i1 + o] - A[i0 + o]);
-      const wm = ch.W0 + (ch.W1 - ch.W0) * ta, Bs = Math.max(50, chanSwing(ch, ta) * MF.half * wm + wm), sg = dm.smoothstep(-Bs, Bs, sd < 0 ? -da : da);
+      const wm = ch.W0 + (ch.W1 - ch.W0) * ta, Bs = Math.max(50, MF.halfOf(chanSwing(ch, ta)) * wm + wm), sg = dm.smoothstep(-Bs, Bs, sd < 0 ? -da : da);
       const sd2 = (o) => lp(4 + o) + sg * (lp(o) - lp(4 + o));
       const h1 = sd2(0), sl = sd2(1), gone = sd2(2), wt = sd2(3);
       // (its floor: the river's banks along its channel)
@@ -1821,7 +1831,7 @@ export class TerrainGenerator {
         // (its loops drawn only where the sampling sees them; how far its channel may stand off
         // its line then (its neighbours' widths and swings shared at its ends): its frame's bounds
         // that much wider, so a channel that can't come nearer than the best so far is passed over)
-        const loops = Rv.phase && minW < 9 * wq, reach = loops ? 1.5 * wq * (MF.half * Math.max(MA[r], 0.05) + 2) : 2 * wq;
+        const loops = Rv.phase && minW < 9 * wq, reach = loops ? 1.5 * wq * (MF.halfOf(MA[r]) + 2) : 2 * wq;
         const o = r * 4, ex = FB[o] - x, ey = FB[o + 1] - y, ez = FB[o + 2] - z;
         if ((Math.sqrt(ex * ex + ey * ey + ez * ez) - FB[o + 3]) * R - reach >= bs) continue;
         if (loops) {
@@ -1881,10 +1891,10 @@ export class TerrainGenerator {
         // (its valley's line: how far off it, and the belt its channel swings across there)
         const nt = nearestOnCurveFine(Fr.F, 9 * best.r, x, y, z), ta = nt[1], wm = bch.W0 + (bch.W1 - bch.W0) * ta, A = chanSwing(bch, ta);
         best.axis = Math.sqrt(nt[0]) * R;
-        best.belt = A * MF.half * wm * (minW <= 2 * wm ? 1 : dm.smoothstep(6 * wm, 2 * wm, minW));
+        best.belt = MF.halfOf(A) * wm * (minW <= 2 * wm ? 1 : dm.smoothstep(6 * wm, 2 * wm, minW));
         // (its cut-off loops only where it swings freely: a river held nearer its line cuts few,
         // and those soon filled)
-        if (ox.ch) { best.ox = Math.sqrt(ox.d2) * R; best.oxW = ox.wm; best.oxAge = 1 - (1 - ox.age) * dm.smoothstep(0.5, 0.85, A); }
+        if (ox.ch) { best.ox = Math.sqrt(ox.d2) * R; best.oxW = ox.wm; best.oxAge = 1 - (1 - ox.age) * dm.smoothstep(0.9, 1, A); }
       }
     }
     // (the great rivers' channels, built winding: refine.js bigChannels)
@@ -1998,10 +2008,10 @@ export class TerrainGenerator {
     return (Rv._mL = C);
   }
 
-  // how far each river record's channel may swing across its belt (0..1): fully on a gentle
-  // slope, its belt kept within reach of the valley's line (a great river nearer it), less as the
-  // slope steepens; the slope read over three records up and down its river, so it changes along
-  // it slowly, not record to record (kept)
+  // how far each river record's channel swings (0..1: the meander family's a, meanders.js): as far as
+  // its sinuosity has it, its belt kept within reach of the valley's line (a great river nearer it);
+  // the slope read over three records up and down its river, so it changes along it slowly, not
+  // record to record (kept)
   _meanderA() {
     const Rv = this.snap.riv;
     if (Rv._mA) return Rv._mA;
@@ -2018,15 +2028,33 @@ export class TerrainGenerator {
       const c = (ax * bx + ay * by + az * bz) / (Math.sqrt((ax * ax + ay * ay + az * az) * (bx * bx + by * by + bz * bz)) || 1);
       bend[r] = fl / Math.max(1e-3, Math.acos(Math.max(-1, Math.min(1, c))));
     }
+    // (its slope over its valley's reach, ~15 widths up and down it: a river's pattern answers to its
+    // valley's fall over several bends, not a cell's (a profile's steps and falls had the slope, and the
+    // pattern, flip from record to record); as sinuous as its stream power, its bed's grain and its
+    // banks' silt and clay make it, meanders.js riverSinuosity)
+    const aS = new Float32Array(m), cap = new Float32Array(m);
     for (let r = 0; r < m; r++) {
-      let u = r, dn = r, sl = len[r], rad = bend[r];
-      for (let k = 0; k < 3 && L.up[u] >= 0; k++) { u = L.up[u]; sl += len[u]; if (k < 1) rad = Math.min(rad, bend[u]); }
-      for (let k = 0; k < 3 && L.dn[dn] >= 0; k++) { dn = L.dn[dn]; sl += len[dn]; if (k < 1) rad = Math.min(rad, bend[dn]); }
-      const slope = sl > 0 ? (rec[u * RIVER_REC + 9] - rec[dn * RIVER_REC + 11]) / sl : 0;
-      // (and no further across than most of the radius its smoothed line turns at, here and
-      // either side: laid along a line that turns sharper, its loops would cross from one
-      // stretch's reach into the next's, cut off where they met)
-      A[r] = Math.min(1 - dm.smoothstep(3e-4, 2e-3, slope), 1800 / (2 * Rv.half[r] * F.half), 0.7 * rad / (2 * Rv.half[r] * F.half));
+      const W = 2 * Rv.half[r], reach = 15 * W;
+      let u = r, dn = r, su = 0.5 * len[r], sd = 0.5 * len[r], rad = bend[r];
+      for (let k = 0; k < 16 && su < reach && L.up[u] >= 0; k++) { u = L.up[u]; su += len[u]; if (k < 1) rad = Math.min(rad, bend[u]); }
+      for (let k = 0; k < 16 && sd < reach && L.dn[dn] >= 0; k++) { dn = L.dn[dn]; sd += len[dn]; if (k < 1) rad = Math.min(rad, bend[dn]); }
+      const slope = su + sd > 0 ? (rec[u * RIVER_REC + 9] - rec[dn * RIVER_REC + 11]) / (su + sd) : 0;
+      aS[r] = F.aOfSinuosity(riverSinuosity(Math.abs(slope), W, Rv.rock ? Rv.rock[r] : 255));
+      // (and no further across than most of the radius its smoothed line turns at, here and either
+      // side: laid along a line that turns sharper, its loops would cross from one stretch's reach into
+      // the next's, cut off where they met; a great river's belt nearer its valley's line)
+      cap[r] = Math.min(F.aOfHalf(1800 / W), F.aOfHalf(0.7 * rad / W));
+    }
+    // (and that along the river over ~10 widths either side, so it changes as its valley does: a
+    // record's rock or a short steep stretch doesn't turn its loops off and on)
+    for (let r = 0; r < m; r++) {
+      const reach = 20 * Rv.half[r];
+      let sw = 1, sa = aS[r];
+      for (const dir of [L.up, L.dn]) {
+        let q = r, d = 0.5 * len[r];
+        for (let k = 0; k < 12 && dir[q] >= 0; k++) { q = dir[q]; const w = 1 - d / reach; if (w <= 0) break; sw += w; sa += w * aS[q]; d += len[q]; }
+      }
+      A[r] = Math.min(sa / sw, cap[r]);
     }
     return (Rv._mA = A);
   }

@@ -11,7 +11,7 @@
 import { FACES, dirFromFaceUV } from '../cubesphere.js';
 import { GridLite } from './grid.js';
 import { ROCK_UP } from './lithology.js';
-import { meanderField } from '../meanders.js';
+import { meanderField, meanderPoint, riverSinuosity } from '../meanders.js';
 import { MT, KEEP, TILE_VERSION } from '../tileshape.js';
 import * as dm from '../../core/dmath.js';
 
@@ -66,7 +66,7 @@ export const RIVER_A = 1e8, RIVER_REC = 13;   // (a record: 3 points, 3 heights,
 export function tileRivers(T) {
   const fl = T.fl, rc = T.rcv, H = T.h, s = 2 / (1 << T.L), du = s / MT;
   const u0 = -1 + T.ti * s - KEEP * du, v0 = -1 + T.tj * s - KEEP * du;
-  const thr = Math.max(0, Math.round(255 * dm.log(RIVER_A) / LN_A)), out = [], keys = [], d = [0, 0, 0];
+  const thr = Math.max(0, Math.round(255 * dm.log(RIVER_A) / LN_A)), out = [], keys = [], rock = [], d = [0, 0, 0];
   // (each record's cell and the cell it drains into, by their place in the level's whole grid:
   // so the rivers' records chain from tile to tile)
   const gn = (1 << T.L) * MT, gkey = (i, j) => (T.face * gn + (T.tj * MT + j - KEEP)) * gn + (T.ti * MT + i - KEEP);
@@ -85,8 +85,9 @@ export function tileRivers(T) {
     at((ui + i) / 2, (uj + j) / 2); at(i, j); at((i + ri) / 2, (j + rj) / 2);
     out.push((H[uj * K + ui] + H[o]) / 2, H[o], (H[o] + H[rj * K + ri]) / 2, dm.exp(fl[o] / 255 * LN_A));
     keys.push(gkey(i, j), gkey(ri, rj));
+    rock.push(T.rockC ? T.rockC[o] & 31 : 255);
   }
-  return { rec: Float32Array.from(out), keys: Float64Array.from(keys) };
+  return { rec: Float32Array.from(out), keys: Float64Array.from(keys), rock: Uint8Array.from(rock) };
 }
 // The world's rivers from its whole refinement at once (R: every tile done): its rivers' cells (at
 // least RIVER_A m^2), and from each river's head up its main inflow (the cell draining into it
@@ -94,7 +95,7 @@ export function tileRivers(T) {
 // it starts as, narrowing as its water does (a river began full width where its water passed
 // RIVER_A, nothing feeding it). Each a record as tileRivers' (the same keys, so they chain); one
 // part, in the grid's order (every client's the same). Kept with the refinement, RIVER_VERSION
-export const SOURCE_A = 1e6, RIVER_VERSION = 2;
+export const SOURCE_A = 1e6, RIVER_VERSION = 4;
 export function worldRivers(R) {
   const n = R.n, gn = n * MT, fl = R.fl, rc = R.rcv, H = R.h;
   const thr = Math.max(0, Math.round(255 * dm.log(RIVER_A) / LN_A)), thrS = Math.max(0, Math.round(255 * dm.log(SOURCE_A) / LN_A));
@@ -131,7 +132,7 @@ export function worldRivers(R) {
   }
   // (the records: each marked cell a curve from halfway to its main marked inflow, through it, to
   // halfway to the cell it drains into)
-  const out = [], keys = [], d = [0, 0, 0], s = 2 / n, du = s / MT;
+  const out = [], keys = [], rock = [], d = [0, 0, 0], s = 2 / n, du = s / MT;
   const at = (f, x, y) => { dirFromFaceUV(f, -1 + (x + 0.5) * du, -1 + (y + 0.5) * du, d); out.push(d[0], d[1], d[2]); };
   const hAt = (f, gi, gj) => inF(gi, gj) ? H[off(f, gi, gj)] : H[off(f, Math.max(0, Math.min(gn - 1, gi)), Math.max(0, Math.min(gn - 1, gj)))];
   for (let f = 0; f < 6; f++) for (let gj = 0; gj < gn; gj++) for (let gi = 0; gi < gn; gi++) {
@@ -148,18 +149,21 @@ export function worldRivers(R) {
     out.push((hAt(f, ui, uj) + H[o]) / 2, H[o], (H[o] + hAt(f, ri, rj)) / 2, dm.exp(fl[o] / 255 * LN_A));
     // (off the face's edge, nothing to chain to: its key would be another cell's)
     keys.push(gx(f, gi, gj), inF(ri, rj) ? gx(f, ri, rj) : -1);
+    // (and the rock it runs over: what its bed and banks are made of, meanders.js riverSinuosity)
+    rock.push(R.rw[o] & 31);
   }
-  return { rec: Float32Array.from(out), keys: Float64Array.from(keys) };
+  return { rec: Float32Array.from(out), keys: Float64Array.from(keys), rock: Uint8Array.from(rock) };
 }
 
-// the tiles' rivers gathered and indexed by the world sim's cells (N a face, world radius Rw):
+// the tiles' rivers gathered and indexed by the world sim's cells (N a face, Rw the drawn globe's
+// radius: lengths along the rivers as the ground has them):
 // { rec, start, idx } (the records of cell c: idx[start[c] .. start[c + 1]])
 export function riverIndex(parts, N, Rw) {
   let total = 0;
   for (const p of parts) total += p.rec.length;
-  const rec = new Float32Array(total), keys = new Float64Array(2 * total / RIVER_REC);
+  const rec = new Float32Array(total), keys = new Float64Array(2 * total / RIVER_REC), rock = new Uint8Array(total / RIVER_REC).fill(255);
   let o = 0, ok = 0;
-  for (const p of parts) { rec.set(p.rec, o); o += p.rec.length; keys.set(p.keys, ok); ok += p.keys.length; }
+  for (const p of parts) { if (p.rock) rock.set(p.rock, o / RIVER_REC); rec.set(p.rec, o); o += p.rec.length; keys.set(p.keys, ok); ok += p.keys.length; }
   const G = new GridLite(N, Rw), m = total / RIVER_REC, cellOf = new Int32Array(m), start = new Int32Array(G.n + 1);
   for (let r = 0; r < m; r++) { const b = r * RIVER_REC + 3; cellOf[r] = G.cellAt(rec[b], rec[b + 1], rec[b + 2]); start[cellOf[r] + 1]++; }
   for (let c = 0; c < G.n; c++) start[c + 1] += start[c];
@@ -199,7 +203,7 @@ export function riverIndex(parts, N, Rw) {
   const dn = new Int32Array(m).fill(-1), up = new Int32Array(m).fill(-1);
   for (let r = 0; r < m; r++) { const d = byKey.get(keys[2 * r + 1]); if (d !== undefined && d !== r) dn[r] = d; }
   for (let r = 0; r < m; r++) { const d = dn[r]; if (d >= 0 && (up[d] < 0 || size[r] > size[up[d]])) up[d] = r; }
-  return { version: RIVER_VERSION, rec, start, idx, half, size, phase, big: bigChannels(rec, half, size, phase, dn, up, G, Rw) };
+  return { version: RIVER_VERSION, rec, start, idx, half, size, phase, rock, big: bigChannels(rec, half, size, phase, dn, up, G, Rw, rock) };
 }
 
 // ---- the great rivers' winding channels: a river too wide for its meander belt to be found
@@ -216,11 +220,11 @@ export function riverIndex(parts, N, Rw) {
 export const contactW = (sp, cell) => Math.max(0.12, sp > 0 && cell > 0 ? 1.5 * sp / cell : 0);
 
 export const BIG_W = 250, BIG_REC = 11;
-function bigChannels(rec, half, size, phase, dn, up, G, Rw) {
+function bigChannels(rec, half, size, phase, dn, up, G, Rw, rock) {
   const F = meanderField(), m = half.length, segs = [], P = F.P, has = new Uint8Array(m);
-  // (the channel, every other point of it: a segment about a width long; and its younger oxbows)
+  // (its younger oxbows, every other point of each: a segment about a width long)
   const thin = (L) => ({ ...L, x: L.x.filter((v, k) => k % 2 === 0), y: L.y.filter((v, k) => k % 2 === 0) });
-  const lines = [thin(F.lines[0]), ...F.lines.slice(1).filter((L) => L.age < 0.5).map(thin)];
+  const oxbows = F.lines.slice(1).filter((L) => L.age < 0.5).map(thin);
   const isBig = (r) => r >= 0 && 2 * half[r] >= BIG_W;
   // (the river's line smoothed over ~10 widths along its main stem: the belt follows the
   // valley, not every turn of the cells (each about a width). Over two meander wavelengths, as
@@ -255,7 +259,8 @@ function bigChannels(rec, half, size, phase, dn, up, G, Rw) {
       const a = nodes[Math.max(0, i - 4)], b = nodes[Math.min(n - 1, i + 4)], ia = 3 * a, ib = 3 * b;
       const dist = Math.sqrt((S[ia] - S[ib]) ** 2 + (S[ia + 1] - S[ib + 1]) ** 2 + (S[ia + 2] - S[ib + 2]) ** 2) * Rw;
       const sl = dist > 0 ? Math.abs(H[Math.max(0, i - 4)] - H[Math.min(n - 1, i + 4)]) / dist : 0;
-      return 1 - dm.smoothstep(3e-4, 2e-3, sl);
+      // (as sinuous as its stream power, its bed's grain and its banks' silt and clay make it)
+      return F.aOfSinuosity(riverSinuosity(sl, 2 * half[q], rock[q]));
     });
     for (const q of nodes) has[q] = 1;
     // (the stem's point at a phase: between the nodes whose phases hold it, up the stem)
@@ -270,26 +275,46 @@ function bigChannels(rec, half, size, phase, dn, up, G, Rw) {
       o.w = 2 * (half[nodes[id]] + f * (half[nodes[iu]] - half[nodes[id]])); o.k = size[nodes[id]] + f * (size[nodes[iu]] - size[nodes[id]]);
       // (its belt widening from what the sampler's meanders give a river of BIG_W to its full
       // swing by twice that: no step where the one gives way to the other)
-      const a0 = Math.min(1, 1800 / (BIG_W * F.half)), aw = Math.min(1, a0 + (1 - a0) * Math.max(0, (o.w - BIG_W) / BIG_W));
+      const a0 = F.aOfHalf(1800 / BIG_W), aw = Math.min(1, a0 + (1 - a0) * Math.max(0, (o.w - BIG_W) / BIG_W));
       o.h = H[id] + f * (H[iu] - H[id]); o.A = (Amp[id] + f * (Amp[iu] - Amp[id])) * aw;
       return o;
     };
-    const p0 = ph[n - 1], p1 = ph[0], o = {};
-    lines.forEach((L, li) => {
-      const nl = L.x.length;
-      let prev = null;
-      for (let per = Math.floor(p0 / P) - (li ? 1 : 0); per <= Math.floor(p1 / P); per++) for (let k = 0; k < nl; k++) {
-        if (li && k === 0) prev = null;   // (an oxbow is a piece of channel, not a loop round the period)
-        const pk = per * P + L.x[k];
+    const p0 = ph[n - 1], p1 = ph[0], o = {}, fp = {};
+    // (a point across the stem's line at phase pk, Y widths off it; into prev's chain)
+    let prev = null;
+    const put = (pk, Y, li, age) => {
+      const cl = Math.sqrt(o.x * o.x + o.y * o.y + o.z * o.z), cx = o.x / cl, cy = o.y / cl, cz = o.z / cl;
+      const ux = cy * o.tz - cz * o.ty, uy = cz * o.tx - cx * o.tz, uz = cx * o.ty - cy * o.tx, ul = Math.sqrt(ux * ux + uy * uy + uz * uz) || 1;
+      const off = o.w * Y / Rw;
+      let px = cx + off * ux / ul, py = cy + off * uy / ul, pz = cz + off * uz / ul;
+      const pl = Math.sqrt(px * px + py * py + pz * pz); px /= pl; py /= pl; pz /= pl;
+      if (prev) segs.push(prev[0], prev[1], prev[2], px, py, pz, o.w / 2, o.k, o.h, li, age);
+      prev = [px, py, pz];
+    };
+    // the channel: the meander family's (meanders.js) at the swing each point's own phase has (found by
+    // turns: a point's phase moves with its swing, slowly), every other point
+    for (let per = Math.floor(p0 / P) - 1; per <= Math.floor(p1 / P); per++) {
+      for (let k = 0; k <= F.n; k += 2) {
+        let pk = per * P + F.levels[F.levels.length - 1].xu[k];
+        if (pk < p0 - 0.5 * P || pk > p1 + 0.5 * P) { prev = null; continue; }
+        let a = at(Math.max(p0, Math.min(p1, pk)), o).A;
+        for (let it = 0; it < 3; it++) { meanderPoint(F, k, a, fp); pk = per * P + fp.x; a = at(Math.max(p0, Math.min(p1, pk)), o).A; }
+        meanderPoint(F, k, a, fp); pk = per * P + fp.x;
         if (pk < p0 || pk > p1) { prev = null; continue; }
         at(pk, o);
-        const cl = Math.sqrt(o.x * o.x + o.y * o.y + o.z * o.z), cx = o.x / cl, cy = o.y / cl, cz = o.z / cl;
-        const ux = cy * o.tz - cz * o.ty, uy = cz * o.tx - cx * o.tz, uz = cx * o.ty - cy * o.tx, ul = Math.sqrt(ux * ux + uy * uy + uz * uz) || 1;
-        const off = o.A * o.w * (L.y[k] - F.mid) / Rw;
-        let px = cx + off * ux / ul, py = cy + off * uy / ul, pz = cz + off * uz / ul;
-        const pl = Math.sqrt(px * px + py * py + pz * pz); px /= pl; py /= pl; pz /= pl;
-        if (prev) segs.push(prev[0], prev[1], prev[2], px, py, pz, o.w / 2, o.k, o.h, li ? 1 : 0, L.age);
-        prev = [px, py, pz];
+        put(pk, fp.y, 0, 0);
+      }
+    }
+    // (its cut-off loops, where it has grown its loops whole: the trace's own, whose they are)
+    oxbows.forEach((L) => {
+      const nl = L.x.length;
+      for (let per = Math.floor(p0 / P) - 1; per <= Math.floor(p1 / P); per++) {
+        prev = null;   // (an oxbow is a piece of channel, not a loop round the period)
+        for (let k = 0; k < nl; k++) {
+          const pk = per * P + L.x[k];
+          if (pk < p0 || pk > p1 || at(pk, o).A < 0.9) { prev = null; continue; }
+          put(pk, L.y[k], 1, L.age);
+        }
       }
     });
   }

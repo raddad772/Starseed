@@ -11,6 +11,8 @@
 import * as dm from '../core/dmath.js';
 import { Rng } from '../core/rng.js';
 import { MEANDER_DATA } from './meanders.data.js';
+import { ROCKS } from './worldsim/lithology.js';
+import { MATERIALS } from './worldsim/materials.js';
 
 // the centreline after `iters` steps: { x, y } (Float64Arrays, along the valley and across it,
 // widths; x wraps at P), and the oxbows cut off on the way ({ x, y } each)
@@ -160,61 +162,148 @@ export function migration(x, y, P) {
   return { x: vx, y: vy };
 }
 
-// ---- the trace the rivers wear (made once by tools/build-meanders.mjs: meanders.data.js),
-// with a grid of its segments for finding the nearest: distances in channel widths
+// ---- the trace the rivers wear (made once by tools/build-meanders.mjs: meanders.data.js), and the
+// gentler ones a river less free to wander wears instead; with a grid of the trace's segments for
+// finding the nearest. Lengths in channel widths
 export const MEANDER = { P: 240, iters: 6000, seed: 7, version: 1 };
+// (the model's widths are MEANDER_U of a river's: its bends come ~18 of its widths apart along the
+// valley and turn ~5.4 round at their apexes, a river's ~11 and ~2.4 (Leopold and Wolman 1960: a
+// meander's wavelength ~11 widths, the radius at its apex ~a fifth of that). Scaled whole: pressed
+// across alone, as they were (0.6), the loops were drawn out along the valley into fingers)
+export const MEANDER_U = 0.62;
+// (the family: the trace's bends each turned a times as far from the valley's way, a = 0 (straight)
+// to 1 (the trace's own), at MEANDER_NL even steps. Langbein and Leopold 1966: a meander is the
+// curve whose direction changes most evenly along it, the same curve whether it wanders a little
+// or a lot, its angle to the valley's way the measure: a gentle river's bends are a mature one's
+// turned less, not squashed across, and its sinuosity follows (1.03 at a = 0.2, 1.24 at 0.5, 1.8 at
+// 0.8, the trace's 2.85 at 1). Each at the same points along the channel, laid over the same period,
+// so a river's channel can go from one to the next smoothly)
+export const MEANDER_NL = 11;
 let field = null;
 export function meanderField() {
   if (field) return field;
   const D = MEANDER_DATA, same = D && D.P === MEANDER.P && D.iters === MEANDER.iters && D.seed === MEANDER.seed && D.version === MEANDER.version;
   const T = same ? D : meanderTrace({ P: MEANDER.P, iters: MEANDER.iters, seed: MEANDER.seed });
-  // (the channel's slow drift across its valley taken out, the loops kept: the belt centred on
-  // the valley's line, ~10 widths each side, as a river's belt is)
-  const P = T.P, NB = 120, bin = new Float64Array(NB), cnt = new Float64Array(NB);
-  for (let k = 0; k < T.x.length; k++) { const i = Math.floor(T.x[k] / P * NB) % NB; bin[i] += T.y[k]; cnt[i]++; }
-  const mean = new Float64Array(NB);
-  for (let i = 0; i < NB; i++) { let sm = 0, sw = 0; for (let j = -10; j <= 10; j++) { const q = (i + j + NB) % NB; sm += bin[q]; sw += cnt[q]; } mean[i] = sw ? sm / sw : 0; }
-  const drift = (x) => { const f = ((x % P) + P) % P / P * NB, i = Math.floor(f) % NB, t = f - Math.floor(f); return mean[i] * (1 - t) + mean[(i + 1) % NB] * t; };
-  // (and its loops pressed a little flatter across: the model's grow ~twice as tall as a river's)
-  const SQ = 0.6;
-  const lines = [{ x: Array.from(T.x), y: Array.from(T.y, (v, k) => SQ * (v - drift(T.x[k]))), closed: true, age: 0 }];
-  // (where each point of the channel is moving, as the model moves it: toward its outer bank, the
-  // faster where the bends upstream turn harder; pressed as the trace is, and scaled so that its
-  // root mean square is 1: how far a river's banks have moved while it cut down, its share here)
-  {
-    const mv = migration(T.x, T.y, P), n = T.x.length;
-    let ss = 0;
-    for (let k = 0; k < n; k++) { mv.y[k] *= SQ; ss += mv.x[k] * mv.x[k] + mv.y[k] * mv.y[k]; }
-    // (a few points at the tightest bends run far faster: held to 3)
-    const rms = Math.sqrt(ss / n) || 1;
-    for (let k = 0; k < n; k++) { const f = Math.min(1 / rms, 3 / (Math.sqrt(mv.x[k] * mv.x[k] + mv.y[k] * mv.y[k]) || 1)); mv.x[k] *= f; mv.y[k] *= f; }
-    lines[0].mx = mv.x; lines[0].my = mv.y;
+  const P0 = T.P, U = MEANDER_U, P = P0 * U, n = T.x.length;
+  // each segment's way (unwound, so it turns continuously) and length
+  const th = new Float64Array(n), ds = new Float64Array(n);
+  for (let k = 0; k < n; k++) {
+    const b = (k + 1) % n;
+    let dx = T.x[b] - T.x[k];
+    if (dx < -P0 / 2) dx += P0; if (dx > P0 / 2) dx -= P0;
+    const dy = T.y[b] - T.y[k];
+    th[k] = dm.atan2(dy, dx); ds[k] = Math.sqrt(dx * dx + dy * dy);
+    if (k) { while (th[k] - th[k - 1] > dm.PI) th[k] -= dm.TWO_PI; while (th[k] - th[k - 1] < -dm.PI) th[k] += dm.TWO_PI; }
   }
-  // (the oxbows: the more recent kept, as lakes; the rest filled to swales)
+  // (the channel's slow drift across its valley taken out, the loops kept: the belt centred on the
+  // valley's line; the moving mean of y over ~25 widths)
+  const NB = 120, unDrift = (x, y, m) => {
+    const bin = new Float64Array(NB), cnt = new Float64Array(NB), mean = new Float64Array(NB);
+    for (let k = 0; k < m; k++) { const i = Math.floor((((x[k] % P0) + P0) % P0) / P0 * NB) % NB; bin[i] += y[k]; cnt[i]++; }
+    for (let i = 0; i < NB; i++) { let sm = 0, sw = 0; for (let j = -10; j <= 10; j++) { const q = (i + j + NB) % NB; sm += bin[q]; sw += cnt[q]; } mean[i] = sw ? sm / sw : 0; }
+    return (xq) => { const f = (((xq % P0) + P0) % P0) / P0 * NB, i = Math.floor(f) % NB, t = f - Math.floor(f); return mean[i] * (1 - t) + mean[(i + 1) % NB] * t; };
+  };
+  const levels = [];
+  let drift1 = null, mid1 = 0, Ltot = 0;
+  for (let k = 0; k < n; k++) Ltot += ds[k];
+  for (let l = 0; l < MEANDER_NL; l++) {
+    const a = l / (MEANDER_NL - 1), px = new Float64Array(n + 1), py = new Float64Array(n + 1);
+    px[0] = T.x[0]; py[0] = T.y[0];
+    for (let k = 0; k < n; k++) { px[k + 1] = px[k] + dm.cos(a * th[k]) * ds[k]; py[k + 1] = py[k] + dm.sin(a * th[k]) * ds[k]; }
+    // (turned back to run along the valley and stretched over its period: a gentler curve is
+    // shorter. The trace's own (a = 1) is itself)
+    const X = px[n] - px[0], Y = py[n] - py[0], Lc = Math.sqrt(X * X + Y * Y), c = X / Lc, sn = -Y / Lc, sc = P0 / Lc;
+    for (let k = 1; k <= n; k++) { const qx = px[k] - px[0], qy = py[k] - py[0]; px[k] = px[0] + (qx * c - qy * sn) * sc; py[k] = py[0] + (qx * sn + qy * c) * sc; }
+    const dr = unDrift(px, py, n);
+    const y = new Float64Array(n);
+    let lo = 1e9, hi = -1e9;
+    for (let k = 0; k < n; k++) { y[k] = py[k] - dr(px[k]); lo = Math.min(lo, y[k]); hi = Math.max(hi, y[k]); }
+    const mid = 0.5 * (lo + hi);
+    for (let k = 0; k < n; k++) y[k] = (y[k] - mid) * U;
+    for (let k = 0; k <= n; k++) px[k] *= U;
+    if (l === MEANDER_NL - 1) { drift1 = dr; mid1 = mid; }
+    levels.push({ a, xu: px, y, half: 0.5 * (hi - lo) * U, sinuosity: Ltot * sc / P0 });
+  }
+  // (where each point of the channel is moving, as the model moves it: toward its outer bank, the
+  // faster where the bends upstream turn harder; scaled so that the trace's own root mean square is
+  // 1 (how far a river's banks have moved while it cut down, its share here), a gentler curve's
+  // slower by as much as it turns less)
+  let rms = 1;
+  for (let l = MEANDER_NL - 1; l >= 0; l--) {
+    const L = levels[l], xw = new Float64Array(n);
+    for (let k = 0; k < n; k++) xw[k] = ((L.xu[k] % P) + P) % P;
+    const mv = migration(xw, L.y, P);
+    if (l === MEANDER_NL - 1) { let ss = 0; for (let k = 0; k < n; k++) ss += mv.x[k] * mv.x[k] + mv.y[k] * mv.y[k]; rms = Math.sqrt(ss / n) || 1; }
+    // (a few points at the tightest bends run far faster: held to 3)
+    for (let k = 0; k < n; k++) { const f = Math.min(1 / rms, 3 / (Math.sqrt(mv.x[k] * mv.x[k] + mv.y[k] * mv.y[k]) || 1)); mv.x[k] *= f; mv.y[k] *= f; }
+    L.mx = mv.x; L.my = mv.y;
+  }
+  // the trace's own as a line, and the oxbows it cut off on the way: the more recent kept, as lakes;
+  // the rest filled to swales (in its frame: only the trace's own has them)
+  const L1 = levels[MEANDER_NL - 1];
+  const lines = [{ x: Array.from(L1.xu.subarray(0, n), (v) => ((v % P) + P) % P), y: Array.from(L1.y), mx: L1.mx, my: L1.my, closed: true, age: 0 }];
   const nOx = T.oxbows.length;
-  T.oxbows.forEach((o, k) => lines.push({ x: Array.from(o.x), y: Array.from(o.y, (v, q) => SQ * (v - drift(o.x[q]))), closed: false, age: (nOx - k) / Math.max(1, nOx) }));
+  T.oxbows.forEach((o, k) => lines.push({ x: Array.from(o.x, (v) => v * U), y: Array.from(o.y, (v, q) => (v - drift1(o.x[q]) - mid1) * U), closed: false, age: (nOx - k) / Math.max(1, nOx) }));
   // segments bucketed by the cells (a width a side) they pass through
   const segs = [], grid = new Map(), key = (i, j) => ((((i % P) + P) % P) * 4099) + j + 2048;
-  let ymin = 1e9, ymax = -1e9;
   lines.forEach((L, li) => {
-    const n = L.x.length, m = L.closed ? n : n - 1;
-    for (let k = 0; k < m; k++) {
-      const b = (k + 1) % n, x0 = L.x[k], y0 = L.y[k];
+    const m = L.x.length, ms = L.closed ? m : m - 1;
+    for (let k = 0; k < ms; k++) {
+      const b = (k + 1) % m, x0 = L.x[k], y0 = L.y[k];
       let dx = L.x[b] - x0;
       if (dx < -P / 2) dx += P; if (dx > P / 2) dx -= P;
       const s = segs.length;
       segs.push({ x0, y0, dx, dy: L.y[b] - y0, line: li, age: L.age });
-      ymin = Math.min(ymin, y0); ymax = Math.max(ymax, y0);
       const i0 = Math.floor(Math.min(x0, x0 + dx)) - 1, i1 = Math.floor(Math.max(x0, x0 + dx)) + 1, j0 = Math.floor(Math.min(y0, y0 + segs[s].dy)) - 1, j1 = Math.floor(Math.max(y0, y0 + segs[s].dy)) + 1;
       for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) { const kk = key(i, j); let l = grid.get(kk); if (!l) grid.set(kk, l = []); l.push(s); }
     }
   });
-  // (the belt's middle and half width: the main channel's swing)
-  let my0 = 1e9, my1 = -1e9;
-  for (const v of lines[0].y) { my0 = Math.min(my0, v); my1 = Math.max(my1, v); }
-  const mid = 0.5 * (my0 + my1); ymin = my0; ymax = my1;
-  field = { P, segs, grid, key, mid, half: 0.5 * (ymax - ymin), lines };
+  // (the belt's half width at a: how far the channel swings either side of the valley's line; and
+  // the a whose belt is h)
+  const halfOf = (a) => { const f = dm.clamp(a, 0, 1) * (MEANDER_NL - 1), i = Math.min(MEANDER_NL - 2, Math.floor(f)), t = f - i; return levels[i].half + (levels[i + 1].half - levels[i].half) * t; };
+  const aOfHalf = (h) => {
+    if (h >= L1.half) return 1;
+    for (let i = 1; i < MEANDER_NL; i++) if (levels[i].half >= h) return (i - 1 + (h - levels[i - 1].half) / Math.max(1e-9, levels[i].half - levels[i - 1].half)) / (MEANDER_NL - 1);
+    return 0;
+  };
+  // (and the a whose channel is P times as long as its valley)
+  const aOfSinuosity = (Pq) => {
+    if (Pq >= L1.sinuosity) return 1;
+    for (let i = 1; i < MEANDER_NL; i++) if (levels[i].sinuosity >= Pq) return (i - 1 + (Pq - levels[i - 1].sinuosity) / Math.max(1e-9, levels[i].sinuosity - levels[i - 1].sinuosity)) / (MEANDER_NL - 1);
+    return 0;
+  };
+  field = { P, U, n, levels, segs, grid, key, mid: 0, half: L1.half, halfOf, aOfHalf, aOfSinuosity, lines };
   return field;
+}
+// how sinuous a river's channel is (its length over its valley's; 1 straight), from the slope S its
+// water runs down, its width W (m) and the rock it runs over (lithology.js's; 255 not known: alluvium):
+// its bed's grain (D50, m) and its banks' silt and clay (M, %), materials.js. Its bankfull discharge
+// from its width as the rivers' regime has it (W = 4.8 Q^0.5, terrain.js _riverWater; van den Berg's
+// own, 4.7), its potential specific stream power omega = 2.1 S Q^0.5 kW/m^2 (van den Berg 1995). Under
+// 90 D50^0.42 W/m^2 it can't move its banks: laterally inactive, it keeps the line its valley gave it;
+// over 900 D50^0.42 it braids (Kleinhans and van den Berg 2011), its threads over a belt that runs
+// nearly straight (~1.1: Rust 1978, under 1.3). Between, it meanders as far as its banks let it,
+// the more silt and clay holding them the further: P = 0.94 M^0.25 (Schumm 1963). Each threshold
+// crossed over a factor of two either side (their data's scatter about them)
+export function riverSinuosity(S, W, rock) {
+  const nm = ROCKS[rock] ? ROCKS[rock].name : 'alluvium', Mt = MATERIALS[nm] && MATERIALS[nm].grain ? MATERIALS[nm] : MATERIALS.alluvium;
+  const Q = (W / 4.8) * (W / 4.8), om = 2100 * Math.max(S, 0) * Math.sqrt(Q), dk = dm.pow(Mt.grain, 0.42);
+  if (!(om > 0)) return 1;
+  const Pm = Math.max(1, 0.94 * dm.pow(Math.max(Mt.fines, 1), 0.25));
+  const active = dm.smoothstep(-0.69, 0.69, dm.log(om / (90 * dk))), braid = dm.smoothstep(-0.69, 0.69, dm.log(om / (900 * dk)));
+  return 1 + (Pm - 1) * active * (1 - braid) + 0.1 * braid;
+}
+
+// a point of the family's channel (k: its index, 0..n; xu unwound) where it swings a: into o (x, y,
+// mx, my: widths, as levels hold them), the two levels round a blended
+export function meanderPoint(F, k, a, o) {
+  const f = dm.clamp(a, 0, 1) * (MEANDER_NL - 1), i = Math.min(MEANDER_NL - 2, Math.floor(f)), t = f - i, A = F.levels[i], B = F.levels[i + 1];
+  const kk = k % F.n;
+  o.x = A.xu[k] + (B.xu[k] - A.xu[k]) * t;
+  o.y = A.y[kk] + (B.y[kk] - A.y[kk]) * t;
+  o.mx = A.mx[kk] + (B.mx[kk] - A.mx[kk]) * t;
+  o.my = A.my[kk] + (B.my[kk] - A.my[kk]) * t;
+  return o;
 }
 // the nearest channel and oxbow to (X, Y) (widths along the valley, wrapped, and across it from
 // the belt's middle): out.d (to the channel), out.ox (to the nearest oxbow), out.oxAge (0..1)

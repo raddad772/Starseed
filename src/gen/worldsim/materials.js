@@ -14,7 +14,12 @@
 //   glow       nothing special: anything hot glows as a blackbody (emissivity ~0.9)
 //   chemistry  tags: acid, oxidiser, reducer, carbonate (dissolves in acid), salt
 //              (dissolves in water), fuel (burns where there's oxygen)
-//   solids     erodibility (x the rivers' K), the angle it stands at (cliffs)
+//   solids     erodibility (x the rivers' K), the angle it stands at (cliffs); what a river
+//              running over it carries and builds its banks of: its bed's median grain (D50, m)
+//              and the silt and clay in its banks (fines, %), typical of what each weathers to
+//              (granite to grus, coarse sand and fine gravel; sandstone back to its own sand;
+//              shale and a playa's salt to mud; limestone and basalt to clay soils over a bed of
+//              their own gravel; chalk to silt over flint gravel)
 //
 // Reactions between them (REACTIONS) are rules the processes apply as rates at the
 // planet's coarse scale; the local detail may one day run them cell by cell.
@@ -23,20 +28,20 @@ import * as dm from '../../core/dmath.js';
 
 export const MATERIALS = {
   // ---- rocks (lithology.js's layers)
-  granite:   { kind: 'rock', rho: 2700, cp: 790, n: 1.55, color: '#8f8580', k: 0.45, stand: 70 },
-  basalt:    { kind: 'rock', rho: 2950, cp: 840, n: 1.6, color: '#3e3c3a', k: 0.6, stand: 75 },
-  andesite:  { kind: 'rock', rho: 2750, cp: 820, n: 1.57, color: '#6b6560', k: 0.65, stand: 70 },
-  sandstone: { kind: 'rock', rho: 2300, cp: 800, n: 1.54, color: '#b9875a', k: 1.0, stand: 60 },
-  shale:     { kind: 'rock', rho: 2400, cp: 800, n: 1.54, color: '#5f6457', k: 2.0, stand: 30 },
-  limestone: { kind: 'rock', rho: 2600, cp: 840, n: 1.6, color: '#bdb7a6', k: 0.8, stand: 65, tags: ['carbonate'] },
-  chalk:     { kind: 'rock', rho: 2000, cp: 840, n: 1.6, color: '#e9e6dc', k: 1.4, stand: 55, tags: ['carbonate'] },
-  alluvium:  { kind: 'sediment', rho: 1900, cp: 800, n: 1.54, color: '#7c6a52', k: 3.0, stand: 25 },
-  salt:      { kind: 'rock', rho: 2170, cp: 880, n: 1.54, color: '#e8dfd8', k: 4.0, stand: 35, tags: ['salt'] },
-  regolith:  { kind: 'sediment', rho: 1800, cp: 750, n: 1.6, color: '#77746e', k: 2.2, stand: 30 },
-  ice:       { kind: 'ice', rho: 917, cp: 2100, n: 1.31, color: '#e4eef5', k: 1.2, stand: 40 },
-  'quartz sand': { kind: 'sediment', rho: 1600, cp: 800, n: 1.54, color: '#d9c08a', k: 3.0, stand: 20 },
-  'coral sand':  { kind: 'sediment', rho: 1500, cp: 840, n: 1.6, color: '#f2ece0', k: 3.0, stand: 20, tags: ['carbonate'] },
-  'black sand':  { kind: 'sediment', rho: 1700, cp: 840, n: 1.6, color: '#2b2a2a', k: 3.0, stand: 20 },
+  granite:   { kind: 'rock', rho: 2700, cp: 790, n: 1.55, color: '#8f8580', k: 0.45, stand: 70, grain: 2e-3, fines: 10 },
+  basalt:    { kind: 'rock', rho: 2950, cp: 840, n: 1.6, color: '#3e3c3a', k: 0.6, stand: 75, grain: 1e-2, fines: 45 },
+  andesite:  { kind: 'rock', rho: 2750, cp: 820, n: 1.57, color: '#6b6560', k: 0.65, stand: 70, grain: 8e-3, fines: 35 },
+  sandstone: { kind: 'rock', rho: 2300, cp: 800, n: 1.54, color: '#b9875a', k: 1.0, stand: 60, grain: 2.5e-4, fines: 10 },
+  shale:     { kind: 'rock', rho: 2400, cp: 800, n: 1.54, color: '#5f6457', k: 2.0, stand: 30, grain: 6e-5, fines: 80 },
+  limestone: { kind: 'rock', rho: 2600, cp: 840, n: 1.6, color: '#bdb7a6', k: 0.8, stand: 65, grain: 1e-2, fines: 50, tags: ['carbonate'] },
+  chalk:     { kind: 'rock', rho: 2000, cp: 840, n: 1.6, color: '#e9e6dc', k: 1.4, stand: 55, grain: 5e-3, fines: 60, tags: ['carbonate'] },
+  alluvium:  { kind: 'sediment', rho: 1900, cp: 800, n: 1.54, color: '#7c6a52', k: 3.0, stand: 25, grain: 1e-3, fines: 25 },
+  salt:      { kind: 'rock', rho: 2170, cp: 880, n: 1.54, color: '#e8dfd8', k: 4.0, stand: 35, grain: 3e-5, fines: 70, tags: ['salt'] },
+  regolith:  { kind: 'sediment', rho: 1800, cp: 750, n: 1.6, color: '#77746e', k: 2.2, stand: 30, grain: 1e-3, fines: 15 },
+  ice:       { kind: 'ice', rho: 917, cp: 2100, n: 1.31, color: '#e4eef5', k: 1.2, stand: 40, grain: 5e-3, fines: 10 },
+  'quartz sand': { kind: 'sediment', rho: 1600, cp: 800, n: 1.54, color: '#d9c08a', k: 3.0, stand: 20, grain: 2.5e-4, fines: 2 },
+  'coral sand':  { kind: 'sediment', rho: 1500, cp: 840, n: 1.6, color: '#f2ece0', k: 3.0, stand: 20, grain: 5e-4, fines: 2, tags: ['carbonate'] },
+  'black sand':  { kind: 'sediment', rho: 1700, cp: 840, n: 1.6, color: '#2b2a2a', k: 3.0, stand: 20, grain: 3e-4, fines: 3 },
   // ---- liquids (liquids.js: what pools on the surface)
   water:     { kind: 'liquid', Tt: 273.16, Pt: 0.006, Tc: 647, Tb: 373.15, L: 40.7, rho: 1000, cp: 4186, mu: 1.0e-3, Tref: 293, B: 1800, n: 1.333, deep: '#0b2a4a', shallow: '#1f7f8f' },
   // (water with ~10% ammonia: liquid down to ~240 K; the eutectic, 33%, to 176 K)

@@ -19,13 +19,15 @@ import { refineLevelN } from '../gen/localsim.js';
 import { newRefine, putTile, complete, toStorable, fromStorable, RIVER_VERSION } from '../gen/worldsim/refine.js';
 
 // a refinement's rivers made from it whole and indexed (refine.js worldRivers: each river's source
-// stream with it), in a worker of their own; its arrays shared, or copied
+// stream with it), in a worker of their own; its arrays shared, or copied. R: the drawn globe's
+// radius (its lengths along the rivers: their meanders' phase in widths; the deep time's, SIM_LEN,
+// is 6.4 times it and squeezed every meander as long along its valley into a hairpin across it)
 function indexWorld(Rf, N, R) {
   return new Promise((resolve) => {
     const w = new Worker(new URL('../workers/riverIndexWorker.js' + location.search, import.meta.url), { type: 'module' });
     w.onmessage = (e) => { w.terminate(); if (e.data.error) { console.error('river index failed:', e.data.error); resolve(null); } else resolve(e.data.riv); };
     w.onerror = (e) => { w.terminate(); console.error('river index worker:', e.message); resolve(null); };
-    w.postMessage({ ref: { L: Rf.L, n: Rf.n, h: Rf.h, fl: Rf.fl, rcv: Rf.rcv }, N, R });
+    w.postMessage({ ref: { L: Rf.L, n: Rf.n, h: Rf.h, rw: Rf.rw, fl: Rf.fl, rcv: Rf.rcv }, N, R });
   });
 }
 
@@ -165,8 +167,8 @@ export class WorldSims {
       st.R = fromStorable(cached);
       // (its rivers made again where they were made another way: the refinement itself kept)
       if (!st.R.riv || st.R.riv.version !== RIVER_VERSION) {
-        const snap = this.game.system.bodies[id].terrain.snapshot;
-        if (snap) { st.R.riv = await indexWorld(st.R, snap.N, snap.R); dbPut(await this.dbP, this.refKey(id), toStorable(st.R)); }
+        const bd = this.game.system.bodies[id], snap = bd.terrain.snapshot;
+        if (snap) { st.R.riv = await indexWorld(st.R, snap.N, bd.R); dbPut(await this.dbP, this.refKey(id), toStorable(st.R)); }
       }
       this._applyRefine(id, st, true);
       return;
@@ -258,8 +260,8 @@ export class WorldSims {
         st.ms = performance.now() - st.t0;
         // (its rivers, indexed by the world sim's cells: in a worker of their own, a few hundred ms;
         // in tile order, not the order they came back in, so every client's index is the same)
-        const snap = this.game.system.bodies[m.body].terrain.snapshot;
-        if (snap) st.R.riv = await indexWorld(st.R, snap.N, snap.R);
+        const bd = this.game.system.bodies[m.body], snap = bd.terrain.snapshot;
+        if (snap) st.R.riv = await indexWorld(st.R, snap.N, bd.R);
         dbPut(await this.dbP, this.refKey(m.body), toStorable(st.R));
         this._applyRefine(m.body, st, false);
       }
