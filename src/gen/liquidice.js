@@ -3,20 +3,31 @@
 // frozen the year round, which the shading draws as snow, too); the sea's ice as its floes.
 import { triDetail } from './detail.js';
 import { S_H } from './terrain.js';
+import { snowsBySeason } from './worldsim/season.js';
+import * as dm from '../core/dmath.js';
 
 export const SEA_SALT = { water: -1.8 };   // (the sea's freezing point under the fresh's, C)
 
 const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
-const _col = [0, 0, 0], _mat = new Float64Array(8), _p = [0, 0, 0], _a = [0, 0, 0, 0], _b = [0, 0, 0, 0];
+const _col = [0, 0, 0], _mat = new Float64Array(8), _p = [0, 0, 0], _a = [0, 0, 0, 0], _b = [0, 0, 0, 0], _yr = [0, 0, 0];
 
 // gen: the world's terrain; s: its sample at d (unit, planet-fixed) where it holds liquid; sinSun:
-// the sun's latitude now (sin, the planet's frame)
-export function frozenNow(gen, s, d, sinSun) {
+// the sun's latitude now (sin, the planet's frame); L: where the sun stands in the year (rad: universe.js
+// solarLongitude), for a world that keeps its year (worldsim/season.js)
+export function frozenNow(gen, s, d, sinSun, L = 0) {
   gen.shade(s, 0.05, _col, _mat, d);
   if (!(_mat[4] > 0)) return true;   // (frozen the year round: the shading's own ice)
   const kind = _mat[0], Tm = _mat[1] * 120 - 60, river = kind > 0.55 && kind < 0.85, flow = river ? _mat[2] : 0;
-  const follow = kind < 0.2 ? 0.25 : kind < 0.55 ? 0.6 : kind < 0.85 ? 0.45 : 0.8;
-  const Ts = Tm + 70 * sinSun * d[1] * follow;
+  let Ts;
+  // (its swing there now, liquid.js liquidIce's: the season map's texels, here the climate grid's own
+  // blend of the same numbers)
+  if (gen.snap && snowsBySeason(gen.p) && gen.snap.season(d[0], d[1], d[2], _yr)) {
+    const follow = kind < 0.2 ? 1 : kind < 0.55 ? 0.8 : kind < 0.85 ? 0.7 : 1;
+    Ts = Tm + follow * (_yr[0] * dm.cos(L) + _yr[1] * dm.sin(L));
+  } else {
+    const follow = kind < 0.2 ? 0.25 : kind < 0.55 ? 0.6 : kind < 0.85 ? 0.45 : 0.8;
+    Ts = Tm + 70 * sinSun * d[1] * follow;
+  }
   const Tf = (kind < 0.2 ? SEA_SALT[gen.p.liquid] || 0 : 0) - 3 * flow;
   const ice = 1 - smooth(Tf - 4, Tf + 4, Ts);
   if (ice > 0 && kind < 0.2) {

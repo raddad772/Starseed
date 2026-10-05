@@ -287,12 +287,22 @@ void liquidSurface(vec3 fp, vec3 n, vec3 upF, float kind, float flow, float fetc
   }
   foam *= uLiquid2.y;
 }
-// how much of it is frozen now: its annual mean (Tm, C over its freezing point) moved by the season
-// (the sun's latitude, the hemisphere's, and how fast that water follows: the sea slowest, a pond
-// quickest); the sea's salt and a river's flow keep them open colder
+// how much of it is frozen now: its annual mean (Tm, C over its freezing point) moved by the season;
+// the sea's salt and a river's flow keep them open colder. Where the world keeps its year (the terrain
+// shader's season map, terrainMaterial.js seasonYear; gen/liquidice.js frozenNow the same sums): its
+// swing there now, the sea's its own (the climate's sea keeps its heat: a few degrees), a lake's and a
+// river's the air's a little damped, a pond's the air's. Else the sun's latitude, the hemisphere's, and
+// how fast that water follows: the sea slowest, a pond quickest
 float liquidIce(float Tm, float kind, float flow, vec3 upF) {
-  float follow = kind < 0.2 ? 0.25 : kind < 0.55 ? 0.6 : kind < 0.85 ? 0.45 : 0.8;
-  float Ts = Tm + 70.0 * uLiquid2.w * upF.y * follow;
+  float Ts;
+  if (uSeason.z > 0.5) {
+    vec3 yr = seasonYear(upF);
+    float follow = kind < 0.2 ? 1.0 : kind < 0.55 ? 0.8 : kind < 0.85 ? 0.7 : 1.0;
+    Ts = Tm + follow * (yr.x * cos(uSeason.x) + yr.y * sin(uSeason.x));
+  } else {
+    float follow = kind < 0.2 ? 0.25 : kind < 0.55 ? 0.6 : kind < 0.85 ? 0.45 : 0.8;
+    Ts = Tm + 70.0 * uLiquid2.w * upF.y * follow;
+  }
   float Tf = (kind < 0.2 ? uLiquid2.z : 0.0) - (kind > 0.55 && kind < 0.85 ? 3.0 * flow : 0.0);
   // (over a few degrees: the marginal ice)
   return 1.0 - smoothstep(Tf - 4.0, Tf + 4.0, Ts);

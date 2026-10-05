@@ -458,14 +458,18 @@ rivers that are straighter where they should be?"):**
   through air over ~0.03 bar (snowsBySeason; Mars keeps its cold-trap rule, Titan none). SOL Earth: 58 N
   late winter all white to the floes, spring melt opening on the sun-facing slopes first, summer tundra
   brown with snow only on the 2+ km plateaus (true-scale heights: a hill drawn 250 m is 2 km up in the
-  climate, ~-20 C). Lake and sea ice not yet on it (liquidIce: the sun's latitude, rough).
+  climate, ~-20 C). Lake and sea ice on it too (liquid.js liquidIce, gen/liquidice.js frozenNow the same
+  sums): the water's annual mean plus its place's swing now, the sea's its own (the climate's sea keeps
+  its heat: 3-5 C at the ice edge), a lake's 0.8 of the air's, a river's 0.7, a pond's the air's; the old
+  sun's-latitude rule only where a world keeps no year. The sun's place in the year is one method,
+  universe.js BodyRuntime.solarLongitude (the shader's and the CPU twin's agree to the bit). SOL Earth
+  southern winter: the sea-ice edge 52-55 S as before; 58 N in its winter a closed pack, walkable.
 
 **What's still wrong / next:**
 - climate.js climateOpts (moved from world.js): `ecc` and `perihelion` sit inside the comment on the
   line above them, so every world's climate has run with a circular orbit. Fixing it changes every
   eccentric world's climate (Mars e 0.09 most): a SIM_VERSION bump, every world re-sims once. Check the
   perihelion's convention against world.js solarLongitude first. Not done: Dave's call on the re-sim.
-- Lake and sea ice onto the seasons' own year (liquidIce reads the sun's latitude x a follow factor).
 - Snow covers most of a high mountain (the snowline reads the real height: physically right, maybe too
   white for Dave).
 - Rock beds stay at their real thickness (tried scaling them with the heights, TILE 42, reverted in

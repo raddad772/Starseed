@@ -203,9 +203,14 @@ uniform vec3 uSnowCol;
 // freeze (x = th) to the spring's thaw (x = -th, a year on), and melts from there at DDF_SNOW mm a day
 // per degree until it's gone; where a year's thaw and the air's sublimation can't take off a winter's
 // fall, it lasts the year (1e4: the ground's own year-round snow, season.js snowYear, the same sums)
-float seasonSWE(vec3 dirF, float Ta) {
+// (a place's year from the map: a1, b1 (K), the cold half's precipitation (mm a month))
+vec3 seasonYear(vec3 dirF) {
   vec4 m = texture(tSeasonMap, vec2(atan(dirF.z, dirF.x) / 6.28319 + 0.5, asin(clamp(dirF.y, -1.0, 1.0)) / 3.14159 + 0.5));
-  float a1 = (m.r - 0.5) * 100.0, b1 = (m.g - 0.5) * 100.0, P = m.b * m.b * 600.0;
+  return vec3((m.r - 0.5) * 100.0, (m.g - 0.5) * 100.0, m.b * m.b * 600.0);
+}
+float seasonSWE(vec3 dirF, float Ta) {
+  vec3 yr = seasonYear(dirF);
+  float a1 = yr.x, b1 = yr.y, P = yr.z;
   float A = length(vec2(a1, b1));
   if (Ta >= A) return 0.0;
   float th = Ta <= -A ? 0.0 : acos(clamp(-Ta / A, -1.0, 1.0));

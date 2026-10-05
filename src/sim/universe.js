@@ -13,6 +13,7 @@ import { atmoReal } from '../gen/bodies.js';
 import { frozenNow } from '../gen/liquidice.js';
 
 const _p = [0, 0, 0], _v = [0, 0, 0];
+const _sN = new THREE.Vector3(), _sM = new THREE.Vector3(), _sS = new THREE.Vector3();
 const _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion();
 const Y = new THREE.Vector3(0, 1, 0);
 
@@ -59,6 +60,26 @@ export class BodyRuntime {
     const r = this.data.rotation;
     _q.setFromAxisAngle(Y, r.phase0 + r.rate * t);
     return out.copy(this.qTilt).multiply(_q);
+  }
+
+  // where the sun stands in this world's year now (rad): its longitude along the sky from the northern
+  // spring equinox, the climate's months' (worldsim/climate.js: 0 the equinox, pi/2 the north's
+  // midsummer), from the sun's direction against the spin axis and the orbit's plane (a moon's: its
+  // planet's). The seasons' snow and ice read it (render/world.js, gen/liquidice.js)
+  solarLongitude() {
+    if (!this._orbN) {
+      const host = this.data.kind === 'moon' && this.parent ? this.parent : this, o = host.data.orbit;
+      if (!o) return 0;
+      orbitState(o, 0, _p, _v);
+      this._orbN = new THREE.Vector3(_p[1] * _v[2] - _p[2] * _v[1], _p[2] * _v[0] - _p[0] * _v[2], _p[0] * _v[1] - _p[1] * _v[0]).normalize();
+      this._axis = new THREE.Vector3(0, 1, 0).applyQuaternion(this.qTilt);
+    }
+    // (N: the spring equinox, where the sun crosses the equator heading north; M a quarter on)
+    const N = _sN.copy(this._axis).cross(this._orbN);
+    if (N.lengthSq() < 1e-12) return 0;
+    N.normalize();
+    const M = _sM.copy(this._orbN).cross(N), sun = _sS.copy(this.pos).negate().normalize();
+    return Math.atan2(sun.dot(M), sun.dot(N));
   }
 
   // World <-> body-fixed conversions (body centred)
@@ -169,10 +190,10 @@ export class BodyRuntime {
     const s = gen.sample(d[0], d[1], d[2], 50, this._scratch);
     const wd = liquidDepthOf(gen, s);
     if (wd > 0 && gen.p.liquid !== 'lava') {
-      // (the sun's latitude now, in this world's frame: the season)
+      // (the season: the sun's latitude now, in this world's frame, and where it stands in the year)
       const sun = this._sunF || (this._sunF = new THREE.Vector3());
       sun.copy(this.pos).negate().normalize().applyQuaternion(this.qInv);
-      if (frozenNow(gen, s, d, sun.y)) return 0;
+      if (frozenNow(gen, s, d, sun.y, this.solarLongitude())) return 0;
     }
     return wd;
   }
