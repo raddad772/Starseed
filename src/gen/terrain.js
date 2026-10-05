@@ -845,14 +845,16 @@ export class TerrainGenerator {
         h = h1 + (h - h1) * fin;
       }
     }
-    if (flooded && this.wetNow && lk.L > wl) wl = lk.L;
+    // (in a lake, its level: a river or a creek that runs into one is at the lake's level there, not
+    // standing on it)
+    if (flooded && this.wetNow) wl = lk.L;
     // ground below the datum is under the sea where the sea reaches it: within about a cell of
     // the sea's own cells, where the sim's surface is low enough for the ground's dips to reach
     // the datum (the shore then the ground's own contour, not the cells'); a dip below the
     // datum beyond that is dry land
     // (a world with no liquid has no datum to lift a dip to: its craters and basins stay as deep as they are)
     const dryDip = () => !lk && wl < -1e8 && p.liquid && (sea >= 0 ? sea < 0.02 : (h0 > 1.5 * amp || S.seaDist(x, y, z) > 1.5));
-    if (!(flooded && this.wetNow && lk.L > wl) && h < 0 && dryDip()) h = 0.5 - 0.02 * h;
+    if (!(flooded && this.wetNow) && h < 0 && dryDip()) h = 0.5 - 0.02 * h;
     // tuyas: a flat lava cap where the ice's surface was (a small cone on it), flanks at ~35
     // degrees of glassy rubble down to the ground round it
     if (S.tuyaAt) {
@@ -1184,6 +1186,8 @@ export class TerrainGenerator {
       if (foot >= 0 && top - bot >= 2) out.falls.push(G[foot] - ox, G[foot + 1] - oy, G[foot + 2] - oz, top, bot, 2 * xw, DM[i0], a0[0], a0[1], a0[2]);
     };
     const drawn = (own) => 0.75 * minW <= 4 * own;   // (sampleSnap's rvFade 0)
+    // (a lake's water at point i of a run: its own cells', or standing as high as the river)
+    const inLake = (X, i, st) => { const lk = this._lakeAt(X[3 * i], X[3 * i + 1], X[3 * i + 2]); return !!lk && (lk.own || lk.L >= st); };
     const halfW = (own) => 1.04 * Math.max(own, 0.75 * minW) + 0.5 * spacing;
     // the rivers' channels (channels.js), each record's once
     const recs = new Set(), big = Rv.big;
@@ -1220,7 +1224,9 @@ export class TerrainGenerator {
           // mesh's spacing, is softer than its own)
           const face = (i > 0 && SL[i - 1] >= 0.75) || (i + 1 < m && SL[i] >= 0.75);
           ST[i] = W.stage; HW[i] = face ? Math.max(W.xw, 0.5) : halfW(own); XW[i] = W.xw; DM[i] = W.dm; V[i] = W.v;
-          ok[i] = A[a + 1] >= 0 && drawn(own) ? 1 : 0;
+          // (none where it's come down to the sea: its level held at the datum's, the sea's water there;
+          // nor in a lake: the lake's water, at its own level, sampleSnap's)
+          ok[i] = A[a + 1] >= 0 && drawn(own) && W.stage > 0.301 && !inLake(X, i, W.stage) ? 1 : 0;
           // (a fall's zone's ends as wide as its grid: channels.js zones)
           if (ch.zones) for (let z = 0; z < ch.zones.length; z += ZONE) if (A[a + 5] >= ch.zones[z] - 1e-6 && A[a + 5] <= ch.zones[z + 1] + 1e-6) HW[i] = 1.02 * ch.zones[z + 5];
         }
@@ -1256,7 +1262,7 @@ export class TerrainGenerator {
           for (const qq of qs) { half += sg[qq * BIG_REC + 6] / qs.length; hsv += sg[qq * BIG_REC + 8] / hs / qs.length; }
           this._riverWater(half, 0, hsv, 1e-4, W);
           ST[i] = W.stage; HW[i] = halfW(half); XW[i] = W.xw; DM[i] = W.dm; V[i] = W.v;
-          ok[i] = hsv >= 0 && drawn(half) ? 1 : 0;
+          ok[i] = hsv >= 0 && drawn(half) && W.stage > 0.301 && !inLake(X, i, W.stage) ? 1 : 0;
         }
         strip(m, X, ST, HW, XW, DM, V, TT, ok, null);
         s = e + 1;
@@ -1324,6 +1330,7 @@ export class TerrainGenerator {
               TG[3 * q] = d1[0] - d2[0]; TG[3 * q + 1] = d1[1] - d2[1]; TG[3 * q + 2] = d1[2] - d2[2];
               ST[q] = (b0 * h0 + b1 * H[o] + b2 * h2) / hs + 0.2 - dl;
               TT[q] = tt;
+              if (inLake(X, q, ST[q])) ok[q] = 0;
             }
             strip(NP, X, ST, HW, XW, DM, V, TT, ok, null, TG);
           }
@@ -2096,8 +2103,10 @@ export class TerrainGenerator {
       if (Tc - this._freezeC() < -8) { col[0] = P.snow[0] * 0.92; col[1] = P.snow[1] * 0.95; col[2] = P.snow[2]; mat[1] = 1; mat[4] = 0; return; }
       // (a river: its channel's water where it runs (S_WET's banks), its flow by how steep its valley
       // (a lowland river's smooth, a mountain torrent white); a lake under a few metres deep: a pond)
-      const river = s[S_WET] > 0.2 || s[S_RFADE] > 0;
-      if (river) this._liquidSurface(mat, 0.7, Tc, dm.smoothstep(0.01, 0.2, slope), 0.2);
+      // (one come down to the sea, its level held at the datum's: the sea's water, as the sea's)
+      const river = s[S_WET] > 0.2 || s[S_RFADE] > 0, atSea = p.liquid && this.contThreshold > -1e8 && s[S_WLVL] > -1e8 && s[S_WLVL] <= 0.301 * this.hScale;
+      if (river && atSea) this._liquidSurface(mat, 0, Tc, 0, 1);
+      else if (river) this._liquidSurface(mat, 0.7, Tc, dm.smoothstep(0.01, 0.2, slope), 0.2);
       else if (wd < 3) this._liquidSurface(mat, 1, Tc, 0, 0.05);
       else this._liquidSurface(mat, 0.4, Tc, 0, dm.smoothstep(3, 40, wd) * 0.7 + 0.1);
       return;

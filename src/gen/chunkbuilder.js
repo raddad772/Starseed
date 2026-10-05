@@ -111,6 +111,8 @@ export function buildChunk(gen, face, level, ix, iy, N = CHUNK_N) {
   const ribbons = spacing < RIBBON_SPACING && gen.riverRibbons && gen.snap && gen.snap.riv, frz = ribbons ? gen._freezeC() : 0;
   const bed = (s, coarse) => {
     if (!ribbons || !(s[S_RIVR] > 0) || !(s[S_WDEPTH] > 0) || (!coarse && s[S_RFADE] > 0) || s[S_TEMP] - 273.15 - frz < -8) return 0;
+    // (nor a river come down to the sea, its level held at the datum's: riverRibbons draws none there)
+    if (s[S_RIVR] === 1 && s[S_WLVL] < 0.301 * gen.hScale) return 0;
     const wd = s[S_WDEPTH];
     s[S_WDEPTH] = 0;
     return wd;

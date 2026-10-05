@@ -109,7 +109,7 @@ export class SunShadows {
 
 // a receiver's side: wp the point (camera-relative world), N its normal; 1 lit, 0 shadowed. Each
 // cascade's own map, the near one's edge fading into the far one's, the far one's into none (the
-// height cube's shadows carry on beyond); 3x3 taps; a bias of a texel or so, more on slopes the sun
+// height cube's shadows carry on beyond); 3x3 taps, bilinear; a bias of a texel or so, more on slopes the sun
 // grazes
 export const GLSL_SUN_SHADOW = /* glsl */`
 uniform vec4 uSunShadow;
@@ -126,12 +126,15 @@ float sunShadowTap(highp sampler2D t, mat4 VP, vec4 L, vec3 wp, float bias) {
   if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) return 1.0;
   float d = dot(L.xyz - wp, uSunShadowDir) - bias;
   ivec2 sz = textureSize(t, 0);
-  ivec2 p = ivec2(uv * vec2(sz));
+  // (a 3x3 box of comparisons, each read bilinearly between the four texels round it: where an
+  // edge lies within a texel it moves smoothly across it, not a whole texel at a time (stairs))
+  vec2 st = uv * vec2(sz) - 0.5, fr = fract(st);
+  ivec2 p0 = ivec2(floor(st));
+  float cmp[16];
+  for (int j = 0; j < 4; j++) for (int i = 0; i < 4; i++) cmp[j * 4 + i] = d <= texelFetch(t, clamp(p0 + ivec2(i - 1, j - 1), ivec2(0), sz - 1), 0).r ? 1.0 : 0.0;
   float lit = 0.0;
-  for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
-    float occ = texelFetch(t, clamp(p + ivec2(i, j), ivec2(0), sz - 1), 0).r;
-    lit += d <= occ ? 1.0 : 0.0;
-  }
+  for (int j = 0; j < 3; j++) for (int i = 0; i < 3; i++)
+    lit += mix(mix(cmp[j * 4 + i], cmp[j * 4 + i + 1], fr.x), mix(cmp[j * 4 + i + 4], cmp[j * 4 + i + 5], fr.x), fr.y);
   return lit / 9.0;
 }
 float sunShadowMap(vec3 wp, vec3 N) {
