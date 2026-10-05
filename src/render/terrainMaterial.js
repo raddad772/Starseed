@@ -94,6 +94,7 @@ attribute vec4 nrm;
 attribute vec4 liq;
 attribute vec4 flw;
 attribute vec2 rib;        // across it (-1..1), its mean depth (m)
+attribute vec4 col;        // (the sea's or a lake's own colour where it's deep, sqrt-coded; 0 a river's)
 uniform vec3 uOriginMod;
 uniform vec3 uOriginRel;
 uniform vec3 uNearOff;
@@ -119,7 +120,7 @@ varying vec2 vRib;
 #include <logdepthbuf_pars_vertex>
 void main() {
   vec3 n = normalize(nrm.xyz);
-  vCol = vec4(0.0); vMat = vec4(0.0); vExt = vec4(0.0, 1.0, 0.0, 0.5);
+  vCol = col; vMat = vec4(0.0); vExt = vec4(0.0, 1.0, 0.0, 0.5);
   vLiq = liq; vFlw = flw; vRib = rib;
   vShore = 1.0; vMorphK = 0.0; vOcc = 0.0;
   vCls0 = vec4(0.0); vCls1 = vec4(0.0); vCls2 = vec4(0.0);
@@ -297,15 +298,17 @@ void main() {
     vec4 d2 = tri(fp, w, 64.0);
     float v = (d0.r - 0.5) * 0.25 * midK + (d1.r - 0.5) * 0.55 * farK + (d2.r - 0.5) * 0.3 * midK * (0.4 + 1.2 * d0.a);
     albedo *= 1.0 + v * mix(0.85, 1.35, rockAmt) * (1.0 - snow * 0.6);
-    float kF = 1.0 - smoothstep(60.0, 260.0, dist);
-    float kM = (1.0 - smoothstep(1800.0, 3500.0, dist)) * mix(0.6, 1.0, smoothstep(5.0, 60.0, dist));
+    // (none of the fine materials on a bed deep under the water's own surface, chunkbuilder.js: ~5 to 20 m)
+    float under = 1.0 - smoothstep(0.03, 0.06, waterEnc);
+    float kF = (1.0 - smoothstep(60.0, 260.0, dist)) * under;
+    float kM = (1.0 - smoothstep(1800.0, 3500.0, dist)) * mix(0.6, 1.0, smoothstep(5.0, 60.0, dist)) * under;
     MatS ms = matGround(vCls0, vCls1, vCls2, fp, dpx, dpy, fn, kF, kM);
     albedo *= ms.ratio;
     // (glacier ice: its body blue)
     albedo *= mix(vec3(1.0), vec3(0.74, 0.88, 1.0), vCls2.w);
     gRough = ms.rough; gAO = ms.ao;
     // sand: the wind's ripples, as far as this world's air works its sand
-    if (vCls1.z > 0.05 && uWindRipple.x > 0.0) {
+    if (vCls1.z > 0.05 && uWindRipple.x > 0.0 && under > 0.0) {
       vec3 upL = uToFixed * up;
       ms.n = sandRippleN(vAnchorPos, dpx, dpy, ms.n, uWindRipple.y, foot, uWindRipple.x * min(vCls1.z * 1.5, 1.0), cross(vec3(0.0, 1.0, 0.0), upL), upL, windSense(upL));
     }
@@ -425,14 +428,20 @@ void main() {
       // (not something above the water the bend looked across to)
       if (sceneZ(uvB) < zW) uvB = sc.xy;
       vec3 bed = texture(tOpaque, uvB).rgb;
-      float ssc = clamp(30.0 * fv * fv * fv, 0.5, 3000.0);
-      vec3 a = uLiquid3.rgb + ssc * vec3(0.012, 0.02, 0.035) + uLiquid3.w * vec3(0.078, 0.207, 0.687);
+      // (a river's load by its speed; the sea's a coastal sea's few g/m^3, and in the surf where the waves
+      // stir up its bed much more; a lake's a little)
+      float ssc = river ? clamp(30.0 * fv * fv * fv, 0.5, 3000.0) : kind < 0.2 ? 5.0 + 40.0 * (1.0 - smoothstep(0.0, 2.0, depthW)) : 3.0;
+      // (dissolved organic matter: a river's the most, a lake's some, the open sea's little)
+      vec3 a = uLiquid3.rgb + ssc * vec3(0.012, 0.02, 0.035) + uLiquid3.w * (river ? 1.0 : kind < 0.2 ? 0.02 : 0.5) * vec3(0.078, 0.207, 0.687);
       vec3 bb = vec3(0.019 * 0.25 * ssc);
       vec3 K = a + bb;
       float cS = sqrt(max(1.0 - (1.0 - muS * muS) / (nI * nI), 0.04));
       vec3 Tb = exp(-K * depthW * (1.0 / cT + 1.0 / cS));
       vec3 Ed = uSunE * sunT * max(muS, 0.0) + uSunE * skyE;
-      body = bed * Tb + 0.33 * bb / K / PI * Ed * (1.0 - exp(-K * depthW * (1.0 / cT + 1.0)));
+      // (where it's deep: the sea's or a lake's own colour, as the terrain draws it from afar, so the two
+      // meet without a step; a river's its silt's scatter)
+      vec3 deep = dot(vCol.rgb, vec3(1.0)) > 0.001 ? vCol.rgb * vCol.rgb / PI * (uSunE * sunT * max(muS, 0.0) * 0.6 + uSunE * skyE * 0.5) : 0.33 * bb / K / PI * Ed;
+      body = bed * Tb + deep * (1.0 - exp(-K * depthW * (1.0 / cT + 1.0)));
     }
     // ---- what it reflects: the banks and trees drawn (a ray marched across the image's depth),
     // else the sky
@@ -440,28 +449,33 @@ void main() {
       vec3 Rf = reflect(-V, Nw);
       float hitK = 0.0;
       vec3 hitC = vec3(0.0);
-      if (dot(Rf, up) > 0.0) {
+      // (where it reflects enough to show: not looking straight down into it. The ray stepped in clip
+      // space, where it's a straight line: each step an add, not a projection)
+      if (dot(Rf, up) > 0.0 && F > 0.035) {
+        vec4 C0 = projectionMatrix * viewMatrix * vec4(vWorldPos, 1.0), CD = projectionMatrix * viewMatrix * vec4(Rf, 0.0);
         float t0 = 0.0, t = 0.3 + 0.01 * zW;
-        for (int i = 0; i < 24; i++) {
-          vec3 q = onScreen(vWorldPos + Rf * t);
-          if (q.z <= 0.0 || q.x < 0.0 || q.y < 0.0 || q.x > 1.0 || q.y > 1.0) break;
-          float zs = sceneZ(q.xy);
-          if (q.z > zs && q.z - zs < max(0.6, 0.35 * t)) {
+        for (int i = 0; i < 16; i++) {
+          vec4 c = C0 + CD * t;
+          if (c.w <= 0.0) break;
+          vec2 q = c.xy / c.w * 0.5 + 0.5;
+          if (q.x < 0.0 || q.y < 0.0 || q.x > 1.0 || q.y > 1.0) break;
+          float zs = sceneZ(q);
+          if (c.w > zs && c.w - zs < max(0.6, 0.35 * t)) {
             // (found between t0 and t: narrowed)
             float lo = t0, hi = t;
             for (int k = 0; k < 5; k++) {
               float tm = 0.5 * (lo + hi);
-              vec3 qm = onScreen(vWorldPos + Rf * tm);
-              if (qm.z > sceneZ(qm.xy)) hi = tm; else lo = tm;
+              vec4 cm = C0 + CD * tm;
+              if (cm.w > sceneZ(cm.xy / cm.w * 0.5 + 0.5)) hi = tm; else lo = tm;
             }
-            vec3 qh = onScreen(vWorldPos + Rf * hi);
-            vec2 e = min(qh.xy, 1.0 - qh.xy);
+            vec4 ch = C0 + CD * hi;
+            vec2 qh = ch.xy / ch.w * 0.5 + 0.5, e = min(qh, 1.0 - qh);
             hitK = smoothstep(0.0, 0.08, min(e.x, e.y));
-            hitC = texture(tOpaque, qh.xy).rgb;
+            hitC = texture(tOpaque, qh).rgb;
             break;
           }
           t0 = t;
-          t *= 1.3;
+          t *= 1.45;
         }
       }
       skyRefl = mix(skyRefl, hitC, hitK);

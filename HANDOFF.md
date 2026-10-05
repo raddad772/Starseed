@@ -241,6 +241,17 @@ distinct stair step in the river edge ... is it not using actual geometry"):**
   strip at its water's level, as wide as sampleSnap draws it, edges from the curve's own tangent so
   cells meet cleanly; S_RIVR 2 marks creek water for the bed. Narrow creeks were dashes; now a line.
   (Stair-steps seen at a creek's edge under trees were the near sun-shadow maps' texels, not the water.)
+- The sea's and the lakes' water too, in the same fine chunks (chunkbuilder.js level water): a flat
+  surface at the water's level over each water vertex and one under the land beside it (the shore where
+  the ground rises out of it: the coasts' saw-teeth gone), drawn in the water pass with the rivers'; the
+  mesh there the bed (the sea floor shaded as ground, gen._bed; its depth in col.a, the shader leaving
+  out the fine materials ~5-20 m down). Deep, it fades to the palette's water colour, as the far sea is
+  drawn (no step at the hand-off); shallow, the bed through it. A coastal sea's 5 g/m^3, the surf's more
+  (waves stirring the bed), a lake's 3; dissolved organic matter a river's most, a lake's some. Water
+  pass at 2560x1440 with half the screen water: ~12 ms (the reflections' march in clip space, 16 steps,
+  none where Fresnel is under 3.5%). Seen (LAB-free): SOL 5.98 S 25.88 E, river r 656's mouth. Still:
+  the drowned river's levees on the shelf show through shallow water (straight seabed edges); a
+  rainbow fringe in the water near that mouth (a fall's spray bow, unconfirmed); whitecaps blocky.
 - Canyons: the floor beside a canyon river narrows on a bend's outer side by how hard it's cutting there
   (`_canyons` Wf; it was 1.8 half widths both sides everywhere: Dave's "straight and uniform" banks).
 - Testing note: in a hidden pane, `debugRun`'s MessageChannel loop starves the workers' replies (a

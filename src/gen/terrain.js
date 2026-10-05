@@ -2082,7 +2082,8 @@ export class TerrainGenerator {
     const Tc = s[S_TEMP] - 273.15;
     // lakes and rivers: water over the ground, tinted by its depth (frozen when cold); the sea
     const wd = s[S_WDEPTH];
-    if (!(wd > 0.05) && h < 0 && p.liquid && this.contThreshold > -1e8) return this.shadeNoise(s, slope, col, mat);
+    // (the sea, unless it's the sea's floor under a surface of its own: chunkbuilder.js's level water)
+    if (!(wd > 0.05) && h < 0 && p.liquid && this.contThreshold > -1e8 && !this._bed) return this.shadeNoise(s, slope, col, mat);
     if (wd > 0.05 && s[S_RFADE] > 0) {
       // (a river faded out from afar: its water over the ground's own colour by how far it's faded)
       const fd = s[S_RFADE], c2 = this._fc || (this._fc = [0, 0, 0]), m2 = this._fm || (this._fm = new Float64Array(8));
