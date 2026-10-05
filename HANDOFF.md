@@ -358,7 +358,7 @@ rivers that are straighter where they should be?"):**
   narrow to nothing where they part (no cut ends); their drift carries on across trace periods. Tried
   and dropped: skipping a thread inside the first's banks (blunt ends; the crescents weren't that).
 - Great rivers (refine.js bigChannels) take every point of the trace (every other drew a great river's
-  bends as corners from 12 km; RIVER_VERSION 6). riverRibbons takes a strip's way from the points either
+  bends as corners from 12 km; RIVER_VERSION 6; not yet looked at from there). riverRibbons takes a strip's way from the points either
   side (a piece a few cm long tilted any way, read as a fall). cloudLight reads the map first and skips
   the far shell where the map covers (same output, less work).
 - **Corestones** (Dave: "How do boulder-y steep slopes like this form and why don't we have them?", a
