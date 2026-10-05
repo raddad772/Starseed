@@ -285,13 +285,27 @@ export function meanderField() {
 // nearly straight (~1.1: Rust 1978, under 1.3). Between, it meanders as far as its banks let it,
 // the more silt and clay holding them the further: P = 0.94 M^0.25 (Schumm 1963). Each threshold
 // crossed over a factor of two either side (their data's scatter about them)
-export function riverSinuosity(S, W, rock) {
+export function riverSinuosity(S, W, rock) { return riverPattern(S, W, rock).P; }
+// the same, and whether it braids: braid (0..1, across the threshold's scatter) and its braiding index
+// Bi, the threads it splits into, from its bars: the bar mode m^2 = 0.17 g (n - 3) W^3 S / (sqrt(Delta
+// D50) C Q) (Crosato and Mosselman 2009: n the nonlinearity of its sediment transport, 4 for sand, 10
+// for gravel; C its Chezy, from Manning's n 0.035 (_riverWater's) and its depth D), Bi = (m - 1) / 2 + 1
+const _pat = { P: 1, braid: 0, Bi: 1 };
+export function riverPattern(S, W, rock, D = 0, out = _pat) {
   const nm = ROCKS[rock] ? ROCKS[rock].name : 'alluvium', Mt = MATERIALS[nm] && MATERIALS[nm].grain ? MATERIALS[nm] : MATERIALS.alluvium;
   const Q = (W / 4.8) * (W / 4.8), om = 2100 * Math.max(S, 0) * Math.sqrt(Q), dk = dm.pow(Mt.grain, 0.42);
-  if (!(om > 0)) return 1;
+  out.P = 1; out.braid = 0; out.Bi = 1;
+  if (!(om > 0)) return out;
   const Pm = Math.max(1, 0.94 * dm.pow(Math.max(Mt.fines, 1), 0.25));
   const active = dm.smoothstep(-0.69, 0.69, dm.log(om / (90 * dk))), braid = dm.smoothstep(-0.69, 0.69, dm.log(om / (900 * dk)));
-  return 1 + (Pm - 1) * active * (1 - braid) + 0.1 * braid;
+  out.P = 1 + (Pm - 1) * active * (1 - braid) + 0.1 * braid;
+  out.braid = braid;
+  if (braid > 0) {
+    const n = Mt.grain >= 2e-3 ? 10 : 4, Dd = Math.max(0.3, D || 0.3 * Math.sqrt(W)), C = dm.pow(Dd, 1 / 6) / 0.035;
+    const m2 = 0.17 * 9.81 * (n - 3) * W * W * W * Math.max(S, 0) / (Math.sqrt(1.65 * Mt.grain) * C * Q);
+    out.Bi = Math.max(1, (Math.sqrt(m2) - 1) / 2 + 1);
+  }
+  return out;
 }
 
 // a point of the family's channel (k: its index, 0..n; xu unwound) where it swings a: into o (x, y,

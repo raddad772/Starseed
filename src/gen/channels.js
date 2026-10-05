@@ -40,6 +40,9 @@ const WIN_RECS = 16, NSEG = 16;
 export const HORSESHOE = 0.3;
 // (a fall zone's floats: buildChannel's ch.zones)
 export const ZONE = 8;
+// (a braided river's threads: each the channel's curve this much of a period on from the last, the
+// golden ratio's part, so no two run alike)
+const THREAD_SHIFT = 0.381966;
 function riverProfile(gen, r) {
   const Lk = gen._rivLinks(), up = Lk.up, dn = Lk.dn;
   const dnOf = (q) => { const n = dn[q]; return n >= 0 && up[n] === q ? n : -1; };
@@ -143,6 +146,13 @@ export function chanSwing(ch, t) {
   return (Ae + (s[1] - Ae) * (t < 0.5 ? 2 * t : 2 - 2 * t)) * (s[3] ? 1 : dm.smoothstep(0, 1, t)) * (s[4] ? 1 : dm.smoothstep(0, 1, 1 - t));
 }
 
+// its threads past one where it braids (0..3) at t along a record's frame (gen._meanderB's, carried
+// between its ends as the swing is; none at a river's source or its end)
+export function chanBraid(ch, t) {
+  const s = ch.br, Ae = t < 0.5 ? s[0] : s[2];
+  return (Ae + (s[1] - Ae) * (t < 0.5 ? 2 * t : 2 - 2 * t)) * (s[3] ? 1 : dm.smoothstep(0, 1, t)) * (s[4] ? 1 : dm.smoothstep(0, 1, 1 - t));
+}
+
 // record r's channel, built (gen: the terrain generator: its snapshot's river index, links,
 // swing and frames)
 export function buildChannel(gen, r, building) {
@@ -160,14 +170,16 @@ export function buildChannel(gen, r, building) {
   const W0 = up >= 0 ? 0.5 * (wq + 2 * Rv.half[up]) : wq, W1 = dn >= 0 ? 0.5 * (wq + 2 * Rv.half[dn]) : wq;
   const Aq = Rv.phase ? MA[r] : 0;
   const sw = [up >= 0 ? 0.5 * (Aq + MA[up]) : Aq, Aq, dn >= 0 ? 0.5 * (Aq + MA[dn]) : Aq, up >= 0 ? 1 : 0, dn >= 0 ? 1 : 0];
-  const ch = { pts: null, at: null, pc: null, kind: null, age: null, groups: null, gi: null, bound: new Float64Array(4), maxHalf: 0, fr, J0, J1, W0, W1, sw };
+  const MB = gen._meanderB ? gen._meanderB() : null, Bq = MB && Rv.phase ? MB[r] : 0;
+  const br = [up >= 0 && MB ? 0.5 * (Bq + MB[up]) : Bq, Bq, dn >= 0 && MB ? 0.5 * (Bq + MB[dn]) : Bq, up >= 0 ? 1 : 0, dn >= 0 ? 1 : 0];
+  const ch = { pts: null, at: null, pc: null, kind: null, age: null, groups: null, gi: null, bound: new Float64Array(4), maxHalf: 0, fr, J0, J1, W0, W1, sw, br };
   // (a river's source: it starts narrow, its width growing over its first record)
   const head = up < 0;
   const P3 = [], A6 = [], pcs = [], kinds = [], ages = [];
   let open = false;
   const hsSmooth = (t) => { const u = 1 - t; return (u * u * rec[b + 9] + 2 * t * u * rec[b + 10] + t * t * rec[b + 11]) / gen.hScale; };
   const hsOf = (gen._channelRockK && gen.snap && riverProfile(gen, r)) || hsSmooth;
-  const emit = (X, Y, mx, my) => {
+  const emit = (X, Y, mx, my, wf = 1) => {
     const t = Math.max(0, Math.min(1, (X - J0) / (J1 - J0))), u = 1 - t, a0 = u * u, a1 = 2 * t * u, a2 = t * t;
     let px = a0 * fr[0] + a1 * fr[3] + a2 * fr[6], py = a0 * fr[1] + a1 * fr[4] + a2 * fr[7], pz = a0 * fr[2] + a1 * fr[5] + a2 * fr[8];
     const pl = Math.sqrt(px * px + py * py + pz * pz); px /= pl; py /= pl; pz /= pl;
@@ -180,7 +192,7 @@ export function buildChannel(gen, r, building) {
     // (where the channel was moving there, per channel width: along the valley (x, up it) and
     // across (y), as the trace lies on the ground)
     const dX = 1 / (J1 - J0), tl = R * dX, gx = mx * tl, gy = my;
-    const half = 0.5 * wm * (head ? 0.15 + 0.85 * dm.smoothstep(0, 0.9, t) : 1);
+    const half = 0.5 * wm * wf * (head ? 0.15 + 0.85 * dm.smoothstep(0, 0.9, t) : 1);
     A6.push(half, hsOf(t), (gx * tx + gy * nx * wm) / wm, (gx * ty + gy * ny * wm) / wm, (gx * tz + gy * nz * wm) / wm, t, wm);
   };
   const end = () => {
@@ -202,24 +214,49 @@ export function buildChannel(gen, r, building) {
     if (t > 1 && phDn === phDn && phDn !== J1) return dm.clamp(sw[2] + (MA[dn] - sw[2]) * Math.min(1, (X - J1) / (phDn - J1)), 0, 1);
     return chanSwing(ch, dm.clamp(t, 0, 1));
   };
+  // (and its threads past one, alike)
+  const nbOfX = (X) => {
+    if (!MB) return 0;
+    const t = (X - J0) / (J1 - J0);
+    if (t < 0 && phUp === phUp && phUp !== J0) return Math.max(0, br[0] + (MB[up] - br[0]) * Math.min(1, (X - J0) / (phUp - J0)));
+    if (t > 1 && phDn === phDn && phDn !== J1) return Math.max(0, br[2] + (MB[dn] - br[2]) * Math.min(1, (X - J1) / (phDn - J1)));
+    return chanBraid(ch, dm.clamp(t, 0, 1));
+  };
   // the channel's points in period p: each the family's (meanders.js) at the swing its own phase has
   // (found by turns: a point's phase moves with its swing, slowly)
-  const fpt = {}, n0 = F.n;
-  const family = (p) => {
-    const sh = p * P, X = new Float64Array(n0 + 1), Y = new Float64Array(n0 + 1), MX = new Float64Array(n0 + 1), MY = new Float64Array(n0 + 1);
+  // A braided river's threads (thread j > 0: where it has more than j - 1 past one): each the same
+  // curve a part of a period on (THREAD_SHIFT), so they cross and part, the bars between them; as
+  // wide as each other, the water shared among them (each 1 / sqrt(1 + nb) of its width: width goes
+  // as the root of the water, its regime's). Where it has fewer, a thread is drawn in onto the first
+  // and lies along it, so threads part and rejoin along the river without ends
+  const fpt = {}, fps = {}, fpd = {}, n0 = F.n;
+  const family = (p, j = 0) => {
+    const sh = p * P, X = new Float64Array(n0 + 1), Y = new Float64Array(n0 + 1), MX = new Float64Array(n0 + 1), MY = new Float64Array(n0 + 1), WF = new Float64Array(n0 + 1), SJ = new Float64Array(n0 + 1);
+    const ks = Math.round(n0 * ((j * THREAD_SHIFT) % 1));
     for (let k = 0; k <= n0; k++) {
       // (a point whose every swing puts it well outside the record's phases: any of them will do)
       const xa = F.xlo[k] + sh, xb = F.xhi[k] + sh;
       let a = sw[1];
       if (xb > lo - 2 && xa < hi + 2) for (let it = 0; it < 3; it++) { meanderPoint(F, k, a, fpt); a = aOfX(fpt.x + sh); }
       meanderPoint(F, k, a, fpt);
-      X[k] = fpt.x + sh; Y[k] = fpt.y; MX[k] = fpt.mx; MY[k] = fpt.my;
+      const nb = nbOfX(fpt.x + sh);
+      X[k] = fpt.x + sh; Y[k] = fpt.y; MX[k] = fpt.mx; MY[k] = fpt.my; WF[k] = 1 / Math.sqrt(1 + nb); SJ[k] = 1;
+      if (j > 0) {
+        const sj = dm.clamp(nb - (j - 1), 0, 1);
+        meanderPoint(F, (k + ks) % n0, a, fps);
+        // (and each drifting across the braidplain on its own, slowly, a couple of widths either way:
+        // the trace read a quarter as fast; without it the threads crossed at the same knots, a rope)
+        const kf = k * 0.25 + ks * 0.61 + 97 * j, i0 = Math.floor(kf), fr = kf - i0;
+        meanderPoint(F, i0 % n0, 0.6, fpd); const d0 = fpd.y;
+        meanderPoint(F, (i0 + 1) % n0, 0.6, fpd);
+        Y[k] = fpt.y + sj * (fps.y - fpt.y + 0.35 * (d0 + (fpd.y - d0) * fr)); MX[k] = MY[k] = 0; SJ[k] = sj;
+      }
     }
-    return { X, Y, MX, MY };
+    return { X, Y, MX, MY, WF, SJ };
   };
   // the stretch of a line (closed: the channel, its points per period from family(); else an oxbow:
   // x unwrapped, y, n points) whose phases lie between the record's ends
-  const lay = (xu0, y0, n, closed, kind, age) => {
+  const lay = (xu0, y0, n, closed, kind, age, j = 0) => {
     const nseg = closed ? n : n - 1;
     let pa = 0, pb = 0;
     if (closed) { pa = Math.floor((lo - F.xhi[0]) / P) - 1; pb = Math.ceil((hi - F.xlo[0]) / P) + 1; }
@@ -230,16 +267,18 @@ export function buildChannel(gen, r, building) {
       pa = Math.floor((lo - mxX) / P); pb = Math.ceil((hi - mn) / P);
     }
     for (let p = pa; p <= pb; p++) {
-      let xu, y, mx = null, my = null, sh = 0;
-      if (closed) { const q = family(p); xu = q.X; y = q.Y; mx = q.MX; my = q.MY; } else { xu = xu0; y = y0; sh = p * P; }
+      let xu, y, mx = null, my = null, wf = null, sj = null, sh = 0;
+      if (closed) { const q = family(p, j); xu = q.X; y = q.Y; mx = q.MX; my = q.MY; wf = q.WF; sj = q.SJ; } else { xu = xu0; y = y0; sh = p * P; }
       for (let k = 0; k < nseg; k++) {
         const k1 = k + 1, Xa = xu[k] + sh, Xb = xu[k1] + sh, i1 = k1;
         const dX = Xb - Xa;
         let f0 = 0, f1 = 1;
         if (dX !== 0) { const fl = (lo - Xa) / dX, fh = (hi - Xa) / dX; f0 = Math.max(0, Math.min(fl, fh)); f1 = Math.min(1, Math.max(fl, fh)); }
         else if (Xa < lo || Xa > hi) f1 = -1;
+        // (a thread lying along the first: none of its own there)
+        if (j > 0 && sj[k] < 0.01 && sj[i1] < 0.01) f1 = -1;
         if (f0 > f1) { end(); continue; }
-        const at = (f) => emit(Xa + dX * f, y[k] + (y[i1] - y[k]) * f, mx ? mx[k] + (mx[i1] - mx[k]) * f : 0, my ? my[k] + (my[i1] - my[k]) * f : 0);
+        const at = (f) => emit(Xa + dX * f, y[k] + (y[i1] - y[k]) * f, mx ? mx[k] + (mx[i1] - mx[k]) * f : 0, my ? my[k] + (my[i1] - my[k]) * f : 0, wf ? wf[k] + (wf[i1] - wf[k]) * f : 1);
         if (!open || f0 > 0) { end(); begin(kind, age); at(f0); }
         at(f1);
         if (f1 < 1) end();
@@ -256,6 +295,9 @@ export function buildChannel(gen, r, building) {
   }
   if (hi - lo > 1e-6) {
     lay(null, null, n0, true, 0, 0);
+    // (a braided river's other threads, as many as it has here)
+    const nbMax = Math.max(br[0], br[1], br[2]);
+    for (let j = 1; j <= 3 && nbMax > j - 1 + 0.01; j++) lay(null, null, n0, true, 0, 0, j);
     // (its cut-off loops: lakes while young, swales once filled; only where it has grown its loops
     // whole, the trace's own (they're its))
     if (Math.max(sw[0], sw[1], sw[2]) > 0.9) F.lines.forEach((L, li) => { if (li && L.age < 0.8) lay(F.oxu[li - 1], L.y, L.x.length, false, 1, L.age); });

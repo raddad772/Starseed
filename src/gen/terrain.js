@@ -25,12 +25,12 @@ import { patchAt } from './dunes.js';
 import { CraterField, VEXAG } from './craters.js';
 import { SUITE, SUITES, DEPOSITS, worldColumn, bedAt, faceMetres } from './geology.js';
 import { canyonTable, wallSet, wallFit, wallAt, wallReach } from './canyon.js';
-import { buildChannel, chanNearest, chanSwing, nearOut, chanFlow, nfOf, ZONE } from './channels.js';
+import { buildChannel, chanNearest, chanSwing, chanBraid, nearOut, chanFlow, nfOf, ZONE } from './channels.js';
 import { craterFloor, TILE_CELLS } from './worldsim/impacts.js';
 import { SnapshotSampler } from './worldsim/snapshot.js';
 import { RIVER_REC, BIG_REC } from './worldsim/refine.js';
 import { TRUE_SCALE, MT, KEEP } from './tileshape.js';
-import { meanderField, riverSinuosity } from './meanders.js';
+import { meanderField, riverPattern } from './meanders.js';
 import { ROCKS, R as ROCK } from './worldsim/lithology.js';
 import { hexToLinear } from './color.js';
 import { HEIGHT_SCALE } from '../core/units.js';
@@ -756,7 +756,12 @@ export class TerrainGenerator {
     if (rv) {
       // (a meandering river's floodplain: the belt it has swung across, laid level near its banks;
       // and the loops it cut off, lakes while young, swales once filled)
-      const bank0 = this._bankOf(rv);
+      // (where it braids, the plain between its threads is the bars', a quarter of its depth under its
+      // banks: a little above its usual stage (_riverWater's, ~0.45 of its depth under them), as bars
+      // stand at middling flows, not a floodplain at its banks. Barely above its water the shore wandered
+      // with every wobble of the ground's heights, in teeth the mesh's size)
+      const brK = dm.smoothstep(0, 1, rv.nb || 0), brDrop = brK * 0.25 * (rv.depth0 || rv.depth);
+      const bank0 = this._bankOf(rv) - brDrop - 0.5 * brK;
       if (rv.belt > 0 && rv.axis < 1.3 * rv.belt && cyK < 1) h += rvK * (1 - cyK) * this._flooded(rv, bank0 + 0.5 - h) * 0.85 * dm.smoothstep(1.3 * rv.belt, 0.85 * rv.belt, rv.axis);
       const oh = 0.5 * (rv.oxW || rv.w);
       if (rv.ox < oh && rv.oxAge < 0.8 && cyK < 0.5) {
@@ -775,8 +780,8 @@ export class TerrainGenerator {
       // (and fading out from afar: its channel shallower and its water paler, to nothing)
       const half = rvWide, flank = Math.max(rv.w * 1.5 + S.G.spacing * (0.02 + 0.12 * rv.k), 1.25 * half);
       if (rv.dist < flank) {
-        const bank = this._bankOf(rv);
-        h += rvK * (1 - cyK) * this._banked(rv, bank - h, x, y, z, half) * dm.smoothstep(flank, half * 1.2, rv.dist);
+        const bank = this._bankOf(rv), brB = dm.smoothstep(0, 1, rv.nb || 0) * 0.25 * (rv.depth0 || rv.depth);
+        h += rvK * (1 - cyK) * this._banked(rv, bank - brB - h, x, y, z, half) * dm.smoothstep(flank, half * 1.2, rv.dist);
         // (its water's level, beside it too: where the shore meets it. A river runs below its banks
         // most of the time: its usual stage about half its channel's depth, so its water fills ~70% of
         // the channel's width, the channel's own banks and bars standing above it)
@@ -1336,8 +1341,16 @@ export class TerrainGenerator {
               TG[3 * q] = d1[0] - d2[0]; TG[3 * q + 1] = d1[1] - d2[1]; TG[3 * q + 2] = d1[2] - d2[2];
               ST[q] = (b0 * h0 + b1 * H[o] + b2 * h2) / hs + 0.2 - dl;
               TT[q] = tt;
-              if (inLake(X, q, ST[q])) ok[q] = 0;
             }
+            // (beside a river, where its floodplain and banks are built up to its level and the creek
+            // with them (sampleSnap's rvRise): its water at the sampler's level there, not under it)
+            if (rv && rv.dist < Math.max(rv.w * 1.5 + S.G.spacing * (0.02 + 0.12 * rv.k), 1.3 * rv.belt + rv.w)) {
+              const m = NP >> 1, sv = this._rbS || (this._rbS = new Float64Array(S_LEN));
+              this.sample(X[3 * m], X[3 * m + 1], X[3 * m + 2], minW, sv);
+              const up = sv[S_WLVL] > -1e8 ? sv[S_WLVL] - ST[m] : 0;
+              if (up > 0) for (let q = 0; q < NP; q++) ST[q] += up;
+            }
+            for (let q = 0; q < NP; q++) if (inLake(X, q, ST[q])) ok[q] = 0;
             strip(NP, X, ST, HW, XW, DM, V, TT, ok, null, TG);
           }
         }
@@ -1886,12 +1899,14 @@ export class TerrainGenerator {
       }
     }
     if (best) {
-      best.axis = best.dist; best.belt = 0; best.ox = 1e9; best.oxAge = 1; best.oxW = 0;
+      best.axis = best.dist; best.belt = 0; best.ox = 1e9; best.oxAge = 1; best.oxW = 0; best.nb = 0;
       if (bch) {
-        // (its valley's line: how far off it, and the belt its channel swings across there)
+        // (its valley's line: how far off it, and the belt its channel swings across there; where it
+        // braids, its threads' too, a width wider)
         const nt = nearestOnCurveFine(Fr.F, 9 * best.r, x, y, z), ta = nt[1], wm = bch.W0 + (bch.W1 - bch.W0) * ta, A = chanSwing(bch, ta);
         best.axis = Math.sqrt(nt[0]) * R;
-        best.belt = MF.halfOf(A) * wm * (minW <= 2 * wm ? 1 : dm.smoothstep(6 * wm, 2 * wm, minW));
+        best.nb = bch.br ? chanBraid(bch, ta) : 0;
+        best.belt = (MF.halfOf(A) + Math.min(1, best.nb)) * wm * (minW <= 2 * wm ? 1 : dm.smoothstep(6 * wm, 2 * wm, minW));
         // (its cut-off loops only where it swings freely: a river held nearer its line cuts few,
         // and those soon filled)
         if (ox.ch) { best.ox = Math.sqrt(ox.d2) * R; best.oxW = ox.wm; best.oxAge = 1 - (1 - ox.age) * dm.smoothstep(0.9, 1, A); }
@@ -2016,7 +2031,7 @@ export class TerrainGenerator {
     const Rv = this.snap.riv;
     if (Rv._mA) return Rv._mA;
     const rec = Rv.rec, m = rec.length / RIVER_REC, R = this.R, L = this._rivLinks(), F = this._mf || (this._mf = meanderField());
-    const A = new Float32Array(m), len = new Float32Array(m), bend = new Float32Array(m), fr = new Float64Array(9);
+    const A = new Float32Array(m), B = new Float32Array(m), len = new Float32Array(m), bend = new Float32Array(m), fr = new Float64Array(9);
     for (let r = 0; r < m; r++) {
       const b = r * RIVER_REC;
       len[r] = Math.sqrt((rec[b + 6] - rec[b]) ** 2 + (rec[b + 7] - rec[b + 1]) ** 2 + (rec[b + 8] - rec[b + 2]) ** 2) * R;
@@ -2032,14 +2047,17 @@ export class TerrainGenerator {
     // valley's fall over several bends, not a cell's (a profile's steps and falls had the slope, and the
     // pattern, flip from record to record); as sinuous as its stream power, its bed's grain and its
     // banks' silt and clay make it, meanders.js riverSinuosity)
-    const aS = new Float32Array(m), cap = new Float32Array(m);
+    const aS = new Float32Array(m), cap = new Float32Array(m), nbS = new Float32Array(m), pat = {};
     for (let r = 0; r < m; r++) {
       const W = 2 * Rv.half[r], reach = 15 * W;
       let u = r, dn = r, su = 0.5 * len[r], sd = 0.5 * len[r], rad = bend[r];
       for (let k = 0; k < 16 && su < reach && L.up[u] >= 0; k++) { u = L.up[u]; su += len[u]; if (k < 1) rad = Math.min(rad, bend[u]); }
       for (let k = 0; k < 16 && sd < reach && L.dn[dn] >= 0; k++) { dn = L.dn[dn]; sd += len[dn]; if (k < 1) rad = Math.min(rad, bend[dn]); }
       const slope = su + sd > 0 ? (rec[u * RIVER_REC + 9] - rec[dn * RIVER_REC + 11]) / (su + sd) : 0;
-      aS[r] = F.aOfSinuosity(riverSinuosity(Math.abs(slope), W, Rv.rock ? Rv.rock[r] : 255));
+      riverPattern(Math.abs(slope), W, Rv.rock ? Rv.rock[r] : 255, this._chanDepth(W) * this.hScale, pat);
+      aS[r] = F.aOfSinuosity(pat.P);
+      // (and how many threads it splits into past one where it braids: up to three more)
+      nbS[r] = Math.min(3, (pat.Bi - 1) * pat.braid);
       // (and no further across than most of the radius its smoothed line turns at, here and either
       // side: laid along a line that turns sharper, its loops would cross from one stretch's reach into
       // the next's, cut off where they met; a great river's belt nearer its valley's line)
@@ -2049,15 +2067,19 @@ export class TerrainGenerator {
     // record's rock or a short steep stretch doesn't turn its loops off and on)
     for (let r = 0; r < m; r++) {
       const reach = 20 * Rv.half[r];
-      let sw = 1, sa = aS[r];
+      let sw = 1, sa = aS[r], sb = nbS[r];
       for (const dir of [L.up, L.dn]) {
         let q = r, d = 0.5 * len[r];
-        for (let k = 0; k < 12 && dir[q] >= 0; k++) { q = dir[q]; const w = 1 - d / reach; if (w <= 0) break; sw += w; sa += w * aS[q]; d += len[q]; }
+        for (let k = 0; k < 12 && dir[q] >= 0; k++) { q = dir[q]; const w = 1 - d / reach; if (w <= 0) break; sw += w; sa += w * aS[q]; sb += w * nbS[q]; d += len[q]; }
       }
       A[r] = Math.min(sa / sw, cap[r]);
+      B[r] = sb / sw;
     }
+    Rv._mB = B;
     return (Rv._mA = A);
   }
+  // each record's threads past one where it braids (0..3: _meanderA's, alike smoothed along its river)
+  _meanderB() { if (!this.snap.riv._mB) this._meanderA(); return this.snap.riv._mB; }
 
   // the simulated lake level here ({ L, own } or null: SnapshotSampler.lakeLevel), looked
   // up a little off true (wandering shores)

@@ -294,19 +294,40 @@ rivers that are straighter where they should be?"):**
   over; graded now (it stepped the ground metres at a line). Creeks within a river's raised floodplain
   raised with it (`rvRise`) and faded out over its width beside it (they were cut at their own level,
   trenches metres deep in it, switched on at 1.5 widths: the sawtooth walls of shots/rock_g.jpg).
-  Their water strips (riverRibbons) still sit at their own level there: under the ground, dry-looking.
-- **Perched rivers (open, the next big one)**: the refinement routes water across closed depressions
-  to their spill without lakes there (a river cell's receiver up to 30 m above it while a lower
-  neighbour exists: LAB-44 r 5537 59 -> 75 m), so a river's cells rise and fall along it, and
-  channels.js windowProfile (heights held at 16-record window ends, the drop between spread
-  monotonically) bridges the dips: the river stands metres above its valley, its floodplain a raised
-  platform. Fix in the refinement: a depression a river crosses is a lake to its spill (or the river
-  ends in it, a dry world's terminal basin), and the profile follows the filled surface.
+  Their water strips (riverRibbons) take the sampler's creek level there (one sample a creek cell
+  near a river).
+- **Perched rivers, fixed in the tiles** (TILE 57): the tile run routed water across hollows to their
+  spills without cutting or filling them (a river cell's receiver up to 30 m above it while a lower
+  neighbour stood beside it: LAB-44 r 5537, 59 -> 75 m), so rivers rose and fell along their cells and
+  channels.js windowProfile bridged the dips: a river metres above its valley, its floodplain a raised
+  platform. Now localsim.js `resolvePonds` (end of the run, three passes, re-routed after each): a
+  hollow whose biggest stream in carries more water than the hollow gathers itself (a river's) is
+  filled or cut through, whichever moves less ground (Lindsay and Creed 2005's least impact): of 17
+  levels between its floor and its spill, filling it to the level plus cutting its outlet's way down to
+  it; filled cells alluvium; the cut's walls worn back to 45 degrees (a one-cell slot was a sawtooth
+  trench). Filling alone raised LAB-44's river 20 m over 6 km behind one sill (pond_a/b); cut, its
+  profile falls 64 -> 59 -> 56 -> 51 -> 39 m (pond_c/d). Records rising downstream: 427 -> 249 of
+  10.6k; the >5 m ones were river mouths barred by the shore rules after the routing: now a river's
+  own mouth (A >= 1e8, RIVER_A) stays open through the wave, longshore and shore-line rules.
+- **Braided rivers drawn** (channels.js threads): meanders.js `riverPattern` gives the braid (0..1,
+  Kleinhans and van den Berg's threshold) and the braiding index from bar theory (Crosato and
+  Mosselman 2009: m^2 = 0.17 g (n - 3) W^3 S / (sqrt(Delta D50) C Q), Bi = (m - 1) / 2 + 1; Chezy from
+  Manning 0.035). terrain.js `_meanderB` (threads past one, 0..3, smoothed as the swing); buildChannel
+  lays up to three more kind-0 pieces: the channel's curve THREAD_SHIFT (golden) of a period on, each
+  drifting across on its own (the trace at quarter speed, ~2 widths), drawn in onto the first where the
+  river has fewer (no thread ends), all as wide as each other (1 / sqrt(1 + nb) of the width: one stage).
+  sampleSnap: the plain between threads at bar level (banks less a quarter of the depth). LAB-44
+  -45.67, -20.78 (braid_a/b). ~45% of LAB-44's records braid (steep drawn slopes, sand and gravel).
+  Great rivers (bigChannels) don't braid yet.
+- Not in, and why: vegetation's bank strength and a dry climate's flashy floods. Candel et al. 2021
+  (the bank-strength predictor, silt-plus-clay as its proxy: in, as Schumm's M) leave vegetation as
+  future work; Millar 2000's friction angle and Eaton 2010's mu' values for vegetated banks couldn't be
+  read (publisher pages closed). Badlands' banded gully walls (pond_c left) are older, not rivers'.
 - Seen: SOL Earth 23.07 N 7.43 E (shots/sol_mea_b.jpg), a savanna river meandering ~2 downstream,
   gentler up; Earth's swings spread 0.3-0.9 (the most sinuous near the coasts, on the lowest slopes).
 - Uncommitted in terrain.js: `drowned` (no floodplain or banks raised where a river's line is under
-  the sea). Unverified: the sand strips across SOL's shelf (sol_mea_a.jpg) look like the refinement's
-  own shore rule making land of drowned river cells, which this can't touch.
+  the sea). Unverified: the sand strips across SOL's shelf (sol_mea_a.jpg) may be the shore rules
+  barring drowned rivers' mouths (now kept open: check at TILE 57).
 
 **What's still wrong / next:**
 - Snow covers most of a high mountain (the snowline reads the real height: physically right, maybe too

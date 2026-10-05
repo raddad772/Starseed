@@ -226,6 +226,90 @@ function tileHeightAt(T, u, v) {
   return (T.h[o] * (1 - a) + T.h[o + 1] * a) * (1 - b) + (T.h[o + K] * (1 - a) + T.h[o + K + 1] * a) * b;
 }
 
+// hollows a stream runs through, resolved (prepareTile's finish). The run routes water across the
+// surface's hollows to where each spills (the Erosion's filled surface) but neither cuts their floors
+// nor their sills, so hollows metres to tens of metres deep stayed on the rivers' way: a river's cells
+// rose and fell along it (LAB-44's: 59 m, then 75, its receiver above it while a lower neighbour stood
+// beside it) and it was drawn standing above its valley, its floodplain built up to it. Over the deep
+// time's ages a river through a hollow does both things a river does: it fills the hollow with what
+// it carries (a lake on a river lives a short while: Lake Geneva's Rhone delta has built 20 km in since
+// the ice left) and cuts down its sill (a knickpoint working back: the gorge an antecedent river holds
+// through a rising ridge). Which wins here is the one that moves less ground, as hydrology's
+// depression handling has it (Lindsay and Creed 2005, least impact): of the levels between the
+// hollow's floor and its spill, the one for which filling the hollow up to it and cutting its outlet
+// down to it (inside the hollow from its floor to where it leaves, then the sill and on until the
+// ground falls below it) moves the least; a long valley behind a narrow ridge is cut through, a
+// shallow wide pan filled. Only a hollow whose largest stream in carries more water than the hollow
+// gathers itself, water from beyond it (a river's); one its own walls drain (a crater, a hollow in the
+// hills) stays as it is. Returns which cells were filled (1)
+function resolvePonds(h, E, wet, Amin, edge) {
+  const G = E.G, n = G.n, { fill, rcv, A, base } = E, { nStart, nbr } = G, rk = E.rainK ?? 1;
+  const pid = new Int32Array(n).fill(-1), q = new Int32Array(n), comps = [];
+  for (let c0 = 0; c0 < n; c0++) {
+    if (pid[c0] >= 0 || base[c0] || wet[c0] || fill[c0] - h[c0] <= 0.5) continue;
+    const id = comps.length, cells = [];
+    let qn = 0, a = 0, pit = c0;
+    q[qn++] = c0; pid[c0] = id;
+    for (let i = 0; i < qn; i++) {
+      const c = q[i];
+      cells.push(c); a += G.area[c] * (E.rain ? E.rain[c] : 1) * rk;
+      if (h[c] < h[pit]) pit = c;
+      for (let e = nStart[c]; e < nStart[c + 1]; e++) { const o = nbr[e]; if (pid[o] < 0 && !base[o] && !wet[o] && fill[o] - h[o] > 0.5) { pid[o] = id; q[qn++] = o; } }
+    }
+    comps.push({ cells, own: a, inA: 0, pit });
+  }
+  if (!comps.length) return null;
+  for (let c = 0; c < n; c++) { const r = rcv[c]; if (r >= 0 && pid[r] >= 0 && pid[c] !== pid[r] && A[c] > comps[pid[r]].inA) comps[pid[r]].inA = A[c]; }
+  // (and a great river come in from beyond the tile straight into one)
+  if (E.src) for (let c = 0; c < n; c++) if (pid[c] >= 0 && E.src[c] > comps[pid[c]].inA) comps[pid[c]].inA = E.src[c];
+  const filled = new Uint8Array(n), path = [], cut = [], NL = 16;
+  let any = false;
+  for (let id = 0; id < comps.length; id++) {
+    const P = comps[id];
+    if (!(P.inA >= Amin && P.inA > P.own)) continue;
+    any = true;
+    // (its outlet's way: from its floor down the routing (the filled surface's, toward its spill),
+    // over the sill and on, as far as ground lower than its floor or the tile's edge)
+    path.length = 0;
+    const lo = h[P.pit], top = fill[P.pit];
+    for (let c = P.pit, k = 0; c >= 0 && k < 400; k++) {
+      path.push(c);
+      if (pid[c] !== id && h[c] <= lo) break;
+      if (base[c] || edge(c)) break;
+      c = rcv[c];
+    }
+    let bestL = top, bestC = Infinity;
+    for (let i = 0; i <= NL; i++) {
+      const L = lo + (top - lo) * i / NL;
+      let cost = 0;
+      for (const c of P.cells) if (h[c] < L) cost += L - h[c];
+      for (const c of path) { if (pid[c] !== id && h[c] <= L) break; if (h[c] > L) cost += h[c] - L; }
+      if (cost < bestC) { bestC = cost; bestL = L; }
+    }
+    for (const c of P.cells) if (h[c] < bestL) { h[c] = bestL; filled[c] = 1; }
+    for (const c of path) { if (pid[c] !== id && h[c] <= bestL) break; if (h[c] > bestL) { h[c] = bestL; cut.push(c); } }
+  }
+  // (a cut through a sill is a gorge, not a slot a cell wide: its walls worn back to what loose rock
+  // and talus hold, ~45 degrees (a slot a few metres wide stood tens of metres deep, sawtooth from afar),
+  // working out from the cut a ring of cells at a time)
+  if (cut.length) {
+    const tanW = 1, ring = new Int32Array(n).fill(-1), q2 = new Int32Array(n);
+    let qn = 0;
+    for (const c of cut) if (ring[c] < 0) { ring[c] = 0; q2[qn++] = c; }
+    for (let i = 0; i < qn; i++) {
+      const c = q2[i];
+      if (ring[c] >= 24) continue;
+      for (let e = nStart[c]; e < nStart[c + 1]; e++) {
+        const o = nbr[e], lim = h[c] + tanW * G.nDist[e];
+        if (base[o] || wet[o] || h[o] <= lim) continue;
+        h[o] = lim;
+        if (ring[o] < 0) { ring[o] = ring[c] + 1; q2[qn++] = o; }
+      }
+    }
+  }
+  return any ? filled : null;
+}
+
 // the ground near each channel (water >= Amin) held to a V from its line (prepareTile's finish)
 const BX = [-1, 0, 1, -1, 1, -1, 0, 1], BY = [-1, -1, -1, 0, 0, 1, 1, 1];
 function burnChannels(h, E, NG, Amin, wet) {
@@ -794,6 +878,17 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
     stampFolds(h, G, S.s.folds, R, cellL, pyr ? 4 * cellL : Infinity);
   }
   E.nStep = steps; E.route(); E.drain();
+  // the hollows its streams run through filled or cut through (resolvePonds), what's filled alluvium;
+  // its water routed again over the ground as it now is
+  // (by turns: a river can come into a hollow through a side basin behind a ridge inside it, which
+  // the hollow's own resolving leaves; routed again, that's a hollow of its own, resolved next time)
+  let ponds = null;
+  for (let pass = 0; pass < 3 && K0 > 0; pass++) {
+    const pf = resolvePonds(h, E, wet, 10 * cell * cell, edge);
+    if (!pf) break;
+    if (!ponds) ponds = pf; else for (let c = 0; c < n; c++) ponds[c] |= pf[c];
+    E.route(); E.drain();
+  }
   // its channels as lines: the run cuts a channel a cell wide, from cell to cell; one running
   // diagonally across the grid joins its cells corner to corner, and the cells either side of each
   // joint stay as high as the banks, a row of teeth along it (rungs in a view from above). Each
@@ -886,6 +981,10 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
       const c = q[i];
       for (let e = nStart[c]; e < nStart[c + 1]; e++) { const o = nbr[e]; if (!water[o] && h[o] < 0) { water[o] = 1; q[qn++] = o; } }
     }
+    // (a river's own way out kept open: its flow scours the bar the waves would build across its mouth,
+    // and its record ran into the sea over a bank a metre up, its water rising 20 m to get there; a
+    // stream smaller than the rivers' (refine.js RIVER_A) may be barred)
+    const MOUTH_A = 1e8;
     // since the sea rose, its waves: a thin point of soft rock out in the water is cut away,
     // a shallow cove all but closed in by land fills with sand (beaches, bay bars): the fine
     // fringe of the drowned land wears to a coast; hard headlands stand
@@ -896,7 +995,7 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
         let ns = 0;
         for (let e = nStart[c]; e < nStart[c + 1]; e++) if (water[nbr[e]] === 1) ns++;
         if (!water[c] && ns >= 5 && h[c] < waveH * (10 + 60 * (1 - hardAt(c)))) { water[c] = 1; h[c] = Math.min(h[c], -2); }
-        else if (water[c] === 1 && ns <= 2 && h[c] > -25) { water[c] = 0; h[c] = 1; rockC[c] = SAND; }
+        else if (water[c] === 1 && ns <= 2 && h[c] > -25 && !(E.A[c] >= MOUTH_A)) { water[c] = 0; h[c] = 1; rockC[c] = SAND; }
       }
     }
     // longshore drift: along a soft or sandy shore the waves carry sand down the coast, building
@@ -909,7 +1008,7 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
         let land = 0;
         for (let dj = -2; dj <= 2; dj++) for (let di = -2; di <= 2; di++) if (!water[c + dj * NG + di]) land++;
         if (land === 0 || land === 25) continue;
-        if (water[c] === 1 && land >= 16 && h[c] > -15 * waveH) { water[c] = 0; h[c] = 1; rockC[c] = SAND; }
+        if (water[c] === 1 && land >= 16 && h[c] > -15 * waveH && !(E.A[c] >= MOUTH_A)) { water[c] = 0; h[c] = 1; rockC[c] = SAND; }
         else if (!water[c] && land <= 9 && h[c] < 8 * waveH) { water[c] = 1; h[c] = Math.min(h[c], -2); }
       }
     }
@@ -925,6 +1024,8 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
       blur(phi, 1, btmp);
       for (let c = 0; c < n; c++) {
         if (wet[c] === 2 || edge(c)) continue;
+        // (a river's mouth stays open water here too, however much land is round it)
+        if (water[c] === 1 && E.A[c] >= MOUTH_A) continue;
         const f = phi[c];
         if (f <= -0.9 || f >= 0.9) continue;
         if (f < 0) { water[c] = 1; h[c] = Math.min(h[c], -0.3 + 4 * f); }
@@ -941,6 +1042,7 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
       const sl = (h[c] - h[E.rcv[c]]) / E.rcvD[c];
       if (E.A[c] > aLay && sl < 0.004) rockC[c] = AL;
     }
+    if (ponds) for (let c = 0; c < n; c++) if (ponds[c] && !water[c]) rockC[c] = AL;
   }
   // the kept square
   const K = MT + 2 * KEEP, off = MARGIN - KEEP;
