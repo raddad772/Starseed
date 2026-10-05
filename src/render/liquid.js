@@ -114,13 +114,85 @@ Waves liquidWaves(vec3 fp, vec3 n, vec3 wd, float lmax, bool river, float foot, 
     float wt0 = fk * dirW * (ktl / kk), wt = wt0 * (0.3 + 1.4 * grp[(i / ${N_DIR}) & 3]);
     float res = smoothstep(2.0 * foot, 6.0 * foot, lam);
     float ph = dot(K.xyz, fp + warp) - K.w;
-    W.g += kd * (wt * res * cos(ph));
-    W.var += wt * wt * 0.5;
-    W.var0 += wt0 * wt0 * 0.5;
-    W.res += wt * wt * 0.5 * res;
-    W.crest += wt * res * sin(ph);
-    rv += wt * wt * 0.5 * res * res;
+    // (each wave in groups, as a sea's are: its height swelling and fading over about three of its
+    // lengths, along a way of its own (its k turned: whole cycles of the detail period too), drifting;
+    // three waves an octave of one height everywhere summed to one lattice, a checkerboard of glints)
+    vec3 Ke = floor(K.yzx * (0.35 / ${(2 * Math.PI / 4096).toFixed(9)}) + 0.5) * ${(2 * Math.PI / 4096).toFixed(9)};
+    float env = 0.6 + 0.4 * sin(dot(Ke, fp + warp) - 0.17 * K.w + float(i) * 1.7);
+    W.g += kd * (wt * res * env * cos(ph));
+    // (the groups' mean square height: 0.6^2 + 0.4^2 / 2)
+    W.var += wt * wt * 0.22;
+    W.var0 += wt0 * wt0 * 0.22;
+    W.res += wt * wt * 0.22 * res;
+    W.crest += wt * res * env * sin(ph);
+    rv += wt * wt * 0.22 * res * res;
   }
+  W.crest /= sqrt(max(rv, 1e-9));
+  return W;
+}
+// a river's ripples: the turbulence's, not wind waves (a few waves of fixed ways summed to a lattice,
+// a checkerboard of glints on every river): gradient noise over four scales, 0.25 to 2 m, each as
+// steep as the next (its height its cell's size), none longer than the river's longest waves (lmax),
+// on the plane across the axis its surface faces most (the two most, blended where it turns: as the
+// ground's scans are), whole cells of the detail period so it doesn't seam where fp wraps. Its slopes
+// (planet-fixed) and their variance as liquidWaves gives them, crest its height in deviations
+float liqHash(vec2 c) {
+  uvec2 q = uvec2(ivec2(c) + 1048576);
+  uint h = (q.x * 1597334677u) ^ (q.y * 3812015801u);
+  h = h * 747796405u + 2891336453u; h ^= h >> 16; h *= 2246822519u; h ^= h >> 13;
+  return float(h & 7u) * 0.7854 + 0.3927;
+}
+// (its value (x) and gradient (yz) at p, in cells, per cells a period: Perlin's, quintic)
+vec3 rippleNoise(vec2 p, float per) {
+  vec2 i = floor(p), f = p - i, i1 = mod(i + 1.0, per);
+  i = mod(i, per);
+  vec2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0), du = 30.0 * f * f * (f * (f - 2.0) + 1.0);
+  float ha = liqHash(i), hb = liqHash(vec2(i1.x, i.y)), hc = liqHash(vec2(i.x, i1.y)), hd = liqHash(i1);
+  vec2 ga = vec2(cos(ha), sin(ha)), gb = vec2(cos(hb), sin(hb)), gc = vec2(cos(hc), sin(hc)), gd = vec2(cos(hd), sin(hd));
+  float va = dot(ga, f), vb = dot(gb, f - vec2(1.0, 0.0)), vc = dot(gc, f - vec2(0.0, 1.0)), vd = dot(gd, f - 1.0);
+  float k = va - vb - vc + vd;
+  return vec3(va + u.x * (vb - va) + u.y * (vc - va) + u.x * u.y * k,
+              ga + u.x * (gb - ga) + u.y * (gc - ga) + u.x * u.y * (ga - gb - gc + gd) + du * (u.yx * k + vec2(vb, vc) - va));
+}
+vec3 rippleAxis(int a, vec3 p, float L, float o) {
+  vec2 uv = a == 0 ? p.zy : a == 1 ? p.xz : p.xy;
+  vec3 r = rippleNoise(uv / L + o, 4096.0 / L);
+  return vec3(r.x, r.yz);
+}
+Waves riverRipples(vec3 fp, vec3 n, float lmax, float foot) {
+  Waves W = Waves(vec3(0.0), 0.0, 0.0, 0.0, 0.0);
+  vec3 an = abs(n);
+  int ma = an.x > an.y && an.x > an.z ? 0 : an.y > an.z ? 1 : 2;
+  int mi = an.x < an.y && an.x < an.z ? 0 : an.y < an.z ? 1 : 2;
+  int me = 3 - mi - ma;
+  float w0 = ma == 0 ? an.x : ma == 1 ? an.y : an.z, w1 = me == 0 ? an.x : me == 1 ? an.y : an.z;
+  vec2 bw = clamp((vec2(w0, w1) - 0.5773) / (1.0 - 0.5773), 0.0, 1.0);
+  bw = bw.x + bw.y < 1e-4 ? vec2(1.0, 0.0) : bw / (bw.x + bw.y);
+  if (bw.y < 0.02) bw = vec2(1.0, 0.0);
+  float rv = 0.0, cr = 0.0;
+  for (int o = 0; o < 4; o++) {
+    float L = 0.25 * exp2(float(o)), fk = 1.0 - smoothstep(lmax * 0.3, lmax * 0.6, L);
+    if (fk <= 0.0) continue;
+    // (a cell's ripple about two cells long: resolved where that spans a few pixels)
+    float res = smoothstep(foot, 3.0 * foot, L);
+    vec3 g = vec3(0.0); float v = 0.0;
+    for (int k = 0; k < 2; k++) {
+      int a = k == 0 ? ma : me;
+      float bwk = k == 0 ? bw.x : bw.y;
+      if (bwk <= 0.0) continue;
+      vec3 r = rippleAxis(a, fp, L, float(o) * 17.31);
+      g += bwk * (a == 0 ? vec3(0.0, r.z, r.y) : a == 1 ? vec3(r.y, 0.0, r.z) : vec3(r.y, r.z, 0.0));
+      v += bwk * r.x;
+    }
+    g -= n * dot(g, n);
+    // (E|grad|^2 of the noise: 0.78, liquidWaves' var; its values' deviation 0.216)
+    W.g += g * (fk * res);
+    W.var += fk * fk * 0.78;
+    W.res += fk * fk * 0.78 * res;
+    W.crest += fk * res * v / 0.216;
+    rv += fk * fk * res * res;
+  }
+  W.var0 = W.var;
   W.crest /= sqrt(max(rv, 1e-9));
   return W;
 }
@@ -161,8 +233,8 @@ void liquidSurface(vec3 fp, vec3 n, vec3 upF, float kind, float flow, float fetc
   if (river) {
     // a river's surface carried down it at its speed (two phases of the pattern, each drawn along
     // and faded at its ends, so it moves without ever stretching)
-    Waves A = liquidWaves(fp - fd * fv * 3.0 * ta, n, wd, lmax, true, foot, warp * 0.05, grp);
-    Waves B = liquidWaves(fp - fd * fv * 3.0 * tb + 0.37, n, wd, lmax, true, foot, warp * 0.05, grp);
+    Waves A = riverRipples(fp - fd * fv * 3.0 * ta, n, lmax, foot);
+    Waves B = riverRipples(fp - fd * fv * 3.0 * tb + 0.37, n, lmax, foot);
     W = A; W.g = A.g * wa + B.g * (1.0 - wa); W.crest = A.crest * wa + B.crest * (1.0 - wa);
   } else W = liquidWaves(fp, n, wd, lmax, false, foot, warp, grp);
   // (scaled to the slopes' variance, the groups left to vary it from place to place)
@@ -205,7 +277,10 @@ void liquidSurface(vec3 fp, vec3 n, vec3 upF, float kind, float flow, float fetc
       float th = mix(0.75, 0.28, cov);
       foam = smoothstep(th - 0.02, th + 0.1, mix(nb, na, wa) + 0.06 * W.crest) * 0.85;
     }
+    // (the lines wander across as they go, a few metres over tens: where the eddies shed off its bed
+    // and banks gather them, held there while the foam runs along them; drawn straight, a ruler's)
     vec2 q = vec2(dot(fp, ac) * 0.2, dot(fp, fd) * 0.004);
+    q.x += 1.2 * (texture(tDetail, vec2(dot(fp, ac), dot(fp, fd)) * 0.012).r - 0.5);
     float sa = texture(tDetail, q - vec2(0.0, fv * 3.0 * ta * 0.004)).a, sb = texture(tDetail, q + vec2(0.43, 0.0) - vec2(0.0, fv * 3.0 * tb * 0.004)).a;
     float streak = smoothstep(0.7, 0.8, mix(sb, sa, wa)) * smoothstep(0.6, 1.2, Fr);
     foam = max(foam, streak * 0.3);

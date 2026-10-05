@@ -116,7 +116,7 @@ void main() {
   float rough = 0.85, ao = 1.0;
 #if MAT_MODE > 0
   // (its rock's scan, by its own position: the texture sits on the stone)
-  MatS ms = matSurf(vR.y, vLocal / MAT_TILE + vR.x * 37.0, dpx / MAT_TILE, dpy / MAT_TILE, ln);
+  MatS ms = matSurf(vR.y, vLocal / MAT_TILE + vR.x * 37.0, dpx / MAT_TILE, dpy / MAT_TILE, ln, 0.0);
   albedo *= ms.ratio;
   ln = ms.n; rough = ms.rough; ao = ms.ao;
 #endif

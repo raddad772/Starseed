@@ -104,17 +104,43 @@ uniform highp sampler2DArray tMatN;
 #define MAT_TILE 2.0
 struct MatS { vec3 ratio; float h; vec3 n; float rough; float ao; };
 
+// a scan's repeats broken up (Quilez, "texture repetition", 2017: its third way): a smooth noise over
+// the tiles, read as one of eight offsets of the scan, picks which each place shows; where one gives way
+// to the next, the two are blended by their texels' own heights (the higher shows, a stone standing out
+// of the sand), so the seams are the texture's own edges, not lines. One tile read twice where they
+// change (about half the ground), once elsewhere. per: the tile's repeats in the coordinates' wrap
+// (the detail period's), its noise wrapping with them (0: they don't wrap)
+float matHash(vec2 c) {
+  uvec2 q = uvec2(ivec2(c) + 1048576);
+  uint h = (q.x * 1597334677u) ^ (q.y * 3812015801u);
+  h = h * 747796405u + 2891336453u; h ^= h >> 16; h *= 2246822519u; h ^= h >> 13;
+  return float(h >> 8) / 16777216.0;
+}
+void matRead(vec2 uv, float layer, vec2 gx, vec2 gy, float per, out vec4 A, out vec4 B) {
+  vec2 c = floor(uv), f = uv - c, c1 = c + 1.0;
+  if (per > 0.0) { c = mod(c, per); c1 = mod(c1, per); }
+  f = f * f * (3.0 - 2.0 * f);
+  float k = 8.0 * mix(mix(matHash(c), matHash(vec2(c1.x, c.y)), f.x), mix(matHash(vec2(c.x, c1.y)), matHash(c1), f.x), f.y);
+  float i = floor(k), fk = k - i;
+  vec2 oA = vec2(matHash(vec2(i, 17.0)), matHash(vec2(i, 29.0))), oB = vec2(matHash(vec2(i + 1.0, 17.0)), matHash(vec2(i + 1.0, 29.0)));
+  if (fk < 0.25) { A = textureGrad(tMatA, vec3(uv + oA, layer), gx, gy); B = textureGrad(tMatN, vec3(uv + oA, layer), gx, gy); return; }
+  if (fk > 0.75) { A = textureGrad(tMatA, vec3(uv + oB, layer), gx, gy); B = textureGrad(tMatN, vec3(uv + oB, layer), gx, gy); return; }
+  vec4 A0 = textureGrad(tMatA, vec3(uv + oA, layer), gx, gy), A1 = textureGrad(tMatA, vec3(uv + oB, layer), gx, gy);
+  float t = smoothstep(0.4, 0.6, fk + 0.15 * (A1.a - A0.a));
+  A = mix(A0, A1, t);
+  B = mix(textureGrad(tMatN, vec3(uv + oA, layer), gx, gy), textureGrad(tMatN, vec3(uv + oB, layer), gx, gy), t);
+}
+
 // one projection, across axis a (0 x, 1 y, 2 z): its texels, and its normal into the planet-fixed
 // frame by the whiteout blend on the face's own normal (uv flipped on a face's back side, so its
 // bumps light the right way round)
-void matPlane(int a, vec3 p, vec3 dx, vec3 dy, vec3 n, float layer, out vec4 A, out vec4 B, out vec3 wn) {
+void matPlane(int a, vec3 p, vec3 dx, vec3 dy, vec3 n, float layer, float per, out vec4 A, out vec4 B, out vec3 wn) {
   vec2 uv, gx, gy;
   float sg;
   if (a == 0) { sg = n.x < 0.0 ? -1.0 : 1.0; uv = vec2(p.z * sg, p.y); gx = vec2(dx.z * sg, dx.y); gy = vec2(dy.z * sg, dy.y); }
   else if (a == 1) { sg = n.y < 0.0 ? -1.0 : 1.0; uv = vec2(p.x * sg, p.z); gx = vec2(dx.x * sg, dx.z); gy = vec2(dy.x * sg, dy.z); }
   else { sg = n.z < 0.0 ? 1.0 : -1.0; uv = vec2(p.x * sg, p.y); gx = vec2(dx.x * sg, dx.y); gy = vec2(dy.x * sg, dy.y); }
-  A = textureGrad(tMatA, vec3(uv, layer), gx, gy);
-  B = textureGrad(tMatN, vec3(uv, layer), gx, gy);
+  matRead(uv, layer, gx, gy, per, A, B);
   vec2 t = B.xy * 2.0 - 1.0;
   t.x *= sg;
   float tz = sqrt(max(1.0 - dot(t, t), 0.0));
@@ -124,7 +150,7 @@ void matPlane(int a, vec3 p, vec3 dx, vec3 dy, vec3 n, float layer, out vec4 A, 
 }
 
 // one class's surface at p (planet-fixed m, already over the tile), dx/dy its screen derivatives
-MatS matSurf(float layer, vec3 p, vec3 dx, vec3 dy, vec3 n) {
+MatS matSurf(float layer, vec3 p, vec3 dx, vec3 dy, vec3 n, float per) {
   vec4 A, B; vec3 wn;
   vec4 sA = vec4(0.0), sB = vec4(0.0); vec3 sn = vec3(0.0);
 #if MAT_MODE == 3
@@ -134,9 +160,9 @@ MatS matSurf(float layer, vec3 p, vec3 dx, vec3 dy, vec3 n) {
   w /= w.x + w.y + w.z;
   w = w * step(0.02, w);
   w /= w.x + w.y + w.z;
-  if (w.x > 0.0) { matPlane(0, p, dx, dy, n, layer, A, B, wn); sA += A * w.x; sB += B * w.x; sn += wn * w.x; }
-  if (w.y > 0.0) { matPlane(1, p, dx, dy, n, layer, A, B, wn); sA += A * w.y; sB += B * w.y; sn += wn * w.y; }
-  if (w.z > 0.0) { matPlane(2, p, dx, dy, n, layer, A, B, wn); sA += A * w.z; sB += B * w.z; sn += wn * w.z; }
+  if (w.x > 0.0) { matPlane(0, p, dx, dy, n, layer, per, A, B, wn); sA += A * w.x; sB += B * w.x; sn += wn * w.x; }
+  if (w.y > 0.0) { matPlane(1, p, dx, dy, n, layer, per, A, B, wn); sA += A * w.y; sB += B * w.y; sn += wn * w.y; }
+  if (w.z > 0.0) { matPlane(2, p, dx, dy, n, layer, per, A, B, wn); sA += A * w.z; sB += B * w.z; sn += wn * w.z; }
 #else
   // (the two axes the surface faces most, weighted so the third's share, gone, leaves no seam)
   vec3 an = abs(n);
@@ -147,8 +173,8 @@ MatS matSurf(float layer, vec3 p, vec3 dx, vec3 dy, vec3 n) {
   vec2 bw = clamp((vec2(w0, w1) - 0.5773) / (1.0 - 0.5773), 0.0, 1.0);
   bw = bw.x + bw.y < 1e-4 ? vec2(1.0, 0.0) : bw / (bw.x + bw.y);   // (exactly diagonal: both 0)
   if (bw.y < 0.02) bw = vec2(1.0, 0.0);
-  matPlane(ma, p, dx, dy, n, layer, A, B, wn); sA += A * bw.x; sB += B * bw.x; sn += wn * bw.x;
-  if (bw.y > 0.0) { matPlane(me, p, dx, dy, n, layer, A, B, wn); sA += A * bw.y; sB += B * bw.y; sn += wn * bw.y; }
+  matPlane(ma, p, dx, dy, n, layer, per, A, B, wn); sA += A * bw.x; sB += B * bw.x; sn += wn * bw.x;
+  if (bw.y > 0.0) { matPlane(me, p, dx, dy, n, layer, per, A, B, wn); sA += A * bw.y; sB += B * bw.y; sn += wn * bw.y; }
 #endif
   return MatS(sA.rgb * 2.5, sA.a, normalize(sn), sB.b, sB.a);
 }
@@ -169,8 +195,10 @@ MatS matGround(vec4 c0, vec4 c1, vec4 c2, vec3 p, vec3 dpx, vec3 dpy, vec3 n, fl
   MatS a = MatS(vec3(1.0), 0.5, n, 0.8, 1.0), b = a, aM = a, bM = a;
   vec3 pf = p / MAT_TILE, dxf = dpx / MAT_TILE, dyf = dpy / MAT_TILE;
   vec3 pm = pf * 0.125 + 0.37, dxm = dxf * 0.125, dym = dyf * 0.125;
-  if (kF > 0.0) { a = matSurf(float(ia), pf, dxf, dyf, n); if (wb > 0.02) b = matSurf(float(ib), pf, dxf, dyf, n); }
-  if (kM > 0.0) { aM = matSurf(float(ia), pm, dxm, dym, n); if (wb > 0.02) bM = matSurf(float(ib), pm, dxm, dym, n); }
+  // (the tiles' repeats in the detail period, over which fp wraps)
+  const float PER = 4096.0 / MAT_TILE;   // (terrainMaterial.js DETAIL_PERIOD)
+  if (kF > 0.0) { a = matSurf(float(ia), pf, dxf, dyf, n, PER); if (wb > 0.02) b = matSurf(float(ib), pf, dxf, dyf, n, PER); }
+  if (kM > 0.0) { aM = matSurf(float(ia), pm, dxm, dym, n, PER * 0.125); if (wb > 0.02) bM = matSurf(float(ib), pm, dxm, dym, n, PER * 0.125); }
   // (each: the near tile over the far one: the ratios multiply, the normals' tilts add; by class,
   // how much relief each read carries: magnified 8x, a soft ground's lumps become drifts (sand's
   // trampled lumps made swirls that crossed its ripples); rock's cracks and beds stay)
