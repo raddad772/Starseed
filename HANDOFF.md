@@ -235,6 +235,12 @@ distinct stair step in the river edge ... is it not using actual geometry"):**
   critical in _riverWater too (Grant 1997), so the brink's discharge is a sane one.
 - Seen (scratchpad rivers_sheet.jpg): Thugroadath's canyon river r 3593 (LAB-44, 8.9 S 46.0 W) from 180 m
   before and after, inside its canyon; SOL Earth's meander r 334; a shore from above.
+- Creeks too (the finest level of the terrain's tiles' drainage, sampleSnap's creeks): riverRibbons
+  walks that level's tiles over the chunk (each cell from the tile whose own square holds it, only
+  where that level is the finest holding the ground, none beside a river), each wet cell's curve a
+  strip at its water's level, as wide as sampleSnap draws it, edges from the curve's own tangent so
+  cells meet cleanly; S_RIVR 2 marks creek water for the bed. Narrow creeks were dashes; now a line.
+  (Stair-steps seen at a creek's edge under trees were the near sun-shadow maps' texels, not the water.)
 - Canyons: the floor beside a canyon river narrows on a bend's outer side by how hard it's cutting there
   (`_canyons` Wf; it was 1.8 half widths both sides everywhere: Dave's "straight and uniform" banks).
 - Testing note: in a hidden pane, `debugRun`'s MessageChannel loop starves the workers' replies (a

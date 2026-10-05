@@ -29,7 +29,7 @@ import { buildChannel, chanNearest, chanSwing, nearOut, chanFlow, nfOf, ZONE } f
 import { craterFloor, TILE_CELLS } from './worldsim/impacts.js';
 import { SnapshotSampler } from './worldsim/snapshot.js';
 import { RIVER_REC, BIG_REC } from './worldsim/refine.js';
-import { TRUE_SCALE } from './tileshape.js';
+import { TRUE_SCALE, MT, KEEP } from './tileshape.js';
 import { meanderField } from './meanders.js';
 import { ROCKS, R as ROCK } from './worldsim/lithology.js';
 import { hexToLinear } from './color.js';
@@ -60,7 +60,7 @@ export const S_RFADE = 20;   // how far a river's water here has faded out, seen
 export const S_WLVL = 21;    // the water's level nearby, a river's, a creek's or a lake's (m, as S_H; -1e9 none): the shore
 export const S_FLX = 22, S_FLY = 23, S_FLZ = 24; // running water's way down (unit, planet-fixed; 0 still)
 export const S_FLV = 25;     // and its speed (m/s: Manning's, by its depth and slope)
-export const S_RIVR = 26;    // 1 where the water is a world-sim river's channel (riverRibbons draws it near)
+export const S_RIVR = 26;    // 1 where the water is a world-sim river's channel, 2 a creek's (riverRibbons draws them near)
 export const S_LEN = 27;
 // (each rock's cohesion as a mass, Pa: how tall a sheer face of it stands: canyon walls)
 const FREEZE_MIX = { methane: 20, ethane: 20 };   // (K: a mixture's freezing point under its main liquid's)
@@ -751,7 +751,7 @@ export class TerrainGenerator {
     // every stream on the land as a vein of water)
     const rvOwn = rv ? rv.w * 0.5 : 0, rvWide = rv && this.wetNow ? Math.max(rvOwn, 0.75 * minWavelength) : rvOwn;
     const rvFade = rv && this.wetNow ? dm.smoothstep(4, 16, rvWide / Math.max(rvOwn, 1e-3)) : 0;
-    let rvWl = -1e9, rvSt = -1e9;
+    let rvWl = -1e9, rvSt = -1e9, ckWl = -1e9;
     if (rv) {
       // (a meandering river's floodplain: the belt it has swung across, laid level near its banks;
       // and the loops it cut off, lakes while young, swales once filled)
@@ -831,7 +831,7 @@ export class TerrainGenerator {
           // (its water running water: render/liquid.js's river, not a still pond; down its line at
           // Manning's speed for its depth and the fall along it; heights in the sim's metres)
           if (wet) {
-            wl = Math.max(wl, bank - 0.25 - 0.1 * dep); out[S_WET] = Math.max(out[S_WET], 0.5);
+            ckWl = bank - 0.25 - 0.1 * dep; wl = Math.max(wl, ckWl); out[S_WET] = Math.max(out[S_WET], 0.5);
             if (finRd.tF !== undefined && finRd.cdi !== undefined) {
               const q0 = this._cq0 || (this._cq0 = [0, 0, 0]), q1 = this._cq1 || (this._cq1 = [0, 0, 0]), e = 0.25 * finRd.du;
               dirFromFaceUV(finRd.tF, finRd.tU, finRd.tV, q0); dirFromFaceUV(finRd.tF, finRd.tU + finRd.cdi * e, finRd.tV + finRd.cdj * e, q1);
@@ -940,7 +940,7 @@ export class TerrainGenerator {
     // above dry. Only where water runs now: a dry world's old channels are valleys in its dust)
     if (rvSt > -1e8) out[S_WET] = Math.max(out[S_WET], rvK * (1 - rvFade) * (1 - dm.smoothstep(0.05, 0.6, (h - rvSt) * this.hScale)));
     // (a river's: its water drawn as a surface of its own near, riverRibbons, where it isn't faded)
-    if (wl > h) { out[S_WDEPTH] = wl - h; if (wl === rvWl) { out[S_RFADE] = rvFade; out[S_RIVR] = 1; } }
+    if (wl > h) { out[S_WDEPTH] = wl - h; if (wl === rvWl) { out[S_RFADE] = rvFade; out[S_RIVR] = 1; } else if (wl === ckWl) out[S_RIVR] = 2; }
     out[S_INLAND] = h > 0 ? 1 : 0;
     out[S_VARIANT] = this.nClimate.fbm(x * 6 + 3, y * 6, z * 6, 3);
     const Ts = S.Tsea(x, y, z);
@@ -1041,19 +1041,21 @@ export class TerrainGenerator {
     const inZone = (Zs, a, b) => { if (Zs) for (let z = 0; z < Zs.length; z += ZONE) if (a >= Zs[z] - 1e-6 && a <= Zs[z + 1] + 1e-6 && b >= Zs[z] - 1e-6 && b <= Zs[z + 1] + 1e-6) return true; return false; };
     // (across a run at point i: up crossed with its way along, its neighbours' either side: the same
     // for the two quads that meet there)
-    const acrossAt = (m, X, ST, i, o) => {
+    const acrossAt = (m, X, ST, i, o, TG) => {
       const i0 = Math.max(0, i - 1), i1 = Math.min(m - 1, i + 1), r0 = R + ST[i0] * hs, r1 = R + ST[i1] * hs;
-      const tx = X[3 * i1] * r1 - X[3 * i0] * r0, ty = X[3 * i1 + 1] * r1 - X[3 * i0 + 1] * r0, tz = X[3 * i1 + 2] * r1 - X[3 * i0 + 2] * r0;
+      let tx = X[3 * i1] * r1 - X[3 * i0] * r0, ty = X[3 * i1 + 1] * r1 - X[3 * i0 + 1] * r0, tz = X[3 * i1 + 2] * r1 - X[3 * i0 + 2] * r0;
+      // (or its curve's own way along there: two runs that meet carry on with the same edges)
+      if (TG) { tx = TG[3 * i]; ty = TG[3 * i + 1]; tz = TG[3 * i + 2]; }
       const ux = X[3 * i], uy = X[3 * i + 1], uz = X[3 * i + 2];
       const ax = uy * tz - uz * ty, ay = uz * tx - ux * tz, az = ux * ty - uy * tx, al = Math.sqrt(ax * ax + ay * ay + az * az) || 1;
       o[0] = ax / al; o[1] = ay / al; o[2] = az / al;
       return o;
     };
-    const strip = (m, X, ST, HW, XW, DM, V, TT, ok, Zs) => {
+    const strip = (m, X, ST, HW, XW, DM, V, TT, ok, Zs, TG) => {
       const P = new Float64Array(3 * m), Ac = new Float64Array(3 * m);
       for (let i = 0; i < m; i++) { const r = R + ST[i] * hs; P[3 * i] = X[3 * i] * r; P[3 * i + 1] = X[3 * i + 1] * r; P[3 * i + 2] = X[3 * i + 2] * r; }
       const ac = [0, 0, 0];
-      for (let i = 0; i < m; i++) { acrossAt(m, X, ST, i, ac); Ac[3 * i] = ac[0]; Ac[3 * i + 1] = ac[1]; Ac[3 * i + 2] = ac[2]; }
+      for (let i = 0; i < m; i++) { acrossAt(m, X, ST, i, ac, TG); Ac[3 * i] = ac[0]; Ac[3 * i + 1] = ac[1]; Ac[3 * i + 2] = ac[2]; }
       let fall = null;
       const endFall = () => {
         if (fall && fall.top - fall.bot >= 2) out.falls.push(fall.fx - ox, fall.fy - oy, fall.fz - oz, fall.top, fall.bot, fall.w, fall.wd, fall.ax, fall.ay, fall.az);
@@ -1258,6 +1260,74 @@ export class TerrainGenerator {
         }
         strip(m, X, ST, HW, XW, DM, V, TT, ok, null);
         s = e + 1;
+      }
+    }
+    // the creeks (sampleSnap's): the finest level of the terrain's tiles holding the ground there (at
+    // most 60 m cells), each cell of its drainage with water in it a curve from halfway to its main
+    // inflow, round it, to halfway to the cell it drains into (RefineReader.creekAt), at its water's
+    // level, as wide as sampleSnap draws it; each cell from the tile whose own square it's in (their
+    // margins overlap), none beside a river (sampleSnap's own rule) or where a finer level holds it
+    if (S.pyr) {
+      const RD = S.pyrReaders().filter((rd) => rd.cell <= 60).sort((a, b) => a.cell - b.cell), K = MT + 2 * KEEP, LN_A = 25.328436022934504;
+      const thrOf = (A) => Math.max(0, Math.round(255 * Math.log(A) / LN_A)), thrA = thrOf(CREEK_A), thrW = thrOf(CREEK_WET);
+      const nbI = (k) => ((k >= 4 ? k + 1 : k) % 3) - 1, nbJ = (k) => (((k >= 4 ? k + 1 : k) / 3) | 0) - 1;
+      const d = [0, 0, 0], d1 = [0, 0, 0], d2 = [0, 0, 0], gr = this.p.g || 9.81, NP = 5;
+      this._minW = minW;
+      for (const rd of RD) {
+        const src = rd.src;
+        if (!src || !src.tiles) continue;
+        const n = src.n, st = 2 / n, du = st / MT;
+        for (let tj = Math.floor((v0 + 1) / st) - 1; tj <= Math.floor((v0 + size + 1) / st) + 1; tj++) for (let ti = Math.floor((u0 + 1) / st) - 1; ti <= Math.floor((u0 + size + 1) / st) + 1; ti++) {
+          if (ti < 0 || tj < 0 || ti >= n || tj >= n) continue;
+          const tile = src.tiles.get((f * n + tj) * n + ti);
+          if (!tile || !tile.fl || !tile.rcv) continue;
+          const H = tile.h, fl = tile.fl, rc = tile.rcv, tu0 = -1 + ti * st - KEEP * du, tv0 = -1 + tj * st - KEEP * du;
+          const ci0 = Math.max(KEEP, Math.floor((u0 - tu0) / du) - 2), ci1 = Math.min(KEEP + MT - 1, Math.ceil((u0 + size - tu0) / du) + 2);
+          const cj0 = Math.max(KEEP, Math.floor((v0 - tv0) / du) - 2), cj1 = Math.min(KEEP + MT - 1, Math.ceil((v0 + size - tv0) / du) + 2);
+          for (let j = cj0; j <= cj1; j++) for (let i = ci0; i <= ci1; i++) {
+            const o = j * K + i, kr = rc[o];
+            if (fl[o] < thrW || kr === 255) continue;
+            // (this level the finest holding the ground here, as sampleSnap reads it; no river beside it)
+            dirFromFaceUV(f, tu0 + (i + 0.5) * du, tv0 + (j + 0.5) * du, d);
+            let fin = null;
+            for (const r2 of RD) if (r2.sample(d) && r2.w > 0.5) { fin = r2; break; }
+            if (fin !== rd) continue;
+            const rv = this._refRiverAt(d[0], d[1], d[2]);
+            if (rv && rv.dist < rv.w * 1.5) continue;
+            // (its size: sampleSnap's, by its water; drawn no narrower than the sampling shows, and not
+            // at all a good deal narrower than that; water in it only where it stands above its bed)
+            const A = Math.exp(fl[o] / 255 * LN_A), kA = Math.log(A / CREEK_A);
+            const own = Math.min(0.45 * rd.cell, 0.5 + 0.9 * Math.exp(0.45 * kA)), dep = Math.min(3, 0.25 + 0.3 * Math.exp(0.3 * kA));
+            const half = Math.max(own, 0.75 * minW), dl = 0.25 + 0.1 * dep;
+            if (half > 4 * own || dep <= dl) continue;
+            const ri = i + nbI(kr), rj = j + nbJ(kr);
+            let ui = i, uj = j, uf = -1;
+            for (let q = 0; q < 8; q++) {
+              const ni = i + nbI(q), nj = j + nbJ(q), no = nj * K + ni, nk = rc[no];
+              if (nk === 255 || ni + nbI(nk) !== i || nj + nbJ(nk) !== j || fl[no] < thrA) continue;
+              if (fl[no] > uf) { uf = fl[no]; ui = ni; uj = nj; }
+            }
+            const x0 = (ui + i) / 2, y0 = (uj + j) / 2, x2 = (i + ri) / 2, y2 = (j + rj) / 2;
+            const h0 = (H[uj * K + ui] + H[o]) / 2, h2 = (H[o] + H[rj * K + ri]) / 2;
+            const lenM = Math.hypot(x2 - x0, y2 - y0) * rd.cell, sl = Math.max(1e-4, (h0 - h2) / Math.max(lenM, 1e-3));
+            const DMc = 2 / 3 * (dep - dl) * hs, Vc = Math.min(9, Math.sqrt(gr * Math.max(DMc, 0.02)), Math.max(0.05, Math.pow(Math.max(0.05, DMc), 2 / 3) * Math.sqrt(sl) / 0.035));
+            const X = new Float64Array(3 * NP), TG = new Float64Array(3 * NP), ST = new Float64Array(NP), HW = new Float64Array(NP).fill(1.04 * half + 0.5 * spacing);
+            const XW = new Float64Array(NP).fill(half * Math.sqrt(1 - dl / dep)), DM = new Float64Array(NP).fill(DMc), V = new Float64Array(NP).fill(Vc), TT = new Float64Array(NP), ok = new Uint8Array(NP).fill(1);
+            for (let q = 0; q < NP; q++) {
+              const tt = q / (NP - 1), b0 = (1 - tt) * (1 - tt), b1 = 2 * tt * (1 - tt), b2 = tt * tt;
+              const cx = b0 * x0 + b1 * i + b2 * x2, cy = b0 * y0 + b1 * j + b2 * y2, uu = tu0 + (cx + 0.5) * du, vv = tv0 + (cy + 0.5) * du;
+              dirFromFaceUV(f, uu, vv, d);
+              X[3 * q] = d[0]; X[3 * q + 1] = d[1]; X[3 * q + 2] = d[2];
+              // (its way along: the curve's own, toward the cell it drains into)
+              const gx = 2 * (1 - tt) * (i - x0) + 2 * tt * (x2 - i), gy = 2 * (1 - tt) * (j - y0) + 2 * tt * (y2 - j), e = 0.01 * du;
+              dirFromFaceUV(f, uu + gx * e, vv + gy * e, d1); dirFromFaceUV(f, uu - gx * e, vv - gy * e, d2);
+              TG[3 * q] = d1[0] - d2[0]; TG[3 * q + 1] = d1[1] - d2[1]; TG[3 * q + 2] = d1[2] - d2[2];
+              ST[q] = (b0 * h0 + b1 * H[o] + b2 * h2) / hs + 0.2 - dl;
+              TT[q] = tt;
+            }
+            strip(NP, X, ST, HW, XW, DM, V, TT, ok, null, TG);
+          }
+        }
       }
     }
     if (!out.index.length) return null;
