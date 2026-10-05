@@ -405,6 +405,35 @@ rivers that are straighter where they should be?"):**
   southern winter): the edge at 51-53 S, a marginal zone of floes and leads ~2 degrees wide (shots
   ice_space_b, ice_edge_partial). Seasonal snow and leaf colour still from the annual means (next: the
   climate's monthly cycle to the snapshot, SIM_VERSION bump: every world re-sims once).
+- **Sea ice as floes** (Dave: "we want better floes"): liquid.js seaFloes (gen/liquidice.js seaFloe the same
+  sums, so the floe you see is the floe you stand on). Cells of a 3D partition (feature points an integer
+  hash of their lattice cell, whole cycles of the 4096 m detail period: the same on every GPU and in JS),
+  merged in groups (feature points in one 2S cube: a floe of a few cells, irregular, sizes spread): the
+  pack's floes ~250 m cells, each as close as the pack is at its group's middle (seaIceCover: the
+  temperature's ice, its edge ragged over the 512/64 m tiles), its leads S/2 (1 - sqrt(c)) wide either
+  side (a floe's share of its cell ~ c); near the edge the waves break floes (the more open, the more)
+  into pieces ~16 m (Toyota et al. 2006's marginal zone), each piece its floe's whose middle it lies in
+  (so they spill across the old outline whole), further apart toward the floe's edge. Waves, chop and
+  whitecaps die in the pack (Squire 2007); a closed pack's leads dark with nilas, walkable at c >= 0.98.
+  Snow by the floe's age; rims blue-grey. The year-round "pack ice" (terrain.js: a sea below -6 C annual
+  tinted white, below -10 snow ground; chunkbuilder: no water surface there) is gone: a cold sea is the
+  sea, its ice the floes, closed (only a frozen ocean's shell is ground). Tried: per-pixel cover (holes
+  ate floes along the 64 m noise), snow by the 64 m noise (white blobs across floes), pieces clipped to
+  their floe (ruler-straight blocks). SOL Earth -51.8, -76 on 2026-10-19: shots floe_a..f.
+  The dashed white line down every lead (Dave: "What dots"; floe_d_zoom): each floe reads its cover from
+  the detail texture at its group's middle (floeState), one point for all its pixels; in a 2x2 pixel block
+  straddling two floes' boundary (a lead's middle) that point jumped from one floe's middle to the other's,
+  the GPU's mip choice from that jump read a blurred level, the cover came out otherwise and the floe was
+  there for those pixels: dashes a pixel block apart along every lead. Now read at the full-size texels
+  (terrainMaterial.js tri0, textureLod 0: what the CPU twin reads too). Found by elimination in the live
+  shader with an in-page dash counter (pieces, far fade, reflections, the haze passes, other water: none of
+  them; a flat water colour: none; the floe values never NaN). Fixed on the way, each a real fault though
+  not the dashes: edges box-filtered against their leads (floeCover: a lead narrower than a pixel a faint
+  line); each feature point in the middle half of its cell and the edges searched round the nearest
+  point's own cell; a cell's floe from whole numbers (its index plus a hashed 0/1 per axis, halved); up
+  stretched 3x in the distances (a 3D lattice's cells far above or below the sea's slice touch it only in
+  slivers).
+  The CPU twin maps a sea patch top-down for checking: tools/floemap.mjs (shots floemap*.png).
 
 **What's still wrong / next:**
 - Snow covers most of a high mountain (the snowline reads the real height: physically right, maybe too

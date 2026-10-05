@@ -226,6 +226,15 @@ vec4 tri(vec3 p, vec3 w, float period) {
   vec4 c = texture(tDetail, p.xy / period + 0.71);
   return a * w.x + b * w.y + c * w.z;
 }
+// the same at the full-size texels: for a point that's one and the same over many pixels (a floe's
+// middle: liquid.js floeState), whose coordinates jump between neighbouring pixels at its edge, where the
+// GPU's mip choice from them read a blurred level, a different floe for those pixels (dashes along leads)
+vec4 tri0(vec3 p, vec3 w, float period) {
+  vec4 a = textureLod(tDetail, p.yz / period, 0.0);
+  vec4 b = textureLod(tDetail, p.zx / period + 0.37, 0.0);
+  vec4 c = textureLod(tDetail, p.xy / period + 0.71, 0.0);
+  return a * w.x + b * w.y + c * w.z;
+}
 // triplanar bump: perturbs the planet-fixed normal
 vec3 triBump(vec3 p, vec3 n, vec3 w, float period, float strength) {
   vec2 gx = texture(tDetail, p.yz / period).gb * 2.0 - 1.0;
@@ -393,6 +402,12 @@ void main() {
     fv = min(fv, sqrt(uLiquid2.x * max(depthW, 0.05)));
 #endif
     liquidSurface(fp, fn, upF, kind, flow, fetch, depthW, foot, wn, grp, vFlw.xyz, fv, nF, wr, foam);
+    // (the sea's ice: how close its pack is here (liquid.js seaIceCover); the waves die in it, the short
+    // chop at once and the swell within a few floes (Squire 2007), so its leads lie calm, no whitecaps)
+    float ice = liquidIce(Tm, kind, flow, upF), iceC = kind < 0.2 && ice > 0.0 ? seaIceCover(ice, nW.a, nG.r) : 0.0;
+    vec4 fl = kind < 0.2 ? seaFloes(fp, upF, w, ice, iceC, foot) : vec4(ice, 0.0, 1.0, 0.0);
+    float calm = smoothstep(0.05, 0.6, max(iceC, fl.w));
+    nF = normalize(mix(nF, upF, 0.9 * calm)); wr *= 1.0 - 0.8 * calm; foam *= 1.0 - calm;
     // (a falling sheet carries no river's ripples: its own surface, streaked below)
     if (river) nF = normalize(mix(nF, fn, smoothstep(0.13, 0.3, 1.0 - dot(fn, upF))));
     // (a river's water carries silt, the more the faster it runs: a water world's rivers browner
@@ -451,8 +466,10 @@ void main() {
       float hitK = 0.0;
       vec3 hitC = vec3(0.0);
       // (where it reflects enough to show: not looking straight down into it. The ray stepped in clip
-      // space, where it's a straight line: each step an add, not a projection)
-      if (dot(Rf, up) > 0.0 && F > 0.035) {
+      // space, where it's a straight line: each step an add, not a projection. Not in the pack's calm leads:
+      // the floes beside them aren't in the image it reads (drawn with the water), only the bed under them
+      // and the far sea's ice, its false hits a dashed white line down every lead; they mirror the sky)
+      if (dot(Rf, up) > 0.0 && F > 0.035 && calm < 0.5) {
         vec4 C0 = projectionMatrix * viewMatrix * vec4(vWorldPos, 1.0), CD = projectionMatrix * viewMatrix * vec4(Rf, 0.0);
         float t0 = 0.0, t = 0.3 + 0.01 * zW;
         for (int i = 0; i < 16; i++) {
@@ -543,16 +560,16 @@ void main() {
       foam = max(foam, (1.0 - smoothstep(0.25, 1.0, dF)) * mix(0.35, 0.95, uFall2.y) * (0.6 + 0.8 * (grp.x - 0.5)) * (1.0 - fallK));
     }
     color = mix(color, vec3(0.75) / PI * lit, clamp(foam, 0.0, 1.0));
-    // frozen: the sea's ice ragged at its edge (floes to come); a lake's and a pond's whole, under
-    // snow where it's long frozen
-    float ice = liquidIce(Tm, kind, flow, upF);
+    // frozen: the sea's ice as floes (liquid.js seaFloes: gen/liquidice.js reads the same, so where it's
+    // drawn is where it bears you), their rims blue-grey where their sides and wet edges show, the young
+    // ones grey, the old under snow; a lake's and a pond's ice whole, under snow where it's long frozen.
+    // In a closed pack's leads the sea freezes over at once: nilas, dark and grey
     if (ice > 0.0) {
-      vec4 dI = tri(fp, w, 512.0), dJ = tri(fp, w, 64.0);
-      // (the floes' edges crisp, as sharp as the pixel can show; jagged by the 8 m tile: gen/liquidice.js
-      // reads the same, so where it's drawn is where it bears you)
-      float fw = clamp(foot / 30.0, 0.01, 0.08);
-      if (kind < 0.2) ice = smoothstep(0.5 - fw, 0.5 + fw, ice + (dI.a - 0.5) * 0.9 + (dJ.r - 0.5) * 0.35 + (tri(fp, w, 8.0).a - 0.5) * 0.12) * smoothstep(0.0, 0.15, ice);
-      float snowy = smoothstep(0.3, 0.9, dJ.a + ice * 0.3);
+      vec4 dI = nW, dJ = nG;
+      if (kind < 0.2) color = mix(color, vec3(0.06, 0.07, 0.08) / PI * (uSunE * sunT * max(muS, 0.0) + uSunE * skyE), (1.0 - fl.x) * 0.75 * smoothstep(0.85, 1.0, fl.w));
+      ice = fl.x;
+      // (snow on a floe as old as it is, drifted a little across it)
+      float snowy = smoothstep(0.3, 0.7, fl.z + (dJ.a - 0.5) * 0.25) * (1.0 - 0.7 * fl.y / max(fl.x, 1e-3));
       vec3 iceAlb = mix(vec3(0.42, 0.52, 0.6), vec3(0.82, 0.86, 0.9), snowy) * (0.9 + 0.2 * dI.r);
       vec3 N2 = normalize(mix(up, N, 0.5));
       vec3 iceCol = iceAlb / PI * (uSunE * sunT * max(dot(N2, uSunDir), 0.0) + uSunE * skyE * (0.5 + 0.5 * dot(N2, up)));

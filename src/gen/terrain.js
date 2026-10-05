@@ -2375,9 +2375,9 @@ export class TerrainGenerator {
         mat[4] = 0;
         return;
       }
-      // (frozen the whole year round; colder than its freezing point only in winter, the shader's)
-      const frozen = p.liquid === 'water' && Tc < -10;
-      if (frozen || (p.frozenOcean && p.liquid !== 'methane')) {
+      // (a frozen ocean's shell: ice, the ground's. A sea frozen the year round is still the sea: its pack
+      // the shader's floes, closed, its leads refrozen (render/liquid.js seaFloes), as its winter ice is)
+      if (p.frozenOcean && p.liquid !== 'methane') {
         col[0] = P.snow[0] * 0.92; col[1] = P.snow[1] * 0.95; col[2] = P.snow[2];
         mat[1] = 1; mat[6] = 0.4;
         return;
@@ -2388,14 +2388,6 @@ export class TerrainGenerator {
       col[2] = P.waterShallow[2] + (P.waterDeep[2] - P.waterShallow[2]) * k;
       mat[4] = Math.max(depth, 0.01);
       this._liquidSurface(mat, 0, Tc, 0, 1);
-      // sea ice at the poles
-      // (pack ice the year round where the sea's annual mean is well below freezing; seasonal ice the
-      // shader's: render/liquid.js)
-      if (p.liquid === 'water' && Tc < -6) {
-        const ice = dm.smoothstep(-6, -10, Tc);
-        col[0] += (0.85 - col[0]) * ice; col[1] += (0.88 - col[1]) * ice; col[2] += (0.92 - col[2]) * ice;
-        if (ice > 0.5) { mat[1] = ice; mat[4] = 0; }
-      }
       return;
     }
 

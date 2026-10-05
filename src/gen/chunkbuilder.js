@@ -122,7 +122,8 @@ export function buildChunk(gen, face, level, ix, iy, N = CHUNK_N) {
   // (and the sea's and the lakes' water, in the same chunks: a surface of its own at its level, flat,
   // over each water vertex and the one under the land beside it, so its shore is where the ground rises
   // out of it; the mesh there its bed, a lake's shaded as ground, the sea's floor too (gen._bed). Not
-  // the rivers' and creeks' (riverRibbons) save a river come down to the sea, nor ice the year round)
+  // the rivers' and creeks' (riverRibbons) save a river come down to the sea, nor a lake frozen the year
+  // round or a frozen ocean's shell (ice, the ground's); a sea's pack ice the shader's floes)
   const LV = spacing < RIBBON_SPACING && !!gen.snap && !!gen.p.liquid && gen.p.liquid !== 'lava', P = gen.p.palette;
   const levelWater = (s, k, coarse) => {
     if (!coarse) lvL[k] = -1e9;
@@ -137,7 +138,7 @@ export function buildChunk(gen, face, level, ix, iy, N = CHUNK_N) {
       kc = Math.min(1, wd / 60);
       s[S_WDEPTH] = 0;
     } else if (gen.contThreshold > -1e8 && (h < 0 || atSea)) {
-      if ((gen.p.liquid === 'water' && Tc < -6) || (gen.p.frozenOcean && gen.p.liquid !== 'methane')) return 0;
+      if (gen.p.frozenOcean && gen.p.liquid !== 'methane') return 0;
       L = 0; depth = Math.max(0, -h); kind = 0; fetch = 1; kc = Math.min(1, depth / 140);
       s[S_WDEPTH] = 0;
     } else return 0;

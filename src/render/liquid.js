@@ -11,7 +11,7 @@
 // methane's ripples finer); what a pixel can't resolve becomes roughness (the sun's glitter spreads,
 // as it does far off); whitecaps in a strong wind, foam where the waves reach the shore. It freezes
 // by the season: its annual mean temperature, the sun's latitude now, and how fast that water
-// follows (the sea slowest; floes to come).
+// follows (the sea slowest); the sea's ice as floes (seaFloes), the waves dying in it.
 // The waves: 12 octaves of three directions each, fixed in the world (a direction that turned with the
 // pixel's own normal would jump its phase at every triangle), each wave's components whole cycles of
 // the 4096 m detail period so they don't seam where its coordinates wrap.
@@ -296,5 +296,121 @@ float liquidIce(float Tm, float kind, float flow, vec3 upF) {
   float Tf = (kind < 0.2 ? uLiquid2.z : 0.0) - (kind > 0.55 && kind < 0.85 ? 3.0 * flow : 0.0);
   // (over a few degrees: the marginal ice)
   return 1.0 - smoothstep(Tf - 4.0, Tf + 4.0, Ts);
+}
+// ---- the sea's ice as floes (gen/liquidice.js reads the same, so where it's drawn is where it bears
+// you). Sea ice breaks along its fractures into plates: cells of a partition of space (each cell's nearest
+// feature point an integer hash of its lattice cell, whole cycles of the 4096 m detail period, the same
+// on every GPU and in JS), the distance to a cell's edge its nearest bisector. The pack's floes ~250 m
+// (FLOE_S[0]); near its edge the waves break them into small ones ~16 m (FLOE_S[1]: the marginal ice
+// zone's, Toyota et al. 2006), the more of them broken the more open the ice; between them leads, the
+// wider the more open (a floe's share of its cell ~ c: its edges in by S/2 (1 - sqrt(c))).
+// How close the pack is here: its temperature's ice (liquidIce), its edge ragged over the 512 m and 64 m
+// tiles (dI.a, dJ.r), the marginal zone where that sum runs from 0.35 to 0.75
+float seaIceCover(float ice, float nA, float nR) {
+  return smoothstep(0.35, 0.75, ice + (nA - 0.5) * 0.9 + (nR - 0.5) * 0.35) * smoothstep(0.0, 0.15, ice);
+}
+uint floeHash(uint x, uint y, uint z, uint s) {
+  uint h = (x * 0x8da6b343u) ^ (y * 0xd8163841u) ^ (z * 0xcb1ab31fu) ^ (s * 0x165667b1u);
+  h ^= h >> 15u; h *= 0x2c1b3c6du; h ^= h >> 12u; h *= 0x297a2d39u; h ^= h >> 15u;
+  return h;
+}
+// lattice cell c's feature point (cells S m across, N to the period): in the middle half of the cell
+vec3 floePoint(vec3 c, float S, float N, uint seed) {
+  vec3 w = mod(c, N);
+  uint h = floeHash(uint(w.x), uint(w.y), uint(w.z), seed);
+  return (c + 0.25 + 0.5 * vec3(float(h & 1023u), float((h >> 10u) & 1023u), float((h >> 20u) & 1023u)) / 1024.0) * S;
+}
+// the floe a lattice cell's in: its index moved on by 0 or 1 along each axis (its own hash), halved: a
+// floe of a few cells, its outline wandering (by fixed pairs of cells, a floe was near square). Whole
+// numbers only, so every GPU and JS agree on it everywhere it's asked (from the cell's jittered point, its
+// floor came out one way for the pixel's own cell and the other for a neighbour's, the compiler rounding
+// each call its own way: a lead's middle read as inside a floe, a dashed line of ice)
+vec3 floeGroup(vec3 c, float N, uint seed) {
+  vec3 w = mod(c, N);
+  uint h = floeHash(uint(w.x), uint(w.y), uint(w.z), seed ^ 0x5bd1u);
+  return floor((c + vec3(float(h & 1u), float((h >> 1u) & 1u), float((h >> 2u) & 1u))) * 0.5);
+}
+// the partition of cells S m across (N to the period) at p, its cells merged in groups (those whose
+// feature points fall in one cube 2S across: a floe of a few cells, irregular, its sizes spread): the
+// group's hash (id), how far p is in from the group's edge (e, m: the nearest bisector with a cell of
+// another group) and the group's middle (gc)
+void floeCell(vec3 p, vec3 up, float S, float N, uint seed, out uint id, out float e, out vec3 gc) {
+  // (its nearest feature point, then the edges round that point's own cell. Measured with up stretched
+  // three times: the cells are a 3D lattice's and the sea a slice through it, and a cell whose point lay
+  // well above or below the slice touched it only in slivers along two floes' boundary, regular as the
+  // lattice is, each a floe of its own: a dashed line of ice down a lead's middle)
+  vec3 g = floor(p / S), ca = g;
+  float d1 = 1e20;
+  for (int k = 0; k < 27; k++) {
+    vec3 c = g + vec3(float(k % 3), float((k / 3) % 3), float(k / 9)) - 1.0, q = floePoint(c, S, N, seed) - p;
+    q += 2.0 * dot(q, up) * up;
+    float d = dot(q, q);
+    if (d < d1) { d1 = d; ca = c; }
+  }
+  vec3 a = floePoint(ca, S, N, seed) - p, ga = floeGroup(ca, N, seed), wa = mod(ga, 0.5 * N);
+  a += 2.0 * dot(a, up) * up;
+  id = floeHash(uint(wa.x), uint(wa.y), uint(wa.z), seed ^ 0x9e37u);
+  gc = (ga + 0.5) * 2.0 * S;
+  e = 1e20;
+  for (int k = 0; k < 27; k++) {
+    if (k == 13) continue;
+    vec3 cb = ca + vec3(float(k % 3), float((k / 3) % 3), float(k / 9)) - 1.0;
+    if (floeGroup(cb, N, seed) == ga) continue;
+    vec3 b = floePoint(cb, S, N, seed) - p;
+    b += 2.0 * dot(b, up) * up;
+    // (p at the origin: its distance to the two points' bisector)
+    e = min(e, 0.5 * (dot(b, b) - dot(a, a)) / length(a - b));
+  }
+}
+vec4 tri0(vec3 p, vec3 w, float period);
+// how much of a pixel foot m across is floe, its middle e m in from the floe's edge and its lead g m wide
+// either side of that edge: the pixel's span less the lead's water in it (box-filtered: a lead narrower
+// than a pixel, a closed pack's metre or so seen from far off, a faint line, not broken into dashes by
+// each pixel's middle falling in it or not)
+float floeCover(float e, float g, float foot) {
+  float f = max(foot, 0.02);
+  return 1.0 - clamp((min(g, e + 0.5 * f) - max(-g, e - 0.5 * f)) / f, 0.0, 1.0);
+}
+// a floe group's cover (seaIceCover at its middle), whether it's there (its share of the pack's floes
+// there), broken (by the waves, the more of the pack the more open the ice) and its leads' half width
+// (its share of its cells): (c, there, broken, g)
+vec4 floeState(uint id, vec3 gc, vec3 w, float ice, float S) {
+  float c = seaIceCover(ice, tri0(gc, w, 512.0).a, tri0(gc, w, 64.0).r), pres = min(1.0, 1.5 * c), cc = c / max(pres, 1e-3);
+  float r1 = float(id & 65535u) / 65536.0, r2 = float(id >> 16u) / 65536.0;
+  return vec4(c, c > 0.0 && r1 <= pres ? 1.0 : 0.0, r2 < 1.0 - smoothstep(0.4, 0.9, c) ? 1.0 : 0.0, max(S / 400.0, 0.5 * S * (1.0 - sqrt(cc))));
+}
+// the sea's ice at p (body-fixed, the detail period's; w its triplanar weights), its temperature's ice
+// (liquidIce) and the cover here (cPix: seaIceCover), a pixel foot m across: x how much of the pixel is
+// ice (0..1), y its rim (the floe's side and wet edge showing), z its age (0 a young floe, grey, 1 an old
+// one under snow), w its floe's cover. The pack's floes (cells ~256 m, merged a few to a floe), each as
+// close as the pack is at its middle, so their edges run straight and their leads are one width along
+// them; a broken one's pieces (~16 m, merged likewise) each its floe's whose middle it lies in, so they
+// spill across its old outline whole, further apart toward its edge where the waves work it
+vec4 seaFloes(vec3 p, vec3 up, vec3 w, float ice, float cPix, float foot) {
+  if (cPix <= 0.0 && ice <= 0.0) return vec4(0.0);
+  uint id;
+  float e, fw = max(foot, 0.03);
+  vec3 gc;
+  floeCell(p, up, 256.0, 16.0, 0x51ceu, id, e, gc);
+  vec4 F = floeState(id, gc, w, ice, 256.0);
+  float x = 0.0, rim = 0.0, age = 0.55 + 0.45 * float(id >> 16u) / 65536.0, cf = F.x;
+  if (F.y > 0.0 && F.z < 0.5) { x = floeCover(e, F.w, fw); rim = 1.0 - smoothstep(F.w, F.w + 0.8 + fw, e); }
+  if (F.y > 0.0 && F.z > 0.5 && foot >= 1.0) { x = F.x / max(min(1.0, 1.5 * F.x), 1e-3); age = 0.15; }
+  if (foot < 4.0 && (F.y < 0.5 || F.z > 0.5 || e < F.w + 16.0)) {
+    uint id2, oid;
+    float e2, oe;
+    vec3 gc2, ogc;
+    floeCell(p, up, 16.0, 256.0, 0x7a11u, id2, e2, gc2);
+    floeCell(gc2, up, 256.0, 16.0, 0x51ceu, oid, oe, ogc);
+    vec4 O = floeState(oid, ogc, w, ice, 256.0);
+    if (O.y > 0.0 && O.z > 0.5) {
+      float g2 = max(0.15, 8.0 * (1.0 - sqrt(O.x / max(min(1.0, 1.5 * O.x), 1e-3)))) + 3.0 * (1.0 - smoothstep(0.0, 40.0, oe));
+      float x2 = mix(floeCover(e2, g2, fw), x, smoothstep(1.0, 4.0, foot));
+      if (x2 > x) { x = x2; rim = 1.0 - smoothstep(g2, g2 + 0.4 + fw, e2); age = 0.3 * float(id2 & 65535u) / 65536.0; cf = O.x; }
+    }
+  }
+  // (from far off, the share of it there)
+  x = mix(x, cPix, smoothstep(16.0, 64.0, foot));
+  return vec4(x, rim * x, age, cf);
 }
 `;
