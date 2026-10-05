@@ -474,6 +474,14 @@ rivers that are straighter where they should be?"):**
   tilt's). SOL Earth e 0.036, perihelion at L 279 (just before the northern winter solstice, as the real
   Earth's 283): on a dry test ball the southern summer at 50 S 4.7 C hotter, the northern 4.6 cooler.
   Still open: a moon's obliquity is to its own orbit round its planet, not to its planet's round the star.
+  Re-simmed in a test tab (SOL Earth 43 s, refinement 64 s all in): the seasons as before on the new
+  world, the southern sea's swing 5.5-5.9 C at 50-55 S (was ~4.9). But Earth's geography is new: the
+  deep time is chaotic in its climate (rain -> erosion -> T.stepEroded -> the plates), so the eccentricity
+  alone gives another world (node, N 64, the same sim with and without it: 23% of the land land in both,
+  heights 3 km apart on average). The rng streams are forked per subsystem; it's the physics coupling.
+  Every old test site (SOL Earth -51.8 -76's floes, 58 N 112's snow) is elsewhere now. A question for
+  Dave: should a climate tweak re-roll the continents (the plates' story kept apart from erosion's
+  feedback, or their events drawn on a schedule the surface can't move)?
 - Snow covers most of a high mountain (the snowline reads the real height: physically right, maybe too
   white for Dave).
 - Rock beds stay at their real thickness (tried scaling them with the heights, TILE 42, reverted in
