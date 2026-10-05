@@ -249,7 +249,7 @@ distinct stair step in the river edge ... is it not using actual geometry"):**
   drawn (no step at the hand-off); shallow, the bed through it. A coastal sea's 5 g/m^3, the surf's more
   (waves stirring the bed), a lake's 3; dissolved organic matter a river's most, a lake's some. Water
   pass at 2560x1440 with half the screen water: ~12 ms (the reflections' march in clip space, 16 steps,
-  none where Fresnel is under 3.5%). Seen (LAB-free): SOL 5.98 S 25.88 E, river r 656's mouth. Still:
+  none where Fresnel is under 3.5%). Seen at SOL 5.98 S 25.88 E, river r 656's mouth. Still:
   the drowned river's levees on the shelf show through shallow water (straight seabed edges); a
   rainbow fringe in the water near that mouth (a fall's spray bow, unconfirmed); whitecaps blocky.
 - Canyons: the floor beside a canyon river narrows on a bend's outer side by how hard it's cutting there
