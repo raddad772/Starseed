@@ -88,9 +88,20 @@ float cloudLight(vec3 rel, float r, float muS, float foot, vec3 sunAbove, inout 
   if (uCloudOn < 0.5) return 1.0;
   float mu = max(muS, 0.05);
   float Tdir = 1.0, Ttot = 1.0, Dup = 1.0;
+  // (near: the map; a point above the datum reads it where its own sun ray, carried down to the datum,
+  // lands; faded into the far shell's over its last twelfth)
+  float w = 0.0;
+  vec4 m0 = vec4(1.0), m1 = vec4(1.0);
+  if (uCSOn > 0.5) {
+    vec3 pf = uToFixed * rel, upF = pf / r, sF = uToFixed * uSunDir;
+    vec3 d = pf - uCSOrigin - (sF - upF * dot(sF, upF)) * (r - uRadius) / max(dot(sF, upF), 0.1);
+    vec2 uv = vec2(dot(d, uCSE), dot(d, uCSN)) * uCSInvL + 0.5;
+    w = smoothstep(0.0, 0.08, min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y)));
+    if (w > 0.0) { m0 = textureLod(tCloudShadow, uv, 0.0); m1 = textureLod(tCloudShadow, uv, uCSLod); }
+  }
   // (the far shell's cover: on the sun's way up at the deck, and overhead over the dome a point sees)
   float hc = uCloud.x - (r - uRadius);
-  if (hc > 0.0) {
+  if (hc > 0.0 && w < 1.0) {
     float cs = muS > -0.05 ? cloudCover(normalize(uToFixed * normalize(rel + uSunDir * hc / max(muS, 0.08))) * uRadius, normalize(uToFixed * normalize(rel + uSunDir * hc / max(muS, 0.08))), foot, cloudBias(uCloud.z)) * uCloudOpacity : 0.0;
     vec3 dz = normalize(uToFixed * rel);
     float cz = cloudCover(dz * uRadius, dz, max(foot, 3.5 * hc), cloudBias(uCloud.z)) * uCloudOpacity;
@@ -98,18 +109,7 @@ float cloudLight(vec3 rel, float r, float muS, float foot, vec3 sunAbove, inout 
     Ttot = 1.0 - cz + cz / (1.0 + 0.1125 * uCloudTau);
     Dup = 1.0 - cz + cz * exp(-uCloudTau / mu);
   }
-  // (near: the map; a point above the datum reads it where its own sun ray, carried down to the datum,
-  // lands; faded into the far shell's over its last twelfth)
-  if (uCSOn > 0.5) {
-    vec3 pf = uToFixed * rel, upF = pf / r, sF = uToFixed * uSunDir;
-    vec3 d = pf - uCSOrigin - (sF - upF * dot(sF, upF)) * (r - uRadius) / max(dot(sF, upF), 0.1);
-    vec2 uv = vec2(dot(d, uCSE), dot(d, uCSN)) * uCSInvL + 0.5;
-    float w = smoothstep(0.0, 0.08, min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y)));
-    if (w > 0.0) {
-      vec4 m0 = textureLod(tCloudShadow, uv, 0.0), m1 = textureLod(tCloudShadow, uv, uCSLod);
-      Tdir = mix(Tdir, m0.r, w); Ttot = mix(Ttot, m1.g, w); Dup = mix(Dup, m1.b, w);
-    }
-  }
+  Tdir = mix(Tdir, m0.r, w); Ttot = mix(Ttot, m1.g, w); Dup = mix(Dup, m1.b, w);
   skyE = skyE * Ttot + sunAbove * max(muS, 0.0) * max(Ttot - Dup, 0.0);
   return muS > -0.05 ? Tdir : 1.0;
 }`;

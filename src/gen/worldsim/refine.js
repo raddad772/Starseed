@@ -95,7 +95,7 @@ export function tileRivers(T) {
 // it starts as, narrowing as its water does (a river began full width where its water passed
 // RIVER_A, nothing feeding it). Each a record as tileRivers' (the same keys, so they chain); one
 // part, in the grid's order (every client's the same). Kept with the refinement, RIVER_VERSION
-export const SOURCE_A = 1e6, RIVER_VERSION = 5;
+export const SOURCE_A = 1e6, RIVER_VERSION = 6;
 export function worldRivers(R) {
   const n = R.n, gn = n * MT, fl = R.fl, rc = R.rcv, H = R.h;
   const thr = Math.max(0, Math.round(255 * dm.log(RIVER_A) / LN_A)), thrS = Math.max(0, Math.round(255 * dm.log(SOURCE_A) / LN_A));
@@ -300,9 +300,10 @@ function bigChannels(rec, half, size, phase, dn, up, G, Rw, rock, drown) {
       prev = [px, py, pz];
     };
     // the channel: the meander family's (meanders.js) at the swing each point's own phase has (found by
-    // turns: a point's phase moves with its swing, slowly), every other point
+    // turns: a point's phase moves with its swing, slowly), every point (~0.3 widths apart: every other
+    // one drew a great river's bends as corners from 12 km)
     for (let per = Math.floor(p0 / P) - 1; per <= Math.floor(p1 / P); per++) {
-      for (let k = 0; k <= F.n; k += 2) {
+      for (let k = 0; k < F.n; k++) {
         let pk = per * P + F.levels[F.levels.length - 1].xu[k];
         if (pk < p0 - 0.5 * P || pk > p1 + 0.5 * P) { prev = null; continue; }
         let a = at(Math.max(p0, Math.min(p1, pk)), o).A;
