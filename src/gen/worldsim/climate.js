@@ -410,13 +410,15 @@ function periLongitude(axis, orbit) {
 }
 
 // the climate's inputs from the body and its star (a moon's year is its planet's: its eccentricity and
-// perihelion that orbit's)
+// perihelion that orbit's, and its seasons its spin axis against that orbit's plane, not its own round
+// the planet's)
 export function climateOpts(body, star, host) {
   const cl = body.terrain.climate, r = body.rotation;
-  const yr = body.kind === 'moon' && host ? host : body;
+  const yr = body.kind === 'moon' && host ? host : body, W = yr !== body && yr.orbit && yr.orbit.W;
+  const obl = W && r.axis ? dm.acos(dm.clamp(r.axis[0] * W[0] + r.axis[1] * W[1] + r.axis[2] * W[2], -1, 1)) : r.obliquity;
   return {
     // (a moon: less its time in its planet's shadow)
-    S: body.insolation * (1 - (body.eclipse || 0)), obliquity: r.obliquity,
+    S: body.insolation * (1 - (body.eclipse || 0)), obliquity: obl,
     ecc: yr.orbitE || 0, perihelion: yr.orbit && yr.orbit.P && r.axis ? periLongitude(r.axis, yr.orbit) : 0,
     // (a moon locked to its planet still sees its star rise and set: its day is its orbit)
     locked: !!cl.locked && body.kind !== 'moon', substellar: cl.substellar, rotH: r.locked ? (body.kind === 'moon' && host && body.orbit && body.orbit.aReal ? 2 * Math.PI * Math.sqrt(body.orbit.aReal ** 3 / (6.674e-11 * host.massEarth * 5.972e24)) / 3600 : 1e4) : Math.abs(r.periodRealH || 24), retro: !!r.retrograde, hadley: cl.hadley,

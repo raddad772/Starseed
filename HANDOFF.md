@@ -473,7 +473,9 @@ rivers that are straighter where they should be?"):**
   universe.js solarLongitude does), not orbit.w - tiltAzimuth (which mixed the orbit's frame with the
   tilt's). SOL Earth e 0.036, perihelion at L 279 (just before the northern winter solstice, as the real
   Earth's 283): on a dry test ball the southern summer at 50 S 4.7 C hotter, the northern 4.6 cooler.
-  Still open: a moon's obliquity is to its own orbit round its planet, not to its planet's round the star.
+  A moon's seasons too (SIM 62): its obliquity in the climate is its spin axis against its planet's orbit
+  round the star (was against its own orbit round the planet, ~1 degree for a locked moon): regular moons
+  orbit in their planet's equator, so they take its tilt (Titan 16.5, the Moon 23.5, Triton 138).
   Re-simmed in a test tab (SOL Earth 43 s, refinement 64 s all in): the seasons as before on the new
   world, the southern sea's swing 5.5-5.9 C at 50-55 S (was ~4.9). But Earth's geography is new: the
   deep time is chaotic in its climate (rain -> erosion -> T.stepEroded -> the plates), so the eccentricity

@@ -24,7 +24,7 @@ import { dunePatches } from '../dunes.js';
 import { ROCK_UP } from './lithology.js';
 import { seasonsFor } from './season.js';
 
-export const SIM_VERSION = 61;   // (61: the climate's orbit eccentric, its perihelion where it falls in the year)
+export const SIM_VERSION = 62;   // (61: the climate's orbit eccentric, its perihelion where it falls in the year; 62: a moon's seasons its tilt to its planet's orbit)
 
 // a world's grid size: maxN for an Earth-sized one, finer cells don't help a small one
 // (N ~ sqrt(radius): Mars ~210, the Moon ~150, a moonlet 64)
