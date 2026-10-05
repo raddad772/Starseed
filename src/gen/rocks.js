@@ -193,10 +193,12 @@ export function scatterRocks(gen, face, level, ix, iy, maxLevel, seed) {
         if ((hasSea && s2[S_H] < 0.3) || s2[S_WDEPTH] > 0.05) continue;
         if (!colDone) { gen.shade(s, 1, col2, mat2, null); colDone = true; }
         const r = R + s2[S_H], rad = dm.cbrt(k1 * k2 * k3);
-        // (rounder the more of its block the rot took; along the joints' strike; half in its grus, less
-        // the more of the ground worn away)
+        // (rounder the more of its block the rot took; along the joints' strike; still in the slope where
+        // it formed: the ground wearing down knows nothing of where the cores lie, so its surface cuts
+        // each at any height, from a cap showing to all but its foot out (one that far out has no grus
+        // left to hold it: it sits). Upright, not tilted with the slope: the uphill side deeper in)
         const round = 0.35 + 0.55 * dm.smoothstep(0, 1, d / Math.min(h1, h2, h3));
-        out.push(sub[0] * r - ox, sub[1] * r - oy, sub[2] * r - oz, rad, A.a + 0.3 * (rb.next() - 0.5), (rb.next() - 0.5) * 0.3, rb.next(), cls, round, 0.45 - 0.3 * Math.min(1, expose), col2[0], col2[1], col2[2]);
+        out.push(sub[0] * r - ox, sub[1] * r - oy, sub[2] * r - oz, rad, A.a + 0.3 * (rb.next() - 0.5), (rb.next() - 0.5) * 0.15, rb.next(), cls, round, 0.1 + 0.8 * rb.next(), col2[0], col2[1], col2[2]);
       }
     }
   }
