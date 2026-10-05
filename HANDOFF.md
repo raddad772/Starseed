@@ -302,6 +302,11 @@ rivers that are straighter where they should be?"):**
   monotonically) bridges the dips: the river stands metres above its valley, its floodplain a raised
   platform. Fix in the refinement: a depression a river crosses is a lake to its spill (or the river
   ends in it, a dry world's terminal basin), and the profile follows the filled surface.
+- Seen: SOL Earth 23.07 N 7.43 E (shots/sol_mea_b.jpg), a savanna river meandering ~2 downstream,
+  gentler up; Earth's swings spread 0.3-0.9 (the most sinuous near the coasts, on the lowest slopes).
+- Uncommitted in terrain.js: `drowned` (no floodplain or banks raised where a river's line is under
+  the sea). Unverified: the sand strips across SOL's shelf (sol_mea_a.jpg) look like the refinement's
+  own shore rule making land of drowned river cells, which this can't touch.
 
 **What's still wrong / next:**
 - Snow covers most of a high mountain (the snowline reads the real height: physically right, maybe too
