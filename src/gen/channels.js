@@ -38,6 +38,8 @@ const WIN_RECS = 16, NSEG = 16;
 // (how far a fall's lip has worn back in its middle, of its water's width: Niagara's Horseshoe Falls
 // stands back a few tenths of its width from its ends)
 export const HORSESHOE = 0.3;
+// (a fall zone's floats: buildChannel's ch.zones)
+export const ZONE = 8;
 function riverProfile(gen, r) {
   const Lk = gen._rivLinks(), up = Lk.up, dn = Lk.dn;
   const dnOf = (q) => { const n = dn[q]; return n >= 0 && up[n] === q ? n : -1; };
@@ -239,19 +241,25 @@ export function buildChannel(gen, r, building) {
   // fall's lip a horseshoe: a cap breaks back as its plunge pool undercuts it, the faster the more
   // water goes over (Gilbert 1907), and a channel's water goes over deepest in its middle (its unit
   // discharge ~ depth^5/3), so its lip has worn back furthest there: Niagara's Horseshoe. Its middle
-  // HORSESHOE of the water's width behind its edges; zones (ta, tb: from that far above its lip to
-  // just below its foot; t0, t1 its face; how far back its middle stands, m; its water's half width,
-  // m), read across the channel by sampleSnap and riverRibbons, with points at their ends too)
+  // HORSESHOE of the water's width behind its edges. And its water leaves the lip at the brink's
+  // speed: through critical depth at a free overfall, the brink's depth ~0.715 of it (Rouse 1936),
+  // so v = q / (0.715 (q^2 / g)^1/3) for its unit discharge q; falling free from there it lands
+  // v sqrt(2 drop / g) out. Zones (ZONE floats: ta, tb, from that far above its lip to past where it
+  // lands; t0, t1 its face; how far back its middle stands, m; its water's half width, m; the brink's
+  // speed, m/s; how far out it lands, m), read across the channel by sampleSnap and riverRibbons,
+  // with points at their ends too)
   if (hsOf.faces && hsOf.faces.length) {
-    const W = {};
+    const W = {}, g = (gen.p && gen.p.g) || 9.81, L = Math.max(len, 1);
     ch.prof = hsOf; ch.len = len; ch.zones = [];
     for (let j = 0; j < hsOf.faces.length; j += 2) {
       const t0 = hsOf.faces[j], t1 = hsOf.faces[j + 1], half = 0.5 * (W0 + (W1 - W0) * t0);
-      const xw = Math.max(0.5, gen._riverWater ? gen._riverWater(half, 0, hsOf(t0), 0, W).xw : half), dmax = HORSESHOE * 2 * xw;
-      ch.zones.push(Math.max(0, t0 - (dmax + 1) / Math.max(len, 1)), Math.min(1, t1 + 1 / Math.max(len, 1)), t0, t1, dmax, xw);
+      if (gen._riverWater) gen._riverWater(half, 0, hsOf(t0), 0, W); else { W.xw = half; W.v = 1; W.dm = 0.5; }
+      const xw = Math.max(0.5, W.xw), dmax = HORSESHOE * 2 * xw, q = Math.max(1e-3, W.v * W.dm);
+      const vb = q / (0.715 * Math.cbrt(q * q / g)), drop = Math.max(0, (hsOf(t0) - hsOf(t1)) * gen.hScale), xl = vb * Math.sqrt(2 * drop / g);
+      ch.zones.push(Math.max(0, t0 - (dmax + 1) / L), Math.min(1, t1 + (xl + 2) / L), t0, t1, dmax, xw, vb, xl);
     }
     const F = [...hsOf.faces];
-    for (let z = 0; z < ch.zones.length; z += 6) F.push(ch.zones[z], ch.zones[z + 1]);
+    for (let z = 0; z < ch.zones.length; z += ZONE) F.push(ch.zones[z], ch.zones[z + 1]);
     const P2 = [], A2 = [], pc2 = [];
     for (let q = 0; q < pcs.length; q += 2) {
       pc2.push(P2.length / 6);

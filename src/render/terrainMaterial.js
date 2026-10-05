@@ -389,6 +389,8 @@ void main() {
     fv = min(fv, sqrt(uLiquid2.x * max(depthW, 0.05)));
 #endif
     liquidSurface(fp, fn, upF, kind, flow, fetch, depthW, foot, wn, grp, vFlw.xyz, fv, nF, wr, foam);
+    // (a falling sheet carries no river's ripples: its own surface, streaked below)
+    if (river) nF = normalize(mix(nF, fn, smoothstep(0.13, 0.3, 1.0 - dot(fn, upF))));
     // (a river's water carries silt, the more the faster it runs: a water world's rivers browner
     // than its lakes)
 #ifndef RIBBON
@@ -496,21 +498,25 @@ void main() {
       float v = min(sqrt(2.0 * uFall1.x * zf) + 0.3, uFall1.y);
       float L = 1.0 + 0.35 * v;
       float t1 = fract(uTime * 0.4), t2 = fract(uTime * 0.4 + 0.5), wa = 1.0 - abs(2.0 * t1 - 1.0);
-      // (jets a metre or two across, white water between: the noise at two scales across the face)
-      vec2 q = vec2(dot(fp, acr) * 0.07, dot(fp, down) * 0.07 / L);
-      float sA = texture(tDetail, q - vec2(0.0, v * t1 * 2.5 * 0.07 / L)).r + 0.5 * texture(tDetail, q * 3.0 - vec2(0.0, v * t1 * 7.5 * 0.07 / L)).a;
-      float sB = texture(tDetail, q + vec2(0.37, 0.0) - vec2(0.0, v * t2 * 2.5 * 0.07 / L)).r + 0.5 * texture(tDetail, q * 3.0 + vec2(0.11, 0.0) - vec2(0.0, v * t2 * 7.5 * 0.07 / L)).a;
+      // (ropes a metre or few across, drawn out down the fall and carried at its speed: the noise at
+      // two scales across the face)
+      vec2 q = vec2(dot(fp, acr) * 0.03, dot(fp, down) * 0.03 / L);
+      float sA = texture(tDetail, q - vec2(0.0, v * t1 * 2.5 * 0.03 / L)).r + 0.5 * texture(tDetail, q * 2.0 - vec2(0.0, v * t1 * 5.0 * 0.03 / L)).a;
+      float sB = texture(tDetail, q + vec2(0.37, 0.0) - vec2(0.0, v * t2 * 2.5 * 0.03 / L)).r + 0.5 * texture(tDetail, q * 2.0 + vec2(0.11, 0.0) - vec2(0.0, v * t2 * 5.0 * 0.03 / L)).a;
       float st = 0.5 + (mix(sB, sA, wa) - 0.75) * 1.6;
-      // (glassy at its lip, breaking up as it falls: the sooner the denser the air; in jets, white
-      // where the noise has it thick, glassy between; its water thinner toward its sides, torn there)
+      // (glassy at its lip, breaking up as it falls: its turbulent surface takes in air from the lip
+      // down, white streaks that thicken, until it's broken through at Horeni's length (1956: ~6 q^0.32
+      // m, q its unit discharge, m^2/s); the sooner the denser the air tears it. Its water thinner
+      // toward its sides, torn there first)
 #ifdef RIBBON
-      float edge = 1.0 - vRib.x * vRib.x;
+      float edge = 1.0 - vRib.x * vRib.x, qU = max(vRib.y, 0.1) * max(vFlw.w * 9.0, 0.3);
 #else
-      float edge = 1.0;
+      float edge = 1.0, qU = max(vFlw.w * 9.0, 0.3);
 #endif
-      float aer = mix(0.25, 0.95, uFall2.y) * smoothstep(0.5, 6.0, v) * smoothstep(0.0, 1.0 + 4.0 * (1.0 - uFall2.y), zf);
-      float jets = smoothstep(0.32, 0.62, st + 0.3 * (edge - 1.0));
-      float white = clamp(aer * (0.1 + 1.0 * jets) + 0.04, 0.0, 1.0);
+      float br = clamp(zf / (6.0 * pow(qU, 0.32)), 0.0, 1.0);
+      float aer = mix(0.25, 0.95, uFall2.y) * smoothstep(0.0, 0.5, zf);
+      float jets = smoothstep(0.62 - 0.5 * br, 0.8 - 0.5 * br, st + 0.3 * (edge - 1.0));
+      float white = clamp(aer * jets, 0.0, 1.0);
       dbgWhite = white;
       vec3 nS = normalize(Nw + transpose(uToFixed) * acr * (st - 0.5) * 0.8);
       vec3 litS = uSunE * sunT * max(dot(nS, uSunDir), 0.0) + uSunE * skyE * 0.6;

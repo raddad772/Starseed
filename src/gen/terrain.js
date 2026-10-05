@@ -25,7 +25,7 @@ import { patchAt } from './dunes.js';
 import { CraterField, VEXAG } from './craters.js';
 import { SUITE, SUITES, DEPOSITS, worldColumn, bedAt, faceMetres } from './geology.js';
 import { canyonTable, wallSet, wallFit, wallAt, wallReach } from './canyon.js';
-import { buildChannel, chanNearest, chanSwing, nearOut, chanFlow, nfOf } from './channels.js';
+import { buildChannel, chanNearest, chanSwing, nearOut, chanFlow, nfOf, ZONE } from './channels.js';
 import { craterFloor, TILE_CELLS } from './worldsim/impacts.js';
 import { SnapshotSampler } from './worldsim/snapshot.js';
 import { RIVER_REC, BIG_REC } from './worldsim/refine.js';
@@ -1012,7 +1012,7 @@ export class TerrainGenerator {
   // its square, so each is drawn once at a level. Frozen the year round, none: ice, the ground's.
   // tempAt(x, y, z): the air's mean temperature (C) there. Returns { pos (chunk-local), nrm, flow
   // (way down, unit; speed / 9 m/s), liq (as chunkbuilder.js's), rib (across -1..1, mean depth m),
-  // index, falls (FALL_STRIDE a fall, as chunkbuilder.js findFalls) } or null
+  // index, falls (FALL_STRIDE a fall, as chunkbuilder.js findFalls, with its lip's way across) } or null
   riverRibbons(f, u0, v0, size, N, spacing, ox, oy, oz, tempAt) {
     const S = this.snap;
     if (!S || !S.riv || !this.wetNow) return null;
@@ -1038,7 +1038,7 @@ export class TerrainGenerator {
     // width drawn (m), XW its water's (m), DM its mean depth (m), V its speed (m/s), TT its t (the
     // way down: t grows downstream; NaN for a run laid down its river), ok drawn there
     // (t as the channel keeps it: Float32, ~1e-7)
-    const inZone = (Zs, a, b) => { if (Zs) for (let z = 0; z < Zs.length; z += 6) if (a >= Zs[z] - 1e-6 && a <= Zs[z + 1] + 1e-6 && b >= Zs[z] - 1e-6 && b <= Zs[z + 1] + 1e-6) return true; return false; };
+    const inZone = (Zs, a, b) => { if (Zs) for (let z = 0; z < Zs.length; z += ZONE) if (a >= Zs[z] - 1e-6 && a <= Zs[z + 1] + 1e-6 && b >= Zs[z] - 1e-6 && b <= Zs[z + 1] + 1e-6) return true; return false; };
     // (across a run at point i: up crossed with its way along, its neighbours' either side: the same
     // for the two quads that meet there)
     const acrossAt = (m, X, ST, i, o) => {
@@ -1056,7 +1056,7 @@ export class TerrainGenerator {
       for (let i = 0; i < m; i++) { acrossAt(m, X, ST, i, ac); Ac[3 * i] = ac[0]; Ac[3 * i + 1] = ac[1]; Ac[3 * i + 2] = ac[2]; }
       let fall = null;
       const endFall = () => {
-        if (fall && fall.top - fall.bot >= 2) out.falls.push(fall.fx - ox, fall.fy - oy, fall.fz - oz, fall.top, fall.bot, fall.w, fall.wd);
+        if (fall && fall.top - fall.bot >= 2) out.falls.push(fall.fx - ox, fall.fy - oy, fall.fz - oz, fall.top, fall.bot, fall.w, fall.wd, fall.ax, fall.ay, fall.az);
         fall = null;
       };
       for (let i = 0; i + 1 < m; i++) {
@@ -1093,7 +1093,7 @@ export class TerrainGenerator {
         const drop = Math.abs(ST[j] - ST[i]) * hs;
         if (drop > 0.75 * L * Math.sqrt(1 - Math.min(1, (drop / L) ** 2)) && drop > 0.3) {
           const lo = ST[j] < ST[i] ? j : i, hi = lo === j ? i : j, rl = R + ST[lo] * hs, rh = R + ST[hi] * hs;
-          if (!fall) fall = { top: rh, bot: rl, fx: P[3 * lo], fy: P[3 * lo + 1], fz: P[3 * lo + 2], w: 0, wd: 0 };
+          if (!fall) fall = { top: rh, bot: rl, fx: P[3 * lo], fy: P[3 * lo + 1], fz: P[3 * lo + 2], w: 0, wd: 0, ax: Ac[3 * lo], ay: Ac[3 * lo + 1], az: Ac[3 * lo + 2] };
           if (rh > fall.top) fall.top = rh;
           if (rl < fall.bot) { fall.bot = rl; fall.fx = P[3 * lo]; fall.fy = P[3 * lo + 1]; fall.fz = P[3 * lo + 2]; }
           fall.w = Math.max(fall.w, 2 * Math.min(XW[i], XW[j])); fall.wd = Math.max(fall.wd, DM[i], DM[j]);
@@ -1105,7 +1105,9 @@ export class TerrainGenerator {
     // horseshoe, drawn as a grid across (its water's width, a little over). Its rows laid along the lip:
     // each column's row at t less its own setback (eased in from the zone's ends), so every column steps
     // at the same row and the grid's rows bow back with the lip (its stage read at t plus the setback,
-    // as sampleSnap reads it); the run's ends the strip's own
+    // as sampleSnap reads it). Over the face the sheet leaves the rock: each row as far out from the lip
+    // as the water has carried in falling to it (v sqrt(2 z / g), from the brink's speed), so it curves
+    // over the lip and lands out from the face's foot; the run's ends the strip's own
     const fallGrid = (ch, s0, m, X, ST, DM, V, TT, ok, z) => {
       const Z = ch.zones, ta = Z[z], tb = Z[z + 1], dmax = Z[z + 4], xw = Z[z + 5], A = ch.at, len = Math.max(ch.len, 1);
       let ia = -1, ib = -1;
@@ -1118,16 +1120,27 @@ export class TerrainGenerator {
       const ml = Math.sqrt(mx * mx + my * my + mz * mz), Tc = tempAt(mx / ml, my / ml, mz / ml);
       if (Tc - frz < -8) return;
       const a0 = acrossAt(m, X, ST, i0, [0, 0, 0]), a1 = acrossAt(m, X, ST, i1, [0, 0, 0]), half = A[(s0 + i0) * 7];
-      const t0 = Z[z + 2], t1 = Z[z + 3];
-      const nr = Math.min(96, Math.max(8, Math.ceil((tb - ta) * len / 0.4))), nc = 16, NV = (nr + 1) * (nc + 1);
+      const t0 = Z[z + 2], t1 = Z[z + 3], vb = Z[z + 6], xl = Z[z + 7], gr = this.p.g || 9.81;
+      // (its rows' base t, down the zone: half a metre apart above and below the face, sixteen down it)
+      const bases = [], nu = Math.max(4, Math.ceil((t0 - ta) * len / 0.5)), nd = Math.max(4, Math.ceil((tb - t1) * len / 0.5));
+      for (let i = 0; i < nu; i++) bases.push(ta + (t0 - ta) * i / nu);
+      for (let i = 0; i < 16; i++) bases.push(t0 + (t1 - t0) * i / 16);
+      for (let i = 0; i <= nd; i++) bases.push(t1 + (tb - t1) * i / nd);
+      if (TT[i1] < TT[i0]) bases.reverse();
+      const nr = bases.length - 1, nc = 16, NV = (nr + 1) * (nc + 1), stLip = this._riverWater(half, 0, ch.prof(t0), 0, W).stage, Ld = t0 + xl / len;
       const G = new Float64Array(NV * 3), U = [0, 0, 0];
       let top = -Infinity, bot = Infinity;
-      // (row ri's base t, down the zone, rows the same at every column; e eased in from the zone's ends)
+      // (row ri: rows the same at every column; e eased in from the zone's ends)
       for (let ri = 0; ri <= nr; ri++) {
-        const ra = TT[i1] >= TT[i0] ? ri : nr - ri, base = ta + (tb - ta) * ra / nr;
+        const base = bases[ri];
         const ease = base < t0 ? (base - ta) / Math.max(t0 - ta, 1e-9) : base > t1 ? 1 - (base - t1) / Math.max(tb - t1, 1e-9) : 1;
+        // (where the water is along the channel: the lip and over the face as far out as it's carried
+        // falling, then from where it lands on to the zone's end)
+        let tg = base;
+        if (base > t0 && base <= t1) tg = t0 + vb * Math.sqrt(2 * Math.max(0, stLip - this._riverWater(half, 0, ch.prof(base), 0, W).stage) * hs / gr) / len;
+        else if (base > t1) tg = Ld + (base - t1) * (tb - Ld) / Math.max(tb - t1, 1e-9);
         for (let ci = 0; ci <= nc; ci++) {
-          const sx = -1 + 2 * ci / nc, back = dmax * Math.pow(Math.max(0, 1 - sx * sx), 5 / 3) / len, t = base - back * ease;
+          const sx = -1 + 2 * ci / nc, back = dmax * Math.pow(Math.max(0, 1 - sx * sx), 5 / 3) / len, t = tg - back * ease;
           // (its place on the channel at t, between the run's points; across, the run's ends' blended)
           let k = i0;
           while (k + 1 < i1 && (TT[k + 1] - t) * (TT[i1] - TT[i0]) < 0) k++;
@@ -1136,7 +1149,7 @@ export class TerrainGenerator {
           const ul = Math.sqrt(U[0] * U[0] + U[1] * U[1] + U[2] * U[2]), f = Math.max(0, Math.min(1, (t - TT[i0]) / (TT[i1] - TT[i0])));
           let ax = a0[0] + f * (a1[0] - a0[0]), ay = a0[1] + f * (a1[1] - a0[1]), az = a0[2] + f * (a1[2] - a0[2]);
           const al = Math.sqrt(ax * ax + ay * ay + az * az) || 1; ax /= al; ay /= al; az /= al;
-          const st = this._riverWater(half, 0, ch.prof(Math.min(1, t + back)), 0, W).stage;
+          const st = this._riverWater(half, 0, ch.prof(Math.min(1, base + back * (1 - ease))), 0, W).stage;
           const rr = R + st * hs, w = sx * 1.02 * xw, o = (ri * (nc + 1) + ci) * 3;
           G[o] = U[0] / ul * rr + ax * w; G[o + 1] = U[1] / ul * rr + ay * w; G[o + 2] = U[2] / ul * rr + az * w;
           if (ci === nc >> 1) { top = Math.max(top, rr); bot = Math.min(bot, rr); }
@@ -1166,7 +1179,7 @@ export class TerrainGenerator {
         // (wound as the strips are: facing up)
         out.index.push(v0, v2, v1, v1, v2, v3);
       }
-      if (foot >= 0 && top - bot >= 2) out.falls.push(G[foot] - ox, G[foot + 1] - oy, G[foot + 2] - oz, top, bot, 2 * xw, DM[i0]);
+      if (foot >= 0 && top - bot >= 2) out.falls.push(G[foot] - ox, G[foot + 1] - oy, G[foot + 2] - oz, top, bot, 2 * xw, DM[i0], a0[0], a0[1], a0[2]);
     };
     const drawn = (own) => 0.75 * minW <= 4 * own;   // (sampleSnap's rvFade 0)
     const halfW = (own) => 1.04 * Math.max(own, 0.75 * minW) + 0.5 * spacing;
@@ -1207,10 +1220,10 @@ export class TerrainGenerator {
           ST[i] = W.stage; HW[i] = face ? Math.max(W.xw, 0.5) : halfW(own); XW[i] = W.xw; DM[i] = W.dm; V[i] = W.v;
           ok[i] = A[a + 1] >= 0 && drawn(own) ? 1 : 0;
           // (a fall's zone's ends as wide as its grid: channels.js zones)
-          if (ch.zones) for (let z = 0; z < ch.zones.length; z += 6) if (A[a + 5] >= ch.zones[z] - 1e-6 && A[a + 5] <= ch.zones[z + 1] + 1e-6) HW[i] = 1.02 * ch.zones[z + 5];
+          if (ch.zones) for (let z = 0; z < ch.zones.length; z += ZONE) if (A[a + 5] >= ch.zones[z] - 1e-6 && A[a + 5] <= ch.zones[z + 1] + 1e-6) HW[i] = 1.02 * ch.zones[z + 5];
         }
         strip(m, X, ST, HW, XW, DM, V, TT, ok, ch.zones);
-        if (ch.zones) for (let z = 0; z < ch.zones.length; z += 6) fallGrid(ch, s0, m, X, ST, DM, V, TT, ok, z);
+        if (ch.zones) for (let z = 0; z < ch.zones.length; z += ZONE) fallGrid(ch, s0, m, X, ST, DM, V, TT, ok, z);
       }
     }
     // the great rivers' (refine.js bigChannels: segments laid up their stems, end to end), in runs
@@ -1284,7 +1297,9 @@ export class TerrainGenerator {
     const w = 2 * half, vbf = (w / 4.8) ** 2 / (2 / 3 * w * D0 * hs), vHG = vbf * Math.pow(Math.max(0.05, (D0 - dl) / D0), 0.85);
     const dm0 = Math.max(0.05, 2 / 3 * (D0 - dl) * hs), v0 = Math.max(vHG, Math.pow(dm0, 2 / 3) * Math.sqrt(Math.max(1e-5, slope)) / 0.035);
     o.stage = stage; o.xw = xw; o.dm = A > 0 ? A / (2 * xw) : 0; o.D = D;
-    o.v = Math.min(9, Math.max(0.05, v0 * A0 / Math.max(A, 0.25 * A0, 1e-6)));
+    // (and no faster than critical for its mean depth: a mobile bed's riffles and bars adjust until the
+    // flow over them stays about there, Grant 1997; the shader holds each pixel's alike)
+    o.v = Math.min(9, Math.sqrt((this.p.g || 9.81) * Math.max(o.dm, 0.05)), Math.max(0.05, v0 * A0 / Math.max(A, 0.25 * A0, 1e-6)));
     return o;
   }
   // how far ground beside a river is laid to its banks (pull: bank - ground): all the way across
@@ -1750,7 +1765,7 @@ export class TerrainGenerator {
             best.mx = cn.mx; best.my = cn.my; best.mz = cn.mz;
             // (at a fall, its lip a horseshoe: the step read that much further down the channel the
             // deeper its water there goes over (channels.js zones), back furthest in its middle)
-            if (ch.zones) for (let z = 0; z < ch.zones.length; z += 6) {
+            if (ch.zones) for (let z = 0; z < ch.zones.length; z += ZONE) {
               const Z = ch.zones;
               if (cn.t < Z[z] || cn.t > Z[z + 1]) continue;
               const qd = Math.max(0, 1 - (dist / Z[z + 5]) ** 2);

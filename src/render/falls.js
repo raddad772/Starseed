@@ -92,11 +92,11 @@ void main() {
     life = mix(6.0, 16.0, aSeed.w) * (1.0 + 0.02 / max(uFall2.x, 0.002));
     life = min(life, 60.0);
     float t = fract(uTime / life + aSeed.x) * life;
-    float vOut = vImp * mix(0.15, 0.35, aSeed.z) + 0.3 * aFall.y / 10.0;
+    float vOut = vImp * mix(0.15, 0.35, aSeed.z);
     p = aFoot + out1 * vOut * 1.2 * (1.0 - exp(-t / 1.2)) + aUp * (vImp * 0.08 * 3.0 * (1.0 - exp(-t / 3.0)) - uFall2.x * t)
       + wind * (t - 3.0 * (1.0 - exp(-t / 3.0)));
     float k = t / life;
-    size = (0.4 + 0.25 * aFall.y + 0.05 * aFall.z) * mix(0.35, 1.0, sqrt(k));
+    size = (0.6 + 0.12 * aFall.z) * mix(0.5, 1.4, aSeed.z) * mix(0.35, 1.0, sqrt(k));
     a = 0.16 * uFall2.y * smoothstep(0.0, 0.12, k) * (1.0 - smoothstep(0.5, 1.0, k));
   } else {
     // a drop thrown up off the foot: toward its terminal speed (down, and with the wind) at its drag
@@ -110,8 +110,9 @@ void main() {
     life = clamp(2.0 * up0 / g / (1.0 + up0 / max(uFall1.z, 0.01)), 0.15, 12.0) + 0.1;
     float t = fract(uTime / life + aSeed.x) * life;
     p = aFoot + vT * t + (v0v - vT) * tau * (1.0 - exp(-t / tau));
-    size = mix(0.05, 0.14, aSeed.y) * (0.6 + 0.04 * aFall.y);
-    a = 0.75 * smoothstep(0.0, 0.05, t / life) * (1.0 - smoothstep(0.75, 1.0, t / life));
+    // (each one a little cloud of the drops thrown together, millimetres each: faint, a haze where many are)
+    size = mix(0.25, 0.8, aSeed.y);
+    a = 0.22 * smoothstep(0.0, 0.05, t / life) * (1.0 - smoothstep(0.75, 1.0, t / life));
   }
   vec4 wp = modelMatrix * vec4(p, 1.0);
   // lit as the air there is: the sun through the air (a forward-scattering phase: bright against the
@@ -164,9 +165,9 @@ void main() {
   float zs = isSkyDepth(dRaw) ? 1e30 : viewZFromDepth(dRaw);
   if (vZ > zs) discard;
   float soft = clamp((zs - vZ) / (vMist > 0.5 ? 1.5 : 0.2), 0.0, 1.0);
-  float a = vA * soft * (1.0 - smoothstep(vMist > 0.5 ? 0.2 : 0.5, 1.0, r));
-  // (a puff of mist uneven within)
-  if (vMist > 0.5) a *= 0.4 + 1.2 * texture(tDetail, vUv * 0.25 + vS).a;
+  float a = vA * soft * (1.0 - smoothstep(0.2, 1.0, r));
+  // (a puff of mist, or of spray, uneven within)
+  a *= 0.4 + 1.2 * texture(tDetail, vUv * 0.25 + vS).a;
   gl_FragColor = vec4(vCol, a);
 }
 `;
@@ -190,13 +191,22 @@ export class FallFx {
     const rnd = () => { rs = (rs * 1664525 + 1013904223) >>> 0; return rs / 4294967296; };
     for (let f = 0; f < falls.length; f += FALL_STRIDE) {
       const x = falls[f], y = falls[f + 1], z = falls[f + 2], drop = falls[f + 3] - falls[f + 4], width = falls[f + 5];
+      const ax = falls[f + 7], ay = falls[f + 8], az = falls[f + 9], dir = Math.hypot(ax, ay, az) > 0.5;
       const vImp = Math.min(Math.sqrt(2 * g * drop), vSheet);
       const ux = origin[0] + x, uy = origin[1] + y, uz = origin[2] + z, ul = Math.hypot(ux, uy, uz);
       // (its share of particles: by its width and how hard it lands)
-      const nSpray = Math.round(Math.min(220, Math.max(16, width * vImp * 1.5)));
-      const nMist = Math.round(Math.min(160, Math.max(0, width * Math.sqrt(drop) * 2)) * mistK);
+      const nSpray = Math.round(Math.min(400, Math.max(16, width * vImp * 1.5)));
+      const nMist = Math.round(Math.min(240, Math.max(0, width * Math.sqrt(drop) * 1.2)) * mistK);
       for (let k = 0; k < nSpray + nMist; k++) {
-        foot.push(x, y, z); upv.push(ux / ul, uy / ul, uz / ul);
+        // (along the line it lands on, its lip's width; a ring of it where that way isn't known)
+        const s = (rnd() - 0.5) * width;
+        if (dir) foot.push(x + ax * s, y + ay * s, z + az * s);
+        else {
+          const nx = ux / ul, ny = uy / ul, nz = uz / ul, el = Math.hypot(nz, nx) || 1, e1x = nz / el, e1z = -nx / el;
+          const e2x = ny * e1z, e2y = nz * e1x - nx * e1z, e2z = -ny * e1x, a = rnd() * 6.2832, rr = 0.5 * width * Math.sqrt(rnd());
+          foot.push(x + rr * (Math.cos(a) * e1x + Math.sin(a) * e2x), y + rr * Math.sin(a) * e2y, z + rr * (Math.cos(a) * e1z + Math.sin(a) * e2z));
+        }
+        upv.push(ux / ul, uy / ul, uz / ul);
         fall.push(vImp, width, drop, k >= nSpray ? 1 : 0);
         seed.push(rnd(), rnd(), rnd(), rnd());
       }

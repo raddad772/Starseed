@@ -361,8 +361,9 @@ export function chunkTransferables(r) {
 // A chunk's falls: each run of river vertices steeper than ~37 degrees (joined to its neighbours) one
 // fall, from its highest vertex (the lip) to its lowest (its foot, where it lands). Returns
 // FALL_STRIDE floats a fall (render/falls.js): its foot (chunk-local), the lip's and the foot's
-// radius, how wide it runs (m), the river's depth there; or null
-export const FALL_STRIDE = 7;
+// radius, how wide it runs (m), the river's depth there, its lip's way across (unit; 0 where it isn't
+// known, as here); or null
+export const FALL_STRIDE = 10;
 function findFalls(V, position, steepA, wdA, ox, oy, oz, spacing) {
   const seen = new Uint8Array(V * V), stack = [], out = [];
   const rad = (v) => { const x = position[v * 3] + ox, y = position[v * 3 + 1] + oy, z = position[v * 3 + 2] + oz; return Math.sqrt(x * x + y * y + z * z); };
@@ -387,7 +388,7 @@ function findFalls(V, position, steepA, wdA, ox, oy, oz, spacing) {
     if (drop < 2) continue;
     // (its width: the run's vertices over its length down the face)
     const width = Math.max(spacing, n * spacing * spacing / Math.max(drop, spacing));
-    out.push(position[foot * 3], position[foot * 3 + 1], position[foot * 3 + 2], top, bot, width, wd);
+    out.push(position[foot * 3], position[foot * 3 + 1], position[foot * 3 + 2], top, bot, width, wd, 0, 0, 0);
   }
   return out.length ? Float32Array.from(out) : null;
 }

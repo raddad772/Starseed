@@ -226,8 +226,13 @@ distinct stair step in the river edge ... is it not using actual geometry"):**
   and stage there at t plus the setback; riverRibbons draws the zone as a 16-column grid whose rows run
   along the lip (each column's row at t less its setback, eased in from the zone's ends to meet the
   strips), so every column steps at the same row (one step per column made sawteeth). SOL 14.02 N
-  52.33 E (fall_hs_c/d). Still: the sheet's lower corner can flap past a bank; the sheet doesn't yet
-  curve out on the water's free-fall arc; its face is glassy rather than in jets from afar.
+  52.33 E (fall_hs_c/d). The sheet leaves the lip at the brink's speed (critical depth at a free
+  overfall, brink depth 0.715 of it: Rouse 1936; 2.7 m/s there) and falls free, each row as far out as
+  v sqrt(2 z / g) (lands 3.9 m out); glassy at the lip, white streaks thickening, broken through by
+  Horeni's length (~6 q^0.32 m); no ripples on it. Spray and mist along its base (falls carry the lip's
+  way across: FALL_STRIDE 10), puffs by the drop (they'd grown with the width into a fog bank), spray
+  particles faint clouds of drops (they read as beads). fall_n_a/b. The river's speed held under
+  critical in _riverWater too (Grant 1997), so the brink's discharge is a sane one.
 - Seen (scratchpad rivers_sheet.jpg): Thugroadath's canyon river r 3593 (LAB-44, 8.9 S 46.0 W) from 180 m
   before and after, inside its canyon; SOL Earth's meander r 334; a shore from above.
 - Canyons: the floor beside a canyon river narrows on a bend's outer side by how hard it's cutting there
