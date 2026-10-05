@@ -35,6 +35,9 @@ const GROUP = 8;
 // Each window worked out once, for every reach in it (gen._rivWin). Returns t -> m for reach r, or
 // null (none of this: its smooth profile)
 const WIN_RECS = 16, NSEG = 16;
+// (how far a fall's lip has worn back in its middle, of its water's width: Niagara's Horseshoe Falls
+// stands back a few tenths of its width from its ends)
+export const HORSESHOE = 0.3;
 function riverProfile(gen, r) {
   const Lk = gen._rivLinks(), up = Lk.up, dn = Lk.dn;
   const dnOf = (q) => { const n = dn[q]; return n >= 0 && up[n] === q ? n : -1; };
@@ -232,9 +235,24 @@ export function buildChannel(gen, r, building) {
     begin(0, 0); emit(J0, F.mid, 0, 0); emit(J1, F.mid, 0, 0); end();
   }
   // (where its profile steps (a fall: riverProfile), points at each face's top and foot, so its
-  // channel drops there, over the face's few metres, not across the trace's whole segment)
+  // channel drops there, over the face's few metres, not across the trace's whole segment. And each
+  // fall's lip a horseshoe: a cap breaks back as its plunge pool undercuts it, the faster the more
+  // water goes over (Gilbert 1907), and a channel's water goes over deepest in its middle (its unit
+  // discharge ~ depth^5/3), so its lip has worn back furthest there: Niagara's Horseshoe. Its middle
+  // HORSESHOE of the water's width behind its edges; zones (ta, tb: from that far above its lip to
+  // just below its foot; t0, t1 its face; how far back its middle stands, m; its water's half width,
+  // m), read across the channel by sampleSnap and riverRibbons, with points at their ends too)
   if (hsOf.faces && hsOf.faces.length) {
-    const F = hsOf.faces, P2 = [], A2 = [], pc2 = [];
+    const W = {};
+    ch.prof = hsOf; ch.len = len; ch.zones = [];
+    for (let j = 0; j < hsOf.faces.length; j += 2) {
+      const t0 = hsOf.faces[j], t1 = hsOf.faces[j + 1], half = 0.5 * (W0 + (W1 - W0) * t0);
+      const xw = Math.max(0.5, gen._riverWater ? gen._riverWater(half, 0, hsOf(t0), 0, W).xw : half), dmax = HORSESHOE * 2 * xw;
+      ch.zones.push(Math.max(0, t0 - (dmax + 1) / Math.max(len, 1)), Math.min(1, t1 + 1 / Math.max(len, 1)), t0, t1, dmax, xw);
+    }
+    const F = [...hsOf.faces];
+    for (let z = 0; z < ch.zones.length; z += 6) F.push(ch.zones[z], ch.zones[z + 1]);
+    const P2 = [], A2 = [], pc2 = [];
     for (let q = 0; q < pcs.length; q += 2) {
       pc2.push(P2.length / 6);
       for (let k = pcs[q]; k < pcs[q + 1]; k++) {

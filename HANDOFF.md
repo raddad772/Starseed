@@ -220,10 +220,14 @@ distinct stair step in the river edge ... is it not using actual geometry"):**
   drop over the face's few metres (they ramped across a whole trace segment, ~30 degrees: no sheet).
   Strips find their own falls; the sheet is the water's width; the face isn't counted in the river's
   speed; the sheet in jets, torn toward its sides, seen through between them (its thickness its unit
-  discharge over its speed). Still reads as a flat plate (sheet 3 of rivers_sheet: SOL 14.02 N 52.33
-  E): a straight lip, straight sides. Next: a horseshoe (the lip retreating fastest where the flow is
-  deepest, unit discharge ~depth^(5/3); Niagara's) read across the channel in the sampler (channels.js
-  keeping its profile function) and a subdivided sheet there, curving out on the water's free-fall arc.
+  discharge over its speed). Its lip a horseshoe: channels.js gives each fall a zone (`ch.zones`, its
+  profile `ch.prof`), its middle `HORSESHOE` (0.3) of the water's width behind its edges, setback ~
+  depth^(5/3) across (unit discharge: the lip wears back where most goes over); sampleSnap reads the bed
+  and stage there at t plus the setback; riverRibbons draws the zone as a 16-column grid whose rows run
+  along the lip (each column's row at t less its setback, eased in from the zone's ends to meet the
+  strips), so every column steps at the same row (one step per column made sawteeth). SOL 14.02 N
+  52.33 E (fall_hs_c/d). Still: the sheet's lower corner can flap past a bank; the sheet doesn't yet
+  curve out on the water's free-fall arc; its face is glassy rather than in jets from afar.
 - Seen (scratchpad rivers_sheet.jpg): Thugroadath's canyon river r 3593 (LAB-44, 8.9 S 46.0 W) from 180 m
   before and after, inside its canyon; SOL Earth's meander r 334; a shore from above.
 - Canyons: the floor beside a canyon river narrows on a bend's outer side by how hard it's cutting there
