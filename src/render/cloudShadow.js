@@ -5,12 +5,16 @@
 // beyond it, the far shell's cover.
 //
 // Per texel, for the ground at the datum there: the sun's way up through the decks, marched (its optical
-// depth: the decks' density times the volume's extinction, uSigma), its direct share exp(-tau); and the
+// depth: the decks' density times a cloud's extinction, uSigmaG), its direct share exp(-tau); and the
 // column overhead: its total transmission of the light falling on it, a cloud of optical depth tau
 // scattering almost nothing away but sending it on mostly forward (water droplets, g ~0.85), about
 // 1 / (1 + 3 (1 - g) tau / 4) (Bohren 1987: the two-stream result for a non-absorbing layer), and of
 // that the part still direct (exp(-tau / mu)). Mipmapped: a level as wide as the patch of deck a point
 // on the ground sees overhead is the sky dome's mean, what lights it diffusely.
+// The extinction a real cloud's: a water cloud's 3 LWC / (2 rho_w r_eff), ~0.045 /m for a stratocumulus'
+// 0.3 g/m^3 of droplets 10 um across (a deck's optical depth ~15, as measured), not the volume's
+// 0.003 /m (its look, the sky's: a deck of ~1.5 dimmed the ground under a full overcast by a tenth);
+// an ice cloud's, thin cirrus', and other worlds' decks the volume's own
 
 import * as THREE from 'three';
 import { FULLSCREEN_VERT } from './glsl.js';
@@ -18,6 +22,7 @@ import { GLSL_CLOUD_N } from './atmosphere.js';
 import { GLSL_DECKS } from './volume.js';
 
 export const CS_SIZE = 256;
+export const WATER_CLOUD_EXT = 1.5 * 0.3e-3 / (1000 * 10e-6);   // (/m: 3 LWC / (2 rho_w r_eff))
 
 export const CLOUD_SHADOW_FRAG = /* glsl */`
 precision highp float;
@@ -29,7 +34,7 @@ uniform float uRadius;
 uniform vec4 uDeck[3];
 uniform float uNumDecks;
 uniform float uMode;
-uniform float uSigma;
+uniform float uSigmaG;
 uniform vec2 uShape;
 uniform float uBands;
 uniform float uJetPhase;
@@ -59,7 +64,7 @@ float tauAlong(vec3 p, vec3 d, float t0, float t1, float foot) {
     for (int k = 0; k < 3; k++) {
       if (float(k) >= uNumDecks) break;
       if (h < uDeck[k].x || h > uDeck[k].y) continue;
-      tau += deckDensity(k, q, h, coverage(k, dirF, q, foot), false, fr) * uSigma * dt;
+      tau += deckDensity(k, q, h, coverage(k, dirF, q, foot), false, fr) * uSigmaG * dt;
     }
   }
   return tau;
@@ -80,16 +85,17 @@ void main() {
 
 export class CloudShadow {
   // volume: the world's VolumePass (its decks' uniforms, shared); R: the datum's radius
-  constructor(volume, R) {
+  constructor(volume, R, clouds) {
     const vu = volume.material.uniforms;
+    const sigmaG = clouds && clouds.type === 'water' ? WATER_CLOUD_EXT : vu.uSigma.value;
     this.R = R;
     this.rt = new THREE.WebGLRenderTarget(CS_SIZE, CS_SIZE, {
       type: THREE.HalfFloatType, depthBuffer: false, generateMipmaps: true,
       minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter, wrapS: THREE.ClampToEdgeWrapping, wrapT: THREE.ClampToEdgeWrapping,
     });
-    const own = { uO: { value: new THREE.Vector3() }, uE: { value: new THREE.Vector3() }, uN: { value: new THREE.Vector3() }, uL: { value: 20000 }, uSunF: { value: new THREE.Vector3() } };
+    const own = { uO: { value: new THREE.Vector3() }, uE: { value: new THREE.Vector3() }, uN: { value: new THREE.Vector3() }, uL: { value: 20000 }, uSunF: { value: new THREE.Vector3() }, uSigmaG: { value: sigmaG } };
     const uniforms = { ...own };
-    for (const k of ['tNoise', 'tCloudMap', 'uCloudMapMean', 'uRadius', 'uDeck', 'uNumDecks', 'uMode', 'uSigma', 'uShape', 'uBands', 'uJetPhase', 'uEqJet', 'uWindMax', 'uTime']) uniforms[k] = vu[k];
+    for (const k of ['tNoise', 'tCloudMap', 'uCloudMapMean', 'uRadius', 'uDeck', 'uNumDecks', 'uMode', 'uShape', 'uBands', 'uJetPhase', 'uEqJet', 'uWindMax', 'uTime']) uniforms[k] = vu[k];
     this.own = own;
     this.material = new THREE.ShaderMaterial({ uniforms, vertexShader: FULLSCREEN_VERT, fragmentShader: CLOUD_SHADOW_FRAG, depthTest: false, depthWrite: false, glslVersion: THREE.GLSL3 });
     this.quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.material);
@@ -100,7 +106,7 @@ export class CloudShadow {
     // (the deck's optical depth where its cover is whole, as the volume reckons the decks above a point:
     // the far shell's stand-in, beyond the map)
     const dk = volume.decks[0];
-    this.tauFull = dk ? dk.density * (dk.top - dk.base) * 0.4 * vu.uSigma.value : 0;
+    this.tauFull = dk ? dk.density * (dk.top - dk.base) * 0.4 * sigmaG : 0;
     // the surfaces' uniforms (world.js puts them in the shared set)
     this.uniforms = {
       tCloudShadow: { value: this.rt.texture },
@@ -144,12 +150,12 @@ export class CloudShadow {
 }
 
 // the surfaces' uniforms where a world has no near volume: no map; the far shell's cover with a deck's
-// optical depth from its thickness (as the volume reckons it: density 0.9, extinction 0.003 / m)
+// optical depth from its thickness (as the volume reckons it, density 0.9; a water cloud's extinction)
 export function noCloudShadow(clouds) {
   const white = new THREE.DataTexture(new Uint16Array([15360, 15360, 15360, 15360]), 1, 1, THREE.RGBAFormat, THREE.HalfFloatType);
   white.needsUpdate = true;
   return {
     tCloudShadow: { value: white }, uCSOrigin: { value: new THREE.Vector3() }, uCSE: { value: new THREE.Vector3(1, 0, 0) }, uCSN: { value: new THREE.Vector3(0, 0, 1) },
-    uCSInvL: { value: 0 }, uCSLod: { value: 0 }, uCSOn: { value: 0 }, uCloudTau: { value: clouds ? 0.9 * clouds.thickness * 0.4 * 0.003 : 0 },
+    uCSInvL: { value: 0 }, uCSLod: { value: 0 }, uCSOn: { value: 0 }, uCloudTau: { value: clouds ? 0.9 * clouds.thickness * 0.4 * (clouds.type === 'water' ? WATER_CLOUD_EXT : 0.003) : 0 },
   };
 }

@@ -123,7 +123,7 @@ export class WorldRenderer {
       else if (clouds && clouds.type !== 'sulfuric') it.volume = new VolumePass(b, a, this.cloudNoise, 1);
       if (it.volume && it.heightCube) for (const k of ['tHeightCube', 'uHeightCube']) it.volume.material.uniforms[k] = it.heightCube.uniforms[k];
       // (its clouds' shadows and overcast light on the ground near the camera, from the near volume's decks)
-      if (it.volume && !b.giant) it.cloudShadow = new CloudShadow(it.volume, b.R);
+      if (it.volume && !b.giant) it.cloudShadow = new CloudShadow(it.volume, b.R, clouds);
       // (the far shell's cover reads the noise on every world: bound only beside a near volume, a
       // sulfuric deck, which has none, read nothing and was never drawn, its world a ball of haze)
       a.material.uniforms.tNoise.value = this.cloudNoise;
