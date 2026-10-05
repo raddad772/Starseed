@@ -18,6 +18,8 @@
 import * as dm from '../core/dmath.js';
 import { meanderField, meanderPoint } from './meanders.js';
 import { RIVER_REC } from './worldsim/refine.js';
+import { ROCKS } from './worldsim/lithology.js';
+import { DEPOSITS } from './geology.js';
 
 const GROUP = 8;
 
@@ -43,6 +45,7 @@ export const ZONE = 8;
 // (a braided river's threads: each the channel's curve this much of a period on from the last, the
 // golden ratio's part, so no two run alike)
 const THREAD_SHIFT = 0.381966;
+const K_ALLUVIUM = ROCKS.find((r) => r.name === 'alluvium').k;
 function riverProfile(gen, r) {
   const Lk = gen._rivLinks(), up = Lk.up, dn = Lk.dn;
   const dnOf = (q) => { const n = dn[q]; return n >= 0 && up[n] === q ? n : -1; };
@@ -87,7 +90,7 @@ function windowProfile(gen, recs) {
   const Rv = gen.snap.riv, rec = Rv.rec, m = recs.length;
   if (!m) return null;
   const N = m * NSEG, k = new Float64Array(N), drop = new Float64Array(N), lens = new Float64Array(m);
-  const fr = new Float64Array(9);
+  const fr = new Float64Array(9), MB = gen._meanderB ? gen._meanderB() : null;
   const hsAt = (q, t) => { const b = q * RIVER_REC, u = 1 - t; return (u * u * rec[b + 9] + 2 * t * u * rec[b + 10] + t * t * rec[b + 11]) / gen.hScale; };
   const D = hsAt(recs[0], 0) - hsAt(recs[m - 1], 1);
   if (!(D > 0.5)) return null;
@@ -95,12 +98,18 @@ function windowProfile(gen, recs) {
     const q = recs[j];
     gen._meanderFrame(q, fr);
     lens[j] = Math.sqrt((fr[6] - fr[0]) ** 2 + (fr[7] - fr[1]) ** 2 + (fr[8] - fr[2]) ** 2) * gen.R;
+    // (a reach running on its own deposits (the refinement's ground under it), or one that braids (a
+    // bed of gravel its water moves, by its pattern's threshold), runs on loose ground, whatever rock
+    // lies under it: no cap stands in it. A flood basalt's flows over their weathered tops make falls
+    // where a river crosses them on rock (Palouse Falls), not under a braided river's gravels)
+    const rq = Rv.rock ? Rv.rock[q] : 255, nq = ROCKS[rq] && ROCKS[rq].name;
+    const kq = nq && DEPOSITS.has(nq) ? ROCKS[rq].k : MB && MB[q] > 0 ? K_ALLUVIUM : NaN;
     for (let i = 0; i < NSEG; i++) {
       const t = (i + 0.5) / NSEG, u = 1 - t, a0 = u * u, a1 = 2 * t * u, a2 = t * t;
       const x = a0 * fr[0] + a1 * fr[3] + a2 * fr[6], y = a0 * fr[1] + a1 * fr[4] + a2 * fr[7], z = a0 * fr[2] + a1 * fr[5] + a2 * fr[8];
       const l = Math.sqrt(x * x + y * y + z * z);
       // (its bed's rock: a little under its banks, in the ground's metres (hs: the sim's, hScale to them))
-      k[j * NSEG + i] = gen._channelRockK(x / l, y / l, z / l, hsAt(q, t) * gen.hScale - 1);
+      k[j * NSEG + i] = kq === kq ? kq : gen._channelRockK(x / l, y / l, z / l, hsAt(q, t) * gen.hScale - 1);
       // (each piece's drop as the smooth profile has it; a rise (the sim's sampling) none)
       drop[j * NSEG + i] = Math.max(0, hsAt(q, i / NSEG) - hsAt(q, (i + 1) / NSEG)) / k[j * NSEG + i];
     }
@@ -245,11 +254,15 @@ export function buildChannel(gen, r, building) {
         const sj = dm.clamp(nb - (j - 1), 0, 1);
         meanderPoint(F, (k + ks) % n0, a, fps);
         // (and each drifting across the braidplain on its own, slowly, a couple of widths either way:
-        // the trace read a quarter as fast; without it the threads crossed at the same knots, a rope)
-        const kf = k * 0.25 + ks * 0.61 + 97 * j, i0 = Math.floor(kf), fr = kf - i0;
-        meanderPoint(F, i0 % n0, 0.6, fpd); const d0 = fpd.y;
-        meanderPoint(F, (i0 + 1) % n0, 0.6, fpd);
+        // the trace read a quarter as fast, on from period to period; without it the threads crossed at
+        // the same knots, a rope)
+        const kf = (p * n0 + k) * 0.25 + ks * 0.61 + 97 * j, i0 = Math.floor(kf), fr = kf - i0, i0n = ((i0 % n0) + n0) % n0;
+        meanderPoint(F, i0n, 0.6, fpd); const d0 = fpd.y;
+        meanderPoint(F, (i0n + 1) % n0, 0.6, fpd);
         Y[k] = fpt.y + sj * (fps.y - fpt.y + 0.35 * (d0 + (fpd.y - d0) * fr)); MX[k] = MY[k] = 0; SJ[k] = sj;
+        // (narrowing to nothing where it parts from the first: a thread begins small at a bar's head,
+        // not as a cut end across the water)
+        WF[k] *= dm.smoothstep(0, 0.5, sj);
       }
     }
     return { X, Y, MX, MY, WF, SJ };
