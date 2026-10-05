@@ -10,7 +10,8 @@
 //                      how rugged the fine detail is), where each cell drains (u8: which
 //                      of its neighbours, in GridLite.nbrs order; 255 none)
 //   on the climate grid the yearly mean brought to sea level (K), rain (mm/yr), plant
-//                      cover and its forest and open shares (life.js), cloud cover
+//                      cover and its forest and open shares (life.js), cloud cover, and the
+//                      year (season.js: the temperature's swing, the cold half's snow)
 //
 // Versioned: a cache keyed by seed, body and SIM_VERSION drops stale ones.
 
@@ -23,7 +24,7 @@ import { dunePatches } from '../dunes.js';
 import { ROCK_UP } from './lithology.js';
 import { seasonsFor } from './season.js';
 
-export const SIM_VERSION = 60;
+export const SIM_VERSION = 61;   // (61: the climate's orbit eccentric, its perihelion where it falls in the year)
 
 // a world's grid size: maxN for an Earth-sized one, finer cells don't help a small one
 // (N ~ sqrt(radius): Mars ~210, the Moon ~150, a moonlet 64)

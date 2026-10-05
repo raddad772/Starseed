@@ -466,10 +466,14 @@ rivers that are straighter where they should be?"):**
   southern winter: the sea-ice edge 52-55 S as before; 58 N in its winter a closed pack, walkable.
 
 **What's still wrong / next:**
-- climate.js climateOpts (moved from world.js): `ecc` and `perihelion` sit inside the comment on the
-  line above them, so every world's climate has run with a circular orbit. Fixing it changes every
-  eccentric world's climate (Mars e 0.09 most): a SIM_VERSION bump, every world re-sims once. Check the
-  perihelion's convention against world.js solarLongitude first. Not done: Dave's call on the re-sim.
+- Fixed (Dave: "Do it"), SIM_VERSION 61, every world re-sims once: climate.js climateOpts had `ecc` and
+  `perihelion` inside a comment, so every climate ran a circular orbit. Now the eccentricity is the
+  world's (a moon's its planet's: its year is the planet's), and perihelion is where it falls in the
+  year, from geometry (periLongitude: the sun seen against the periapsis, the year reckoned as
+  universe.js solarLongitude does), not orbit.w - tiltAzimuth (which mixed the orbit's frame with the
+  tilt's). SOL Earth e 0.036, perihelion at L 279 (just before the northern winter solstice, as the real
+  Earth's 283): on a dry test ball the southern summer at 50 S 4.7 C hotter, the northern 4.6 cooler.
+  Still open: a moon's obliquity is to its own orbit round its planet, not to its planet's round the star.
 - Snow covers most of a high mountain (the snowline reads the real height: physically right, maybe too
   white for Dave).
 - Rock beds stay at their real thickness (tried scaling them with the heights, TILE 42, reverted in

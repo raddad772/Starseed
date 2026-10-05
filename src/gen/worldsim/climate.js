@@ -396,11 +396,28 @@ function koppenOf(c, n, Tm, Pm, north) {
   return (tMin > -3 ? 'C' : 'D') + season + sub;
 }
 
-// the climate's inputs from the body and its star
+// where perihelion falls in a world's year: the sun's longitude in its sky then, from the northern spring
+// equinox (as universe.js solarLongitude reckons the year: N the equinox, axis x the orbit's normal; M a
+// quarter on), the sun seen against the periapsis (-P); axis its spin axis, orbit the one round its star
+function periLongitude(axis, orbit) {
+  const W = orbit.W, P = orbit.P;
+  let nx = axis[1] * W[2] - axis[2] * W[1], ny = axis[2] * W[0] - axis[0] * W[2], nz = axis[0] * W[1] - axis[1] * W[0];
+  const l = Math.sqrt(nx * nx + ny * ny + nz * nz);
+  if (l < 1e-9) return 0;
+  nx /= l; ny /= l; nz /= l;
+  const mx = W[1] * nz - W[2] * ny, my = W[2] * nx - W[0] * nz, mz = W[0] * ny - W[1] * nx;
+  return dm.atan2(-(P[0] * mx + P[1] * my + P[2] * mz), -(P[0] * nx + P[1] * ny + P[2] * nz));
+}
+
+// the climate's inputs from the body and its star (a moon's year is its planet's: its eccentricity and
+// perihelion that orbit's)
 export function climateOpts(body, star, host) {
   const cl = body.terrain.climate, r = body.rotation;
+  const yr = body.kind === 'moon' && host ? host : body;
   return {
-    S: body.insolation * (1 - (body.eclipse || 0)), obliquity: r.obliquity,   // (a moon: less its time in its planet's shadow) ecc: body.orbitE || 0, perihelion: (body.orbit ? body.orbit.w : 0) - (r.tiltAzimuth || 0),
+    // (a moon: less its time in its planet's shadow)
+    S: body.insolation * (1 - (body.eclipse || 0)), obliquity: r.obliquity,
+    ecc: yr.orbitE || 0, perihelion: yr.orbit && yr.orbit.P && r.axis ? periLongitude(r.axis, yr.orbit) : 0,
     // (a moon locked to its planet still sees its star rise and set: its day is its orbit)
     locked: !!cl.locked && body.kind !== 'moon', substellar: cl.substellar, rotH: r.locked ? (body.kind === 'moon' && host && body.orbit && body.orbit.aReal ? 2 * Math.PI * Math.sqrt(body.orbit.aReal ** 3 / (6.674e-11 * host.massEarth * 5.972e24)) / 3600 : 1e4) : Math.abs(r.periodRealH || 24), retro: !!r.retrograde, hadley: cl.hadley,
     pressure: body.atmosphere ? body.atmosphere.pressure : 0, Tmean: body.Tsurf, albedo: body.albedo, lapse: cl.lapse,
