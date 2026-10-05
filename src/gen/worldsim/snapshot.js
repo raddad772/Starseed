@@ -15,7 +15,7 @@
 // Versioned: a cache keyed by seed, body and SIM_VERSION drops stale ones.
 
 import { GridLite } from './grid.js';
-import { RefineReader, TileSet } from './refine.js';
+import { RefineReader, TileSet, contactW } from './refine.js';
 import { MT } from '../tileshape.js';
 import * as dm from '../../core/dmath.js';
 import { Noise3 } from '../../core/noise.js';
@@ -223,6 +223,7 @@ export class SnapshotSampler {
     this.ref = R ? new RefineReader(R) : null;
     this.riv = R && R.riv ? R.riv : null;   // (its rivers, refine.js riverIndex)
     this.refCell = R ? (Math.PI / 2) * this.Rd / (R.n * MT) : 0;
+    if (this.ref) this.ref.cell = this.refCell;
   }
   // the terrain pyramid's finer levels near the player (gen/terrainTiles.js): a Map of level ->
   // TileSet, filled as tiles come in; their readers, coarse to fine, each with its cell size (m)
@@ -385,7 +386,7 @@ export class SnapshotSampler {
       const score = W + (1.5 * e * (H / W - hb) / span + 0.8 * dm.clamp(2 * e, -1, 1) * ROCK_UP[r]) * Math.min(1, 2.5 * W);
       if (score > bs) { sec = best; ss = bs; bs = score; best = r; } else if (score > ss) { ss = score; sec = r; }
     }
-    if (sec >= 0) { this.rock2 = sec; this.rockMix = 0.5 * (1 - dm.smoothstep(0, 0.12, bs - ss)); }
+    if (sec >= 0) { this.rock2 = sec; this.rockMix = 0.5 * (1 - dm.smoothstep(0, contactW(this.rockSoft, this.G.spacing / this.G.R * this.Rd), bs - ss)); }
     return best;
   }
   lake(x, y, z) { const w = this.s.water[this.G.cellAt(x, y, z)]; return w > -1e8 ? w : null; }

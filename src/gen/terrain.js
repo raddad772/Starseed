@@ -2120,8 +2120,11 @@ export class TerrainGenerator {
       return;
     }
     // the rock (or sand) showing, and across a contact on even ground the other one, mixed
+    // (its contacts as wide as the vertices reading them are apart: chunkbuilder.js's _shadeSp)
+    S.rockSoft = this._shadeSp || 0;
     let rt = S.rockAt(x, y, z, h / this.hScale), r2 = S.rock2;
     const mix = S.rockMix;
+    S.rockSoft = 0;
     // (where no tile of the terrain's has laid out the beds: the same beds the tiles have)
     if (!S.rockPyr) { rt = this._bedRock(x, y, z, h, rt); r2 = mix > 0 ? this._bedRock(x, y, z, h, r2) : rt; }
     const c1 = this.rockLin[rt] || P.rock, c2 = this.rockLin[r2] || P.rock, rc = this._rcol || (this._rcol = [0, 0, 0]);

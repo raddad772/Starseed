@@ -208,6 +208,13 @@ export function riverIndex(parts, N, Rw) {
 // offset across by its width, as short segments indexed by the world sim's cells. Each segment:
 // its ends (directions), the river's half width, size and bank height there; and its kind
 // (0 the channel, 1 an oxbow) and the oxbow's age
+// how far apart two rocks' scores grade into each other across a contact (rockAt's): sharp (0.12, a
+// tenth of a cell) where the ground is sampled finely; read by a mesh whose vertices lie sp m apart (a
+// reader's cells cell m), over about a vertex spacing either side. A contact sharper than the vertices
+// fell between them, and the triangles drew it along their edges: stairs, tens of metres a step on a far
+// chunk (the scores move about 4/3 a cell across a contact: the cubic B-spline's step at its middle)
+export const contactW = (sp, cell) => Math.max(0.12, sp > 0 && cell > 0 ? 1.5 * sp / cell : 0);
+
 export const BIG_W = 250, BIG_REC = 11;
 function bigChannels(rec, half, size, phase, dn, up, G, Rw) {
   const F = meanderField(), m = half.length, segs = [], P = F.P, has = new Uint8Array(m);
@@ -477,7 +484,7 @@ export class RefineReader {
       if (el) score += 0.8 * el * (dep && dep.has(rk[k]) ? -1 : dm.clamp(4 * rel + ROCK_UP[rk[k]], -1, 1)) * wk;
       if (score > bs) { sec = best; ss = bs; bs = score; best = rk[k]; } else if (score > ss) { ss = score; sec = rk[k]; }
     }
-    if (sec >= 0) { out.rock2 = sec; out.rockMix = 0.5 * (1 - dm.smoothstep(0, 0.12, bs - ss)); }
+    if (sec >= 0) { out.rock2 = sec; out.rockMix = 0.5 * (1 - dm.smoothstep(0, contactW(out.rockSoft, this.cell), bs - ss)); }
     return best;
   }
 }

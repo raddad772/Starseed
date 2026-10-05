@@ -213,6 +213,8 @@ export function buildChunk(gen, face, level, ix, iy, N = CHUNK_N) {
     }
     const CVi = CN + 1;
     const col = [0, 0, 0], mat = new Float64Array(8);
+    // (the vertices' spacing, the parent's: shade grades the rock's contacts over it)
+    gen._shadeSp = 2 * spacing;
     for (let j = 0; j < CVi; j++) {
       for (let i = 0; i < CVi; i++) {
         const c = (j + 1) * CV + (i + 1);
@@ -269,6 +271,7 @@ export function buildChunk(gen, face, level, ix, iy, N = CHUNK_N) {
   };
   const tA = [0, 0, 0], tB = [0, 0, 0];
 
+  gen._shadeSp = spacing;
   for (let j = 0; j < V; j++) {
     for (let i = 0; i < V; i++) {
       const vi = j * V + i;
@@ -339,6 +342,7 @@ export function buildChunk(gen, face, level, ix, iy, N = CHUNK_N) {
       mcolA[vi * 4 + 3] = encodeWater(mw);
     }
   }
+  gen._shadeSp = 0;
 
   // ---- skirts: copies of edge vertices pushed down radially
   const skirt = Math.max(spacing * 1.5, 3) + (maxH - minH) * 0.02;
