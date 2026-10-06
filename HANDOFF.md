@@ -75,7 +75,10 @@ Dave's queue, in the order he raised it (keep this list current):
    the aureole (phaseMie's narrow lobe), the ground's sun and the shadow maps lifted as the air's; the
    loading screen counts near plants and grass. Scratchpad sky10_*, shadowB_*. Open: the ground's game-scale
    haze now reads foggier than the clear sky from 90 m; the loading screen covers arrivals, not a descent
-   from orbit (that wants streaming ahead of the camera). Was: the solar aureole (dust and droplets' narrow forward peak; the sun's disc is true size, 0.52 deg,
+   from orbit (that wants streaming ahead of the camera). And (88913ad) the sky through a gentle fisheye
+   about the zenith from low down (atmosphere.js lensZ, sky.js SKY_LENS): the sun, moons, planets and stars
+   rise and set at the drawn skyline (Dave's idea); the air's optics through it backwards. Scratchpad
+   lens_*. Was: the solar aureole (dust and droplets' narrow forward peak; the sun's disc is true size, 0.52 deg,
    and reads tiny in the 72 deg view without it). Dave: "more dramatic; it's the sky not clouds that turn
    super pink".
 13. Dave's new asks, in order (the loading screen DONE, af5c907); the caprock scarps (or a fault scarp:
