@@ -696,11 +696,15 @@ void main() {
     float F0 = 0.04 - 0.02 * vCls2.w;
     float Fs = F0 + (1.0 - F0) * pow(1.0 - VdH, 5.0);
     color += uSunE * sunT * Dg * Gg * Fs / (4.0 * NdV);
-    // glints: snow's grains, and quartz sand's, fewer, near enough to tell apart
+    // glints: snow's grains, and quartz sand's, fewer, near enough to tell apart. A grain's cell (4.5 mm)
+    // smaller than a pixel is its share of the pixel's light, not all of it (a speck many times the
+    // sunlit snow's brightness, coming and going with each blade swaying in front of it, flashed); and
+    // where the pixel holds many, gone (their sum the snow's own sheen)
     float gw = vCls2.z + 0.6 * vCls1.z;
-    if (gw > 0.05 && dist < 60.0 && muS > 0.0) {
+    float gc = foot * 220.0;
+    if (gw > 0.05 && gc < 3.0 && muS > 0.0) {
       float g = grainGlint(fp, N, H, mix(0.9, 0.97, vCls1.z / max(gw, 1e-3)));
-      color += uSunE * sunT * g * 25.0 * gw * (1.0 - smoothstep(15.0, 60.0, dist));
+      color += uSunE * sunT * min(g * 25.0 / max(1.0, gc * gc), 3.0) * gw * (1.0 - smoothstep(1.5, 3.0, gc));
     }
 #else
     // wet / icy sheen

@@ -221,9 +221,11 @@ export function scatterFlora(gen, face, level, ix, iy, maxLevel, species) {
       } else pTree = veg * veg * species.densityTree * (Tc > -2 && Tc < 42 ? 1 : 0.2) * 0.5 * (1 - meadow) * fk;
       const pShrub = veg * species.densityShrub * 0.45 * (1 - 0.75 * meadow) * ok;
       const pPlant = veg * 0.9 * (1 + 0.4 * meadow) * (species.plantScarce ? 0.08 : 1) * ok; // (crusts only, where no plants reached land)
-      if (roll < pTree) { out.tree.push(px, py, pz, rng.range(0.6, 1.25) * treeScale, rot, tint, slope, 0); continue; }
-      if (roll < pTree + pShrub * 0.6) { out.shrub.push(px, py, pz, rng.range(0.6, 1.4), rot, tint, slope, 1); continue; }
-      if (roll < pTree + pShrub * 0.6 + pPlant * 0.6) { out.plant.push(px, py, pz, rng.range(0.6, 1.5), rot, tint, slope, 2); continue; }
+      // (each: where, its size, its turn, its tint, the slope, the year's mean temperature there (C: the
+      // seasons' snow on it, floraRender.js))
+      if (roll < pTree) { out.tree.push(px, py, pz, rng.range(0.6, 1.25) * treeScale, rot, tint, slope, Tc); continue; }
+      if (roll < pTree + pShrub * 0.6) { out.shrub.push(px, py, pz, rng.range(0.6, 1.4), rot, tint, slope, Tc); continue; }
+      if (roll < pTree + pShrub * 0.6 + pPlant * 0.6) { out.plant.push(px, py, pz, rng.range(0.6, 1.5), rot, tint, slope, Tc); continue; }
     }
     // (rocks and boulders: gen/rocks.js, where the ground's history put them; not the flora's own)
   }

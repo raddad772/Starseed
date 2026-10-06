@@ -6,6 +6,7 @@ import { floraSpecies, FLORA_KINDS } from '../gen/flora.js';
 import { GLSL_SURFACE_ATMO, GLSL_CLOUD_N, GLSL_CLOUD_SHADOW } from './atmosphere.js';
 import { GLSL_TERRAIN_SHADOW } from './terrainShadow.js';
 import { GLSL_MOON } from './moonlight.js';
+import { GLSL_SEASON } from './season.js';
 import { GLSL_SUN_SHADOW, GLSL_SKY_SHADOW, SHADOW_LAYER, SKY_LAYER, SHADOW_LIGHT_UNIFORMS } from './sunShadows.js';
 import { growTree } from '../gen/life/tree.js';
 import { treeGeometry as grownMesh } from './treeMesh.js';
@@ -220,8 +221,13 @@ const VERT = /* glsl */`
 attribute float part;
 attribute float ao;
 attribute vec2 tuv;
+// (the year's mean temperature where it stands, C: the scatter's (gen/flora.js), as the rocks' rC)
+attribute float fTa;
 varying vec2 vUv;
 uniform float uTime;
+uniform vec3 uCenter;
+uniform mat3 uToFixed;
+uniform float uTopY;   // (its top, in its geometry's units: a crown's height within it)
 // (the wind: its way (world) times its speed over 10 m/s squared, its gust now: sim/wind.js)
 uniform vec4 uWindV;
 uniform float uFadeStart;
@@ -232,8 +238,12 @@ varying float vPart;
 varying float vAo;
 varying vec3 vTint;
 varying float vDist;
+varying vec3 vSnow;   // x: the snow on its boughs now (0..1), y: the snow's depth on the ground (m), z: its height above its foot (m)
+varying vec3 vLocal;
+varying float vTop;   // (how far up it, 0..1)
 #include <common>
 #include <logdepthbuf_pars_vertex>
+${GLSL_SEASON}
 void main() {
   vec3 p = position;
   mat4 im = mat4(1.0);
@@ -252,8 +262,29 @@ void main() {
   float sway = 0.0012 + 0.0007 * sin(uTime * 1.3 + phase) * (0.4 + uWindV.w) + 0.0003 * sin(uTime * 3.1 + phase * 2.1);
   wp.xyz += uWindV.xyz * (p.y * p.y * sway * (leaf ? 1.0 : 0.8));
   if (leaf) wp.xyz += vec3(sin(uTime * 7.0 + p.x * 3.1 + phase), 0.5 * sin(uTime * 5.3 + p.y * 2.3), cos(uTime * 6.3 + p.z * 2.7)) * 0.03 * sqrt(length(uWindV.xyz));
-  vWorld = wp.xyz;
   vNormal = normalize(mat3(modelMatrix) * mat3(im) * normal);
+  // (the seasons' snow where it stands (season.js, the ground's snowpack, the same sums): on its boughs
+  // while the month is freezing (a thaw, or a warm spell's sun, unloads them within a day or two); banked
+  // round its foot as deep as it lies there)
+  vSnow = vec3(0.0, 0.0, p.y * length(im[1].xyz));
+  vTop = p.y / max(uTopY, 1e-3);
+  vLocal = p + im[3].xyz * 0.0137;
+  if (uSeason.z > 0.5) {
+    vec3 dirF = normalize(uToFixed * ((modelMatrix * im * vec4(0.0, 0.0, 0.0, 1.0)).xyz - uCenter));
+    float swe = min(seasonSWE(dirF, fTa), 3000.0);
+    vec3 yr = seasonYear(dirF);
+    float Tn = fTa + yr.x * cos(uSeason.x) + yr.y * sin(uSeason.x);
+    vSnow.x = (1.0 - exp(-swe / 12.0)) * (1.0 - smoothstep(-3.0, 1.5, Tn));
+    vSnow.y = swe * SNOW_DEPTH_PER_MM;
+    // (on a bough it lies as a ridge a few cm deep along its top, wider than a twig and overhanging it:
+    // seen from below or the side, a white line along it, not only from above)
+    if (part < 0.5 && vSnow.x > 0.0) {
+      vec3 upW = normalize(mat3(modelMatrix) * im[1].xyz);
+      float ny = dot(vNormal, upW);
+      wp.xyz += vSnow.x * 0.05 * smoothstep(-0.15, 0.35, ny) * (upW + 0.6 * (vNormal - upW * ny));
+    }
+  }
+  vWorld = wp.xyz;
   vPart = part;
   vAo = ao;
   vUv = tuv;
@@ -285,6 +316,10 @@ varying float vPart;
 varying float vAo;
 varying vec3 vTint;
 varying float vDist;
+varying vec3 vSnow;
+varying vec3 vLocal;
+varying float vTop;
+uniform vec3 uSnowCol;
 #include <common>
 #include <logdepthbuf_pars_fragment>
 ${GLSL_SURFACE_ATMO}
@@ -332,8 +367,28 @@ void main() {
       albedo = vTint * (0.35 + 1.5 * dot(lt.rgb, vec3(0.3, 0.59, 0.11)));
     }
   }
+  // (the snow on it: what lies open to the sky holds what fell on it, in clumps; and banked round its foot)
+  float snowK = 0.0;
+  if (vSnow.x + vSnow.y > 0.0) {
+    float clump = texture(tNoise, vLocal * 0.9).r;
+    vec3 Ng = normalize(vNormal);
+    if (vPart < 0.5) {
+      // (a bough's ridge (raised over its top, the vertex shader), a leaning trunk's upper side, inside the
+      // crown as well: the leaves above take some, not all; what reaches a bough stays on it)
+      snowK = vSnow.x * smoothstep(0.0, 0.3, dot(Ng, up)) * smoothstep(0.1, 0.4, 0.3 + 0.7 * clump);
+    } else {
+      // (a crown's leaves: its top, where the sky's open above them (skyBlocked: the boughs and crowns over
+      // them), in clumps; the upper face more, but from below or the side the snow over a leaf a pixel or
+      // two across shows round it too)
+      float face = 0.55 + 0.45 * dot(Ng, up);
+      float open = (1.0 - 0.85 * skyBl) * (0.35 + 0.65 * smoothstep(0.3, 0.85, vTop));
+      snowK = vSnow.x * smoothstep(0.3, 0.6, open * face * (0.55 + 0.9 * clump));
+    }
+    snowK = max(snowK, 1.0 - smoothstep(vSnow.y - 0.03, vSnow.y + 0.03, vSnow.z));
+    albedo = mix(albedo, uSnowCol, snowK * (vPart > 0.5 && vPart < 1.5 ? 0.9 : 1.0));
+  }
   float ndl = max(dot(N, uSunDir), 0.0);
-  float trans = vPart > 0.5 && vPart < 1.5 ? max(0.0, -dot(N, uSunDir)) * 0.35 : 0.0;
+  float trans = vPart > 0.5 && vPart < 1.5 ? max(0.0, -dot(N, uSunDir)) * 0.35 * (1.0 - snowK) : 0.0;
   float leaf = vPart > 0.5 && vPart < 1.5 ? 0.35 : 0.0;
   vec3 moon = moonLit(rel, r, up, N, keySh, leaf, 0.55 + 0.45 * dot(N, up), skyK);
   vec3 c = albedo / PI * (uSunE * sunT * (ndl + trans) * vAo + (uSunE * (skyE * (0.55 + 0.45 * dot(N, up)) * skyK + canopyLit(skyBl, sunTop, muS, skyE)) + uAmbientFloor + moon) * vAo);
@@ -444,6 +499,19 @@ export function seatInstances(obj, b) {
   });
 }
 
+// release a node's mesh's own geometries (FloraSet.wrap): the shared buffers taken off them first, so
+// disposing them frees only their own
+function unwrap(m) {
+  const w = m.userData.wraps;
+  if (!w) return;
+  for (const g of w.values()) {
+    for (const k of Object.keys(g.attributes)) if (k !== 'fTa') g.deleteAttribute(k);
+    g.setIndex(null);
+    g.dispose();
+  }
+  w.clear();
+}
+
 export class FloraSet {
   constructor(body, shared) {
     const t = body.data.terrain;
@@ -485,6 +553,9 @@ export class FloraSet {
       m.uniforms.uWindV = this.material.uniforms.uWindV;   // (one wind for all: setWind)
       m.uniforms.uFadeEnd.value = this.kindDist[k] * 0.98;
       m.uniforms.uFadeStart.value = this.kindDist[k] * 0.7;
+      const gk = this.geos[k];
+      if (!gk.boundingBox) gk.computeBoundingBox();
+      m.uniforms.uTopY = { value: gk.boundingBox.max.y };
       // (the trees EZ-Tree grew: their textures)
       const ez = k === 'tree' && this.geos.tree.userData.ez;
       m.uniforms.uTex = { value: ez ? 1 : 0 };
@@ -496,6 +567,8 @@ export class FloraSet {
     this.materials.treeFar = this.materials.tree.clone();
     for (const key in this.materials.tree.uniforms) if (key !== 'uTex') this.materials.treeFar.uniforms[key] = this.materials.tree.uniforms[key];
     this.materials.treeFar.uniforms.uTex = { value: 0 };
+    if (!this.treeFar.boundingBox) this.treeFar.computeBoundingBox();
+    this.materials.treeFar.uniforms.uTopY = { value: this.treeFar.boundingBox.max.y };
     // (and their shadows')
     this.shadowMats = {};
     for (const k in this.materials) this.shadowMats[k] = shadowMaterial(this.materials[k]);
@@ -529,6 +602,12 @@ export class FloraSet {
       const n = arr.length / 8;
       if (!n) continue;
       const mesh = new THREE.InstancedMesh(this.geos[kind], this.materials[kind], n);
+      // (each plant's year's mean temperature: the seasons' snow on it)
+      const ta = new Float32Array(n);
+      for (let i = 0; i < n; i++) ta[i] = arr[i * 8 + 7];
+      mesh.userData.fTa = new THREE.InstancedBufferAttribute(ta, 1);
+      mesh.geometry = this.wrap(mesh, this.geos[kind]);
+      mesh.addEventListener('dispose', () => unwrap(mesh));
       mesh.layers.enable(SHADOW_LAYER);
       // (trees and shrubs take the sky from what's under them)
       if (kind === 'tree' || kind === 'shrub') mesh.layers.enable(SKY_LAYER);
@@ -579,6 +658,25 @@ export class FloraSet {
     return group;
   }
 
+  // a node's mesh's own form of one of the shared geometries: the same buffers, and its instances' own
+  // attribute (fTa) besides (unwrap: its own released, the shared kept)
+  wrap(m, base) {
+    const w = m.userData.wraps || (m.userData.wraps = new Map());
+    let g = w.get(base);
+    if (!g) {
+      g = new THREE.BufferGeometry();
+      for (const k in base.attributes) g.setAttribute(k, base.attributes[k]);
+      if (base.index) g.setIndex(base.index);
+      if (!base.boundingSphere) base.computeBoundingSphere();
+      if (!base.boundingBox) base.computeBoundingBox();
+      g.boundingSphere = base.boundingSphere; g.boundingBox = base.boundingBox;
+      g.userData = base.userData;
+      g.setAttribute('fTa', m.userData.fTa);
+      w.set(base, g);
+    }
+    return g;
+  }
+
   // per-frame: hide kinds beyond their draw distance, swap distant trees to the impostor
   updateNode(group, dist) {
     for (const m of group.children) {
@@ -588,7 +686,7 @@ export class FloraSet {
       // (EZ-Tree's near to ~90 m, its lighter one to ~300, the impostor beyond; else near to 450)
       if (kind === 'tree') {
         const near = dist < (this.treeMid ? 300 : 450);
-        m.geometry = near ? (this.treeMid && dist >= 90 ? this.treeMid : this.geos.tree) : this.treeFar;
+        m.geometry = this.wrap(m, near ? (this.treeMid && dist >= 90 ? this.treeMid : this.geos.tree) : this.treeFar);
         m.material = near ? this.materials.tree : this.materials.treeFar;
         m.userData.shadowMat = near ? this.shadowMats.tree : this.shadowMats.treeFar;
       }

@@ -119,12 +119,21 @@ uniform vec2 uTexel;
 varying vec2 vUv;
 void main() {
   float exposure = clamp(uKey / exp2(texture(tAdapt, vec2(0.5)).r), uMinExp, uMaxExp);
+  // (the four taps weighted 1 / (1 + their brightness): Karis's average, so a single pixel far brighter
+  // than its neighbours (a glint, a speck of sky through leaves, one that overflowed the buffer) blooms as
+  // little as a pixel should, not into an orb flickering as it comes and goes; a bright area's taps are all
+  // alike, its bloom unchanged)
   vec3 c = vec3(0.0);
-  c += texture(tColor, vUv + uTexel * vec2(-1.0, -1.0)).rgb;
-  c += texture(tColor, vUv + uTexel * vec2(1.0, -1.0)).rgb;
-  c += texture(tColor, vUv + uTexel * vec2(-1.0, 1.0)).rgb;
-  c += texture(tColor, vUv + uTexel * vec2(1.0, 1.0)).rgb;
-  c *= 0.25 * exposure;
+  float wsum = 0.0;
+  for (int i = 0; i < 4; i++) {
+    vec2 o = vec2(i == 0 || i == 2 ? -1.0 : 1.0, i < 2 ? -1.0 : 1.0);
+    vec3 t = texture(tColor, vUv + uTexel * o).rgb;
+    if (any(isnan(t)) || any(isinf(t))) t = vec3(0.0);
+    t = min(t * exposure, vec3(1e4));
+    float w = 1.0 / (1.0 + max(max(t.r, t.g), t.b));
+    c += t * w; wsum += w;
+  }
+  c /= max(wsum, 1e-6);
   float l = max(max(c.r, c.g), c.b);
   float soft = clamp(l - 0.8, 0.0, 2.0);
   soft = soft * soft / 8.0;
@@ -208,6 +217,9 @@ void main() {
     for (int i = 1; i < 10; i++) acc += texture(tColor, 0.5 + d * (1.0 - uRadial * 0.05 * float(i))).rgb;
     c = mix(c, acc / 10.0 * vec3(0.85, 0.95, 1.25), clamp(uRadial, 0.0, 1.0));
   }
+  // (a pixel that overflowed the half-float buffer, or went NaN, drawn as the brightest white, never black)
+  if (any(isnan(c))) c = vec3(0.0);
+  c = min(c, vec3(6e4));
   c *= exposure;
   c += texture(tBloom, vUv).rgb * uBloom;
   // (night vision: in a moonlit night's dark the eye's rods take over, colour fading and leaning blue:
