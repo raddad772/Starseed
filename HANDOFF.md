@@ -44,6 +44,18 @@ Dave's queue, in the order he raised it (keep this list current):
 6. An alien world with life to compare: a different star's light, a different air; screenshots.
 7. Far wooded mountains seen from km away (the ground's canopy colour on far slopes).
 8. The moon on the sea (glints) and on floes; the sky shadow's cost (+8 ms: fewer taps, early out).
+9. Flashing (Dave: "feels like it's going to give an epileptic fit"): DONE (d153ddc). Snow and sand grain
+   glints were single pixels many times the snow's brightness, popping as blades swayed past and bloomed
+   into orbs (a black dot where the buffer overflowed). Glints now filtered by the pixel's footprint; bloom's
+   first pass a Karis average; NaN/overflow drawn white. Measured in the test view: no saturated pixels,
+   ~0.5% of pixels changing a frame (leaves and grass in the wind). The "X near the left" Dave saw was not
+   found; a dark hollow by a rock at 33N 78W (cam_dave2, left) is a candidate.
+10. Snow on trees: DONE (d153ddc, 8df12d1): the ground's snowpack (each plant's year's mean temperature
+   from the scatter), boughs carrying raised ridges, crowns white where open to the sky (sides at a wood's
+   edge), feet banked. Grass's "parallel lines": the noise read body-fixed x, z only (stretched N-S);
+   now 3D, gusts as drifting patches; bare ground blended from patch corners (8df12d1).
+   Test tip: the hidden pane clears the canvas between tasks: read pixels right after game.frame
+   (wrap it), and show them in a second same-origin tab (localStorage) to look at them.
 
 ## NOW: fire through the recent centuries (session 39d69fa8, 2026-10-06), SIM 68
 
