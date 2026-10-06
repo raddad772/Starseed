@@ -198,6 +198,9 @@ void main() {
   vec3 L = vec3(0.0), T = vec3(1.0);
   vec3 Lth = vec3(0.0);
   vec3 sunDirF = uToFixed * uSunDir;
+  // (the sun's height over the air along the ray as on the world's true size: atmosphere.js trueUp)
+  vec3 upC = normalize(-uCenter);
+  float kT = trueK(length(uCenter) - uRadius);
 
   for (int seg = 0; seg < 3; seg++) {
     float a = seg == 0 ? t0 : (seg == 1 ? tIn : tOut);
@@ -205,15 +208,20 @@ void main() {
     if (b <= a + 1.0) continue;
     int N = seg == 1 ? int(uSteps) : 18;
     float dt = (b - a) / float(N);
+    // (the stretch from the camera: its steps squared, closer near it, where the ground haze is)
+    bool sq = seg == 0 && a < 1.0;
     for (int i = 0; i < 96; i++) {
       if (i >= N) break;
       float t = a + (float(i) + jitter) * dt;
+      float dti = dt;
+      if (sq) { float u = (float(i) + jitter) / float(N); t = a + (b - a) * u * u; dti = (b - a) * 2.0 * u / float(N) + 1e-3; }
       vec3 p = (t - tca) * D - perp;
       float r = length(p);
       float h = r - uRadius;
       vec3 sR, sM, e;
       mediumAt(r, sR, sM, e);
-      float muS = dot(p, uSunDir) / r;
+      vec3 nT = trueUp(p, r, upC, kT);
+      float muS = dot(nT, uSunDir);
       vec3 ext = e;
       float tauAbove = 0.0;
       float cd = 0.0, frac = 0.5;
@@ -264,7 +272,7 @@ void main() {
       S += (sR + sM) * sunTransmittance(r, muS) * (dif * 0.5 / PI_A);
       vec3 Sm = vec3(0.0), mT = vec3(0.0), mms = vec3(0.0), mT0 = vec3(0.0);
       if (moon) {
-        float muM = dot(p, uMoonDir) / r, shM = exp(-tauV / max(muM, 0.06));
+        float muM = dot(nT, uMoonDir), shM = exp(-tauV / max(muM, 0.06));
         mT0 = sunTransmittance(r, muM); mT = mT0 * shM;
         mms = multiScatter(r, muM) * (0.2 + 0.8 * shM);
         Sm = sR * (mT * pRm + mms) + sM * (mT * pMm + mms);
@@ -285,7 +293,7 @@ void main() {
           S += sc * vec3(0.75, 0.82, 1.0) * uFlash.w * exp(-dot(fd, fd) / 6.0e7);
         }
       }
-      vec3 Ts = exp(-ext * dt);
+      vec3 Ts = exp(-ext * dti);
       L += T * (S - S * Ts) / max(ext, vec3(1e-12));
       if (moon) Lm += T * (Sm - Sm * Ts) / max(ext, vec3(1e-12));
       if (uGlow > 0.0 && h < -20000.0) Lth += T * thermalGlow(h) * (vec3(1.0) - Ts);
@@ -294,7 +302,7 @@ void main() {
         float te = a + float(i) * dt + min(0.5 * dt, 1.0 / max(ext.g, 1e-12));
         Lth += T * (vec3(1.0) - Ts) * airHeatGlow(length((te - tca) * D - perp));
       }
-      Lth += T * airLight(p, r) * dt;   // (airglow: the air's own light; the aurora is drawn after)
+      Lth += T * airLight(p, r) * dti;   // (airglow: the air's own light; the aurora is drawn after)
       T *= Ts;
       if (max(T.x, max(T.y, T.z)) < 0.003) { T = vec3(0.0); break; }
     }

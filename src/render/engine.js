@@ -53,7 +53,7 @@ void main() {
   if (isnan(l) || isinf(l)) l = 0.0;
   // luminance relative to the incident-light reference (an 18% grey card lit
   // where the camera is), clamped to [-6, +3] stops
-  float x = clamp(l / max(uRef, 1e-9), 1.0 / 64.0, 8.0);
+  float x = clamp(l / max(uRef, 1e-9), 1.0 / 64.0, 64.0);
   // Solid surfaces set the exposure: ground, hulls, planets. A bright sky
   // (and clouds, and the sun) barely counts, so it blows out a little rather
   // than plunging the ground into darkness; a dark sky (black space, night)
@@ -69,8 +69,10 @@ void main() {
   w *= sky ? mix(0.35, 0.04, smoothstep(0.25, 1.0, x)) : near;
   // z/w: 4th-power mean over solid surfaces only, which tracks a bright
   // subject covering a few percent of the frame (a sunlit planet beside a
-  // dark hull) so it is not blown out
-  float ws = sky ? 0.0 : w;
+  // dark hull) so it is not blown out; and a sky far brighter than the light
+  // here (a sunset's, the low sun's glow over a ground it barely lights): the
+  // eye closes down for it and the ground goes to silhouette
+  float ws = sky ? w * 0.6 * smoothstep(3.0, 12.0, x) : w;
   float x2 = x * x;
   gl_FragColor = vec4(log2(x) * w, w, x2 * x2 * ws, ws);
 }
@@ -367,7 +369,7 @@ export class Engine {
     // camera (set by the game each frame, per view), and how far the frame's
     // own brightness may move exposure from it, in stops
     this.meterUp = 5;
-    this.meterDown = 0.5;
+    this.meterDown = 3;
     this.toneCurve = 'agx';   // or 'aces'
     this.meterStrength = 0.75; // how much of the solid surfaces' brightness the eye compensates
     // the views drawn on the canvas (one per player: a split screen with two)

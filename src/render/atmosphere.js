@@ -220,10 +220,22 @@ uniform float uAbsExp;
 // fades the far ground (the game draws worlds at a tenth of their size with air of real
 // density and height: without it a ridge that looks 50 km off has only 5 km of air before it)
 uniform vec4 uHaze;
+// (its colour: scattering by wavelength over green's, an Angstrom slope (550/l)^a from the world's
+// aerosols: the fine haze of a land with plants takes the blue most, so the far hills go blue and a low
+// sun reddens deep; a desert's coarse dust and a sea's salt nearly grey)
+uniform vec3 uHazeCol;
 // the air above the knee (m) squeezed by uUpper (bodies.js atmoAlt): its density at a drawn
 // height is the real air's at the real height it stands for
 uniform float uKnee;
 uniform float uUpper;
+// the world's true size over its drawn one (bodies.js radiusM / R: ~64 on a true-scale world)
+uniform float uTrueK;
+// the up at p (from the world's centre, r its length) as on the true-size world, from a camera whose own
+// up is upC: on the drawn ball a view along the ground curves round fast, the air 50 km off under a sun
+// some 30 degrees higher than the camera's and lit white where the true world's sun there is setting
+// too; the curve undone by k (the true size near the ground, 1 from high up)
+vec3 trueUp(vec3 p, float r, vec3 upC, float k) { return normalize(mix(upC, p / r, 1.0 / k)); }
+float trueK(float hc) { return mix(max(uTrueK, 1.0), 1.0, smoothstep(20000.0, 60000.0, hc)); }
 const float PI_A = 3.14159265358979;
 void mediumAt(float r, out vec3 scatR, out vec3 scatM, out vec3 ext) {
   float h = r - uRadius;
@@ -231,10 +243,10 @@ void mediumAt(float r, out vec3 scatR, out vec3 scatM, out vec3 ext) {
   float dR = exp(-hr / uRayleighH);
   float dM = exp(-hr / uMieH);
   float dA = uAbsExp > 0.5 ? dR : max(0.0, 1.0 - abs(h - uAbsCenter) / max(uAbsWidth, 1.0));
-  float dH = uHaze.x * exp(-max(h, 0.0) / max(uHaze.y, 1.0));
+  vec3 dH = uHaze.x * exp(-max(h, 0.0) / max(uHaze.y, 1.0)) * uHazeCol;
   scatR = uRayleigh * dR;
-  scatM = uMie * dM + vec3(dH);
-  ext = scatR + scatM + uMieAbs * dM + uAbs * dA + vec3(dH * uHaze.z);
+  scatM = uMie * dM + dH;
+  ext = scatR + scatM + uMieAbs * dM + uAbs * dA + dH * uHaze.z;
 }
 float phaseRayleigh(float c) { return 3.0 / (16.0 * PI_A) * (1.0 + c * c); }
 float phaseMie(float c, float g) {
@@ -263,15 +275,25 @@ void main() {
   float dMin = uTop - r, dMax = rho + H;
   float d = dMin + vUv.x * (dMax - dMin);
   float mu = d < 1e-3 ? 1.0 : clamp((H * H - rho * rho - d * d) / (2.0 * r * d), -1.0, 1.0);
-  float len = distToTop(r, mu);
-  const int N = 48;
+  // (the sunlight's way through the air as on the world's true size, which the drawn one stands for:
+  // its air is real air, a real height, and wrapped round a ball a 64th of the size a low sun's way
+  // through it was a few airmasses where Earth's horizon is nearly forty, the setting sun white and
+  // bright; the air's layers the same at each height, the curve under them the true one's. Below the
+  // true horizon (above the drawn one, which dips further), the light grazing it)
+  float K = max(uTrueK, 1.0), Rk = uRadius * K, rK = Rk + (r - uRadius), topK = Rk + (uTop - uRadius);
+  float muK = max(mu, -sqrt(max(0.0, 1.0 - (Rk / rK) * (Rk / rK))) + 1e-4);
+  float len = max(0.0, -rK * muK + sqrt(max(rK * rK * (muK * muK - 1.0) + topK * topK, 0.0)));
+  // (its steps closer near the start, squared: a low sun's way runs hundreds of km to the top, and in
+  // even steps the ground haze, its first few hundred metres up, fell between two of them; then the haze
+  // barely dimmed the sun it lit, a white blaze round a setting sun)
+  const int N = 64;
   vec3 od = vec3(0.0);
-  float dt = len / float(N);
   for (int i = 0; i < N; i++) {
-    float t = (float(i) + 0.5) * dt;
-    float rr = sqrt(r * r + t * t + 2.0 * r * mu * t);
+    float u0 = float(i) / float(N), u1 = float(i + 1) / float(N);
+    float t = len * (u0 * u0 + u1 * u1) * 0.5, dt = len * (u1 * u1 - u0 * u0);
+    float rr = sqrt(rK * rK + t * t + 2.0 * rK * muK * t);
     vec3 sR, sM, e;
-    mediumAt(rr, sR, sM, e);
+    mediumAt(rr - Rk + uRadius, sR, sM, e);
     od += e * dt;
   }
   gl_FragColor = vec4(exp(-od), 1.0);
@@ -317,10 +339,11 @@ void main() {
       float tMax = distToTop(r, mu);
       bool ground = hitsGround(r, mu, uGround);
       if (ground) tMax = -r * mu - sqrt(max(0.0, r * r * (mu * mu - 1.0) + uGround * uGround));
-      float dt = tMax / float(STEPS);
       vec3 thr = vec3(1.0), L = vec3(0.0), MS = vec3(0.0);
       for (int s = 0; s < STEPS; s++) {
-        float t = (float(s) + 0.5) * dt;
+        // (squared steps: the ground haze near the start)
+        float u0 = float(s) / float(STEPS), u1 = float(s + 1) / float(STEPS);
+        float t = tMax * (u0 * u0 + u1 * u1) * 0.5, dt = tMax * (u1 * u1 - u0 * u0);
         vec3 p = pos + dir * t;
         float rr = length(p);
         vec3 sR, sM, e;
@@ -381,11 +404,12 @@ void main() {
       float st = sqrt(1.0 - ct * ct);
       vec3 dir = vec3(cos(th) * st, ct, sin(th) * st);
       float tMax = distToTop(r, ct);
-      float dt = tMax / float(STEPS);
       vec3 thr = vec3(1.0), L = vec3(0.0);
       float cs = dot(dir, sunDir);
       for (int s = 0; s < STEPS; s++) {
-        float t = (float(s) + 0.5) * dt;
+        // (squared steps: the ground haze near the start)
+        float u0 = float(s) / float(STEPS), u1 = float(s + 1) / float(STEPS);
+        float t = tMax * (u0 * u0 + u1 * u1) * 0.5, dt = tMax * (u1 * u1 - u0 * u0);
         vec3 p = pos + dir * t;
         float rr = length(p);
         vec3 sR, sM, e;
@@ -550,32 +574,41 @@ float cloudDensity(vec3 pFixedDir, float foot) {
 void march(float t0, float t1, vec3 D, float tca, vec3 perp, float cosTheta, float jitter, inout vec3 L, inout vec3 T, int steps, inout vec3 Lm) {
   if (t1 <= t0) return;
   float dt = (t1 - t0) / float(steps);
+  // (from a camera low in the air, the steps squared, closer near it: along the ground the haze's few
+  // hundred metres up are where the light comes from, and in even steps a horizon ray's first one spans
+  // tens of km)
+  bool sq = t0 < 1.0 && length(uCenter) - uRadius < 4.0 * uHaze.y;
+  vec3 upC = normalize(-uCenter);
+  float kT = trueK(length(uCenter) - uRadius);
   float pR = phaseRayleigh(cosTheta), pM = phaseMie(cosTheta, uMieG);
   bool moon = uMoonE.g > 0.0;
   float cosM = dot(D, uMoonDir), pRm = phaseRayleigh(cosM), pMm = phaseMie(cosM, uMieG);
   for (int i = 0; i < 32; i++) {
     if (i >= steps) break;
     float t = t0 + (float(i) + jitter) * dt;
+    float dti = dt;
+    if (sq) { float u = (float(i) + jitter) / float(steps); t = t0 + (t1 - t0) * u * u; dti = (t1 - t0) * 2.0 * u / float(steps) + 1e-3; }
     vec3 p = (t - tca) * D - perp;
     float r = length(p);
     vec3 sR, sM, e;
     mediumAt(r, sR, sM, e);
-    float muS = dot(p, uSunDir) / r;
+    vec3 nT = trueUp(p, r, upC, kT);
+    float muS = dot(nT, uSunDir);
     vec3 sunT = sunTransmittance(r, muS);
     // (air in a mountain's shadow: terrainShadow.js)
     if (uHeightCube.x > 0.5 && r < uRadius + uHeightCube.z) sunT *= airShadow(uToFixed * p, uToFixed * uSunDir, uRadius);
     vec3 ms = multiScatter(r, muS);
     vec3 S = sR * (sunT * pR + ms) + sM * (sunT * pM + ms);
-    vec3 Ts = exp(-e * dt);
+    vec3 Ts = exp(-e * dti);
     vec3 eSafe = max(e, vec3(1e-14));
     L += T * (S - S * Ts) / eSafe;
     if (moon) {
-      float muM = dot(p, uMoonDir) / r;
+      float muM = dot(nT, uMoonDir);
       vec3 mT = sunTransmittance(r, muM), mms = multiScatter(r, muM);
       vec3 Sm = sR * (mT * pRm + mms) + sM * (mT * pMm + mms);
       Lm += T * (Sm - Sm * Ts) / eSafe;
     }
-    gEm += T * airLight(p, r) * dt;
+    gEm += T * airLight(p, r) * dti;
     // (a hot world's air glows from where the step's light comes from: one optical depth in, or its
     // middle when it is thin; at the jittered sample the glow's fall with height showed as dither)
     if (uThermal.x > 0.0) {
@@ -654,7 +687,8 @@ void main() {
   march(tc, t1, D, tca, perp, cosTheta, jitter, L2, T2, steps / 2 + 2, Lm2);
   vec3 cl = vec3(0.0), clm = vec3(0.0);
   if (alpha > 0.002) {
-    float muS = dot(up, uSunDir);
+    vec3 upT = trueUp(pc, rc, normalize(-uCenter), trueK(length(uCenter) - uRadius));
+    float muS = dot(upT, uSunDir);
     vec3 sunT = sunTransmittance(rc, muS);
     vec3 amb = multiScatter(rc, muS) * 6.0;
     bool fromBelow = dot(D, up) > 0.0;
@@ -665,7 +699,7 @@ void main() {
     cl = lit;
     // (and the moon's on it by night)
     if (uMoonE.g > 0.0) {
-      float muM = dot(up, uMoonDir);
+      float muM = dot(upT, uMoonDir);
       float lm = max(muM, 0.0) * 0.6 + 0.4 * smoothstep(-0.1, 0.3, muM);
       clm = uCloudColor.rgb * (sunTransmittance(rc, muM) * lm / PI_A + multiScatter(rc, muM) * 6.0);
       if (fromBelow) clm *= mix(0.55, 0.18, dens);
@@ -721,6 +755,13 @@ function lutTarget(w, h) {
 function v3(a) { return new THREE.Vector3(a[0], a[1], a[2]); }
 
 // One atmosphere: parameters, LUTs and the composite material.
+// the ground haze's scattering at the render's red, green and blue (~680, 550, 440 nm) over green's,
+// by its Angstrom exponent (bodies.js atmosphereRender haze[3])
+export function hazeColour(haze) {
+  const a = haze && haze[3] > 0 ? haze[3] : 0;
+  return new THREE.Vector3(Math.pow(550 / 680, a), 1, Math.pow(550 / 440, a));
+}
+
 export class Atmosphere {
   constructor(renderer, body) {
     this.body = body;
@@ -736,6 +777,8 @@ export class Atmosphere {
     this.top = R + a.height;
     this.params = {
       uRadius: { value: R },
+      // (its true size over its drawn one: the sunlight's way through its air as on the true world)
+      uTrueK: { value: d.radiusM > 0 && R > 0 ? Math.max(1, d.radiusM / R) : 1 },
       uBottom: { value: this.bottom },
       uTop: { value: this.top },
       uGround: { value: this.ground },
@@ -745,6 +788,7 @@ export class Atmosphere {
       uMieAbs: { value: v3(a.mieAbs) },
       uMieH: { value: a.mieH },
       uHaze: { value: new THREE.Vector4(...(a.haze || [0, 1000, 0, 0])) },
+      uHazeCol: { value: hazeColour(a.haze) },
       uKnee: { value: a.knee != null && isFinite(a.knee) ? a.knee : 1e12 },
       uUpper: { value: a.upper || 1 },
       uMieG: { value: a.mieG },

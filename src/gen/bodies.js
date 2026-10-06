@@ -299,7 +299,10 @@ function atmosphereRender(rng, b, atm, Tsurf, dustColor) {
   // (the far lowlands and coasts lost in it, a mountain's summit standing out above), ~0.25
   // optical depth straight up
   const hazeK = P < 0.002 ? 0 : 3e-4 * dm.sqrt(Math.min(P, 3)) * (0.5 + 0.7 * seas + 0.4 * dry);
-  const haze = [hazeK, 700 * dm.sqrt(9.81 / g), 0.1, 0];
+  // (its colour by wavelength, an Angstrom exponent: a land with plants' fine haze (organics, sulphate)
+  // ~1.3, taking the blue; a sea's salt and a desert's dust coarse, nearly grey)
+  const angstrom = dm.clamp(1.3 - 0.9 * dry - 0.4 * seas * (1 - dry), 0.2, 1.6);
+  const haze = [hazeK, 700 * dm.sqrt(9.81 / g), 0.1, angstrom];
   // the air above the knee squeezed (a solid world's), by the square root of the game's length
   // scale (~0.32): below it, the air as it is (skies, haze, clouds and summits in real air), above
   // it thinning three times as fast, so from orbit the limb is a thin line, not the halo round a

@@ -2,6 +2,32 @@
 
 Dave is play-testing and giving feedback in short bursts.
 
+## NOW: forests, shade, moonlight; Dave's queue (session 39d69fa8, 2026-10-06)
+
+Done and committed: EZ-Tree trees, green Earth (7821ce2); stands, sky shadow, leaf-cut sun shadows,
+grass and animal shade, moonlight and film-blue night vision, haze lit under cloud decks (4735334).
+See LIFE.md (Trees by EZ-Tree, Shade, Moonlight). Test recipe: ?seed=SOL&workers=2&date=2026-10-06T23:08
+(sun ~29 deg at 18.66N 59.63W, a game day is 3 h); night 2026-11-04T18:29 (Moon near full, 42 deg up);
+sunset 2026-11-04T20:05. Trees take ~80 s to load with 2 workers.
+
+Dave's queue, in the order he raised it (keep this list current):
+1. Sunsets: the low sun a white glare over half the view. Haze is grey (should be spectral, an
+   Angstrom slope by the world's aerosols; dust taking blue), and the tonemap whitens the bright
+   orange near the sun. Dave: "the sun should dim a bunch and change colors"; dust raised by wind
+   over dry soil should pink the sky.
+2. Wind: trees sway like a hurricane (amplitude ~2.5 m at an 18 m top; quick fix to ~0.3 m done) and
+   constantly; grass too. A local wind as world state (the latitude's belts, weather over days, a day's
+   round, gusts), the trees' lean and sway and the grass from it; dust from it (item 1).
+3. Soil at walking scale: the world sim's soil depth and water table (worldsim/soil.js) into the
+   snapshot (SIM bump), refined by slope and curvature; trees by root depth, grass by a few cm, bare rock
+   and scree where none, wetland plants where the water table is at the surface.
+4. Open ground's variety (Dave: "muddy patches where there's no trees"): game trails between water and
+   grazing (the herds are world state), wallows and mud by water, bare patches on thin soil, mounds.
+5. A flashlight (hand light) for the dark nights now.
+6. An alien world with life to compare: a different star's light, a different air; screenshots.
+7. Far wooded mountains seen from km away (the ground's canopy colour on far slopes).
+8. The moon on the sea (glints) and on floes; the sky shadow's cost (+8 ms: fewer taps, early out).
+
 ## NOW: fire through the recent centuries (session 39d69fa8, 2026-10-06), SIM 68
 
 - gen/life/fire.js (LIFE.md has the model): 8 km fire tiles, 300 years on 32 m cells, run in the

@@ -205,6 +205,9 @@ ${GLSL_NOISE}
 uniform vec3 uColor;
 uniform float uRadiance;
 uniform float uTime;
+// (its light through the air where the camera is, as on the world's true size: atmosphere.js's
+// transmittance; the drawn air's own is thinner, a setting sun white-hot through it)
+uniform vec3 uDiscT;
 varying vec3 vN;
 varying vec3 vObj;
 varying vec3 vView;
@@ -217,7 +220,7 @@ void main() {
   vec3 limb = vec3(1.0 - 0.52 * (1.0 - mu), 1.0 - 0.6 * (1.0 - mu), 1.0 - 0.7 * (1.0 - mu));
   float gran = 0.92 + 0.08 * fbm3(vObj * 160.0 + uTime * 0.002, 4);
   float spots = smoothstep(0.62, 0.7, fbm3(vObj * 9.0 + 3.0, 5) * 0.5 + 0.5) * smoothstep(0.75, 0.2, abs(vObj.y));
-  vec3 c = uColor * uRadiance * limb * gran * (1.0 - 0.7 * spots);
+  vec3 c = uColor * uRadiance * limb * gran * (1.0 - 0.7 * spots) * uDiscT;
   gl_FragColor = vec4(c, 1.0);
 }
 `;
@@ -228,6 +231,7 @@ export function makeStarMesh(starData) {
       uColor: { value: new THREE.Vector3(...starData.color) },
       uRadiance: { value: starData.surfaceRadiance },
       uTime: { value: 0 },
+      uDiscT: { value: new THREE.Vector3(1, 1, 1) },
     },
     vertexShader: SUN_VERT, fragmentShader: SUN_FRAG,
   });

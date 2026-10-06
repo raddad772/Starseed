@@ -244,8 +244,8 @@ void main() {
   p *= 1.0 - smoothstep(uFadeStart, uFadeEnd, length((modelMatrix * im * vec4(0.0, 0.0, 0.0, 1.0)).xyz));
   float phase = im[3].x * 0.37 + im[3].z * 0.23;
   float bend = (part > 0.5 && part < 1.5) ? 1.0 : 0.25;
-  p.x += sin(uTime * 1.4 + phase) * uWind * p.y * p.y * 0.012 * bend;
-  p.z += cos(uTime * 1.1 + phase * 1.3) * uWind * p.y * p.y * 0.008 * bend;
+  p.x += sin(uTime * 1.4 + phase) * uWind * p.y * p.y * 0.0015 * bend;
+  p.z += cos(uTime * 1.1 + phase * 1.3) * uWind * p.y * p.y * 0.001 * bend;
   vec4 wp = modelMatrix * im * vec4(p, 1.0);
   vWorld = wp.xyz;
   vNormal = normalize(mat3(modelMatrix) * mat3(im) * normal);
@@ -351,8 +351,8 @@ void main() {
   p *= 1.0 - smoothstep(uFadeStart, uFadeEnd, length((modelMatrix * im * vec4(0.0, 0.0, 0.0, 1.0)).xyz));
   float phase = im[3].x * 0.37 + im[3].z * 0.23;
   float bend = (part > 0.5 && part < 1.5) ? 1.0 : 0.25;
-  p.x += sin(uTime * 1.4 + phase) * uWind * p.y * p.y * 0.012 * bend;
-  p.z += cos(uTime * 1.1 + phase * 1.3) * uWind * p.y * p.y * 0.008 * bend;
+  p.x += sin(uTime * 1.4 + phase) * uWind * p.y * p.y * 0.0015 * bend;
+  p.z += cos(uTime * 1.1 + phase * 1.3) * uWind * p.y * p.y * 0.001 * bend;
   vec4 wp = modelMatrix * im * vec4(p, 1.0);
   vD = dot(uLightPos - wp.xyz, uLightDir);
   vUv = tuv;

@@ -2232,6 +2232,9 @@ export class Game {
       const vis = THREE.MathUtils.clamp((mu - cosH) / 0.01 + 0.5, 0, 1);
       tr = [vis, vis, vis];
     }
+    // (the star's disc seen through that air: render/sky.js)
+    const sit = this.world.items[star.id];
+    if (sit && sit.mesh && sit.mesh.material.uniforms.uDiscT) sit.mesh.material.uniforms.uDiscT.value.set(tr[0], tr[1], tr[2]);
     // (under the clouds: their light where the camera is, as the ground's shaders take it (cloudShadow.js,
     // atmosphere.js cloudLight): the sun's beam through them, the sky's light under them, and what of
     // the beam they scatter down as more of it)
