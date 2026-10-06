@@ -1,11 +1,13 @@
 // A loading screen on arriving somewhere: the game's start, and any jump that carries the camera kilometres
 // in a frame near a world (a warp's end, a respawn). The view is hidden behind a bar until the ground round
-// the camera is in (its tiles, the terrain's chunks, the workers' jobs: what tools/scenic.js drain waits on),
+// the camera is in (its tiles, the terrain's chunks and its near plants and grass, the workers' jobs), quiet for
+// a few seconds (the plants' jobs are asked for as the chunks come in: a lull between closed it early, and
+// the trees came in after: Dave),
 // not the wrong terrain refining before you (Dave: "there's not much point seeing all the wrong terrain").
 // Its progress: the share of the most work outstanding since it began that's done (never going back). Any
 // key or click skips it; 90 s at most. None for tests (game.debugFree, ?loadscreen=0).
 
-const MAX_MS = 90000, SETTLE_MS = 600, JUMP_M = 4000, NEAR_M = 60000;
+const MAX_MS = 90000, SETTLE_MS = 2500, JUMP_M = 4000, NEAR_M = 60000;
 
 export class LoadScreen {
   constructor(game) {
@@ -42,7 +44,7 @@ export class LoadScreen {
     if (g.tiles) n += (g.tiles.missing || 0) + (g.tiles.pending ? g.tiles.pending.size : 0);
     const b = g.universe && g.camPos ? g.universe.dominantBody(g.camPos) : null;
     const it = b && g.world && g.world.items.find((i) => i.body === b);
-    if (it && it.terrain) n += it.terrain.pendingCount || 0;
+    if (it && it.terrain) n += it.terrain.loadingCount ? it.terrain.loadingCount() : it.terrain.pendingCount || 0;
     return n;
   }
 

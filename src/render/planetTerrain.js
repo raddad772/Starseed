@@ -104,6 +104,7 @@ export class PlanetTerrain {
   // camFixed: camera position in the body-fixed frame (relative to centre)
   update(camFixed, frustumCheck) {
     this.frame++;
+    this._floraWant = 0;   // (near nodes whose plants aren't in yet: loadingCount)
     this.camLocal.copy(camFixed);
     // (the ground's near anchor: a point by the camera every mesh measures itself from, in double
     // precision here, so a pattern laid along the ground's own directions (sand's ripples across the
@@ -302,6 +303,12 @@ export class PlanetTerrain {
     }, () => { this.pendingCount--; node.refreshJob = null; node.stale = true; });
   }
 
+  // the work outstanding for the ground round the camera (ui/loadScreen.js): its chunks being built, its
+  // near nodes' plants not yet in, its grass not yet laid
+  loadingCount() {
+    return (this.pendingCount || 0) + (this._floraWant || 0) + (this.grassSet && !this.grassSet.at ? 1 : 0);
+  }
+
   // the flora set, its clearings the body's own (shared with the world's flora field)
   ensureFloraSet() {
     if (this.floraSet) return;
@@ -315,6 +322,7 @@ export class PlanetTerrain {
   floraVisit(node, dist) {
     node.floraFrame = this.frame;
     node.floraDist = dist;
+    if (!node.flora) this._floraWant++;
     if (node.flora) this.floraSet.updateNode(node.flora, dist);
     if (node.flora || node.floraJob) return;
     this.ensureFloraSet();

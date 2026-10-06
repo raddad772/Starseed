@@ -148,7 +148,7 @@ export class WorldRenderer {
       uTop: { value: a ? a.top : b.R + 1 },
       uGround: { value: a ? a.ground : b.R },
       uTrueK: a ? a.params.uTrueK : { value: 1 },
-      uSunLift: a ? a.sunLift : { value: new THREE.Vector2() },
+      uSunLift: { value: new THREE.Vector2() },   // (none: the surfaces' uSunDir is lifted already, below)
       tTrans: { value: a ? a.trans.texture : null },
       tIrr: { value: a ? a.irr.texture : null },
       uCloud: { value: a ? a.material.uniforms.uCloud.value : new THREE.Vector4() },
@@ -258,6 +258,16 @@ export class WorldRenderer {
       // camera is (the sun's thousands of times brighter: not worth the ground's shaders' while)
       const ml = it.moon = moonLight(this.u, b, it.moon);
       const camUp = _up.copy(_v).negate().normalize(), sunUp = camUp.dot(sh.uSunDir.value), near = dist - b.R < 60000;
+      // (the sun the ground sees, lifted near the horizon as the air sees it from here (atmosphere.js
+      // liftMu): its direct light and its shadows a low sun's, long, not a grazing one's next to none (the
+      // sky lit by the lifted sun and the ground's own by the true one, the trees cast nothing: Dave); the
+      // sky's passes take the true sun and lift it themselves)
+      const sunTrue = it.sunTrue || (it.sunTrue = new THREE.Vector3());
+      sunTrue.copy(sh.uSunDir.value);
+      if (it.atmo && it.atmo.sunLift.value.x > it.atmo.sunLift.value.y) {
+        const mu = camUp.dot(sunTrue), mu2 = it.atmo.liftMu(mu), ax = _v4.copy(camUp).cross(sunTrue);
+        if (mu2 !== mu && ax.lengthSq() > 1e-12) sh.uSunDir.value.applyAxisAngle(ax.normalize(), Math.asin(mu) - Math.asin(mu2));
+      }
       sh.uMoonDir.value.copy(ml.dir);
       sh.uMoonE.value.copy(this.starColor).multiplyScalar(near && sunUp > 0.1 ? 0 : ml.E);
       if (ss && b.solid && it.terrain && near && dist - b.R < ssBest) {
@@ -329,7 +339,7 @@ export class WorldRenderer {
         const mat = useVol ? it.volume.material : it.atmo.material;
         const u = mat.uniforms;
         u.uCenter.value.copy(_v);
-        u.uSunDir.value.copy(sh.uSunDir.value);
+        u.uSunDir.value.copy(sunTrue);
         u.uSunE.value.copy(sh.uSunE.value);
         if (u.uMoonE) { u.uMoonDir.value.copy(sh.uMoonDir.value); u.uMoonE.value.copy(sh.uMoonE.value); }
         u.uToFixed.value.copy(sh.uToFixed.value);
@@ -337,7 +347,7 @@ export class WorldRenderer {
         // none from high up, where the drawn world's sky is the true one's)
         if (b.solid) {
           const camH = alt, share = 1 - THREE.MathUtils.smoothstep(camH, 20000, 60000);
-          it.atmo.updateSkyView(this.engine.renderer, camH, _up.copy(_v).negate().normalize(), sh.uSunDir.value,
+          it.atmo.updateSkyView(this.engine.renderer, camH, _up.copy(_v).negate().normalize(), sunTrue,
             useVol ? 4 * it.volume.material.uniforms.uMaxDist.value : 1e30, share);
           // (and the sun as the air sees it from here: lifted near the horizon by the same stretch, so it sets
           // at the drawn skyline: atmosphere.js liftMu; none from high up)
