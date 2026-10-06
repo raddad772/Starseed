@@ -105,13 +105,33 @@ void main() {
   if (block) alb = mix(vec3(0.32, 0.52, 0.6) * (0.85 + 0.3 * tri(vFp, w, 1.0).r), vec3(0.86, 0.89, 0.93), smoothstep(0.45, 0.75, dot(normalize(vN), up)));
   // (an iceberg: a glacier's ice, white and blue with the air in it, under its snow; bluer low down where the
   // sea has washed it clear)
-  if (berg) alb = mix(vec3(0.55, 0.72, 0.84) * (0.9 + 0.2 * tri(vFp, w, 8.0).r), vec3(0.88, 0.91, 0.95), smoothstep(0.35, 0.75, dot(normalize(vN), up))) * mix(0.8, 1.0, smoothstep(0.0, 3.0, r - uRadius));
+  if (berg) {
+    float hw = r - uRadius, side = 1.0 - smoothstep(0.35, 0.75, dot(normalize(vN), up));
+    // (its sides banded by the glacier's layers, a few metres apart and wavering; a notch the swell cuts
+    // at the water, ~a metre, deeper blue)
+    float band = 0.5 + 0.5 * sin(hw * 1.7 + (tri(vFp, w, 64.0).r - 0.5) * 9.0), notch = 1.0 - smoothstep(0.2, 1.2, hw);
+    alb = mix(vec3(0.88, 0.91, 0.95), vec3(0.55, 0.72, 0.84) * (0.9 + 0.2 * tri(vFp, w, 8.0).r) * mix(1.0, 0.75, band * 0.8), side);
+    alb = mix(alb, vec3(0.25, 0.45, 0.6), notch * side * 0.8);
+  }
   vec3 pF = uToFixed * rel;
   vec3 sunA = atmoSunTransmittance(r, muS), skyE = atmoSkyIrradiance(r, muS);
   // (a top's own shadow read 15 cm over it: in a low sun its flat face shadowed itself in stripes; a
   // sail's, half a metre and up, still falls on it)
   vec3 sunT = sunA * cloudLight(rel, r, muS, foot, sunA, skyE) * terrainShadow(pF, normalize(pF), uToFixed * uSunDir, uRadius) * sunShadowMap(vWorld + (wall || sail || block ? vec3(0.0) : up * 0.15), N);
   vec3 N2 = normalize(mix(up, N, wall || sail || block ? 1.0 : 0.5));
+  // (a berg's faces broken: the ice's own fractures and melt hollows, the 8 m and 2 m tiles' slopes)
+  if (berg) {
+    vec4 b1 = tri(vFp, w, 8.0), b2 = tri(vFp, w, 2.0);
+    vec3 t1 = normalize(cross(N2, abs(N2.y) < 0.9 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0))), t2 = cross(N2, t1);
+    N2 = normalize(N2 + ((b1.g - 0.5) * t1 + (b1.b - 0.5) * t2) * 0.9 + ((b2.g - 0.5) * t1 + (b2.b - 0.5) * t2) * 0.5 * (1.0 - smoothstep(0.3, 3.0, foot)));
+  }
+  // (a top's snow packed by the wind into low ridges and drifts, sastrugi: a little tilt by the 2 m and 8 m
+  // tiles, faded where a pixel spans them)
+  if (!(wall || sail || block)) {
+    vec4 s1 = tri(vFp, w, 2.0), s2 = tri(vFp, w, 8.0);
+    vec3 t1 = normalize(cross(up, vec3(0.0, 1.0, 0.0) + up * 0.01)), t2 = cross(up, t1);
+    N2 = normalize(N2 + ((s1.g - 0.5) * t1 + (s1.b - 0.5) * t2) * 0.35 * (1.0 - smoothstep(0.2, 2.0, foot)) + ((s2.g - 0.5) * t1 + (s2.b - 0.5) * t2) * 0.25 * (1.0 - smoothstep(1.0, 8.0, foot)));
+  }
   vec3 color = alb / PI * (uSunE * sunT * max(dot(N2, uSunDir), 0.0) + (uSunE * skyE * (0.5 + 0.5 * dot(N2, up)) + uAmbientFloor));
   vec3 V = normalize(-vWorld), H = normalize(V + uSunDir);
   color += uSunE * sunT * pow(max(dot(N2, H), 0.0), mix(400.0, 40.0, snowy)) * 0.04 * step(0.0, muS);

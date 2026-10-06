@@ -549,7 +549,10 @@ rivers that are straighter where they should be?"):**
   their tops, glacier blue on their sides. Solid: a box over its waterline. SOL Earth 56.4 N 149.6 (the
   glaciated island): bergs frozen into the pack, 1,900 drawn, ~0.7 ms a frame; a walker stopped at a
   34 m berg's 7 m side. Density 33 ms once per world. Not yet: their drift with the currents, tabular
-  bergs off ice shelves, calving seen at the fronts.
+  bergs off ice shelves, calving seen at the fronts. Their faces broken (the 8 m and 2 m tiles' slopes
+  tilting the normal), banded by the glacier's layers, a deeper blue notch the swell cuts at the water;
+  the floes' tops packed by the wind into sastrugi (the 2 m and 8 m tiles' slopes, faded where a pixel
+  spans them). (berg_close shot)
 - **Seasons on the land: snow through the year** (Dave: "see seasonal changes"; "refine and add"; not
   living things yet). worldsim/season.js: each world's year by climate cell, its temperature's first
   harmonic about the mean (a1 cos L + b1 sin L, L the solar longitude from the northern spring equinox,
