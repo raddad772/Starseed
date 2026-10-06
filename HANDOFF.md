@@ -561,6 +561,21 @@ rivers that are straighter where they should be?"):**
   networks over the floes, leads, white ridges, the ice down to 1.07 m (summer_ponds shot). The air over
   the summer pack runs to +15 C there (the ground-like run's summer; a melting surface holds it near 0 in
   truth): ponds saturate, the thaw's wasting by phase, so it's no matter yet.
+- **Survey round (SIM 62/63, 2026-10-05; scratchpad shots/s62, 8 new worlds LAB-300..307 start bodies,
+  world maps):** barren locked dwarfs (LAB-300/301/303: their night-side cold-trap ice at the anti-
+  stellar point, right), a cold temperate world with life (Heshiash LAB-302, -1 C mean: pack to ~35
+  degrees, sparse land), two global-ocean "temperate worlds with life" (Pochovan LAB-304, Soarupaerk
+  LAB-305: the generator's plan, but each is its system's start world: startScore takes 2 off a sea
+  world and gives 3 for life, so a landless world can be where the game starts), an icy cratered moon
+  (Megell LAB-307: a faint vertical seam near 142 W to look at), and a Titan (Gaesshitost LAB-306)
+  with a ruler line round both poles at ~60 degrees. Fixed (SIM 63): a Titan's low latitudes stood
+  400 m higher by a step between 50 and 62 degrees, unscaled: ~25 times the relief its history drew
+  (a 490 km moon drawn at 1/10; its icy lid relaxed flat), so the step was all there was. Now cos^2 of
+  the latitude (Titan's shape) at the world's own scale (scale x VEXAG), the seas' datum on the ground
+  so shaped: SOL Titan's polar seas fill its basins (shots/titan). Gaesshitost's history is flat (no
+  crater survives: the sim's smallest, 65 km, wider than its lid relaxes, 29 km), so its seas still
+  ring the poles (now at ~80 degrees): the icy lid's relaxation at a small world's scale to look at.
+  Seen on both Titans: the rugged provinces' ice drawn as clusters of round bubbles.
 - **Mars' seasonal caps** (gen/frostcap.js; world.js frostTexture; render/season.js seasonFrost): a thin
   air (under 0.05 bar, little heat carried poleward) with CO2 in it freezes out at its poles in winter.
   Per 1-degree band of latitude through the year (Leighton and Murray 1966, one layer): the ground a slab

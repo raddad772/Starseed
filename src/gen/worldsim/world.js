@@ -25,6 +25,7 @@ import { SimGrid } from './grid.js';
 import { Erosion } from './erosion.js';
 import { Tectonics, blur, smoothField } from './tectonics.js';
 import { Impacts, craterFloor, worldCell, WORLD_CELLS, airCut } from './impacts.js';
+import { VEXAG } from '../craters.js';
 import { barrenWorld } from './barren.js';
 import { stagnantWorld } from './stagnant.js';
 import { Lithology, R as ROCK, marineRock } from './lithology.js';
@@ -210,24 +211,29 @@ export function worldSim(body, star, opts = {}) {
     // (an icy world's lava is slush, water and ammonia: ice once frozen)
     for (let c = 0; c < G.n; c++) rock[c] = icy ? (ruggedK && ruggedK[c] > 0.35 ? ICE : REG) : S.volc[c] > 0.5 ? BAS : 0;
     // (a Titan's liquid stands in its polar basins: the methane rains out where it's cold and
-    // evaporates from the low latitudes. The datum at the level that holds its share of the
-    // world's area in the basins poleward of ~55 degrees; the low latitudes standing a few
-    // hundred metres higher (as Titan's do), their basins dry, floored with what wind and rain
-    // carried into them, so no crater there reaches down to the liquid's level)
+    // evaporates from the low latitudes. The low latitudes stand a few hundred metres higher (as
+    // Titan's do: its shape flattened beyond its spin's, the poles ~400 m low, smoothly, as cos^2 of
+    // the latitude: a step between 50 and 62 degrees drew a ruler line round both poles on a world
+    // its history left flat), their basins dry, floored with what wind and rain carried into them, so
+    // no crater there reaches down to the liquid's level. The datum at the level that holds its share
+    // of the world's area in the basins poleward of ~55 degrees, on the ground so shaped)
     let ocean = null, dunes = null;
     const hydrocarbon = body.terrain && (body.terrain.liquid === 'methane' || body.terrain.liquid === 'ethane');
     if (hydrocarbon) {
       const share = seaFrac > 0 ? seaFrac : Math.min(0.15, body.terrain.ocean || 0.05);
+      // (1 - pw: cos^2 of the latitude; its rise drawn as the world's own relief is, scale x VEXAG:
+      // 400 m as it stood was ~25 times the rest, a flat world's seas ringed by latitude circles)
+      const lowK = (c) => 1 - G.dir[c * 3 + 1] * G.dir[c * 3 + 1], hk = scale * VEXAG;
       const pol = [];
-      for (let c = 0; c < G.n; c++) if (Math.abs(G.dir[c * 3 + 1]) > 0.82) pol.push(S.h[c]);
+      for (let c = 0; c < G.n; c++) if (Math.abs(G.dir[c * 3 + 1]) > 0.82) pol.push(S.h[c] + 400 * hk * lowK(c));
       pol.sort((a, b) => a - b);
       const L = pol.length ? pol[Math.min(pol.length - 1, Math.floor(share * G.n))] : 0;
       ocean = new Uint8Array(G.n);
       const h0 = Float64Array.from(S.h);   // (the ground as its history left it, for the dunes below)
       for (let c = 0; c < G.n; c++) {
-        const pw = dm.smoothstep(0.77, 0.88, Math.abs(G.dir[c * 3 + 1]));
-        let hc = S.h[c] - L + 400 * (1 - pw);
-        const floor = 2 + 300 * (1 - pw);
+        const pw = 1 - lowK(c);
+        let hc = S.h[c] - L + 400 * hk * (1 - pw);
+        const floor = 2 + 300 * hk * (1 - pw);
         if (hc < floor) hc += (floor - hc) * (1 - pw);
         S.h[c] = hc;
       }
