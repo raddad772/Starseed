@@ -1,7 +1,9 @@
 import * as THREE from 'three';
+import { eraFleet } from './eraFleets.js';
 import { EXPEDITION_TYPES } from './layouts/expedition.data.js';
 export function spawnExpeditionFleet(g) {
-  if (g.expeditionFleet?.every(v => !v.dead)) return g.expeditionFleet;
+  // (made once: a lost craft is parked again with the rest, eraFleets.js, not made anew)
+  if (g.expeditionFleet) return g.expeditionFleet;
   const base = g.carrier;
   const offsets = [[2800,0,0], [3010,0,0], [3140,0,0], [3200,0,0], [3250,0,0], [3290,0,0], [3330,0,0]];
   g.expeditionFleet = Object.entries(EXPEDITION_TYPES).map(([key,t], i) => {
@@ -18,7 +20,7 @@ export function spawnExpeditionFleet(g) {
 export function boardExpedition(g, key = 'longreach') {
   if (g.player.vessel) g.player.releaseControls(g.player.vessel);
   g.setWarp(0);
-  const v = spawnExpeditionFleet(g).find(v => v.type.key === `expedition_${key}`);
+  const v = eraFleet(g, 'expedition').find(v => v.type.key === `expedition_${key}`);
   g.player.placeAboard(v, new THREE.Vector3(...v.type.seats[0].stand), new THREE.Vector3(0,0,-1));
   g.player.grounded = false; g.player.sVel.set(0,0,0);
   g.player.lastSeat = { vessel: v, seat: 0 };

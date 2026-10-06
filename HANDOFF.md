@@ -2,6 +2,69 @@
 
 Dave is play-testing and giving feedback in short bursts.
 
+## NOW: ship integration pass, Codex's fleets (session 39d69fa8, 2026-10-06)
+
+Dave: "Can we do ship integration pass on the models and features codex designed and put in", and "I want
+the new captains yacht the Neptune 2 as the default craft as well". Codex (OpenAI's agent, in the same
+tree, uncommitted) had built three eras of fleet and refitted the established one; committed whole as
+the baseline (ea3260d), then integrated on top.
+
+- **What Codex built** (all in the baseline commit): one GLB a craft from `tools/blender/build_{pioneer,
+  expedition,horizon}.py` (`assets/models/{pioneer,expedition,horizon}/`), their types as data
+  (`src/sim/layouts/{pioneer,expedition,horizon}.data.js`), drawn by `render/fleetVisual.js` (named
+  nodes and semantic materials: the asset contract); interlocked airlocks with pressure
+  (`sim/airlocks.js`: F cycles, R back; a door held shut while someone stands in it), Pioneer
+  freefall cabins (player.js updateFreefall: no floor adhesion, suit jets, X brakes), propulsion
+  availability (`sim/propulsion.js`: fans need air), deck frames and turnover airlocks on Halyard
+  (`sim/deckFrames.js`), the established refit (`sim/establishedRefit.js`: Bastion, Halyard, the
+  Neptune 2 yacht re-laid, Halyard's family launch `tender_yacht`, two surface runabouts in the
+  yachts' garages: `sim/auxiliaryFleet.js`). Its tests: `node --test tools/tests/*.test.mjs` (91).
+- **Eras: open, Dave is designing them further (with ChatGPT).** Every era has the same seven roles,
+  and the current fleet fills them too (Codex renamed the Bulldog "Hover scout" to match):
+
+  | Role | Pioneer | Expedition | Current (Bastion's) | Horizon |
+  |---|---|---|---|---|
+  | Carrier | Caravan | Longreach | Bastion | Meridian |
+  | Tender | Anchor | Crosscurrent | Halyard | Confluence |
+  | Family explorer | Nomad | Hearth | Neptune 2 | Neptune 3 |
+  | Cargo lifter | Gantry | Porter | Atlas | Cradle |
+  | Lander | Hopper | Kestrel | Wayfarer / Cheyenne | Shorebird |
+  | Survey scout | Firefly | Moth | Kite | Lark |
+  | Small runabout | Trail | Skimmer | Bulldog / Mule | Drift |
+
+  Oldest to newest: Pioneer and Expedition (no FTL, no artificial gravity), the current fleet (FTL,
+  gravity plating), Horizon (its Neptune 3 the Neptune 2's successor). Dave: you'll pick an era for
+  your fleet (a modal button on the entry screen) and use that era's craft ("you're supposed to use
+  craft from the correct era"), one fleet at a time, the middle era by default; not built yet: with
+  four eras, which is "middle", and whether the current fleet is an era to pick, are his to settle.
+  For now (`sim/eraFleets.js`): none parked by default; `?era=pioneer|expedition|horizon` or boarding a
+  craft from a test scene parks that era's seven round the start world (a line along an orbit above
+  the FTL lock, between Halyard's and Bastion's heights: SOL Earth Pioneer 73 km, Expedition 80,
+  Horizon 86; on rails; the carried one clamped), giving any other era up (`game.removeVessel`). A lost
+  craft parks its era again (Codex's spawners had made a whole new fleet). The first pass had parked
+  all three eras at once, 21 craft (Dave: "why 21?").
+- **The Neptune 2 is your craft** (`game.ship === game.yacht`): landed at the start site with you 6 m
+  off its port airlock (or its other side, bow or stern: the first dry spot level with its ground);
+  in orbit beside you on the default start, its length clear of you; in its recess under Bastion when
+  you start aboard. The start sites were chosen for a shuttle: a big craft lands on the nearest dry,
+  near-level ground under all of it within 400 m (`padNear`: SOL's site had it on a sea cliff, you in
+  the sea). The Wayfarer shuttle is a spare on pad 2 of Bastion's starboard bay; player 2 still gets
+  the Kittiwake. Flown back up into its recess (within 3 m, square to her, under 1 m/s) the yacht
+  berths again (`berthYachtIfHome`; a ring on the HUD marks the berth while you fly it near her):
+  before, once launched it could never go home. The shuttle's ramp flags are set only on a shuttle
+  (a "RAMP OPEN" chip had shown on the yacht).
+- **Seen in the game:** the start loads clean (32 craft; 39 with an era); all 22 test scenes board (models
+  in, on a floor; boarding another era's craft swaps the fleets); from a spacewalk: F cycles the yacht's
+  airlock (5 s to vacuum), F climbs in, R cycles to the cabin (1 bar), the pilot seat flies her; the
+  aboard start has her in her recess; set 1.5 m under it, slow and square, she berths (at 3 m/s not).
+- **Found, for generation:** SOL Earth's start site (15.80 N 68.27 E) changes under the craft as the
+  refinement loads: the coarse heights say flat land at 39 m, then it reads sea within 4 m of the hull
+  (isWaterAt everywhere, liquidDepthAt ~667 m even where groundHeight says 39 m). The yacht stood 39 m
+  over the water and you started in the sea; the shuttle would have the same. `padNear` (dry ground
+  under the craft and 10 m round) can't help while the heights disagree.
+- **Not done:** the era picker (entry screen modal) and eras replacing the whole fleet; the era's craft
+  summonable like your own; Codex's terse code style left as written.
+
 ## NOW: England-sized worlds, true-scale ground, channels as lines (session 39d69fa8, 2026-10-03/04)
 
 Dave looked at the same mountain (SOL Earth, Yotaxus Peak, 33.44 N 157.97 W) from orbit, descent, a low

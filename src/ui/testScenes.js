@@ -76,7 +76,7 @@ export const TEST_SCENES = [
   },
   {
     label: 'Carrier flight bay',
-    note: 'Bastion\'s starboard bay beside your shuttle: Tab for routes, Space to jetpack',
+    note: 'Bastion\'s starboard bay beside the Wayfarer shuttle (your yacht in its recess under the bow): Tab for routes, Space to jetpack',
     run: (g) => g.startAboard(),
   },
   {

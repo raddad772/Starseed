@@ -1,4 +1,5 @@
 import { dockAuxiliaryFleet } from './sim/auxiliaryFleet.js';
+import { parkEraFleets } from './sim/eraFleets.js';
 import { AttachedFrameVisual, initDeckFrames, updateDeckFrames } from './sim/deckFrames.js';
 // Game orchestration: universe time and warp, vessel/player simulation,
 // camera, lighting, start sequence, settlement surveys, events.
@@ -89,7 +90,11 @@ export class Game {
     this.warpIndex = 0;
     this.freecam = new FreeCam(this);
     this.vessels = [];
-    this.ship = this.addVessel('shuttle', 'Wayfarer', 'SV-27');
+    // your craft: the Neptune 2, Bastion's yacht (Dave: the default craft): landed beside you, or by
+    // you in orbit, or in its recess under Bastion's bow when you start aboard her
+    this.ship = this.yacht = this.addVessel('yacht', 'Neptune 2', 'CV-01-Y');
+    // (the Wayfarer shuttle: a spare, on pad 2 of Bastion's starboard bay: parkCraft)
+    this.wayfarer = this.addVessel('shuttle', 'Wayfarer', 'SV-27');
     // things you carry and put down (world state), and what draws them
     this.items = new Items(this);
     this.itemVisuals = new ItemVisuals(this.engine, this.items);
@@ -332,8 +337,9 @@ export class Game {
     if (!ref || ref.dead) ref = this.ship.dead ? null : this.ship;
     if (!ref) { const ri = this.respawnInfo; if (ri) this.landShipAt(ri.body, ri.dir.clone(), null, s); return; }
     if (ref.parent && ref.zone) {
-      // a free pad in the same bay (else 30 m inboard of ref)
-      const host = ref.parent, z = ref.zone;
+      // a free pad in the same bay (else 30 m inboard of ref); by a craft in a berth of its own
+      // (the yacht in its recess), a free pad of the host's first bay with pads
+      const host = ref.parent, z = ref.zone.pads || !host.type.zones ? ref.zone : host.type.zones.find((zz) => zz.pads) || ref.zone;
       const busy = (pos) => host.children.some((c) => c !== s && !c.dead && c.lpos.distanceTo(pos) < 16);
       let at = null;
       for (const pd of z.pads || []) { const pos = new THREE.Vector3(pd[0], pd[1] + 2.35, pd[2]); if (!busy(pos)) { at = pos; break; } }
@@ -529,7 +535,7 @@ export class Game {
     this.startDir = dirF.clone().normalize();
     this.t = this.clock.now();
     this.universe.update(this.t);
-    this.landShipAt(b, this.startDir, null);
+    this.landShipAt(b, this.padNear(b, this.startDir, this.ship.type.radius), null);
     this.spawnFleet(b);
     this.respawnInfo = { body: b, dir: this.startDir.clone() };
     this.placed = true;
@@ -548,21 +554,39 @@ export class Game {
     this.respawnInfo = { body: b, dir: dir.clone() };
     const here = s.landed && !s.parent && s.body === b && s.landedPosF.clone().normalize().dot(dir) > 0.99999;
     // (the time is the world's: at night it's night there, and the sun's rising time said)
-    if (!here) this.landShipAt(b, dir, null);
+    // (on dry ground near level under all of it: the spot, else the nearest such: padNear)
+    if (!here) this.landShipAt(b, this.padNear(b, dir, s.type.radius), null);
     const dark = this.sunElevation(b, dir) < 0;
     const rise = dark ? this.findMorning(b, dir, 0, this.t) - this.t : 0;
     const sp = s.landedPosF.clone();
     const sq = s.landedQuatF.clone();
-    const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(sq);
-    const left = new THREE.Vector3(-1, 0, 0).applyQuaternion(sq);
-    const pp = sp.clone().addScaledVector(fwd, 9).addScaledVector(left, 19);
-    const toShip = sp.clone().sub(pp);
+    // (by its way in: a craft's airlock, 6 m out from it and facing it; the shuttle's port bow)
+    const e = s.type.entries && s.type.entries.find((en) => !en.internal);
+    let pp, toShip;
+    if (e) {
+      // (where that's water, or the ground falls away from the craft's, its other side, its bow or
+      // its stern: the first dry and within 3 m of the ground it stands on, facing it)
+      const out = new THREE.Vector3(...e.outside), away = out.clone().sub(new THREE.Vector3(...e.inside)).setY(0).normalize();
+      const P1 = out.addScaledVector(away, 6), half = s.type.size ? s.type.size[2] / 2 : s.type.radius;
+      const spots = [[P1, away.clone().negate()], [new THREE.Vector3(-P1.x, P1.y, P1.z), new THREE.Vector3(Math.sign(P1.x), 0, 0)],
+        [new THREE.Vector3(0, P1.y, -half - 8), new THREE.Vector3(0, 0, 1)], [new THREE.Vector3(0, P1.y, half + 8), new THREE.Vector3(0, 0, -1)]];
+      const g0 = b.groundHeight(sp.clone().normalize());
+      const good = ([P]) => { const d = sp.clone().add(P.clone().applyQuaternion(sq)).normalize(); return !b.isWaterAt(d) && Math.abs(b.groundHeight(d) - g0) < 3; };
+      const [P, face] = spots.find(good) || spots[0];
+      pp = sp.clone().add(P.clone().applyQuaternion(sq));
+      toShip = face.clone().applyQuaternion(sq);
+    } else {
+      const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(sq);
+      const left = new THREE.Vector3(-1, 0, 0).applyQuaternion(sq);
+      pp = sp.clone().addScaledVector(fwd, 9).addScaledVector(left, 19);
+      toShip = sp.clone().sub(pp);
+    }
     if (p.vessel) p.releaseControls(p.vessel);
     p.vessel = null;
     p.placeOnSurface(b, pp.normalize(), toShip);
     p.pitch = 0.04;
     p.lastSeat = { vessel: s, seat: 0 };
-    s.rampTarget = 1; s.ramp = 1;
+    if (s.type.key === 'shuttle') { s.rampTarget = 1; s.ramp = 1; }   // (the shuttle's ramp: a craft with an airlock has none)
     this.target = null;
     this.route = null;
     this.setWarp(0);
@@ -588,6 +612,37 @@ export class Game {
       const spot = res && res.spots && res.spots.find((sp) => sp.key === spotKey);
       this.startOnSurface(b, spot ? new THREE.Vector3(...spot.dir) : this.fallbackSite(b), spot);
     }, (err) => { console.error(err); if (token === this.startToken) { this.loadHold = false; this.startOnSurface(b, this.fallbackSite(b), null); } });
+  }
+
+  // where a craft r m across its middle can stand near dirF on b: dry ground near level under all of it
+  // and a ring 10 m past it (within 3 m over its middle and sixteen places round), the spot itself if it is, else the nearest
+  // such on rings out to 400 m; none: the spot (the start sites are chosen for a shuttle's footprint;
+  // a yacht twice its length had stood over a sea cliff with its airlock side over the water)
+  padNear(b, dirF, r) {
+    const up = dirF.clone().normalize();
+    const e1 = new THREE.Vector3(0, 1, 0).cross(up);
+    if (e1.lengthSq() < 1e-8) e1.set(1, 0, 0);
+    e1.normalize();
+    const e2 = up.clone().cross(e1);
+    const at = (x, y) => up.clone().multiplyScalar(b.R).addScaledVector(e1, x).addScaledVector(e2, y).normalize();
+    // (under it, and a ring 10 m past its hull: somewhere to stand by its way in)
+    const fits = (x0, y0) => {
+      let lo = Infinity, hi = -Infinity;
+      for (let k = -1; k < 16; k++) {
+        const rr = k < 0 ? 0 : k < 8 ? r * 0.8 : r + 10, a = k * Math.PI / 4 + (k >= 8 ? Math.PI / 8 : 0);
+        const d = at(x0 + Math.cos(a) * rr, y0 + Math.sin(a) * rr);
+        if (b.isWaterAt(d)) return false;
+        const h = b.groundHeight(d);
+        lo = Math.min(lo, h); hi = Math.max(hi, h);
+      }
+      return hi - lo < 3;
+    };
+    if (fits(0, 0)) return up;
+    for (let ring = 40; ring <= 400; ring += 40) for (let i = 0; i < 12; i++) {
+      const a = i * Math.PI / 6 + ring * 0.01;
+      if (fits(Math.cos(a) * ring, Math.sin(a) * ring)) return at(Math.cos(a) * ring, Math.sin(a) * ring);
+    }
+    return up;
   }
 
   // sine of the sun's elevation over the horizon at a body-fixed direction, now
@@ -621,6 +676,7 @@ export class Game {
     if (this.tender) this.placeInOrbit(this.tender, b, lockRadius(b) - b.R + 90000 * FLEET_K, 0.35);
     if (this.carrier) this.placeInOrbit(this.carrier, b, lockRadius(b) - b.R + 280000 * FLEET_K, -0.45);
     this.dockCarried();
+    parkEraFleets(this, b);
   }
 
   // the player is in the game (the briefing closed): say where they are
@@ -800,10 +856,11 @@ export class Game {
     // the camera: looking down the composed view
     const camQ = lookQuat(view.p, view.h, -view.alpha, new THREE.Quaternion());
     const camUp = new THREE.Vector3(0, 1, 0).applyQuaternion(camQ);
-    // the ship 30 m ahead and a little low, aft end (ramp) turned toward you
+    // the ship ahead and a little low (30 m for the shuttle; a bigger craft further, its
+    // whole length clear of you), aft end turned toward you
     if (s.parent) s.leaveParent();
     s.body = b; s.dead = false; s.hull = 1; s.landed = false; s.rails = false;
-    s.pos.copy(P).addScaledVector(view.D, 30).addScaledVector(camUp, -3.5);
+    s.pos.copy(P).addScaledVector(view.D, Math.max(30, s.type.radius * 1.5 + 10)).addScaledVector(camUp, -3.5);
     s.vel.copy(vel);
     // turned 35 deg one way or the other: whichever shows you its sunlit flank
     const S = this.universe.star.pos.clone().sub(b.pos).normalize();
@@ -820,7 +877,7 @@ export class Game {
     s.angVel.set(0, 0, 0);
     s.assist = 2;
     s.gearTarget = 0; s.gear = 0;
-    s.rampTarget = 1; s.ramp = 1;
+    if (s.type.key === 'shuttle') { s.rampTarget = 1; s.ramp = 1; }
     s.targetVel.copy(s.vel); s.targetFrame = 'inertial';
     s.pilot = null;
     // you: on a spacewalk, matched to the ship
@@ -868,6 +925,8 @@ export class Game {
     this.placeInOrbit(this.tender, b, lockAlt + 90000 * FLEET_K, 0.35);
     this.placeInOrbit(this.carrier, b, lockAlt + 280000 * FLEET_K, -0.45);
     this.dockCarried();
+    // (and the three eras' fleets, each on an orbit of its own: eraFleets.js)
+    parkEraFleets(this, b);
     // compile the big ships' shaders now, not the first time one comes into view
     const r = this.engine.renderer;
     if (r.compileAsync) {
@@ -876,33 +935,55 @@ export class Game {
     }
   }
 
-  // The carrier's own craft, in their places: the yacht in its recess under
-  // the hull, the escape pods in their tubes (made the first time)
+  // The carrier's own craft, in their places: the escape pods in their tubes
+  // (made the first time). The yacht is your craft: it goes to its recess under
+  // the hull only when you start aboard (berthYacht)
   dockCarried() {
     const c = this.carrier;
     if (!c || c.dead) return;
     const L = c.type.layout;
-    if (!this.yacht) {
-      this.yacht = this.addVessel('yacht', 'Neptune 2', 'CV-01-Y');
-      this.pods = L.pods.map((p, i) => this.addVessel('pod', `Pod ${i + 1}`, `CV-01-P${i + 1}`));
-    }
-    const put = (v, key, pos, quat, hatch) => {
-      v.dead = false; v.hull = 1; v.hullTemp = 290; v.landed = false;
-      v.ftl.state = 'idle';
-      v.nav.cancel(null);
-      v.hatchKey = key;
-      v.home = { host: c, hatch };
-      const zone = { name: `${v.type.className} berth`, kind: 'berth', min: [pos[0] - 1, pos[1] - 1, pos[2] - 1], max: [pos[0] + 1, pos[1] + 1, pos[2] + 1], gravity: 0, pressure: 1 };
-      v.dockAt(c, zone, new THREE.Vector3(...pos), quat);
-    };
-    put(this.yacht, 'yacht', L.yacht.dock.pos, new THREE.Quaternion(), L.yacht.hatch);
+    if (!this.pods) this.pods = L.pods.map((p, i) => this.addVessel('pod', `Pod ${i + 1}`, `CV-01-P${i + 1}`));
     L.pods.forEach((p, i) => {
       // nose out of the tube: the pod's -z along the tube's axis
       const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, -1), new THREE.Vector3(...p.dock.axis));
-      put(this.pods[i], p.id, p.dock.pos, q, p.hatch);
+      this.berth(this.pods[i], p.id, p.dock.pos, q, p.hatch);
     });
     this.parkCraft();
     dockAuxiliaryFleet(this);
+  }
+
+  // a craft out of the world: off the vessels and out of the scene (an era's fleet given up for another)
+  removeVessel(v) {
+    for (const c of v.children.slice()) c.leaveParent();
+    if (v.parent) v.leaveParent();
+    for (const p of this.players) {
+      if (p.target === v.target) p.target = null;
+      if (p.lastSeat && p.lastSeat.vessel === v) p.lastSeat = null;
+    }
+    const i = this.vessels.indexOf(v);
+    if (i >= 0) this.vessels.splice(i, 1);
+    const vis = v.visual;
+    if (vis && vis.model && vis.model.root) vis.model.root.removeFromParent();
+    if (vis && vis.fx) vis.fx.removeFromParent();
+    v.dead = true;
+  }
+
+  // the yacht in its recess under the carrier's forward hull (boarded through the hatch over its hub)
+  berthYacht() {
+    const c = this.carrier, L = c.type.layout;
+    this.berth(this.yacht, 'yacht', L.yacht.dock.pos, new THREE.Quaternion(), L.yacht.hatch);
+  }
+
+  // a carried craft into its place on the carrier (a berth zone of its own round it)
+  berth(v, key, pos, quat, hatch) {
+    const c = this.carrier;
+    v.dead = false; v.hull = 1; v.hullTemp = 290; v.landed = false;
+    v.ftl.state = 'idle';
+    v.nav.cancel(null);
+    v.hatchKey = key;
+    v.home = { host: c, hatch };
+    const zone = { name: `${v.type.className} berth`, kind: 'berth', min: [pos[0] - 1, pos[1] - 1, pos[2] - 1], max: [pos[0] + 1, pos[1] + 1, pos[2] + 1], gravity: 0, pressure: 1 };
+    v.dockAt(c, zone, new THREE.Vector3(...pos), quat);
   }
 
   // The carrier's vehicles and landers, parked in the starboard bay (made the
@@ -938,6 +1019,15 @@ export class Game {
     park(this.cart, P[3][0] - 26, P[3][2] - 14, 180);
     park(this.dropship, P[4][0], P[4][2], 0);
     park(this.tank, P[2][0] - 26, P[2][2], 0);
+    // (the Wayfarer, the spare shuttle, on the second pad: its centre 2.35 m over the deck, gear down)
+    const w = this.wayfarer;
+    if (w && !this.aboardOf(w).length) {
+      w.dead = false; w.hull = 1; w.hullTemp = 290; w.landed = false;
+      w.ftl.state = 'idle'; w.nav.cancel(null);
+      if (w.parent) w.leaveParent();
+      w.dockAt(c, bay, new THREE.Vector3(P[1][0], P[1][1] + 2.35, P[1][2]), new THREE.Quaternion());
+      w.gear = w.gearTarget = 1; w.rampTarget = w.ramp = 1;
+    }
     this.crate.doors.rear.open = this.crate.doors.rear.target = 1;
     this.dropship.doors.ramp.open = this.dropship.doors.ramp.target = 1; // (ramp down: walk in)
   }
@@ -1213,15 +1303,13 @@ export class Game {
     const c = this.carrier;
     if (!c || c.dead) return;
     const s = this.ship;
-    const deckY = 2.35; // (the shuttle's centre over a deck, gear down)
-    s.dead = false; s.hull = 1;
-    // on the second pad of the starboard bay, nose to the bay's mouth
+    // your yacht in its recess under the bow; the spare shuttle on the second pad of the starboard bay
+    this.berthYacht();
+    s.assist = 2;
+    this.parkCraft();
     const bay = c.type.zones.find((z) => z.side > 0) || c.type.zones[0];
     const pad = bay.pads[1];
-    s.dockAt(c, bay, new THREE.Vector3(pad[0], pad[1] + deckY, pad[2]), new THREE.Quaternion());
-    s.rampTarget = 1; s.ramp = 1;
-    s.assist = 2;
-    // you: inboard of it, by its ramp, looking at it
+    // you: inboard of the shuttle, by its ramp, looking at it
     const p = this.players[0];
     if (p.mode === 'seat') p.releaseControls(p.vessel);
     p.placeAboard(c, new THREE.Vector3(pad[0] - 20, pad[1], pad[2] + 22), new THREE.Vector3(0.6, 0, -0.8));
@@ -1232,7 +1320,7 @@ export class Game {
     this.regroupAll();
     this.beginLoading('space', `Boarding ${c.name}`, () => {
       this.message(`Aboard ${c.name} · ${c.type.className} · ${bay.name}`, 'nav');
-      this.message(`Your shuttle ${s.name} is on pad 2 · its ramp is down · Tab finds your way (the bridge is up the forward lift)`);
+      this.message(`Your yacht ${s.name} is in its recess under the bow · board her by the hatch above it · the shuttle ${this.wayfarer.name} is on pad 2 · Tab finds your way (the bridge is up the forward lift)`);
     });
   }
 
@@ -1466,10 +1554,10 @@ export class Game {
     if (this.aboardOf(s).length) { this.message(`${s.name} has someone aboard`, 'caution'); return; }
     const up = p.fPos.clone().normalize();
     const fwd = p.heading.clone();
-    const dest = up.clone().multiplyScalar(b.R).addScaledVector(fwd, 45).normalize();
+    const dest = up.clone().multiplyScalar(b.R).addScaledVector(fwd, Math.max(45, s.type.radius + 25)).normalize();
     if (s.ftl.state === 'cruise') s.ftl.state = 'idle';
     this.landShipAt(b, dest, fwd.clone().negate(), s);
-    s.rampTarget = 1; s.ramp = 1;
+    if (s.type.key === 'shuttle') { s.rampTarget = 1; s.ramp = 1; }
     this.message('Ship summoned', 'nav');
   }
 
@@ -1778,6 +1866,7 @@ export class Game {
       }
     }
     this.checkZones();
+    this.berthYachtIfHome();
     for (const v of this.vessels) if (v.pilot && !v.dead) this.chooseReference(v);
     for (const p of this.players) { this.setCur(p); this.stepPlayer(p, dtReal); }
     this.setCur(null);
@@ -2008,6 +2097,23 @@ export class Game {
         }
       }
     }
+  }
+
+  // the yacht flown back up into its recess under the carrier (its launch drops it 8.5 m clear; this
+  // takes it home): within 3 m of its place there, square to the carrier (within ~8 degrees) and under
+  // 1 m/s against it: berthed again, the hatch over its hub up to the yacht dock
+  berthYachtIfHome() {
+    const y = this.yacht, c = this.carrier;
+    if (!y || !c || c.dead || y.dead || y.parent || y.landed || y.body !== c.body) return;
+    if (c.pos.distanceToSquared(y.pos) > Math.pow(c.type.radius + 60, 2)) return;
+    const local = c.bodyToLocal(y.pos, _v1);
+    if (local.distanceTo(_v2.fromArray(c.type.layout.yacht.dock.pos)) > 3) return;
+    if (_v2.copy(y.vel).sub(c.pointVelocity(local, _v3)).length() > 1) return;
+    if (Math.abs(_q1.copy(c.quat).invert().multiply(y.quat).w) < Math.cos(0.07)) return;
+    this.berthYacht();
+    y.angVel.set(0, 0, 0);
+    this.tell(y, `${y.name} berthed under ${c.name} · the hatch over the hub leads up to the yacht dock`, 'nav');
+    this.audio.clunk();
   }
 
   // FULL assist near a big ship holds velocity relative to it
@@ -2289,11 +2395,11 @@ export class Game {
     const ri = this.respawnInfo;
     const b = ri.body;
     for (const v of this.vessels) { v.ftl.state = 'idle'; v.ftl.speed = 0; }
-    this.landShipAt(b, ri.dir, null);
+    this.landShipAt(b, this.padNear(b, ri.dir, this.ship.type.radius), null);
     // lost big ships are replaced on their old orbits
     if (this.tender && this.tender.dead) this.placeInOrbit(this.tender, b, lockRadius(b) - b.R + 90000 * FLEET_K, 0.35);
     if (this.carrier && this.carrier.dead) { this.placeInOrbit(this.carrier, b, lockRadius(b) - b.R + 280000 * FLEET_K, -0.45); this.dockCarried(); }
-    this.ship.rampTarget = 1; this.ship.ramp = 1;
+    if (this.ship.type.key === 'shuttle') { this.ship.rampTarget = 1; this.ship.ramp = 1; }
     const p = this.players[0];
     p.vessel = this.ship;
     p.mode = 'ship';

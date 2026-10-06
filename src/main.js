@@ -191,6 +191,7 @@ function boot(s) {
       simWorkers: params.get('simWorkers') ? +params.get('simWorkers') : undefined,
       tileGPU: params.get('tilegpu') !== '0',   // (?tilegpu=0: the tile sims on the CPU, for a hidden test tab)
       testSpot: params.get('test') || undefined,
+      era: params.get('era') || undefined,   // (the era whose fleet is parked round the start world: pioneer, expedition, horizon)
       renderScale: params.get('scale') ? +params.get('scale') : settings.scale,
       reversedDepth: params.get('logdepth') ? false : undefined,
     });

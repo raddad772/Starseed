@@ -766,6 +766,18 @@ export class Hud {
   drawDockingGuides() {
     const g = this.game, ctx = this.ctx;
     const pt = {};
+    // the yacht's recess under the carrier, while you fly the yacht near her: a ring where it berths
+    // (up into it slowly, square to her: game.js berthYachtIfHome)
+    const y = g.yacht, c = g.carrier;
+    if (y && c && g.focus === y && !y.parent && !c.dead && c.type.layout && c.getWorldPos(_v).distanceTo(g.camPos) < c.type.radius + 9000) {
+      const w = c.localToWorld(_v2.fromArray(c.type.layout.yacht.dock.pos), _v3);
+      this.project(w, pt);
+      if (!pt.behind && pt.x > -40 && pt.x < this.w + 40 && pt.y > -40 && pt.y < this.h + 40) {
+        ctx.strokeStyle = COL.tgt; ctx.fillStyle = COL.tgt;
+        ctx.beginPath(); ctx.arc(pt.x, pt.y, 14, 0, Math.PI * 2); ctx.moveTo(pt.x, pt.y - 20); ctx.lineTo(pt.x, pt.y - 8); ctx.stroke();
+        ctx.fillText(`${c.name.toUpperCase()} · ${y.name.toUpperCase()} BERTH · ${U.fmtDist(w.distanceTo(g.camPos))}`, pt.x + 20, pt.y);
+      }
+    }
     for (const h of g.vessels) {
       if (!h.big || h.dead || !h.type.zones) continue;
       const d0 = h.getWorldPos(_v).distanceTo(g.camPos);

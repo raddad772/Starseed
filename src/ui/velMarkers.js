@@ -48,7 +48,23 @@ function place(hud, dir, m, out) {
   const a = Math.abs(_d.x) + Math.abs(_d.y) > 1e-9 ? Math.atan2(-_d.y, _d.x) : Math.PI / 2;
   const rx = cx - m, ry = cy - m, k = Math.min(rx / Math.abs(Math.cos(a) || 1e-6), ry / Math.abs(Math.sin(a) || 1e-6));
   out.x = cx + Math.cos(a) * k; out.y = cy + Math.sin(a) * k; out.a = a; out.edge = true;
+  // (clear of the corner panels, the flight data and the nav: slid down past their foot)
+  for (const r of panelRects(hud)) if (out.x > r.l - 16 && out.x < r.r + 16 && out.y > r.t - 16 && out.y < r.b + 16) out.y = r.b + 30;
   return out;
+}
+
+// the HUD's corner panels on its canvas (read a couple of times a second: they move only on a resize)
+function panelRects(hud) {
+  const now = performance.now();
+  if (!hud._vmRects || now - hud._vmRectsT > 500) {
+    const c = hud.canvas.getBoundingClientRect();
+    hud._vmRects = [hud.flight, hud.nav].filter((e) => e && e.offsetParent !== null).map((e) => {
+      const r = e.getBoundingClientRect();
+      return { l: r.left - c.left, r: r.right - c.left, t: r.top - c.top, b: r.bottom - c.top };
+    }).filter((r) => r.r > r.l && r.b > r.t);
+    hud._vmRectsT = now;
+  }
+  return hud._vmRects;
 }
 
 function edgeArrow(ctx, pt) {

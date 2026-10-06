@@ -1,8 +1,10 @@
 import * as THREE from 'three';
+import { eraFleet } from './eraFleets.js';
 import { PIONEER_TYPES } from './layouts/pioneer.data.js';
 // Deliberately opt-in: adding an era must not replace the established fleet or save positions.
 export function spawnPioneerFleet(g) {
-  if (g.pioneerFleet?.every(v => !v.dead)) return g.pioneerFleet;
+  // (made once: a lost craft is parked again with the rest, eraFleets.js, not made anew)
+  if (g.pioneerFleet) return g.pioneerFleet;
   const base = g.carrier;
   const offsets = [[1800,0,0], [2000,0,0], [2140,0,0], [2200,0,0], [2250,0,0], [2290,0,0], [2330,0,0]];
   g.pioneerFleet = Object.entries(PIONEER_TYPES).map(([key,t], i) => {
@@ -19,7 +21,7 @@ export function spawnPioneerFleet(g) {
 export function boardPioneer(g, key = 'caravan') {
   if (g.player.vessel) g.player.releaseControls(g.player.vessel);
   g.setWarp(0);
-  const fleet = spawnPioneerFleet(g), v = fleet.find(v => v.type.key === `pioneer_${key}`);
+  const fleet = eraFleet(g, 'pioneer'), v = fleet.find(v => v.type.key === `pioneer_${key}`);
   g.player.placeAboard(v, new THREE.Vector3(...v.type.seats[0].stand), new THREE.Vector3(0,0,-1));
   g.player.grounded = false; g.player.sVel.set(0,0,0);
   g.player.lastSeat = { vessel: v, seat: 0 };

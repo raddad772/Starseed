@@ -70,7 +70,7 @@ export class Player {
     this.route = null;
     this.deathShown = false;
     this.respawnT = 0;
-    this.ownShip = null;   // their own shuttle (player 1: the Wayfarer)
+    this.ownShip = null;   // their own craft (player 1: the Neptune 2, game.ship)
     this.travelIndex = 0;  // travel compression: their ship's own warp level while others hold the clock
     this.mode = 'surface'; // 'seat' | 'ship' | 'surface' | 'eva'
     this.body = null;
