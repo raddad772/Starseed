@@ -70,7 +70,12 @@ Dave's queue, in the order he raised it (keep this list current):
    far air marched on the true-size sphere (SKYVIEW_FRAG), sky pixels without the game-scale haze, the
    sky's elevations stretched and the sun lifted near the horizon (liftMu) so it sets at the drawn skyline,
    true-horizon cut-offs, AgX saturation 1.4; a loading screen (ui/loadScreen.js). Scratchpad sky8_*.
-   Left: the solar aureole (dust and droplets' narrow forward peak; the sun's disc is true size, 0.52 deg,
+   Then (3901e24, 965f75e): the true-size marches at real heights (mediumAtReal: the stratosphere and its
+   ozone whole), a sky pixel's sunlit air all the sky-view LUT's from low down, no game haze on the sun's way,
+   the aureole (phaseMie's narrow lobe), the ground's sun and the shadow maps lifted as the air's; the
+   loading screen counts near plants and grass. Scratchpad sky10_*, shadowB_*. Open: the ground's game-scale
+   haze now reads foggier than the clear sky from 90 m; the loading screen covers arrivals, not a descent
+   from orbit (that wants streaming ahead of the camera). Was: the solar aureole (dust and droplets' narrow forward peak; the sun's disc is true size, 0.52 deg,
    and reads tiny in the 72 deg view without it). Dave: "more dramatic; it's the sky not clouds that turn
    super pink".
 13. Dave's new asks, in order (the loading screen DONE, af5c907); the caprock scarps (or a fault scarp:
