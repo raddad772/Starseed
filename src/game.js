@@ -2232,6 +2232,15 @@ export class Game {
       const vis = THREE.MathUtils.clamp((mu - cosH) / 0.01 + 0.5, 0, 1);
       tr = [vis, vis, vis];
     }
+    // (under the clouds: their light where the camera is, as the ground's shaders take it (cloudShadow.js,
+    // atmosphere.js cloudLight): the sun's beam through them, the sky's light under them, and what of
+    // the beam they scatter down as more of it)
+    const cs = it && it.cloudShadow && it.cloudShadow.atCam;
+    if (cs) {
+      const muC = Math.max(0, L.up.dot(L.sunDir));
+      sky = sky.map((x, i) => x * cs.tot + tr[i] * muC * Math.max(cs.tot - cs.up, 0));
+      tr = tr.map((x) => x * cs.dir);
+    }
     const sr = sc[0] * tr[0], sg = sc[1] * tr[1], sb = sc[2] * tr[2];
     const mx = Math.max(sr, sg, sb, 1e-6);
     L.sunColor.setRGB(sr / mx, sg / mx, sb / mx);

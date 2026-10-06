@@ -13,7 +13,8 @@ import { giantPortrait, portraitLook } from '../gen/portrait.js';
 import { drawSchematic } from './briefing.js';
 import { normalizeSeed, randomSeedString } from '../core/rng.js';
 import { clockText, seasonText } from '../sim/worldClock.js';
-import { faunaOf, realmsByLand, realmOf } from '../sim/fauna.js';
+import { faunaOf, realmOf } from '../sim/fauna.js';
+import { searchPlaces } from '../gen/worldsim/places.js';
 
 const TABS = [['map', 'Map'], ['planets', 'Planets'], ['settings', 'Settings'], ['controls', 'Controls']];
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
@@ -165,6 +166,8 @@ export class PauseScreen {
           <button id="catLook" type="button">Look up</button><button id="catRandom" type="button">Random</button>
           ${current ? '' : `<button id="catHere" type="button">Back to this system</button><button id="catTravel" type="button" class="primary">Travel there</button>`}</div>
       </div>
+      ${current ? `<div class="findPlace"><label class="label" for="placeQ">Find a place</label><input id="placeQ" value="${esc(this.placeQ || '')}" spellcheck="false" placeholder="a sandy beach on a tropical island with animals" aria-label="Find a place by what it has"><button id="placeFind" type="button">Find</button></div>
+      <div class="placeHits" id="placeHits">${this.placeHitsHtml(sys)}</div>` : ''}
       <canvas class="schematic" id="catSchem"></canvas>
       <div class="worlds">${order.map((b) => this.card(sys, b, current, false, seed)).join('')}</div>
     </div>`;
@@ -211,15 +214,12 @@ export class PauseScreen {
       const c = BS.land.clade, p = BS.plans[BS.land.plan], fl = BS.flight.large != null ? 'big flyers' : BS.flight.small != null ? 'small flyers' : '';
       row('Animals', `${esc(c.name)}: ${c.size}, ${c.posture}, ${c.blood}-blooded, ${c.limbs} limbs <span style="opacity:0.65">(${esc(p.name)} plan: ${esc(p.text)})</span> · up to ${esc(BS.land.top)}${fl ? ' · ' + fl : ''}`);
     }
-    // (its realms and their species, a few highlights and where they're found: this system's worlds
-    // whose sim is in: sim/fauna.js, life/lineage.js)
-    const FA = lb && BS && BS.land && lb.terrain ? faunaOf(lb) : null;
-    if (FA) {
-      const kg = (m) => (m >= 1000 ? `${(m / 1000).toFixed(1)} t` : m >= 10 ? `${Math.round(m)} kg` : m >= 1 ? `${m.toFixed(1)} kg` : `${Math.round(m * 1000)} g`);
-      const RS = realmsByLand(FA).filter((R) => R.species.length), isl = RS.filter((R) => R.island).length;
-      row('Realms', `${RS.length} with land animals${isl ? ` (${isl} island${isl > 1 ? 's' : ''})` : ''}${FA.s.realms && FA.s.realms.interchanges.length ? ` · ${FA.s.realms.interchanges.length} interchange${FA.s.realms.interchanges.length > 1 ? 's' : ''}` : ''}`);
-      row('Species', RS.slice(0, 4).map((R) => `<i>${esc(R.name)}</i> <span style="opacity:0.65">(${(R.share * 100).toFixed(R.share < 0.1 ? 1 : 0)}% of the land${R.island ? ', an island' : ''})</span>: ` +
-        R.species.filter((sp) => !sp.flyer).slice(0, 3).concat(R.species.filter((sp) => sp.flyer).slice(0, 1)).map((sp) => `<b>${esc(sp.name)}</b> <span style="opacity:0.65">${sp.role}, ${kg(sp.massKg)}${sp.herd > 1 ? `, ${sp.flyer ? 'flocks' : 'herds'} of ~${sp.herd}` : sp.level > 1 || sp.flyer ? ', alone' : ''}${sp.from !== R.id ? `, from ${esc(realmOf(FA, sp.from).name)}` : ''}</span> ${sp.flyer ? '' : 'in '}${esc(sp.habitat)}`).join('; ')).join('<br>'));
+    // its places (worldsim/places.js): its land by landmass, each sized, described, its animals
+    const PL = b.terrain && b.terrain.snapshot && b.terrain.snapshot.places;
+    if (PL && PL.places.length) {
+      const k = {}; for (const p of PL.places) k[p.kind] = (k[p.kind] || 0) + 1;
+      const word = { continent: 'continent', 'large island': 'large island', island: 'island', islet: 'islet' };
+      row('Places', ['continent', 'large island', 'island', 'islet'].filter((x) => k[x]).map((x) => `${k[x]} ${word[x]}${k[x] > 1 ? 's' : ''}`).concat(PL.groups.length ? [`${PL.groups.length} archipelago${PL.groups.length > 1 ? 's' : ''}`] : []).join(' · '));
     }
     if (BS && BS.plans.length && BS.sea) row('Sea life', `${BS.plans.length} body plans · up to ${esc(BS.sea.top)}`);
     if (H && b.solid && H.airType && H.airType !== 'none') row('Sky', esc(H.airType) + (H.seaPH != null ? ` · seas pH ${H.seaPH.toFixed(1)}` : ''));
@@ -242,8 +242,50 @@ export class PauseScreen {
       <canvas width="96" height="96" data-portrait="${key}" data-body="${b.id}"></canvas>
       <div><h4>${esc(b.name)} <span>${esc(b.label)}${home ? ' · your landing site' : ''}</span></h4>
         <dl>${rows.join('')}</dl>
+        ${this.placeListHtml(b, lb, current)}
         <div class="cover" data-cover="${key}">${b.solid ? '<span class="note">surveying…</span>' : ''}</div>
         ${btns}</div></article>`;
+  }
+
+  // a place's line: its name, what and how big, its climate, a few of its tags, its animals (the realms
+  // there: sim/fauna.js), and Go (this system's worlds)
+  placeLine(b, lb, p, current, focus = null) {
+    const n = (x) => (x >= 100 ? Math.round(x).toLocaleString('en-US') : x.toFixed(x < 10 ? 1 : 0));
+    const lat = `${Math.abs(p.lat).toFixed(0)}°${p.lat >= 0 ? 'N' : 'S'}`;
+    const show = (p.tags || []).filter((t) => !['continent', 'large island', 'island', 'islet', 'archipelago', 'islands', 'life', 'plants', 'sandy beach'].includes(t)).slice(0, 9);
+    let fauna = '';
+    const FA = lb && lb.terrain && p.realms && p.realms.length ? faunaOf(lb) : null;
+    if (FA) {
+      const sp = [], seen = new Set();
+      for (const r of p.realms) for (const s of realmOf(FA, r).species) if (!seen.has(s.name) && sp.length < 5) { seen.add(s.name); sp.push(s); }
+      if (sp.length) fauna = `<div class="pAnimals">${sp.map((s) => `<b>${esc(s.name)}</b> <span>${s.role}</span>`).join(' · ')}</div>`;
+    }
+    const where = p.kind === 'archipelago' ? `${p.islands} islands` : p.kind;
+    const go = current ? `<button type="button" data-goplace="${b.id}|${p.kind === 'archipelago' ? 'g' : 'p'}|${p.kind === 'archipelago' ? p.members[0] : p.id}${focus ? '|' + focus : ''}">Go</button>` : '';
+    return `<li><div><b>${esc(p.name || where)}</b> <span class="pMeta">${esc(where)} · ${n(p.areaKm2)} km² · ${lat}${p.T != null ? ` · ${Math.round(p.T)} °C` : ''}${p.peakM > 0 ? ` · to ${n(p.peakM)} m` : ''}</span>
+      <div class="pTags">${show.map((t) => `<span>${esc(t)}</span>`).join('')}</div>${fauna}</div>${go}</li>`;
+  }
+  placeListHtml(b, lb, current) {
+    const PL = b.terrain && b.terrain.snapshot && b.terrain.snapshot.places;
+    if (!PL || !PL.places.length) return '';
+    const list = PL.places.filter((p) => p.kind !== 'islet').slice(0, 10).concat(PL.groups.slice(0, 4));
+    return `<details class="places"><summary>Its places</summary><ul>${list.map((p) => this.placeLine(b, lb, p, current)).join('')}</ul></details>`;
+  }
+  // the search's hits across this system's worlds (their places, and their archipelagos)
+  placeHitsHtml(sys) {
+    const q = this.placeQ;
+    if (!q) return '';
+    const all = [];
+    for (const b of sys.bodies) {
+      const PL = b.terrain && b.terrain.snapshot && b.terrain.snapshot.places;
+      if (!PL) continue;
+      for (const p of PL.places) all.push({ ...p, _b: b });
+      for (const p of PL.groups) all.push({ ...p, _b: b });
+    }
+    const hits = searchPlaces(all, q).slice(0, 12);
+    if (!hits.length) return `<p class="note">Nothing found for “${esc(q)}” on the worlds surveyed so far.</p>`;
+    const beachy = /beach|sand|coast|shore/.test(q.toLowerCase());
+    return `<ul>${hits.map(({ place }) => { const lb = this.game.universe.bodies[place._b.id]; return this.placeLine(place._b, lb, place, true, beachy && place.beachAt ? 'beach' : null).replace('<li><div><b>', `<li><div><span class="pWorld">${esc(place._b.name)}</span> <b>`); }).join('')}</ul>`;
   }
 
   wirePlanets() {
@@ -268,10 +310,27 @@ export class PauseScreen {
     if (go) go.onclick = () => this.o.travel(seed);
     this.fillPortraits(root, sys, current);
     this.wireCardButtons(root);
+    const pq = root.querySelector('#placeQ'), pf = root.querySelector('#placeFind');
+    if (pq && pf) {
+      const find = () => { this.placeQ = pq.value.trim(); const box = root.querySelector('#placeHits'); box.innerHTML = this.placeHitsHtml(sys); this.wireCardButtons(box); };
+      pf.onclick = find;
+      pq.onkeydown = (e) => { if (e.key === 'Enter') find(); e.stopPropagation(); };
+    }
   }
 
   wireCardButtons(root) {
     const g = this.game;
+    // Go: the world targeted and the place chosen as where to land (the nav computer's site)
+    for (const b of root.querySelectorAll('[data-goplace]')) b.onclick = () => {
+      const [bid, kind, id, focus] = b.dataset.goplace.split('|'), body = g.universe.bodies[+bid], PL = body.data.terrain.snapshot.places;
+      const p = kind === 'g' ? PL.groups.find((x) => x.members[0] === +id) : PL.places.find((x) => x.id === +id);
+      if (!p) return;
+      const V = body.pos.constructor, d = focus === 'beach' && p.beachAt ? p.beachAt : p.at;
+      g.players[0].target = body;
+      if (g.nav) g.nav.chooseSite(body, { dirF: new V(...d), label: `${p.name}${focus === 'beach' ? ', its beach' : ''}` });
+      g.message(`Nav computer: ${body.data.name}, ${p.name}${focus === 'beach' ? ' (the beach)' : ''}. N to fly there`, 'nav');
+      b.textContent = 'Set';
+    };
     for (const b of root.querySelectorAll('[data-target]')) b.onclick = () => {
       const body = g.universe.bodies[+b.dataset.target];
       g.players[0].target = body;

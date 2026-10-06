@@ -214,6 +214,21 @@ details summary { cursor: pointer; letter-spacing: 0.12em; text-transform: upper
 #overlay .world .cover .chip { padding: 4px 6px; font-size: 11px; }
 #overlay .world .cardBtns { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
 #overlay .world .cardBtns button { font-size: var(--step--1); padding: 4px 10px; }
+#overlay .findPlace { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+#overlay .findPlace input { flex: 1 1 260px; min-width: 0; font: 400 var(--step-0) var(--font-ui); letter-spacing: 0.02em; text-transform: none; color: var(--ink); background: rgba(0,0,0,0.35); border: 1px solid var(--hair); padding: 7px 10px; }
+#overlay .placeHits:empty { display: none; }
+#overlay .placeHits ul, #overlay .world .places ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+#overlay .placeHits ul { grid-template-columns: repeat(auto-fill, minmax(min(380px, 100%), 1fr)); gap: 6px; }
+#overlay .placeHits li, #overlay .world .places li { display: flex; gap: 8px; align-items: start; justify-content: space-between; padding: 6px 8px; background: rgba(0,0,0,0.22); border: 1px solid var(--hair); border-radius: 2px; font-size: var(--step--1); }
+#overlay .placeHits li button, #overlay .world .places li button { font-size: var(--step--1); padding: 3px 10px; flex: none; }
+#overlay .pWorld { color: var(--target); letter-spacing: 0.06em; text-transform: uppercase; font-size: 0.9em; }
+#overlay .pMeta { color: var(--ink-dim); }
+#overlay .pTags { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 3px; }
+#overlay .pTags span { padding: 1px 5px; border: 1px solid var(--hair); border-radius: 2px; color: var(--ink-dim); font-size: 0.92em; }
+#overlay .pAnimals { margin-top: 3px; color: var(--ink-dim); }
+#overlay .pAnimals b { color: var(--ink); font-weight: 600; }
+#overlay .world .places { margin-top: 8px; font-size: var(--step--1); }
+#overlay .world .places summary { cursor: pointer; color: var(--ink-dim); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 4px; }
 select { font: 400 var(--step--1) var(--font-ui); color: var(--ink); background: rgba(0,0,0,0.3); border: 1px solid var(--hair); padding: 4px 8px; }
 #mapLabels { position: fixed; inset: 0; pointer-events: none; }
 #mapLabels .ml { position: absolute; transform: translate(8px, -50%); font: var(--step--1) var(--font-ui); letter-spacing: 0.08em; color: var(--ink); white-space: nowrap; pointer-events: auto; cursor: pointer; text-shadow: 0 0 4px #000; }

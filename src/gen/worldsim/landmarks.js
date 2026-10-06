@@ -125,3 +125,28 @@ export function auroraLandmark(s, body, key) {
     lat: best.lat, lon: best.lon,
   };
 }
+
+// names a world's places (places.js) in place: a continent by its name alone, an island "X Island" or
+// "the Isle of X", an islet a cay in warm seas and a skerry in cold ones, an archipelago "the X Islands"
+const PLACE_FORMS = {
+  continent: ['#'],
+  'large island': ['# Island', 'the Isle of #', '# Island'],
+  island: ['# Island', '# Isle', '# Island'],
+  isletWarm: ['# Cay', '# Key', '# Islet'],
+  isletCold: ['# Skerry', '# Rock', '# Holm'],
+  archipelago: ['the # Islands', 'the # Isles', 'the # Islands'],
+};
+export function namePlaces(P, key) {
+  if (!P) return P;
+  const root = Rng.fromString('places|' + key), used = new Set();
+  const pick = (rng) => { let nm = makeName(rng, 2, rng.chance(0.25) ? 3 : 2); for (let k = 0; k < 6 && (used.has(nm) || nm.length > 9); k++) nm = makeName(rng, 2, 2); used.add(nm); return nm; };
+  const one = (p, kind) => {
+    const rng = root.fork(`${kind}${p.id ?? p.members[0]}`);
+    const forms = kind === 'islet' ? (Math.abs(p.lat) < 30 ? PLACE_FORMS.isletWarm : PLACE_FORMS.isletCold) : PLACE_FORMS[kind];
+    p.name = forms[rng.int(0, forms.length - 1)].replace('#', pick(rng));
+    p.name = p.name[0].toUpperCase() + p.name.slice(1);
+  };
+  for (const p of P.places) one(p, p.kind);
+  for (const g of P.groups) one(g, 'archipelago');
+  return P;
+}

@@ -90,6 +90,18 @@ plants you walk through, the animals you watch, and how many of each.
   (circling thermals 90-180 m up, drifting between them, banking). Drawn as two hinged panels a wing.
 - The catalogue: Realms (how many, islands, interchanges) and Species (the four biggest realms, three
   walkers and a flyer each: role, mass, herd or flock, where it lives, the realm its line came from).
+- **Grass** (Dave: "put some grass on that and it could be pretty"; first cut): `render/grassRender.js`,
+  tufts within ~30 m (thick near, thinning off), as thick as the life map's cover and open share
+  (grassland thick, forest floor thin; none on sand, beaches, ice, water, frozen or steep ground),
+  grasses where evolve.js's plantGrade has them (fern fronds before), the world's pigment browning
+  where it's dry, swaying. Needs: denser, finer blades; seasons; flowers (LIFE.md 5).
+- **Places** (Dave: the catalogue's land by continents and islands with km2 and tags to search):
+  `worldsim/places.js` in the sim worker (SIM 67): every landmass (continent, large island, island,
+  islet; archipelagos), its game-scale area, latitudes, climate, country, coasts (beaches by sand,
+  cliffs, reefs), heights, waters, volcanoes, life (realms), and tags; named (landmarks.js
+  namePlaces); the catalogue lists a world's places with their animals, and "Find a place" searches
+  the system's worlds by tags (searchPlaces: aliases, the most specific first); Go sets the target
+  and the nav computer's landing site (a beach when the words ask for one).
 - `flora.js`/`floraRender.js`: the current scattered plants (to be redone: foliage-redo-later).
 - The climate's months (monsoons, dry seasons), the seasons (snow, ice, river flow).
 

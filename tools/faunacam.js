@@ -76,14 +76,19 @@ export async function watchHerd(level = 1, dist = 7, k = 0, side = 0, settle = 6
   const b = B(), V = b.pos.constructor, L = list().filter((x) => !x.h.flyer && x.h.level === level);
   if (!L[k]) return 'none';
   const { h } = L[k], fc = g().freecam, M = new (await import('three')).Matrix4();
-  const E = new V().fromArray(h.E), N = new V().fromArray(h.N), away = E.clone().multiplyScalar(Math.cos(side)).addScaledVector(N, Math.sin(side));
+  const E = new V().fromArray(h.E), N = new V().fromArray(h.N);
+  // (a side of it on dry ground to watch from)
+  let away = null;
+  { const o = {}; herdAt(b, h, g().universe.t, o); const c0 = new V().fromArray(h.home).multiplyScalar(b.R).addScaledVector(E, o.x).addScaledVector(N, o.z);
+    for (let k = 0; k < 12 && !away; k++) { const a = side + k * Math.PI / 6, w = E.clone().multiplyScalar(Math.cos(a)).addScaledVector(N, Math.sin(a)); if (!b.isWaterAt(c0.clone().addScaledVector(w, -dist))) away = w; } }
+  if (!away) away = E.clone();
   const aim = () => {
     const o = {}, t = g().universe.t;
     herdAt(b, h, t, o);
     const c = new V().fromArray(h.home).multiplyScalar(b.R).addScaledVector(E, o.x).addScaledVector(N, o.z);
     const up = c.clone().normalize(), at = up.clone().multiplyScalar(b.R + b.groundHeight(up) + h.sp.design.hipH);
     const e0 = c.clone().addScaledVector(away, -dist), eu = e0.clone().normalize();
-    const eyeP = eu.clone().multiplyScalar(b.R + b.groundHeight(eu) + eye);
+    const eyeP = eu.clone().multiplyScalar(b.R + Math.max(0.3, b.groundHeight(eu)) + eye);
     fc.ref = b; fc.posF.copy(eyeP);
     M.lookAt(eyeP, at, up); fc.quatF.setFromRotationMatrix(M);
   };

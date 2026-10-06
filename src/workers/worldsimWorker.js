@@ -6,9 +6,11 @@ import { generateSystem } from '../gen/system.js';
 import { worldSim, simOptsFor } from '../gen/worldsim/world.js';
 import { packSnapshot, snapshotBuffers } from '../gen/worldsim/snapshot.js';
 import { findFeatures } from '../gen/worldsim/features.js';
-import { nameLandmarks, landmarks } from '../gen/worldsim/landmarks.js';
+import { findPlaces } from '../gen/worldsim/places.js';
+import { nameLandmarks, landmarks, namePlaces } from '../gen/worldsim/landmarks.js';
 import { ROCKS } from '../gen/worldsim/lithology.js';
-import { TerrainGenerator } from '../gen/terrain.js';
+import { TerrainGenerator, RELIEF_MAX } from '../gen/terrain.js';
+import { HEIGHT_SCALE } from '../core/units.js';
 import { prepareTile, refineLevel } from '../gen/localsim.js';
 import { packTile, RefineReader, TileSet } from '../gen/worldsim/refine.js';
 import { runInt } from '../gpu/itile.js';
@@ -85,6 +87,14 @@ self.onmessage = async (e) => {
       const F = findFeatures(W.G, W.h, { E: W.E, scale: W.G.R / b.radiusM, craters: W.craters || [], volcanoes: W.volcanoes, tuyas: W.tuyas, glaciers: W.glaciers, coasts: W.coasts, rock: W.rock, rockNames: ROCKS.map((r) => r.name), climate: W.climate, Gc: W.Gc, dunes: W.dunes, mesas: W.mesas, soil: W.soil, drowned: W.drowned, top: 5 });
       const dry = !b.terrain.liquid || b.terrain.liquid === 'lava';
       snap.landmarks = landmarks(nameLandmarks(F, `${m.seed}|${m.body}`, dry), dry);
+      // its places: every landmass worth a visit, sized, described and tagged for searching (places.js)
+      try {
+        const bio = b.life && b.life.biosphere;
+        // (as you walk it: the game's radius, and its heights as the terrain draws them: TerrainGenerator.hScale)
+        let rel = 0; for (const v of snap.h) rel = Math.max(rel, Math.abs(v));
+        const R = b.terrain.R || b.R, hScale = Math.min(b.terrain.heightScale ?? HEIGHT_SCALE, RELIEF_MAX * R / Math.max(1, rel));
+        snap.places = namePlaces(findPlaces(W, F, { R, hScale, rockNames: ROCKS.map((r) => r.name), volcanoes: W.volcanoes, life: { animals: !!(bio && bio.land), flyers: !!(bio && bio.land && bio.flight && bio.flight.small != null) } }), `${m.seed}|${m.body}`);
+      } catch (err) { self.postMessage({ type: 'log', job: m.job, body: m.body, msg: 'places failed: ' + err }); }
     } catch (err) { self.postMessage({ type: 'log', job: m.job, body: m.body, msg: 'landmarks failed: ' + err }); }
     snap.ms = Math.round(performance.now() - t0);
     self.postMessage({ type: 'snapshot', job: m.job, body: m.body, snap }, snapshotBuffers(snap));

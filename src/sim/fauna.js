@@ -182,9 +182,12 @@ function cubeHerds(F, b, i, j, k) {
       const clim = { T: F.s.Tsea[c] - 273.15 - 0.0065 * h, P: F.s.P[c] };
       const sp = speciesFor(realmOf(F, F.s.realm ? F.s.realm[c] : -1), lv, clim, luck);
       if (!sp) continue;
-      // (its tangent frame: east and north at its home)
+      // (its tangent frame: east and north at its home; dry ground all round it, where it spreads)
       const E = Math.abs(home[1]) > 0.99 ? norm(cross([1, 0, 0], home)) : norm(cross([0, 1, 0], home)), N = cross(home, E);
-      const size = Math.max(1, Math.round(sp.herd * (0.5 + sizeLuck)));
+      const size = Math.max(1, Math.round(sp.herd * (0.5 + sizeLuck))), rr = sp.design.len * (2.5 + 1.7 * Math.sqrt(size));
+      let wetAround = false;
+      for (const [ex, nz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (b.isWaterAt(_hv.set(home[0] * R + (E[0] * ex + N[0] * nz) * rr, home[1] * R + (E[1] * ex + N[1] * nz) * rr, home[2] * R + (E[2] * ex + N[2] * nz) * rr))) { wetAround = true; break; }
+      if (wetAround) continue;
       list.push({ id: `${lv}:${i},${j},${k}:${m}`, level: lv, sp, n: size, home, E, N, roam: ROAM[lv], key, spots: new Map() });
     }
   }
@@ -229,10 +232,14 @@ function spot(b, h, k) {
   }
   const l = Math.hypot(x, z);
   if (l > h.roam) { x *= h.roam / l; z *= h.roam / l; }
-  for (let t = 0; t < 3; t++) {
-    const R = b.R, dv = _sv.set(h.home[0] * R + h.E[0] * x + h.N[0] * z, h.home[1] * R + h.E[1] * x + h.N[1] * z, h.home[2] * R + h.E[2] * x + h.N[2] * z);
-    if (!b.isWaterAt(dv)) break;
-    x *= 0.35; z *= 0.35;
+  // (dry ground under all of the herd as it spreads there, and half way back to home: pulled in toward
+  // home till it is; a flock's anywhere)
+  const R = b.R, wet = (px, pz) => b.isWaterAt(_sv.set(h.home[0] * R + h.E[0] * px + h.N[0] * pz, h.home[1] * R + h.E[1] * px + h.N[1] * pz, h.home[2] * R + h.E[2] * px + h.N[2] * pz));
+  const D = h.sp.design, rH = h.flyer ? 0 : D.len * (1.5 + 1.7 * Math.sqrt(h.n)) + D.len;
+  for (let t = 0; t < 5; t++) {
+    if (h.flyer ? !wet(x, z) : !(wet(x, z) || wet(x + rH, z) || wet(x - rH, z) || wet(x, z + rH) || wet(x, z - rH) || wet(x * 0.5, z * 0.5))) break;
+    if (t === 4) { x = 0; z = 0; break; }
+    x *= 0.45; z *= 0.45;
   }
   s = [x, z];
   if (h.spots.size > 8) h.spots.clear();

@@ -121,7 +121,7 @@ export class CloudShadow {
   update(renderer, camF, sunF, on) {
     const U = this.uniforms;
     U.uCSOn.value = on ? 1 : 0;
-    if (!on) return;
+    if (!on) { this.atCam = null; return; }
     const R = this.R, up = camF.clone().normalize(), alt = camF.length() - R;
     // (a patch some way past where the decks' shadows can be told apart: a few times the camera's height
     // or the decks', 16 to 96 km across; its texels' size snapped so the patch steps by whole ones)
@@ -142,6 +142,18 @@ export class CloudShadow {
     renderer.render(this.scene, this.cam);
     renderer.setRenderTarget(prev);
     U.uCSOrigin.value.copy(o); U.uCSE.value.copy(E); U.uCSN.value.copy(N); U.uCSInvL.value = 1 / L;
+    // (the clouds' light on the ground under the camera, read back every few frames while the camera is
+    // under the decks: the standard materials' sun and sky (game.js computeLighting) dimmed as the
+    // ground's are, a herd or a ship in a cloud's shadow as dark as the grass it stands on)
+    if (alt < this.base) {
+      if (((this._rb = (this._rb || 0) + 1) & 7) === 1) {
+        const p = up.clone().multiplyScalar(R).sub(o);
+        const x = Math.max(0, Math.min(CS_SIZE - 1, Math.floor((p.dot(E) / L + 0.5) * CS_SIZE))), y = Math.max(0, Math.min(CS_SIZE - 1, Math.floor((p.dot(N) / L + 0.5) * CS_SIZE)));
+        const buf = this._buf || (this._buf = new Uint16Array(4)), f = THREE.DataUtils.fromHalfFloat;
+        renderer.readRenderTargetPixels(this.rt, x, y, 1, 1, buf);
+        this.atCam = { dir: f(buf[0]), tot: f(buf[1]), up: f(buf[2]) };
+      }
+    } else this.atCam = null;
     // (the level as wide as the patch of deck a point sees overhead: the dome out to ~60 degrees from the
     // zenith, about 3.5 times the decks' height across)
     U.uCSLod.value = Math.max(0, Math.log2(3.5 * this.base / t));

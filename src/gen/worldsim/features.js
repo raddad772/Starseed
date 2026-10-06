@@ -249,6 +249,9 @@ export function findFeatures(G, h, opts = {}) {
   }
   out.archipelagos.sort((a, b) => b.islands - a.islands);
   out.archipelagos = out.archipelagos.slice(0, top);
+  // (the landmasses and the sea, for places.js: each cell's landmass, the landmasses biggest first, and
+  // which of the islands go together)
+  out._landId = landId; out._lands = lands; out._ocean = ocean; out._isleGroup = isles.map((L, i) => [L.id, gfind(i)]);
   // ---- cliffs (tallest drop to a neighbour on land) and waterfalls (along rivers)
   const cl = [], wf = [];
   for (let c = 0; c < n; c++) {

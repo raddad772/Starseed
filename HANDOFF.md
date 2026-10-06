@@ -2,6 +2,23 @@
 
 Dave is play-testing and giving feedback in short bursts.
 
+## NOW: places to go, grass, and the clouds' light on things (session 39d69fa8, 2026-10-06), SIM 67
+
+- The catalogue's places (worldsim/places.js, LIFE.md): each world's landmasses sized at game scale
+  (SOL Earth 125,000 km2: Mourferia 25-28k km2, islands 1-1,200), tagged; "Find a place" over the
+  system's worlds ("a nice sandy beach on an island in the tropics with animals" finds tropical
+  islands and cays with beaches and their animals); Go targets the world and sets the landing site.
+  Worlds without a sea get none yet (their regions later).
+- Grass underfoot (render/grassRender.js, first cut), herds kept off the water (a grazing spot needs dry
+  ground under the whole herd; a home dry all round), standard materials (ships, animals, grass) lit
+  under the clouds as the ground is (cloudShadow.js reads back the texel under the camera every 8
+  frames; game.js computeLighting).
+- The sea's shallows fixed earlier this session (b79d773). Found, not fixed (a task chip for its own
+  session): the sea's level-water surface drawn over land in chunk-shaped patches (SOL Earth 15.75,
+  -158.66): white or teal sheets with straight edges; grass and animals poke through them.
+- Dave wants a near-time sim next after these (memory disturbance-sims-later): forest fires at a
+  fine scale over recent centuries; intelligent species' warming later.
+
 ## NOW: animals on the ground and in the air, by realm (session 39d69fa8, 2026-10-06), SIM 66
 
 - Herds walk the land (sim/fauna.js world state: species per realm, herds on a 512 m lattice, each

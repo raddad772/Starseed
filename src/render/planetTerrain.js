@@ -13,6 +13,7 @@ import { RockSet } from './rockRender.js';
 import { FloeSet } from './floeRender.js';
 import { BergSet } from './bergRender.js';
 import { FaunaSet } from './faunaRender.js';
+import { GrassSet } from './grassRender.js';
 import { FACES, dirFromFaceUV, chunkArcSize } from '../gen/cubesphere.js';
 import { CHUNK_N, chunkIndices, FALL_STRIDE } from '../gen/chunkbuilder.js';
 import { FallFx } from './falls.js';
@@ -133,6 +134,11 @@ export class PlanetTerrain {
     if (life && life.biosphere && life.biosphere.land) {
       if (!this.faunaSet) this.faunaSet = new FaunaSet(this.body, this.group);
       this.faunaSet.update(camFixed, this.worldT || 0);
+    }
+    // (grass and ferns underfoot, where land plants grow: grassRender.js)
+    if (life && this.body.data.history && this.body.data.history.plantGrade >= 1) {
+      if (!this.grassSet) this.grassSet = new GrassSet(this.body, this.group);
+      this.grassSet.update(camFixed);
     }
     return this.visibleList;
   }
@@ -613,6 +619,7 @@ export class PlanetTerrain {
     if (this.floeSet) this.floeSet.dispose();
     if (this.bergSet) this.bergSet.dispose();
     if (this.faunaSet) this.faunaSet.dispose();
+    if (this.grassSet) this.grassSet.dispose();
     if (this.fallFx) this.fallFx.material.dispose();
   }
 }
