@@ -79,7 +79,9 @@ void main() {
   if (sail) alb = mix(vec3(0.5, 0.62, 0.7), vec3(0.85, 0.88, 0.92), smoothstep(0.35, 0.6, tri(vFp, w, 2.0).r));
   vec3 pF = uToFixed * rel;
   vec3 sunA = atmoSunTransmittance(r, muS), skyE = atmoSkyIrradiance(r, muS);
-  vec3 sunT = sunA * cloudLight(rel, r, muS, foot, sunA, skyE) * terrainShadow(pF, normalize(pF), uToFixed * uSunDir, uRadius) * sunShadowMap(vWorld, N);
+  // (a top's own shadow read 15 cm over it: in a low sun its flat face shadowed itself in stripes; a
+  // sail's, half a metre and up, still falls on it)
+  vec3 sunT = sunA * cloudLight(rel, r, muS, foot, sunA, skyE) * terrainShadow(pF, normalize(pF), uToFixed * uSunDir, uRadius) * sunShadowMap(vWorld + (wall || sail ? vec3(0.0) : up * 0.15), N);
   vec3 N2 = normalize(mix(up, N, wall || sail ? 1.0 : 0.5));
   vec3 color = alb / PI * (uSunE * sunT * max(dot(N2, uSunDir), 0.0) + (uSunE * skyE * (0.5 + 0.5 * dot(N2, up)) + uAmbientFloor));
   vec3 V = normalize(-vWorld), H = normalize(V + uSunDir);
@@ -107,7 +109,7 @@ export class FloeSet {
     const sunF = this._s || (this._s = new THREE.Vector3());
     sunF.copy(b.pos).negate().normalize().applyQuaternion(b.qInv);
     this.at = dir; this.L = L;
-    this.job = this.pool.submit({ type: 'floes', body: b.id, dir: [dir.x, dir.y, dir.z], sinSun: sunF.y, L, reach: REACH }, 8);
+    this.job = this.pool.submit({ type: 'floes', body: b.id, dir: [dir.x, dir.y, dir.z], sinSun: sunF.y, L, reach: REACH }, 2);
     this.job.promise.then((r) => { this.job = null; this.show(r); }, () => { this.job = null; });
   }
   show(r) {

@@ -59,7 +59,7 @@ export function seasonPixels(snap) {
   return pixelsOf(snap.Nc, snap.R, snap.season, (k, v) => (k < 2 ? v / 100 + 0.5 : k === 2 ? Math.sqrt(Math.max(0, v) / 600) : (v - 273.15 + 60) / 120), snap.Tsea);
 }
 // the maps' layout's revision: a snapshot whose maps are older is worked out again (worldSims.js)
-export const SEASON_V = 2;
+export const SEASON_V = 3;
 // (the air over a frozen sea's: a1, b1 and its year's mean against the open sea's, K / 100 + 0.5)
 export function seasonIcePixels(snap) {
   return pixelsOf(snap.Nc, snap.R, snap.seasonIce, (k, v) => v / 100 + 0.5);
@@ -67,9 +67,11 @@ export function seasonIcePixels(snap) {
 
 // the air's year over a sea that freezes in winter: its ice cuts the sea's heat off (its winters as
 // cold as land's), so the climate run again with every sea cell whose coldest month falls below the
-// sea's freezing point as frozen ground; per climate cell a1, b1 and the year's mean against the open
-// sea's (K), planar (the open year's own where the sea never freezes). What the leads between its floes
-// freeze over by (render/liquid.js leadIce, gen/liquidice.js)
+// sea's freezing point as frozen ground; per climate cell a1, b1 (its swing: that run's) and the year's
+// mean against the open sea's (K: 0, planar). The mean stays the sea's: as ground those cells took
+// ground's darker albedo too (no ice on them) and came out ~27 K warmer a year at 75 N, a pack thawing at
+// winter's end. What the leads freeze over by and the floes grow by (render/liquid.js leadIce, gen/
+// liquidice.js packIce)
 function seasonIce(Gc, G, snap, climOpts, wet, cover, clim) {
   const m = Gc.n, n = wet.length, Tf = 273.15 - 1.8, froze = new Uint8Array(m);
   let any = 0;
@@ -88,7 +90,6 @@ function seasonIce(Gc, G, snap, climOpts, wet, cover, clim) {
   for (let c = 0; c < m; c++) {
     const f = froze[c];
     out[c] = f ? h2[c] : h1[c]; out[m + c] = f ? h2[m + c] : h1[m + c];
-    if (f) { let s1 = 0, s2 = 0; for (let k = 0; k < 12; k++) { s1 += clim.Tm[k * m + c]; s2 += clim2.Tm[k * m + c]; } out[2 * m + c] = (s2 - s1) / 12; }
   }
   return out;
 }

@@ -498,7 +498,12 @@ rivers that are straighter where they should be?"):**
   edge as left after its leads (not across a lead), crest over the crack, sides ~27 degrees, twice as wide
   as high, the crest's height x0.6..1.4 by the 4 m tile (ridgeCrest, the walker's the same); the walker
   stands on that tent (floeAt o.ridge). The shading further off: the band within 2H of a ridged edge,
-  broken blocks (the 2 m tile) and its sides lit by how they face.
+  broken blocks (the 2 m tile) and its sides lit by how they face. 75 N 117 at its winter's end (2026-11-18):
+  air over the pack -27 C, ice 1.93 m, snow 9 cm, tops 0.23 m; a ridge ~1 m (pressure_ridge shot). Build:
+  0.37 s, 172k triangles (main thread timing; in a worker, every ~150 m). Fixed on the way: the air over a
+  frozen sea's year kept its run's swing but not its mean (that run's cells took ground's darker albedo
+  and came out ~27 K warmer a year: a pack thawing at winter's end; SEASON_V 3); floe tops shadowed
+  themselves in stripes in a low sun (their own shadow now read 15 cm over them).
 - **Seasons on the land: snow through the year** (Dave: "see seasonal changes"; "refine and add"; not
   living things yet). worldsim/season.js: each world's year by climate cell, its temperature's first
   harmonic about the mean (a1 cos L + b1 sin L, L the solar longitude from the northern spring equinox,
