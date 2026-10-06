@@ -81,34 +81,56 @@ uniform float uFadeIn;
 uniform float uPatchK;
 varying float vGT;
 varying float vGK;
+float grassHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float grassNoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(grassHash(i), grassHash(i + vec2(1.0, 0.0)), f.x), mix(grassHash(i + vec2(0.0, 1.0)), grassHash(i + vec2(1.0, 1.0)), f.x), f.y);
+}
 vec3 grassBlade(mat4 im) {
-  vec4 pc = modelMatrix * im * vec4(aBlade.x, 0.0, aBlade.y, 1.0);
+  // (the patch's own turn of the blades' layout, mirrored or not, and its own share of them: every patch
+  // drew the same layout, a pattern repeating every 2 m, a grid)
+  float ps = grassHash(iWave * 0.731 + 0.17);
+  float rq = floor(ps * 4.0);
+  vec2 bx = aBlade.xy;
+  bx = rq < 1.0 ? bx : rq < 2.0 ? vec2(-bx.y, bx.x) : rq < 3.0 ? -bx : vec2(bx.y, -bx.x);
+  if (fract(ps * 7.13) > 0.5) bx.x = -bx.x;
+  float rr = fract(aBlade.z + ps * 0.618);
+  vec4 pc = modelMatrix * im * vec4(bx.x, 0.0, bx.y, 1.0);
   float dc = length(pc.xyz);
-  float dens = iGrass.x * (1.0 - smoothstep(uFadeR * 0.7, uFadeR, dc)) * smoothstep(uFadeIn - 8.0, uFadeIn + 2.0, dc);
-  vGT = aV.x; vGK = fract(aBlade.z * 13.71);
-  if (aBlade.z >= dens) return vec3(0.0);
+  vec3 off = mat3(im) * vec3(bx.x, 0.0, bx.y);
+  vec2 wp = iWave + off.xz;
+  // (its thickness and height by the lie of the ground a few metres across, smooth over the patches' edges:
+  // clumps and thin places, not squares)
+  float n1 = grassNoise(wp / 4.3), n2 = grassNoise(wp / 1.7 + 31.0);
+  float dens = iGrass.x * (0.5 + n1) * (1.0 - smoothstep(uFadeR * 0.7, uFadeR, dc)) * smoothstep(uFadeIn - 8.0, uFadeIn + 2.0, dc);
+  vGT = aV.x; vGK = fract(rr * 13.71);
+  if (rr >= dens) return vec3(0.0);
   float t = aV.x, side = aV.y;
-  float k1 = fract(aBlade.z * 7.31), k2 = fract(aBlade.z * 3.17 + aBlade.w * 0.13);
-  // (out of the season's snow: its tips standing up out of a thin fall, buried by a deep one)
-  float hb = iGrass.y * (0.45 + 0.9 * k1) - iGrass.w;
+  float k1 = fract(rr * 7.31), k2 = fract(rr * 3.17 + aBlade.w * 0.13);
+  // (out of the season's snow, its depth drifted and hollowed a few metres across: the tips standing up out
+  // of a thin fall, buried by a deep one, held still by it)
+  float snow = iGrass.w * (0.4 + 1.2 * grassNoise(wp / 2.6 + 7.0));
+  float hb = iGrass.y * (0.45 + 0.9 * k1) * (0.75 + 0.5 * n2) - snow;
   if (hb < 0.02) return vec3(0.0);
-  vec2 f = vec2(cos(aBlade.w), sin(aBlade.w)), p = vec2(-f.y, f.x);
+  float held = exp(-snow * 6.0);
+  float yaw = aBlade.w + ps * 6.2832;
+  vec2 f = vec2(cos(yaw), sin(yaw)), p = vec2(-f.y, f.x);
   // (its own lean, the wilder the more; the wind's bend, a gust's wave running across in its way)
-  vec2 B = f * iGrass.z * (0.15 + 0.85 * k2);
+  vec2 B = f * iGrass.z * (0.15 + 0.85 * k2) * (0.4 + 0.6 * held);
   vec3 wl = transpose(mat3(im)) * uWindL;
   vec2 wd = length(wl.xz) > 1e-4 ? normalize(wl.xz) : vec2(1.0, 0.0);
-  vec3 off = mat3(im) * vec3(aBlade.x, 0.0, aBlade.y);
   vec2 wF = length(uWindL.xz) > 1e-4 ? normalize(uWindL.xz) : vec2(1.0, 0.0);
-  float ph = dot(iWave + off.xz, wF) * 0.35 - uWindT * 2.2 + k1 * 0.6;
+  float ph = dot(wp, wF) * 0.35 - uWindT * 2.2 + k1 * 0.6;
   float g = 0.5 + 0.5 * sin(ph) * (0.7 + 0.3 * sin(ph * 2.3 + 1.7));
-  B += wd * uGrassWind * (0.25 + 0.75 * g) * (0.7 + 0.6 * k2);
+  B += wd * uGrassWind * (0.25 + 0.75 * g) * (0.7 + 0.6 * k2) * held;
   float bl = length(B);
   if (bl > 1.2) B *= 1.2 / bl;
-  float u = aBlade.x * 0.5 + 0.5, v = aBlade.y * 0.5 + 0.5;
+  float u = bx.x * 0.5 + 0.5, v = bx.y * 0.5 + 0.5;
   float hg = mix(mix(iCorner.x, iCorner.y, u), mix(iCorner.z, iCorner.w, u), v);
   float w = uBladeW * (0.6 + 0.8 * k2) * (1.0 + 0.6 * iGrass.y) * pow(1.0 - t, 0.7);
-  vec2 xz = vec2(aBlade.x, aBlade.y) + (B * hb * t * t + p * w * side) * uPatchK;
-  return vec3(xz.x, hg + iGrass.w + hb * t * (1.0 - 0.3 * dot(B, B) * t), xz.y);
+  vec2 xz = bx + (B * hb * t * t + p * w * side) * uPatchK;
+  return vec3(xz.x, hg + snow + hb * t * (1.0 - 0.3 * dot(B, B) * t), xz.y);
 }
 `;
 
@@ -422,7 +444,8 @@ export class GrassSet {
       const steep = Math.max(Math.abs(c10 - c00), Math.abs(c11 - c01), Math.abs(c01 - c00), Math.abs(c11 - c10)) / span;
       if (steep > 0.9 || bare(d)) { rnd(); rnd(); rnd(); continue; }
       const kS = share > 0 ? standAt(gen, d, s, share, true).k * (1 - meadowAt(gen, d, h0, this.species)) : 0;
-      const dens = thick * (1 - 0.68 * kS) * (this.fern ? 0.6 : 1) * (0.8 + 0.4 * rnd());
+      rnd();
+      const dens = thick * (1 - 0.68 * kS) * (this.fern ? 0.6 : 1);
       if (dens < 0.01) { rnd(); rnd(); continue; }
       Y.set(d[0], d[1], d[2]);
       X.copy(EU).addScaledVector(Y, -EU.dot(Y)).normalize();
@@ -433,11 +456,13 @@ export class GrassSet {
       M.makeBasis(X.multiplyScalar(hs), Y, Z.multiplyScalar(hs)).setPosition(Pp);
       mat.set(M.elements, q * 16);
       corner[q * 4] = c00 - h0; corner[q * 4 + 1] = c10 - h0; corner[q * 4 + 2] = c01 - h0; corner[q * 4 + 3] = c11 - h0;
-      const Hp = H * (0.85 + 0.3 * rnd());
+      rnd();
+      const Hp = H;
       grass[q * 4] = Math.min(1, dens); grass[q * 4 + 1] = Hp; grass[q * 4 + 2] = (this.fern ? 0.7 : 0.12 + 0.45 * Math.min(1, Hp / 1.2)) / Math.max(1, Hp * 0.6); grass[q * 4 + 3] = snowD;
       const wx = d[0] * R, wz = d[2] * R;
       wave[q * 2] = wx - 2048 * Math.floor(wx / 2048); wave[q * 2 + 1] = wz - 2048 * Math.floor(wz / 2048);
-      const tdr = rnd() * 0.5 * (0.3 + dryK);
+      rnd();
+      const tdr = 0.25 * (0.3 + dryK);
       // (the shade's grass under a stand darker, greener: no sun to dry it)
       for (let cc = 0; cc < 3; cc++) col[q * 3 + cc] = (base[cc] + (dryTip[cc] - base[cc]) * tdr * (1 - kS)) * (1 - 0.25 * kS);
       q++;

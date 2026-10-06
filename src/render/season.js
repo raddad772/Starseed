@@ -77,14 +77,15 @@ float seasonSWE(vec3 dirF, float Ta) {
 // cover takes, a few cm of it (~20 mm of water hides grass and stones; a thin fall lies in patches, and
 // the last of a spring's melt in the hollows and the lee: n, the ground's own 64 m / 512 m tiles), less
 // on a slope that faces the sun's mean path (its year a few degrees warmer: terrain.js _shadeAspect, the
-// year-round snow's own), and none on a cliff (steeper than ~50 degrees it sloughs off)
+// year-round snow's own), thinner on a steep one and next to none on a face (it sloughs off: from ~28
+// degrees thinning, past ~57 the rock bare)
 float seasonSnow(vec3 dirF, vec3 fn, float Ta, float n) {
   float dn = dot(fn, dirF), cl2 = 1.0 - dirF.y * dirF.y;
   float shade = cl2 > 1e-6 ? sign(dirF.y) * (fn.y - dn * dirF.y) / sqrt(cl2) * min(1.0, 2.0 * abs(dirF.y)) : 0.0;
   float swe = seasonSWE(dirF, Ta - 8.0 * shade);
   float c = 1.0 - exp(-swe / 12.0);
   c = smoothstep(n - 0.25, n + 0.25, c * 1.2 - 0.1);
-  return c * (1.0 - 0.75 * smoothstep(0.35, 0.65, 1.0 - dn));
+  return c * (1.0 - 0.9 * smoothstep(0.12, 0.45, 1.0 - dn));
 }
 // ---- the seasons' frost where a thin air freezes out at the poles (Mars' CO2; gen/frostcap.js, world.js):
 // its mass by the solar longitude (x) and latitude (y, south to north), sqrt(kg / 2000); uFrost x: where
