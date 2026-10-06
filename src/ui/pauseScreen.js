@@ -15,6 +15,7 @@ import { normalizeSeed, randomSeedString } from '../core/rng.js';
 import { clockText, seasonText } from '../sim/worldClock.js';
 import { faunaOf, realmOf } from '../sim/fauna.js';
 import { searchPlaces } from '../gen/worldsim/places.js';
+import { fireRegimeAt } from '../gen/life/fire.js';
 
 const TABS = [['map', 'Map'], ['planets', 'Planets'], ['settings', 'Settings'], ['controls', 'Controls']];
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
@@ -219,7 +220,8 @@ export class PauseScreen {
     if (PL && PL.places.length) {
       const k = {}; for (const p of PL.places) k[p.kind] = (k[p.kind] || 0) + 1;
       const word = { continent: 'continent', 'large island': 'large island', island: 'island', islet: 'islet' };
-      row('Places', ['continent', 'large island', 'island', 'islet'].filter((x) => k[x]).map((x) => `${k[x]} ${word[x]}${k[x] > 1 ? 's' : ''}`).concat(PL.groups.length ? [`${PL.groups.length} archipelago${PL.groups.length > 1 ? 's' : ''}`] : []).join(' · '));
+      if (PL.features) row('Places', Object.entries(k).sort((x, y) => y[1] - x[1]).map(([x, nn]) => `${nn} ${x}${nn > 1 ? (x.endsWith('s') ? '' : 's') : ''}`).join(' · '));
+      else row('Places', ['continent', 'large island', 'island', 'islet'].filter((x) => k[x]).map((x) => `${k[x]} ${word[x]}${k[x] > 1 ? 's' : ''}`).concat(PL.groups.length ? [`${PL.groups.length} archipelago${PL.groups.length > 1 ? 's' : ''}`] : []).join(' · '));
     }
     if (BS && BS.plans.length && BS.sea) row('Sea life', `${BS.plans.length} body plans · up to ${esc(BS.sea.top)}`);
     if (H && b.solid && H.airType && H.airType !== 'none') row('Sky', esc(H.airType) + (H.seaPH != null ? ` · seas pH ${H.seaPH.toFixed(1)}` : ''));
@@ -252,7 +254,7 @@ export class PauseScreen {
   placeLine(b, lb, p, current, focus = null) {
     const n = (x) => (x >= 100 ? Math.round(x).toLocaleString('en-US') : x.toFixed(x < 10 ? 1 : 0));
     const lat = `${Math.abs(p.lat).toFixed(0)}°${p.lat >= 0 ? 'N' : 'S'}`;
-    const show = (p.tags || []).filter((t) => !['continent', 'large island', 'island', 'islet', 'archipelago', 'islands', 'life', 'plants', 'sandy beach'].includes(t)).slice(0, 9);
+    const show = (p.tags || []).filter((t) => !['continent', 'large island', 'island', 'islet', 'archipelago', 'islands', 'life', 'plants', 'sandy beach', 'fire', 'burns often', 'burns now and then', 'rarely burns'].includes(t)).slice(0, 9);
     let fauna = '';
     const FA = lb && lb.terrain && p.realms && p.realms.length ? faunaOf(lb) : null;
     if (FA) {
@@ -260,10 +262,19 @@ export class PauseScreen {
       for (const r of p.realms) for (const s of realmOf(FA, r).species) if (!seen.has(s.name) && sp.length < 5) { seen.add(s.name); sp.push(s); }
       if (sp.length) fauna = `<div class="pAnimals">${sp.map((s) => `<b>${esc(s.name)}</b> <span>${s.role}</span>`).join(' · ')}</div>`;
     }
+    // (its fires, by the regime gen/life/fire.js runs: a long dry season and fuel to carry them, often;
+    // never dry, rarely; no air to burn in, never)
+    let fire = '';
+    const gen = lb && lb.terrain;
+    if (gen && gen.snap && gen.snap.s.season && p.at && !p.named) {
+      const r = fireRegimeAt(gen.snap, p.at), H = lb.data.history || {}, o2 = H.air ? (H.air.O2 || 0) / Math.max(H.P || 0, 1e-6) : 0;
+      if (r && o2 >= 0.15) { const risk = r.dry * Math.min(1, r.open + 0.6 * r.forest); fire = risk > 0.35 ? 'burns often' : risk > 0.12 ? 'burns now and then' : 'rarely burns'; }
+    }
     const where = p.kind === 'archipelago' ? `${p.islands} islands` : p.kind;
+    const size = p.areaKm2 > 0 ? `${n(p.areaKm2)} km²` : p.sizeKm ? `${n(p.sizeKm)} km` : '';
     const go = current ? `<button type="button" data-goplace="${b.id}|${p.kind === 'archipelago' ? 'g' : 'p'}|${p.kind === 'archipelago' ? p.members[0] : p.id}${focus ? '|' + focus : ''}">Go</button>` : '';
-    return `<li><div><b>${esc(p.name || where)}</b> <span class="pMeta">${esc(where)} · ${n(p.areaKm2)} km² · ${lat}${p.T != null ? ` · ${Math.round(p.T)} °C` : ''}${p.peakM > 0 ? ` · to ${n(p.peakM)} m` : ''}</span>
-      <div class="pTags">${show.map((t) => `<span>${esc(t)}</span>`).join('')}</div>${fauna}</div>${go}</li>`;
+    return `<li><div><b>${esc(p.name || where)}</b> <span class="pMeta">${esc(where)}${size ? ` · ${size}` : ''} · ${lat}${p.T != null ? ` · ${Math.round(p.T)} °C` : ''}${p.peakM > 0 ? ` · to ${n(p.peakM)} m` : ''}</span>
+      <div class="pTags">${show.map((t) => `<span>${esc(t)}</span>`).join('')}${fire ? `<span>${fire}</span>` : ''}</div>${fauna}</div>${go}</li>`;
   }
   placeListHtml(b, lb, current) {
     const PL = b.terrain && b.terrain.snapshot && b.terrain.snapshot.places;
@@ -279,7 +290,14 @@ export class PauseScreen {
     for (const b of sys.bodies) {
       const PL = b.terrain && b.terrain.snapshot && b.terrain.snapshot.places;
       if (!PL) continue;
-      for (const p of PL.places) all.push({ ...p, _b: b });
+      // (and how often it burns, a tag of its own to search: the fire regime, gen/life/fire.js)
+      const lb = this.game.universe.bodies[b.id], gen = lb && lb.terrain, o2 = (b.terrain && b.terrain.fireO2) || 0;
+      const burns = (p) => {
+        if (!gen || !gen.snap || !gen.snap.s.season || !p.at || p.named || o2 < 0.15) return [];
+        const r = fireRegimeAt(gen.snap, p.at), risk = r ? r.dry * Math.min(1, r.open + 0.6 * r.forest) : 0;
+        return risk > 0.35 ? ['burns often', 'fire'] : risk > 0.12 ? ['burns now and then', 'fire'] : r ? ['rarely burns'] : [];
+      };
+      for (const p of PL.places) all.push({ ...p, tags: [...p.tags, ...burns(p)], _b: b });
       for (const p of PL.groups) all.push({ ...p, _b: b });
     }
     const hits = searchPlaces(all, q).slice(0, 12);

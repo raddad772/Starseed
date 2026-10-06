@@ -3,7 +3,7 @@
 // (after testkit's ready()). toHerds() stands you on land near the start where the food web's grazers
 // are thick; atHerd(level, dist) by the nearest herd of a level; atFlock(dist) floats a free camera by
 // the nearest flock, looking at it; list() the herds and flocks about.
-import { faunaOf, herdsNear, herdAt, flyerAt, realmOf } from '/src/sim/fauna.js';
+import { faunaOf, herdsNear, herdAt, flyerAt, realmOf, activeTime } from '/src/sim/fauna.js';
 
 const g = () => window.game;
 const B = () => g().player.currentBody();
@@ -17,7 +17,7 @@ export function list(reach = 1400) {
   const b = B(), F = fauna(), V = b.pos.constructor, t = g().universe.t, o = {}, at = here();
   if (!F) return [];
   return herdsNear(F, b, at, reach, []).map((h) => {
-    if (h.flyer) flyerAt(b, h, 0, t, o); else herdAt(b, h, t, o);
+    if (h.flyer) flyerAt(b, h, 0, t, o); else herdAt(b, h, activeTime(F.clock, h, t), o);
     const c = new V().fromArray(h.home).multiplyScalar(b.R).addScaledVector(new V().fromArray(h.E), o.x).addScaledVector(new V().fromArray(h.N), o.z);
     return { h, c, d: c.distanceTo(at), y: o.y || 0 };
   }).sort((a, c) => a.d - c.d);
@@ -79,12 +79,12 @@ export async function watchHerd(level = 1, dist = 7, k = 0, side = 0, settle = 6
   const E = new V().fromArray(h.E), N = new V().fromArray(h.N);
   // (a side of it on dry ground to watch from)
   let away = null;
-  { const o = {}; herdAt(b, h, g().universe.t, o); const c0 = new V().fromArray(h.home).multiplyScalar(b.R).addScaledVector(E, o.x).addScaledVector(N, o.z);
+  { const o = {}; herdAt(b, h, activeTime(fauna().clock, h, g().universe.t), o); const c0 = new V().fromArray(h.home).multiplyScalar(b.R).addScaledVector(E, o.x).addScaledVector(N, o.z);
     for (let k = 0; k < 12 && !away; k++) { const a = side + k * Math.PI / 6, w = E.clone().multiplyScalar(Math.cos(a)).addScaledVector(N, Math.sin(a)); if (!b.isWaterAt(c0.clone().addScaledVector(w, -dist))) away = w; } }
   if (!away) away = E.clone();
   const aim = () => {
     const o = {}, t = g().universe.t;
-    herdAt(b, h, t, o);
+    herdAt(b, h, activeTime(fauna().clock, h, t), o);
     const c = new V().fromArray(h.home).multiplyScalar(b.R).addScaledVector(E, o.x).addScaledVector(N, o.z);
     const up = c.clone().normalize(), at = up.clone().multiplyScalar(b.R + b.groundHeight(up) + h.sp.design.hipH);
     const e0 = c.clone().addScaledVector(away, -dist), eu = e0.clone().normalize();

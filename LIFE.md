@@ -102,6 +102,40 @@ plants you walk through, the animals you watch, and how many of each.
   namePlaces); the catalogue lists a world's places with their animals, and "Find a place" searches
   the system's worlds by tags (searchPlaces: aliases, the most specific first); Go sets the target
   and the nav computer's landing site (a beach when the words ask for one).
+- **Fire through the recent centuries** (Dave: "a relatively fine near-time sim for some things, like
+  forest fires"; memory disturbance-sims-later): `gen/life/fire.js`, the land cut into ~8 km fire tiles
+  (19 a face on SOL Earth), each run over 300 years on 32 m cells with a 1.5 km margin, in the terrain
+  workers on demand (`sim/fireField.js` asks for the tiles near the camera). The regime from the
+  snapshot: dry months (Gaussen: rain under twice the temperature) or the warm season's want of water
+  (a boreal summer's), lightning from the warm season's storms, the plants' cover (grass, forest), no
+  fire under ~15% oxygen. Each year a regional drought; strikes on a world-fixed 1 km lattice (tiles
+  agree on them); fires burn in rounds for a span of their own (an exponential, longer the drier),
+  each round a step's chance by fuel (grass back in a year or two, forest litter over decades), the
+  year's dryness, wind (the latitude's) and slope, the head with the wind, flanks at half pace, back a
+  third (egg-shaped burns); crowning in severe years replaces a stand. Seams between tiles wander
+  (noise) so two histories meet along a wavy line. SOL Earth: savanna ~every 10-20 years, seasonal
+  forest ~30-40, wet temperate and rainforest rarely (thousands). The grass reads it: none the year it
+  burned, a green flush for a few years, thick where a crown fire opened a forest until its canopy
+  closes (~35 years), thin under old forest. The ground shows it too (chunkbuilder.js, the finer
+  chunks: this year's burn charred, last year's darkened, a green flush after; the workers keep their
+  own fire tiles, the same fires as the main thread's: the terrain params' fireO2 and seed). The
+  catalogue says how often each place burns. Not yet: the trees (foliage redo), floods and windthrow,
+  intelligent species' warming.
+- **A day's round** (sim/fauna.js dayClock, activeTime): each herd's path runs on its own active time,
+  its kind's activity by the local solar hour at its home (grazers by day, most in the morning and the
+  evening; hunters at dusk, through the night, at dawn), so a herd stays put through its rest and walks
+  on where it was (world state: the world's spin and sun at the time); resting animals lie down (the
+  body let down, the legs folding by the IK, the head down); flocks roost by night.
+- **Flowers** (grassRender.js): where flowering plants have evolved (plantGrade 3+), heads on some tufts,
+  thickest on open moist grassland and a burn's first years, coloured across the land animals' visual
+  window (biosphere seeing: its ultraviolet shows to us as a pale violet, its near infrared a deep red)
+  and white.
+- **Trees, a placeholder** (`gen/life/tree.js`, `render/treeMesh.js`): the old flora's trees (placement,
+  collisions, impostors kept) grown by branching in EZ-Tree's way, not EZ-Tree itself: forms from the
+  plants' history (flora.js: seed trees as conifers with tree ferns among them, flowering trees as
+  broadleaf crowns, now and then the world's own alien forms), trunks as wide as the solid field
+  takes them, crowns of rounded leaf cards at their own tilts. Dave asked whether this is EZ-Tree: not
+  yet; porting it (MIT, dgreenheck/ez-tree, its leaf and bark textures) waits on his OK to download it.
 - `flora.js`/`floraRender.js`: the current scattered plants (to be redone: foliage-redo-later).
 - The climate's months (monsoons, dry seasons), the seasons (snow, ice, river flow).
 

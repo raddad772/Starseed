@@ -6,6 +6,8 @@ import { floraSpecies, FLORA_KINDS } from '../gen/flora.js';
 import { GLSL_SURFACE_ATMO, GLSL_CLOUD_N, GLSL_CLOUD_SHADOW } from './atmosphere.js';
 import { GLSL_TERRAIN_SHADOW } from './terrainShadow.js';
 import { GLSL_SUN_SHADOW, SHADOW_LAYER } from './sunShadows.js';
+import { growTree } from '../gen/life/tree.js';
+import { treeGeometry as grownMesh } from './treeMesh.js';
 
 // ---------------------------------------------------------------- geometry
 
@@ -46,7 +48,25 @@ function noisy(geo, rng, amount) {
   return geo;
 }
 
+// a grown tree (gen/life/tree.js: its limbs by branching, its leaves in clusters) for the forms its
+// history gives (a seed tree's, a flowering tree's, a tree fern's), its trunk as wide as the solid field
+// takes it (sim/floraField.js TRUNK); the flora shader's parts: bark 0, foliage 1
+const GROWN = { conifer: 0.035, broadleaf: 0.045, fern: 0.04 };
+function grownTreeGeometry(sp) {
+  const H = sp.treeHeight, form = sp.tree;
+  const ts = { form, H, trunkR: GROWN[form] * H, key: `flora|${sp.seed}|${form}`, levels: form === 'fern' ? 1 : form === 'conifer' ? 2 : 3,
+    spread: form === 'broadleaf' ? 0.6 : form === 'conifer' ? 0.32 : 0.2, leafSize: form === 'fern' ? H * 0.35 : form === 'conifer' ? H * 0.06 : H * 0.1, bark: [1, 1, 1], leaf: [1, 1, 1] };
+  const t = growTree(ts, 0);
+  // (held to the height the instances are scaled from)
+  const k = H / Math.max(t.H, 1e-3);
+  for (const sg of t.segs) { sg.a = sg.a.map((x) => x * k); sg.b = sg.b.map((x) => x * k); }
+  for (const L of t.leaves) L.p = L.p.map((x) => x * k);
+  const { bark, leaves } = grownMesh(t, ts, 1, true);
+  return finalize([{ geo: bark, part: 0 }, { geo: leaves, part: 1, aoBase: 0.5 }]);
+}
+
 function treeGeometry(sp, rng) {
+  if (GROWN[sp.tree]) return grownTreeGeometry(sp);
   const H = sp.treeHeight;
   const parts = [];
   const trunk = (h, r0, r1) => { const g = new THREE.CylinderGeometry(r1, r0, h, 7, 2, true); g.translate(0, h / 2, 0); return g; };

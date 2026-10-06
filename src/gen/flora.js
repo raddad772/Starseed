@@ -51,6 +51,10 @@ export function floraSpecies(terrain) {
     if (st < 2) sp.densityShrub = 0;
     if (st < 1) sp.plantScarce = true;
     if (st >= 3 && terrain.maxTree > 0) sp.treeHeight = Math.min(sp.treeHeight * (st >= 4 ? 1.6 : 1), terrain.maxTree * 0.6);
+    // (its trees' form from its plants' history, its own stream: seed trees (a conifer's build) with tree
+    // ferns among them, then flowering trees (a broadleaf's spreading crown); now and then an alien form
+    // the world's own lineages took)
+    if (st >= 3) { const fr = new Rng(terrain.seed).fork('treeForm'); sp.tree = st >= 4 ? fr.pick(['broadleaf', 'broadleaf', 'conifer', 'broadleaf', 'bulb']) : fr.pick(['conifer', 'conifer', 'fern', 'spire']); }
     if (st === 2) sp.shrubHeight = Math.min(sp.shrubHeight * 1.4, Math.max(1, terrain.maxTree));
     sp.stage = st;
   }

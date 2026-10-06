@@ -746,6 +746,8 @@ function terrainParams(rng, b, star, minerals, tidalHeating, proto) {
     // (how mature its land plants are, from its history: flora.js's stages and tree heights)
     floraStage: b.history && b.life ? b.history.floraStage : -1,
     maxTree: b.history && b.life ? b.history.maxTreeM : 0,
+    // (the oxygen's share of its air: whether its plants burn, gen/life/fire.js)
+    fireO2: b.history && b.history.air ? (b.history.air.O2 || 0) / Math.max(b.history.P || 0, 1e-6) : 0,
   };
 }
 

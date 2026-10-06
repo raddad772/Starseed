@@ -137,7 +137,7 @@ export class PlanetTerrain {
     }
     // (grass and ferns underfoot, where land plants grow: grassRender.js)
     if (life && this.body.data.history && this.body.data.history.plantGrade >= 1) {
-      if (!this.grassSet) this.grassSet = new GrassSet(this.body, this.group);
+      if (!this.grassSet) this.grassSet = new GrassSet(this.body, this.group, this.pool);
       this.grassSet.update(camFixed);
     }
     return this.visibleList;
@@ -218,6 +218,7 @@ export class PlanetTerrain {
   // scattered again on the new ground)
   // (only chunks fine enough to show it: vertices no further apart than maxSpacing m)
   invalidate(face, u0, v0, u1, v1, maxSpacing = Infinity) {
+    if (this.grassSet) this.grassSet.invalidate();
     const walk = (node) => {
       const s = 2 / (1 << node.level), nu = -1 + node.ix * s, nv = -1 + node.iy * s;
       if (node.face !== face || nu > u1 || nu + s < u0 || nv > v1 || nv + s < v0) return;

@@ -125,15 +125,17 @@ export class Creature {
     this.phase = (seed % 1000) / 1000;   // (its stride's start)
     this.headDown = 0; this.bob = 0;
   }
-  // speed: m/s along its -z; grazing 0..1: its head down to the ground
-  update(dt, speed, grazing) {
+  // speed: m/s along its -z; grazing 0..1: its head down to the ground; rest 0..1: lying down (its body
+  // let down toward the ground, its legs folding under it, its head down)
+  update(dt, speed, grazing, rest = 0) {
+    this.rest = (this.rest || 0) + (rest - (this.rest || 0)) * Math.min(1, dt * 0.8);
     const D = this.sp.d, moving = speed > 0.05;
     // (its steps quicken with its speed, then lengthen: a gallop's stride a couple of legs long)
     const rate = moving ? D.stepHz * Math.min(2.5, Math.sqrt(speed / D.walk)) : 0;
     this.phase = (this.phase + rate * dt) % 1;
     const stride = moving ? Math.min(speed / Math.max(rate, 0.1), 2 * D.legLen) : 0;
-    this.bob = moving ? 0.04 * D.legLen * Math.sin(this.phase * Math.PI * 4) : 0;
-    this.headDown += ((grazing > 0.5 && !moving ? 1 : 0) - this.headDown) * Math.min(1, dt * 2.5);
+    this.bob = (moving ? 0.04 * D.legLen * Math.sin(this.phase * Math.PI * 4) : 0) - this.rest * 0.55 * D.hipH;
+    this.headDown += ((grazing > 0.5 && !moving ? 1 : 0.7 * this.rest) - this.headDown) * Math.min(1, dt * 2.5);
     D.limbs.forEach((L, i) => {
       const ph = (this.phase + 0.5 * L.group) % 1, swing = ph > D.duty;
       // (its foot's rest, out from its hip by its splay; through stance it slides back under the

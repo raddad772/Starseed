@@ -27,6 +27,7 @@ import { Rng, hashInts } from '../core/rng.js';
 import { S_LEN, S_H, S_WDEPTH, S_MOUNT, S_ROUGH, S_SAND, S_ICE, S_TEMP } from './terrain.js';
 import { ROCKS } from './worldsim/lithology.js';
 import { MAT_W0, MAT_N } from './matclasses.js';
+import { fireAtDir, fireMark } from './life/fire.js';
 
 export const VCHUNK = 32;          // cells per chunk side (1 m cells)
 const MINW = 2;                    // the heightfield's band limit for the base surface (m)
@@ -395,6 +396,8 @@ export function buildVolumeChunk(field, ci, cj, ck, level = 0) {
       const b = field.bedShade(r, colm.dip), k = 1 + (0.86 + 0.28 * b - 1) * Math.min(1, mm[2] * 1.5);
       cc[0] *= k * (1 + 0.05 * (b - 0.5)); cc[1] *= k; cc[2] *= k * (1 - 0.05 * (b - 0.5));
     }
+    // (the recent fires' marks on the ground, as the heightfield's chunks have them: not on bare rock faces)
+    if (mm[2] < 0.5 && r > 0) fireMark(gen, fireAtDir(gen, ux, uy, uz), cc);
     col[v * 4] = encodeColor(cc[0]); col[v * 4 + 1] = encodeColor(cc[1]); col[v * 4 + 2] = encodeColor(cc[2]); col[v * 4 + 3] = 0;
     mat[v * 4] = Math.round(mm[0] * 255); mat[v * 4 + 1] = Math.round(mm[1] * 255); mat[v * 4 + 2] = Math.round(mm[2] * 255); mat[v * 4 + 3] = Math.round(mm[3] * 255);
     ext[v * 4] = Math.round(Math.min(1, mm[5]) * 255); ext[v * 4 + 1] = Math.round(Math.min(1, mm[6]) * 255);

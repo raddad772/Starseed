@@ -321,3 +321,55 @@ export function flyerAt(b, f, i, t, out) {
   }
   return out;
 }
+
+// the round of a day (LIFE.md 4: no animal standing about the same at all hours): grazers out by day,
+// most of all in the morning and the evening, resting through the night; hunters about at dusk, through
+// the night and at dawn, lying up in the heat of the day; flyers by day. Activity by the local solar hour
+// (0..24), 0..1
+const ACTIVE = {
+  grazer: (hr) => { const day = smooth01(hr, 5, 7) * (1 - smooth01(hr, 19, 21)); return 0.04 + 0.96 * day * (0.8 + 0.25 * (bump(hr, 7.5, 1.5) + bump(hr, 18, 1.5))); },
+  hunter: (hr) => { const night = 1 - smooth01(hr, 7, 9) * (1 - smooth01(hr, 17, 19)); return 0.15 + 0.85 * Math.max(night, 0.6 * (bump(hr, 6, 1.2) + bump(hr, 19, 1.2))); },
+  flyer: (hr) => smooth01(hr, 5.5, 7) * (1 - smooth01(hr, 18.5, 20)),
+};
+const smooth01 = (x, a, b) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+const bump = (x, c, w) => { const z = (x - c) / w; return Math.exp(-z * z); };
+// (each one's day added up, quarter hours: the active time's own clock, per 24 h of hours)
+const CUM = {};
+for (const [k, f] of Object.entries(ACTIVE)) { const c = new Float64Array(97); for (let i = 0; i < 96; i++) c[i + 1] = c[i] + f((i + 0.5) / 4) / 4; CUM[k] = c; }
+const kindOf = (h) => (h.flyer ? 'flyer' : h.level >= 2 ? 'hunter' : 'grazer');
+
+// a world's day now, from its spin and the sun (as the HUD's local time; world state: the same at the
+// same world time for everyone): { t, lonS, sign, P (its solar day, s; 0 locked) }. Set every frame
+export function dayClock(b, t) {
+  const rot = b.data.rotation || {}, w = b.omega ? b.omega.length() : 0;
+  if (rot.locked || !(w > 0)) return { t, P: 0 };
+  const sunF = b.pos.clone().negate().normalize().applyQuaternion(b.qInv), sign = Math.sign(rot.rate || 1);
+  // (its solar day, not its spin's: the sun comes round a little late each day as it goes along its orbit
+  // (a moon its planet's): with the spin's, the hour pinned here drifts a day a year, and the herds' own
+  // clocks jumped a day's walk as it came round)
+  const host = b.data.kind === 'moon' && b.parent ? b.parent : b, n = host.data.orbit ? host.data.orbit.n || 0 : 0;
+  const ws = Math.max(w * 0.05, w - sign * n);
+  return { t, lonS: Math.atan2(sunF.z, sunF.x), sign, P: 2 * Math.PI / ws };
+}
+// the local solar hour at a herd's home at time t, unwrapped (hours since a world-fixed start)
+function hourAt(clock, h, t) {
+  const lonP = Math.atan2(h.home[2], h.home[0]);
+  let hr0 = ((clock.lonS - lonP) / (2 * Math.PI)) * 24 * clock.sign + 12 - clock.t * 24 / clock.P;
+  hr0 = ((hr0 % 24) + 24) % 24;
+  return hr0 + t * 24 / clock.P;
+}
+// how active a herd's kind is at time t (0..1), and its active time: the seconds of its own clock, which
+// runs at its activity (its path's: a herd stays put through its rest, and walks on where it was)
+export function activityAt(clock, h, t) {
+  if (!clock || !clock.P) return 1;
+  const u = hourAt(clock, h, t);
+  return ACTIVE[kindOf(h)](u - 24 * Math.floor(u / 24));
+}
+// (its mean pace times the time, and a day's swing about it: no count of days, so nothing jumps where the
+// local hour's reckoning wraps; its rate the activity of the hour, exactly)
+export function activeTime(clock, h, t) {
+  if (!clock || !clock.P) return t;
+  const u = hourAt(clock, h, t), hr = u - 24 * Math.floor(u / 24), C = CUM[kindOf(h)], mean = C[96] / 24;
+  const q = hr * 4, i = Math.min(95, Math.floor(q)), part = C[i] + (C[i + 1] - C[i]) * (q - i);
+  return mean * t + (clock.P / 24) * (part - hr * mean);
+}

@@ -10,6 +10,7 @@
 import { dirFromFaceUV, faceUVFromDir, chunkUVBounds, chunkArcSize } from './cubesphere.js';
 import { S_LEN, S_H, S_WLVL, S_FLX, S_FLV, S_RIVR, S_RFADE, S_WDEPTH, S_TEMP, surfaceOf } from './terrain.js';
 import { MAT_W0, MAT_N } from './matclasses.js';
+import { fireAtDir, fireMark } from './life/fire.js';
 
 export const CHUNK_N = 32; // quads per side (even)
 // rivers drawn as a surface of their own (terrain.js riverRibbons; terrainMaterial.js's RIBBON) in
@@ -125,6 +126,8 @@ export function buildChunk(gen, face, level, ix, iy, N = CHUNK_N) {
   // the rivers' and creeks' (riverRibbons) save a river come down to the sea, nor a lake frozen the year
   // round or a frozen ocean's shell (ice, the ground's); a sea's pack ice the shader's floes)
   const LV = spacing < RIBBON_SPACING && !!gen.snap && !!gen.p.liquid && gen.p.liquid !== 'lava', P = gen.p.palette;
+  // (fires' marks on the finer chunks of a world whose plants burn)
+  const FIRE = spacing <= 40;
   const levelWater = (s, k, coarse) => {
     if (!coarse) lvL[k] = -1e9;
     if (!LV) return 0;
@@ -291,6 +294,11 @@ export function buildChunk(gen, face, level, ix, iy, N = CHUNK_N) {
       gen._bed = seaBed[fk] === 1;
       gen.shade(s, 1 - up, col, mat, nv);
       gen._bed = false;
+      // (the recent centuries' fires on the ground near: this year's burn charred, last year's darkened,
+      // then a flush of green for a few years; gen/life/fire.js, its tiles kept on the generator)
+      if (FIRE && !(mat[4] > 0) && s[S_H] > 0) {
+        fireMark(gen, fireAtDir(gen, px / pl, py / pl, pz / pl), col);
+      }
       nrm[vi * 4] = Math.round(nx * 127); nrm[vi * 4 + 1] = Math.round(ny * 127); nrm[vi * 4 + 2] = Math.round(nz * 127);
       if (mat[4] > 0 && mat[0] > 0.55 && mat[0] < 0.85) { steepA[vi] = 1 - up; wdA[vi] = mat[4]; }
       const sd = shoreDepth(mat[4], s[0], mat[0], s[S_WLVL]);

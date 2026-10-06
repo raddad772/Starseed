@@ -146,7 +146,7 @@ export function namePlaces(P, key) {
     p.name = forms[rng.int(0, forms.length - 1)].replace('#', pick(rng));
     p.name = p.name[0].toUpperCase() + p.name.slice(1);
   };
-  for (const p of P.places) one(p, p.kind);
+  for (const p of P.places) if (!p.named) one(p, p.kind);
   for (const g of P.groups) one(g, 'archipelago');
   return P;
 }

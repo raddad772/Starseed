@@ -93,7 +93,7 @@ self.onmessage = async (e) => {
         // (as you walk it: the game's radius, and its heights as the terrain draws them: TerrainGenerator.hScale)
         let rel = 0; for (const v of snap.h) rel = Math.max(rel, Math.abs(v));
         const R = b.terrain.R || b.R, hScale = Math.min(b.terrain.heightScale ?? HEIGHT_SCALE, RELIEF_MAX * R / Math.max(1, rel));
-        snap.places = namePlaces(findPlaces(W, F, { R, hScale, rockNames: ROCKS.map((r) => r.name), volcanoes: W.volcanoes, life: { animals: !!(bio && bio.land), flyers: !!(bio && bio.land && bio.flight && bio.flight.small != null) } }), `${m.seed}|${m.body}`);
+        snap.places = namePlaces(findPlaces(W, F, { R, hScale, radiusM: b.radiusM, sea: !dry && b.terrain.ocean > 0, rockNames: ROCKS.map((r) => r.name), volcanoes: W.volcanoes, life: { animals: !!(bio && bio.land), flyers: !!(bio && bio.land && bio.flight && bio.flight.small != null) } }), `${m.seed}|${m.body}`);
       } catch (err) { self.postMessage({ type: 'log', job: m.job, body: m.body, msg: 'places failed: ' + err }); }
     } catch (err) { self.postMessage({ type: 'log', job: m.job, body: m.body, msg: 'landmarks failed: ' + err }); }
     snap.ms = Math.round(performance.now() - t0);

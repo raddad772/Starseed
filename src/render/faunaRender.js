@@ -5,7 +5,7 @@
 // the bigger it is: Stankowich 2008; from a hunter that's come for it) and a hunter's dash at a herd it's
 // come near; both drift back to the herd's own path when it's over (world state when worlds are shared).
 import * as THREE from 'three';
-import { faunaOf, herdsNear, herdAt, memberAt, flyerAt } from '../sim/fauna.js';
+import { faunaOf, herdsNear, herdAt, memberAt, flyerAt, dayClock, activeTime, activityAt } from '../sim/fauna.js';
 import { Species, Creature, FlyerSpecies, Flyer } from './creatureRender.js';
 
 const REACH = 1400, HIGH = 3000, CHASE_R = 90, CHASE_T = 12, COOL = 90;
@@ -40,6 +40,8 @@ export class FaunaSet {
       this.at = (this.at || new THREE.Vector3()).copy(camF); this.atT = t;
       herdsNear(F, b, camF, REACH, this.herds);
     }
+    // (the world's day now: each herd on its own active time, resting through its quiet hours)
+    const clock = F.clock = dayClock(b, t);
     if (!this.originSet || this.origin.distanceTo(camF) > 600) { this.origin.set(Math.round(camF.x / 256) * 256, Math.round(camF.y / 256) * 256, Math.round(camF.z / 256) * 256); this.originSet = true; }
     const R = b.R, camAlt = camF.length() - R - b.groundHeight(_u.copy(camF).normalize());
     // the herds' own movement and flight
@@ -50,7 +52,8 @@ export class FaunaSet {
       let st = this.herdState.get(h.id);
       if (!st) { st = { fx: 0, fz: 0, flee: false, chase: null, chaseT: 0, cool: 0, seen: 0, cx: 0, cz: 0, turn: 0, wT: 0 }; this.herdState.set(h.id, st); }
       st.seen = this.frame;
-      herdAt(b, h, t, herdO);
+      st.tau = activeTime(clock, h, t); st.act = activityAt(clock, h, t);
+      herdAt(b, h, st.tau, herdO);
       st.ox = herdO.x; st.oz = herdO.z; st.cx = herdO.x + st.fx; st.cz = herdO.z + st.fz;
       // (the camera in its frame: metres east and north of its home)
       _a.copy(camF).addScaledVector(_u.fromArray(h.home), -R);
@@ -113,7 +116,7 @@ export class FaunaSet {
     for (const h of live) {
       const st = this.herdState.get(h.id), sp = h.sp, D = sp.design, vis = visDist(sp);
       for (let i = 0; i < h.n; i++) {
-        memberAt(b, h, i, t, memO);
+        memberAt(b, h, i, st.tau, memO);
         const x = memO.x + st.fx, z = memO.z + st.fz;
         if (Math.hypot(x - st.kx, z - st.kz) > vis) continue;
         const key = h.id + '#' + i;
@@ -133,7 +136,7 @@ export class FaunaSet {
             m.hx = Math.sin(a); m.hz = Math.cos(a);
           }
         }
-        m.cr.update(dt, m.v, st.flee || st.chase ? 0 : memO.graze);
+        m.cr.update(dt, m.v, st.flee || st.chase ? 0 : memO.graze, st.flee || st.chase ? 0 : Math.max(0, 1 - 2 * st.act));
         m.h = h;
         let list = draw.get(sp.key);
         if (!list) draw.set(sp.key, (list = []));
@@ -143,6 +146,8 @@ export class FaunaSet {
     // the flocks: each flyer where its flock's path has it, over the ground under the flock, headed along
     // its flight, banked into its turn
     for (const f of flocks) {
+      // (roosting or down from the thermals through the night: not about)
+      if (activityAt(clock, f, t) < 0.25) continue;
       const sp = f.sp, D = sp.design, vis = Math.min(1500, Math.max(150, D.span * 900));
       flyerAt(b, f, 0, t, fo[0]);
       this.onSphere(f, fo[0].x, fo[0].z, 0, _p);
@@ -226,7 +231,14 @@ export class FaunaSet {
     const b = this.body, h = m.h, D = h.sp.design, R = b.R;
     _p.fromArray(h.home).multiplyScalar(R).addScaledVector(_u.fromArray(h.E), m.x).addScaledVector(_g.fromArray(h.N), m.z);
     _u.copy(_p).normalize();
-    const gh = b.groundHeight(_u);
+    // (the ground as it's drawn: the near field's floor where it's built, the heightfield's beyond; asked
+    // again as it moves a step, the volume's search not cheap)
+    if (!m.gp || m.gp.distanceToSquared(_p) > 0.09 || m.gnf !== (b.near && b.near.field)) {
+      const g0 = b.groundHeight(_u);
+      m.gh = b.near && b.near.field ? b.floorAt(_g.copy(_u).multiplyScalar(R + g0 + 0.3)) : g0;
+      m.gp = (m.gp || new THREE.Vector3()).copy(_p); m.gnf = b.near && b.near.field;
+    }
+    const gh = m.gh;
     _g.copy(_u).multiplyScalar(R + gh);
     // (its heading on the ground)
     _f.fromArray(h.E).multiplyScalar(m.hx).addScaledVector(_a.fromArray(h.N), m.hz);

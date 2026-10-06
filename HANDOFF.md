@@ -2,6 +2,27 @@
 
 Dave is play-testing and giving feedback in short bursts.
 
+## NOW: fire through the recent centuries (session 39d69fa8, 2026-10-06), SIM 68
+
+- gen/life/fire.js (LIFE.md has the model): 8 km fire tiles, 300 years on 32 m cells, run in the
+  terrain workers on demand (job 'fire', priority 1: ahead of the chunks' stream, or it starved behind
+  ~900 of them), sim/fireField.js keeps them; the grass reads them (no grass on this year's burn, a green
+  flush, grass where a crown fire opened a forest). Seams between tiles wander; checked in node (a two-
+  tile mosaic: no line). tools/tests/fire.test.mjs on a made-up uniform world.
+- Grass and animals stand on the ground as it's drawn: body.floorAt (the near field's volume within
+  160 m) not groundHeight, which sat 5-25 m under the drawn surface on refined volcanic country; and the
+  body's height cache is cleared when finer terrain tiles land (terrainTiles.flush), which it never was
+  (groundHeight kept the coarse heights it had first read: the walker's beyond the near field too).
+- Places on worlds without a sea: their named features (craters, volcanoes, ranges, dune seas, ice,
+  canyons, dry valleys and basins), game-scale sizes; SIM 68 so cached dry worlds get them.
+- The ground shows the fires (fine chunks: this year's burn charred, a green flush after; the workers'
+  own fire tiles from the terrain params' fireO2 and seed, the same as the main thread's). The catalogue
+  says how often a place burns, and "burns often" / "fire" can be searched.
+- A day's round for the animals (sim/fauna.js dayClock/activeTime: each herd's path on its own active
+  time by the local solar hour, wrap-free; grazers by day, hunters at night; resting ones lie down;
+  flocks roost at night). Flowers on the grass where flowering plants have evolved, coloured across the
+  land animals' visual window.
+
 ## NOW: places to go, grass, and the clouds' light on things (session 39d69fa8, 2026-10-06), SIM 67
 
 - The catalogue's places (worldsim/places.js, LIFE.md): each world's landmasses sized at game scale

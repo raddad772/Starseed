@@ -127,6 +127,9 @@ export class TerrainTiles {
       if (terr && terr.invalidate) terr.invalidate(p.face, p.u0, p.v0, p.u1, p.v1, p.spacing);
       const b = g.universe.bodies[p.id];
       if (p.near && b && b.near && b.near.field) b.near.field = null;
+      // (and the heights the walker, the animals and the grass read: the finer ground now, not the
+      // coarser one they'd kept)
+      if (b && b._hcache) b._hcache.clear();
     }
     this.inval.length = 0;
   }

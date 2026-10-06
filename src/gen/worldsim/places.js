@@ -20,11 +20,14 @@ const MAX_PLACES = 160;
 export function findPlaces(W, F, opts = {}) {
   const G = W.G, h = W.h, n = G.n, landId = F._landId, lands = F._lands;
   if (!landId || !lands) return null;
-  // (a world without a sea has no landmasses to tell apart: its places will be its regions, later)
-  if (!F._ocean || !F._ocean.some((v) => v)) return null;
   const C = W.climate, Gc = W.Gc, L = W.life, Co = W.coasts, ice = W.glaciers ? W.glaciers.ice : null, E = W.E;
   const lenK = opts.R ? opts.R / G.R : 1, hK = opts.hScale ?? 1;
   const names = opts.rockNames || [], km2 = (a) => a * lenK * lenK / 1e6, planetKm2 = km2(4 * dm.PI * G.R * G.R);
+  // (a world without a sea has no landmasses to tell apart: its places its named features, craters,
+  // volcanoes, ranges, dune seas, ice, canyons, its dry valleys and basins)
+  // (a sea it had once and lost, Mars's lowlands, holds no islands: opts.sea, whether it has one now)
+  if (opts.sea === false || !F._ocean || !F._ocean.some((v) => v)) return featurePlaces(F, opts, planetKm2);
+
   const lake = E && E.water ? (c) => !E.base[c] && E.water[c] - h[c] > 1 : () => false;
   // (each landmass's index in the list: the big ones, and every island over an islet's size up to the cap)
   const keep = lands.filter((Ld, i) => i < MAX_PLACES && Ld.cells >= 2);
@@ -137,10 +140,39 @@ export function findPlaces(W, F, opts = {}) {
   return { places, groups: groupsOut.slice(0, 40), planetKm2: Math.round(planetKm2) };
 }
 
+// a dry world's places: its named features, each sized as you'd walk it (features.js gives them at the
+// real world's scale: opts.radiusM against the game's R), where it is, its tags
+const FEATURE_KINDS = {
+  craters: ['crater', ['crater', 'basin', 'impact']], volcanoes: ['volcano', ['volcano', 'mountains']], tuyas: ['volcano', ['volcano', 'table mountain', 'ice']],
+  ranges: ['range', ['mountains', 'range']], peaks: ['peak', ['mountains', 'peak']], duneSeas: ['dune sea', ['dunes', 'desert', 'sand']],
+  plateaus: ['plateau', ['plateau', 'highland']], iceFields: ['ice cap', ['ice cap', 'glaciers', 'ice']], gorges: ['canyon', ['canyon', 'gorge']],
+  lakes: ['basin', ['basin', 'dry lake']], saltFlats: ['salt flat', ['salt flat', 'basin']], rivers: ['valley', ['valley', 'dry river', 'channels']],
+  mesaCountry: ['mesas', ['mesas', 'canyon', 'desert']],
+};
+function featurePlaces(F, opts, planetKm2) {
+  const k = opts.R && opts.radiusM ? opts.R / opts.radiusM : 1, places = [];
+  const dir = (lat, lon) => { const a = lat * dm.PI / 180, o = lon * dm.PI / 180; return [+(dm.cos(a) * dm.cos(o)).toFixed(6), +dm.sin(a).toFixed(6), +(dm.cos(a) * dm.sin(o)).toFixed(6)]; };
+  let id = 0;
+  for (const [key, [kind, base]] of Object.entries(FEATURE_KINDS)) {
+    for (const f of F[key] || []) {
+      if (f.lat == null || !f.name) continue;
+      const al = Math.abs(f.lat), band = BANDS.find((B) => al < B[0])[1];
+      const areaKm2 = f.areaKm2 != null ? f.areaKm2 * k * k : f.diameterKm != null ? Math.PI * (f.diameterKm * k / 2) ** 2 : null;
+      const sizeKm = f.diameterKm != null ? f.diameterKm * k : f.lengthKm != null ? f.lengthKm * k : f.widthKm != null ? f.widthKm * k : null;
+      const tags = [...base, band];
+      if (f.kind === 'hot' || f.kind === 'cold') tags.push(f.kind);
+      const heightM = f.height ?? f.heightM ?? f.peak ?? null;
+      places.push({ id: id++, kind, name: f.name[0].toUpperCase() + f.name.slice(1), areaKm2: areaKm2 != null ? +areaKm2.toFixed(areaKm2 < 10 ? 2 : 0) : 0, sizeKm: sizeKm != null ? +sizeKm.toFixed(1) : null,
+        lat: +f.lat.toFixed(2), lon: +f.lon.toFixed(2), peakM: heightM != null && opts.hScale ? Math.round(heightM * opts.hScale) : 0, tags, at: dir(f.lat, f.lon), named: true });
+    }
+  }
+  return { places, groups: [], planetKm2: Math.round(planetKm2), features: true };
+}
+
 // search a world's places by words ("tropical island beach animals"): each word a tag or the start of
 // one (a plural's singular too, "tropics" the tropical's); the places with the most of them, then the
 // biggest. Returns [{ place, hit }] best first
-const ALIAS = { tropics: 'tropical', jungles: 'jungle', beaches: 'beach', sand: 'sandy beach', sandy: 'sandy beach', reefs: 'reef', coral: 'white sand', mountain: 'mountains', volcanoes: 'volcano', volcanic: 'volcano', lake: 'lakes', river: 'rivers', glacier: 'glaciers', ice: 'glaciers', snow: 'glaciers', animal: 'animals', wildlife: 'animals', bird: 'birds', flyers: 'birds', alive: 'life', living: 'life', forests: 'forest', woods: 'forest', grass: 'grassland', grasslands: 'grassland', plains: 'grassland', cliffs: 'sea cliffs', cliff: 'sea cliffs', continents: 'continent', isle: 'island', islet: 'islet', archipelagos: 'archipelago', deserts: 'desert', dune: 'dunes', hill: 'hills', cold: 'cold', arctic: 'polar' };
+const ALIAS = { craters: 'crater', basins: 'basin', canyons: 'canyon', valleys: 'valley', mesa: 'mesas', tropics: 'tropical', jungles: 'jungle', beaches: 'beach', sand: 'sandy beach', sandy: 'sandy beach', reefs: 'reef', coral: 'white sand', mountain: 'mountains', volcanoes: 'volcano', volcanic: 'volcano', lake: 'lakes', river: 'rivers', glacier: 'glaciers', ice: 'glaciers', snow: 'glaciers', animal: 'animals', wildlife: 'animals', bird: 'birds', flyers: 'birds', alive: 'life', living: 'life', forests: 'forest', woods: 'forest', grass: 'grassland', grasslands: 'grassland', plains: 'grassland', cliffs: 'sea cliffs', cliff: 'sea cliffs', continents: 'continent', isle: 'island', islet: 'islet', archipelagos: 'archipelago', deserts: 'desert', dune: 'dunes', hill: 'hills', cold: 'cold', arctic: 'polar' };
 export function searchPlaces(list, query) {
   const words = String(query || '').toLowerCase().split(/[\s,]+/).filter((w) => w && !['a', 'an', 'the', 'in', 'on', 'with', 'and', 'of', 'some', 'somewhere', 'nice', 'place', 'places'].includes(w)).map((w) => ALIAS[w] || w);
   if (!words.length) return [];

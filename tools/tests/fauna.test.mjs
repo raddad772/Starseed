@@ -89,3 +89,21 @@ test("realms' lines: sister realms close, long-parted ones far, a fresh split th
   assert.ok(d(0, 2) < d(0, 1) && d(0, 1) < d(0, 3) + 1.5, `${d(0, 2)} ${d(0, 1)} ${d(0, 3)}`);
   assert.ok(islandMass(400, 0.001) < 400 && islandMass(1, 0.001) > 1 && islandMass(400, 0.5) === 400);
 });
+
+import { activeTime, activityAt } from '../../src/sim/fauna.js';
+
+test("a day's round: a herd's own clock never runs back or jumps, grazers rest through the night and hunters don't", () => {
+  const clock = { t: 0, lonS: 0, sign: 1, P: 86400 }, g = herd(5), hunter = { ...herd(6), level: 2 };
+  let prev = activeTime(clock, g, 0), nightRun = 0, dayRun = 0;
+  for (let t = 600; t <= 3 * 86400; t += 600) {
+    const a = activeTime(clock, g, t), step = a - prev;
+    assert.ok(step >= 0 && step <= 600 * 1.3 + 1e-6, `step ${step}`);
+    const hr = ((12 - (Math.atan2(g.home[2], g.home[0]) / (2 * Math.PI)) * 24 + t / 3600) % 24 + 24) % 24;
+    if (hr > 0 && hr < 4) nightRun += step; else if (hr > 10 && hr < 14) dayRun += step;
+    prev = a;
+  }
+  assert.ok(nightRun < 0.1 * dayRun, `night ${nightRun} day ${dayRun}`);
+  // (at the herd's local midnight: the grazer down, the hunter out)
+  const lon = Math.atan2(g.home[2], g.home[0]), tMid = ((lon / (2 * Math.PI)) * 24 + 12) * 3600;
+  assert.ok(activityAt(clock, g, tMid) < 0.1 && activityAt(clock, hunter, tMid) > 0.8);
+});
