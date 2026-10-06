@@ -217,7 +217,7 @@ export function scatterFlora(gen, face, level, ix, iy, maxLevel, species) {
         const closed = Math.min(0.95, 60 / (0.8 * Math.PI * crown * crown));
         pTree = (st.k * closed + (1 - st.k) * 0.02 * f) * (0.85 + 0.15 * species.densityTree) * (Tc > -2 && Tc < 42 ? 1 : 0.2) * (1 - meadow) * Math.min(1, veg * 2.5);
         treeScale = st.size;
-        ok *= 1 - 0.8 * st.k;   // (the forest floor's shrubs and plants thin under its canopy)
+        ok *= 1 - 0.3 * st.k;   // (the forest floor's shrubs and plants: an understorey under its canopy, a little thinner)
       } else pTree = veg * veg * species.densityTree * (Tc > -2 && Tc < 42 ? 1 : 0.2) * 0.5 * (1 - meadow) * fk;
       const pShrub = veg * species.densityShrub * 0.45 * (1 - 0.75 * meadow) * ok;
       const pPlant = veg * 0.9 * (1 + 0.4 * meadow) * (species.plantScarce ? 0.08 : 1) * ok; // (crusts only, where no plants reached land)

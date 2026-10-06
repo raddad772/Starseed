@@ -21,8 +21,10 @@ import { SHADOW_LAYER, SHADOW_LIGHT_UNIFORMS, receiveShadows } from './sunShadow
 import { standAt } from '../gen/life/stands.js';
 import { floraSpecies, meadowAt } from '../gen/flora.js';
 
-const TILE = 8, PPT = 4, NEAR_R = 16, MID_R = 44, HIGH = 60, MOVE = 1.2;
-const LOD = { near: { blades: 1400, seg: 2, width: 0.007 }, mid: { blades: 600, seg: 1, width: 0.014 } };
+const TILE = 8, PPT = 4, NEAR_R = 16, MID_R = 44, FAR_R = 160, FAR_TILE = 32, HIGH = 120, MOVE = 1.2;
+// (near and middle: 8 m tiles of 2 m patches; far: 32 m tiles of 8 m patches, their blades broader and fewer
+// to the metre, fading in as the middle's fade out: the field's texture and its line to ~160 m)
+const LOD = { near: { blades: 1400, seg: 2, width: 0.007 }, mid: { blades: 600, seg: 1, width: 0.014 }, far: { blades: 650, seg: 1, width: 0.0055 } };
 const _c = new THREE.Color(), _y = new THREE.Vector3();
 
 // a patch's blades over [-1, 1]^2 m (the patch's own frame, y up), each seg segments under a single tip:
@@ -74,11 +76,14 @@ uniform float uGrassWind;
 uniform vec3 uWindL;
 uniform float uBladeW;
 uniform float uFadeR;
+uniform float uFadeIn;
+uniform float uPatchK;
 varying float vGT;
 varying float vGK;
 vec3 grassBlade(mat4 im) {
-  vec4 pc = modelMatrix * im * vec4(0.0, 0.0, 0.0, 1.0);
-  float dens = iGrass.x * (1.0 - smoothstep(uFadeR * 0.7, uFadeR, length(pc.xyz)));
+  vec4 pc = modelMatrix * im * vec4(aBlade.x, 0.0, aBlade.y, 1.0);
+  float dc = length(pc.xyz);
+  float dens = iGrass.x * (1.0 - smoothstep(uFadeR * 0.7, uFadeR, dc)) * smoothstep(uFadeIn - 8.0, uFadeIn + 2.0, dc);
   vGT = aV.x; vGK = fract(aBlade.z * 13.71);
   if (aBlade.z >= dens) return vec3(0.0);
   float t = aV.x, side = aV.y;
@@ -99,7 +104,7 @@ vec3 grassBlade(mat4 im) {
   float u = aBlade.x * 0.5 + 0.5, v = aBlade.y * 0.5 + 0.5;
   float hg = mix(mix(iCorner.x, iCorner.y, u), mix(iCorner.z, iCorner.w, u), v);
   float w = uBladeW * (0.6 + 0.8 * k2) * (1.0 + 0.6 * iGrass.y) * pow(1.0 - t, 0.7);
-  vec2 xz = vec2(aBlade.x, aBlade.y) + B * hb * t * t + p * w * side;
+  vec2 xz = vec2(aBlade.x, aBlade.y) + (B * hb * t * t + p * w * side) * uPatchK;
   return vec3(xz.x, hg + hb * t * (1.0 - 0.3 * dot(B, B) * t), xz.y);
 }
 `;
@@ -165,7 +170,10 @@ export class GrassSet {
     this.shadowMats = {};
     for (const [k, L] of Object.entries(LOD)) {
       this.geo[k] = bladeGeometry(this.fern ? Math.round(L.blades * 0.35) : L.blades, L.seg, 0x9e3779b9 ^ (k === 'near' ? 1 : 2));
-      const U = { uWindT: this.time, uGrassWind: this.windAmp, uWindL: this.windL, uBladeW: { value: L.width * (this.fern ? 5 : 1) }, uFadeR: { value: k === 'near' ? 1e6 : MID_R } };
+      const U = {
+        uWindT: this.time, uGrassWind: this.windAmp, uWindL: this.windL, uBladeW: { value: L.width * (this.fern ? 5 : 1) * (k === 'far' ? 4 : 1) },
+        uFadeR: { value: k === 'near' ? 1e6 : k === 'mid' ? MID_R : FAR_R }, uFadeIn: { value: k === 'far' ? MID_R - 4 : -1e6 }, uPatchK: { value: k === 'far' ? 0.25 : 1 },
+      };
       const m = new THREE.MeshStandardMaterial({ roughness: 0.85, metalness: 0, side: THREE.DoubleSide });
       m.onBeforeCompile = (sh) => {
         Object.assign(sh.uniforms, U);
@@ -197,7 +205,7 @@ export class GrassSet {
       this.fmat.onBeforeCompile = (sh) => { sh.fragmentShader = sh.fragmentShader.replace('#include <normal_fragment_begin>', '#include <normal_fragment_begin>\n  normal = normalize( vNormal );'); };
       receiveShadows(this.fmat);
     }
-    this.tiles = new Map(); this.at = null; this.visible = true;
+    this.tiles = new Map(); this.farTiles = new Map(); this.at = null; this.visible = true;
     this._s = new Float64Array(S_LEN); this._uv = { face: 0, u: 0, v: 0 };
   }
 
@@ -211,7 +219,8 @@ export class GrassSet {
   // the ground under its tiles changed (finer terrain came, the near field built anew): made again
   invalidate() {
     for (const T of this.tiles.values()) this.dropTile(T);
-    this.tiles.clear(); this.at = null;
+    for (const T of this.farTiles.values()) this.dropTile(T);
+    this.tiles.clear(); this.farTiles.clear(); this.at = null;
   }
 
   dropTile(T) {
@@ -230,7 +239,7 @@ export class GrassSet {
     const show = (v) => {
       if (v === this.visible) return;
       this.visible = v;
-      for (const T of this.tiles.values()) {
+      for (const T of [...this.tiles.values(), ...this.farTiles.values()]) {
         for (const m of Object.values(T.meshes || {})) if (m) m.visible = v && m.userData.on;
         if (T.flowers) T.flowers.visible = v && T.flowers.userData.on;
       }
@@ -267,45 +276,72 @@ export class GrassSet {
       if (T.flowers) { T.flowers.userData.on = dist < NEAR_R + 8; T.flowers.visible = T.flowers.userData.on && this.visible; }
     }
     for (const [key, T] of this.tiles) if (!live.has(key)) { this.dropTile(T); if (this.tiles.size > 400) this.tiles.delete(key); }
+    // the far tier: 32 m tiles to ~160 m (their 8 m patches' blades fading in past the middle tier's reach)
+    const NF = Math.round(Math.PI * 0.5 * R / FAR_TILE), fi = Math.floor((uv.u + 1) * 0.5 * NF), fj = Math.floor((uv.v + 1) * 0.5 * NF), kf = Math.ceil(FAR_R / FAR_TILE) + 1;
+    const orderF = this._orderF || (this._orderF = (() => { const o = []; for (let a = -kf; a <= kf; a++) for (let c = -kf; c <= kf; c++) o.push([a, c]); return o.sort((p, q) => p[0] * p[0] + p[1] * p[1] - q[0] * q[0] - q[1] * q[1]); })());
+    const liveF = new Set();
+    let builtF = 0;
+    for (const [oi, oj] of orderF) {
+      const i = fi + oi, j = fj + oj;
+      if (i < 0 || j < 0 || i >= NF || j >= NF) continue;
+      const key = uv.face * 1e10 + i * 1e5 + j;
+      let T = this.farTiles.get(key);
+      if (!T) { if (builtF >= 2) { more = true; continue; } T = this.tile(uv.face, i, j, NF, FAR_TILE); this.farTiles.set(key, T); builtF++; }
+      liveF.add(key);
+      if (!T.n) continue;
+      const dist = T.pos.distanceTo(camF) - FAR_TILE * 0.7;
+      const on = dist < FAR_R && T.pos.distanceTo(camF) + FAR_TILE * 0.7 > MID_R - 10;
+      T.meshes = T.meshes || {};
+      if (on && !T.meshes.far) T.meshes.far = this.tileMesh(T, 'far', FAR_TILE);
+      if (T.meshes.far) { T.meshes.far.userData.on = on; T.meshes.far.visible = on && this.visible; }
+    }
+    for (const [key, T] of this.farTiles) if (!liveF.has(key)) { this.dropTile(T); if (this.farTiles.size > 200) this.farTiles.delete(key); }
     if (more) this.at = null;
   }
 
   // a tile's patches as an instanced mesh of a level's blades (its own copy of the instance data; the
   // blades' buffers shared)
-  tileMesh(T, L) {
+  tileMesh(T, L, size = TILE) {
     const G = this.geo[L], g = new THREE.BufferGeometry();
     g.setAttribute('position', G.position); g.setAttribute('normal', G.normal); g.setAttribute('aBlade', G.aBlade); g.setAttribute('aV', G.aV); g.setIndex(G.index);
     g.setAttribute('iCorner', new THREE.InstancedBufferAttribute(T.corner, 4));
     g.setAttribute('iGrass', new THREE.InstancedBufferAttribute(T.grass, 4));
     g.setAttribute('iWave', new THREE.InstancedBufferAttribute(T.wave, 2));
-    g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), TILE * 0.75 + 2);
+    g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), size * 0.75 + 2);
     const m = new THREE.InstancedMesh(g, this.mats[L], T.n);
     m.instanceMatrix.array.set(T.mat);
     m.instanceColor = new THREE.InstancedBufferAttribute(T.col.slice(), 3);
     m.position.copy(T.pos);
     m.frustumCulled = true;
-    m.boundingSphere = new THREE.Sphere(new THREE.Vector3(), TILE * 0.75 + 2);
+    m.boundingSphere = new THREE.Sphere(new THREE.Vector3(), size * 0.75 + 2);
     if (L === 'near') { m.layers.enable(SHADOW_LAYER); m.userData.shadowNearOnly = true; m.userData.shadowMat = this.shadowMats[L]; }
     this.group.add(m);
     return m;
   }
 
   // one tile's patches: how thick its country grows them, their ground, their colour (its own hash)
-  tile(face, i, j, NT) {
+  tile(face, i, j, NT, size = TILE) {
     const b = this.body, gen = b.terrain, R = b.R, s = this._s, snap = gen.snap;
     const du = 2 / NT, u0 = -1 + i * du, v0 = -1 + j * du, dc = [0, 0, 0];
     dirFromFaceUV(face, u0 + du * 0.5, v0 + du * 0.5, dc);
     gen.sample(dc[0], dc[1], dc[2], 4, s);
     const T = { n: 0, pos: new THREE.Vector3(dc[0] * R, dc[1] * R, dc[2] * R) };
     const tC = s[S_TEMP] - 273.15;
-    if (s[S_SAND] > 0.3 || s[S_ICE] > 0 || s[S_WDEPTH] > 0.05 || s[S_RIVR] > 0 || tC < -4 || (gen.p.liquid && s[S_H] < 0.25)) return T;
-    // (nor on sand: the rock showing a sand (quartz, coral, black: lithology.js), or a beach's on low
-    // ground by the sea, as the terrain shades it (terrain.js shadeSnap))
-    if (snap.rockAt) {
-      const hs = s[S_H] / (gen.hScale || 1);
-      if (snap.rockAt(dc[0], dc[1], dc[2], hs) >= 11) return T;
-      if (gen.p.liquid === 'water' && s[S_H] < 14 && snap.rockPyr && snap.rockAt(dc[0], dc[1], dc[2], hs, 0) >= 11) return T;
-    }
+    if (tC < -4) return T;
+    // (where it can't grow, patch by patch (a creek's bed, sand, a steep face: only there bare, not the whole
+    // tile): its water, ice, sand (the rock showing a sand: quartz, coral, black (lithology.js), or a beach's
+    // on low ground by the sea, as the terrain shades it: terrain.js shadeSnap))
+    const s2 = this._s2 || (this._s2 = new Float64Array(S_LEN));
+    const bare = (dd) => {
+      gen.sample(dd[0], dd[1], dd[2], 2, s2);
+      if (s2[S_SAND] > 0.3 || s2[S_ICE] > 0 || s2[S_WDEPTH] > 0.05 || s2[S_RIVR] > 0 || (gen.p.liquid && s2[S_H] < 0.25)) return true;
+      if (snap.rockAt) {
+        const hs = s2[S_H] / (gen.hScale || 1);
+        if (snap.rockAt(dd[0], dd[1], dd[2], hs) >= 11) return true;
+        if (gen.p.liquid === 'water' && s2[S_H] < 14 && snap.rockPyr && snap.rockAt(dd[0], dd[1], dd[2], hs, 0) >= 11) return true;
+      }
+      return false;
+    };
     // (the country's plants: their cover and how open they stand, its rain)
     const c = snap.Gc ? snap.Gc.sample(snap.s.cover, dc) : 0.5, open = snap.s.open ? snap.Gc.sample(snap.s.open, dc) : 0.5, forest = snap.s.forest ? snap.Gc.sample(snap.s.forest, dc) : 0;
     const P = snap.s.P ? snap.Gc.sample(snap.s.P, dc) : 800;
@@ -331,11 +367,7 @@ export class GrassSet {
       const g0 = b.groundHeight(V.set(d[0], d[1], d[2]));
       hg[a * 5 + bb] = b.near && b.near.field ? b.floorAt(V.multiplyScalar(R + g0 + 0.3)) : g0;
     }
-    // (too steep: bare rock)
-    const span = TILE / PPT;
-    let steep = 0;
-    for (let a = 0; a < 4; a++) for (let bb = 0; bb < 4; bb++) steep = Math.max(steep, Math.abs(hg[(a + 1) * 5 + bb] - hg[a * 5 + bb]) / span, Math.abs(hg[a * 5 + bb + 1] - hg[a * 5 + bb]) / span);
-    if (steep > 0.9) return T;
+    const span = size / PPT;
     // (the tile's own centre on its ground: its meshes there, culled and ranked by distance from there)
     T.pos.set(dc[0], dc[1], dc[2]).multiplyScalar(R + hg[12]);
     const wet = Math.min(1, Math.max(0, (P - 300) / 1200)), warm = Math.min(1, Math.max(0, (tC + 4) / 24));
@@ -362,8 +394,11 @@ export class GrassSet {
     for (let a = 0; a < PPT; a++) for (let bb = 0; bb < PPT; bb++) {
       const c00 = hg[a * 5 + bb], c10 = hg[(a + 1) * 5 + bb], c01 = hg[a * 5 + bb + 1], c11 = hg[(a + 1) * 5 + bb + 1], h0 = (c00 + c10 + c01 + c11) / 4;
       dirFromFaceUV(face, u0 + du * (a + 0.5) / PPT, v0 + du * (bb + 0.5) / PPT, d);
+      // (too steep (bare rock), or where it can't grow: this patch only)
+      const steep = Math.max(Math.abs(c10 - c00), Math.abs(c11 - c01), Math.abs(c01 - c00), Math.abs(c11 - c10)) / span;
+      if (steep > 0.9 || bare(d)) { rnd(); rnd(); rnd(); continue; }
       const kS = share > 0 ? standAt(gen, d, s, share, true).k * (1 - meadowAt(gen, d, h0, this.species)) : 0;
-      const dens = thick * (1 - 0.9 * kS) * (this.fern ? 0.6 : 1) * (0.8 + 0.4 * rnd());
+      const dens = thick * (1 - 0.68 * kS) * (this.fern ? 0.6 : 1) * (0.8 + 0.4 * rnd());
       if (dens < 0.01) { rnd(); rnd(); continue; }
       Y.set(d[0], d[1], d[2]);
       X.copy(EU).addScaledVector(Y, -EU.dot(Y)).normalize();
@@ -379,14 +414,15 @@ export class GrassSet {
       const wx = d[0] * R, wz = d[2] * R;
       wave[q * 2] = wx - 2048 * Math.floor(wx / 2048); wave[q * 2 + 1] = wz - 2048 * Math.floor(wz / 2048);
       const tdr = rnd() * 0.5 * (0.3 + dryK);
-      for (let cc = 0; cc < 3; cc++) col[q * 3 + cc] = base[cc] + (dryTip[cc] - base[cc]) * tdr;
+      // (the shade's grass under a stand darker, greener: no sun to dry it)
+      for (let cc = 0; cc < 3; cc++) col[q * 3 + cc] = (base[cc] + (dryTip[cc] - base[cc]) * tdr * (1 - kS)) * (1 - 0.25 * kS);
       q++;
     }
     T.n = q; T.mat = mat.subarray(0, q * 16); T.corner = corner.subarray(0, q * 4); T.grass = grass.subarray(0, q * 4); T.wave = wave.subarray(0, q * 2); T.col = col.subarray(0, q * 3);
     // (its flowers: an open, moist grassland's most, a fresh burn's a flush of them; a few heads in a patch,
     // over the grass)
     const fl = this.flowerCols.length ? Math.min(0.25, 0.06 * Math.min(1, open * 1.5) * (0.5 + wet) * (1 + 2 * green)) : 0;
-    const per = Math.round(fl * 40);
+    const per = size === TILE ? Math.round(fl * 40) : 0;
     if (per > 0 && q) {
       const fm = new THREE.InstancedMesh(this.flowerGeo, this.fmat, q * per);
       const P2 = new THREE.Vector3(), Mf = new THREE.Matrix4(), Sf = new THREE.Matrix4();
