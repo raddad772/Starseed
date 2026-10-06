@@ -303,11 +303,13 @@ void main() {
     // grows and what lies bare, its own surface in place of theirs; none on a bed under water or on a
     // lava's glow
     vec4 c0 = vCls0, c1 = vCls1, c2 = vCls2;
-    // (or where a thin air freezes out, Mars' CO2 frost: season.js seasonFrost)
+    // (or where a thin air freezes out, Mars' CO2 frost: season.js seasonFrost; frostK how much of
+    // the white is that frost, a slab with no wind's ridges in it)
+    float frostK = 0.0;
     if (uSeason.z > 0.5 || uFrost.y > 0.5) {
       float sn0 = mix(d2.r, d1.r, smoothstep(250.0, 1000.0, dist)) * 0.7 + d0.a * 0.3;
       float sn = uSeason.z > 0.5 ? seasonSnow(uToFixed * up, fn, vExt.a * 120.0 - 60.0, sn0) : 0.0;
-      if (uFrost.y > 0.5) sn = max(sn, seasonFrost(fn, sn0));
+      if (uFrost.y > 0.5) { float fr = seasonFrost(fn, sn0); frostK = fr > sn ? 1.0 : 0.0; sn = max(sn, fr); }
       sn *= (1.0 - smoothstep(0.0, 0.02, waterEnc)) * (1.0 - smoothstep(0.0, 0.1, emissive));
       // (the year-round snow showing: a glacier's bare ice, its ablation zone, isn't; a winter's snow
       // covers it too)
@@ -345,6 +347,16 @@ void main() {
     if (vCls1.z > 0.05 && uWindRipple.x > 0.0 && under > 0.0) {
       vec3 upL = uToFixed * up;
       ms.n = sandRippleN(vAnchorPos, dpx, dpy, ms.n, uWindRipple.y, foot, uWindRipple.x * min(vCls1.z * 1.5, 1.0), cross(vec3(0.0, 1.0, 0.0), upL), upL, windSense(upL));
+    }
+    // snow: packed by the wind into sastrugi, hard ridges a few metres apart running along it (the
+    // ripples' layer at ~3 m, a tenth as high as they're apart as sand's are; crests along the zonal
+    // winds), and drifts eight times that, on snow that's lain a while (a fresh fall lies smooth: the
+    // seasons' thin snow less), in patches where the wind has scoured it (the 64 m tile), as far as
+    // this world's air moves its grains; not on a thin air's frost (a slab laid from the air itself)
+    float sasK = uWindRipple.x * smoothstep(0.3, 0.8, c2.z) * (1.0 - frostK) * smoothstep(0.35, 0.75, d2.b) * 0.5;
+    if (sasK > 0.01 && under > 0.0) {
+      vec3 upL = uToFixed * up, eL = cross(vec3(0.0, 1.0, 0.0), upL);
+      ms.n = sandRippleN(vAnchorPos + 37.0, dpx, dpy, ms.n, 24.0, foot, sasK, cross(upL, eL), upL, 1.0);
     }
     N = normalize(mix(N, normalize(transpose(uToFixed) * ms.n), 0.9));
 #else

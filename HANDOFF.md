@@ -582,6 +582,13 @@ rivers that are straighter where they should be?"):**
   _lockedLit) and the lag's temperature read at the ground's slope near the terminator (a slope facing
   the star lit as ground further into the day): softer, and following the ground up close; still a
   line from far off at Megell's e 0.023 (honest: a lag warms itself and sharpens its own edge).
+- **Sastrugi on the land's snow** (terrainMaterial.js, beside sand's ripples: HANDOFF's "wind-sculpted
+  snow on windy worlds"): the ripples' layer (materials.js sandRippleN) at ~3 m spacing, their crests
+  turned to run along the zonal winds (sastrugi lie along the wind, ripples across it), and drifts at
+  8x; on settled snow (the snow class over 0.3), in patches the wind has scoured (the 64 m tile), as
+  far as the world's air moves grains (uWindRipple.x), half sand's strength. Not on a thin air's frost
+  (Mars' seasonal slab: frostK). First try at full strength on Mars' frost drew regular chevrons with
+  dark troughs, tyre tracks; now SOL Earth 50 N 56 E: fine patchy ridges in the snow within ~100 m.
 - **Mars' seasonal caps** (gen/frostcap.js; world.js frostTexture; render/season.js seasonFrost): a thin
   air (under 0.05 bar, little heat carried poleward) with CO2 in it freezes out at its poles in winter.
   Per 1-degree band of latitude through the year (Leighton and Murray 1966, one layer): the ground a slab
