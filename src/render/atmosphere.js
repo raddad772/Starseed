@@ -144,7 +144,10 @@ uniform float uCSInvL;
 uniform float uCSLod;
 uniform float uCSOn;
 uniform float uCloudTau;
+// (and, for the moon's light after it: the cloud's overhead, its direct share and its all-in)
+float cloudDirZ = 1.0, cloudTotZ = 1.0;
 float cloudLight(vec3 rel, float r, float muS, float foot, vec3 sunAbove, inout vec3 skyE) {
+  cloudDirZ = 1.0; cloudTotZ = 1.0;
   if (uCloudOn < 0.5) return 1.0;
   float mu = max(muS, 0.05);
   float Tdir = 1.0, Ttot = 1.0, Dup = 1.0;
@@ -171,6 +174,7 @@ float cloudLight(vec3 rel, float r, float muS, float foot, vec3 sunAbove, inout 
     Dup = 1.0 - cz + cz * exp(-uCloudTau / mu);
   }
   Tdir = mix(Tdir, m0.r, w); Ttot = mix(Ttot, m1.g, w); Dup = mix(Dup, m1.b, w);
+  cloudDirZ = Dup; cloudTotZ = Ttot;
   skyE = skyE * Ttot + sunAbove * max(muS, 0.0) * max(Ttot - Dup, 0.0);
   return muS > -0.05 ? Tdir : 1.0;
 }`;
@@ -500,6 +504,8 @@ uniform sampler2D tDepth;
 uniform vec3 uCenter;      // planet centre relative to the camera (world axes)
 uniform vec3 uSunDir;
 uniform vec3 uSunE;        // sun illuminance (rgb) at the planet
+uniform vec3 uMoonDir;     // and by night its brightest moon's (moonlight.js: 0 by day)
+uniform vec3 uMoonE;
 uniform mat3 uCamRot;      // view -> world rotation
 uniform vec2 uTanHalf;
 uniform mat3 uToFixed;     // world -> body-fixed rotation
@@ -540,10 +546,13 @@ float cloudDensity(vec3 pFixedDir, float foot) {
 
 // march [t0,t1] accumulating in-scattering; positions via the perpendicular
 // offset (p = (t - tca) * D - perp) to stay precise far from the planet
-void march(float t0, float t1, vec3 D, float tca, vec3 perp, float cosTheta, float jitter, inout vec3 L, inout vec3 T, int steps) {
+// (Lm: the moon's, by night: the same air lit from its way)
+void march(float t0, float t1, vec3 D, float tca, vec3 perp, float cosTheta, float jitter, inout vec3 L, inout vec3 T, int steps, inout vec3 Lm) {
   if (t1 <= t0) return;
   float dt = (t1 - t0) / float(steps);
   float pR = phaseRayleigh(cosTheta), pM = phaseMie(cosTheta, uMieG);
+  bool moon = uMoonE.g > 0.0;
+  float cosM = dot(D, uMoonDir), pRm = phaseRayleigh(cosM), pMm = phaseMie(cosM, uMieG);
   for (int i = 0; i < 32; i++) {
     if (i >= steps) break;
     float t = t0 + (float(i) + jitter) * dt;
@@ -560,6 +569,12 @@ void march(float t0, float t1, vec3 D, float tca, vec3 perp, float cosTheta, flo
     vec3 Ts = exp(-e * dt);
     vec3 eSafe = max(e, vec3(1e-14));
     L += T * (S - S * Ts) / eSafe;
+    if (moon) {
+      float muM = dot(p, uMoonDir) / r;
+      vec3 mT = sunTransmittance(r, muM), mms = multiScatter(r, muM);
+      vec3 Sm = sR * (mT * pRm + mms) + sM * (mT * pMm + mms);
+      Lm += T * (Sm - Sm * Ts) / eSafe;
+    }
     gEm += T * airLight(p, r) * dt;
     // (a hot world's air glows from where the step's light comes from: one optical depth in, or its
     // middle when it is thin; at the jittered sample the glow's fall with height showed as dither)
@@ -598,7 +613,7 @@ void main() {
   float cosTheta = dot(D, uSunDir);
   float jitter = ign(gl_FragCoord.xy);
   int steps = int(uSteps);
-  vec3 L = vec3(0.0), T = vec3(1.0);
+  vec3 L = vec3(0.0), T = vec3(1.0), Lm = vec3(0.0);
   gEm = vec3(0.0);
 
   // cloud shell intersection
@@ -622,12 +637,12 @@ void main() {
   vec3 aNear, aFar;
   auroraRay(D, tca, perp, min(hit.y, sceneDist), jitter, aNear, aFar);
   if (tc < 0.0) {
-    march(t0, t1, D, tca, perp, cosTheta, jitter, L, T, steps);
-    outL = vec4(L * uSunE + gEm + aNear + T * aFar, 1.0); outT = vec4(T, 1.0);
+    march(t0, t1, D, tca, perp, cosTheta, jitter, L, T, steps, Lm);
+    outL = vec4(L * uSunE + Lm * uMoonE + gEm + aNear + T * aFar, 1.0); outT = vec4(T, 1.0);
     return;
   }
   // segment before the cloud
-  march(t0, tc, D, tca, perp, cosTheta, jitter, L, T, steps / 2 + 2);
+  march(t0, tc, D, tca, perp, cosTheta, jitter, L, T, steps / 2 + 2, Lm);
   vec3 em1 = gEm;
   gEm = vec3(0.0);
   vec3 pc = (tc - tca) * D - perp;
@@ -635,9 +650,9 @@ void main() {
   vec3 up = pc / rc;
   float dens = cloudDensity(normalize(uToFixed * up), tc * gPixA);
   float alpha = clamp(dens * uCloudColor.a, 0.0, 1.0) * graze;
-  vec3 L2 = vec3(0.0), T2 = vec3(1.0);
-  march(tc, t1, D, tca, perp, cosTheta, jitter, L2, T2, steps / 2 + 2);
-  vec3 cl = vec3(0.0);
+  vec3 L2 = vec3(0.0), T2 = vec3(1.0), Lm2 = vec3(0.0);
+  march(tc, t1, D, tca, perp, cosTheta, jitter, L2, T2, steps / 2 + 2, Lm2);
+  vec3 cl = vec3(0.0), clm = vec3(0.0);
   if (alpha > 0.002) {
     float muS = dot(up, uSunDir);
     vec3 sunT = sunTransmittance(rc, muS);
@@ -648,10 +663,17 @@ void main() {
     vec3 lit = uCloudColor.rgb * (sunT * lambert * silver / PI_A + amb);
     if (fromBelow) lit *= mix(0.55, 0.18, dens);
     cl = lit;
+    // (and the moon's on it by night)
+    if (uMoonE.g > 0.0) {
+      float muM = dot(up, uMoonDir);
+      float lm = max(muM, 0.0) * 0.6 + 0.4 * smoothstep(-0.1, 0.3, muM);
+      clm = uCloudColor.rgb * (sunTransmittance(rc, muM) * lm / PI_A + multiScatter(rc, muM) * 6.0);
+      if (fromBelow) clm *= mix(0.55, 0.18, dens);
+    }
   }
   // final = scene * T*(1-a)*T2 + L + T*((1-a)*L2 + a*cl)
   outT = vec4(T * (1.0 - alpha) * T2, 1.0);
-  outL = vec4((L + T * ((1.0 - alpha) * L2 + alpha * cl)) * uSunE + em1 + T * (1.0 - alpha) * gEm + aNear + T * (1.0 - alpha) * T2 * aFar, 1.0);
+  outL = vec4((L + T * ((1.0 - alpha) * L2 + alpha * cl)) * uSunE + (Lm + T * ((1.0 - alpha) * Lm2 + alpha * clm)) * uMoonE + em1 + T * (1.0 - alpha) * gEm + aNear + T * (1.0 - alpha) * T2 * aFar, 1.0);
 }
 `;
 
@@ -837,6 +859,8 @@ export class Atmosphere {
       uCenter: { value: new THREE.Vector3() },
       uSunDir: { value: new THREE.Vector3(1, 0, 0) },
       uSunE: { value: new THREE.Vector3(1, 1, 1) },
+      uMoonDir: { value: new THREE.Vector3(0, 1, 0) },
+      uMoonE: { value: new THREE.Vector3() },
       uCamRot: { value: new THREE.Matrix3() },
       uTanHalf: { value: new THREE.Vector2(1, 1) },
       uToFixed: { value: new THREE.Matrix3() },

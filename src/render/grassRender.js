@@ -12,6 +12,7 @@ import { S_LEN, S_H, S_TEMP, S_SAND, S_ICE, S_WDEPTH, S_RIVR } from '../gen/terr
 import { fmix32 } from '../core/rng.js';
 import { FireField } from '../sim/fireField.js';
 import { FIRE_OLD } from '../gen/life/fire.js';
+import { SHADOW_LAYER, receiveShadows, depthMaterial } from './sunShadows.js';
 
 const TILE = 8, RADIUS = 30, PER_M2 = 20, CAP = 40000, HIGH = 60, MOVE = 1.2, NEAR = 7;
 const _m = new THREE.Matrix4(), _x = new THREE.Vector3(), _y = new THREE.Vector3(), _z = new THREE.Vector3(), _c = new THREE.Color();
@@ -61,6 +62,14 @@ function nmRGB(l) {
   return [r * r, g * g, b * b].map((x) => 0.04 + 0.6 * x);
 }
 
+// the wind: a gust that runs across the field, each tuft a little its own, the tips most
+const WIND = `{
+    vec3 ip = vec3(instanceMatrix[3][0], instanceMatrix[3][1], instanceMatrix[3][2]);
+    float ph = uWindT * 1.6 + dot(ip, vec3(0.31, 0.17, 0.23));
+    float bend = (0.10 * sin(ph) + 0.04 * sin(ph * 2.7 + 1.3)) * position.y * position.y;
+    transformed.x += bend; transformed.z += 0.5 * bend;
+  }`;
+
 export class GrassSet {
   constructor(body, group, pool) {
     this.body = body; this.group = group;
@@ -82,15 +91,10 @@ export class GrassSet {
       // down, half of every tuft's blades in shadow)
       sh.fragmentShader = sh.fragmentShader.replace('#include <normal_fragment_begin>', '#include <normal_fragment_begin>\n  normal = normalize( vNormal );');
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nuniform float uWindT;')
-        .replace('#include <begin_vertex>', `#include <begin_vertex>
-  {
-    // (the wind: a gust that runs across the field, each tuft a little its own, the tips most)
-    vec3 ip = vec3(instanceMatrix[3][0], instanceMatrix[3][1], instanceMatrix[3][2]);
-    float ph = uWindT * 1.6 + dot(ip, vec3(0.31, 0.17, 0.23));
-    float bend = (0.10 * sin(ph) + 0.04 * sin(ph * 2.7 + 1.3)) * position.y * position.y;
-    transformed.x += bend; transformed.z += 0.5 * bend;
-  }`);
+        .replace('#include <begin_vertex>', `#include <begin_vertex>\n${WIND}`);
     };
+    // (in the sun's shadows and the canopy's, and casting its own, near: sunShadows.js)
+    receiveShadows(this.mat);
     // flowers, where flowering plants have evolved (plantGrade 3+): heads coloured in their pollinators'
     // window (the land's animals' eyes: biosphere.js seeing), spread across it and away from the
     // foliage's own colour, and white
@@ -103,6 +107,7 @@ export class GrassSet {
       const fg = new THREE.CircleGeometry(1, 6); fg.rotateX(-Math.PI / 2);
       this.fmat = new THREE.MeshStandardMaterial({ roughness: 0.7, side: THREE.DoubleSide });
       this.fmat.onBeforeCompile = (sh) => { sh.fragmentShader = sh.fragmentShader.replace('#include <normal_fragment_begin>', '#include <normal_fragment_begin>\n  normal = normalize( vNormal );'); };
+      receiveShadows(this.fmat);
       this.flowers = new THREE.InstancedMesh(fg, this.fmat, CAP >> 2);
       this.flowers.count = 0; this.flowers.frustumCulled = false; this.flowers.setColorAt(0, _c.set(1, 1, 1));
       group.add(this.flowers);
@@ -110,6 +115,9 @@ export class GrassSet {
     this.mesh = new THREE.InstancedMesh(tuftGeometry(this.fern), this.mat, CAP);
     this.mesh.count = 0; this.mesh.frustumCulled = false;
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.mesh.layers.enable(SHADOW_LAYER);
+    this.mesh.userData.shadowNearOnly = true;
+    this.mesh.userData.shadowMat = depthMaterial('uniform float uWindT;\n', WIND, { uWindT: this.time });
     this.mesh.setColorAt(0, _c.set(1, 1, 1));
     group.add(this.mesh);
     this.tiles = new Map(); this.at = null; this.origin = new THREE.Vector3();

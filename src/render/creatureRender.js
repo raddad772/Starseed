@@ -7,7 +7,7 @@
 // body bobbing with its stride, a grazer's head down to the ground. In a creature's own frame: x right,
 // y up, -z forward, the ground at y = -hipH.
 import * as THREE from 'three';
-import { SHADOW_LAYER } from './sunShadows.js';
+import { SHADOW_LAYER, receiveShadows } from './sunShadows.js';
 
 const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _k = new THREE.Vector3(), _d = new THREE.Vector3(), _h = new THREE.Vector3(), _f = new THREE.Vector3();
 const _q = new THREE.Quaternion(), _m = new THREE.Matrix4(), _m2 = new THREE.Matrix4(), _s = new THREE.Vector3();
@@ -73,9 +73,10 @@ export class Species {
         { x: 0, y: H.dy * 0.5, z: H.dz * 0.5, sx: H.nr, sy: H.nr, sz: L * 0.55 + H.nr * 0.4, rx: Math.atan2(-H.dy, H.dz), scale: s },
         { x: 0, y: H.dy, z: H.dz, sx: H.r * 0.9, sy: H.r * 0.85, sz: H.r * 1.25, scale: s }], D.coat);
     } else this.headGeo = null;
-    this.mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0 });
-    this.legMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(...D.coat.back.map((x) => x * 0.9)), roughness: 0.8 });
-    this.eyeMat = new THREE.MeshStandardMaterial({ color: 0x080808, roughness: 0.15, metalness: 0.1 });
+    // (in the sun's shadows and the canopy's: sunShadows.js)
+    this.mat = receiveShadows(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0 }));
+    this.legMat = receiveShadows(new THREE.MeshStandardMaterial({ color: new THREE.Color(...D.coat.back.map((x) => x * 0.9)), roughness: 0.8 }));
+    this.eyeMat = receiveShadows(new THREE.MeshStandardMaterial({ color: 0x080808, roughness: 0.15, metalness: 0.1 }));
     this.eyeR = Math.max(0.006, s * 0.02);
     this.cap = 0; this.n = 0;
     this.origin = new THREE.Vector3();
@@ -202,8 +203,8 @@ export class FlyerSpecies {
       if (D.tail > 0) parts.push({ x: 0, y: 0, z: D.len * 0.3 + D.tail * 0.4, sx: D.tail * 0.35, sy: D.body.h * 0.15, sz: D.tail * 0.5, scale: D.len });
     }
     this.bodyGeo = coatGeometry(parts, D.coat);
-    this.mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 });
-    this.wingMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(...D.coat.back), roughness: 0.9, side: THREE.DoubleSide });
+    this.mat = receiveShadows(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 }));
+    this.wingMat = receiveShadows(new THREE.MeshStandardMaterial({ color: new THREE.Color(...D.coat.back), roughness: 0.9, side: THREE.DoubleSide }));
     this.cap = 0; this.grow(8);
   }
   grow(cap) {

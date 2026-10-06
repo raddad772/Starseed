@@ -9,7 +9,8 @@
 
 import { Rng, hashInts, hash3f } from '../core/rng.js';
 import { dirFromFaceUV, chunkUVBounds, chunkArcSize } from './cubesphere.js';
-import { S_LEN, S_H, S_TEMP, S_MOIST, S_WDEPTH } from './terrain.js';
+import { S_LEN, S_H, S_TEMP, S_MOIST, S_WDEPTH, S_WET } from './terrain.js';
+import { standAt } from './life/stands.js';
 import { cliffWeightAt } from './volume.js';
 import * as dm from '../core/dmath.js';
 import { CHUNK_N } from './chunkbuilder.js';
@@ -201,21 +202,26 @@ export function scatterFlora(gen, face, level, ix, iy, maxLevel, species) {
     if (species.life > 0 && slope < 0.55 && snow < 0.5) {
       // (a simulated world's life map: how much of the cover is forest and how much open
       // country, so trees stand in its forests and shrubs and grass fill its open land)
-      let fk = 1, ok = 1, pTree;
+      let fk = 1, ok = 1, pTree, treeScale = 1;
       if (gen.snap) {
         // (a simulated world's forests as they stand: its life map's forest share closing to a canopy, ~90%
         // of the ground under crowns ~0.3 of a tree's height across (a conifer's narrower), one candidate
         // a 60 m2: a forest a forest, not a scatter over grass (Dave: "a woodland needs a lot more trees");
         // its world's own luck a little more or less)
-        const f = gen.snap.forest(dir[0], dir[1], dir[2]);
+        const f = gen.snap.forest(dir[0], dir[1], dir[2]), cov = gen.snap.cover(dir[0], dir[1], dir[2]);
         ok = 0.6 + 0.8 * gen.snap.open(dir[0], dir[1], dir[2]);
-        const crown = species.treeHeight * (species.tree === 'conifer' || species.tree === 'spire' ? 0.2 : 0.3);
-        pTree = Math.min(0.95, f * 0.9 / (Math.PI * crown * crown) * 60) * (0.75 + 0.35 * species.densityTree) * (Tc > -2 && Tc < 42 ? 1 : 0.2) * (1 - meadow) * Math.min(1, veg * 2.5);
-        ok *= 1 - 0.7 * f;   // (the forest floor's shrubs and plants thin under its canopy)
+        // (in a stand the crowns close (one tree to a crown's area and a bit less: they overlap); in the
+        // open a tree in fifty candidates)
+        const st = standAt(gen, dir, s, Math.min(1, cov * 1.2) * f, true);
+        const crown = species.treeHeight * st.size * (species.tree === 'conifer' || species.tree === 'spire' ? 0.2 : 0.3);
+        const closed = Math.min(0.95, 60 / (0.8 * Math.PI * crown * crown));
+        pTree = (st.k * closed + (1 - st.k) * 0.02 * f) * (0.85 + 0.15 * species.densityTree) * (Tc > -2 && Tc < 42 ? 1 : 0.2) * (1 - meadow) * Math.min(1, veg * 2.5);
+        treeScale = st.size;
+        ok *= 1 - 0.8 * st.k;   // (the forest floor's shrubs and plants thin under its canopy)
       } else pTree = veg * veg * species.densityTree * (Tc > -2 && Tc < 42 ? 1 : 0.2) * 0.5 * (1 - meadow) * fk;
       const pShrub = veg * species.densityShrub * 0.45 * (1 - 0.75 * meadow) * ok;
       const pPlant = veg * 0.9 * (1 + 0.4 * meadow) * (species.plantScarce ? 0.08 : 1) * ok; // (crusts only, where no plants reached land)
-      if (roll < pTree) { out.tree.push(px, py, pz, rng.range(0.6, 1.25), rot, tint, slope, 0); continue; }
+      if (roll < pTree) { out.tree.push(px, py, pz, rng.range(0.6, 1.25) * treeScale, rot, tint, slope, 0); continue; }
       if (roll < pTree + pShrub * 0.6) { out.shrub.push(px, py, pz, rng.range(0.6, 1.4), rot, tint, slope, 1); continue; }
       if (roll < pTree + pShrub * 0.6 + pPlant * 0.6) { out.plant.push(px, py, pz, rng.range(0.6, 1.5), rot, tint, slope, 2); continue; }
     }

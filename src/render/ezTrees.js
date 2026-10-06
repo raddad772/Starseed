@@ -55,8 +55,9 @@ export function ezTreeGeometry(sp, g = 9.81, lod = 0) {
     o.branch.sections = { 0: 8, 1: 5, 2: 3, 3: 2 };
     o.branch.segments = { 0: 6, 1: 4, 2: 3, 3: 3 };
     o.branch.force = { direction: { x: 0, y: 1, z: 0 }, strength: 0.012 / gR };
-    // (a crown full enough to close a canopy: clusters thick along the outer twigs)
-    o.leaves.count = rng.int(3, 4); o.leaves.size = 3.2; o.leaves.angle = 20; o.leaves.start = 0.1; o.leaves.billboard = 'double';
+    // (a crown full enough to close a canopy: clusters thick all along the outer twigs, the branches inside
+    // hidden as a real crown's are)
+    o.leaves.count = rng.int(5, 7); o.leaves.size = 3.6; o.leaves.angle = 20; o.leaves.start = 0; o.leaves.billboard = 'double';
   }
   o.bark.textured = false;
   if (lod > 0) {

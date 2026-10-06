@@ -8,7 +8,8 @@
 import * as THREE from 'three';
 import { GLSL_SURFACE_ATMO, GLSL_CLOUD_N, GLSL_CLOUD_SHADOW, GLSL_THERMAL } from './atmosphere.js';
 import { GLSL_TERRAIN_SHADOW } from './terrainShadow.js';
-import { GLSL_SUN_SHADOW, SHADOW_LAYER, SHADOW_LIGHT_UNIFORMS } from './sunShadows.js';
+import { GLSL_MOON } from './moonlight.js';
+import { GLSL_SUN_SHADOW, GLSL_SKY_SHADOW, SHADOW_LAYER, SHADOW_LIGHT_UNIFORMS } from './sunShadows.js';
 import { MAT_UNIFORMS, GLSL_MATERIALS, trackMaterial } from './materials.js';
 import { ROCK_STRIDE } from '../gen/rocks.js';
 import { GLSL_SEASON } from './season.js';
@@ -110,6 +111,8 @@ ${GLSL_CLOUD_SHADOW}
 ${GLSL_THERMAL}
 ${GLSL_TERRAIN_SHADOW}
 ${GLSL_SUN_SHADOW}
+${GLSL_SKY_SHADOW}
+${GLSL_MOON}
 #if MAT_MODE > 0
 ${GLSL_MATERIALS}
 #endif
@@ -155,10 +158,12 @@ void main() {
   float muS = dot(up, uSunDir);
   vec3 pF = uToFixed * rel;
   vec3 sunA = atmoSunTransmittance(r, muS), skyE = atmoSkyIrradiance(r, muS);
-  vec3 sunT = sunA * cloudLight(rel, r, muS, foot, sunA, skyE) * terrainShadow(pF, normalize(pF), uToFixed * uSunDir, uRadius) * sunShadowMap(vWorld, N);
+  float keySh = sunShadowMap(vWorld, N);
+  vec3 sunT = sunA * cloudLight(rel, r, muS, foot, sunA, skyE) * terrainShadow(pF, normalize(pF), uToFixed * uSunDir, uRadius) * keySh;
   float ndl = max(dot(N, uSunDir), 0.0);
   float wrap = 0.5 + 0.5 * dot(N, up);
-  vec3 color = albedo / PI * (uSunE * sunT * ndl * mix(1.0, ao, 0.35) + (uSunE * skyE * wrap + uAmbientFloor) * ao);
+  float skyK = skyShadow(vWorld);
+  vec3 color = albedo / PI * (uSunE * sunT * ndl * mix(1.0, ao, 0.35) + (uSunE * skyE * wrap * skyK + uAmbientFloor + moonLit(rel, r, up, N, keySh, 0.0, wrap, skyK)) * ao);
   vec3 V = normalize(-vWorld), H = normalize(V + uSunDir);
   float rg = clamp(rough, 0.05, 1.0), a2 = rg * rg * rg * rg;
   float NdH = max(dot(N, H), 0.0), NdV = max(dot(N, V), 1e-3), VdH = max(dot(V, H), 0.0);

@@ -2247,6 +2247,24 @@ export class Game {
     L.sunIntensity = E * mx;
     L.skyColor.setRGB(sky[0] * sc[0] * E, sky[1] * sc[1] * E, sky[2] * sc[2] * E);
     L.skyIntensity = 1;
+    // by night the moon's (render/moonlight.js, world.js): its sky's light, and the key light its once the
+    // sun's down and it's up (the near shadow maps follow it too)
+    const ml = it && it.moon;
+    if (ml && ml.E > 0 && !b.isStar) {
+      const muM = L.up.dot(ml.dir);
+      if (muM > 0) {
+        let mtr = [1, 1, 1], msky = [0, 0, 0];
+        if (it.atmo) { mtr = it.atmo.transmittance(r, muM); msky = it.atmo.skyIrradiance(r, muM); }
+        if (cs) { msky = msky.map((x) => x * cs.tot); mtr = mtr.map((x) => x * cs.up); }
+        L.skyColor.r += msky[0] * sc[0] * ml.E; L.skyColor.g += msky[1] * sc[1] * ml.E; L.skyColor.b += msky[2] * sc[2] * ml.E;
+        if (L.up.dot(L.sunDir) < -0.05) {
+          const mr = sc[0] * mtr[0], mg = sc[1] * mtr[1], mb = sc[2] * mtr[2], mm = Math.max(mr, mg, mb, 1e-6);
+          L.sunDir.copy(ml.dir);
+          L.sunColor.setRGB(mr / mm, mg / mm, mb / mm);
+          L.sunIntensity = ml.E * mm;
+        }
+      }
+    }
     const mu = Math.max(0, L.up.dot(L.sunDir));
     const ga = 0.18;
     L.groundColor.setRGB((sr * E * mu + sky[0] * E) * ga * 0.5, (sg * E * mu + sky[1] * E) * ga * 0.5, (sb * E * mu + sky[2] * E) * ga * 0.5);

@@ -130,12 +130,25 @@ plants you walk through, the animals you watch, and how many of each.
   thickest on open moist grassland and a burn's first years, coloured across the land animals' visual
   window (biosphere seeing: its ultraviolet shows to us as a pale violet, its near infrared a deep red)
   and white.
-- **Trees, a placeholder** (`gen/life/tree.js`, `render/treeMesh.js`): the old flora's trees (placement,
-  collisions, impostors kept) grown by branching in EZ-Tree's way, not EZ-Tree itself: forms from the
-  plants' history (flora.js: seed trees as conifers with tree ferns among them, flowering trees as
-  broadleaf crowns, now and then the world's own alien forms), trunks as wide as the solid field
-  takes them, crowns of rounded leaf cards at their own tilts. Dave asked whether this is EZ-Tree: not
-  yet; porting it (MIT, dgreenheck/ez-tree, its leaf and bark textures) waits on his OK to download it.
+- **Trees by EZ-Tree** (`vendor/ez-tree`, MIT, Daniel Greenheck; `render/ezTrees.js`): each conifer and
+  broadleaf species grown with its options from the world (form from the plants' history, height from
+  it, build and reach from gravity), drawn by the flora shader with CC0 bark and leaf textures, the leaf
+  sprite tinted the world's foliage colour and cut out by its alpha; near < 90 m, a lighter middle
+  version < 300 m, impostors beyond. Tree ferns and the alien forms keep the grown placeholder
+  (`gen/life/tree.js`, `render/treeMesh.js`). Trees by the life map's forest share and the crowns'
+  spacing. Foliage colour (pigments.js): a main band just short of the ground's photon peak with a
+  partner a little shorter (chlorophyll a and b), a Soret band and shielding pigments in the blue usually,
+  a retinal-like one now and then (purple); SOL Earth green.
+- **Shade** (`render/sunShadows.js`): the sun's two maps take the trees' leaves cut out (dappled shade),
+  the grass (near map) and the animals; and a canopy's sky shadow: two maps from straight overhead of the
+  trees' and shrubs' tops (0..150 m, ..1.4 km, body-fixed, redrawn in turn every few frames); every
+  receiver (ground, rocks, trees' own lower leaves, grass, animals) takes the sky's light by how much of
+  it the canopy over and around it hides (rings of taps to 45 m, cosine-weighted; the leaves let ~12%
+  through). ?skyshadow=0 off.
+- **Moonlight** (`render/moonlight.js`): the brightest moon (from a moon, its planet) lights the night as
+  a Lambert sphere at its phase, drawn ~10 stops brighter (the eye's dark adaptation, and the half-float
+  buffers' floor); ground, plants, rocks, the sky's air and clouds, animals and grass; the shadow maps
+  follow it once the sun's down; night vision fades colour toward blue (engine.js tonemap).
 - `flora.js`/`floraRender.js`: the current scattered plants (to be redone: foliage-redo-later).
 - The climate's months (monsoons, dry seasons), the seasons (snow, ice, river flow).
 

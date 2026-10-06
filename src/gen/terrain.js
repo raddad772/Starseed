@@ -37,6 +37,7 @@ import { hexToLinear } from './color.js';
 import { HEIGHT_SCALE } from '../core/units.js';
 import { MC, MAT_W0, MAT_N, LITH_CLASS } from './matclasses.js';
 import { MATERIALS } from './worldsim/materials.js';
+import { standAt } from './life/stands.js';
 
 // Sample record layout
 export const S_H = 0;        // height above sea level / datum (m)
@@ -317,6 +318,7 @@ export class TerrainGenerator {
 
   // Full sample. minWavelength (m) band-limits the fine octaves.
   sample(x, y, z, minWavelength, out) {
+    this._sampleW = minWavelength;   // (the last sample's detail: shadeSnap's forest stands, near or far)
     const o = this.snap ? this.sampleSnap(x, y, z, minWavelength, out) : this.sampleNoise(x, y, z, minWavelength, out);
     if (this.hScale < 1) { o[S_H] *= this.hScale; o[S_WDEPTH] *= this.hScale; o[S_RDEP] *= this.hScale; if (o[S_WLVL] > -1e8) o[S_WLVL] *= this.hScale; }
     return o;
@@ -2292,10 +2294,23 @@ export class TerrainGenerator {
     // plants: the life map's cover, forest in the foliage colour, open country drier
     if (P.veg) {
       const cov = S.cover(x, y, z), fo = S.forest(x, y, z), op = S.open(x, y, z);
-      const vegW = dm.clamp(cov * 1.2, 0, 1) * (1 - rockW) * (1 - 0.8 * sandW) * dm.smoothstep(-6, 2, Tc) * (1 - 0.7 * volc);
+      let vegW = dm.clamp(cov * 1.2, 0, 1) * (1 - rockW) * (1 - 0.8 * sandW) * dm.smoothstep(-6, 2, Tc) * (1 - 0.7 * volc);
       if (vegW > 0) {
-        const f = fo / Math.max(1e-3, fo + op), dry = P.vegDry || P.veg;
-        const vr = dry[0] + (P.veg[0] - dry[0]) * f, vg = dry[1] + (P.veg[1] - dry[1]) * f, vb = dry[2] + (P.veg[2] - dry[2]) * f;
+        // (the forest as its stands (life/stands.js): near, where its trees are drawn, the floor under a
+        // stand its litter, the open country's grass between; far off, where they aren't, a stand's dark
+        // canopy, and past a stand's own size the stands' share of the ground)
+        const share = Math.min(1, cov * 1.2) * fo, sw = this._sampleW || 0, far = dm.smoothstep(20, 60, sw);
+        const mix = dm.smoothstep(60, 400, sw);
+        const _d = this._sd || (this._sd = [0, 0, 0]); _d[0] = x; _d[1] = y; _d[2] = z;
+        const k = share > 0 ? (mix < 1 ? standAt(this, _d, s, share, sw <= 40).k : 0) * (1 - mix) + share * mix : 0;
+        const dry = P.vegDry || P.veg, of = 0.5 * fo / Math.max(1e-3, fo + op);
+        const fl = P.soil || P.veg;
+        let vr = dry[0] + (P.veg[0] - dry[0]) * of, vg = dry[1] + (P.veg[1] - dry[1]) * of, vb = dry[2] + (P.veg[2] - dry[2]) * of;
+        const sr = (fl[0] + (P.veg[0] - fl[0]) * 0.3) * 0.75 * (1 - far) + P.veg[0] * 0.8 * far;
+        const sg = (fl[1] + (P.veg[1] - fl[1]) * 0.3) * 0.75 * (1 - far) + P.veg[1] * 0.8 * far;
+        const sb = (fl[2] + (P.veg[2] - fl[2]) * 0.3) * 0.75 * (1 - far) + P.veg[2] * 0.8 * far;
+        vr += (sr - vr) * k; vg += (sg - vg) * k; vb += (sb - vb) * k;
+        vegW = Math.max(vegW, k * (1 - rockW));
         r += (vr - r) * vegW; g += (vg - g) * vegW; b += (vb - b) * vegW;
         mat[0] = vegW;
       }

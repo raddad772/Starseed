@@ -82,6 +82,8 @@ uniform float uCloudMapMean;
 uniform vec3 uCenter;
 uniform vec3 uSunDir;
 uniform vec3 uSunE;
+uniform vec3 uMoonDir;   // by night its brightest moon's (moonlight.js: 0 by day)
+uniform vec3 uMoonE;
 uniform mat3 uCamRot;
 uniform vec2 uTanHalf;
 uniform mat3 uToFixed;
@@ -187,6 +189,11 @@ void main() {
   float cosT = dot(D, uSunDir);
   float pR = phaseRayleigh(cosT), pM = phaseMie(cosT, uMieG);
   float pC = mix(hg(cosT, 0.62), hg(cosT, -0.22), 0.3);
+  // (the moon's, by night: the air and the clouds lit from its way too, Lm)
+  bool moon = uMoonE.g > 0.0;
+  float cosM = dot(D, uMoonDir);
+  float pRm = phaseRayleigh(cosM), pMm = phaseMie(cosM, uMieG), pCm = mix(hg(cosM, 0.62), hg(cosM, -0.22), 0.3);
+  vec3 Lm = vec3(0.0);
   float jitter = ign(gl_FragCoord.xy);
   vec3 L = vec3(0.0), T = vec3(1.0);
   vec3 Lth = vec3(0.0);
@@ -243,12 +250,27 @@ void main() {
           tauAbove += tl * uSigma * 0.8;
         }
       }
+      float tauV = tauAbove;
       tauAbove /= max(muS, 0.06);
       float shade = exp(-tauAbove);
       vec3 sunT = sunTransmittance(r, muS) * shade;
       if (uHeightCube.x > 0.5 && r < uRadius + uHeightCube.z) sunT *= airShadow(uToFixed * p, uToFixed * uSunDir, uRadius);
       vec3 ms = multiScatter(r, muS) * (0.2 + 0.8 * shade);
       vec3 S = sR * (sunT * pR + ms) + sM * (sunT * pM + ms);
+      // (under a deck, the sunlight it scatters down lights the air too, as it does the ground (atmosphere.js
+      // cloudLight: all in 1 / (1 + 3 (1 - g) tau / 4), less the beam), the overcast's grey haze that pales
+      // the far woods; from the dome below the deck, half the sphere's directions, radiance E / pi)
+      float dif = max(0.0, 1.0 / (1.0 + 0.1125 * tauV) - exp(-tauV / max(muS, 0.06))) * max(muS, 0.0);
+      S += (sR + sM) * sunTransmittance(r, muS) * (dif * 0.5 / PI_A);
+      vec3 Sm = vec3(0.0), mT = vec3(0.0), mms = vec3(0.0), mT0 = vec3(0.0);
+      if (moon) {
+        float muM = dot(p, uMoonDir) / r, shM = exp(-tauV / max(muM, 0.06));
+        mT0 = sunTransmittance(r, muM); mT = mT0 * shM;
+        mms = multiScatter(r, muM) * (0.2 + 0.8 * shM);
+        Sm = sR * (mT * pRm + mms) + sM * (mT * pMm + mms);
+        float difM = max(0.0, 1.0 / (1.0 + 0.1125 * tauV) - shM) * max(muM, 0.0);
+        Sm += (sR + sM) * mT0 * (difM * 0.5 / PI_A);
+      }
       if (cd > 0.0) {
         float sc = cd * uSigma;
         // multiple scattering inside clouds: soft fill that keeps shadows from going black
@@ -256,6 +278,7 @@ void main() {
         // powder: thin cloud edges facing the sun are brighter than dense cores
         float powder = 1.0 - exp(-cd * 3.0);
         S += sc * cc * (sunT * pC * (0.6 + 0.8 * powder) + amb);
+        if (moon) Sm += sc * cc * (mT * pCm * (0.6 + 0.8 * powder) + mms * 14.0 * mix(0.45, 1.0, frac) + mT0 * 0.05 * (0.3 + 0.7 * frac));
         ext += vec3(sc);
         if (uFlash.w > 0.0) {
           vec3 fd = p + uCenter - uFlash.xyz;
@@ -264,6 +287,7 @@ void main() {
       }
       vec3 Ts = exp(-ext * dt);
       L += T * (S - S * Ts) / max(ext, vec3(1e-12));
+      if (moon) Lm += T * (Sm - Sm * Ts) / max(ext, vec3(1e-12));
       if (uGlow > 0.0 && h < -20000.0) Lth += T * thermalGlow(h) * (vec3(1.0) - Ts);
       // (a hot rocky world's air, from one optical depth into the step, or its middle: atmosphere.js)
       if (uThermal.x > 0.0) {
@@ -282,7 +306,7 @@ void main() {
   }
   vec3 aNear, aFar;
   auroraRay(D, tca, perp, min(hit.y, sceneDist), jitter, aNear, aFar);
-  outL = vec4(L * uSunE + Lth + aNear + T * aFar, 1.0);
+  outL = vec4(L * uSunE + Lm * uMoonE + Lth + aNear + T * aFar, 1.0);
   outT = vec4(T, 1.0);
 }
 `;
@@ -363,6 +387,8 @@ export class VolumePass {
       uCenter: { value: new THREE.Vector3() },
       uSunDir: { value: new THREE.Vector3(1, 0, 0) },
       uSunE: { value: new THREE.Vector3(1, 1, 1) },
+      uMoonDir: { value: new THREE.Vector3(0, 1, 0) },
+      uMoonE: { value: new THREE.Vector3() },
       uCamRot: { value: new THREE.Matrix3() },
       uTanHalf: { value: new THREE.Vector2(1, 1) },
       uToFixed: { value: new THREE.Matrix3() },

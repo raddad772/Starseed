@@ -207,6 +207,11 @@ void main() {
   }
   c *= exposure;
   c += texture(tBloom, vUv).rgb * uBloom;
+  // (night vision: in a moonlit night's dark the eye's rods take over, colour fading and leaning blue:
+  // the Purkinje shift; by the light it's adapted to: an overcast day's ~2^-9, a full moon's ~2^-13)
+  float scot = 1.0 - smoothstep(-13.5, -11.0, texture(tAdapt, vec2(0.5)).r);
+  // (and leaning further blue than the eye does, film's night: its convention, read at once as night)
+  if (scot > 0.0) { float Yl = dot(c, vec3(0.2126, 0.7152, 0.0722)); c = mix(c, Yl * vec3(0.55, 0.82, 1.55), 0.8 * scot); }
   c *= uWhiteBalance;
   c += uFlash;
   float v = 1.0 - uVignette * pow(length(vUv - 0.5) * 1.25, 2.4);

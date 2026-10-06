@@ -5,7 +5,8 @@ import { Rng } from '../core/rng.js';
 import { floraSpecies, FLORA_KINDS } from '../gen/flora.js';
 import { GLSL_SURFACE_ATMO, GLSL_CLOUD_N, GLSL_CLOUD_SHADOW } from './atmosphere.js';
 import { GLSL_TERRAIN_SHADOW } from './terrainShadow.js';
-import { GLSL_SUN_SHADOW, SHADOW_LAYER } from './sunShadows.js';
+import { GLSL_MOON } from './moonlight.js';
+import { GLSL_SUN_SHADOW, GLSL_SKY_SHADOW, SHADOW_LAYER, SKY_LAYER, SHADOW_LIGHT_UNIFORMS } from './sunShadows.js';
 import { growTree } from '../gen/life/tree.js';
 import { treeGeometry as grownMesh } from './treeMesh.js';
 import { ezTreeGeometry, barkTexture, leafTexture } from './ezTrees.js';
@@ -154,7 +155,8 @@ function treeFarGeometry(sp) {
   if (sp.tree === 'conifer' || sp.tree === 'spire') { crown = new THREE.ConeGeometry(H * 0.22, H * 0.8, 5, 1); crown.translate(0, H * 0.58, 0); }
   else if (sp.tree === 'mushroom') { crown = new THREE.CylinderGeometry(H * 0.32, H * 0.3, H * 0.12, 6); crown.translate(0, H * 0.56, 0); }
   else { crown = new THREE.OctahedronGeometry(H * 0.26, 0); crown.translate(0, H * 0.72, 0); }
-  parts.push({ geo: crown, part: 1, aoBase: 0.5 });
+  // (its underside dark, as a crown's is in its own and its neighbours' shade)
+  parts.push({ geo: crown, part: 1, aoBase: 0.1 });
   return finalize(parts);
 }
 
@@ -293,6 +295,8 @@ ${GLSL_CLOUD_N}
 ${GLSL_CLOUD_SHADOW}
 ${GLSL_TERRAIN_SHADOW}
 ${GLSL_SUN_SHADOW}
+${GLSL_SKY_SHADOW}
+${GLSL_MOON}
 void main() {
   #include <logdepthbuf_fragment>
   // (in the clouds' shadow as the ground under it is)
@@ -305,7 +309,8 @@ void main() {
   float muS = dot(up, uSunDir);
   vec3 pF = uToFixed * rel;
   vec3 sunA = atmoSunTransmittance(r, muS), skyE = atmoSkyIrradiance(r, muS);
-  vec3 sunT = sunA * cloudLight(rel, r, muS, foot, sunA, skyE) * terrainShadow(pF, normalize(pF), uToFixed * uSunDir, uRadius) * sunShadowMap(vWorld, N);
+  float keySh = sunShadowMap(vWorld, N), skyK = skyShadow(vWorld);
+  vec3 sunT = sunA * cloudLight(rel, r, muS, foot, sunA, skyE) * terrainShadow(pF, normalize(pF), uToFixed * uSunDir, uRadius) * keySh;
   vec3 albedo = vPart < 0.5 ? uTrunk : vTint;
   // (EZ-Tree's: its bark's texture over the trunk's colour; its leaf sprite cut out by its alpha, its
   // brightness over the world's foliage colour: the leaves the world's own hue whatever the sprite's)
@@ -315,10 +320,62 @@ void main() {
   }
   float ndl = max(dot(N, uSunDir), 0.0);
   float trans = vPart > 0.5 && vPart < 1.5 ? max(0.0, -dot(N, uSunDir)) * 0.35 : 0.0;
-  vec3 c = albedo / PI * (uSunE * sunT * (ndl + trans) * vAo + (uSunE * skyE * (0.55 + 0.45 * dot(N, up)) + uAmbientFloor) * vAo);
+  float leaf = vPart > 0.5 && vPart < 1.5 ? 0.35 : 0.0;
+  vec3 moon = moonLit(rel, r, up, N, keySh, leaf, 0.55 + 0.45 * dot(N, up), skyK);
+  vec3 c = albedo / PI * (uSunE * sunT * (ndl + trans) * vAo + (uSunE * skyE * (0.55 + 0.45 * dot(N, up)) * skyK + uAmbientFloor + moon) * vAo);
   gl_FragColor = vec4(c, 1.0);
 }
 `;
+
+// its shadow (sunShadows.js): the plant as drawn (shrunk into the ground at the end of its range, in the
+// wind), its distance from the light; EZ-Tree's leaves cut out by their sprite's alpha, so a crown's
+// shadow is dappled, not a block
+const SHADOW_VERT = /* glsl */`
+attribute float part;
+attribute vec2 tuv;
+uniform vec3 uLightPos;
+uniform vec3 uLightDir;
+uniform float uTime;
+uniform float uWind;
+uniform float uFadeStart;
+uniform float uFadeEnd;
+varying float vD;
+varying vec2 vUv;
+varying float vPart;
+void main() {
+  vec3 p = position;
+  mat4 im = mat4(1.0);
+  #ifdef USE_INSTANCING
+  im = instanceMatrix;
+  #endif
+  p *= 1.0 - smoothstep(uFadeStart, uFadeEnd, length((modelMatrix * im * vec4(0.0, 0.0, 0.0, 1.0)).xyz));
+  float phase = im[3].x * 0.37 + im[3].z * 0.23;
+  float bend = (part > 0.5 && part < 1.5) ? 1.0 : 0.25;
+  p.x += sin(uTime * 1.4 + phase) * uWind * p.y * p.y * 0.012 * bend;
+  p.z += cos(uTime * 1.1 + phase * 1.3) * uWind * p.y * p.y * 0.008 * bend;
+  vec4 wp = modelMatrix * im * vec4(p, 1.0);
+  vD = dot(uLightPos - wp.xyz, uLightDir);
+  vUv = tuv;
+  vPart = part;
+  gl_Position = projectionMatrix * viewMatrix * wp;
+}`;
+const SHADOW_FRAG = /* glsl */`
+uniform sampler2D tLeaf;
+uniform float uTex;
+varying float vD;
+varying vec2 vUv;
+varying float vPart;
+void main() {
+  if (uTex > 0.5 && vPart > 0.5 && vPart < 1.5 && texture2D(tLeaf, vUv).a < 0.5) discard;
+  gl_FragColor = vec4(vD, 0.0, 0.0, 1.0);
+}`;
+function shadowMaterial(m) {
+  const u = m.uniforms;
+  return new THREE.ShaderMaterial({
+    uniforms: { ...SHADOW_LIGHT_UNIFORMS, uTime: u.uTime, uWind: u.uWind, uFadeStart: u.uFadeStart, uFadeEnd: u.uFadeEnd, tLeaf: u.tLeaf, uTex: u.uTex },
+    vertexShader: SHADOW_VERT, fragmentShader: SHADOW_FRAG, side: THREE.DoubleSide,
+  });
+}
 
 export class FloraSet {
   constructor(body, shared) {
@@ -371,6 +428,11 @@ export class FloraSet {
     this.materials.treeFar = this.materials.tree.clone();
     for (const key in this.materials.tree.uniforms) if (key !== 'uTex') this.materials.treeFar.uniforms[key] = this.materials.tree.uniforms[key];
     this.materials.treeFar.uniforms.uTex = { value: 0 };
+    // (and their shadows')
+    this.shadowMats = {};
+    for (const k in this.materials) this.shadowMats[k] = shadowMaterial(this.materials[k]);
+    // (in the coarse shadow maps every tree its far form: sunShadows.js)
+    this.shadowFarTree = { geo: this.treeFar, mat: this.shadowMats.treeFar };
     this.colors = {
       veg: pal.veg || [0.1, 0.1, 0.1], vegDry: pal.vegDry || [0.2, 0.18, 0.12],
       rock: pal.rock, rock2: pal.rock2,
@@ -394,8 +456,14 @@ export class FloraSet {
       if (!n) continue;
       const mesh = new THREE.InstancedMesh(this.geos[kind], this.materials[kind], n);
       mesh.layers.enable(SHADOW_LAYER);
-      mesh.frustumCulled = false;
+      // (trees and shrubs take the sky from what's under them)
+      if (kind === 'tree' || kind === 'shrub') mesh.layers.enable(SKY_LAYER);
+      // (culled by its instances' bounds, three.js's InstancedMesh's own, made on first use once they're
+      // placed: each view, the shadow maps' too, draws only the nodes it can see)
+      mesh.frustumCulled = true;
       mesh.userData.kind = kind;
+      mesh.userData.shadowMat = this.shadowMats[kind];
+      if (kind === 'tree') mesh.userData.shadowFar = this.shadowFarTree;
       for (let i = 0; i < n; i++) {
         const k = i * 8;
         pos.set(arr[k], arr[k + 1], arr[k + 2]);
@@ -448,6 +516,7 @@ export class FloraSet {
         const near = dist < (this.treeMid ? 300 : 450);
         m.geometry = near ? (this.treeMid && dist >= 90 ? this.treeMid : this.geos.tree) : this.treeFar;
         m.material = near ? this.materials.tree : this.materials.treeFar;
+        m.userData.shadowMat = near ? this.shadowMats.tree : this.shadowMats.treeFar;
       }
     }
   }
@@ -458,5 +527,6 @@ export class FloraSet {
     if (this.treeMid) this.treeMid.dispose();
     this.material.dispose();
     for (const k in this.materials) this.materials[k].dispose();
+    for (const k in this.shadowMats) this.shadowMats[k].dispose();
   }
 }

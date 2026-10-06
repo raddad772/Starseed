@@ -5,7 +5,8 @@ import { GLSL_SURFACE_ATMO, GLSL_CLOUD_N, GLSL_CLOUD_SHADOW, GLSL_THERMAL } from
 import { GLSL_NOISE } from './glsl.js';
 import { MAT_UNIFORMS, GLSL_MATERIALS, trackMaterial } from './materials.js';
 import { GLSL_TERRAIN_SHADOW } from './terrainShadow.js';
-import { GLSL_SUN_SHADOW } from './sunShadows.js';
+import { GLSL_SUN_SHADOW, GLSL_SKY_SHADOW } from './sunShadows.js';
+import { GLSL_MOON } from './moonlight.js';
 import { GLSL_LIQUID } from './liquid.js';
 import { detailData } from '../gen/detail.js';
 import { GLSL_SEASON } from './season.js';
@@ -208,6 +209,8 @@ ${GLSL_CLOUD_SHADOW}
 ${GLSL_THERMAL}
 ${GLSL_TERRAIN_SHADOW}
 ${GLSL_SUN_SHADOW}
+${GLSL_SKY_SHADOW}
+${GLSL_MOON}
 ${GLSL_LIQUID}
 #ifdef RIBBON
 // a river's water over what's drawn (engine.js's water pass): the image so far and its depth,
@@ -295,7 +298,8 @@ void main() {
   vec3 pF = uToFixed * rel;
   sunT *= terrainShadow(pF, normalize(pF), uToFixed * uSunDir, uRadius);
   // (and finer near the camera: the sun's shadow maps)
-  sunT *= sunShadowMap(vWorldPos, N);
+  float keySh = sunShadowMap(vWorldPos, N);
+  sunT *= keySh;
 
   // ---- detail (planet-fixed, precision-safe coordinates)
   vec3 fp = vFixedPos;
@@ -661,7 +665,9 @@ void main() {
   } else {
     float wrap = 0.5 + 0.5 * dot(N, up);
     vec3 direct = uSunE * sunT * ndl;
-    vec3 ambient = uSunE * skyE * wrap + uAmbientFloor;
+    // (under a wood's canopy, little of the sky: sunShadows.js; and by night the moon's: moonlight.js)
+    float skyK = skyShadow(vWorldPos);
+    vec3 ambient = uSunE * skyE * wrap * skyK + uAmbientFloor + moonLit(rel, r, up, N, keySh, 0.0, wrap, skyK);
     // far off the ground's small roughness goes unresolved, but its shadows don't: rocks,
     // furrows and a forest's canopy darken it, the more so with the sun low
     float farK = smoothstep(1500.0, 12000.0, dist);

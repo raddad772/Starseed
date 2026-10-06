@@ -13,14 +13,15 @@ import { VolumePass } from './volume.js';
 import { CloudShadow, noCloudShadow } from './cloudShadow.js';
 import { loadMaterials, windRipple } from './materials.js';
 import { HeightCube } from './terrainShadow.js';
-import { SUN_SHADOW_UNIFORMS } from './sunShadows.js';
+import { SUN_SHADOW_UNIFORMS, SKY_SHADOW_UNIFORMS } from './sunShadows.js';
+import { moonLight } from './moonlight.js';
 import { Liquid } from './liquid.js';
 import { fallPhysics, FallFx } from './falls.js';
 import { RIBBON_PASS } from './terrainMaterial.js';
 import * as U from '../core/units.js';
 
 const _v = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3(), _v4 = new THREE.Vector3();
-const _m4 = new THREE.Matrix4();
+const _m4 = new THREE.Matrix4(), _up = new THREE.Vector3();
 // (a world's seasons before its climate's year arrives: none)
 const _blankSeason = (() => { const t = new THREE.DataTexture(new Uint8Array([128, 128, 0, 255]), 1, 1, THREE.RGBAFormat); t.needsUpdate = true; return t; })();
 function blankSeasonMap() { return _blankSeason; }
@@ -152,7 +153,12 @@ export class WorldRenderer {
       uCloudOn: { value: a ? a.material.uniforms.uCloudOn.value : 0 },
       uCloudOpacity: { value: a ? a.material.uniforms.uCloudColor.value.w : 0 },
       uLavaColor: { value: b.data.terrain && b.data.terrain.palette && b.data.terrain.palette.lava ? new THREE.Vector3(...b.data.terrain.palette.lava) : new THREE.Vector3(3.2, 0.75, 0.12) },   // (the body's own glow: blackbody at its melt's temperature)
-      uAmbientFloor: { value: new THREE.Vector3(0.0004, 0.0004, 0.0005) },
+      // (the night's own light, the stars' and the air's glow, as moonlight is drawn: moonlight.js; a full
+      // Moon ~100 times it)
+      uAmbientFloor: { value: new THREE.Vector3(0.0001, 0.0001, 0.00013) },
+      // (its moons' light: the brightest's direction and light, moonlight.js)
+      uMoonDir: { value: new THREE.Vector3(0, 1, 0) },
+      uMoonE: { value: new THREE.Vector3() },
       uDebug: { value: 0 },
       tNoise: { value: this.cloudNoise },
       // (the atmosphere's own: rebuildTerrain hands the climate's cloud map to all three)
@@ -165,6 +171,7 @@ export class WorldRenderer {
       ...(it.liquid ? it.liquid.uniforms : {}),
       ...(it.liquid ? (it.falls = fallPhysics(b, it.liquid.U)).uniforms : {}),
       ...SUN_SHADOW_UNIFORMS,
+      ...SKY_SHADOW_UNIFORMS,
       uNear: { value: new THREE.Vector2(0, 0) },
       uNearUp: { value: new THREE.Vector3(0, 1, 0) },
       // (the seasons on its land: its climate's year by place, setSeasonMap; where the sun stands in its
@@ -245,8 +252,16 @@ export class WorldRenderer {
       const E = this.u.sunIlluminance(b.pos);
       sh.uSunE.value.copy(this.starColor).multiplyScalar(E);
       sh.uCenter.value.copy(_v);
-      if (ss && b.solid && it.terrain && dist - b.R < 60000 && dist - b.R < ssBest) {
-        ssBest = dist - b.R; ss.active = true; ss.sunDir.copy(sh.uSunDir.value); ss.anchor.copy(_v);
+      // its night's light: its brightest moon's (or, from a moon, its planet's); none by day where the
+      // camera is (the sun's thousands of times brighter: not worth the ground's shaders' while)
+      const ml = it.moon = moonLight(this.u, b, it.moon);
+      const camUp = _up.copy(_v).negate().normalize(), sunUp = camUp.dot(sh.uSunDir.value), near = dist - b.R < 60000;
+      sh.uMoonDir.value.copy(ml.dir);
+      sh.uMoonE.value.copy(this.starColor).multiplyScalar(near && sunUp > 0.1 ? 0 : ml.E);
+      if (ss && b.solid && it.terrain && near && dist - b.R < ssBest) {
+        // (the shadows the key light's: the sun's, or by night the moon's when it's up)
+        const moonKey = ml.E > 0 && sunUp < -0.05 && camUp.dot(ml.dir) > 0.02;
+        ssBest = dist - b.R; ss.active = true; ss.sunDir.copy(moonKey ? ml.dir : sh.uSunDir.value); ss.anchor.copy(_v); ss.bodyQInv.copy(b.qInv); ss.body = b;
       }
       _m4.makeRotationFromQuaternion(b.qInv);
       sh.uToFixed.value.setFromMatrix4(_m4);
@@ -302,6 +317,7 @@ export class WorldRenderer {
         u.uCenter.value.copy(_v);
         u.uSunDir.value.copy(sh.uSunDir.value);
         u.uSunE.value.copy(sh.uSunE.value);
+        if (u.uMoonE) { u.uMoonDir.value.copy(sh.uMoonDir.value); u.uMoonE.value.copy(sh.uMoonE.value); }
         u.uToFixed.value.copy(sh.uToFixed.value);
         if (useVol) {
           u.uTime.value = this.timeSec;

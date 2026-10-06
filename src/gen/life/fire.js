@@ -235,8 +235,8 @@ export function fireCellOf(R, face, u, v, seed = 0x51f15e) {
 // the fire record under a unit direction on a generator's world, in the terrain workers (their chunks'
 // ground, chunkbuilder.js and volume.js): its fire tiles worked out as the chunks over them are built, kept
 // on the generator (a couple of dozen); the same fires as the main thread's (sim/fireField.js: the
-// terrain params' fireO2 and seed). { ageG, ageC }, or null where its plants don't burn
-const _fuv = { face: 0, u: 0, v: 0 }, _fd = [0, 0, 0], _rec = { ageG: FIRE_OLD, ageC: FIRE_OLD };
+// terrain params' fireO2 and seed). { ageG, ageC, n (how many fires burned it) }, or null where its plants don't burn
+const _fuv = { face: 0, u: 0, v: 0 }, _fd = [0, 0, 0], _rec = { ageG: FIRE_OLD, ageC: FIRE_OLD, n: 0 };
 export function fireAtDir(gen, x, y, z) {
   if (!gen.snap || !(gen.p.life > 0) || !((gen.p.fireO2 || 0) >= 0.15)) return null;
   _fd[0] = x; _fd[1] = y; _fd[2] = z;
@@ -251,7 +251,7 @@ export function fireAtDir(gen, x, y, z) {
     tiles.set(key, T);
   }
   const o = c.x * T.n + c.y;
-  _rec.ageG = T.ageG[o]; _rec.ageC = T.ageC[o];
+  _rec.ageG = T.ageG[o]; _rec.ageC = T.ageC[o]; _rec.n = T.fires[o];
   return _rec;
 }
 // a fire's mark on the ground's colour (linear RGB, in place): this year's burn charred, last year's
