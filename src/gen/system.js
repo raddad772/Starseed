@@ -529,6 +529,10 @@ export function generateSystem(seedInput) {
       const toStar = norm([-pos[0], -pos[1], -pos[2]]);
       const q = bodyOrientationAt(b, 0);
       b.terrain.climate.substellar = qRotate(qConj(q), toStar);
+      // (and how far its star swings east and west in its sky as it librates: an eccentric orbit's
+      // speed runs ahead of and behind its steady spin, ~2e radians (the Moon's ~8 degrees); a degree
+      // at the least, its own shape's and its tides' wobble)
+      b.terrain.climate.libration = Math.max(0.02, 2 * (b.orbitE || 0));
     }
   }
 

@@ -576,6 +576,12 @@ rivers that are straighter where they should be?"):**
   crater survives: the sim's smallest, 65 km, wider than its lid relaxes, 29 km), so its seas still
   ring the poles (now at ~80 degrees): the icy lid's relaxation at a small world's scale to look at.
   Seen on both Titans: the rugged provinces' ice drawn as clusters of round bubbles.
+  Megell's seam (LAB-307, a locked airless icy moon) is its fixed terminator: the day side's sublimed
+  lag (terrain.js, 86-106 K) began within a degree of it, pole to pole. Now a locked world's sun is
+  averaged over its libration (system.js climate.libration, 2e, a degree at least: terrain.js
+  _lockedLit) and the lag's temperature read at the ground's slope near the terminator (a slope facing
+  the star lit as ground further into the day): softer, and following the ground up close; still a
+  line from far off at Megell's e 0.023 (honest: a lag warms itself and sharpens its own edge).
 - **Mars' seasonal caps** (gen/frostcap.js; world.js frostTexture; render/season.js seasonFrost): a thin
   air (under 0.05 bar, little heat carried poleward) with CO2 in it freezes out at its poles in winter.
   Per 1-degree band of latitude through the year (Leighton and Murray 1966, one layer): the ground a slab

@@ -515,6 +515,15 @@ export class TerrainGenerator {
     return out;
   }
 
+  // a locked world's day-side sun where cp is the cosine of the star's angle from overhead, averaged
+  // over its libration's swing (climate)
+  _lockedLit(cp) {
+    const A = this.p.climate.libration || 0;
+    if (!(A > 0)) return Math.max(cp, 0);
+    const th = dm.acos(dm.clamp(cp, -1, 1)), lo = th - A, hi = Math.min(th + A, dm.PI / 2);
+    return hi > lo ? (dm.sin(hi) - dm.sin(lo)) / (2 * A) : 0;
+  }
+
   // Annual-mean temperature and moisture
   climate(x, y, z, h, inland, out) {
     const cl = this.p.climate;
@@ -522,7 +531,11 @@ export class TerrainGenerator {
     if (cl.locked) {
       const ss = cl.substellar;
       const cp = x * ss[0] + y * ss[1] + z * ss[2];
-      rel = (1 - cl.dayNight) + cl.dayNight * (4 * Math.max(cp, 0) + 0.02);
+      // (its sun averaged over its libration's swing, A either way (system.js): ground near the
+      // terminator is lit part of each orbit, so the day side's warmth fades over a band of it; a
+      // fixed line had drawn a ruler-straight edge, pole to pole, where an icy world's sublimed lag
+      // begins)
+      rel = (1 - cl.dayNight) + cl.dayNight * (4 * this._lockedLit(cp) + 0.02);
     } else {
       const P2 = (3 * y * y - 1) / 2;
       rel = 1 + cl.s2 * P2 * cl.transport;
@@ -2221,7 +2234,18 @@ export class TerrainGenerator {
     // cold one (Rhea's, Triton's, under ~90 K the ice hardly sublimes) stays bright): by its
     // crater record, how long it's been exposed, and its warmth)
     let lag = 0;
-    if (p.icy && S.crat) lag = dm.smoothstep(0.02, 0.6, S.crat(x, y, z)) * dm.smoothstep(86, 106, s[S_TEMP]);
+    if (p.icy && S.crat) {
+      // (near a locked world's terminator a slope facing its star is lit as ground further into its
+      // day, one facing away as its night's: the lag's edge follows the ground there)
+      let Tl = s[S_TEMP];
+      const cl = p.climate;
+      if (cl && cl.locked && cl.substellar && nrm && slope > 0.005) {
+        const ss = cl.substellar, dn = cl.dayNight;
+        const Tof = (c) => cl.Tmean * dm.pow(Math.max((1 - dn) + dn * (4 * this._lockedLit(c) + 0.02), 0.002), 0.25);
+        Tl += Tof(nrm[0] * ss[0] + nrm[1] * ss[1] + nrm[2] * ss[2]) - Tof(x * ss[0] + y * ss[1] + z * ss[2]);
+      }
+      lag = dm.smoothstep(0.02, 0.6, S.crat(x, y, z)) * dm.smoothstep(86, 106, Tl);
+    }
     if (lag > 0) for (let k = 0; k < 3; k++) { rc[k] += (LAG_DUST[k] - rc[k]) * 0.85 * lag; }
     // (on an airless world the regolith is its own rock ground up by impacts: a mare's soil is
     // dark basalt, the highlands' pale; not one colour laid over everything)
