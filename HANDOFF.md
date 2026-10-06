@@ -56,6 +56,15 @@ Dave's queue, in the order he raised it (keep this list current):
    now 3D, gusts as drifting patches; bare ground blended from patch corners (8df12d1).
    Test tip: the hidden pane clears the canvas between tasks: read pixels right after game.frame
    (wrap it), and show them in a second same-origin tab (localStorage) to look at them.
+11. Low-sun shadow flicker: DONE (d7cd3aa). Sun maps held to the ground (cameras turned with the body,
+   the sun stepped 0.1 degree at a time); grass out of the sun maps and into its own additive cover map
+   (sunShadows.js COVER, grassCover), the sward self-shaded, snow under grass darker; grass patches framed
+   from their own corners (the doubled lines on cell edges). Cloud beam at 3x the sky's drawn extinction.
+   Seen, not yet looked at: at 33N 78W under the wood near cam_dave2 the ground shows white slabs with
+   straight edges, a step up from the bare ground beside them (the near field's chunks vs the
+   heightfield? perhaps Dave's "X"). Next in the queue: wind-raised dust (item 1/2), begun: the plan is a
+   dust aerosol on top of bodies.js's mie set, world state from wind over dry bare ground upwind, the
+   LUTs rebuilt when it changes (Atmosphere.generate + readBack).
 
 ## NOW: fire through the recent centuries (session 39d69fa8, 2026-10-06), SIM 68
 
