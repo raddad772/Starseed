@@ -602,8 +602,13 @@ void main() {
       }
       ice = fl.x;
       // (snow on a floe as old as it is, drifted a little across it)
-      float snowy = smoothstep(0.3, 0.7, fl.z + (dJ.a - 0.5) * 0.25) * (1.0 - 0.7 * fl.y / max(fl.x, 1e-3));
+      // (in a summer its snow gone, the ice bare, and melt ponds in its hollows: season.js meltPond, the
+      // slabs' own the same, floeRender.js)
+      float thaw = uSeason.z > 0.5 ? smoothstep(-1.0, 2.0, Tair) : 0.0;
+      float snowy = smoothstep(0.3, 0.7, fl.z + (dJ.a - 0.5) * 0.25) * (1.0 - 0.7 * fl.y / max(fl.x, 1e-3)) * (1.0 - 0.7 * thaw);
       vec3 iceAlb = mix(vec3(0.42, 0.52, 0.6), vec3(0.82, 0.86, 0.9), snowy) * (0.9 + 0.2 * dI.r);
+      float pond = uSeason.z > 0.5 ? meltPond(Tair, dJ.r * 0.6 + tri(fp, w, 8.0).r * 0.4) * (1.0 - smoothstep(0.0, 0.2, ridge.w)) : 0.0;
+      iceAlb = mix(iceAlb, vec3(0.12, 0.32, 0.45), pond);
       vec3 N2 = normalize(mix(up, N, 0.5));
       // (a pressure ridge's sail: broken blocks, snow in their gaps, its sides lit by how they face; the
       // slabs' own near the camera: floeRender.js)
@@ -615,6 +620,7 @@ void main() {
       vec3 iceCol = iceAlb / PI * (uSunE * sunT * max(dot(N2, uSunDir), 0.0) + uSunE * skyE * (0.5 + 0.5 * dot(N2, up)));
       float NdH2 = max(dot(N2, H), 0.0);
       iceCol += uSunE * sunT * pow(NdH2, mix(400.0, 40.0, snowy)) * 0.04 * step(0.0, muS);
+      iceCol += uSunE * sunT * pow(max(dot(normalize(mix(up, N2, 0.2)), H), 0.0), 600.0) * 0.4 * pond * step(0.0, muS);
       color = mix(color, iceCol, ice);
       albedo = mix(albedo, iceAlb, ice);
     }

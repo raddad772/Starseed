@@ -553,6 +553,14 @@ rivers that are straighter where they should be?"):**
   tilting the normal), banded by the glacier's layers, a deeper blue notch the swell cuts at the water;
   the floes' tops packed by the wind into sastrugi (the 2 m and 8 m tiles' slopes, faded where a pixel
   spans them). (berg_close shot)
+- **Melt ponds** (season.js meltPond; terrainMaterial.js's frozen sea and floeRender.js's slab tops alike,
+  the same tiles): where the air over the pack is above freezing its snow melts (snowy down 70%) and the
+  water gathers in the floe's hollows (the 64 m and 8 m tiles' low places), up to ~0.45 of it at the
+  height of a summer (5-50% in the Arctic's: Fetterer and Untersteiner 1998); turquoise (0.12, 0.32,
+  0.45), a calm water's glint; none on a ridge. SOL Earth 75 N 117 on 2026-12-03 (its summer, L 118): pond
+  networks over the floes, leads, white ridges, the ice down to 1.07 m (summer_ponds shot). The air over
+  the summer pack runs to +15 C there (the ground-like run's summer; a melting surface holds it near 0 in
+  truth): ponds saturate, the thaw's wasting by phase, so it's no matter yet.
 - **Seasons on the land: snow through the year** (Dave: "see seasonal changes"; "refine and add"; not
   living things yet). worldsim/season.js: each world's year by climate cell, its temperature's first
   harmonic about the mean (a1 cos L + b1 sin L, L the solar longitude from the northern spring equinox,

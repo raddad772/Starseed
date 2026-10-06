@@ -7,6 +7,7 @@ import * as THREE from 'three';
 import { GLSL_SURFACE_ATMO, GLSL_CLOUD_N, GLSL_CLOUD_SHADOW } from './atmosphere.js';
 import { GLSL_TERRAIN_SHADOW } from './terrainShadow.js';
 import { GLSL_SUN_SHADOW, SHADOW_LAYER } from './sunShadows.js';
+import { GLSL_SEASON } from './season.js';
 
 const REACH = 600, MOVE = 150, HIGH = 3000;
 
@@ -74,6 +75,7 @@ varying vec3 vFp;
 varying vec4 vAux;
 #include <common>
 #include <logdepthbuf_pars_fragment>
+${GLSL_SEASON}
 ${GLSL_SURFACE_ATMO}
 ${GLSL_CLOUD_N}
 ${GLSL_CLOUD_SHADOW}
@@ -94,8 +96,13 @@ void main() {
   vec3 upF = normalize(vFp), w = pow(abs(upF), vec3(4.0));
   w /= w.x + w.y + w.z;
   vec4 dI = tri(vFp, w, 512.0), dJ = tri(vFp, w, 64.0);
-  float snowy = smoothstep(0.3, 0.7, vAux.x + (dJ.a - 0.5) * 0.25);
+  // (in a summer its snow gone and melt ponds in its hollows: season.js meltPond, the frozen sea's
+  // shading the same further off)
+  float Tair = uSeason.z > 0.5 ? seaMeanT(upF) + seasonIceNow(upF) : -10.0, thaw = uSeason.z > 0.5 ? smoothstep(-1.0, 2.0, Tair) : 0.0;
+  float snowy = smoothstep(0.3, 0.7, vAux.x + (dJ.a - 0.5) * 0.25) * (1.0 - 0.7 * thaw);
   vec3 alb = mix(vec3(0.42, 0.52, 0.6), vec3(0.82, 0.86, 0.9), snowy) * (0.9 + 0.2 * dI.r);
+  float pond = vAux.w < 0.25 && uSeason.z > 0.5 ? meltPond(Tair, dJ.r * 0.6 + tri(vFp, w, 8.0).r * 0.4) : 0.0;
+  alb = mix(alb, vec3(0.12, 0.32, 0.45), pond);
   // (a side: the floe's ice, blue where it's wet by the water, under its top's snow; a ridge's sail:
   // broken blocks, blue ice and snow in their gaps, as liquid.js's frozen sea draws them further off)
   bool berg = vAux.w > 2.5, block = vAux.w > 1.5, wall = vAux.w > 0.75 && !block, sail = vAux.w > 0.25 && vAux.w < 0.75;
@@ -135,6 +142,7 @@ void main() {
   vec3 color = alb / PI * (uSunE * sunT * max(dot(N2, uSunDir), 0.0) + (uSunE * skyE * (0.5 + 0.5 * dot(N2, up)) + uAmbientFloor));
   vec3 V = normalize(-vWorld), H = normalize(V + uSunDir);
   color += uSunE * sunT * pow(max(dot(N2, H), 0.0), mix(400.0, 40.0, snowy)) * 0.04 * step(0.0, muS);
+  color += uSunE * sunT * pow(max(dot(normalize(mix(up, N2, 0.2)), H), 0.0), 600.0) * 0.4 * pond * step(0.0, muS);
   gl_FragColor = vec4(color, 1.0);
 }
 `;

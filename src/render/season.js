@@ -43,6 +43,17 @@ float seaIceAt(vec3 m, float Tf) {
   float Ts = t.a * 120.0 - 60.0 + (t.r - 0.5) * 100.0 * cos(uSeason.x) + (t.g - 0.5) * 100.0 * sin(uSeason.x);
   return 1.0 - smoothstep(Tf - 4.0, Tf + 4.0, Ts);
 }
+// melt ponds on a floe's top now (0..1 here): where the air over the pack (Tair, C) is above freezing its
+// snow melts and the water gathers in its hollows (n: the 64 m and 8 m tiles there, its low places low),
+// up to ~0.45 of the floe at the height of a summer (5-50% of the Arctic's: Fetterer and Untersteiner 1998)
+float meltPond(float Tair, float n) {
+  float f = 0.45 * smoothstep(-0.5, 4.0, Tair);
+  return f > 0.0 ? 1.0 - smoothstep(f - 0.06, f + 0.06, n) : 0.0;
+}
+// (the sea's year's mean at sea level there, C: the map's)
+float seaMeanT(vec3 dirF) {
+  return textureLod(tSeasonMap, vec2(atan(dirF.z, dirF.x) / 6.28319 + 0.5, asin(clamp(dirF.y, -1.0, 1.0)) / 3.14159 + 0.5), 0.0).a * 120.0 - 60.0;
+}
 float seasonSWE(vec3 dirF, float Ta) {
   vec3 yr = seasonYear(dirF);
   float a1 = yr.x, b1 = yr.y, P = yr.z;
