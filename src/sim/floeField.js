@@ -8,6 +8,7 @@ import * as THREE from 'three';
 import { liquidNow, iceAt, floeOf, packIceAt, floeTop, floeRound, seaTempAt } from '../gen/liquidice.js';
 import { ridgeBlocks } from '../gen/floeslabs.js';
 import { bergsNear, bergBasis } from '../gen/icebergs.js';
+import * as dm from '../core/dmath.js';
 
 export class FloeField {
   constructor(body) {
@@ -20,7 +21,7 @@ export class FloeField {
   near(p, radius, out) {
     const b = this.body, gen = b.terrain;
     if (!gen) return out;
-    const R = gen.R, l = Math.hypot(p.x, p.y, p.z);
+    const R = gen.R, l = dm.hypot(p.x, p.y, p.z);
     if (l - R > 20 || l - R < -10) return out;
     const d = [p.x / l, p.y / l, p.z / l], s = gen.sample(d[0], d[1], d[2], 8, this._s);
     const L = b.solarLongitude(), q = liquidNow(gen, s, d, 0, L, this._q || (this._q = {}));
@@ -29,13 +30,13 @@ export class FloeField {
     if (!(Math.abs(L - this.L) < 0.01)) { this.floes.clear(); this.L = L; }
     const iceF = iceAt(gen, L, q.ice);
     // (the floes about it: its own and those round it a little further than it asks)
-    const ex = Math.abs(d[1]) < 0.9 ? [d[2], 0, -d[0]] : [0, -d[2], d[1]], el = Math.hypot(...ex);
+    const ex = Math.abs(d[1]) < 0.9 ? [d[2], 0, -d[0]] : [0, -d[2], d[1]], el = dm.hypot(...ex);
     ex[0] /= el; ex[1] /= el; ex[2] /= el;
     const ey = [d[1] * ex[2] - d[2] * ex[1], d[2] * ex[0] - d[0] * ex[2], d[0] * ex[1] - d[1] * ex[0]];
     const seen = new Set(), k = radius + 3;
     for (const [a, c] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [0.7, 0.7], [-0.7, 0.7], [0.7, -0.7], [-0.7, -0.7]]) {
       const pp = [d[0] * R + (ex[0] * a + ey[0] * c) * k, d[1] * R + (ex[1] * a + ey[1] * c) * k, d[2] * R + (ex[2] * a + ey[2] * c) * k];
-      const pl = Math.hypot(...pp);
+      const pl = dm.hypot(...pp);
       pp[0] *= R / pl; pp[1] *= R / pl; pp[2] *= R / pl;
       const F = floeOf(pp, iceF, {});
       if (!F.there || seen.has(F.id)) continue;
@@ -53,7 +54,7 @@ export class FloeField {
       if (!fl.ridged) continue;
       const r2 = (radius + 2) * (radius + 2);
       ridgeBlocks(fl.f, fl.P, fl.mid, fl.rr, fl.top, R, (x, y, z) => (x - p.x) ** 2 + (y - p.y) ** 2 + (z - p.z) ** 2 < r2, (c3, qt, bl, bt, bw) => {
-        out.push({ kind: 'box', x: c3[0], y: c3[1], z: c3[2], q: qt, hx: bl / 2, hy: bt / 2, hz: bw / 2, r: Math.hypot(bl, bt, bw) / 2, h: 0 });
+        out.push({ kind: 'box', x: c3[0], y: c3[1], z: c3[2], q: qt, hx: bl / 2, hy: bt / 2, hz: bw / 2, r: dm.hypot(bl, bt, bw) / 2, h: 0 });
       });
     }
     return out;
@@ -69,17 +70,17 @@ export class BergField {
   near(p, radius, out) {
     const b = this.body, gen = b.terrain;
     if (!gen || !gen.snap) return out;
-    const R = gen.R, l = Math.hypot(p.x, p.y, p.z);
+    const R = gen.R, l = dm.hypot(p.x, p.y, p.z);
     if (l - R > 300 || l - R < -10) return out;
     const L = b.solarLongitude();
     const warm = (d) => { const T = seaTempAt(gen, L, [d[0] * R, d[1] * R, d[2] * R]); return T == null ? 0 : Math.min(1, Math.max(0, T / 8)); };
     bergsNear(gen.snap, R, [p.x / l, p.y / l, p.z / l], radius + 260, warm, (bg) => {
       const cx = bg.dir[0] * (R + bg.hgt * 0.45), cy = bg.dir[1] * (R + bg.hgt * 0.45), cz = bg.dir[2] * (R + bg.hgt * 0.45);
-      const reach = radius + Math.hypot(bg.len, bg.wid) * 0.4;
+      const reach = radius + dm.hypot(bg.len, bg.wid) * 0.4;
       if ((cx - p.x) ** 2 + (cy - p.y) ** 2 + (cz - p.z) ** 2 > reach * reach + bg.hgt * bg.hgt) return;
       bergBasis(bg.dir, bg.yaw, _bx, _by, _bz);
       _Q.setFromRotationMatrix(_M.makeBasis(_X.fromArray(_bx), _Y.fromArray(_by), _Z.fromArray(_bz)));
-      out.push({ kind: 'box', x: cx, y: cy, z: cz, q: [_Q.x, _Q.y, _Q.z, _Q.w], hx: bg.len * 0.46, hy: bg.hgt * 0.45, hz: bg.wid * 0.46, r: Math.hypot(bg.len, bg.hgt, bg.wid) / 2, h: 0 });
+      out.push({ kind: 'box', x: cx, y: cy, z: cz, q: [_Q.x, _Q.y, _Q.z, _Q.w], hx: bg.len * 0.46, hy: bg.hgt * 0.45, hz: bg.wid * 0.46, r: dm.hypot(bg.len, bg.hgt, bg.wid) / 2, h: 0 });
     });
     return out;
   }

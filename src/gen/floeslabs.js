@@ -7,6 +7,7 @@
 import { faceUV, faceRoot, pieceShape, pieceMid, pieceCrack, clipPiece, splits, childId, crackOpen, pieceCover, edgePlane, liquidNow, packIce, packIceAt, floeTop, iceAt, ridgeCrest, floeRound, floeAge, POLY_MAX } from './liquidice.js';
 import { triDetail } from './detail.js';
 import { S_LEN } from './terrain.js';
+import * as dm from '../core/dmath.js';
 
 const _j = [0, 0, 0, 0], _k = [0, 0, 0, 0];
 // how far the shading's edge stands out from a piece's polygon at p (body-fixed; d its way): liquid.js
@@ -33,7 +34,7 @@ export function buildFloes(gen, dir, sinSun, L, reach = 600) {
   const ice = iceAt(gen, L, q.ice), origin = [dir[0] * R, dir[1] * R, dir[2] * R];
   const P = [], N = [], F = [], A = [], I = [], B = [];
   // (the faces its reach touches)
-  const ex = Math.abs(dir[1]) < 0.9 ? [dir[2], 0, -dir[0]] : [0, -dir[2], dir[1]], el = Math.hypot(...ex);
+  const ex = Math.abs(dir[1]) < 0.9 ? [dir[2], 0, -dir[0]] : [0, -dir[2], dir[1]], el = dm.hypot(...ex);
   ex[0] /= el; ex[1] /= el; ex[2] /= el;
   const ey = [dir[1] * ex[2] - dir[2] * ex[1], dir[2] * ex[0] - dir[0] * ex[2], dir[0] * ex[1] - dir[1] * ex[0]];
   const faces = new Map();
@@ -102,21 +103,21 @@ export function buildFloes(gen, dir, sinSun, L, reach = 600) {
         const ed = E[k], ek = ed.sg * (ed.n[0] * p[0] + ed.n[1] * p[1] + ed.n[2] * p[2]) - ed.g;
         if (ek < e1) { e2 = e1; e1 = ek; near = k; } else if (ek < e2) e2 = ek;
       }
-      if (e2 < rr) e1 = rr - Math.hypot(rr - e1, rr - e2);
+      if (e2 < rr) e1 = rr - dm.hypot(rr - e1, rr - e2);
       return e1 + jag(p, [p[0] / R, p[1] / R, p[2] / R]);
     };
     // (rays from its middle along the ground: its outline every ~1 m (more further off))
     const up0 = [cen[0] / R, cen[1] / R, cen[2] / R];
-    const ax = Math.abs(up0[1]) < 0.9 ? [up0[2], 0, -up0[0]] : [0, -up0[2], up0[1]], al = Math.hypot(...ax);
+    const ax = Math.abs(up0[1]) < 0.9 ? [up0[2], 0, -up0[0]] : [0, -up0[2], up0[1]], al = dm.hypot(...ax);
     ax[0] /= al; ax[1] /= al; ax[2] /= al;
     const ay = [up0[1] * ax[2] - up0[2] * ax[1], up0[2] * ax[0] - up0[0] * ax[2], up0[0] * ax[1] - up0[1] * ax[0]];
     let rmax = 0;
-    for (let i = 0; i < Pc.n; i++) { const q = onFace(f, Pc.V[2 * i], Pc.V[2 * i + 1], R, [0, 0, 0]); rmax = Math.max(rmax, Math.hypot(q[0] - cen[0], q[1] - cen[1], q[2] - cen[2])); }
+    for (let i = 0; i < Pc.n; i++) { const q = onFace(f, Pc.V[2 * i], Pc.V[2 * i + 1], R, [0, 0, 0]); rmax = Math.max(rmax, dm.hypot(q[0] - cen[0], q[1] - cen[1], q[2] - cen[2])); }
     rmax += 4;
-    const at = (th, rho, o) => { const c2 = Math.cos(th), s2 = Math.sin(th); for (let k = 0; k < 3; k++) o[k] = cen[k] + (ax[k] * c2 + ay[k] * s2) * rho; const l = Math.hypot(o[0], o[1], o[2]); o[0] *= R / l; o[1] *= R / l; o[2] *= R / l; return o; };
+    const at = (th, rho, o) => { const c2 = dm.cos(th), s2 = dm.sin(th); for (let k = 0; k < 3; k++) o[k] = cen[k] + (ax[k] * c2 + ay[k] * s2) * rho; const l = dm.hypot(o[0], o[1], o[2]); o[0] *= R / l; o[1] *= R / l; o[2] *= R / l; return o; };
     if (!(ef(cen) > 0)) return;
     const ring = [], ridgeH = [], q = [0, 0, 0];
-    const mid0 = Math.hypot(cen[0] - origin[0], cen[1] - origin[1], cen[2] - origin[2]);
+    const mid0 = dm.hypot(cen[0] - origin[0], cen[1] - origin[1], cen[2] - origin[2]);
     for (let th = 0; th < 2 * Math.PI;) {
       let lo = 0, hi = rmax;
       if (ef(at(th, hi, q)) > 0) hi = rmax * 1.5;
@@ -131,7 +132,7 @@ export function buildFloes(gen, dir, sinSun, L, reach = 600) {
     if (nb < 3) return;
     const rt = R + top;
     const put = (p, r, nx, ny, nz, h, wall) => {
-      const l = Math.hypot(p[0], p[1], p[2]), k = r / l, x = p[0] * k, y = p[1] * k, z = p[2] * k;
+      const l = dm.hypot(p[0], p[1], p[2]), k = r / l, x = p[0] * k, y = p[1] * k, z = p[2] * k;
       P.push(x - origin[0], y - origin[1], z - origin[2]); N.push(nx, ny, nz); F.push(x, y, z); A.push(age, top, h, wall);
       return P.length / 3 - 1;
     };
@@ -140,13 +141,13 @@ export function buildFloes(gen, dir, sinSun, L, reach = 600) {
       const a = ring[(i + nb - 1) % nb], b = ring[(i + 1) % nb], t = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], u = [p[0] / R, p[1] / R, p[2] / R];
       let ox = t[1] * u[2] - t[2] * u[1], oy = t[2] * u[0] - t[0] * u[2], oz = t[0] * u[1] - t[1] * u[0];
       if (ox * (p[0] - cen[0]) + oy * (p[1] - cen[1]) + oz * (p[2] - cen[2]) < 0) { ox = -ox; oy = -oy; oz = -oz; }
-      const ol = Math.hypot(ox, oy, oz) || 1;
+      const ol = dm.hypot(ox, oy, oz) || 1;
       return [ox / ol, oy / ol, oz / ol];
     });
     // the top: the outline, then rings toward the middle (each ~80 m of size, thinned to ~40 m apart), then
     // the middle: a fan of triangles that keeps to the sphere
     let perim = 0;
-    for (let i = 0; i < nb; i++) { const a = ring[i], b = ring[(i + 1) % nb]; perim += Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]); }
+    for (let i = 0; i < nb; i++) { const a = ring[i], b = ring[(i + 1) % nb]; perim += dm.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]); }
     const rings = Math.max(1, Math.ceil(size / 80));
     let prev = ring.map((p, i) => ({ i, v: put(p, rt, p[0] / R, p[1] / R, p[2] / R, top, 0) }));
     for (let r = 1; r <= rings; r++) {
@@ -173,7 +174,7 @@ export function buildFloes(gen, dir, sinSun, L, reach = 600) {
       const H = E[k].H, row = (p, o) => {
         const u = [p[0] / R, p[1] / R, p[2] / R], Hc = H * ridgeCrest(p, u);
         // (its face: falling inward at 1 in 2, so facing up and in)
-        const nl = Math.hypot(u[0] * 2 - o[0], u[1] * 2 - o[1], u[2] * 2 - o[2]), nx = (u[0] * 2 - o[0]) / nl, ny = (u[1] * 2 - o[1]) / nl, nz = (u[2] * 2 - o[2]) / nl;
+        const nl = dm.hypot(u[0] * 2 - o[0], u[1] * 2 - o[1], u[2] * 2 - o[2]), nx = (u[0] * 2 - o[0]) / nl, ny = (u[1] * 2 - o[1]) / nl, nz = (u[2] * 2 - o[2]) / nl;
         return [[0.15, Hc], [0.15 - Hc, Hc / 2], [0.15 - 2 * Hc, 0]].map(([x, z]) => put([p[0] + o[0] * x, p[1] + o[1] * x, p[2] + o[2] * x], rt + z, nx, ny, nz, top + z, 0.5));
       };
       const ra = row(ring[i], out[i]), rb = row(ring[j], out[j]);
@@ -216,7 +217,7 @@ export function ridgeBlocks(f, Pc, cen, rr, top, R, want, put) {
     if (!(Pc.ES[i] < 0)) continue;
     const H = -Pc.ES[i], j = (i + 1) % Pc.n;
     const A = onFace(f, Pc.V[2 * i], Pc.V[2 * i + 1], R, [0, 0, 0]), Bv = onFace(f, Pc.V[2 * j], Pc.V[2 * j + 1], R, [0, 0, 0]);
-    const len = Math.hypot(Bv[0] - A[0], Bv[1] - A[1], Bv[2] - A[2]);
+    const len = dm.hypot(Bv[0] - A[0], Bv[1] - A[1], Bv[2] - A[2]);
     if (len < 2 * rr + 1) continue;
     const et = [(Bv[0] - A[0]) / len, (Bv[1] - A[1]) / len, (Bv[2] - A[2]) / len];
     for (let k = 0; rr + k + 1 <= len - rr; k++) {
@@ -227,13 +228,13 @@ export function ridgeBlocks(f, Pc, cen, rr, top, R, want, put) {
       const tb = 0.1 + 0.2 * Math.min(1, H / 1.5), n = Math.floor(2.24 * H / 0.75 + rnd());
       for (let b = 0; b < n; b++) {
         const t = rr + k + rnd(), base = [A[0] + et[0] * t, A[1] + et[1] * t, A[2] + et[2] * t];
-        const bl = Math.hypot(...base), u = [base[0] / bl, base[1] / bl, base[2] / bl];
+        const bl = dm.hypot(...base), u = [base[0] / bl, base[1] / bl, base[2] / bl];
         // (in: across the crack, toward the floe's middle)
         let ix = u[1] * et[2] - u[2] * et[1], iy = u[2] * et[0] - u[0] * et[2], iz = u[0] * et[1] - u[1] * et[0];
         if (ix * (cen[0] - base[0]) + iy * (cen[1] - base[1]) + iz * (cen[2] - base[2]) < 0) { ix = -ix; iy = -iy; iz = -iz; }
-        const Hc = H * ridgeCrest(base, u), x = rnd() * 2 * Hc, l = 0.6 + 1.9 * Math.pow(rnd(), 1.5), w = 0.5 + rnd(), th = tb * (0.7 + 0.6 * rnd());
+        const Hc = H * ridgeCrest(base, u), x = rnd() * 2 * Hc, l = 0.6 + 1.9 * dm.pow(rnd(), 1.5), w = 0.5 + rnd(), th = tb * (0.7 + 0.6 * rnd());
         const z = top + Math.max(0, Hc - x / 2) - th * 0.4 * rnd(), r = R + z;
-        const c = [base[0] + ix * x, base[1] + iy * x, base[2] + iz * x], cl = Math.hypot(...c);
+        const c = [base[0] + ix * x, base[1] + iy * x, base[2] + iz * x], cl = dm.hypot(...c);
         // (its turn: along the ridge, up and across as axes, then yawed, pitched 15-65 degrees either way and rolled)
         const yaw = rnd() * 6.2832, pitch = (0.26 + 0.87 * rnd()) * (rnd() < 0.5 ? -1 : 1), roll = (rnd() - 0.5) * 1.05;
         put([c[0] * r / cl, c[1] * r / cl, c[2] * r / cl], turn(et, u, yaw, pitch, roll), l, th, w);
@@ -246,7 +247,7 @@ export function ridgeBlocks(f, Pc, cen, rr, top, R, want, put) {
 function turn(et, u, yaw, pitch, roll) {
   const ac = [et[1] * u[2] - et[2] * u[1], et[2] * u[0] - et[0] * u[2], et[0] * u[1] - et[1] * u[0]];
   // (the frame's matrix, columns: along, up, across; then the local yaw (y), pitch (x), roll (z))
-  const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch), cr = Math.cos(roll), sr = Math.sin(roll);
+  const cy = dm.cos(yaw), sy = dm.sin(yaw), cp = dm.cos(pitch), sp = dm.sin(pitch), cr = dm.cos(roll), sr = dm.sin(roll);
   // local rotation Ry * Rx * Rz
   const Lr = [
     [cy * cr + sy * sp * sr, -cy * sr + sy * sp * cr, sy * cp],

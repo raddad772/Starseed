@@ -339,15 +339,15 @@ function airGlow(b, star, h, atm, S) {
   const green = [0.12, 1.0, 0.25], violet = [0.35, 0.2, 1.0], pink = [1.0, 0.22, 0.32], red = [1.0, 0.12, 0.08];
   const lo = mixc(green, violet, pink, 0.02 * w), hi = mixc(red, violet, pink, 0.02 * w);
   // (a tilted dipole, fixed per body; no randomness drawn)
-  const tilt = 0.06 + 0.12 * ((Math.sin((b.massEarth * 1e4 + b.radiusM) * 1e-3) * 43758.5453) % 1 + 1) % 1;
+  const tilt = 0.06 + 0.12 * ((dm.sin((b.massEarth * 1e4 + b.radiusM) * 1e-3) * 43758.5453) % 1 + 1) % 1;
   return {
     aurora: 7e-3 * wind * (field > 0.05 ? Math.min(2, 0.6 + 0.4 * field) : 0.15) * thin,
-    ovalLat: field > 0.05 ? dm.clamp(67 + 4 * Math.log2(Math.max(field, 0.05)) - 4 * Math.log2(wind), 45, 82) * Math.PI / 180 : -1,
+    ovalLat: field > 0.05 ? dm.clamp(67 + 4 * dm.log2(Math.max(field, 0.05)) - 4 * dm.log2(wind), 45, 82) * Math.PI / 180 : -1,
     ovalWidth: (3 + 2 * Math.min(2, wind)) * Math.PI / 180,
     colorLow: lo, colorHigh: hi,
     airglow: 1.2e-4 * thin * (O > 0.01 ? 1 : 0.35),
     airglowColor: O > 0.01 ? [0.45, 1.0, 0.35] : [1.0, 0.55, 0.25],
-    magAxis: [Math.sin(tilt), Math.cos(tilt), 0],
+    magAxis: [dm.sin(tilt), dm.cos(tilt), 0],
   };
 }
 
@@ -599,7 +599,7 @@ export function buildBody(rng, proto, star, host) {
   } else if (b.comp.water > 0.15) hydro = { water: 'frozen', liquid: null, oceanFraction: 0, iceCover: 1 };
   // (ground ice: with little or no air to carry the vapour, only the cold traps keep it at the
   // surface: polar caps, the rest under the ground)
-  else if (Tsurf < 240 && b.comp.water > 1e-5) { const thinK = 1 - dm.clamp(LOG10(Math.max(pBar, 1e-6)) + 2, 0, 1); hydro = { water: 'frozen', liquid: null, oceanFraction: 0, iceCover: dm.clamp(0.08 + coverage * 0.3, 0, 0.45) * (1 - thinK) ** 3 + 0.015 * thinK }; }
+  else if (Tsurf < 240 && b.comp.water > 1e-5) { const thinK = 1 - dm.clamp(LOG10(Math.max(pBar, 1e-6)) + 2, 0, 1); hydro = { water: 'frozen', liquid: null, oceanFraction: 0, iceCover: dm.clamp(0.08 + coverage * 0.3, 0, 0.45) * (1 - thinK) * (1 - thinK) * (1 - thinK) + 0.015 * thinK }; }
   // a young world: its magma ocean still crusting over
   // (a rocky world big enough stays molten for a while: ~50 Myr for an Earth, much less for a
   // Moon; icy bodies freeze over at once)

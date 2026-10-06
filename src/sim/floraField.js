@@ -18,6 +18,7 @@ import { scatterFlora, floraSpecies } from '../gen/flora.js';
 import { faceUVFromDir } from '../gen/cubesphere.js';
 import { ROCK_STRIDE, rockShapeOf } from '../gen/rocks.js';
 import { FloeField, BergField } from './floeField.js';
+import * as dm from '../core/dmath.js';
 
 const CELL = 16; // m: spatial hash cell (body-fixed)
 // trunk radius at the base, as a fraction of the tree's height (render/floraRender.js)
@@ -52,7 +53,7 @@ export class FloraField {
 
   // make sure the node under a body-fixed point is loaded
   ensure(p) {
-    const len = Math.hypot(p.x, p.y, p.z);
+    const len = dm.hypot(p.x, p.y, p.z);
     const [f, ix, iy] = this.nodeKey([p.x / len, p.y / len, p.z / len]);
     const key = `${f}:${ix}:${iy}`;
     if (this.nodes.has(key)) return;
@@ -81,7 +82,7 @@ export class FloraField {
     };
     const cleared = (x, y, z) => {
       if (!clear.length) return false;
-      const l = Math.hypot(x, y, z), k = R / l;
+      const l = dm.hypot(x, y, z), k = R / l;
       for (const c of clear) {
         const dx = x * k - c.pos.x, dy = y * k - c.pos.y, dz = z * k - c.pos.z;
         if (dx * dx + dy * dy + dz * dz < c.r * c.r) return true;
@@ -94,7 +95,7 @@ export class FloraField {
       if (cleared(x, y, z)) continue;
       const s = trees[i + 3], tint = trees[i + 5];
       const H = sp.treeHeight * s * (0.85 + 0.3 * tint);
-      const l = Math.hypot(x, y, z);
+      const l = dm.hypot(x, y, z);
       put({ kind: 'tree', x, y, z, ux: x / l, uy: y / l, uz: z / l, r: Math.max(0.12, (TRUNK[sp.tree] || 0.04) * sp.treeHeight * s), h: H });
     }
     for (const arr of rocks) {
@@ -104,7 +105,7 @@ export class FloraField {
         if (r < 0.3) continue; // (pebbles: wheels roll over them)
         const x = o[0] + arr[i], y = o[1] + arr[i + 1], z = o[2] + arr[i + 2];
         if (cleared(x, y, z)) continue;
-        const l = Math.hypot(x, y, z);
+        const l = dm.hypot(x, y, z);
         // drawn sunk by a quarter of its size, a squashed sphere: its middle a little under the ground
         put({ kind: 'rock', x: x - x / l * 0.25 * s, y: y - y / l * 0.25 * s, z: z - z / l * 0.25 * s, ux: x / l, uy: y / l, uz: z / l, r, h: 0 });
       }
@@ -117,7 +118,7 @@ export class FloraField {
       if (rad < 0.3) continue;   // (pebbles: wheels roll over them)
       const x = o[0] + geo[i], y = o[1] + geo[i + 1], z = o[2] + geo[i + 2];
       if (cleared(x, y, z)) continue;
-      const l = Math.hypot(x, y, z), sh = rockShapeOf(geo[i + 6], geo[i + 9]);
+      const l = dm.hypot(x, y, z), sh = rockShapeOf(geo[i + 6], geo[i + 9]);
       const up = rad * sh.sy * (1 - 2 * sh.sink);   // (its middle above the ground)
       put({ kind: 'rock', x: x + x / l * up, y: y + y / l * up, z: z + z / l * up, ux: x / l, uy: y / l, uz: z / l, r: rad * (0.55 + 0.35 * sh.sy), h: 0 });
     }
@@ -132,7 +133,7 @@ export class FloraField {
           const key = `${a}:${b}:${c}`, cell = this.cells.get(key);
           if (!cell) continue;
           const keep = cell.filter((it) => {
-            const l = Math.hypot(it.x, it.y, it.z), k = R / l;
+            const l = dm.hypot(it.x, it.y, it.z), k = R / l;
             const dx = it.x * k - posF.x, dy = it.y * k - posF.y, dz = it.z * k - posF.z;
             return dx * dx + dy * dy + dz * dz >= r * r;
           });
@@ -153,15 +154,15 @@ export class FloraField {
     if (!this.plants) return out;
     this.ensure(p);
     // (the edges of a node: its neighbours too)
-    const l = Math.hypot(p.x, p.y, p.z);
+    const l = dm.hypot(p.x, p.y, p.z);
     const tx = Math.abs(p.y / l) < 0.9 ? [p.z, 0, -p.x] : [0, -p.z, p.y];
-    const tl = Math.hypot(tx[0], tx[1], tx[2]);
+    const tl = dm.hypot(tx[0], tx[1], tx[2]);
     for (const [a, b] of [[1, 0], [-1, 0]]) {
       const k = (radius + 4) / tl;
       this.ensure({ x: p.x + tx[0] * k * a, y: p.y + tx[1] * k * a, z: p.z + tx[2] * k * a });
     }
     const ty = [p.y * tx[2] / l - p.z * tx[1] / l, p.z * tx[0] / l - p.x * tx[2] / l, p.x * tx[1] / l - p.y * tx[0] / l];
-    const tyl = Math.hypot(ty[0], ty[1], ty[2]);
+    const tyl = dm.hypot(ty[0], ty[1], ty[2]);
     for (const a of [1, -1]) {
       const k = (radius + 4) / tyl;
       this.ensure({ x: p.x + ty[0] * k * a, y: p.y + ty[1] * k * a, z: p.z + ty[2] * k * a });

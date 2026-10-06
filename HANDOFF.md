@@ -384,8 +384,16 @@ rivers that are straighter where they should be?"):**
 - **Deterministic math** (Dave: "This is all deterministic so identical across clients right?"): the
   generation files of this work (terrain, rocks, flora, geology, localsim, channels) now use dmath for
   every transcendental (Math.pow/log/exp/sin/cos/atan/tanh/hypot/cbrt differ by an ulp between engines;
-  dm.hypot added). Other generation files still have ~40 (bodies, star, settlements, worldsim barren,
-  landmarks, stagnant, snapshot, grid, world, sim floraField...): queued as its own task.
+  dm.hypot added). The rest (2026-10-06, SIM 64): bodies, star, settlements, floeslabs, liquidice,
+  icebergs, detail, worldsim barren/stagnant/landmarks/snapshot/world/climate, sim floraField and
+  floeField; integer powers past 2 (** 3, ** 4: an engine's pow) written as products. Checked: 152
+  systems' every number the same save the aurora's render values (magAxis, ovalLat: the dipole tilt's
+  sin hash, 1e-16..1e-11); seven world sims (Mercury, Mars, Moon, Io, Titan, LAB-306:4, LAB-300:1)
+  bit-identical save the folds' arc vectors (3e-16), hence the version; floes, ridges, bergs and their
+  colliders as before in the game. Left native on purpose: grid.js cellAt's Math.atan (a first guess,
+  stepped against the edges to the exact cell, in the hottest loop), portrait.js's picture (render
+  output; the shares of what covers a world, which the catalog shows, are sampled through dmath), and the sim's per-viewer code (ship, player, nav, kepler's orbit drawing and state-
+  vector elements, the tile streamer's order, the clock's season text).
 
 - **One world clock** (Dave: "start simulating time. And have an agreed upon start time ... It would also
   sync clouds up between clients"): sim/worldClock.js. Universe time counts from WORLD_EPOCH (2026-10-05

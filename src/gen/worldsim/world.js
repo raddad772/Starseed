@@ -45,10 +45,11 @@ const KD = +(globalThis.process?.env?.WS_KD || 6e-7), KF = +(globalThis.process?
 // Rp^4/d^3 (Earth: Moon 0.36 m, Sun 0.16 m); a world locked to its host feels no tide from it
 export function tideOf(body, sys) {
   let a = 0;
-  const Rp = body.radiusM, Mp = body.massEarth;
-  for (const id of body.moons || []) { const m = sys.bodies[id]; const d = m.orbit && m.orbit.aReal || 0; if (d > 0) a += (m.massEarth / Mp) * Rp ** 4 / d ** 3; }
-  if (body.kind === 'moon' && !body.rotation.locked) { const hst = sys.bodies[body.parentId]; const d = body.orbit && body.orbit.aReal || 0; if (d > 0) a += (hst.massEarth / Mp) * Rp ** 4 / d ** 3; }
-  if (!(body.rotation.locked && body.kind !== 'moon')) { const d = body.aAU * 1.496e11; a += (sys.bodies[0].mass * 332946 / Mp) * Rp ** 4 / d ** 3; }
+  // (powers as products: ** and Math.pow are an engine's own approximation)
+  const Rp = body.radiusM, Mp = body.massEarth, Rp4 = (Rp * Rp) * (Rp * Rp);
+  for (const id of body.moons || []) { const m = sys.bodies[id]; const d = m.orbit && m.orbit.aReal || 0; if (d > 0) a += (m.massEarth / Mp) * Rp4 / (d * d * d); }
+  if (body.kind === 'moon' && !body.rotation.locked) { const hst = sys.bodies[body.parentId]; const d = body.orbit && body.orbit.aReal || 0; if (d > 0) a += (hst.massEarth / Mp) * Rp4 / (d * d * d); }
+  if (!(body.rotation.locked && body.kind !== 'moon')) { const d = body.aAU * 1.496e11; a += (sys.bodies[0].mass * 332946 / Mp) * Rp4 / (d * d * d); }
   return Math.min(a, 30);
 }
 // a big moon (over 0.5% of the planet's mass) steadies the tilt: milder ice ages
@@ -857,6 +858,6 @@ function vegFrom(rain, rainK, out) {
   return out;
 }
 
-function latLonOf(d) { return { lat: Math.asin(Math.max(-1, Math.min(1, d[1]))) * 180 / Math.PI, lon: Math.atan2(d[2], d[0]) * 180 / Math.PI }; }
+function latLonOf(d) { return { lat: dm.asin(Math.max(-1, Math.min(1, d[1]))) * 180 / Math.PI, lon: dm.atan2(d[2], d[0]) * 180 / Math.PI }; }
 
 function hashJitter(c) { let x = Math.imul(c ^ 0x9e3779b9, 0x85ebca6b); x ^= x >>> 13; x = Math.imul(x, 0xc2b2ae35); x ^= x >>> 16; return (x >>> 0) / 4294967296; }

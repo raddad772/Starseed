@@ -239,7 +239,7 @@ export function analyzeSettlements(gen, opts = {}) {
 
   // ---- select sites: greedy non-maximum suppression
   const minSep = opts.minSeparation || Math.max(0.12, 3.2 / Math.sqrt(n / 10) * 2.5); // radians
-  const cosSep = Math.cos(minSep);
+  const cosSep = dm.cos(minSep);
   const order = Array.from({ length: n }, (_, i) => i).filter((i) => score[i] > 0);
   order.sort((a, b) => (score[b] - score[a]) || (a - b));
   const sites = [];

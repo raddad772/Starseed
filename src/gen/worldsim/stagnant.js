@@ -212,7 +212,7 @@ export function stagnantWorld(G, opts) {
 // provinces of short ridges packed close (Xanadu's), and scattered. Raised in h (as drawn)
 export function contractionRidges(G, h, rng, scale, k = 1, rugged = null) {
   const n = G.n, d = G.dir, R = G.R, ridges = [];
-  const east = (p) => { const l = Math.hypot(p[0], p[2]) || 1; return [-p[2] / l, 0, p[0] / l]; };
+  const east = (p) => { const l = dm.hypot(p[0], p[2]) || 1; return [-p[2] / l, 0, p[0] / l]; };
   const rot = (p, ax, a) => {   // (p turned by a about the unit axis ax)
     const c = dm.cos(a), sn = dm.sin(a), dt = p[0] * ax[0] + p[1] * ax[1] + p[2] * ax[2];
     return [p[0] * c + (ax[1] * p[2] - ax[2] * p[1]) * sn + ax[0] * dt * (1 - c), p[1] * c + (ax[2] * p[0] - ax[0] * p[2]) * sn + ax[1] * dt * (1 - c), p[2] * c + (ax[0] * p[1] - ax[1] * p[0]) * sn + ax[2] * dt * (1 - c)];
@@ -222,19 +222,19 @@ export function contractionRidges(G, h, rng, scale, k = 1, rugged = null) {
   // (the equatorial chains)
   const nEq = Math.round(rng.range(20, 40) * k);
   for (let i = 0; i < nEq; i++) {
-    const lon = rng.range(0, 2 * Math.PI), lat = rng.range(-0.42, 0.42), at = [Math.cos(lat) * Math.cos(lon), Math.sin(lat), Math.cos(lat) * Math.sin(lon)];
+    const lon = rng.range(0, 2 * Math.PI), lat = rng.range(-0.42, 0.42), at = [dm.cos(lat) * dm.cos(lon), dm.sin(lat), dm.cos(lat) * dm.sin(lon)];
     add(at, headingAt(at, 0.35), rng.range(150e3, 800e3), rng.range(8e3, 20e3), rng.range(400, 1500));
   }
   // (provinces of short ridges packed close, most in the low latitudes)
   const nProv = Math.round(rng.range(3, 6));
   for (let p = 0; p < nProv; p++) {
-    const c0 = p < nProv - 1 ? (() => { const lon = rng.range(0, 2 * Math.PI), lat = rng.range(-0.3, 0.3); return [Math.cos(lat) * Math.cos(lon), Math.sin(lat), Math.cos(lat) * Math.sin(lon)]; })() : rng.unitVector();
+    const c0 = p < nProv - 1 ? (() => { const lon = rng.range(0, 2 * Math.PI), lat = rng.range(-0.3, 0.3); return [dm.cos(lat) * dm.cos(lon), dm.sin(lat), dm.cos(lat) * dm.sin(lon)]; })() : rng.unitVector();
     const rad = rng.range(600e3, 1400e3) / (R / scale), dir0 = rng.range(0, Math.PI), nR = Math.round(rng.range(60, 150) * k);
     for (let i = 0; i < nR; i++) {
       const e = east(c0), nn = [c0[1] * e[2] - c0[2] * e[1], c0[2] * e[0] - c0[0] * e[2], c0[0] * e[1] - c0[1] * e[0]];
       const a = rng.range(0, 2 * Math.PI), r = rad * Math.sqrt(rng.next());
-      let at = [c0[0] + r * (Math.cos(a) * e[0] + Math.sin(a) * nn[0]), c0[1] + r * (Math.cos(a) * e[1] + Math.sin(a) * nn[1]), c0[2] + r * (Math.cos(a) * e[2] + Math.sin(a) * nn[2])];
-      const l = Math.hypot(...at); at = at.map((x) => x / l);
+      let at = [c0[0] + r * (dm.cos(a) * e[0] + dm.sin(a) * nn[0]), c0[1] + r * (dm.cos(a) * e[1] + dm.sin(a) * nn[1]), c0[2] + r * (dm.cos(a) * e[2] + dm.sin(a) * nn[2])];
+      const l = dm.hypot(...at); at = at.map((x) => x / l);
       add(at, rot(east(at), at, dir0 + rng.range(-0.6, 0.6)), rng.range(50e3, 250e3), rng.range(6e3, 15e3), rng.range(300, 1200));
     }
   }
@@ -249,7 +249,7 @@ export function contractionRidges(G, h, rng, scale, k = 1, rugged = null) {
   for (const r of ridges) {
     const Lg = r.L * scale / R, hd = r.heading, at = r.at;
     let pole = [at[1] * hd[2] - at[2] * hd[1], at[2] * hd[0] - at[0] * hd[2], at[0] * hd[1] - at[1] * hd[0]];
-    const pl = Math.hypot(...pole); pole = pole.map((x) => x / pl);
+    const pl = dm.hypot(...pole); pole = pole.map((x) => x / pl);
     const u = rot(at, pole, -Lg / 2), v = [pole[1] * u[2] - pole[2] * u[1], pole[2] * u[0] - pole[0] * u[2], pole[0] * u[1] - pole[1] * u[0]];
     const A = { pole, u, v, start: 0, len: Lg, H: r.H * scale * VEXAG, w: 2 * r.w * scale, mid: at };
     arcs.push(A);

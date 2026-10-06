@@ -3,9 +3,12 @@
 // is built from), and what covers it: ocean, ice, lava, biomes, plains, in
 // fractions of the surface. Runs in a terrain worker (terrain worlds) or on
 // the main thread (giants: their bands and storms from the generation data).
+// The picture is render output (Math.* allowed); the shares of what covers it are data the catalog
+// shows every player, so the places they're sampled at go through dmath.
 
 import { S_H, S_TEMP, S_MOIST, S_CRATER, S_MOUNT, S_LAVA, S_LEN } from './terrain.js';
 import { biomeName } from './settlements.js';
+import * as dm from '../core/dmath.js';
 
 const SUN = norm([-0.62, 0.48, 0.62]); // light from the upper left, a little in front
 
@@ -93,7 +96,7 @@ export function terrainCover(gen, n = 1500) {
   const habitable = p.liquid === 'water' && cl.Tmean > 250 && cl.Tmean < 330;
   for (let i = 0; i < n; i++) {
     const z = 1 - (i + 0.5) / n * 2, r = Math.sqrt(1 - z * z), th = i * 2.399963;
-    gen.sample(Math.cos(th) * r, z, Math.sin(th) * r, R / 20, s);
+    gen.sample(dm.cos(th) * r, z, dm.sin(th) * r, R / 20, s);
     const h = s[S_H], Tc = s[S_TEMP] - 273.15;
     if (hasSea && h < 0) {
       if (p.liquid === 'water') add(Tc < -2 || p.frozenOcean ? 'sea ice' : 'ocean');

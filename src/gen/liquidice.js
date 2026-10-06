@@ -208,7 +208,7 @@ export function pieceMid(f, sh, R, m) {
   const ax = f.ax, b = (ax + 1) % 3, d = (ax + 2) % 3, q = 1 + sh.cu * sh.cu + sh.cv * sh.cv;
   m[ax] = f.sg; m[b] = f.sg * sh.cu; m[d] = f.sg * sh.cv;
   nrm3(m, R);
-  return R * Math.sqrt(sh.area) / Math.pow(q, 0.75);
+  return R * Math.sqrt(sh.area) / dm.pow(q, 0.75);
 }
 // the crack of piece P (hash id, level lvl, shape sh) into k: the line A u + B v + C = 0
 export function pieceCrack(P, lvl, sh, k) {
@@ -286,7 +286,7 @@ export function floeOf(p, ice, o) {
   o.ridge = rh > 0 ? rh * Math.max(0, 1 - rd / (2 * rh)) : 0; o.ridgeH = rh; o.ridgeD = rd;
   c = pieceCover(m, ice);
   const rr = floeRound(s, P.id, c);
-  if (e2 < rr) e = rr - Math.hypot(rr - e, rr - e2);
+  if (e2 < rr) e = rr - dm.hypot(rr - e, rr - e2);
   o.id = P.id; o.e = e; o.lid = lid; o.c = c; o.size = s; o.P = P;
   o.there = c > 0 && (P.id & 65535) / 65536 <= Math.min(1, 1.5 * c);
   return o;

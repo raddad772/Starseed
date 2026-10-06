@@ -22,8 +22,8 @@ export function hzSeff(kind, teff) {
 
 // Kroupa IMF over 0.08-3 M_sun: the share of stars below 0.5 M_sun
 const IMF_LOW_SHARE = (() => {
-  const w1 = (Math.pow(0.08, -0.3) - Math.pow(0.5, -0.3)) / 0.3;
-  const w2 = 0.5 * (Math.pow(0.5, -1.3) - Math.pow(3, -1.3)) / 1.3;
+  const w1 = (dm.pow(0.08, -0.3) - dm.pow(0.5, -0.3)) / 0.3;
+  const w2 = 0.5 * (dm.pow(0.5, -1.3) - dm.pow(3, -1.3)) / 1.3;
   return Math.round(w1 / (w1 + w2) * 1e6) / 1e6; // (rounded: the same in every engine)
 })();
 

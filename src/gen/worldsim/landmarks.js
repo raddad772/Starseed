@@ -6,6 +6,7 @@
 import { Rng } from '../../core/rng.js';
 import { makeName } from '../names.js';
 import { GridLite } from './grid.js';
+import * as dm from '../../core/dmath.js';
 
 // each kind's forms (# is the name)
 const FORMS = {
@@ -99,15 +100,15 @@ export function auroraLandmark(s, body, key) {
     Gc.centre(c, d);
     const fc = cl ? G.cellAt(d[0], d[1], d[2]) : c;
     if (!(s.h[fc] > 0) || (s.ice && s.ice[fc] > 0)) continue;
-    const mlat = Math.asin(Math.min(1, Math.abs(d[0] * ax[0] + d[1] * ax[1] + d[2] * ax[2])));
-    const u = (mlat - glow.ovalLat) / (1.5 * glow.ovalWidth), under = Math.exp(-u * u);
+    const mlat = dm.asin(Math.min(1, Math.abs(d[0] * ax[0] + d[1] * ax[1] + d[2] * ax[2])));
+    const u = (mlat - glow.ovalLat) / (1.5 * glow.ovalWidth), under = dm.exp(-u * u);
     if (under < 0.3) continue;
     // (the winter's longest night, its share of the day: polar night where the tilt brings it)
-    const t = Math.tan(Math.min(1.55, Math.abs(Math.asin(d[1])))) * Math.tan(Math.min(1.55, obl));
-    const night = t >= 1 ? 1 : 1 - Math.acos(Math.min(1, t)) / Math.PI;
+    const t = dm.tan(Math.min(1.55, Math.abs(dm.asin(d[1])))) * dm.tan(Math.min(1.55, obl));
+    const night = t >= 1 ? 1 : 1 - dm.acos(Math.min(1, t)) / Math.PI;
     const clear = cl ? 1 - s.cloud[c] : 0.7;
     const score = under * (0.4 + night) * clear * clear;
-    if (!best || score > best.score) best = { score, night, clear, lat: Math.asin(d[1]) * 180 / Math.PI, lon: Math.atan2(d[2], d[0]) * 180 / Math.PI };
+    if (!best || score > best.score) best = { score, night, clear, lat: dm.asin(d[1]) * 180 / Math.PI, lon: dm.atan2(d[2], d[0]) * 180 / Math.PI };
   }
   if (!best) return null;
   const rng = Rng.fromString('landmarks|' + key).fork('aurora');

@@ -56,7 +56,8 @@ function tap(u, v, out, w) {
 // the shader's tri(): the noise at planet-fixed p (m) seen along normal n, period m; into out (rgba 0..1)
 export function triDetail(p, n, period, out) {
   if (!D) D = detailData(DS);
-  let wx = n[0] ** 4, wy = n[1] ** 4, wz = n[2] ** 4;
+  let wx = n[0] * n[0], wy = n[1] * n[1], wz = n[2] * n[2];
+  wx *= wx; wy *= wy; wz *= wz;
   const ws = wx + wy + wz; wx /= ws; wy /= ws; wz /= ws;
   out[0] = out[1] = out[2] = out[3] = 0;
   tap(p[1] / period, p[2] / period, out, wx);

@@ -24,7 +24,7 @@ import { dunePatches } from '../dunes.js';
 import { ROCK_UP } from './lithology.js';
 import { seasonsFor, cloudOf } from './season.js';
 
-export const SIM_VERSION = 63;   // (61: the climate's orbit eccentric, its perihelion where it falls in the year; 62: a moon's seasons its tilt to its planet's orbit; 63: a Titan's low latitudes raised as cos^2 of the latitude, not a step, drawn at the world's scale)
+export const SIM_VERSION = 64;   // (61: the climate's orbit eccentric, its perihelion where it falls in the year; 62: a moon's seasons its tilt to its planet's orbit; 63: a Titan's low latitudes raised as cos^2 of the latitude, not a step, drawn at the world's scale; 64: generation's last Math.sin/cos/hypot... through dmath: the folds' arcs moved an ulp, so every client holds the same bits)
 
 // a world's grid size: maxN for an Earth-sized one, finer cells don't help a small one
 // (N ~ sqrt(radius): Mars ~210, the Moon ~150, a moonlet 64)
@@ -484,10 +484,10 @@ export function cloudMapPixels(s, w = 256) {
   const nz = new Noise3(0x51c10d ^ Math.round(s.R / 1000)), sp = Gc.spacing / s.R;
   const f = 1 / (2.5 * sp), amp = 0.9 * sp;
   for (let y = 0; y < hh; y++) {
-    const lat = (y + 0.5) / hh * Math.PI - Math.PI / 2, cl = Math.cos(lat), sl = Math.sin(lat);
+    const lat = (y + 0.5) / hh * Math.PI - Math.PI / 2, cl = dm.cos(lat), sl = dm.sin(lat);
     for (let x = 0; x < w; x++) {
       const lon = (x + 0.5) / w * 2 * Math.PI - Math.PI;
-      let dx = cl * Math.cos(lon), dy = sl, dz = cl * Math.sin(lon);
+      let dx = cl * dm.cos(lon), dy = sl, dz = cl * dm.sin(lon);
       const wx = nz.noise(dx * f, dy * f, dz * f) + 0.5 * nz.noise(dx * f * 2.1 + 5.2, dy * f * 2.1, dz * f * 2.1);
       const wy = nz.noise(dx * f + 17.1, dy * f, dz * f) + 0.5 * nz.noise(dx * f * 2.1, dy * f * 2.1 + 9.3, dz * f * 2.1);
       const wz = nz.noise(dx * f, dy * f + 31.7, dz * f) + 0.5 * nz.noise(dx * f * 2.1, dy * f * 2.1, dz * f * 2.1 + 3.9);

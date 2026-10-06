@@ -54,10 +54,10 @@ export function bergDensity(S) {
 export function bergBasis(up, yaw, X, Y, Z) {
   const ax = Math.abs(up[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
   let e1 = [ax[1] * up[2] - ax[2] * up[1], ax[2] * up[0] - ax[0] * up[2], ax[0] * up[1] - ax[1] * up[0]];
-  const l = Math.hypot(e1[0], e1[1], e1[2]);
+  const l = dm.hypot(e1[0], e1[1], e1[2]);
   e1 = [e1[0] / l, e1[1] / l, e1[2] / l];
   const e2 = [up[1] * e1[2] - up[2] * e1[1], up[2] * e1[0] - up[0] * e1[2], up[0] * e1[1] - up[1] * e1[0]];
-  const c = Math.cos(yaw), s = Math.sin(yaw);
+  const c = dm.cos(yaw), s = dm.sin(yaw);
   for (let i = 0; i < 3; i++) { X[i] = e1[i] * c + e2[i] * s; Y[i] = up[i]; }
   Z[0] = X[1] * Y[2] - X[2] * Y[1]; Z[1] = X[2] * Y[0] - X[0] * Y[2]; Z[2] = X[0] * Y[1] - X[1] * Y[0];
 }
@@ -95,7 +95,7 @@ export function bergsNear(S, R, centre, radius, warm, put) {
       const p = [0, 0, 0];
       p[ax] = f.sg / ll; p[b] = f.sg * uu / ll; p[d] = f.sg * vv / ll;
       // (its size: many small, few big, 15-250 m long; a fifth or so of it above the water)
-      const len = Math.min(250, 15 * Math.pow(1 - rnd() * 0.999, -1 / 1.3)), wid = len * (0.45 + 0.5 * rnd()), hgt = len * (0.12 + 0.15 * rnd());
+      const len = Math.min(250, 15 * dm.pow(1 - rnd() * 0.999, -1 / 1.3)), wid = len * (0.45 + 0.5 * rnd()), hgt = len * (0.12 + 0.15 * rnd());
       put({ dir: p, len, wid, hgt, yaw: rnd() * 6.2832, shape: Math.floor(rnd() * BERG_SHAPES), id: h });
     }
   }
