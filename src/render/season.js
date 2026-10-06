@@ -34,6 +34,15 @@ float seasonIceNow(vec3 dirF) {
   vec4 m = texture(tSeasonIce, vec2(atan(dirF.z, dirF.x) / 6.28319 + 0.5, asin(clamp(dirF.y, -1.0, 1.0)) / 3.14159 + 0.5));
   return (m.b - 0.5) * 100.0 + (m.r - 0.5) * 100.0 * cos(uSeason.x) + (m.g - 0.5) * 100.0 * sin(uSeason.x);
 }
+// the sea's ice at a point m of it (its year's mean and its swing now, by the map: one value for every
+// pixel that asks of m, and for the slabs and the walker: gen/liquidice.js iceAt), its freezing point Tf
+// (C); read at the full-size texels (a piece's middle jumps between pixels at its edge)
+float seaIceAt(vec3 m, float Tf) {
+  vec3 u = normalize(m);
+  vec4 t = textureLod(tSeasonMap, vec2(atan(u.z, u.x) / 6.28319 + 0.5, asin(clamp(u.y, -1.0, 1.0)) / 3.14159 + 0.5), 0.0);
+  float Ts = t.a * 120.0 - 60.0 + (t.r - 0.5) * 100.0 * cos(uSeason.x) + (t.g - 0.5) * 100.0 * sin(uSeason.x);
+  return 1.0 - smoothstep(Tf - 4.0, Tf + 4.0, Ts);
+}
 float seasonSWE(vec3 dirF, float Ta) {
   vec3 yr = seasonYear(dirF);
   float a1 = yr.x, b1 = yr.y, P = yr.z;

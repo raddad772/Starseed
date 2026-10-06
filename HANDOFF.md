@@ -470,8 +470,35 @@ rivers that are straighter where they should be?"):**
   n s/4): the estimate drifted off the real piece, cracks missed it: slivers and strips (fmid shots);
   lead widths by the cover at each point along a crack: combs. GPU: atan(0, 0) (a square's long axis) is
   NaN on the GPU (0 in JS): guarded in both. tools/floemap.mjs BY_FLOE=1 colours each floe. SOL Earth
-  56.5 N 148 from 300 m: a fractured pack, leads young and dark near its edge. Next: the floes as slabs
-  (Dave: "Why aren't the leads real geometry"), built straight from these polygons.
+  56.5 N 148 from 300 m: a fractured pack, leads young and dark near its edge.
+- **Floes as slabs** (Dave: "Why aren't the leads real geometry"): gen/floeslabs.js buildFloes (a terrain
+  worker job 'floes'; render/floeRender.js FloeSet, planetTerrain.update, rebuilt every ~150 m or as the
+  season moves; nothing above 3 km). Each face's subdivision walked down every side that reaches within
+  600 m of the camera, each floe whole: its polygon in by each edge's lead (the plane N.x >= g, a line in
+  the face's (u, v) over a floe), each edge cut ~1 m apart (to 4 m further off) and moved out by the
+  shading's ragged noise (the same 8 m / 2 m tiles), raised to its top: packIce (first-year ice by the
+  degree days since freeze-up of the air over the ice, 1.33 FDD^0.58 cm, Lebedev 1938; wasting through the
+  thaw; 3 m where it never thaws) x 0.7..1.3 by the floe's hash (x0.6 for pieces under 64 m), floating at
+  Archimedes' freeboard (1025 / 917 kg/m3) less its snow's weight, its snow (the winter's fall so far at
+  300 kg/m3) on it. Its top in rings toward its middle (each ~80 m of size, thinned to ~40 m spacing,
+  stitched by their places along the edge) so it keeps to the sphere; walls from its top to 5 cm under
+  the water, blue ice under the snow. Lit as rocks are; it casts the near sun's shadows. Walking: universe
+  groundHeight on the sea is the floe's top there (floeTopAt: floeAt, floeTop); a lead with 10 cm of ice
+  bears you at the water, an open one doesn't. The sea's ice for a piece (its cover: its stop and its
+  leads) is read at the piece's middle from the season map (its A channel now the year's mean at sea level:
+  render/season.js seaIceAt, gen/liquidice.js iceAt bilinear on the same bytes; SEASON_V 2 re-works cached
+  maps), not the pixel's: every pixel, the slabs and the walker split each piece alike. SOL Earth 56.5 N
+  148: floes with ragged blue edges a few tens of cm high over refrozen leads. Snow on a floe: half the
+  fall (the rest blown into the leads: Leonard and Maksym 2011), no more than it floats (more floods it,
+  the slush freezing into its ice: its top at most ~a third of its ice). 56.5 N 148 early winter: tops
+  0.19 m. Cost: the slabs ~0.7 ms a frame there (3.9 vs 3.2 ms, gl.finish timing).
+- **Pressure ridges**: a crack in a close pack may close instead of open (crackOpen: up to half of a
+  closed pack's, smoothstep(0.85, 1, c)); its edges carry its sail's height (ES < 0: 0.5-1.5 m, first-year
+  sails' usual) and its floes touch (0.15 m). Slabs: each floe builds its half of the sail along its own
+  edge as left after its leads (not across a lead), crest over the crack, sides ~27 degrees, twice as wide
+  as high, the crest's height x0.6..1.4 by the 4 m tile (ridgeCrest, the walker's the same); the walker
+  stands on that tent (floeAt o.ridge). The shading further off: the band within 2H of a ridged edge,
+  broken blocks (the 2 m tile) and its sides lit by how they face.
 - **Seasons on the land: snow through the year** (Dave: "see seasonal changes"; "refine and add"; not
   living things yet). worldsim/season.js: each world's year by climate cell, its temperature's first
   harmonic about the mean (a1 cos L + b1 sin L, L the solar longitude from the northern spring equinox,

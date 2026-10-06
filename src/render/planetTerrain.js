@@ -10,6 +10,7 @@
 import * as THREE from 'three';
 import { SHADOW_LAYER } from './sunShadows.js';
 import { RockSet } from './rockRender.js';
+import { FloeSet } from './floeRender.js';
 import { FACES, dirFromFaceUV, chunkArcSize } from '../gen/cubesphere.js';
 import { CHUNK_N, chunkIndices, FALL_STRIDE } from '../gen/chunkbuilder.js';
 import { FallFx } from './falls.js';
@@ -117,6 +118,11 @@ export class PlanetTerrain {
     // hide everything not selected this frame, recycle stale meshes
     this.collect();
     this.nearUpdate();
+    // (the sea's floes near the camera as slabs: floeRender.js)
+    if (this.hasSea && this.body.data.terrain.liquid === 'water') {
+      if (!this.floeSet) this.floeSet = new FloeSet(this.body, this.pool, this.shared, this.group);
+      this.floeSet.update(camFixed);
+    }
     return this.visibleList;
   }
 
@@ -593,6 +599,7 @@ export class PlanetTerrain {
     for (const r of this.roots) this.disposeNode(r);
     this.disposeNear();
     if (this.rockSet) this.rockSet.dispose();
+    if (this.floeSet) this.floeSet.dispose();
     if (this.fallFx) this.fallFx.material.dispose();
   }
 }

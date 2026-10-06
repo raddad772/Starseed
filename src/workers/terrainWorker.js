@@ -10,6 +10,7 @@ import { VolumeField, buildVolumeChunk, volumeTransferables } from '../gen/volum
 import { TileSet } from '../gen/worldsim/refine.js';
 import { heightFace } from '../gen/heightmap.js';
 import { scatterStones } from '../gen/rocks.js';
+import { buildFloes } from '../gen/floeslabs.js';
 
 const params = new Map();
 const gens = new Map();
@@ -94,6 +95,13 @@ self.onmessage = (e) => {
       const g = gen(m.body), sp = g._species || (g._species = floraSpecies(params.get(m.body)));
       const r = scatterStones(g, m.face, m.level, m.ix, m.iy, m.maxLevel, sp.seed ^ 0x2545f491);
       self.postMessage({ type: 'stones', job: m.job, origin: r.origin, geo: r.geo }, [r.geo.buffer]);
+      return;
+    }
+    if (m.type === 'floes') {
+      // the sea's floes near the camera as slabs (gen/floeslabs.js)
+      const r = buildFloes(gen(m.body), m.dir, m.sinSun, m.L, m.reach);
+      if (!r) { self.postMessage({ type: 'floes', job: m.job, pos: null }); return; }
+      self.postMessage({ type: 'floes', job: m.job, ...r }, [r.pos.buffer, r.nrm.buffer, r.fp.buffer, r.aux.buffer, r.idx.buffer]);
       return;
     }
     if (m.type === 'hface') {

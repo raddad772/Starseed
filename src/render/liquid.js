@@ -342,12 +342,21 @@ vec2 leadIce(uint lid, float frz, float pDay) {
 float leadHalf(uint cid, float c, float s) {
   return min(150.0, 0.03 * min(s, 2048.0) * (0.2 + 1.6 * float(cid & 255u) / 256.0) * (1.0 + 8.0 * (1.0 - sqrt(c))));
 }
-// how close the pack is at a point m of it (seaIceCover by its tiles there: one value for every pixel
-// that asks of m)
+// what a crack did as it formed (its hash, the pack's cover, the piece it parted): opened, its lead's half
+// width (m, > 0); or, where the pack's close and was pressed together along it, closed into a pressure
+// ridge, its sail's height (m, as < 0: ~0.5-1.5 m, first-year sails' usual), up to half of a closed pack's
+// cracks (gen/liquidice.js crackOpen the same)
+float crackOpen(uint cid, float c, float s) {
+  if (float((cid >> 8u) & 255u) / 256.0 < 0.5 * smoothstep(0.85, 1.0, c)) return -(0.5 + float((cid >> 16u) & 255u) / 255.0);
+  return leadHalf(cid, c, s);
+}
+// how close the pack is at a point m of it: seaIceCover by the sea's ice there (season.js seaIceAt: the
+// map's, the pixel's own ice where the world keeps no year) and its tiles there; one value for every
+// pixel that asks of m
 float pieceCover(vec3 m, float ice) {
   vec3 u = normalize(m), wm = pow(abs(u), vec3(4.0));
   wm /= wm.x + wm.y + wm.z;
-  return seaIceCover(ice, tri0(m, wm, 512.0).a, tri0(m, wm, 64.0).r);
+  return seaIceCover(uSeason.z > 0.5 ? seaIceAt(m, uLiquid2.z) : ice, tri0(m, wm, 512.0).a, tri0(m, wm, 64.0).r);
 }
 // (the lead along a cube face's edge: the two faces' hash)
 uint faceLead(uint face, int axis, bool neg) {
@@ -362,7 +371,7 @@ const int POLY_MAX = 12;
 // own coordinates (a great circle a straight line), its square split by a crack through near the piece's
 // centroid across its long axis, and each half again, every piece an exact convex polygon whose edges
 // keep their cracks' hashes and leads' half widths
-void floeOf(vec3 p, float ice, out uint id, out float e, out uint lid, out float c, out float size, out vec3 mid, out bool there) {
+void floeOf(vec3 p, float ice, out uint id, out float e, out uint lid, out float c, out float size, out vec3 mid, out bool there, out vec4 ridge) {
   float R = length(p);
   vec3 a = abs(p);
   int ax = a.x >= a.y && a.x >= a.z ? 0 : a.y >= a.z ? 1 : 2, b = (ax + 1) % 3, d = (ax + 2) % 3;
@@ -375,6 +384,7 @@ void floeOf(vec3 p, float ice, out uint id, out float e, out uint lid, out float
   V[0] = vec2(-1.0, -1.0); V[1] = vec2(1.0, -1.0); V[2] = vec2(1.0, 1.0); V[3] = vec2(-1.0, 1.0);
   EI[0] = faceLead(face, d, !neg); EI[1] = faceLead(face, b, neg); EI[2] = faceLead(face, d, neg); EI[3] = faceLead(face, b, !neg);
   for (int i = 0; i < 4; i++) ES[i] = leadHalf(EI[i], 1.0, 4096.0);
+  ridge = vec4(0.0, 0.0, 0.0, 1e20);
   int n = 4;
   id = floeHash(face, 0x51ceu, 0u, 0x3a7bu);
   c = 1.0;
@@ -417,7 +427,7 @@ void floeOf(vec3 p, float ice, out uint id, out float e, out uint lid, out float
     if (n >= POLY_MAX - 1) break;
     float side = KA * pu + KB * pv + KC >= 0.0 ? 1.0 : -1.0;
     uint cid = floeHash(id, uint(lvl), 0x7a11u, 0x1f3du);
-    float g = leadHalf(cid, c, s);
+    float g = crackOpen(cid, c, s);
     vec2 W[POLY_MAX];
     uint WI[POLY_MAX];
     float WS[POLY_MAX];
@@ -438,17 +448,23 @@ void floeOf(vec3 p, float ice, out uint id, out float e, out uint lid, out float
     n = k;
     id = floeHash(id, side > 0.0 ? 1u : 0u, uint(lvl), 0x9e37u);
   }
-  // (in from its edge: the nearest of its edges' planes, less that edge's lead)
+  // (in from its edge: the nearest of its edges' planes, less that edge's lead (a ridge's floes touch);
+  // and its nearest ridge: the way across it, away from its crest, and how far off: ridge)
   e = 1e20; lid = 0u;
+  float rh = 0.0;
   for (int i = 0; i < POLY_MAX; i++) {
     if (i >= n) break;
     vec2 dv = V[(i + 1) % n] - V[i];
     if (dot(dv, dv) < 1e-24) continue;
     vec3 N3;
     N3[b] = -dv.y; N3[d] = dv.x; N3[ax] = dv.y * V[i].x - dv.x * V[i].y;
-    float ek = abs(dot(p, normalize(N3))) - ES[i];
+    N3 = normalize(N3);
+    float dn = dot(p, N3), ek = abs(dn) - max(ES[i], 0.15);
     if (ek < e) { e = ek; lid = EI[i]; }
+    if (ES[i] < 0.0 && abs(dn) < ridge.w) { ridge = vec4(N3 * sign(dn), abs(dn)); rh = -ES[i]; }
   }
+  // (a ridge's sail: its height here, its sides ~27 degrees, twice as wide as it's high either side)
+  ridge.w = rh > 0.0 ? rh * max(0.0, 1.0 - ridge.w / (2.0 * rh)) : 0.0;
   size = s; mid = m;
   there = c > 0.0 && float(id & 65535u) / 65536.0 <= min(1.0, 1.5 * c);
 }
@@ -456,11 +472,13 @@ void floeOf(vec3 p, float ice, out uint id, out float e, out uint lid, out float
 // cover here (cPix: seaIceCover), a pixel foot m across: x how much of the pixel is ice (0..1), y its rim
 // (the floe's side and wet edge showing), z its age (0 a young piece, grey, 1 an old floe under snow), w the
 // pack's cover at its piece. frz: how far under the sea's freezing point the air over it is now (C), pDay:
-// its winter's snowfall (mm of water a day); lead: the ice in the lead there (leadIce: cm, snow)
-vec4 seaFloes(vec3 p, vec3 up, vec3 w, float ice, float cPix, float foot, float frz, float pDay, out vec2 lead) {
+// its winter's snowfall (mm of water a day); lead: the ice in the lead there (leadIce: cm, snow); ridge:
+// a pressure ridge's sail there (xyz the way down its side, planet-fixed; w its height, m)
+vec4 seaFloes(vec3 p, vec3 up, vec3 w, float ice, float cPix, float foot, float frz, float pDay, out vec2 lead, out vec4 ridge) {
   // (a lead of the median age: what its leads come to from far off)
   vec2 leadFar = leadIce(32768u, frz, pDay);
   lead = vec2(0.0);
+  ridge = vec4(0.0);
   if (cPix <= 0.0 && ice <= 0.0) return vec4(0.0);
   // (a pixel 64 m across or more sees the share of it there only: no floes to find, the far fade's whole)
   if (foot >= 64.0) { lead = leadFar; return vec4(cPix, 0.0, 0.7, cPix); }
@@ -468,7 +486,8 @@ vec4 seaFloes(vec3 p, vec3 up, vec3 w, float ice, float cPix, float foot, float 
   float e, c, size;
   vec3 mid;
   bool there;
-  floeOf(p, ice, id, e, lid, c, size, mid, there);
+  floeOf(p, ice, id, e, lid, c, size, mid, there, ridge);
+  if (!there) ridge = vec4(0.0);
   // (its edges ragged at a few metres and less, not drawn with a ruler: gen/liquidice.js the same)
   e += (tri(p, w, 8.0).r - 0.5) * 1.6 + (tri(p, w, 2.0).a - 0.5) * 0.5;
   float fw = max(foot, 0.03), x = 0.0, rim = 0.0;
@@ -480,6 +499,7 @@ vec4 seaFloes(vec3 p, vec3 up, vec3 w, float ice, float cPix, float foot, float 
   float kFar = smoothstep(16.0, 64.0, foot);
   x = mix(x, cPix, kFar);
   lead = mix(lead, leadFar, kFar);
+  ridge.w *= 1.0 - kFar;
   return vec4(x, rim * x * (1.0 - kFar), mix(age, 0.7, kFar), mix(c, cPix, kFar));
 }
 `;

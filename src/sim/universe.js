@@ -10,7 +10,7 @@ import { dirFromFaceUV, faceUVFromDir, chunkArcSize } from '../gen/cubesphere.js
 import { CHUNK_N } from '../gen/chunkbuilder.js';
 import * as U from '../core/units.js';
 import { atmoReal } from '../gen/bodies.js';
-import { frozenNow } from '../gen/liquidice.js';
+import { frozenNow, liquidNow, floeAt, packIce, floeTop, iceAt } from '../gen/liquidice.js';
 
 const _p = [0, 0, 0], _v = [0, 0, 0];
 const _sN = new THREE.Vector3(), _sM = new THREE.Vector3(), _sS = new THREE.Vector3();
@@ -133,8 +133,28 @@ export class BodyRuntime {
     const nx = ay * bz - az * by, ny = az * bx - ax * bz, nz = ax * by - ay * bx;
     const den = nx * d[0] + ny * d[1] + nz * d[2];
     const num = nx * P[0][0] + ny * P[0][1] + nz * P[0][2];
-    if (Math.abs(den) < 1e-12) return Math.hypot(P[0][0], P[0][1], P[0][2]) - this.R;
-    return num / den - this.R;
+    const h = Math.abs(den) < 1e-12 ? Math.hypot(P[0][0], P[0][1], P[0][2]) - this.R : num / den - this.R;
+    // (on the sea: a floe's top, its slab's: render/floeRender.js)
+    return h < 0.05 && this.hasSeaIce ? Math.max(h, this.floeTopAt(d)) : h;
+  }
+
+  get hasSeaIce() { const t = this.data.terrain; return !!(t && t.liquid === 'water' && t.ocean > 0); }
+  // the sea's floe under a body-fixed direction d (unit array): its top above the water (m), the slabs'
+  // own sums (gen/floeslabs.js: gen/liquidice.js floeAt and floeTop); 0 on open water, a frozen-over lead,
+  // land or no ice
+  floeTopAt(d) {
+    const gen = this.terrain, s = gen.sample(d[0], d[1], d[2], 8, this._fs || (this._fs = new Float64Array(S_LEN)));
+    if (!(liquidDepthOf(gen, s) > 0)) return 0;
+    const sun = this._sunF || (this._sunF = new THREE.Vector3());
+    sun.copy(this.pos).negate().normalize().applyQuaternion(this.qInv);
+    const L = this.solarLongitude(), q = liquidNow(gen, s, d, sun.y, L, this._lq || (this._lq = {}));
+    if (q.all || !(q.ice > 0) || !(q.kind < 0.2)) return 0;
+    const p = this._fp3 || (this._fp3 = [0, 0, 0]);
+    p[0] = d[0] * gen.R; p[1] = d[1] * gen.R; p[2] = d[2] * gen.R;
+    const o = floeAt(p, d, iceAt(gen, L, q.ice), this._fa || (this._fa = {}));
+    if (!(o.f > 0)) return 0;
+    // (and a pressure ridge's sail on it: floeslabs.js's)
+    return floeTop(packIce(gen, d, L, q.Tm, this._pk || (this._pk = {})), o.id, o.piece) + o.ridge;
   }
 
   // the ground under body-fixed point p (m above datum): the near field's volume where it's

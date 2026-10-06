@@ -8,7 +8,8 @@
 // (terrain.js, snowYear); the seasons' snow over the rest is the shader's (render/terrainMaterial.js
 // seasonSnow), from the same numbers baked into a map by latitude and longitude (the cloud map's layout):
 //   R: a1 / 100 + 0.5, G: b1 / 100 + 0.5 (K; the swing's two parts, so the texture blends them),
-//   B: sqrt(P / 600) (mm/month), A: 255.
+//   B: sqrt(P / 600) (mm/month), A: the year's mean at sea level, (C + 60) / 120 (the sea's ice by place:
+//   every piece of the pack reads it at its own middle, liquid.js and gen/liquidice.js iceAt).
 
 import { SimGrid, GridLite } from './grid.js';
 import { climateOn } from './climate.js';
@@ -36,10 +37,10 @@ export function seasonHarmonics(clim, m) {
 }
 
 // the maps the shader reads, by latitude and longitude, from a planar field of three per climate cell
-// (snap.Nc, snap.R): code(k, value) each into its byte
-function pixelsOf(Nc, R, f, code) {
+// (snap.Nc, snap.R) and a fourth (or 255): code(k, value) each into its byte
+function pixelsOf(Nc, R, f, code, f4) {
   const Gc = new SimGrid(Nc, R), m = Gc.n;
-  const F = [f.subarray(0, m), f.subarray(m, 2 * m), f.subarray(2 * m, 3 * m)];
+  const F = [f.subarray(0, m), f.subarray(m, 2 * m), f.subarray(2 * m, 3 * m), f4];
   const W = SEASON_W, H = SEASON_H, px = new Uint8Array(W * H * 4), d = [0, 0, 0], uv = { face: 0, u: 0, v: 0 };
   const b8 = (x) => Math.max(0, Math.min(255, Math.round(x * 255)));
   for (let j = 0; j < H; j++) {
@@ -49,14 +50,16 @@ function pixelsOf(Nc, R, f, code) {
       d[0] = cl * dm.cos(lon); d[1] = sl; d[2] = cl * dm.sin(lon);
       const o = 4 * (j * W + i);
       for (let k = 0; k < 3; k++) px[o + k] = b8(code(k, Gc.sample(F[k], d, uv)));
-      px[o + 3] = 255;
+      px[o + 3] = f4 ? b8(code(3, Gc.sample(f4, d, uv))) : 255;
     }
   }
   return px;
 }
 export function seasonPixels(snap) {
-  return pixelsOf(snap.Nc, snap.R, snap.season, (k, v) => (k < 2 ? v / 100 + 0.5 : Math.sqrt(Math.max(0, v) / 600)));
+  return pixelsOf(snap.Nc, snap.R, snap.season, (k, v) => (k < 2 ? v / 100 + 0.5 : k === 2 ? Math.sqrt(Math.max(0, v) / 600) : (v - 273.15 + 60) / 120), snap.Tsea);
 }
+// the maps' layout's revision: a snapshot whose maps are older is worked out again (worldSims.js)
+export const SEASON_V = 2;
 // (the air over a frozen sea's: a1, b1 and its year's mean against the open sea's, K / 100 + 0.5)
 export function seasonIcePixels(snap) {
   return pixelsOf(snap.Nc, snap.R, snap.seasonIce, (k, v) => v / 100 + 0.5);
@@ -103,8 +106,8 @@ export function seasonsFor(snap, climOpts) {
   const cover = snap.cover ? { cover: snap.cover, forest: snap.forest } : null;
   const clim = climateOn(Gc, G, snap.h, climOpts, wet, cover);
   const season = seasonHarmonics(clim, Gc.n), ice = seasonIce(Gc, G, snap, climOpts, wet, cover, clim);
-  const S = { season, seasonIce: ice, Nc: snap.Nc, R: snap.R };
-  return { season, seasonPx: seasonPixels(S), seasonIce: ice, seasonIcePx: seasonIcePixels(S), yearDays: climOpts.yearDays };
+  const S = { season, seasonIce: ice, Tsea: snap.Tsea, Nc: snap.Nc, R: snap.R };
+  return { season, seasonPx: seasonPixels(S), seasonIce: ice, seasonIcePx: seasonIcePixels(S), yearDays: climOpts.yearDays, seasonV: SEASON_V };
 }
 
 // whether a world's snow comes and goes with its seasons (p: its terrain's params): water that falls as

@@ -15,7 +15,7 @@
 import { SIM_VERSION, simNFor } from '../gen/worldsim/snapshot.js';
 import { auroraLandmark } from '../gen/worldsim/landmarks.js';
 import { climateOpts } from '../gen/worldsim/climate.js';
-import { SEASON_W, SEASON_H } from '../gen/worldsim/season.js';
+import { SEASON_W, SEASON_H, SEASON_V } from '../gen/worldsim/season.js';
 import { TILE_VERSION } from '../gen/tileshape.js';
 import { refineLevelN } from '../gen/localsim.js';
 import { newRefine, putTile, complete, toStorable, fromStorable, RIVER_VERSION } from '../gen/worldsim/refine.js';
@@ -41,7 +41,7 @@ function seasonsOf(snap, opts) {
     const w = new Worker(new URL('../workers/seasonWorker.js' + location.search, import.meta.url), { type: 'module' });
     w.onmessage = (e) => { w.terminate(); if (e.data.error) { console.error('seasons failed:', e.data.error); resolve(null); } else resolve(e.data.r); };
     w.onerror = (e) => { w.terminate(); console.error('seasons worker:', e.message); resolve(null); };
-    w.postMessage({ snap: { N: snap.N, R: snap.R, Nc: snap.Nc, h: snap.h, water: snap.water, ocean: snap.ocean, cover: snap.cover, forest: snap.forest }, opts });
+    w.postMessage({ snap: { N: snap.N, R: snap.R, Nc: snap.Nc, h: snap.h, water: snap.water, ocean: snap.ocean, cover: snap.cover, forest: snap.forest, Tsea: snap.Tsea }, opts });
   });
 }
 
@@ -157,7 +157,7 @@ export class WorldSims {
     const cached = await dbGet(await this.dbP, this.key(id));
     if (cached) {
       // (one cached before its seasons were kept: worked out once, kept, and the world shown with them)
-      if (cached.Nc && !cached.seasonIce) {
+      if (cached.Nc && cached.seasonV !== SEASON_V) {
         const b = this.game.system.bodies[id], host = b.kind === 'moon' ? this.game.system.bodies[b.parentId] : null;
         const r = await seasonsOf(cached, climateOpts(b, this.game.system.bodies[0], host));
         if (r) { Object.assign(cached, r); dbPut(await this.dbP, this.key(id), cached); }

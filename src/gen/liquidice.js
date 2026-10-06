@@ -3,7 +3,7 @@
 // frozen the year round, which the shading draws as snow, too); the sea's ice as its floes.
 import { triDetail } from './detail.js';
 import { S_H } from './terrain.js';
-import { snowsBySeason } from './worldsim/season.js';
+import { snowsBySeason, SEASON_V, SEASON_W, SEASON_H } from './worldsim/season.js';
 import * as dm from '../core/dmath.js';
 
 export const SEA_SALT = { water: -1.8 };   // (the sea's freezing point under the fresh's, C)
@@ -45,7 +45,7 @@ export function frozenNow(gen, s, d, sinSun, L = 0) {
   if (q.ice > 0 && q.kind < 0.2) {
     const r = gen.R + Math.max(0, s[S_H]);
     _p[0] = d[0] * r; _p[1] = d[1] * r; _p[2] = d[2] * r;
-    return seaFloe(_p, d, q.ice, Math.max(q.Tf - q.Tair, 0));
+    return seaFloe(_p, d, iceAt(gen, L, q.ice), Math.max(q.Tf - q.Tair, 0));
   }
   return q.ice > 0.5;
 }
@@ -58,7 +58,9 @@ export function packIce(gen, d, L, Tm, o) {
   o.hi = 0.5; o.hs = 0.05;
   if (!gen.snap || !gen.snap.seasonIce(d[0], d[1], d[2], _yi) || !gen.snap.season(d[0], d[1], d[2], _yr)) return o;
   const Y = gen.snap.s.yearDays || 365, Tf = -1.8, Tb = Tm + _yi[2], A = Math.sqrt(_yi[0] * _yi[0] + _yi[1] * _yi[1]);
-  const fall = Math.max(0, _yr[2]) * 12 / 300;   // (m of settled snow a year at the cold half's rate)
+  // (m of settled snow a year at the cold half's rate, half of it blown into the leads: Leonard and
+  // Maksym 2011)
+  const fall = 0.5 * Math.max(0, _yr[2]) * 12 / 300;
   if (Tb - A >= Tf) { o.hi = 0; o.hs = 0; return o; }
   if (Tb + A <= Tf) { o.hi = 3; o.hs = Math.min(0.5, fall); return o; }
   const th = dm.acos((Tf - Tb) / A), Yr = Y / dm.TWO_PI;
@@ -77,10 +79,11 @@ export function packIce(gen, d, L, Tm, o) {
 }
 // a floe's top above the water (m; floeAt's id, piece): its ice (the pack's, more or less by the floe:
 // older and younger ones) floating at Archimedes' freeboard (sea water 1025, ice 917 kg/m3) less its
-// snow's weight (300 kg/m3), its snow on it
+// snow's weight (300 kg/m3), its snow on it; no more snow than it floats (more and the sea floods it, the
+// slush freezing into its ice: its top at most ~a third of its ice's thickness)
 export function floeTop(pk, id, piece) {
-  const hi = pk.hi * (0.7 + 0.6 * ((id >>> 8) & 255) / 255) * (piece ? 0.6 : 1);
-  return Math.max(0, hi * (1025 - 917) / 1025 - pk.hs * 300 / 1025) + pk.hs;
+  const hi = pk.hi * (0.7 + 0.6 * ((id >>> 8) & 255) / 255) * (piece ? 0.6 : 1), hs = Math.min(pk.hs, hi * (1025 - 917) / 300);
+  return Math.max(0, hi * (1025 - 917) / 1025 - hs * 300 / 1025) + hs;
 }
 
 // ---- the sea's floes, as liquid.js seaFloes draws them (its integer hash and cells, so the floe you see
@@ -101,7 +104,37 @@ const _j = [0, 0, 0, 0], _k = [0, 0, 0, 0];
 // a lead's half width (liquid.js leadHalf) and how close the pack is at a point m of it (pieceCover)
 const leadHalf = (cid, c, s) => Math.min(150, 0.03 * Math.min(s, 2048) * (0.2 + 1.6 * (cid & 255) / 256) * (1 + 8 * (1 - Math.sqrt(c))));
 const _u = [0, 0, 0], _pr = [0, 0, 0];
-const pieceCover = (m, ice) => { const l = Math.sqrt(m[0] * m[0] + m[1] * m[1] + m[2] * m[2]); _u[0] = m[0] / l; _u[1] = m[1] / l; _u[2] = m[2] / l; return seaIceCover(ice, m, _u); };
+// what a crack did as it formed (liquid.js crackOpen): its lead's half width (m, > 0), or closed into a
+// pressure ridge: its sail's height (m, as < 0)
+export const crackOpen = (cid, c, s) => (((cid >>> 8) & 255) / 256 < 0.5 * smooth(0.85, 1.0, c) ? -(0.5 + ((cid >>> 16) & 255) / 255) : leadHalf(cid, c, s));
+// (ice: the sea's ice there, a number, or by place: iceAt's)
+const pieceCover = (m, ice) => { const l = Math.sqrt(m[0] * m[0] + m[1] * m[1] + m[2] * m[2]); _u[0] = m[0] / l; _u[1] = m[1] / l; _u[2] = m[2] / l; return seaIceCover(typeof ice === 'function' ? ice(m) : ice, m, _u); };
+// the season map's texels at m (snap.seasonPx, w x h; WebGL's linear filter: texel centres, s repeating,
+// t clamped) into o (0..1 each)
+function mapAt(px, w, h, m, o) {
+  const l = Math.sqrt(m[0] * m[0] + m[1] * m[1] + m[2] * m[2]), x = m[0] / l, y = Math.max(-1, Math.min(1, m[1] / l)), z = m[2] / l;
+  const fx = (dm.atan2(z, x) / 6.28319 + 0.5) * w - 0.5, fy = (dm.asin(y) / 3.14159 + 0.5) * h - 0.5;
+  const x0 = Math.floor(fx), y0 = Math.floor(fy), tx = fx - x0, ty = fy - y0;
+  const xa = ((x0 % w) + w) % w, xb = (xa + 1) % w, ya = Math.max(0, Math.min(h - 1, y0)), yb = Math.max(0, Math.min(h - 1, y0 + 1));
+  for (let k = 0; k < 4; k++) {
+    const a = px[4 * (ya * w + xa) + k], b = px[4 * (ya * w + xb) + k], c = px[4 * (yb * w + xa) + k], d = px[4 * (yb * w + xb) + k];
+    o[k] = ((a + (b - a) * tx) * (1 - ty) + (c + (d - c) * tx) * ty) / 255;
+  }
+  return o;
+}
+const _mp = [0, 0, 0, 0];
+// the sea's ice by place now (L: where the sun stands in the year): render/season.js seaIceAt's sums on
+// the same map; or ice everywhere where the world keeps no year
+export function iceAt(gen, L, ice) {
+  const S = gen.snap && gen.snap.s;
+  if (!S || !S.seasonPx || S.seasonV !== SEASON_V || !snowsBySeason(gen.p)) return ice;
+  const Tf = SEA_SALT[gen.p.liquid] || 0, cL = dm.cos(L), sL = dm.sin(L);
+  return (m) => {
+    const t = mapAt(S.seasonPx, SEASON_W, SEASON_H, m, _mp);
+    const Ts = t[3] * 120 - 60 + (t[0] - 0.5) * 100 * cL + (t[1] - 0.5) * 100 * sL;
+    return 1 - smooth(Tf - 4, Tf + 4, Ts);
+  };
+}
 
 // ---- the pack subdivided (Dave: "Why not actually subdivide the ice?"; liquid.js floeOf the same sums).
 // Each cube face of the world in its own coordinates (u, v: the other two over its own, a central
@@ -207,31 +240,39 @@ export function floeOf(p, ice, o) {
   const m = o.mid || (o.mid = [0, 0, 0]);
   for (let lvl = 0; lvl < 32; lvl++) {
     const sh = pieceShape(P, _SH);
+    if (!(sh.area >= 1e-20)) break;
     s = pieceMid(f, sh, R, m);
     const k = pieceCrack(P, lvl, sh, _KR);
     if (s < 4096) { c = pieceCover(m, ice); if (!splits(k.h, s, c)) break; }
     if (P.n >= POLY_MAX - 1) break;
     const side = k.A * f.u + k.B * f.v + k.C >= 0 ? 1 : 0;
-    clipPiece(P, k, side, leadHalf(k.cid, c, s), Q);
+    clipPiece(P, k, side, crackOpen(k.cid, c, s), Q);
     Q.id = childId(P.id, side, lvl);
     const t = P; P = Q; Q = t;
   }
-  // (in from its edge: the nearest of its edges' planes, less that edge's lead)
-  let e = Infinity, lid = 0;
+  // (in from its edge: the nearest of its edges' planes, less that edge's lead (a ridge's floes touch);
+  // and its nearest ridge: its sail's height here, liquid.js's ridge.w)
+  let e = Infinity, lid = 0, rd = Infinity, rh = 0;
   const V = P.V, n = P.n;
   for (let i = 0; i < n; i++) {
     const j = (i + 1) % n, du = V[2 * j] - V[2 * i], dv = V[2 * j + 1] - V[2 * i + 1];
     if (du * du + dv * dv < 1e-24) continue;
     const Au = -dv, Bv = du, C = -(Au * V[2 * i] + Bv * V[2 * i + 1]);
     edgePlane(f, Au, Bv, C, _N3);
-    const ek = Math.abs(p[0] * _N3[0] + p[1] * _N3[1] + p[2] * _N3[2]) - P.ES[i];
+    const ad = Math.abs(p[0] * _N3[0] + p[1] * _N3[1] + p[2] * _N3[2]), ek = ad - Math.max(P.ES[i], 0.15);
     if (ek < e) { e = ek; lid = P.EI[i]; }
+    if (P.ES[i] < 0 && ad < rd) { rd = ad; rh = -P.ES[i]; }
   }
+  o.ridge = rh > 0 ? rh * Math.max(0, 1 - rd / (2 * rh)) : 0; o.ridgeH = rh; o.ridgeD = rd;
   o.id = P.id; o.e = e; o.lid = lid; o.c = c; o.size = s; o.P = P;
   o.there = c > 0 && (P.id & 65535) / 65536 <= Math.min(1, 1.5 * c);
   return o;
 }
 export { leadHalf, pieceCover };
+const _rc = [0, 0, 0, 0];
+// a pressure ridge's crest by place: its height over its sail's own, 0.6..1.4 (the 4 m tile: blocks piled
+// higher here, lower there; the slabs and the walker alike)
+export const ridgeCrest = (p, d) => 0.6 + 0.8 * triDetail(p, d, 4, _rc)[1];
 const _FO = {};
 // what's under p (body-fixed m; d its way) of the sea's ice, its temperature's ice (0..1), into o: f (how
 // far in from the edge of the piece there less its lead, m; < 0 none: liquid.js seaFloes' own sums), id
@@ -242,6 +283,8 @@ export function floeAt(p, d, ice, o) {
   // (its edges ragged: liquid.js the same)
   const e = F.e + (triDetail(p, d, 8, _j)[0] - 0.5) * 1.6 + (triDetail(p, d, 2, _k)[3] - 0.5) * 0.5;
   o.c = F.c; o.lid = F.lid; o.lead = F.there; o.f = F.there ? e : -Infinity; o.id = F.id; o.size = F.size; o.piece = F.size < 64;
+  // (its sail's height here at its crest's: floeslabs.js's tent)
+  o.ridge = F.there && F.ridgeH > 0 ? Math.max(0, F.ridgeH * ridgeCrest(p, d) - F.ridgeD / 2) : 0;
   return o;
 }
 const _fa = {};

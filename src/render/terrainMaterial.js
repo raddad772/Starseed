@@ -430,7 +430,8 @@ void main() {
     // (the air over the pack, which the leads freeze by: its ice keeps the sea's heat from it, worldsim/
     // season.js seasonIce; the open sea's own where the world keeps no year)
     float Tair = uSeason.z > 0.5 ? Tm + seasonIceNow(upF) : tsf.x;
-    vec4 fl = kind < 0.2 ? seaFloes(pF, upF, w, ice, iceC, foot, max(tsf.y - Tair, 0.0), pDay, lead) : vec4(ice, 0.0, 1.0, 0.0);
+    vec4 ridge = vec4(0.0);
+    vec4 fl = kind < 0.2 ? seaFloes(pF, upF, w, ice, iceC, foot, max(tsf.y - Tair, 0.0), pDay, lead, ridge) : vec4(ice, 0.0, 1.0, 0.0);
     float calm = smoothstep(0.05, 0.6, max(iceC, fl.w));
     nF = normalize(mix(nF, upF, 0.9 * calm)); wr *= 1.0 - 0.8 * calm; foam *= 1.0 - calm;
     // (a falling sheet carries no river's ripples: its own surface, streaked below)
@@ -604,6 +605,13 @@ void main() {
       float snowy = smoothstep(0.3, 0.7, fl.z + (dJ.a - 0.5) * 0.25) * (1.0 - 0.7 * fl.y / max(fl.x, 1e-3));
       vec3 iceAlb = mix(vec3(0.42, 0.52, 0.6), vec3(0.82, 0.86, 0.9), snowy) * (0.9 + 0.2 * dI.r);
       vec3 N2 = normalize(mix(up, N, 0.5));
+      // (a pressure ridge's sail: broken blocks, snow in their gaps, its sides lit by how they face; the
+      // slabs' own near the camera: floeRender.js)
+      if (ridge.w > 0.0) {
+        float blk = tri(fp, w, 2.0).r;
+        iceAlb = mix(iceAlb, mix(vec3(0.5, 0.62, 0.7), vec3(0.85, 0.88, 0.92), smoothstep(0.35, 0.6, blk)), smoothstep(0.0, 0.2, ridge.w));
+        N2 = normalize(N2 + transpose(uToFixed) * ridge.xyz * 0.5 * smoothstep(0.0, 0.1, ridge.w));
+      }
       vec3 iceCol = iceAlb / PI * (uSunE * sunT * max(dot(N2, uSunDir), 0.0) + uSunE * skyE * (0.5 + 0.5 * dot(N2, up)));
       float NdH2 = max(dot(N2, H), 0.0);
       iceCol += uSunE * sunT * pow(NdH2, mix(400.0, 40.0, snowy)) * 0.04 * step(0.0, muS);

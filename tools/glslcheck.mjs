@@ -1,5 +1,5 @@
 // Offline compile check of the terrain material's shaders (the ground's and the rivers' water,
-// terrainMaterial.js's RIBBON) and the rocks' (rockRender.js), with three's chunks pasted in, through glslangValidator: catches a
+// terrainMaterial.js's RIBBON), the rocks' (rockRender.js) and the floes' (floeRender.js), with three's chunks pasted in, through glslangValidator: catches a
 // shader that won't compile (a black or see-through world in the browser) without loading the game.
 //   node tools/glslcheck.mjs [outDir]
 import fs from 'node:fs';
@@ -8,6 +8,7 @@ import { execSync } from 'node:child_process';
 const THREE = await import('../node_modules/three/build/three.module.js');
 const TM = await import('../src/render/terrainMaterial.js');
 const RR = await import('../src/render/rockRender.js');
+const FR = await import('../src/render/floeRender.js');
 const D = process.argv[2] || fs.mkdtempSync(os.tmpdir() + '/glslcheck-');
 const expand = (src) => src.replace(/#include <(\w+)>/g, (_, k) => THREE.ShaderChunk[k] ?? (() => { throw new Error('chunk ' + k); })());
 const prefixF = `#version 300 es
@@ -25,9 +26,9 @@ uniform mat4 modelMatrix; uniform mat4 modelViewMatrix; uniform mat4 projectionM
 in vec3 position;
 `;
 let bad = 0;
-for (const [name, mat] of [['terrain', TM.makeTerrainMaterial({})], ['ribbon', TM.makeRibbonMaterial({ uniforms: {} })], ['rock', RR.ROCK_SHADERS]]) {
+for (const [name, mat] of [['terrain', TM.makeTerrainMaterial({})], ['ribbon', TM.makeRibbonMaterial({ uniforms: {} })], ['rock', RR.ROCK_SHADERS], ['floe', FR.FLOE_SHADERS]]) {
   const defs = Object.entries({ ...(mat.defines || {}), MAT_MODE: 3 }).map(([k, v]) => `#define ${k} ${v}`).join('\n') + '\n';
-  for (const [st, src, pre] of [['frag', mat.fragmentShader, prefixF.replace('out highp', defs + '#define varying in\nout highp')], ['vert', mat.vertexShader, prefixV + (name === 'rock' ? 'in mat4 instanceMatrix;\n' : '') + defs]]) {
+  for (const [st, src, pre] of [['frag', mat.fragmentShader, prefixF.replace('out highp', defs + '#define varying in\nout highp')], ['vert', mat.vertexShader, prefixV + (name === 'rock' ? 'in mat4 instanceMatrix;\n' : name === 'floe' ? 'in vec3 normal;\n' : '') + defs]]) {
     const f = `${D}/${name}.${st}`;
     fs.writeFileSync(f, (pre + expand(src)).replace(/\baverage\(/g, 'average_('));
     try { execSync(`glslangValidator ${f}`, { stdio: 'pipe' }); console.log(name, st, 'ok'); }
