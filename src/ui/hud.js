@@ -7,6 +7,7 @@ import * as U from '../core/units.js';
 import { ASSIST_NAMES } from '../sim/ship.js';
 import { lockRadius } from '../sim/ftl.js';
 import { PAD_LAYOUT, padDiagram, padButtonFor, padButtonText, padGlyph } from '../padLayout.js';
+import { markerVelocity, drawVelocityMarkers } from './velMarkers.js';
 
 const $ = (id) => document.getElementById(id);
 const _v = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3();
@@ -477,6 +478,7 @@ export class Hud {
       }
       this.drawStick();
     }
+    if (p.mode === 'eva') { const mv = markerVelocity(g, _v3); drawVelocityMarkers(this, mv.vel, mv.tag, COL); }
     if (g.target) this.drawTarget(g.target);
     this.drawPlayers();
     this.drawNav();
@@ -582,24 +584,10 @@ export class Hud {
     const body = s.body;
     const cx = this.w / 2, cy = this.h / 2;
     const up = _v2.copy(s.pos).normalize();
-    // flight path marker: velocity relative to the surface (or orbital outside)
+    // the velocity markers, prograde and retrograde on the sky round you (velMarkers.js)
     const near = s.altitude < Math.max(body.atmHeight * 1.5, 60000);
-    const vel = near ? s.surfaceVel(_v3) : _v3.copy(s.vel);
-    if (vel.length() > 2) {
-      const pt = this.project(_v.copy(g.camPos).addScaledVector(vel.normalize(), 1e6), {});
-      if (!pt.behind) {
-        ctx.strokeStyle = COL.ok;
-        ctx.beginPath(); ctx.arc(pt.x, pt.y, 6, 0, Math.PI * 2);
-        ctx.moveTo(pt.x - 14, pt.y); ctx.lineTo(pt.x - 6, pt.y); ctx.moveTo(pt.x + 6, pt.y); ctx.lineTo(pt.x + 14, pt.y);
-        ctx.moveTo(pt.x, pt.y - 6); ctx.lineTo(pt.x, pt.y - 12);
-        ctx.stroke();
-      }
-      const rp = this.project(_v.copy(g.camPos).addScaledVector(vel, -1e6), {});
-      if (!rp.behind) {
-        ctx.strokeStyle = COL.cau;
-        ctx.beginPath(); ctx.arc(rp.x, rp.y, 6, 0, Math.PI * 2); ctx.moveTo(rp.x - 4, rp.y - 4); ctx.lineTo(rp.x + 4, rp.y + 4); ctx.moveTo(rp.x + 4, rp.y - 4); ctx.lineTo(rp.x - 4, rp.y + 4); ctx.stroke();
-      }
-    }
+    const mv = markerVelocity(g, _v3);
+    drawVelocityMarkers(this, mv.vel, mv.tag, COL);
     if (!near) return;
     // pitch ladder in the camera frame
     const camInv = _q.copy(g.camQuat).invert();
