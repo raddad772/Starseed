@@ -73,6 +73,28 @@ void main() {
 }
 `;
 
+// the sky's lens from low over a drawn world (atmosphere.js GLSL_MEDIUM lensTrueZ): x y z the camera's up
+// (world), w on; and the drawn and the true horizon's dips (world.js sets them each frame): the stars through
+// it as the sun is, rising and setting at the drawn skyline
+export const SKY_LENS = { uLensUp: { value: new THREE.Vector4(0, 1, 0, 0) }, uLensK: { value: new THREE.Vector2(0, 0) } };
+export const GLSL_LENS_DIR = /* glsl */`
+uniform vec4 uLensUp;
+uniform vec2 uLensK;
+// a way (world, unit) through the lens: to the drawn sky (toDrawn) or back to the true one
+vec3 lensDir(vec3 d, bool toDrawn) {
+  if (uLensUp.w < 0.5 || uLensK.x <= uLensK.y) return d;
+  vec3 up = uLensUp.xyz;
+  float c = clamp(dot(d, up), -1.0, 1.0), z = acos(c);
+  float hD = 1.5707963 + uLensK.x, hT = 1.5707963 + uLensK.y;
+  float z2 = toDrawn ? (z <= hT ? z * hD / hT : hD + (z - hT) * (3.14159265 - hD) / (3.14159265 - hT))
+    : (z <= hD ? z * hT / hD : hT + (z - hD) * (3.14159265 - hT) / (3.14159265 - hD));
+  vec3 h = d - up * c;
+  float hl = length(h);
+  if (hl < 1e-6) return d;
+  return up * cos(z2) + (h / hl) * sin(z2);
+}
+`;
+
 const STAR_VERT = /* glsl */`
 attribute vec3 color;
 attribute float size;
@@ -88,8 +110,12 @@ uniform float uStarExp;
 varying vec3 vColor;
 #include <common>
 #include <logdepthbuf_pars_vertex>
+${GLSL_LENS_DIR}
 void main() {
-  vec4 mv = modelViewMatrix * vec4(position, 1.0);
+  // (through the sky's lens: SKY_LENS)
+  vec3 wp = (modelMatrix * vec4(position, 1.0)).xyz;
+  float wl = length(wp);
+  vec4 mv = viewMatrix * vec4(lensDir(wp / wl, true) * wl, 1.0);
   gl_Position = projectionMatrix * mv;
   float tw = 1.0 + uTwinkle * 0.45 * sin(uTime * (7.0 + fract(position.x * 0.137) * 9.0) + position.y);
   // In space the stars stay visible beside a sunlit planet or ship (as the
@@ -173,7 +199,7 @@ export class Sky {
     g.setAttribute('color', new THREE.BufferAttribute(col, 3));
     g.setAttribute('size', new THREE.BufferAttribute(size2, 1));
     this.starMat = new THREE.ShaderMaterial({
-      uniforms: { uPixelRatio: { value: 1 }, uTwinkle: { value: 0 }, uTime: { value: 0 }, uExtinction: { value: 1 },
+      uniforms: { ...SKY_LENS, uPixelRatio: { value: 1 }, uTwinkle: { value: 0 }, uTime: { value: 0 }, uExtinction: { value: 1 },
         tAdapt: { value: null }, uKey: { value: 0.18 }, uMinExp: { value: 0.04 }, uMaxExp: { value: 260 }, uStarExp: { value: 70 } },
       vertexShader: STAR_VERT, fragmentShader: STAR_FRAG,
       blending: THREE.AdditiveBlending, depthWrite: false, transparent: true,

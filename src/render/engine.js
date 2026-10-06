@@ -12,6 +12,7 @@ import { FULLSCREEN_VERT, GLSL_DEPTH } from './glsl.js';
 import { renderFullscreen } from './atmosphere.js';
 import { VOLUME_COMPOSITE_FRAG } from './volume.js';
 import { SunShadows } from './sunShadows.js';
+import { SKY_LENS, GLSL_LENS_DIR } from './sky.js';
 
 const BG_FRAG = /* glsl */`
 ${GLSL_DEPTH}
@@ -22,6 +23,7 @@ uniform mat3 uCamRot;
 uniform vec2 uTanHalf;
 uniform float uSkyGain;
 varying vec2 vUv;
+${GLSL_LENS_DIR}
 void main() {
   vec4 c = texture(tColor, vUv);
   float d = texture(tDepth, vUv).r;
@@ -29,7 +31,8 @@ void main() {
     vec2 ndc = vUv * 2.0 - 1.0;
     vec3 dv = normalize(vec3(ndc.x * uTanHalf.x, ndc.y * uTanHalf.y, -1.0));
     vec3 D = uCamRot * dv;
-    c.rgb += texture(tSky, D).rgb * uSkyGain;
+    // (the stars through the sky's lens from low over a world: sky.js SKY_LENS)
+    c.rgb += texture(tSky, lensDir(D, false)).rgb * uSkyGain;
   }
   gl_FragColor = vec4(c.rgb, 1.0);
 }
@@ -456,7 +459,7 @@ export class Engine {
     const mk = (frag, uniforms) => new THREE.ShaderMaterial({ uniforms, vertexShader: FULLSCREEN_VERT, fragmentShader: frag, depthTest: false, depthWrite: false });
     const depthU = () => ({ uDepthMode: { value: this.depthMode }, uNear: { value: this.near }, uFar: { value: this.far }, uLogDepthFC: { value: Math.log2(this.far + 1) } });
     this.depthUniforms = depthU;
-    this.bgMat = mk(BG_FRAG, { tColor: { value: null }, tDepth: { value: null }, tSky: { value: null }, uCamRot: { value: new THREE.Matrix3() }, uTanHalf: { value: new THREE.Vector2() }, uSkyGain: { value: 1 }, ...depthU() });
+    this.bgMat = mk(BG_FRAG, { ...SKY_LENS, tColor: { value: null }, tDepth: { value: null }, tSky: { value: null }, uCamRot: { value: new THREE.Matrix3() }, uTanHalf: { value: new THREE.Vector2() }, uSkyGain: { value: 1 }, ...depthU() });
     this.lumMat = mk(LUM_FRAG, { tColor: { value: null }, tDepth: { value: null }, uRef: { value: 0.03 }, uNearCut: { value: 0 }, ...depthU() });
     this.adaptMat = mk(ADAPT_FRAG, { tLum: { value: null }, tPrev: { value: null }, uDt: { value: 0.016 }, uLevel: { value: 7 }, uReset: { value: 1 }, uRef: { value: 0.03 }, uUp: { value: 5 }, uDown: { value: 0.5 }, uStrength: { value: 0.75 } });
     this.brightMat = mk(BRIGHT_FRAG, { tColor: { value: null }, tAdapt: { value: null }, uKey: { value: 0.18 }, uMinExp: { value: 0.04 }, uMaxExp: { value: 260 }, uTexel: { value: new THREE.Vector2() } });

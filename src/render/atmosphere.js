@@ -237,18 +237,21 @@ uniform float uTrueK;
 vec3 trueUp(vec3 p, float r, vec3 upC, float k) { return normalize(mix(upC, p / r, 1.0 / k)); }
 float trueK(float hc) { return mix(max(uTrueK, 1.0), 1.0, smoothstep(20000.0, 60000.0, hc)); }
 const float PI_A = 3.14159265358979;
-// the sun as the air sees it from low over a drawn world (world.js: uSunLift x the drawn horizon's dip from
-// the camera, y the true world's; zero far off): its height stretched near the horizon as the sky's view is
-// (skyTrueEl), so it reddens and dims as it nears the drawn skyline and its light ends as it touches it; on
-// the true world's horizon alone it set in mid-air over the drawn skyline, or (the disc lowered instead)
-// behind hills the drawn world stands eight times steeper (Dave); below the drawn horizon, as much higher
-// as there
 uniform vec2 uSunLift;
+// the sky's lens from low over a drawn world (world.js; uSunLift x the drawn horizon's dip from the camera,
+// y the true world's, zero far off): the drawn world's ball a 64th of the size, its horizon dips further, so
+// the sky is drawn through a gentle fisheye about the zenith: each way's angle from the zenith stretched (the
+// true horizon's onto the drawn one's; below it, what's left of the half below squeezed), so the sun, the
+// moons and the stars rise and set at the drawn skyline, their paths and the world's tilt kept (Dave: "a
+// bit like putting the sky under a fisheye lens"); the air's optics through it backwards, the true sky's
+float lensTrueZ(float zd) {
+  float hD = 1.5707963 + uSunLift.x, hT = 1.5707963 + uSunLift.y;
+  return zd <= hD ? zd * hT / hD : hT + (zd - hD) * (3.14159265 - hT) / (3.14159265 - hD);
+}
+// (the true sun's height for the drawn one's: through the lens backwards)
 float liftMu(float mu) {
   if (uSunLift.x <= uSunLift.y) return mu;
-  float e = asin(clamp(mu, -1.0, 1.0)), E1 = 0.2094;
-  if (e >= E1) return mu;
-  return sin(e >= -uSunLift.x ? E1 - (E1 - e) * (E1 + uSunLift.y) / (E1 + uSunLift.x) : e + (uSunLift.x - uSunLift.y));
+  return cos(lensTrueZ(acos(clamp(mu, -1.0, 1.0))));
 }
 // (the ground haze's share: 0 for a sky pixel's ray, which reaches no far ground for it to stand in front of;
 // the haze is the game's stand-in for the distance the drawn world leaves out, and over a ray toward the
@@ -501,12 +504,14 @@ uniform sampler2D tSkyView;
 uniform vec4 uSkyView;   // x its share (1 low down, 0 from high up); y, z the drawn and the true horizon's dip there (rad)
 uniform vec3 uSkyUp;     // the camera's up (world)
 uniform vec3 uSkySunH;   // the sun's way along the ground there (world, unit): the azimuths' zero
-// a drawn elevation as the true world's (rad): the drawn horizon dips further (its ball a 64th the size: ~3
-// degrees from 140 m, the true one's 0.4), so near it the sky's elevations stretched, the true horizon's
-// onto the drawn skyline (the far sky's band sat a few degrees over the treeline, a dim gap under it, and
-// the sun set in mid-air over it: Dave), none from 12 degrees up
-const float SKY_E1 = 0.2094;
-float skyTrueEl(float e) { return e >= SKY_E1 ? e : SKY_E1 - (SKY_E1 - e) * (SKY_E1 + uSkyView.z) / (SKY_E1 + uSkyView.y); }
+// a drawn elevation as the true world's (rad): through the sky's lens backwards (GLSL_MEDIUM lensTrueZ; the
+// dips here uSkyView y, z: the far sky's band sat a few degrees over the treeline without it, and the sun
+// set in mid-air over it: Dave)
+float skyTrueEl(float e) {
+  if (uSkyView.y <= uSkyView.z) return e;
+  float zd = 1.5707963 - e, hD = 1.5707963 + uSkyView.y, hT = 1.5707963 + uSkyView.z;
+  return 1.5707963 - (zd <= hD ? zd * hT / hD : hT + (zd - hD) * (3.14159265 - hT) / (3.14159265 - hD));
+}
 vec3 skyFar(vec3 D) {
   if (uSkyView.x <= 0.0) return vec3(0.0);
   float s = clamp(dot(D, uSkyUp), -1.0, 1.0), el = skyTrueEl(asin(s));
@@ -896,6 +901,15 @@ function lutTarget(w, h) {
 
 function v3(a) { return new THREE.Vector3(a[0], a[1], a[2]); }
 
+// the sky's lens (GLSL_MEDIUM lensTrueZ): a zenith angle through it, true to drawn (toDrawn) or back; dD, dT
+// the drawn and the true horizon's dips
+export function lensZ(z, dD, dT, toDrawn) {
+  const hD = Math.PI / 2 + dD, hT = Math.PI / 2 + dT;
+  if (!(dD > dT)) return z;
+  return toDrawn ? (z <= hT ? z * hD / hT : hD + (z - hT) * (Math.PI - hD) / (Math.PI - hT))
+    : (z <= hD ? z * hT / hD : hT + (z - hD) * (Math.PI - hT) / (Math.PI - hD));
+}
+
 // One atmosphere: parameters, LUTs and the composite material.
 // the ground haze's scattering at the render's red, green and blue (~680, 550, 440 nm) over green's,
 // by its Angstrom exponent (bodies.js atmosphereRender haze[3])
@@ -1071,18 +1085,15 @@ export class Atmosphere {
     return out;
   }
 
-  // the sun as the air sees it low over a drawn world (GLSL_MEDIUM liftMu; this.sunLift: world.js)
+  // the true sun's height for a drawn one's: through the sky's lens backwards (GLSL_MEDIUM; this.sunLift)
   liftMu(mu) {
     const dD = this.sunLift.value.x, dT = this.sunLift.value.y;
     if (!(dD > dT)) return mu;
-    const e = Math.asin(Math.max(-1, Math.min(1, mu))), E1 = 0.2094;
-    if (e >= E1) return mu;
-    return Math.sin(e >= -dD ? E1 - (E1 - e) * (E1 + dT) / (E1 + dD) : e + (dD - dT));
+    return Math.cos(lensZ(Math.acos(Math.max(-1, Math.min(1, mu))), dD, dT, false));
   }
 
   // Sunlight transmittance at radius r, sun zenith cosine mu (incl. planet shadow)
-  transmittance(r, mu, out = [1, 1, 1]) {
-    mu = this.liftMu(mu);
+  transmittance(r, mu, out = [1, 1, 1]) {   // (mu the true sun's: game.js computeLighting)
     const top = this.top, bot = this.bottom;
     const rr = Math.min(Math.max(r, bot), top);
     const H = Math.sqrt(top * top - bot * bot);
@@ -1100,7 +1111,6 @@ export class Atmosphere {
   }
 
   skyIrradiance(r, mu, out = [0, 0, 0]) {
-    mu = this.liftMu(mu);
     const v = Math.min(Math.max((r - this.ground) / (this.top - this.ground), 0), 1);
     return this._bilinear(this.cpuIrr, mu * 0.5 + 0.5, v, out);
   }
@@ -1174,12 +1184,14 @@ uniform float uGround;
 uniform float uTrueK;
 uniform sampler2D tTrans;
 uniform sampler2D tIrr;
-uniform vec2 uSunLift;   // (the sun as the air sees it low over a drawn world: atmosphere.js GLSL_MEDIUM liftMu)
+uniform vec2 uSunLift;   // (the sky's lens low over a drawn world: atmosphere.js GLSL_MEDIUM)
+float lensTrueZ(float zd) {
+  float hD = 1.5707963 + uSunLift.x, hT = 1.5707963 + uSunLift.y;
+  return zd <= hD ? zd * hT / hD : hT + (zd - hD) * (3.14159265 - hT) / (3.14159265 - hD);
+}
 float liftMu(float mu) {
   if (uSunLift.x <= uSunLift.y) return mu;
-  float e = asin(clamp(mu, -1.0, 1.0)), E1 = 0.2094;
-  if (e >= E1) return mu;
-  return sin(e >= -uSunLift.x ? E1 - (E1 - e) * (E1 + uSunLift.y) / (E1 + uSunLift.x) : e + (uSunLift.x - uSunLift.y));
+  return cos(lensTrueZ(acos(clamp(mu, -1.0, 1.0))));
 }
 vec2 transmittanceUV(float r, float mu) {
   float H = sqrt(max(0.0, uTop * uTop - uBottom * uBottom));
