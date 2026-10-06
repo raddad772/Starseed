@@ -1,50 +1,128 @@
-// Grass near the camera (LIFE.md 5; Dave: "put some grass on that and it could be pretty"): tufts of
-// blades on the ground within ~30 m (thick near, thinning off), as thick as the country's plants are open (the life map's cover and
-// its open share: a grassland thick, a forest floor thin; none on sand, bare rock, ice, water or frozen
-// ground), where grasses have evolved (evolve.js plantGrade 4; before them, ferns' broader fronds),
-// coloured from the world's own foliage pigment toward its dry colour where its rain is short, taller
-// where it's wetter and warmer (and the pull lighter), swaying in the wind. Tufts placed by each 8 m
-// tile's own hash in the cube face's coordinates (the same for everyone), on the ground under them (the
-// tile's heights, as the finest mesh draws them); fading out with distance so none pops.
+// Grass near the camera (LIFE.md 5; Dave: "put some grass on that and it could be pretty", "you need SO
+// much more grass"): blades, each a few triangles shaped, bent and coloured in the vertex shader (after
+// Peter Adams's GLSL triangle grass: many thin blades, dark at their feet, the wind's gusts running across
+// them), in 2 m patches whose feet follow the ground (the patch's four corners' heights, as the drawn
+// ground has them), hundreds to the square metre where the country grows them thick. As thick as the
+// country's plants are open (the life map's cover; under a wood's closed stands only a few, shaded out:
+// gen/life/stands.js); none on sand, bare rock, ice, water or frozen ground; where grasses have evolved
+// (evolve.js plantGrade 4; before them, ferns' broader fronds); coloured from the world's own foliage
+// pigment toward its dry colour where its rain is short (no texture's colours over it); as tall as it
+// grows left to itself (a dry steppe's a hand high, a wet warm country's a metre and more: "long and wild
+// when it can"); bent by the wind where you stand (sim/wind.js), its gusts running across in its way.
+// Patches by each 8 m tile's own hash in the cube face's coordinates (the same for everyone), each tile
+// its own meshes (culled by view), its blades full near, fewer and broader further, thinned out at the
+// edge of its reach.
 import * as THREE from 'three';
 import { dirFromFaceUV, faceUVFromDir } from '../gen/cubesphere.js';
 import { S_LEN, S_H, S_TEMP, S_SAND, S_ICE, S_WDEPTH, S_RIVR } from '../gen/terrain.js';
 import { fmix32 } from '../core/rng.js';
 import { FireField } from '../sim/fireField.js';
-import { FIRE_OLD } from '../gen/life/fire.js';
-import { SHADOW_LAYER, receiveShadows, depthMaterial } from './sunShadows.js';
+import { SHADOW_LAYER, SHADOW_LIGHT_UNIFORMS, receiveShadows } from './sunShadows.js';
+import { standAt } from '../gen/life/stands.js';
+import { floraSpecies, meadowAt } from '../gen/flora.js';
 
-const TILE = 8, RADIUS = 30, PER_M2 = 20, CAP = 40000, HIGH = 60, MOVE = 1.2, NEAR = 7;
-const _m = new THREE.Matrix4(), _x = new THREE.Vector3(), _y = new THREE.Vector3(), _z = new THREE.Vector3(), _c = new THREE.Color();
+const TILE = 8, PPT = 4, NEAR_R = 16, MID_R = 44, HIGH = 60, MOVE = 1.2;
+const LOD = { near: { blades: 1400, seg: 2, width: 0.007 }, mid: { blades: 600, seg: 1, width: 0.014 } };
+const _c = new THREE.Color(), _y = new THREE.Vector3();
 
-// a tuft: blades (narrow and tapering for grass; broad, few and arching for fern fronds), unit high, its
-// normals all up (lit as the ground is under it: no dark backs), darker at the foot
-function tuftGeometry(fern) {
-  const pos = [], col = [], idx = [], nrm = [];
-  const blades = fern ? 4 : 10, SEG = 2;
-  let h = 0x9e3779b9;
+// a patch's blades over [-1, 1]^2 m (the patch's own frame, y up), each seg segments under a single tip:
+//   aBlade (x, z, r, yaw): its foot, its own random (kept where r is under the patch's density), its way
+//   aV (t, side): along it 0..1, its edge (-1, +1; 0 the tip)
+function bladeGeometry(nb, seg, seed) {
+  const per = seg * 2 + 1, nv = nb * per;
+  const A = new Float32Array(nv * 4), W = new Float32Array(nv * 2), P = new Float32Array(nv * 3), idx = new Uint32Array(nb * (seg * 2 - 1) * 3);
+  let h = seed >>> 0;
   const rnd = () => { h = fmix32((h + 0x6d2b79f5) >>> 0); return h / 4294967296; };
-  for (let b = 0; b < blades; b++) {
-    const a = (b + rnd() * 0.6) / blades * Math.PI * 2, lean = (fern ? 0.55 : 0.12) + rnd() * (fern ? 0.3 : 0.22), len = 0.55 + 0.45 * rnd();
-    const w0 = fern ? 0.07 : 0.022, ca = Math.cos(a), sa = Math.sin(a), base = pos.length / 3;
-    const ox = (rnd() - 0.5) * 0.2, oz = (rnd() - 0.5) * 0.2;   // (blades from a spread of roots)
-    for (let s = 0; s <= SEG; s++) {
-      const t = s / SEG, w = w0 * (fern ? Math.sin(Math.PI * Math.min(1, t * 1.15)) + 0.15 : 1 - t * 0.92);
-      const out = lean * t * t * len, up = len * (t - 0.5 * lean * t * t * (fern ? 0.8 : 0.3));
-      const cx = ox + ca * out, cz = oz + sa * out;
-      pos.push(cx - sa * w, up, cz + ca * w, cx + sa * w, up, cz - ca * w);
-      const k = 0.55 + 0.45 * t;
-      col.push(k, k, k, k, k, k);
-      nrm.push(0, 1, 0, 0, 1, 0);
+  let v = 0, k = 0;
+  for (let b = 0; b < nb; b++) {
+    const x = rnd() * 2 - 1, z = rnd() * 2 - 1, r = rnd(), yaw = rnd() * Math.PI * 2, base = v;
+    for (let s = 0; s <= seg; s++) {
+      for (const sd of s === seg ? [0] : [-1, 1]) {
+        A[v * 4] = x; A[v * 4 + 1] = z; A[v * 4 + 2] = r; A[v * 4 + 3] = yaw;
+        W[v * 2] = s / seg; W[v * 2 + 1] = sd;
+        P[v * 3] = x; P[v * 3 + 1] = s / seg; P[v * 3 + 2] = z;
+        v++;
+      }
     }
-    for (let s = 0; s < SEG; s++) { const i = base + s * 2; idx.push(i, i + 1, i + 2, i + 1, i + 3, i + 2); }
+    for (let s = 0; s < seg; s++) {
+      const i = base + s * 2;
+      if (s === seg - 1) { idx[k++] = i; idx[k++] = i + 1; idx[k++] = i + 2; }
+      else { idx[k++] = i; idx[k++] = i + 1; idx[k++] = i + 2; idx[k++] = i + 1; idx[k++] = i + 3; idx[k++] = i + 2; }
+    }
   }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  g.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
-  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-  g.setIndex(idx);
-  return g;
+  // (normals all up, lit as the ground is: and a material without them is drawn flat-shaded)
+  const N = new Float32Array(nv * 3);
+  for (let i = 0; i < nv; i++) N[i * 3 + 1] = 1;
+  return {
+    position: new THREE.BufferAttribute(P, 3), normal: new THREE.BufferAttribute(N, 3), aBlade: new THREE.BufferAttribute(A, 4), aV: new THREE.BufferAttribute(W, 2),
+    index: new THREE.BufferAttribute(idx.subarray(0, k), 1),
+  };
+}
+
+// a blade's shape, shared by the lit material and the shadows': from its patch's instance data
+//   iCorner: the ground's heights at the patch's corners over its centre's plane (u-v-, u+v-, u-v+, u+v+)
+//   iGrass: density (0..1), height (m), how wild (its own lean), (unused)
+//   iWave: where the patch lies (body-fixed x, z, wrapped): the gusts' phase runs across it
+const GLSL_BLADE = /* glsl */`
+attribute vec4 aBlade;
+attribute vec2 aV;
+attribute vec4 iCorner;
+attribute vec4 iGrass;
+attribute vec2 iWave;
+uniform float uWindT;
+uniform float uGrassWind;
+uniform vec3 uWindL;
+uniform float uBladeW;
+uniform float uFadeR;
+varying float vGT;
+varying float vGK;
+vec3 grassBlade(mat4 im) {
+  vec4 pc = modelMatrix * im * vec4(0.0, 0.0, 0.0, 1.0);
+  float dens = iGrass.x * (1.0 - smoothstep(uFadeR * 0.7, uFadeR, length(pc.xyz)));
+  vGT = aV.x; vGK = fract(aBlade.z * 13.71);
+  if (aBlade.z >= dens) return vec3(0.0);
+  float t = aV.x, side = aV.y;
+  float k1 = fract(aBlade.z * 7.31), k2 = fract(aBlade.z * 3.17 + aBlade.w * 0.13);
+  float hb = iGrass.y * (0.45 + 0.9 * k1);
+  vec2 f = vec2(cos(aBlade.w), sin(aBlade.w)), p = vec2(-f.y, f.x);
+  // (its own lean, the wilder the more; the wind's bend, a gust's wave running across in its way)
+  vec2 B = f * iGrass.z * (0.15 + 0.85 * k2);
+  vec3 wl = transpose(mat3(im)) * uWindL;
+  vec2 wd = length(wl.xz) > 1e-4 ? normalize(wl.xz) : vec2(1.0, 0.0);
+  vec3 off = mat3(im) * vec3(aBlade.x, 0.0, aBlade.y);
+  vec2 wF = length(uWindL.xz) > 1e-4 ? normalize(uWindL.xz) : vec2(1.0, 0.0);
+  float ph = dot(iWave + off.xz, wF) * 0.35 - uWindT * 2.2 + k1 * 0.6;
+  float g = 0.5 + 0.5 * sin(ph) * (0.7 + 0.3 * sin(ph * 2.3 + 1.7));
+  B += wd * uGrassWind * (0.25 + 0.75 * g) * (0.7 + 0.6 * k2);
+  float bl = length(B);
+  if (bl > 1.2) B *= 1.2 / bl;
+  float u = aBlade.x * 0.5 + 0.5, v = aBlade.y * 0.5 + 0.5;
+  float hg = mix(mix(iCorner.x, iCorner.y, u), mix(iCorner.z, iCorner.w, u), v);
+  float w = uBladeW * (0.6 + 0.8 * k2) * (1.0 + 0.6 * iGrass.y) * pow(1.0 - t, 0.7);
+  vec2 xz = vec2(aBlade.x, aBlade.y) + B * hb * t * t + p * w * side;
+  return vec3(xz.x, hg + hb * t * (1.0 - 0.3 * dot(B, B) * t), xz.y);
+}
+`;
+
+// its shadow (sunShadows.js): the blades as drawn, their distance from the light
+function bladeDepthMaterial(uniforms) {
+  return new THREE.ShaderMaterial({
+    uniforms: { ...SHADOW_LIGHT_UNIFORMS, ...uniforms },
+    vertexShader: `
+uniform vec3 uLightPos;
+uniform vec3 uLightDir;
+varying float vD;
+${GLSL_BLADE}
+void main() {
+  vec4 wp = modelMatrix * instanceMatrix * vec4(grassBlade(instanceMatrix), 1.0);
+  vD = dot(uLightPos - wp.xyz, uLightDir);
+  gl_Position = projectionMatrix * viewMatrix * wp;
+}`,
+    fragmentShader: `
+varying float vD;
+void main() { gl_FragColor = vec4(vD, 0.0, 0.0, 1.0); }`,
+    side: THREE.DoubleSide,
+  });
 }
 
 // a wavelength (nm) as the eye sees it, linear RGB (a rough fit to the CIE curves: Bruton's), past our
@@ -62,42 +140,49 @@ function nmRGB(l) {
   return [r * r, g * g, b * b].map((x) => 0.04 + 0.6 * x);
 }
 
-// the wind: a gust that runs across the field, each tuft a little its own, the tips most
-const WIND = `{
-    vec3 ip = vec3(instanceMatrix[3][0], instanceMatrix[3][1], instanceMatrix[3][2]);
-    float ph = uWindT * 1.6 + dot(ip, vec3(0.31, 0.17, 0.23));
-    float bend = (0.10 * sin(ph) + 0.04 * sin(ph * 2.7 + 1.3)) * position.y * position.y * uGrassWind;
-    transformed.x += bend; transformed.z += 0.5 * bend;
-  }`;
-
 export class GrassSet {
   constructor(body, group, pool) {
     this.body = body; this.group = group;
     // (the recent centuries' fires where it stands: gen/life/fire.js; a tile's grass made again as its
     // fire tile comes in)
     this.fire = pool ? new FireField(body, pool) : null;
-    if (this.fire) this.fire.onTile = () => { this.tiles.clear(); this.at = null; };
+    if (this.fire) this.fire.onTile = () => this.invalidate();
     const d = body.data, H = d.history || {};
     this.grade = H.plantGrade ?? -1;
     this.fern = this.grade < 4;
     this.veg = (d.life && d.life.vegColor) || [0.1, 0.2, 0.05];
     this.dry = (d.life && d.life.dryColor) || this.veg;
     this.gK = Math.pow(9.81 / Math.max(d.gravity || 9.81, 1), 0.3);
-    this.mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, metalness: 0, side: THREE.DoubleSide });
+    // (the flora's species: its meadows, open ground among the stands where no tree stands: flora.js)
+    this.species = body._floraSpecies || (body._floraSpecies = floraSpecies(d.terrain));
     this.time = { value: 0 };
-    // (how hard the wind bends it: sim/wind.js, setWind; a light air barely)
-    this.windAmp = { value: 0.5 };
-    this.mat.onBeforeCompile = (sh) => {
-      sh.uniforms.uWindT = this.time;
-      sh.uniforms.uGrassWind = this.windAmp;
-      // (both faces lit as the ground is: a double-sided material's back faces would take its normal turned
-      // down, half of every tuft's blades in shadow)
-      sh.fragmentShader = sh.fragmentShader.replace('#include <normal_fragment_begin>', '#include <normal_fragment_begin>\n  normal = normalize( vNormal );');
-      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nuniform float uWindT;\nuniform float uGrassWind;')
-        .replace('#include <begin_vertex>', `#include <begin_vertex>\n${WIND}`);
-    };
-    // (in the sun's shadows and the canopy's, and casting its own, near: sunShadows.js)
-    receiveShadows(this.mat);
+    // (the wind: how hard it bends the blades and its way (setWind); a light air barely)
+    this.windAmp = { value: 0.3 };
+    this.windL = { value: new THREE.Vector3(1, 0, 0) };
+    // the blades' shapes, near and further (fewer, broader); a material each (its width, its reach)
+    this.geo = {};
+    this.mats = {};
+    this.shadowMats = {};
+    for (const [k, L] of Object.entries(LOD)) {
+      this.geo[k] = bladeGeometry(this.fern ? Math.round(L.blades * 0.35) : L.blades, L.seg, 0x9e3779b9 ^ (k === 'near' ? 1 : 2));
+      const U = { uWindT: this.time, uGrassWind: this.windAmp, uWindL: this.windL, uBladeW: { value: L.width * (this.fern ? 5 : 1) }, uFadeR: { value: k === 'near' ? 1e6 : MID_R } };
+      const m = new THREE.MeshStandardMaterial({ roughness: 0.85, metalness: 0, side: THREE.DoubleSide });
+      m.onBeforeCompile = (sh) => {
+        Object.assign(sh.uniforms, U);
+        sh.vertexShader = sh.vertexShader.replace('#include <common>', `#include <common>\n${GLSL_BLADE}`)
+          .replace('#include <beginnormal_vertex>', 'vec3 objectNormal = vec3(0.0, 1.0, 0.0);\n#ifdef USE_TANGENT\nvec3 objectTangent = vec3(1.0, 0.0, 0.0);\n#endif')
+          .replace('#include <begin_vertex>', 'vec3 transformed = grassBlade(instanceMatrix);');
+        // (both faces lit as the ground is; dark at the foot, light at the tip, a little each its own)
+        sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vGT;\nvarying float vGK;')
+          .replace('#include <normal_fragment_begin>', '#include <normal_fragment_begin>\n  normal = normalize( vNormal );')
+          .replace('#include <color_fragment>', '#include <color_fragment>\n  diffuseColor.rgb *= mix(0.3, 1.0, pow(vGT, 0.8)) * (0.82 + 0.36 * vGK);');
+      };
+      m.customProgramCacheKey = () => 'grass-blades';
+      // (in the sun's shadows and the canopy's: sunShadows.js)
+      receiveShadows(m);
+      this.mats[k] = m;
+      this.shadowMats[k] = bladeDepthMaterial(U);
+    }
     // flowers, where flowering plants have evolved (plantGrade 3+): heads coloured in their pollinators'
     // window (the land's animals' eyes: biosphere.js seeing), spread across it and away from the
     // foliage's own colour, and white
@@ -107,31 +192,33 @@ export class GrassSet {
       const lo = win ? win.lo : 400, hi = win ? win.hi : 700;
       for (const f of [0.12, 0.45, 0.85]) this.flowerCols.push(nmRGB(lo + (hi - lo) * f));
       this.flowerCols.push([0.62, 0.62, 0.58]);
-      const fg = new THREE.CircleGeometry(1, 6); fg.rotateX(-Math.PI / 2);
+      this.flowerGeo = new THREE.CircleGeometry(1, 6); this.flowerGeo.rotateX(-Math.PI / 2);
       this.fmat = new THREE.MeshStandardMaterial({ roughness: 0.7, side: THREE.DoubleSide });
       this.fmat.onBeforeCompile = (sh) => { sh.fragmentShader = sh.fragmentShader.replace('#include <normal_fragment_begin>', '#include <normal_fragment_begin>\n  normal = normalize( vNormal );'); };
       receiveShadows(this.fmat);
-      this.flowers = new THREE.InstancedMesh(fg, this.fmat, CAP >> 2);
-      this.flowers.count = 0; this.flowers.frustumCulled = false; this.flowers.setColorAt(0, _c.set(1, 1, 1));
-      group.add(this.flowers);
     }
-    this.mesh = new THREE.InstancedMesh(tuftGeometry(this.fern), this.mat, CAP);
-    this.mesh.count = 0; this.mesh.frustumCulled = false;
-    this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    this.mesh.layers.enable(SHADOW_LAYER);
-    this.mesh.userData.shadowNearOnly = true;
-    this.mesh.userData.shadowMat = depthMaterial('uniform float uWindT;\nuniform float uGrassWind;\n', WIND, { uWindT: this.time, uGrassWind: this.windAmp });
-    this.mesh.setColorAt(0, _c.set(1, 1, 1));
-    group.add(this.mesh);
-    this.tiles = new Map(); this.at = null; this.origin = new THREE.Vector3();
+    this.tiles = new Map(); this.at = null; this.visible = true;
     this._s = new Float64Array(S_LEN); this._uv = { face: 0, u: 0, v: 0 };
   }
 
-  // the wind where the camera is (sim/wind.js): its speed (m/s) bending the blades, gusts and all
-  setWind(speed, gust) { this.windAmp.value = Math.min(2.2, (speed / 7) * (0.7 + 0.6 * gust)); }
+  // the wind where the camera is (sim/wind.js): its speed (m/s) bending the blades, its gusts, its way
+  // (body-fixed)
+  setWind(speed, gust, dirF) {
+    this.windAmp.value = Math.min(1.4, (speed / 9) * (0.75 + 0.5 * gust));
+    if (dirF) this.windL.value.copy(dirF);
+  }
 
-  // the ground under its tiles changed (finer terrain came): made again
-  invalidate() { this.tiles.clear(); this.at = null; }
+  // the ground under its tiles changed (finer terrain came, the near field built anew): made again
+  invalidate() {
+    for (const T of this.tiles.values()) this.dropTile(T);
+    this.tiles.clear(); this.at = null;
+  }
+
+  dropTile(T) {
+    for (const m of Object.values(T.meshes || {})) { if (m) { this.group.remove(m); m.geometry.dispose(); } }
+    if (T.flowers) { this.group.remove(T.flowers); T.flowers.dispose(); }
+    T.meshes = null; T.flowers = null;
+  }
 
   // camF: the camera, body-fixed
   update(camF) {
@@ -140,78 +227,76 @@ export class GrassSet {
     if (nf !== this._nf) { this._nf = nf; this.invalidate(); }
     const b = this.body, gen = b.terrain, R = b.R, now = performance.now() / 1000;
     this.time.value += Math.min(0.1, Math.max(0, now - (this._t || now))); this._t = now;   // (the wind's: render time)
-    if (!gen || !gen.snap || !gen.snap.s.cover || this.grade < 1 || camF.length() - R > HIGH + 2000) { this.mesh.visible = false; if (this.flowers) this.flowers.visible = false; return; }
+    const show = (v) => {
+      if (v === this.visible) return;
+      this.visible = v;
+      for (const T of this.tiles.values()) {
+        for (const m of Object.values(T.meshes || {})) if (m) m.visible = v && m.userData.on;
+        if (T.flowers) T.flowers.visible = v && T.flowers.userData.on;
+      }
+    };
+    if (!gen || !gen.snap || !gen.snap.s.cover || this.grade < 1 || camF.length() - R > HIGH + 2000) { show(false); return; }
     const up = _y.copy(camF).normalize(), alt = camF.length() - R - b.groundHeight(up);
-    if (alt > HIGH) { this.mesh.visible = false; if (this.flowers) this.flowers.visible = false; return; }
-    this.mesh.visible = true; if (this.flowers) this.flowers.visible = true;
+    if (alt > HIGH) { show(false); return; }
+    show(true);
     if (this.at && this.at.distanceTo(camF) < MOVE) return;
     this.at = (this.at || new THREE.Vector3()).copy(camF);
-    this.origin.set(Math.round(camF.x / 64) * 64, Math.round(camF.y / 64) * 64, Math.round(camF.z / 64) * 64);
-    // the tiles about: on the camera's face, within reach
+    // the tiles about: on the camera's face, within reach, nearest first; each its meshes for its distance
     const uv = faceUVFromDir([up.x, up.y, up.z], this._uv), NT = Math.round(Math.PI * 0.5 * R / TILE);
-    const ci = Math.floor((uv.u + 1) * 0.5 * NT), cj = Math.floor((uv.v + 1) * 0.5 * NT), k = Math.ceil(RADIUS / TILE) + 1;
-    let n = 0, nFl = 0, built = 0, more = false;
-    const live = new Set();
+    const ci = Math.floor((uv.u + 1) * 0.5 * NT), cj = Math.floor((uv.v + 1) * 0.5 * NT), k = Math.ceil(MID_R / TILE) + 1;
     const order = this._order || (this._order = (() => { const o = []; for (let a = -k; a <= k; a++) for (let c = -k; c <= k; c++) o.push([a, c]); return o.sort((p, q) => p[0] * p[0] + p[1] * p[1] - q[0] * q[0] - q[1] * q[1]); })());
+    const live = new Set();
+    let built = 0, more = false;
     for (const [oi, oj] of order) {
-      if (n >= CAP) break;
       const i = ci + oi, j = cj + oj;
       if (i < 0 || j < 0 || i >= NT || j >= NT) continue;
       const key = uv.face * 1e10 + i * 1e5 + j;
       let T = this.tiles.get(key);
-      // (a dozen new tiles a frame at most, the nearest first come round: the rest the frames after, the
-      // grass filling in, no stall where the ground's been made again)
-      if (!T) { if (built >= 12) { more = true; continue; } T = this.tile(uv.face, i, j, NT); this.tiles.set(key, T); built++; }
+      // (a few new tiles a frame at most, the nearest first: the rest the frames after, the grass filling in)
+      if (!T) { if (built >= 6) { more = true; continue; } T = this.tile(uv.face, i, j, NT); this.tiles.set(key, T); built++; }
       live.add(key);
       if (!T.n) continue;
-      for (let q = 0; q < T.n && n < CAP; q++) {
-        const o = q * 7, px = T.p[o], py = T.p[o + 1], pz = T.p[o + 2];
-        const dx = px - camF.x, dy = py - camF.y, dz = pz - camF.z, d = Math.sqrt(dx * dx + dy * dy + dz * dz);
-        if (d > RADIUS) continue;
-        // (thinned with distance, the ones kept a little bigger to cover for those gone; shrunk toward
-        // nothing at the edge of its reach: no tuft pops in)
-        const keep = d < NEAR ? 1 : Math.max(0.2, NEAR / d);
-        if (T.p[o + 6] > keep) continue;
-        const s = T.p[o + 4] * (1 + 0.6 * (1 - keep)) * Math.min(1, (RADIUS - d) / (RADIUS * 0.3));
-        _y.set(px, py, pz).normalize();
-        _x.copy(T.e).addScaledVector(_y, -T.e.dot(_y)).normalize();
-        _z.crossVectors(_x, _y);
-        const c = Math.cos(T.p[o + 3]), sn = Math.sin(T.p[o + 3]);
-        const X = _x.clone().multiplyScalar(c).addScaledVector(_z, sn), Z = _z.multiplyScalar(c).addScaledVector(_x, -sn);
-        _m.makeBasis(X.multiplyScalar(s), _y.multiplyScalar(s), Z.multiplyScalar(s)).setPosition(px - this.origin.x, py - this.origin.y, pz - this.origin.z);
-        this.mesh.setMatrixAt(n, _m);
-        // (a flower on a tuft now and then where the grass is thick enough to hold them, near enough to see)
-        if (this.flowers && nFl < (CAP >> 2) && T.fl > 0 && d < RADIUS * 0.7 && T.p[o + 6] < T.fl) {
-          const fs = (0.018 + 0.02 * T.p[o + 6] / T.fl) * Math.min(1, (RADIUS * 0.7 - d) / 4);
-          _m.makeBasis(_x.copy(X).normalize().multiplyScalar(fs), _y.normalize().multiplyScalar(fs), _z.copy(Z).normalize().multiplyScalar(fs));
-          _m.setPosition(px - this.origin.x + _y.x / fs * s * 0.85, py - this.origin.y + _y.y / fs * s * 0.85, pz - this.origin.z + _y.z / fs * s * 0.85);
-          this.flowers.setMatrixAt(nFl, _m);
-          const fc = this.flowerCols[Math.floor(T.p[o + 6] / T.fl * 97) % this.flowerCols.length];
-          this.flowers.setColorAt(nFl, _c.setRGB(fc[0], fc[1], fc[2]));
-          nFl++;
-        }
-        const t = T.p[o + 5];
-        _c.setRGB(T.col[0] + (T.col[3] - T.col[0]) * t, T.col[1] + (T.col[4] - T.col[1]) * t, T.col[2] + (T.col[5] - T.col[2]) * t);
-        this.mesh.setColorAt(n, _c);
-        n++;
+      const dist = T.pos.distanceTo(camF) - TILE * 0.7;
+      const lod = dist < NEAR_R ? 'near' : dist < MID_R ? 'mid' : null;
+      T.meshes = T.meshes || {};
+      for (const L of Object.keys(LOD)) {
+        let m = T.meshes[L];
+        if (L === lod && !m) m = T.meshes[L] = this.tileMesh(T, L);
+        if (m) { m.userData.on = L === lod; m.visible = m.userData.on && this.visible; }
       }
+      if (T.flowers) { T.flowers.userData.on = dist < NEAR_R + 8; T.flowers.visible = T.flowers.userData.on && this.visible; }
     }
-    for (const key of this.tiles.keys()) if (!live.has(key) && this.tiles.size > 600) this.tiles.delete(key);
+    for (const [key, T] of this.tiles) if (!live.has(key)) { this.dropTile(T); if (this.tiles.size > 400) this.tiles.delete(key); }
     if (more) this.at = null;
-    this.mesh.count = n;
-    this.mesh.position.copy(this.origin);
-    if (this.flowers) { this.flowers.count = nFl; this.flowers.position.copy(this.origin); this.flowers.instanceMatrix.needsUpdate = true; if (this.flowers.instanceColor) this.flowers.instanceColor.needsUpdate = true; }
-    this.mesh.instanceMatrix.needsUpdate = true;
-    if (this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true;
   }
 
-  // one tile's tufts: how thick its country grows them, where each stands (its own hash), its colour
+  // a tile's patches as an instanced mesh of a level's blades (its own copy of the instance data; the
+  // blades' buffers shared)
+  tileMesh(T, L) {
+    const G = this.geo[L], g = new THREE.BufferGeometry();
+    g.setAttribute('position', G.position); g.setAttribute('normal', G.normal); g.setAttribute('aBlade', G.aBlade); g.setAttribute('aV', G.aV); g.setIndex(G.index);
+    g.setAttribute('iCorner', new THREE.InstancedBufferAttribute(T.corner, 4));
+    g.setAttribute('iGrass', new THREE.InstancedBufferAttribute(T.grass, 4));
+    g.setAttribute('iWave', new THREE.InstancedBufferAttribute(T.wave, 2));
+    g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), TILE * 0.75 + 2);
+    const m = new THREE.InstancedMesh(g, this.mats[L], T.n);
+    m.instanceMatrix.array.set(T.mat);
+    m.instanceColor = new THREE.InstancedBufferAttribute(T.col.slice(), 3);
+    m.position.copy(T.pos);
+    m.frustumCulled = true;
+    m.boundingSphere = new THREE.Sphere(new THREE.Vector3(), TILE * 0.75 + 2);
+    if (L === 'near') { m.layers.enable(SHADOW_LAYER); m.userData.shadowNearOnly = true; m.userData.shadowMat = this.shadowMats[L]; }
+    this.group.add(m);
+    return m;
+  }
+
+  // one tile's patches: how thick its country grows them, their ground, their colour (its own hash)
   tile(face, i, j, NT) {
     const b = this.body, gen = b.terrain, R = b.R, s = this._s, snap = gen.snap;
     const du = 2 / NT, u0 = -1 + i * du, v0 = -1 + j * du, dc = [0, 0, 0];
     dirFromFaceUV(face, u0 + du * 0.5, v0 + du * 0.5, dc);
     gen.sample(dc[0], dc[1], dc[2], 4, s);
-    const T = { n: 0, p: null, e: null, col: null };
+    const T = { n: 0, pos: new THREE.Vector3(dc[0] * R, dc[1] * R, dc[2] * R) };
     const tC = s[S_TEMP] - 273.15;
     if (s[S_SAND] > 0.3 || s[S_ICE] > 0 || s[S_WDEPTH] > 0.05 || s[S_RIVR] > 0 || tC < -4 || (gen.p.liquid && s[S_H] < 0.25)) return T;
     // (nor on sand: the rock showing a sand (quartz, coral, black: lithology.js), or a beach's on low
@@ -224,63 +309,113 @@ export class GrassSet {
     // (the country's plants: their cover and how open they stand, its rain)
     const c = snap.Gc ? snap.Gc.sample(snap.s.cover, dc) : 0.5, open = snap.s.open ? snap.Gc.sample(snap.s.open, dc) : 0.5, forest = snap.s.forest ? snap.Gc.sample(snap.s.forest, dc) : 0;
     const P = snap.s.P ? snap.Gc.sample(snap.s.P, dc) : 800;
-    // (its fires: none the year one's burned, then a flush of green for a few years; a crown fire's opening
-    // in a forest grassed over till its canopy closes again, ~35 years; old closed forest, its floor thin)
-    let canopy = 1, green = 0, ash = 1;
+    // (its fires: none the year one's burned, then a flush of green for a few years (a crown fire's opening
+    // in a forest: the stands, below))
+    let green = 0, ash = 1;
     const F = this.fire ? this.fire.at(dc) : null;
     if (F) {
       if (F.ageG < 1) ash = 0.1;
       else if (F.ageG < 4) green = 1 - F.ageG / 4;
-      if (F.ageC !== FIRE_OLD) canopy = 1 - Math.exp(-F.ageC / 35);
     } else if (this.fire && this.fire.active) T.wait = true;
-    const fo = Math.min(1, forest);
-    const thick = Math.max(0, Math.min(1, c)) * (Math.min(1, open) + 0.25 * fo * canopy + 0.9 * fo * (1 - canopy)) * ash;
-    const nT = Math.round(PER_M2 * TILE * TILE * Math.min(1, thick * 1.5) * (0.75 + 0.5 * ((fmix32(face * 7919 + i * 104729 + j) & 1023) / 1023)));
-    if (nT < 1) return T;
-    // (its heights: the ground at 5 x 5 points, the tufts' between)
-    const hg = new Float64Array(25), d = [0, 0, 0];
-    const V = new THREE.Vector3();
-    // (the ground as it's drawn: the near field's volume where it's built (a ledge, the local detail
-    // over the heightfield: sim/nearGround.js), the heightfield's finest mesh beyond)
+    // (as thick as the country's green cover; under a wood's stands (gen/life/stands.js) thinned, each patch
+    // by the stand where it lies: a closed canopy's shade keeps a few; its crown fires' openings and the open
+    // country between grassed over)
+    const fo = Math.min(1, forest), share = Math.min(1, c * 1.2) * fo;
+    const thick = Math.min(1, Math.max(0, c) * 1.5) * ash;
+    if (thick < 0.02) return T;
+    // (its ground: the heights at the patches' corners, 5 x 5, as the drawn ground has them: the near
+    // field's volume where it's built (sim/nearGround.js), the heightfield's finest mesh beyond)
+    const hg = new Float64Array(25), d = [0, 0, 0], V = new THREE.Vector3();
     for (let a = 0; a < 5; a++) for (let bb = 0; bb < 5; bb++) {
       dirFromFaceUV(face, u0 + du * a / 4, v0 + du * bb / 4, d);
       const g0 = b.groundHeight(V.set(d[0], d[1], d[2]));
       hg[a * 5 + bb] = b.near && b.near.field ? b.floorAt(V.multiplyScalar(R + g0 + 0.3)) : g0;
     }
     // (too steep: bare rock)
-    const span = TILE / 4;
+    const span = TILE / PPT;
     let steep = 0;
     for (let a = 0; a < 4; a++) for (let bb = 0; bb < 4; bb++) steep = Math.max(steep, Math.abs(hg[(a + 1) * 5 + bb] - hg[a * 5 + bb]) / span, Math.abs(hg[a * 5 + bb + 1] - hg[a * 5 + bb]) / span);
     if (steep > 0.9) return T;
+    // (the tile's own centre on its ground: its meshes there, culled and ranked by distance from there)
+    T.pos.set(dc[0], dc[1], dc[2]).multiplyScalar(R + hg[12]);
     const wet = Math.min(1, Math.max(0, (P - 300) / 1200)), warm = Math.min(1, Math.max(0, (tC + 4) / 24));
-    const H = (this.fern ? 0.4 : 0.15 + 0.25 * wet) * (0.6 + 0.4 * warm) * this.gK;
+    // (how tall it grows, left to itself (Dave: "growing long and wild when it can"): a dry steppe's a hand
+    // high, a wet warm country's a metre and more, the cold's low; a burn's regrowth short its first years;
+    // taller under a light pull. Grazing to come: the herds' densities, sim/fauna.js)
+    const wetG = Math.min(1, Math.max(0, (P - 250) / 1500));
+    const H = (this.fern ? 0.4 + 0.5 * wet : 0.1 + 1.3 * Math.pow(wetG, 1.5)) * (0.4 + 0.6 * warm) * (1 - 0.6 * green) * this.gK;
     const dryK = 1 - wet;
     // (its colour: the foliage's where it's wet, straw where it's dry (the world's dry colour, as the ground
-    // shades its open country), a fresh burn's green flush; its tips a little lighter, some tufts drier)
+    // shades its open country), a fresh burn's green flush; some patches drier)
     const k0 = Math.min(1, dryK * 1.1) * (1 - green);
-    const base = this.veg.map((x, k) => (x + (this.dry[k] - x) * k0) * (1.35 + 0.3 * green));
-    T.col = [...base, ...this.dry.map((x) => x * 1.45)];
-    T.e = new THREE.Vector3(...(() => { const e = [0, 0, 0]; dirFromFaceUV(face, u0 + du, v0 + du * 0.5, e); return [e[0] - dc[0], e[1] - dc[1], e[2] - dc[2]]; })()).normalize();
-    T.p = new Float64Array(nT * 7);
+    const base = this.veg.map((x, q) => (x + (this.dry[q] - x) * k0) * (1.35 + 0.3 * green));
+    const dryTip = this.dry.map((x) => x * 1.45);
+    // (the patches: their frames, their corners, their density, height and colour)
+    const eu = [0, 0, 0], ev = [0, 0, 0];
+    dirFromFaceUV(face, u0 + du, v0 + du * 0.5, eu); dirFromFaceUV(face, u0 + du * 0.5, v0 + du, ev);
+    const EU = new THREE.Vector3(eu[0] - dc[0], eu[1] - dc[1], eu[2] - dc[2]), EV = new THREE.Vector3(ev[0] - dc[0], ev[1] - dc[1], ev[2] - dc[2]);
+    const n = PPT * PPT, mat = new Float32Array(n * 16), corner = new Float32Array(n * 4), grass = new Float32Array(n * 4), wave = new Float32Array(n * 2), col = new Float32Array(n * 3);
     let hsh = fmix32((face * 0x9e3779b1) ^ (i * 0x85ebca6b) ^ (j * 0xc2b2ae35));
     const rnd = () => { hsh = fmix32((hsh + 0x6d2b79f5) >>> 0); return hsh / 4294967296; };
-    for (let q = 0; q < nT; q++) {
-      const fu = rnd(), fv = rnd();
-      dirFromFaceUV(face, u0 + du * fu, v0 + du * fv, d);
-      const ga = fu * 4, gb = fv * 4, ia = Math.min(3, Math.floor(ga)), ib = Math.min(3, Math.floor(gb)), ta = ga - ia, tb = gb - ib;
-      const gh = (hg[ia * 5 + ib] * (1 - ta) + hg[(ia + 1) * 5 + ib] * ta) * (1 - tb) + (hg[ia * 5 + ib + 1] * (1 - ta) + hg[(ia + 1) * 5 + ib + 1] * ta) * tb;
-      const r = R + gh - 0.03, o = q * 7;
-      T.p[o] = d[0] * r; T.p[o + 1] = d[1] * r; T.p[o + 2] = d[2] * r;
-      T.p[o + 3] = rnd() * Math.PI * 2; T.p[o + 4] = H * (0.6 + 0.8 * rnd()); T.p[o + 5] = rnd() * 0.5 * (0.3 + dryK); T.p[o + 6] = rnd();
+    const M = new THREE.Matrix4(), X = new THREE.Vector3(), Y = new THREE.Vector3(), Z = new THREE.Vector3(), Pp = new THREE.Vector3();
+    let q = 0;
+    for (let a = 0; a < PPT; a++) for (let bb = 0; bb < PPT; bb++) {
+      const c00 = hg[a * 5 + bb], c10 = hg[(a + 1) * 5 + bb], c01 = hg[a * 5 + bb + 1], c11 = hg[(a + 1) * 5 + bb + 1], h0 = (c00 + c10 + c01 + c11) / 4;
+      dirFromFaceUV(face, u0 + du * (a + 0.5) / PPT, v0 + du * (bb + 0.5) / PPT, d);
+      const kS = share > 0 ? standAt(gen, d, s, share, true).k * (1 - meadowAt(gen, d, h0, this.species)) : 0;
+      const dens = thick * (1 - 0.9 * kS) * (this.fern ? 0.6 : 1) * (0.8 + 0.4 * rnd());
+      if (dens < 0.01) { rnd(); rnd(); continue; }
+      Y.set(d[0], d[1], d[2]);
+      X.copy(EU).addScaledVector(Y, -EU.dot(Y)).normalize();
+      Z.copy(EV).addScaledVector(Y, -EV.dot(Y)).addScaledVector(X, -EV.dot(X)).normalize();
+      // (the frame in metres: the patch's half-side along u and v, its blades over [-1, 1])
+      const hs = span / 2;
+      Pp.set(d[0] * (R + h0), d[1] * (R + h0), d[2] * (R + h0)).sub(T.pos);
+      M.makeBasis(X.multiplyScalar(hs), Y, Z.multiplyScalar(hs)).setPosition(Pp);
+      mat.set(M.elements, q * 16);
+      corner[q * 4] = c00 - h0; corner[q * 4 + 1] = c10 - h0; corner[q * 4 + 2] = c01 - h0; corner[q * 4 + 3] = c11 - h0;
+      const Hp = H * (0.85 + 0.3 * rnd());
+      grass[q * 4] = Math.min(1, dens); grass[q * 4 + 1] = Hp; grass[q * 4 + 2] = (this.fern ? 0.7 : 0.12 + 0.45 * Math.min(1, Hp / 1.2)) / Math.max(1, Hp * 0.6); grass[q * 4 + 3] = 0;
+      const wx = d[0] * R, wz = d[2] * R;
+      wave[q * 2] = wx - 2048 * Math.floor(wx / 2048); wave[q * 2 + 1] = wz - 2048 * Math.floor(wz / 2048);
+      const tdr = rnd() * 0.5 * (0.3 + dryK);
+      for (let cc = 0; cc < 3; cc++) col[q * 3 + cc] = base[cc] + (dryTip[cc] - base[cc]) * tdr;
+      q++;
     }
-    // (its flowers' share of the tufts: an open, moist grassland's most, a fresh burn's a flush of them)
-    T.fl = this.flowers ? Math.min(0.25, 0.06 * Math.min(1, open * 1.5) * (0.5 + wet) * (1 + 2 * green)) : 0;
-    T.n = nT;
+    T.n = q; T.mat = mat.subarray(0, q * 16); T.corner = corner.subarray(0, q * 4); T.grass = grass.subarray(0, q * 4); T.wave = wave.subarray(0, q * 2); T.col = col.subarray(0, q * 3);
+    // (its flowers: an open, moist grassland's most, a fresh burn's a flush of them; a few heads in a patch,
+    // over the grass)
+    const fl = this.flowerCols.length ? Math.min(0.25, 0.06 * Math.min(1, open * 1.5) * (0.5 + wet) * (1 + 2 * green)) : 0;
+    const per = Math.round(fl * 40);
+    if (per > 0 && q) {
+      const fm = new THREE.InstancedMesh(this.flowerGeo, this.fmat, q * per);
+      const P2 = new THREE.Vector3(), Mf = new THREE.Matrix4(), Sf = new THREE.Matrix4();
+      let f = 0;
+      for (let p = 0; p < q; p++) {
+        M.fromArray(T.mat, p * 16);
+        for (let e = 0; e < per; e++) {
+          const x = rnd() * 2 - 1, z = rnd() * 2 - 1, u = x * 0.5 + 0.5, v = z * 0.5 + 0.5;
+          const hgp = (T.corner[p * 4] * (1 - u) + T.corner[p * 4 + 1] * u) * (1 - v) + (T.corner[p * 4 + 2] * (1 - u) + T.corner[p * 4 + 3] * u) * v;
+          const fs = 0.02 + 0.025 * rnd();
+          P2.set(x, hgp + T.grass[p * 4 + 1] * (0.7 + 0.3 * rnd()), z).applyMatrix4(M);
+          Sf.makeScale(fs, fs, fs);
+          Mf.extractRotation(M).multiply(Sf).setPosition(P2);
+          fm.setMatrixAt(f, Mf);
+          const fc = this.flowerCols[Math.floor(rnd() * this.flowerCols.length)];
+          fm.setColorAt(f, _c.setRGB(fc[0], fc[1], fc[2]));
+          f++;
+        }
+      }
+      fm.count = f; fm.position.copy(T.pos); fm.frustumCulled = false; fm.visible = false;
+      this.group.add(fm);
+      T.flowers = fm;
+    }
     return T;
   }
 
   dispose() {
-    this.group.remove(this.mesh); this.mesh.dispose(); this.mesh.geometry.dispose(); this.mat.dispose();
-    if (this.flowers) { this.group.remove(this.flowers); this.flowers.dispose(); this.flowers.geometry.dispose(); this.fmat.dispose(); }
+    this.invalidate();
+    for (const L of Object.keys(this.mats)) { this.mats[L].dispose(); this.shadowMats[L].dispose(); }
+    if (this.fmat) { this.fmat.dispose(); this.flowerGeo.dispose(); }
   }
 }

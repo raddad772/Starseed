@@ -669,6 +669,8 @@ void main() {
     // (under a wood's canopy, little of the sky: sunShadows.js; and by night the moon's: moonlight.js)
     float skyBl = skyBlocked(vWorldPos), skyK = 1.0 - skyBl;
     vec3 ambient = uSunE * (skyE * wrap * skyK + canopyLit(skyBl, sunTop, muS, skyE)) + uAmbientFloor + moonLit(rel, r, up, N, keySh, 0.0, wrap, skyK);
+    // (under the grass drawn near (grassRender.js, to ~44 m): its thatch and its soil, not another lawn)
+    albedo = mix(albedo, albedo * vec3(0.5, 0.45, 0.36), veg * 0.75 * (1.0 - smoothstep(30.0, 46.0, dist)));
     // far off the ground's small roughness goes unresolved, but its shadows don't: rocks,
     // furrows and a forest's canopy darken it, the more so with the sun low
     float farK = smoothstep(1500.0, 12000.0, dist);

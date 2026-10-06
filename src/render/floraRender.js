@@ -322,7 +322,15 @@ void main() {
   // brightness over the world's foliage colour: the leaves the world's own hue whatever the sprite's)
   if (uTex > 0.5) {
     if (vPart < 0.5) albedo = uTrunk * 2.4 * texture2D(tBark, vUv).rgb;
-    else if (vPart < 1.5) { vec4 lt = texture2D(tLeaf, vUv); if (lt.a < 0.5) discard; albedo = vTint * (0.35 + 1.5 * dot(lt.rgb, vec3(0.3, 0.59, 0.11))); }
+    else if (vPart < 1.5) {
+      // (its alpha raised as the sprite shrinks with distance, its mips averaging the gaps: a far crown
+      // stays whole, not a scatter of single bright pixels of sky sparkling through it)
+      vec4 lt = texture2D(tLeaf, vUv);
+      vec2 tx = vUv * vec2(textureSize(tLeaf, 0)), ddx = dFdx(tx), ddy = dFdy(tx);
+      float mip = max(0.0, 0.5 * log2(max(dot(ddx, ddx), dot(ddy, ddy))));
+      if (lt.a * (1.0 + 0.3 * mip) < 0.5) discard;
+      albedo = vTint * (0.35 + 1.5 * dot(lt.rgb, vec3(0.3, 0.59, 0.11)));
+    }
   }
   float ndl = max(dot(N, uSunDir), 0.0);
   float trans = vPart > 0.5 && vPart < 1.5 ? max(0.0, -dot(N, uSunDir)) * 0.35 : 0.0;
@@ -377,7 +385,11 @@ varying float vD;
 varying vec2 vUv;
 varying float vPart;
 void main() {
-  if (uTex > 0.5 && vPart > 0.5 && vPart < 1.5 && texture2D(tLeaf, vUv).a < 0.5) discard;
+  if (uTex > 0.5 && vPart > 0.5 && vPart < 1.5) {
+    vec2 tx = vUv * vec2(textureSize(tLeaf, 0)), ddx = dFdx(tx), ddy = dFdy(tx);
+    float mip = max(0.0, 0.5 * log2(max(dot(ddx, ddx), dot(ddy, ddy))));
+    if (texture2D(tLeaf, vUv).a * (1.0 + 0.3 * mip) < 0.5) discard;
+  }
   gl_FragColor = vec4(vD, 0.0, 0.0, 1.0);
 }`;
 function shadowMaterial(m) {

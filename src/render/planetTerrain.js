@@ -170,7 +170,7 @@ export class PlanetTerrain {
       if (!this._dayAt || Math.abs(t - this._dayAt) > 60) { this._day = dayClock(b, t).P || 0; this._dayAt = t; }
       const w = this.wind = windAt(b, _wd.copy(camFixed).normalize(), t, b.u.sunIlluminance(b.pos), this._day, this.wind);
       if (this.floraSet) this.floraSet.setWind(_ww.copy(w.dir).applyQuaternion(b.q), w.speed, w.gust);
-      if (this.grassSet) this.grassSet.setWind(w.speed, w.gust);
+      if (this.grassSet) this.grassSet.setWind(w.speed, w.gust, w.dir);
     }
     return this.visibleList;
   }
