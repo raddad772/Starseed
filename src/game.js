@@ -465,7 +465,10 @@ export class Game {
     const b = this.startBody;
     this.loadText = `Surveying ${b.data.name} for a landing site`;
     this.screenHud.setLoading(this.loadText, 0);
-    this.requestSurvey(b, -50).then((res) => {
+    // (the survey reads the simulated world: the start world's sim first, from the cache at once, else
+    // run now; surveyed before it, the sites were the procedural ground's, where the sim may have sea:
+    // SOL Earth's start had been 667 m under it)
+    this.startSim(b).then(() => this.requestSurvey(b, -50)).then((res) => {
       // (the world as it is now, on the shared clock: of the survey's sites, the best one in daylight)
       this.t = this.clock.now();
       this.universe.update(this.t);
@@ -474,6 +477,21 @@ export class Game {
     }, (err) => {
       console.error(err);
       this.placeStart(b, this.fallbackSite(b), null);
+    });
+  }
+
+  // the start world's sim (worldSims.js): resolves once it's in, or failed, or there are none
+  startSim(b) {
+    const ws = this.worldSims, id = b.data.id;
+    if (!ws || !b.data.terrain || !b.solid) return Promise.resolve();
+    ws.request(id);
+    return new Promise((res) => {
+      const poll = () => {
+        const st = ws.status.get(id);
+        if (st === 'ready' || st === 'failed' || st === undefined) res();
+        else { if (st === 'running') this.screenHud.setLoading(`Simulating ${b.data.name}'s history`, 0); setTimeout(poll, 250); }
+      };
+      poll();
     });
   }
 

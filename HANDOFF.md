@@ -57,11 +57,18 @@ the baseline (ea3260d), then integrated on top.
   in, on a floor; boarding another era's craft swaps the fleets); from a spacewalk: F cycles the yacht's
   airlock (5 s to vacuum), F climbs in, R cycles to the cabin (1 bar), the pilot seat flies her; the
   aboard start has her in her recess; set 1.5 m under it, slow and square, she berths (at 3 m/s not).
-- **Found, for generation:** SOL Earth's start site (15.80 N 68.27 E) changes under the craft as the
-  refinement loads: the coarse heights say flat land at 39 m, then it reads sea within 4 m of the hull
-  (isWaterAt everywhere, liquidDepthAt ~667 m even where groundHeight says 39 m). The yacht stood 39 m
-  over the water and you started in the sea; the shuttle would have the same. `padNear` (dry ground
-  under the craft and 10 m round) can't help while the heights disagree.
+- **The start sites were surveyed on the procedural ground** (found by the yacht starting 39 m over the
+  sea): `begin()` asked the terrain workers for the landing-site survey before any world sim had been
+  requested (worldSims.requestAll ran only once the start was placed), so the sites and settlements
+  were the pre-sim noise terrain's; SOL Earth's start (15.80 N 68.27 E) lay 667 m under the simulated
+  sea (the craft landed on the old heights and the ground went to sea under it as the sim came in).
+  Every simulated world's start since the sims arrived (2026-10-01) has been so. Now `begin()` waits
+  for the start world's sim (`startSim`: from the cache at once, else run, "Simulating X's history"),
+  then surveys; and a world's sim arriving drops any survey made before it (worldSims.js _apply), so
+  the catalog's spots and settlements are the sim's too. SOL Earth now starts at 28.63 S 130.93 W,
+  temperate forest, a river mouth by a sheltered harbour, the Neptune 2 landed and you 6 m off its
+  airlock on its ground. (`padNear`, dry near-level ground under a big craft and 10 m round, stays for
+  sites chosen for a shuttle.)
 - **Not done:** the era picker (entry screen modal) and eras replacing the whole fleet; the era's craft
   summonable like your own; Codex's terse code style left as written.
 
