@@ -66,14 +66,15 @@ Dave's queue, in the order he raised it (keep this list current):
 12. Dust and spray: DONE (e3a2622, sim/dust.js, Atmosphere.setDust). Sunsets measured near 33N 78W
    (scratchpad shots pink_*, tau07_*): the raw sky is coloured (overhead 1:0.76:0.61, horizon 1:0.45:0.17)
    but the display is pale, and after sunset (-1 deg) the whole sky goes an even lilac-grey with no
-   bright orange band toward the set sun, dust or not; doubling the dust doesn't help. NEXT: the sky's
-   twilight (why the band toward the sun is missing after sunset: the far air's light, the MS LUT's share);
-   then the solar aureole (dust and droplets' narrow forward peak; the sun's disc is true size, 0.52 deg,
+   bright orange band toward the set sun, dust or not; doubling the dust doesn't help. DONE (af5c907): the
+   far air marched on the true-size sphere (SKYVIEW_FRAG), sky pixels without the game-scale haze, the
+   sky's elevations stretched and the sun lifted near the horizon (liftMu) so it sets at the drawn skyline,
+   true-horizon cut-offs, AgX saturation 1.4; a loading screen (ui/loadScreen.js). Scratchpad sky8_*.
+   Left: the solar aureole (dust and droplets' narrow forward peak; the sun's disc is true size, 0.52 deg,
    and reads tiny in the 72 deg view without it). Dave: "more dramatic; it's the sky not clouds that turn
    super pink".
-13. Dave's new asks, in order: a loading screen with a progress bar on arrival (start, warps, landings)
-   until the ground round the camera is in (main.js loop; metrics as tools/scenic.js drain: pool pending,
-   terrain pendingCount, tiles missing; off for tests); the caprock scarps (at 3.06N 39.71W the world's
+13. Dave's new asks, in order (the loading screen DONE, af5c907); the caprock scarps (or a fault scarp:
+   localsim.js faults slip once, a step of even throw along a long line; check which) (at 3.06N 39.71W the world's
    tallest fall, 18 m, goes over one: a smooth vertical wall of even height for hundreds of metres; wants a
    rounded rim, talus at its foot, ledges, a gorge cut back below the fall, ragged plan); the fall's sheet
    (a flat ribbon with a moire, grass to the plunge pool, the river below hidden); marshes, mud and ponds
