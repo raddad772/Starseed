@@ -262,6 +262,12 @@ export class WorldRenderer {
         // (the shadows the key light's: the sun's, or by night the moon's when it's up)
         const moonKey = ml.E > 0 && sunUp < -0.05 && camUp.dot(ml.dir) > 0.02;
         ssBest = dist - b.R; ss.active = true; ss.sunDir.copy(moonKey ? ml.dir : sh.uSunDir.value); ss.anchor.copy(_v); ss.bodyQInv.copy(b.qInv); ss.body = b;
+        // (the leaves' colour for the light a canopy passes down: its foliage's, its brightness one)
+        if (!it.leafTint) {
+          const v = b.data.terrain && b.data.terrain.palette && b.data.terrain.palette.veg, Y = v ? 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2] : 0;
+          it.leafTint = Y > 1e-4 ? v.map((x) => Math.min(2.5, x / Y)) : [1, 1, 1];
+        }
+        SKY_SHADOW_UNIFORMS.uLeafTint.value.set(...it.leafTint);
       }
       _m4.makeRotationFromQuaternion(b.qInv);
       sh.uToFixed.value.setFromMatrix4(_m4);

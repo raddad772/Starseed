@@ -25,6 +25,7 @@ import { Sky } from './render/sky.js';
 import { makeDetailTexture } from './render/terrainMaterial.js';
 import { makeCloudNoise } from './render/noise3d.js';
 import { FreeCam } from './sim/freecam.js';
+import { SKY_SHADOW_UNIFORMS } from './render/sunShadows.js';
 import { Ship, ASSIST_NAMES, VesselTarget } from './sim/ship.js';
 import { VESSEL_TYPES, insideBox, restHeight } from './sim/vesselTypes.js';
 import { makeInterior } from './sim/interiors.js';
@@ -2269,6 +2270,10 @@ export class Game {
       }
     }
     const mu = Math.max(0, L.up.dot(L.sunDir));
+    // (the sun's and the sky's light on a level canopy here, for the light it passes down to the lit
+    // materials under it: render/sunShadows.js canopyLit)
+    SKY_SHADOW_UNIFORMS.uCanopySun.value.set(L.sunColor.r, L.sunColor.g, L.sunColor.b).multiplyScalar(L.sunIntensity * mu);
+    SKY_SHADOW_UNIFORMS.uCanopySky.value.set(L.skyColor.r, L.skyColor.g, L.skyColor.b).multiplyScalar(L.skyIntensity);
     const ga = 0.18;
     L.groundColor.setRGB((sr * E * mu + sky[0] * E) * ga * 0.5, (sg * E * mu + sky[1] * E) * ga * 0.5, (sb * E * mu + sky[2] * E) * ga * 0.5);
     // night-time floodlights come on automatically while landing

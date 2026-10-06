@@ -159,11 +159,12 @@ void main() {
   vec3 pF = uToFixed * rel;
   vec3 sunA = atmoSunTransmittance(r, muS), skyE = atmoSkyIrradiance(r, muS);
   float keySh = sunShadowMap(vWorld, N);
-  vec3 sunT = sunA * cloudLight(rel, r, muS, foot, sunA, skyE) * terrainShadow(pF, normalize(pF), uToFixed * uSunDir, uRadius) * keySh;
+  vec3 sunTop = sunA * cloudLight(rel, r, muS, foot, sunA, skyE) * terrainShadow(pF, normalize(pF), uToFixed * uSunDir, uRadius);
+  vec3 sunT = sunTop * keySh;
   float ndl = max(dot(N, uSunDir), 0.0);
   float wrap = 0.5 + 0.5 * dot(N, up);
-  float skyK = skyShadow(vWorld);
-  vec3 color = albedo / PI * (uSunE * sunT * ndl * mix(1.0, ao, 0.35) + (uSunE * skyE * wrap * skyK + uAmbientFloor + moonLit(rel, r, up, N, keySh, 0.0, wrap, skyK)) * ao);
+  float skyBl = skyBlocked(vWorld), skyK = 1.0 - skyBl;
+  vec3 color = albedo / PI * (uSunE * sunT * ndl * mix(1.0, ao, 0.35) + (uSunE * (skyE * wrap * skyK + canopyLit(skyBl, sunTop, muS, skyE)) + uAmbientFloor + moonLit(rel, r, up, N, keySh, 0.0, wrap, skyK)) * ao);
   vec3 V = normalize(-vWorld), H = normalize(V + uSunDir);
   float rg = clamp(rough, 0.05, 1.0), a2 = rg * rg * rg * rg;
   float NdH = max(dot(N, H), 0.0), NdV = max(dot(N, V), 1e-3), VdH = max(dot(V, H), 0.0);

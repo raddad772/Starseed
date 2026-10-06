@@ -298,6 +298,7 @@ void main() {
   vec3 pF = uToFixed * rel;
   sunT *= terrainShadow(pF, normalize(pF), uToFixed * uSunDir, uRadius);
   // (and finer near the camera: the sun's shadow maps)
+  vec3 sunTop = sunT;   // (the sun's on a canopy over here: canopyLit)
   float keySh = sunShadowMap(vWorldPos, N);
   sunT *= keySh;
 
@@ -666,8 +667,8 @@ void main() {
     float wrap = 0.5 + 0.5 * dot(N, up);
     vec3 direct = uSunE * sunT * ndl;
     // (under a wood's canopy, little of the sky: sunShadows.js; and by night the moon's: moonlight.js)
-    float skyK = skyShadow(vWorldPos);
-    vec3 ambient = uSunE * skyE * wrap * skyK + uAmbientFloor + moonLit(rel, r, up, N, keySh, 0.0, wrap, skyK);
+    float skyBl = skyBlocked(vWorldPos), skyK = 1.0 - skyBl;
+    vec3 ambient = uSunE * (skyE * wrap * skyK + canopyLit(skyBl, sunTop, muS, skyE)) + uAmbientFloor + moonLit(rel, r, up, N, keySh, 0.0, wrap, skyK);
     // far off the ground's small roughness goes unresolved, but its shadows don't: rocks,
     // furrows and a forest's canopy darken it, the more so with the sun low
     float farK = smoothstep(1500.0, 12000.0, dist);

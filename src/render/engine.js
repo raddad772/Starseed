@@ -70,9 +70,10 @@ void main() {
   // z/w: 4th-power mean over solid surfaces only, which tracks a bright
   // subject covering a few percent of the frame (a sunlit planet beside a
   // dark hull) so it is not blown out; and a sky far brighter than the light
-  // here (a sunset's, the low sun's glow over a ground it barely lights): the
-  // eye closes down for it and the ground goes to silhouette
-  float ws = sky ? w * 0.6 * smoothstep(3.0, 12.0, x) : w;
+  // here (a sunset's, the low sun's glow over a ground it barely lights, 10 to
+  // 50 times it): the eye closes down for it and the ground goes to silhouette.
+  // An overcast's ~5 times doesn't: under trees the eye opens for the wood
+  float ws = sky ? w * 0.6 * smoothstep(12.0, 40.0, x) : w;
   float x2 = x * x;
   gl_FragColor = vec4(log2(x) * w, w, x2 * x2 * ws, ws);
 }

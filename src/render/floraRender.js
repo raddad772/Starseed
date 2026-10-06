@@ -314,8 +314,9 @@ void main() {
   float muS = dot(up, uSunDir);
   vec3 pF = uToFixed * rel;
   vec3 sunA = atmoSunTransmittance(r, muS), skyE = atmoSkyIrradiance(r, muS);
-  float keySh = sunShadowMap(vWorld, N), skyK = skyShadow(vWorld);
-  vec3 sunT = sunA * cloudLight(rel, r, muS, foot, sunA, skyE) * terrainShadow(pF, normalize(pF), uToFixed * uSunDir, uRadius) * keySh;
+  float keySh = sunShadowMap(vWorld, N), skyBl = skyBlocked(vWorld), skyK = 1.0 - skyBl;
+  vec3 sunTop = sunA * cloudLight(rel, r, muS, foot, sunA, skyE) * terrainShadow(pF, normalize(pF), uToFixed * uSunDir, uRadius);
+  vec3 sunT = sunTop * keySh;
   vec3 albedo = vPart < 0.5 ? uTrunk : vTint;
   // (EZ-Tree's: its bark's texture over the trunk's colour; its leaf sprite cut out by its alpha, its
   // brightness over the world's foliage colour: the leaves the world's own hue whatever the sprite's)
@@ -327,7 +328,7 @@ void main() {
   float trans = vPart > 0.5 && vPart < 1.5 ? max(0.0, -dot(N, uSunDir)) * 0.35 : 0.0;
   float leaf = vPart > 0.5 && vPart < 1.5 ? 0.35 : 0.0;
   vec3 moon = moonLit(rel, r, up, N, keySh, leaf, 0.55 + 0.45 * dot(N, up), skyK);
-  vec3 c = albedo / PI * (uSunE * sunT * (ndl + trans) * vAo + (uSunE * skyE * (0.55 + 0.45 * dot(N, up)) * skyK + uAmbientFloor + moon) * vAo);
+  vec3 c = albedo / PI * (uSunE * sunT * (ndl + trans) * vAo + (uSunE * (skyE * (0.55 + 0.45 * dot(N, up)) * skyK + canopyLit(skyBl, sunTop, muS, skyE)) + uAmbientFloor + moon) * vAo);
   gl_FragColor = vec4(c, 1.0);
 }
 `;

@@ -25,6 +25,31 @@ const SKY_EVERY = 4;   // (frames between a sky map's redraws; the two take turn
 const SUN_ORG = CASCADES.map((c, i) => [i * CASCADES[0].size, 0]);
 const SKY_ORG = SKY_CASCADES.map((c, i) => [i * SKY_CASCADES[0].size, CASCADES[0].size]);
 const ATLAS_W = CASCADES.length * CASCADES[0].size, ATLAS_H = CASCADES[0].size + SKY_CASCADES[0].size;
+const SKY_D = SKY_CASCADES.map((c) => 2000 + c.far);   // (each sky map's camera's height over the camera)
+
+// the sky maps softened (Dave: blended, not squares): each texel's share of a 5x5 round it under canopy, and
+// that share times the canopy top's depth below the map's camera less D, both linear so the hardware's
+// blend between texels stays true (the depth after it: the second over the first); a crown's edge fades
+// over a metre or so, its leaves' gaps averaged
+const BLUR_VERT = /* glsl */`
+void main() { gl_Position = vec4(position.xy, 0.0, 1.0); }`;
+const BLUR_FRAG = /* glsl */`
+uniform highp sampler2D tAtlas;
+uniform vec2 uOrg;
+uniform float uN;
+uniform float uD;
+uniform vec2 uOutOrg;
+void main() {
+  ivec2 px = ivec2(gl_FragCoord.xy - uOutOrg), org = ivec2(uOrg), hi = ivec2(int(uN) - 1);
+  float c = 0.0, ch = 0.0, ws = 0.0;
+  for (int j = -2; j <= 2; j++) for (int i = -2; i <= 2; i++) {
+    float w = (i == 0 ? 6.0 : abs(i) == 1 ? 4.0 : 1.0) * (j == 0 ? 6.0 : abs(j) == 1 ? 4.0 : 1.0);
+    float m = texelFetch(tAtlas, org + clamp(px + ivec2(i, j), ivec2(0), hi), 0).r;
+    float cov = m > 2.0 ? 1.0 : 0.0;
+    c += w * cov; ch += w * cov * (m - uD); ws += w;
+  }
+  gl_FragColor = vec4(c / ws, ch / ws, 0.0, 1.0);
+}`;
 
 // shared by every receiving material (terrain, plants): x on, y the first cascade's reach, z the
 // second's; per cascade the light's view-projection, its position and its texel (m)
@@ -46,6 +71,14 @@ export const SKY_SHADOW_UNIFORMS = {
   uSkyShadowUp0: { value: new THREE.Vector3(0, 1, 0) }, uSkyShadowUp1: { value: new THREE.Vector3(0, 1, 0) },
   uSkyCenter: { value: new THREE.Vector3() },
   uSkyToFixed: { value: new THREE.Matrix3() },
+  tSkySoft: { value: null },
+  uSkyD: { value: new THREE.Vector2(SKY_D[0], SKY_D[1]) },
+  // (the light the canopy passes down (canopyLit): the leaves' colour, its brightness one (world.js, the
+  // world near the camera); and for the three.js lit materials, the sun's and the sky's light on a level
+  // canopy where the camera is (game.js computeLighting)
+  uLeafTint: { value: new THREE.Vector3(1, 1, 1) },
+  uCanopySun: { value: new THREE.Vector3() },
+  uCanopySky: { value: new THREE.Vector3() },
 };
 
 // the light's position and direction for the cascade being drawn: shared by every caster's shadow
@@ -98,6 +131,27 @@ export class SunShadows {
     this.skyBody = null;
     this.mat = new THREE.ShaderMaterial({ uniforms: { ...SHADOW_LIGHT_UNIFORMS }, vertexShader: DEPTH_VERT, fragmentShader: DEPTH_FRAG, side: THREE.DoubleSide });
     SUN_SHADOW_UNIFORMS.tShadowAtlas.value = this.atlas.texture;
+    // (the sky maps softened, side by side: BLUR_FRAG)
+    const n = SKY_CASCADES[0].size;
+    this.skySoft = new THREE.WebGLRenderTarget(n * SKY_CASCADES.length, n, { type: THREE.HalfFloatType, format: THREE.RGFormat, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false, generateMipmaps: false });
+    SKY_SHADOW_UNIFORMS.tSkySoft.value = this.skySoft.texture;
+    this.blurMat = new THREE.ShaderMaterial({
+      uniforms: { tAtlas: { value: this.atlas.texture }, uOrg: { value: new THREE.Vector2() }, uN: { value: n }, uD: { value: 0 }, uOutOrg: { value: new THREE.Vector2() } },
+      vertexShader: BLUR_VERT, fragmentShader: BLUR_FRAG, depthTest: false, depthWrite: false,
+    });
+    const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.blurMat);
+    quad.frustumCulled = false;
+    this.blurScene = new THREE.Scene(); this.blurScene.add(quad);
+    this.blurCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  }
+
+  // soften sky map i (BLUR_FRAG) into its square of skySoft
+  _soften(renderer, i) {
+    const n = SKY_CASCADES[i].size, t = this.skySoft, u = this.blurMat.uniforms;
+    u.uOrg.value.set(SKY_ORG[i][0], SKY_ORG[i][1]); u.uN.value = n; u.uD.value = SKY_D[i]; u.uOutOrg.value.set(i * n, 0);
+    t.viewport.set(i * n, 0, n, n); t.scissor.set(i * n, 0, n, n); t.scissorTest = true;
+    renderer.setRenderTarget(t);
+    renderer.render(this.blurScene, this.blurCam);
   }
 
   // draw into one map's square of the atlas, cleared
@@ -192,11 +246,12 @@ export class SunShadows {
       const toWorld = _m2.compose(this.anchor, _q.copy(this.bodyQInv).invert(), _one);
       SKY_CASCADES.forEach((c, i) => {
         if (!due[i]) return;
-        const cam = this.skyCams[i], D = 2000 + c.far;
+        const cam = this.skyCams[i], D = SKY_D[i];
         if (i > 0) this._far(swapped);
         const texel = this._place(cam, up, c.far, c.size, D, D + 4000);
         this._region(renderer, SKY_ORG[i], c.size);
         renderer.render(scene, cam);
+        this._soften(renderer, i);
         K['uSkyShadowVP' + i].value.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse).multiply(toWorld);
         const L = _v.copy(cam.position).sub(this.anchor).applyQuaternion(this.bodyQInv);
         K['uSkyShadowL' + i].value.set(L.x, L.y, L.z, texel);
@@ -273,15 +328,15 @@ uniform vec3 uSkyShadowUp0;
 uniform vec3 uSkyShadowUp1;
 uniform vec3 uSkyCenter;
 uniform mat3 uSkyToFixed;
-float skyShadowMap(ivec2 org, int n, mat4 VP, vec4 L, vec3 upF, float ext, vec3 pF) {
+uniform highp sampler2D tSkySoft;
+uniform vec2 uSkyD;
+float skyShadowMap(float u0, float nTex, float D, mat4 VP, vec4 L, vec3 upF, float ext, vec3 pF) {
   vec4 c = VP * vec4(pF, 1.0);
   vec2 uv = c.xy / c.w * 0.5 + 0.5;
   float edge = 45.0 / (2.0 * ext);
   if (any(lessThan(uv, vec2(edge))) || any(greaterThan(uv, vec2(1.0 - edge)))) return -1.0;
   // (a bias: the point's own leaves, a texel and a little more, aren't over it)
   float d = dot(L.xyz - pF, upF) - (0.3 + 1.5 * L.w);
-  ivec2 sz = ivec2(n);
-  vec2 szf = vec2(sz);
   float blocked = 0.0;
   for (int j = 0; j < 5; j++) {
     float a = j == 0 ? 0.0 : j == 1 ? 1.0 : j == 2 ? 3.5 : j == 3 ? 9.0 : 20.0;
@@ -292,26 +347,41 @@ float skyShadowMap(ivec2 org, int n, mat4 VP, vec4 L, vec3 upF, float ext, vec3 
     for (int k = 0; k < 6; k++) {
       if (k >= n) break;
       float ang = (float(k) + 0.5 * float(j)) * 1.0471976;
-      vec2 tuv = uv + vec2(cos(ang), sin(ang)) * (r / (2.0 * ext));
-      float m = texelFetch(tShadowAtlas, org + clamp(ivec2(tuv * szf), ivec2(0), sz - 1), 0).r;
-      float dh = d - m;
-      if (m > 2.0 && dh > 0.0) { float h2 = dh * dh; acc += b * b / (b * b + h2) - a * a / (a * a + h2 + 1e-6); }
+      vec2 tuv = clamp(uv + vec2(cos(ang), sin(ang)) * (r / (2.0 * ext)), vec2(0.5 / nTex), vec2(1.0 - 0.5 / nTex));
+      // (the softened map, blended between texels: the canopy's share there and its top)
+      vec2 sc = texture(tSkySoft, vec2((u0 + tuv.x) * ${(1 / SKY_CASCADES.length).toFixed(6)}, tuv.y)).rg;
+      if (sc.r > 0.003) {
+        float dh = d - (D + sc.g / sc.r);
+        if (dh > 0.0) { float h2 = dh * dh; acc += sc.r * (b * b / (b * b + h2) - a * a / (a * a + h2 + 1e-6)); }
+      }
     }
     blocked += acc / float(n);
   }
   return clamp(blocked, 0.0, 1.0);
 }
-float skyShadow(vec3 wp) {
-  if (uSkyShadow.x < 0.5) return 1.0;
+// how much of the sky (cosine-weighted) the canopy hides from wp, 0..1
+float skyBlocked(vec3 wp) {
+  if (uSkyShadow.x < 0.5) return 0.0;
   float dist = length(wp);
-  if (dist > uSkyShadow.z) return 1.0;
+  if (dist > uSkyShadow.z) return 0.0;
   vec3 pF = uSkyToFixed * (wp - uSkyCenter);
   float bl = -1.0;
-  if (dist < uSkyShadow.y) bl = skyShadowMap(ivec2(${SKY_ORG[0][0]}, ${SKY_ORG[0][1]}), ${SKY_CASCADES[0].size}, uSkyShadowVP0, uSkyShadowL0, uSkyShadowUp0, uSkyShadow.y, pF);
-  if (bl < 0.0) bl = skyShadowMap(ivec2(${SKY_ORG[1][0]}, ${SKY_ORG[1][1]}), ${SKY_CASCADES[1].size}, uSkyShadowVP1, uSkyShadowL1, uSkyShadowUp1, uSkyShadow.z, pF);
-  if (bl < 0.0) return 1.0;
-  bl *= 1.0 - smoothstep(0.8 * uSkyShadow.z, uSkyShadow.z, dist);
-  return 1.0 - bl * (1.0 - uSkyShadow.w);
+  if (dist < uSkyShadow.y) bl = skyShadowMap(0.0, ${SKY_CASCADES[0].size.toFixed(1)}, uSkyD.x, uSkyShadowVP0, uSkyShadowL0, uSkyShadowUp0, uSkyShadow.y, pF);
+  if (bl < 0.0) bl = skyShadowMap(1.0, ${SKY_CASCADES[1].size.toFixed(1)}, uSkyD.y, uSkyShadowVP1, uSkyShadowL1, uSkyShadowUp1, uSkyShadow.z, pF);
+  if (bl < 0.0) return 0.0;
+  return bl * (1.0 - smoothstep(0.8 * uSkyShadow.z, uSkyShadow.z, dist));
+}
+float skyShadow(vec3 wp) { return 1.0 - skyBlocked(wp) * (1.0 - uSkyShadow.w); }
+uniform vec3 uLeafTint;
+uniform vec3 uCanopySun;
+uniform vec3 uCanopySky;
+// the light the canopy over a point passes down to it (bl: how much of its sky the canopy hides): the
+// sun's and the sky's on the canopy's top (sunTop the sun's light there, its shadows by the ground and
+// the clouds but not the leaves'; muS its height), through the leaves and scattered within them, a tenth
+// of it, in the leaves' colour (a wood's floor in its green light, brighter under a sunlit crown than a
+// clouded one); per the receiver's light (x its E)
+vec3 canopyLit(float bl, vec3 sunTop, float muS, vec3 skyE) {
+  return bl * 0.1 * (sunTop * max(muS, 0.0) + skyE) * uLeafTint;
 }
 `;
 
@@ -341,8 +411,9 @@ export function receiveShadows(mat) {
     vec3 shN = normalize((vec4(normal, 0.0) * viewMatrix).xyz);
     float shS = sunShadowMap(vShWorld, shN);
     reflectedLight.directDiffuse *= shS; reflectedLight.directSpecular *= shS;
-    float shK = skyShadow(vShWorld);
-    reflectedLight.indirectDiffuse *= shK; reflectedLight.indirectSpecular *= shK;
+    float shB = skyBlocked(vShWorld);
+    reflectedLight.indirectDiffuse *= 1.0 - shB; reflectedLight.indirectSpecular *= 1.0 - shB;
+    reflectedLight.indirectDiffuse += BRDF_Lambert(material.diffuseColor) * shB * 0.1 * (uCanopySun + uCanopySky) * uLeafTint;
   }`);
   };
   const key = own ? own.toString() : '';
