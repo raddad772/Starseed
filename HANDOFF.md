@@ -11,13 +11,22 @@ See LIFE.md (Trees by EZ-Tree, Shade, Moonlight). Test recipe: ?seed=SOL&workers
 sunset 2026-11-04T20:05. Trees take ~80 s to load with 2 workers.
 
 Dave's queue, in the order he raised it (keep this list current):
-1. Sunsets: the low sun a white glare over half the view. Haze is grey (should be spectral, an
-   Angstrom slope by the world's aerosols; dust taking blue), and the tonemap whitens the bright
-   orange near the sun. Dave: "the sun should dim a bunch and change colors"; dust raised by wind
-   over dry soil should pink the sky.
-2. Wind: trees sway like a hurricane (amplitude ~2.5 m at an 18 m top; quick fix to ~0.3 m done) and
-   constantly; grass too. A local wind as world state (the latitude's belts, weather over days, a day's
-   round, gusts), the trees' lean and sway and the grass from it; dust from it (item 1).
+1. Sunsets: DONE (6bd8ac5): sunlight through the air as on the true-size world, the sky's air and
+   clouds seeing the sun as there, squared steps, spectral haze, the disc through the air, the meter
+   closing for a bright sky. Recipe: date=2026-11-04T20:05:50 (sun ~3 deg). Left: dust raised by wind
+   over dry soil to pink the sky (with item 2).
+2. Wind: DONE (sim/wind.js): world state, the latitude's belt and mean speed (as the sea's waves),
+   weather over ~3 days, a day's round, gusts; trees lean by its drag and sway by its gusts (~0.4 m at an
+   18 m top in 10 m/s, still in calm air), leaves flutter, grass bends by it. Left: dust raised off dry
+   ground in a strong wind (the haze over it, pinker sunsets).
+   Also done: plants and rocks seated on the drawn ground (floraRender.js seatInstances: Universe.floorAt)
+   when built and again when the ground under them refines or the near field is rebuilt, a budget a frame;
+   a chunk rebuilt keeps its plants (seated again) instead of scattering them anew; rebuilds behind the
+   trees' jobs.
+   Noted: near the ground with 2 workers (the test tab) trees can take minutes: hundreds of fine chunks,
+   ~1 s each (shade() ~53 us a fine point), rank ahead of the flora jobs; consider trees before the finest
+   chunks. A straight ledge in the ground near 18.66N 59.63W (the near field's edge against the
+   heightfield?) seen at sunset from 2.5 m.
 3. Soil at walking scale: the world sim's soil depth and water table (worldsim/soil.js) into the
    snapshot (SIM bump), refined by slope and curvature; trees by root depth, grass by a few cm, bare rock
    and scree where none, wetland plants where the water table is at the surface.

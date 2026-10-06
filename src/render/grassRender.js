@@ -66,7 +66,7 @@ function nmRGB(l) {
 const WIND = `{
     vec3 ip = vec3(instanceMatrix[3][0], instanceMatrix[3][1], instanceMatrix[3][2]);
     float ph = uWindT * 1.6 + dot(ip, vec3(0.31, 0.17, 0.23));
-    float bend = (0.10 * sin(ph) + 0.04 * sin(ph * 2.7 + 1.3)) * position.y * position.y;
+    float bend = (0.10 * sin(ph) + 0.04 * sin(ph * 2.7 + 1.3)) * position.y * position.y * uGrassWind;
     transformed.x += bend; transformed.z += 0.5 * bend;
   }`;
 
@@ -85,12 +85,15 @@ export class GrassSet {
     this.gK = Math.pow(9.81 / Math.max(d.gravity || 9.81, 1), 0.3);
     this.mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, metalness: 0, side: THREE.DoubleSide });
     this.time = { value: 0 };
+    // (how hard the wind bends it: sim/wind.js, setWind; a light air barely)
+    this.windAmp = { value: 0.5 };
     this.mat.onBeforeCompile = (sh) => {
       sh.uniforms.uWindT = this.time;
+      sh.uniforms.uGrassWind = this.windAmp;
       // (both faces lit as the ground is: a double-sided material's back faces would take its normal turned
       // down, half of every tuft's blades in shadow)
       sh.fragmentShader = sh.fragmentShader.replace('#include <normal_fragment_begin>', '#include <normal_fragment_begin>\n  normal = normalize( vNormal );');
-      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nuniform float uWindT;')
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nuniform float uWindT;\nuniform float uGrassWind;')
         .replace('#include <begin_vertex>', `#include <begin_vertex>\n${WIND}`);
     };
     // (in the sun's shadows and the canopy's, and casting its own, near: sunShadows.js)
@@ -117,12 +120,15 @@ export class GrassSet {
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.mesh.layers.enable(SHADOW_LAYER);
     this.mesh.userData.shadowNearOnly = true;
-    this.mesh.userData.shadowMat = depthMaterial('uniform float uWindT;\n', WIND, { uWindT: this.time });
+    this.mesh.userData.shadowMat = depthMaterial('uniform float uWindT;\nuniform float uGrassWind;\n', WIND, { uWindT: this.time, uGrassWind: this.windAmp });
     this.mesh.setColorAt(0, _c.set(1, 1, 1));
     group.add(this.mesh);
     this.tiles = new Map(); this.at = null; this.origin = new THREE.Vector3();
     this._s = new Float64Array(S_LEN); this._uv = { face: 0, u: 0, v: 0 };
   }
+
+  // the wind where the camera is (sim/wind.js): its speed (m/s) bending the blades, gusts and all
+  setWind(speed, gust) { this.windAmp.value = Math.min(2.2, (speed / 7) * (0.7 + 0.6 * gust)); }
 
   // the ground under its tiles changed (finer terrain came): made again
   invalidate() { this.tiles.clear(); this.at = null; }

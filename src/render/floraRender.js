@@ -222,7 +222,8 @@ attribute float ao;
 attribute vec2 tuv;
 varying vec2 vUv;
 uniform float uTime;
-uniform float uWind;
+// (the wind: its way (world) times its speed over 10 m/s squared, its gust now: sim/wind.js)
+uniform vec4 uWindV;
 uniform float uFadeStart;
 uniform float uFadeEnd;
 varying vec3 vWorld;
@@ -243,10 +244,14 @@ void main() {
   // dark pixels, and a plant a pixel across reads as a speck, not as the ground's colour)
   p *= 1.0 - smoothstep(uFadeStart, uFadeEnd, length((modelMatrix * im * vec4(0.0, 0.0, 0.0, 1.0)).xyz));
   float phase = im[3].x * 0.37 + im[3].z * 0.23;
-  float bend = (part > 0.5 && part < 1.5) ? 1.0 : 0.25;
-  p.x += sin(uTime * 1.4 + phase) * uWind * p.y * p.y * 0.0015 * bend;
-  p.z += cos(uTime * 1.1 + phase * 1.3) * uWind * p.y * p.y * 0.001 * bend;
   vec4 wp = modelMatrix * im * vec4(p, 1.0);
+  // (the wind: a lean along it as strong as its drag (its speed squared), a sway about that with its
+  // gusts, the top most (a cantilever's bend, as the height squared): ~0.4 m at an 18 m top in a
+  // 10 m/s wind, a few cm in a light air; the leaves fluttering)
+  bool leaf = part > 0.5 && part < 1.5;
+  float sway = 0.0012 + 0.0007 * sin(uTime * 1.3 + phase) * (0.4 + uWindV.w) + 0.0003 * sin(uTime * 3.1 + phase * 2.1);
+  wp.xyz += uWindV.xyz * (p.y * p.y * sway * (leaf ? 1.0 : 0.8));
+  if (leaf) wp.xyz += vec3(sin(uTime * 7.0 + p.x * 3.1 + phase), 0.5 * sin(uTime * 5.3 + p.y * 2.3), cos(uTime * 6.3 + p.z * 2.7)) * 0.03 * sqrt(length(uWindV.xyz));
   vWorld = wp.xyz;
   vNormal = normalize(mat3(modelMatrix) * mat3(im) * normal);
   vPart = part;
@@ -336,7 +341,8 @@ attribute vec2 tuv;
 uniform vec3 uLightPos;
 uniform vec3 uLightDir;
 uniform float uTime;
-uniform float uWind;
+// (the wind: its way (world) times its speed over 10 m/s squared, its gust now: sim/wind.js)
+uniform vec4 uWindV;
 uniform float uFadeStart;
 uniform float uFadeEnd;
 varying float vD;
@@ -350,10 +356,14 @@ void main() {
   #endif
   p *= 1.0 - smoothstep(uFadeStart, uFadeEnd, length((modelMatrix * im * vec4(0.0, 0.0, 0.0, 1.0)).xyz));
   float phase = im[3].x * 0.37 + im[3].z * 0.23;
-  float bend = (part > 0.5 && part < 1.5) ? 1.0 : 0.25;
-  p.x += sin(uTime * 1.4 + phase) * uWind * p.y * p.y * 0.0015 * bend;
-  p.z += cos(uTime * 1.1 + phase * 1.3) * uWind * p.y * p.y * 0.001 * bend;
   vec4 wp = modelMatrix * im * vec4(p, 1.0);
+  // (the wind: a lean along it as strong as its drag (its speed squared), a sway about that with its
+  // gusts, the top most (a cantilever's bend, as the height squared): ~0.4 m at an 18 m top in a
+  // 10 m/s wind, a few cm in a light air; the leaves fluttering)
+  bool leaf = part > 0.5 && part < 1.5;
+  float sway = 0.0012 + 0.0007 * sin(uTime * 1.3 + phase) * (0.4 + uWindV.w) + 0.0003 * sin(uTime * 3.1 + phase * 2.1);
+  wp.xyz += uWindV.xyz * (p.y * p.y * sway * (leaf ? 1.0 : 0.8));
+  if (leaf) wp.xyz += vec3(sin(uTime * 7.0 + p.x * 3.1 + phase), 0.5 * sin(uTime * 5.3 + p.y * 2.3), cos(uTime * 6.3 + p.z * 2.7)) * 0.03 * sqrt(length(uWindV.xyz));
   vD = dot(uLightPos - wp.xyz, uLightDir);
   vUv = tuv;
   vPart = part;
@@ -372,8 +382,52 @@ void main() {
 function shadowMaterial(m) {
   const u = m.uniforms;
   return new THREE.ShaderMaterial({
-    uniforms: { ...SHADOW_LIGHT_UNIFORMS, uTime: u.uTime, uWind: u.uWind, uFadeStart: u.uFadeStart, uFadeEnd: u.uFadeEnd, tLeaf: u.tLeaf, uTex: u.uTex },
+    uniforms: { ...SHADOW_LIGHT_UNIFORMS, uTime: u.uTime, uWindV: u.uWindV, uFadeStart: u.uFadeStart, uFadeEnd: u.uFadeEnd, tLeaf: u.tLeaf, uTex: u.uTex },
     vertexShader: SHADOW_VERT, fragmentShader: SHADOW_FRAG, side: THREE.DoubleSide,
+  });
+}
+
+// seat a node's plants and rocks (an object holding instanced meshes, its position the node's origin)
+// on the ground as drawn now (Universe.floorAt: the near field's volume where it's built, else the
+// heightfield's): the scatter's ground was the generator's as it was then, and as finer tiles came in or
+// the near field was built over it, trees and boulders were left in the air or under the ground. A plant
+// on the floor itself; a rock as deep in it as it was scattered (a corestone's cap only showing), never
+// standing off it
+const _sp = new THREE.Vector3(), _sd = new THREE.Vector3();
+export function seatInstances(obj, b) {
+  const R = b.R;
+  obj.updateMatrix();
+  const o = obj.position;
+  obj.traverse((m) => {
+    if (!m.isInstancedMesh || !m.count) return;
+    const a = m.instanceMatrix.array, n = m.count, rock = m.userData.kind === 'stone';
+    const mo = m === obj ? null : m.position;
+    let lift = m.userData.lift;
+    if (!lift) {
+      lift = m.userData.lift = new Float32Array(n);
+      if (rock) for (let i = 0; i < n; i++) {
+        const k = i * 16;
+        _sp.set(o.x + a[k + 12], o.y + a[k + 13], o.z + a[k + 14]);
+        if (mo) _sp.add(mo);
+        const r = _sp.length();
+        lift[i] = Math.min(0, r - R - b.groundHeight(_sd.copy(_sp).divideScalar(r)));
+      }
+    }
+    for (let i = 0; i < n; i++) {
+      const k = i * 16;
+      if (a[k] === 0 && a[k + 1] === 0 && a[k + 2] === 0) continue;   // (cleared: scaled to nothing)
+      _sp.set(o.x + a[k + 12], o.y + a[k + 13], o.z + a[k + 14]);
+      if (mo) _sp.add(mo);
+      const r = _sp.length();
+      _sd.copy(_sp).divideScalar(r);
+      // (from 3 m above where it stands: ground risen a little under it found too)
+      const h = b.floorAt(_sp.copy(_sd).multiplyScalar(r + 3), 3);
+      _sp.copy(_sd).multiplyScalar(R + h + lift[i]).sub(o);
+      if (mo) _sp.sub(mo);
+      a[k + 12] = _sp.x; a[k + 13] = _sp.y; a[k + 14] = _sp.z;
+    }
+    m.instanceMatrix.needsUpdate = true;
+    m.boundingSphere = null;
   });
 }
 
@@ -402,7 +456,7 @@ export class FloraSet {
     this.material = new THREE.ShaderMaterial({
       uniforms: {
         ...shared,
-        uWind: { value: body.atm ? Math.min(1.5, 0.3 + body.atm.pressure * 0.5) : 0 },
+        uWindV: { value: new THREE.Vector4() },
         uTrunk: { value: new THREE.Vector3(...trunk) },
         tBark: { value: null }, tLeaf: { value: null }, uTex: { value: 0 },
         uFadeStart: { value: 1100 },
@@ -415,6 +469,7 @@ export class FloraSet {
     for (const k of FLORA_KINDS) {
       const m = this.material.clone();
       for (const key in this.material.uniforms) if (shared[key]) m.uniforms[key] = shared[key];
+      m.uniforms.uWindV = this.material.uniforms.uWindV;   // (one wind for all: setWind)
       m.uniforms.uFadeEnd.value = this.kindDist[k] * 0.98;
       m.uniforms.uFadeStart.value = this.kindDist[k] * 0.7;
       // (the trees EZ-Tree grew: their textures)
@@ -437,6 +492,12 @@ export class FloraSet {
       veg: pal.veg || [0.1, 0.1, 0.1], vegDry: pal.vegDry || [0.2, 0.18, 0.12],
       rock: pal.rock, rock2: pal.rock2,
     };
+  }
+
+  // the wind where the camera is (sim/wind.js): dirW its way (world axes), speed (m/s), gust (0..1)
+  setWind(dirW, speed, gust) {
+    const k = (speed / 10) * (speed / 10);
+    this.material.uniforms.uWindV.value.set(dirW.x * k, dirW.y * k, dirW.z * k, gust);
   }
 
   // Build instanced meshes for one node's scatter data

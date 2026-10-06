@@ -18,7 +18,9 @@ import { FACES, dirFromFaceUV, chunkArcSize } from '../gen/cubesphere.js';
 import { CHUNK_N, chunkIndices, FALL_STRIDE } from '../gen/chunkbuilder.js';
 import { FallFx } from './falls.js';
 import { makeTerrainMaterial, makeRibbonMaterial, RIBBON_PASS, DETAIL_PERIOD } from './terrainMaterial.js';
-import { FloraSet } from './floraRender.js';
+import { FloraSet, seatInstances } from './floraRender.js';
+import { windAt } from '../sim/wind.js';
+import { dayClock } from '../sim/fauna.js';
 import { floraOf } from '../sim/floraField.js';
 import { VCHUNK } from '../gen/volume.js';
 
@@ -30,6 +32,7 @@ function setClassAttrs(g, cls) {
 import { NEAR_RINGS } from '../sim/nearGround.js';
 
 const FLORA_DIST = 1600;
+const _wd = new THREE.Vector3(), _ww = new THREE.Vector3();
 const STONE_DIST = 120, STONE_DROP = 200;   // (the small stones near the camera: gen/rocks.js scatterStones)
 
 const SPLIT_K = 2.2;
@@ -90,6 +93,7 @@ export class PlanetTerrain {
     this.floraLevel = Math.max(2, this.maxLevel - 3);
     this.floraSet = null;
     this.floraCount = 0;
+    this.reseatQ = new Set();   // (nodes' plants and rocks to seat again on the ground: invalidate, the near field)
     // the near field's volume chunks (gen/volume.js), by lattice key
     this.near = new Map();
     this.nearAnchor = null;
@@ -139,6 +143,34 @@ export class PlanetTerrain {
     if (life && this.body.data.history && this.body.data.history.plantGrade >= 1) {
       if (!this.grassSet) this.grassSet = new GrassSet(this.body, this.group, this.pool);
       this.grassSet.update(camFixed);
+    }
+    // (plants and rocks seated again where the ground under them changed: a finer tile in, or the near
+    // field built anew round the camera (those within its reach); ~2 ms a frame)
+    const nf = this.body.near && this.body.near.field;
+    if (nf !== this._nfSeat) {
+      this._nfSeat = nf;
+      const reach = 600;
+      for (const r of this.roots) (function walk(node, self) {
+        if (node.flora && node.flora.position.distanceTo(camFixed) < reach + node.arc) self.reseatQ.add(node.flora);
+        if (node.stones && node.stones.position.distanceTo(camFixed) < reach + node.arc) self.reseatQ.add(node.stones);
+        if (node.children) for (const c of node.children) walk(c, self);
+      })(r, this);
+    }
+    if (this.reseatQ.size) {
+      const t0 = performance.now();
+      for (const obj of this.reseatQ) {
+        this.reseatQ.delete(obj);
+        if (obj.parent) seatInstances(obj, this.body);
+        if (performance.now() - t0 > 2) break;
+      }
+    }
+    // (the wind where the camera is, world state (sim/wind.js): the trees and the grass in it)
+    if (this.floraSet || this.grassSet) {
+      const b = this.body, t = this.worldT || 0;
+      if (!this._dayAt || Math.abs(t - this._dayAt) > 60) { this._day = dayClock(b, t).P || 0; this._dayAt = t; }
+      const w = this.wind = windAt(b, _wd.copy(camFixed).normalize(), t, b.u.sunIlluminance(b.pos), this._day, this.wind);
+      if (this.floraSet) this.floraSet.setWind(_ww.copy(w.dir).applyQuaternion(b.q), w.speed, w.gust);
+      if (this.grassSet) this.grassSet.setWind(w.speed, w.gust);
     }
     return this.visibleList;
   }
@@ -216,14 +248,17 @@ export class PlanetTerrain {
   }
 
   // the ground changed in a patch of a face (u0..u1, v0..v1: a terrain tile arrived): the chunks
-  // over it are built again, each drawn as it was until its new mesh is in (and its plants
-  // scattered again on the new ground)
+  // over it are built again, each drawn as it was until its new mesh is in (and its plants and rocks
+  // seated again on the new ground)
   // (only chunks fine enough to show it: vertices no further apart than maxSpacing m)
   invalidate(face, u0, v0, u1, v1, maxSpacing = Infinity) {
     if (this.grassSet) this.grassSet.invalidate();
     const walk = (node) => {
       const s = 2 / (1 << node.level), nu = -1 + node.ix * s, nv = -1 + node.iy * s;
       if (node.face !== face || nu > u1 || nu + s < u0 || nv > v1 || nv + s < v0) return;
+      // (its plants and rocks seated again on the new ground, a few a frame: reseat)
+      if (node.flora) this.reseatQ.add(node.flora);
+      if (node.stones) this.reseatQ.add(node.stones);
       if (node.arc / CHUNK_N <= maxSpacing) {
         if (node.state === 2) node.stale = true;
         else if (node.state === 1) node.restale = true;
@@ -236,9 +271,11 @@ export class PlanetTerrain {
   refresh(node, dist) {
     node.stale = false;
     const gen = this.generation;
+    // (behind the trees: a rebuild only betters ground already drawn, and with finer tiles coming in all
+    // the while near the ground its stream starved the plants' jobs, a wood's trees not coming for minutes)
     node.refreshJob = this.pool.submit({
       type: 'chunk', body: this.body.id, face: node.face, level: node.level, ix: node.ix, iy: node.iy, N: CHUNK_N,
-    }, this.priority(node, dist) + 1);
+    }, this.priority(node, dist) + 6);
     this.pendingCount++;
     node.refreshJob.promise.then((data) => {
       this.pendingCount--;
@@ -248,11 +285,10 @@ export class PlanetTerrain {
       this.group.remove(old); old.geometry.dispose(); old.material.dispose(); disposeKids(old); this.meshCount--;
       this.buildMesh(node, data);
       node.mesh.visible = shown;
-      if (node.flora) {
-        this.group.remove(node.flora); this.floraCount -= node.flora.userData.count;
-        for (const m of node.flora.children) m.dispose();
-        node.flora = null; node.floraJob = null;
-      }
+      // (its plants and rocks kept, seated again on the new ground: not scattered again, which kept the
+      // trees coming and going while the ground refined and their jobs behind the chunks')
+      if (node.flora) this.reseatQ.add(node.flora);
+      if (node.stones) this.reseatQ.add(node.stones);
     }, () => { this.pendingCount--; node.refreshJob = null; node.stale = true; });
   }
 
@@ -285,6 +321,9 @@ export class PlanetTerrain {
       const rocks = this.rockSet.build(data);
       if (rocks) { node.flora.add(rocks); node.flora.userData.count += rocks.userData.count; }
       node.flora.visible = node.floraFrame === this.frame;
+      // (on the ground as drawn now: seatInstances, in the frames' budget)
+      node.flora.position.set(data.origin[0], data.origin[1], data.origin[2]);
+      this.reseatQ.add(node.flora);
       this.floraSet.updateNode(node.flora, node.floraDist || 0);
       this.floraCount += node.flora.userData.count;
       this.group.add(node.flora);
@@ -304,7 +343,7 @@ export class PlanetTerrain {
       if (gen !== this.generation || !node.stoneJob) return;
       node.stoneJob = null;
       node.stones = this.rockSet.build(data);
-      if (node.stones) { node.stones.position.set(data.origin[0], data.origin[1], data.origin[2]); this.group.add(node.stones); }
+      if (node.stones) { node.stones.position.set(data.origin[0], data.origin[1], data.origin[2]); this.reseatQ.add(node.stones); this.group.add(node.stones); }
     }, () => { node.stoneJob = null; });
   }
   dropStones(node) {
