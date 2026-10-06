@@ -55,9 +55,34 @@ float cloudN(float n) { return 0.55 + (n - 0.682) * 4.3; }
 float cloudBias(float cover) { return (cover - 0.5) * 0.3 + 0.5 * smoothstep(0.8, 1.0, cover) - 0.5 * (1.0 - smoothstep(0.0, 0.2, cover)); }
 // 0 where a pixel foot m across sees an octave of tile L m whole, 1 where it spans a few texels
 float cloudFade(float foot, float L) { return smoothstep(1.0, 4.0, foot * 64.0 / L); }
-// cover (0..1) at q (body-fixed m) in direction dirF; bias: the world's cover moving the threshold
-float cloudCover(vec3 q, vec3 dirF, float foot, float bias) {
+// the climate's cloud map at uv, read smoothly: a cubic B-spline over its texels, in four bilinear taps
+// (Sigg and Hadwiger 2005). Read bilinearly its slope bent at every texel line (~2.4 km on a drawn
+// world), and the cover's threshold drew the bends as straight edges, along the latitudes and longitudes:
+// from below, looking east at sunset, a diagonal edge across the twilight (Dave)
+vec3 cloudMapSmooth(vec2 uv) {
+  vec2 sz = vec2(textureSize(tCloudMap, 0)), st = uv * sz - 0.5, i = floor(st), f = st - i;
+  vec2 f2 = f * f, f3 = f2 * f;
+  vec2 w0 = (1.0 - 3.0 * f + 3.0 * f2 - f3) / 6.0, w1 = (4.0 - 6.0 * f2 + 3.0 * f3) / 6.0;
+  vec2 w2 = (1.0 + 3.0 * f + 3.0 * f2 - 3.0 * f3) / 6.0, w3 = f3 / 6.0;
+  vec2 g0 = w0 + w1, g1 = w2 + w3;
+  vec2 h0 = (i - 0.5 + w1 / g0) / sz, h1 = (i + 1.5 + w3 / g1) / sz;
+  return g0.y * (g0.x * texture(tCloudMap, h0).rgb + g1.x * texture(tCloudMap, vec2(h1.x, h0.y)).rgb)
+       + g1.y * (g0.x * texture(tCloudMap, vec2(h0.x, h1.y)).rgb + g1.x * texture(tCloudMap, h1).rgb);
+}
+// the climate's push on the cover at dirF: the bare belts of a Hadley circulation, or with the simulated
+// climate's cloud map, the clouds moved to where it rains, as strongly as the weather's own spread so the
+// climate's belts read from space; about its own mean, the world's cover setting the amount (a dry world's
+// map and its low cover had counted its dryness twice); and its year, the swing's two parts turned by where
+// the sun stands in it (uCloudYear cos and sin of its solar longitude, 0 without: the rain belts and the
+// storm tracks follow the sun). Slow over the globe: read once per point, its decks and generations sharing it
+float cloudClimate(vec3 dirF) {
   float lat = asin(clamp(dirF.y, -1.0, 1.0));
+  if (uCloudMapMean <= 0.0) return 0.12 * cos(abs(lat) * 6.0);
+  vec3 cm = cloudMapSmooth(vec2(atan(dirF.z, dirF.x) / 6.2832 + 0.5, lat / 3.14159 + 0.5));
+  return (cm.r + (cm.g - 0.5) * uCloudYear.x + (cm.b - 0.5) * uCloudYear.y - uCloudMapMean) * 0.8;
+}
+// cover (0..1) at q (body-fixed m), clim its point's cloudClimate; bias: the world's cover moving the threshold
+float cloudCoverC(vec3 q, float foot, float bias, float clim) {
   float L0 = uRadius * ${CLOUD_K[0].toFixed(3)}, L1 = uRadius * ${CLOUD_K[1].toFixed(3)};
   float f0 = cloudFade(foot, L0), f1 = cloudFade(foot, L1);
   // (drawn out along the winds: the noise squeezed across the axis, its systems twice as long east-west)
@@ -65,18 +90,10 @@ float cloudCover(vec3 q, vec3 dirF, float foot, float bias) {
   float a = f0 > 0.999 ? 0.682 : mix(textureLod(tNoise, qz / L0, 0.0).r, 0.682, f0);
   float b = f1 > 0.999 ? 0.682 : mix(textureLod(tNoise, qz / L1 + 0.5, 0.0).r, 0.682, f1);
   float spread = length(vec2(0.124 * f0, 0.083 * f1));
-  float hadley = 0.12 * cos(abs(lat) * 6.0);
-  // (with the simulated climate's cloud map: it moves the clouds to where it rains, as strongly as the
-  // weather's own spread so the climate's belts read from space; about its own mean, the world's cover
-  // setting the amount: a dry world's map and its low cover had counted its dryness twice)
-  // (and its year: the swing's two parts turned by where the sun stands in it, uCloudYear cos and sin of
-  // its solar longitude, 0 without: the rain belts and the storm tracks follow the sun)
-  if (uCloudMapMean > 0.0) {
-    vec3 cm = texture(tCloudMap, vec2(atan(dirF.z, dirF.x) / 6.2832 + 0.5, lat / 3.14159 + 0.5)).rgb;
-    hadley = (cm.r + (cm.g - 0.5) * uCloudYear.x + (cm.b - 0.5) * uCloudYear.y - uCloudMapMean) * 0.8;
-  }
-  return smoothstep(0.6 - bias - spread, 0.8 - bias + spread, cloudN(a * 0.6 + b * 0.4) + hadley);
+  return smoothstep(0.6 - bias - spread, 0.8 - bias + spread, cloudN(a * 0.6 + b * 0.4) + clim);
 }
+// cover (0..1) at q in direction dirF
+float cloudCover(vec3 q, vec3 dirF, float foot, float bias) { return cloudCoverC(q, foot, bias, cloudClimate(dirF)); }
 // the fine texture inside covered areas (its mean far off)
 float cloudDetail(vec3 q, float foot) {
   float L2 = uRadius * ${CLOUD_K[2].toFixed(3)}, f = cloudFade(foot, L2);
@@ -99,7 +116,13 @@ void cloudGens(vec3 dirF, out vec3 gA, out vec3 gB) {
   float ph = 1.1 * dirF.x + 0.7 * dirF.z - 0.5 * dirF.y + 0.35 * sin(2.3 * dirF.y + 1.7 * dirF.x - 0.9 * dirF.z);
   float s = uCloudClock.x / T + ph + 4.0;
   float a = floor(s), fa = s - a, b = floor(s + 0.5), fb = s + 0.5 - b;
-  float wa = smoothstep(0.4, 0.6, 1.0 - abs(2.0 * fa - 1.0));
+  // (the front ragged: where the hand-over falls jittered by noise over the globe (~10 and ~4 km cells on a
+  // drawn world, up to a sixth of a life), its weights only, not the ages, so the clouds don't shear; a
+  // smooth front ran a ruler line across the sky, two generations meeting along it (Dave: the diagonal
+  // edge in the twilight). Under a fifth either way, a generation's weight never reaches its index's turn)
+  float j = 0.16 * (textureLod(tNoise, dirF * 9.0, 0.0).g - textureLod(tNoise, dirF * 23.0 + 0.37, 0.0).g);
+  float fj = fract(s + j);
+  float wa = smoothstep(0.4, 0.6, 1.0 - abs(2.0 * fj - 1.0));
   gA = vec3(wa, (fa - 0.5) * T, 2.0 * (uCloudClock.y + a));
   gB = vec3(1.0 - wa, (fb - 0.5) * T, 2.0 * (uCloudClock.y + b) + 1.0);
 }
@@ -120,9 +143,9 @@ vec3 cloudAdvect(vec3 pf, vec3 dirF, vec3 g) {
 float cloudCoverG(vec3 pf, vec3 dirF, float foot, float bias) {
   vec3 gA, gB;
   cloudGens(dirF, gA, gB);
-  float c = 0.0;
-  if (gA.x > 0.005) c += gA.x * cloudCover(cloudAdvect(pf, dirF, gA), dirF, foot, bias);
-  if (gB.x > 0.005) c += gB.x * cloudCover(cloudAdvect(pf, dirF, gB), dirF, foot, bias);
+  float c = 0.0, clim = cloudClimate(dirF);
+  if (gA.x > 0.005) c += gA.x * cloudCoverC(cloudAdvect(pf, dirF, gA), foot, bias, clim);
+  if (gB.x > 0.005) c += gB.x * cloudCoverC(cloudAdvect(pf, dirF, gB), foot, bias, clim);
   return c;
 }`;
 
@@ -698,12 +721,12 @@ ${GLSL_CLOUD_N}
 float cloudDensity(vec3 pFixedDir, float foot) {
   vec3 pf = pFixedDir * uRadius, gA, gB;
   cloudGens(pFixedDir, gA, gB);
-  float d = 0.0;
+  float d = 0.0, clim = cloudClimate(pFixedDir);
   for (int j = 0; j < 2; j++) {
     vec3 g = j == 0 ? gA : gB;
     if (g.x <= 0.005) continue;
     vec3 q = cloudAdvect(pf, pFixedDir, g);
-    float cov = cloudCover(q, pFixedDir, foot, cloudBias(uCloud.z));
+    float cov = cloudCoverC(q, foot, cloudBias(uCloud.z), clim);
     d += g.x * cov * smoothstep(0.15, 0.55, cloudDetail(q, foot) * cov + 0.25);
   }
   return d;

@@ -20,7 +20,8 @@ import { GLSL_TERRAIN_SHADOW } from './terrainShadow.js';
 // each carried on its wind). Needs GLSL_CLOUD_N, tNoise, uDeck, uMode, uBands, uJetPhase, uShape
 export const GLSL_DECKS = /* glsl */`
 // coverage of deck i (0..1) at body-fixed point q (metres) with direction dirF, a pixel foot m across
-float coverage(int i, vec3 dirF, vec3 q, float foot) {
+// (clim: dirF's cloudClimate, atmosphere.js, read once per point for all its decks)
+float coverage(int i, vec3 dirF, vec3 q, float foot, float clim) {
   float lat = asin(clamp(dirF.y, -1.0, 1.0));
   if (uMode < 0.5) {
     float band = sin(lat * uBands * 2.0 + uJetPhase * 6.2832 + 0.6 * sin(lat * uBands * 0.7));
@@ -29,7 +30,7 @@ float coverage(int i, vec3 dirF, vec3 q, float foot) {
     if (i == 1) return smoothstep(-0.45, 0.45, n * 1.5 + 0.1 + uDeck[1].w);
     return smoothstep(0.2, 0.62, texture(tNoise, q / 42000.0 + 0.37).g + uDeck[2].w);
   }
-  return cloudCover(q, dirF, foot, uDeck[i].w);
+  return cloudCoverC(q, foot, uDeck[i].w, clim);
 }
 // density of deck i at q (height h); cov precomputed; detail adds erosion
 float deckDensity(int i, vec3 q, float h, float cov, bool detail, out float frac) {
@@ -52,9 +53,9 @@ float deckDensity(int i, vec3 q, float h, float cov, bool detail, out float frac
 }
 // the generations' coverage of deck i at body-fixed pf (dirF its way), each carried on its wind
 // (atmosphere.js cloudGens: gA, gB): (A's, B's)
-vec2 deckCovG(int i, vec3 pf, vec3 dirF, float foot, vec3 gA, vec3 gB) {
-  return vec2(gA.x > 0.005 ? coverage(i, dirF, cloudAdvect(pf, dirF, gA), foot) : 0.0,
-              gB.x > 0.005 ? coverage(i, dirF, cloudAdvect(pf, dirF, gB), foot) : 0.0);
+vec2 deckCovG(int i, vec3 pf, vec3 dirF, float foot, vec3 gA, vec3 gB, float clim) {
+  return vec2(gA.x > 0.005 ? coverage(i, dirF, cloudAdvect(pf, dirF, gA), foot, clim) : 0.0,
+              gB.x > 0.005 ? coverage(i, dirF, cloudAdvect(pf, dirF, gB), foot, clim) : 0.0);
 }
 // deck i's density at pf over the generations (height h; each its coverage cv; frac the weightier's)
 float deckDenG(int i, vec3 pf, vec3 dirF, float h, vec2 cv, vec3 gA, vec3 gB, bool detail, out float frac) {
@@ -238,12 +239,13 @@ void main() {
       vec3 pf = uToFixed * p, dirF = pf / r, gA, gB;
       float lat = asin(clamp(dirF.y, -1.0, 1.0));
       cloudGens(dirF, gA, gB);
+      float clim = uMode > 0.5 ? cloudClimate(dirF) : 0.0;
       for (int k = 0; k < 3; k++) {
         if (float(k) >= uNumDecks) break;
         vec4 dk = uDeck[k];
         // (a deck below: on the way of a sun under this height's horizontal, below)
         if (h > dk.y && liftMu(muS) > 0.06) continue;
-        vec2 cv = deckCovG(k, pf, dirF, t * gPixA, gA, gB);
+        vec2 cv = deckCovG(k, pf, dirF, t * gPixA, gA, gB, clim);
         float cov = gA.x * cv.x + gB.x * cv.y;
         if (h > dk.y) { tauBelow += dk.z * cov * (dk.y - dk.x) * 0.4 * uSigma; continue; }
         if (h < dk.x) { tauAbove += dk.z * cov * (dk.y - dk.x) * 0.4 * uSigma; continue; }

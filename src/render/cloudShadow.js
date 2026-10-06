@@ -61,10 +61,12 @@ float tauAlong(vec3 p, vec3 d, float t0, float t1, float foot, vec3 gA, vec3 gB,
     vec3 x = p + d * (t0 + (float(s) + 0.5) * dt);
     float r = length(x), h = r - uRadius, fr;
     vec3 dirF = x / r;
+    float clim = -99.0;
     for (int k = 0; k < 3; k++) {
       if (float(k) >= uNumDecks) break;
       if (h < uDeck[k].x || h > uDeck[k].y) continue;
-      tau += deckDenG(k, x, dirF, h, deckCovG(k, x, dirF, foot, gA, gB), gA, gB, true, fr) * sigma * dt;
+      if (clim < -98.0) clim = uMode > 0.5 ? cloudClimate(dirF) : 0.0;
+      tau += deckDenG(k, x, dirF, h, deckCovG(k, x, dirF, foot, gA, gB, clim), gA, gB, true, fr) * sigma * dt;
     }
   }
   return tau;
