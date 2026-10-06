@@ -375,14 +375,15 @@ void main() {
     if (vPart < 0.5) {
       // (a bough's ridge (raised over its top, the vertex shader), a leaning trunk's upper side, inside the
       // crown as well: the leaves above take some, not all; what reaches a bough stays on it)
-      snowK = vSnow.x * smoothstep(0.0, 0.3, dot(Ng, up)) * smoothstep(0.1, 0.4, 0.3 + 0.7 * clump);
+      snowK = vSnow.x * smoothstep(0.12, 0.4, dot(Ng, up)) * smoothstep(0.1, 0.4, 0.3 + 0.7 * clump);
     } else {
-      // (a crown's leaves: its top, where the sky's open above them (skyBlocked: the boughs and crowns over
-      // them), in clumps; the upper face more, but from below or the side the snow over a leaf a pixel or
-      // two across shows round it too)
-      float face = 0.55 + 0.45 * dot(Ng, up);
-      float open = (1.0 - 0.85 * skyBl) * (0.35 + 0.65 * smoothstep(0.3, 0.85, vTop));
-      snowK = vSnow.x * smoothstep(0.3, 0.6, open * face * (0.55 + 0.9 * clump));
+      // (a crown's leaves: wherever the sky's open over them (skyBlocked: the boughs and crowns around and
+      // above), its top most, but down its sides too where it stands at a wood's edge or alone, in clumps;
+      // the upper face more, but from below or the side the snow over a leaf a pixel or two across shows
+      // round it too)
+      float face = 0.65 + 0.35 * dot(Ng, up);
+      float open = (1.0 - 0.6 * skyBl) * (0.6 + 0.4 * smoothstep(0.2, 0.8, vTop));
+      snowK = vSnow.x * smoothstep(0.22, 0.5, open * face * (0.55 + 0.9 * clump));
     }
     snowK = max(snowK, 1.0 - smoothstep(vSnow.y - 0.03, vSnow.y + 0.03, vSnow.z));
     albedo = mix(albedo, uSnowCol, snowK * (vPart > 0.5 && vPart < 1.5 ? 0.9 : 1.0));

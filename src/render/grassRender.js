@@ -65,13 +65,16 @@ function bladeGeometry(nb, seg, seed) {
 // a blade's shape, shared by the lit material and the shadows': from its patch's instance data
 //   iCorner: the ground's heights at the patch's corners over its centre's plane (u-v-, u+v-, u-v+, u+v+)
 //   iGrass: density (0..1), height (m), how wild (its own lean), the season's snow on it now (m)
-//   iWave: where the patch lies (body-fixed x, z, wrapped): the gusts' phase runs across it
+//   iBare: where it grows at the patch's corners (1, 0 bare: a creek's bed, sand, rock showing), blended
+//   across it, ragged by its clumps (a patch all or nothing was a square)
+//   iWave: where the patch lies (body-fixed x, y, z, each wrapped at 2048 m): its noises' place
 const GLSL_BLADE = /* glsl */`
 attribute vec4 aBlade;
 attribute vec2 aV;
 attribute vec4 iCorner;
+attribute vec4 iBare;
 attribute vec4 iGrass;
-attribute vec2 iWave;
+attribute vec3 iWave;
 uniform float uWindT;
 uniform float uGrassWind;
 uniform vec3 uWindL;
@@ -81,11 +84,27 @@ uniform float uFadeIn;
 uniform float uPatchK;
 varying float vGT;
 varying float vGK;
-float grassHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-float grassNoise(vec2 p) {
-  vec2 i = floor(p), f = fract(p);
+float grassHash(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
+vec3 grassHash3(vec3 p) {
+  return fract(sin(vec3(dot(p, vec3(127.1, 311.7, 74.7)), dot(p, vec3(269.5, 183.3, 246.1)), dot(p, vec3(113.5, 271.9, 124.6)))) * 43758.5453);
+}
+// smooth noise over the ground's place in 3D (body-fixed: the ground's own metres, the same every way
+// along it; read in two of its axes it was stretched north-south, streaks lying in parallel lines), three
+// values at once; its lattice wrapping every per cells (the patches' place wraps at 2048 m: no seam there)
+vec3 grassNoise3(vec3 p, float per) {
+  vec3 i = floor(p), f = fract(p);
   f = f * f * (3.0 - 2.0 * f);
-  return mix(mix(grassHash(i), grassHash(i + vec2(1.0, 0.0)), f.x), mix(grassHash(i + vec2(0.0, 1.0)), grassHash(i + vec2(1.0, 1.0)), f.x), f.y);
+  vec3 a = grassHash3(mod(i, per)), b = grassHash3(mod(i + vec3(1.0, 0.0, 0.0), per));
+  vec3 c = grassHash3(mod(i + vec3(0.0, 1.0, 0.0), per)), d = grassHash3(mod(i + vec3(1.0, 1.0, 0.0), per));
+  vec3 e = grassHash3(mod(i + vec3(0.0, 0.0, 1.0), per)), g = grassHash3(mod(i + vec3(1.0, 0.0, 1.0), per));
+  vec3 h = grassHash3(mod(i + vec3(0.0, 1.0, 1.0), per)), k = grassHash3(mod(i + vec3(1.0, 1.0, 1.0), per));
+  return mix(mix(mix(a, b, f.x), mix(c, d, f.x), f.y), mix(mix(e, g, f.x), mix(h, k, f.x), f.y), f.z);
+}
+float grassNoise1(vec3 p) {
+  vec3 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(mix(grassHash(i), grassHash(i + vec3(1.0, 0.0, 0.0)), f.x), mix(grassHash(i + vec3(0.0, 1.0, 0.0)), grassHash(i + vec3(1.0, 1.0, 0.0)), f.x), f.y),
+    mix(mix(grassHash(i + vec3(0.0, 0.0, 1.0)), grassHash(i + vec3(1.0, 0.0, 1.0)), f.x), mix(grassHash(i + vec3(0.0, 1.0, 1.0)), grassHash(i + vec3(1.0, 1.0, 1.0)), f.x), f.y), f.z);
 }
 vec3 grassBlade(mat4 im) {
   // (the patch's own turn of the blades' layout, mirrored or not, and its own share of them: every patch
@@ -99,30 +118,32 @@ vec3 grassBlade(mat4 im) {
   vec4 pc = modelMatrix * im * vec4(bx.x, 0.0, bx.y, 1.0);
   float dc = length(pc.xyz);
   vec3 off = mat3(im) * vec3(bx.x, 0.0, bx.y);
-  vec2 wp = iWave + off.xz;
+  vec3 wp = iWave + off;
   // (its thickness and height by the lie of the ground a few metres across, smooth over the patches' edges:
-  // clumps and thin places, not squares)
-  float n1 = grassNoise(wp / 4.3), n2 = grassNoise(wp / 1.7 + 31.0);
-  float dens = iGrass.x * (0.5 + n1) * (1.0 - smoothstep(uFadeR * 0.7, uFadeR, dc)) * smoothstep(uFadeIn - 8.0, uFadeIn + 2.0, dc);
+  // clumps and thin places, not squares; and the season's snow drifted and hollowed)
+  vec3 nz = grassNoise3(wp / 3.2, 640.0);
+  float n1 = nz.x, n2 = nz.y;
+  float u0 = bx.x * 0.5 + 0.5, v0 = bx.y * 0.5 + 0.5;
+  float gb = mix(mix(iBare.x, iBare.y, u0), mix(iBare.z, iBare.w, u0), v0);
+  float dens = iGrass.x * (0.5 + n1) * smoothstep(0.25, 0.75, gb + 0.5 * (n2 - 0.5)) * (1.0 - smoothstep(uFadeR * 0.7, uFadeR, dc)) * smoothstep(uFadeIn - 8.0, uFadeIn + 2.0, dc);
   vGT = aV.x; vGK = fract(rr * 13.71);
   if (rr >= dens) return vec3(0.0);
   float t = aV.x, side = aV.y;
   float k1 = fract(rr * 7.31), k2 = fract(rr * 3.17 + aBlade.w * 0.13);
   // (out of the season's snow, its depth drifted and hollowed a few metres across: the tips standing up out
   // of a thin fall, buried by a deep one, held still by it)
-  float snow = iGrass.w * (0.4 + 1.2 * grassNoise(wp / 2.6 + 7.0));
+  float snow = iGrass.w * (0.4 + 1.2 * nz.z);
   float hb = iGrass.y * (0.45 + 0.9 * k1) * (0.75 + 0.5 * n2) - snow;
   if (hb < 0.02) return vec3(0.0);
   float held = exp(-snow * 6.0);
   float yaw = aBlade.w + ps * 6.2832;
   vec2 f = vec2(cos(yaw), sin(yaw)), p = vec2(-f.y, f.x);
-  // (its own lean, the wilder the more; the wind's bend, a gust's wave running across in its way)
+  // (its own lean, the wilder the more; the wind's bend, its gusts patches of stronger wind (cat's paws) a
+  // few metres across running downwind over the field, not waves in parallel lines)
   vec2 B = f * iGrass.z * (0.15 + 0.85 * k2) * (0.4 + 0.6 * held);
   vec3 wl = transpose(mat3(im)) * uWindL;
   vec2 wd = length(wl.xz) > 1e-4 ? normalize(wl.xz) : vec2(1.0, 0.0);
-  vec2 wF = length(uWindL.xz) > 1e-4 ? normalize(uWindL.xz) : vec2(1.0, 0.0);
-  float ph = dot(wp, wF) * 0.35 - uWindT * 2.2 + k1 * 0.6;
-  float g = 0.5 + 0.5 * sin(ph) * (0.7 + 0.3 * sin(ph * 2.3 + 1.7));
+  float g = smoothstep(0.2, 0.85, grassNoise1(wp / 7.0 - uWindL * (uWindT * 0.6) + k1 * 0.12));
   B += wd * uGrassWind * (0.25 + 0.75 * g) * (0.7 + 0.6 * k2) * held;
   float bl = length(B);
   if (bl > 1.2) B *= 1.2 / bl;
@@ -333,8 +354,9 @@ export class GrassSet {
     const G = this.geo[L], g = new THREE.BufferGeometry();
     g.setAttribute('position', G.position); g.setAttribute('normal', G.normal); g.setAttribute('aBlade', G.aBlade); g.setAttribute('aV', G.aV); g.setIndex(G.index);
     g.setAttribute('iCorner', new THREE.InstancedBufferAttribute(T.corner, 4));
+    g.setAttribute('iBare', new THREE.InstancedBufferAttribute(T.bare, 4));
     g.setAttribute('iGrass', new THREE.InstancedBufferAttribute(T.grass, 4));
-    g.setAttribute('iWave', new THREE.InstancedBufferAttribute(T.wave, 2));
+    g.setAttribute('iWave', new THREE.InstancedBufferAttribute(T.wave, 3));
     g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), size * 0.75 + 2);
     const m = new THREE.InstancedMesh(g, this.mats[L], T.n);
     m.instanceMatrix.array.set(T.mat);
@@ -389,9 +411,10 @@ export class GrassSet {
     if (thick < 0.02) return T;
     // (its ground: the heights at the patches' corners, 5 x 5, as the drawn ground has them: the near
     // field's volume where it's built (sim/nearGround.js), the heightfield's finest mesh beyond)
-    const hg = new Float64Array(25), d = [0, 0, 0], V = new THREE.Vector3();
+    const hg = new Float64Array(25), gC = new Float32Array(25), d = [0, 0, 0], V = new THREE.Vector3();
     for (let a = 0; a < 5; a++) for (let bb = 0; bb < 5; bb++) {
       dirFromFaceUV(face, u0 + du * a / 4, v0 + du * bb / 4, d);
+      gC[a * 5 + bb] = bare(d) ? 0 : 1;
       const g0 = b.groundHeight(V.set(d[0], d[1], d[2]));
       hg[a * 5 + bb] = b.near && b.near.field ? b.floorAt(V.multiplyScalar(R + g0 + 0.3)) : g0;
     }
@@ -432,7 +455,7 @@ export class GrassSet {
     const eu = [0, 0, 0], ev = [0, 0, 0];
     dirFromFaceUV(face, u0 + du, v0 + du * 0.5, eu); dirFromFaceUV(face, u0 + du * 0.5, v0 + du, ev);
     const EU = new THREE.Vector3(eu[0] - dc[0], eu[1] - dc[1], eu[2] - dc[2]), EV = new THREE.Vector3(ev[0] - dc[0], ev[1] - dc[1], ev[2] - dc[2]);
-    const n = PPT * PPT, mat = new Float32Array(n * 16), corner = new Float32Array(n * 4), grass = new Float32Array(n * 4), wave = new Float32Array(n * 2), col = new Float32Array(n * 3);
+    const n = PPT * PPT, mat = new Float32Array(n * 16), corner = new Float32Array(n * 4), grows = new Float32Array(n * 4), grass = new Float32Array(n * 4), wave = new Float32Array(n * 3), col = new Float32Array(n * 3);
     let hsh = fmix32((face * 0x9e3779b1) ^ (i * 0x85ebca6b) ^ (j * 0xc2b2ae35));
     const rnd = () => { hsh = fmix32((hsh + 0x6d2b79f5) >>> 0); return hsh / 4294967296; };
     const M = new THREE.Matrix4(), X = new THREE.Vector3(), Y = new THREE.Vector3(), Z = new THREE.Vector3(), Pp = new THREE.Vector3();
@@ -440,9 +463,10 @@ export class GrassSet {
     for (let a = 0; a < PPT; a++) for (let bb = 0; bb < PPT; bb++) {
       const c00 = hg[a * 5 + bb], c10 = hg[(a + 1) * 5 + bb], c01 = hg[a * 5 + bb + 1], c11 = hg[(a + 1) * 5 + bb + 1], h0 = (c00 + c10 + c01 + c11) / 4;
       dirFromFaceUV(face, u0 + du * (a + 0.5) / PPT, v0 + du * (bb + 0.5) / PPT, d);
-      // (too steep (bare rock), or where it can't grow: this patch only)
+      // (too steep (bare rock), or where it can't grow: at its corners, blended across it (the shader))
       const steep = Math.max(Math.abs(c10 - c00), Math.abs(c11 - c01), Math.abs(c01 - c00), Math.abs(c11 - c10)) / span;
-      if (steep > 0.9 || bare(d)) { rnd(); rnd(); rnd(); continue; }
+      const g00 = gC[a * 5 + bb], g10 = gC[(a + 1) * 5 + bb], g01 = gC[a * 5 + bb + 1], g11 = gC[(a + 1) * 5 + bb + 1];
+      if (steep > 0.9 || g00 + g10 + g01 + g11 === 0) { rnd(); rnd(); rnd(); continue; }
       const kS = share > 0 ? standAt(gen, d, s, share, true).k * (1 - meadowAt(gen, d, h0, this.species)) : 0;
       rnd();
       const dens = thick * (1 - 0.68 * kS) * (this.fern ? 0.6 : 1);
@@ -456,18 +480,19 @@ export class GrassSet {
       M.makeBasis(X.multiplyScalar(hs), Y, Z.multiplyScalar(hs)).setPosition(Pp);
       mat.set(M.elements, q * 16);
       corner[q * 4] = c00 - h0; corner[q * 4 + 1] = c10 - h0; corner[q * 4 + 2] = c01 - h0; corner[q * 4 + 3] = c11 - h0;
+      grows[q * 4] = g00; grows[q * 4 + 1] = g10; grows[q * 4 + 2] = g01; grows[q * 4 + 3] = g11;
       rnd();
       const Hp = H;
       grass[q * 4] = Math.min(1, dens); grass[q * 4 + 1] = Hp; grass[q * 4 + 2] = (this.fern ? 0.7 : 0.12 + 0.45 * Math.min(1, Hp / 1.2)) / Math.max(1, Hp * 0.6); grass[q * 4 + 3] = snowD;
-      const wx = d[0] * R, wz = d[2] * R;
-      wave[q * 2] = wx - 2048 * Math.floor(wx / 2048); wave[q * 2 + 1] = wz - 2048 * Math.floor(wz / 2048);
+      const wx = d[0] * R, wy = d[1] * R, wz = d[2] * R;
+      wave[q * 3] = wx - 2048 * Math.floor(wx / 2048); wave[q * 3 + 1] = wy - 2048 * Math.floor(wy / 2048); wave[q * 3 + 2] = wz - 2048 * Math.floor(wz / 2048);
       rnd();
       const tdr = 0.25 * (0.3 + dryK);
       // (the shade's grass under a stand darker, greener: no sun to dry it)
       for (let cc = 0; cc < 3; cc++) col[q * 3 + cc] = (base[cc] + (dryTip[cc] - base[cc]) * tdr * (1 - kS)) * (1 - 0.25 * kS);
       q++;
     }
-    T.n = q; T.mat = mat.subarray(0, q * 16); T.corner = corner.subarray(0, q * 4); T.grass = grass.subarray(0, q * 4); T.wave = wave.subarray(0, q * 2); T.col = col.subarray(0, q * 3);
+    T.n = q; T.mat = mat.subarray(0, q * 16); T.corner = corner.subarray(0, q * 4); T.bare = grows.subarray(0, q * 4); T.grass = grass.subarray(0, q * 4); T.wave = wave.subarray(0, q * 3); T.col = col.subarray(0, q * 3);
     // (its flowers: an open, moist grassland's most, a fresh burn's a flush of them; a few heads in a patch,
     // over the grass)
     const fl = this.flowerCols.length ? Math.min(0.25, 0.06 * Math.min(1, open * 1.5) * (0.5 + wet) * (1 + 2 * green)) : 0;
