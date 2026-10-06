@@ -430,7 +430,7 @@ void main() {
     // (the air over the pack, which the leads freeze by: its ice keeps the sea's heat from it, worldsim/
     // season.js seasonIce; the open sea's own where the world keeps no year)
     float Tair = uSeason.z > 0.5 ? Tm + seasonIceNow(upF) : tsf.x;
-    vec4 fl = kind < 0.2 ? seaFloes(fp, upF, w, ice, iceC, foot, max(tsf.y - Tair, 0.0), pDay, lead) : vec4(ice, 0.0, 1.0, 0.0);
+    vec4 fl = kind < 0.2 ? seaFloes(pF, upF, w, ice, iceC, foot, max(tsf.y - Tair, 0.0), pDay, lead) : vec4(ice, 0.0, 1.0, 0.0);
     float calm = smoothstep(0.05, 0.6, max(iceC, fl.w));
     nF = normalize(mix(nF, upF, 0.9 * calm)); wr *= 1.0 - 0.8 * calm; foam *= 1.0 - calm;
     // (a falling sheet carries no river's ripples: its own surface, streaked below)

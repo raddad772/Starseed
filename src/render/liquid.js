@@ -313,12 +313,7 @@ float liquidIce(float Tm, float kind, float flow, vec3 upF) {
   return 1.0 - smoothstep(t.y - 4.0, t.y + 4.0, t.x);
 }
 // ---- the sea's ice as floes (gen/liquidice.js reads the same, so where it's drawn is where it bears
-// you). Sea ice breaks along its fractures into plates: cells of a partition of space (each cell's nearest
-// feature point an integer hash of its lattice cell, whole cycles of the 4096 m detail period, the same
-// on every GPU and in JS), the distance to a cell's edge its nearest bisector. The pack's floes ~250 m
-// (FLOE_S[0]); near its edge the waves break them into small ones ~16 m (FLOE_S[1]: the marginal ice
-// zone's, Toyota et al. 2006), the more of them broken the more open the ice; between them leads, the
-// wider the more open (a floe's share of its cell ~ c: its edges in by S/2 (1 - sqrt(c))).
+// you): the pack subdivided, as ice breaks (Dave: "Why not actually subdivide the ice?"): floeOf.
 // How close the pack is here: its temperature's ice (liquidIce), its edge ragged over the 512 m and 64 m
 // tiles (dI.a, dJ.r), the marginal zone where that sum runs from 0.35 to 0.75
 float seaIceCover(float ice, float nA, float nR) {
@@ -328,59 +323,6 @@ uint floeHash(uint x, uint y, uint z, uint s) {
   uint h = (x * 0x8da6b343u) ^ (y * 0xd8163841u) ^ (z * 0xcb1ab31fu) ^ (s * 0x165667b1u);
   h ^= h >> 15u; h *= 0x2c1b3c6du; h ^= h >> 12u; h *= 0x297a2d39u; h ^= h >> 15u;
   return h;
-}
-// lattice cell c's feature point (cells S m across, N to the period): in the middle half of the cell
-vec3 floePoint(vec3 c, float S, float N, uint seed) {
-  vec3 w = mod(c, N);
-  uint h = floeHash(uint(w.x), uint(w.y), uint(w.z), seed);
-  return (c + 0.25 + 0.5 * vec3(float(h & 1023u), float((h >> 10u) & 1023u), float((h >> 20u) & 1023u)) / 1024.0) * S;
-}
-// the floe a lattice cell's in: its index moved on by 0 or 1 along each axis (its own hash), halved: a
-// floe of a few cells, its outline wandering (by fixed pairs of cells, a floe was near square). Whole
-// numbers only, so every GPU and JS agree on it everywhere it's asked (from the cell's jittered point, its
-// floor came out one way for the pixel's own cell and the other for a neighbour's, the compiler rounding
-// each call its own way: a lead's middle read as inside a floe, a dashed line of ice)
-vec3 floeGroup(vec3 c, float N, uint seed) {
-  vec3 w = mod(c, N);
-  uint h = floeHash(uint(w.x), uint(w.y), uint(w.z), seed ^ 0x5bd1u);
-  return floor((c + vec3(float(h & 1u), float((h >> 1u) & 1u), float((h >> 2u) & 1u))) * 0.5);
-}
-// the partition of cells S m across (N to the period) at p, its cells merged in groups (those whose
-// feature points fall in one cube 2S across: a floe of a few cells, irregular, its sizes spread): the
-// group's hash (id), how far p is in from the group's edge (e, m: the nearest bisector with a cell of
-// another group) and the group's middle (gc)
-void floeCell(vec3 p, vec3 up, float S, float N, uint seed, out uint id, out float e, out vec3 gc, out uint lid) {
-  // (its nearest feature point, then the edges round that point's own cell. Measured with up stretched
-  // three times: the cells are a 3D lattice's and the sea a slice through it, and a cell whose point lay
-  // well above or below the slice touched it only in slivers along two floes' boundary, regular as the
-  // lattice is, each a floe of its own: a dashed line of ice down a lead's middle)
-  vec3 g = floor(p / S), ca = g;
-  float d1 = 1e20;
-  for (int k = 0; k < 27; k++) {
-    vec3 c = g + vec3(float(k % 3), float((k / 3) % 3), float(k / 9)) - 1.0, q = floePoint(c, S, N, seed) - p;
-    q += 2.0 * dot(q, up) * up;
-    float d = dot(q, q);
-    if (d < d1) { d1 = d; ca = c; }
-  }
-  vec3 a = floePoint(ca, S, N, seed) - p, ga = floeGroup(ca, N, seed), wa = mod(ga, 0.5 * N);
-  a += 2.0 * dot(a, up) * up;
-  id = floeHash(uint(wa.x), uint(wa.y), uint(wa.z), seed ^ 0x9e37u);
-  gc = (ga + 0.5) * 2.0 * S;
-  e = 1e20;
-  vec3 gn = ga;
-  for (int k = 0; k < 27; k++) {
-    if (k == 13) continue;
-    vec3 cb = ca + vec3(float(k % 3), float((k / 3) % 3), float(k / 9)) - 1.0, gb = floeGroup(cb, N, seed);
-    if (gb == ga) continue;
-    vec3 b = floePoint(cb, S, N, seed) - p;
-    b += 2.0 * dot(b, up) * up;
-    // (p at the origin: its distance to the two points' bisector)
-    float eb = 0.5 * (dot(b, b) - dot(a, a)) / length(a - b);
-    if (eb < e) { e = eb; gn = gb; }
-  }
-  // (the lead along that edge: the two floes either side of it, the same from both)
-  vec3 wn = mod(gn, 0.5 * N);
-  lid = id ^ floeHash(uint(wn.x), uint(wn.y), uint(wn.z), seed ^ 0x9e37u);
 }
 vec4 tri0(vec3 p, vec3 w, float period);
 vec4 tri(vec3 p, vec3 w, float period);
@@ -393,31 +335,128 @@ vec2 leadIce(uint lid, float frz, float pDay) {
   float h = frz > 0.0 ? 1.33 * pow(frz * age, 0.58) : 0.0;
   return vec2(h, (1.0 - exp(-pDay * age / 12.0)) * smoothstep(3.0, 8.0, h));
 }
-// how much of a pixel foot m across is floe, its middle e m in from the floe's edge and its lead g m wide
-// either side of that edge: the pixel's span less the lead's water in it (box-filtered: a lead narrower
-// than a pixel, a closed pack's metre or so seen from far off, a faint line, not broken into dashes by
-// each pixel's middle falling in it or not)
-float floeCover(float e, float g, float foot) {
-  float f = max(foot, 0.02);
-  return 1.0 - clamp((min(g, e + 0.5 * f) - max(-g, e - 0.5 * f)) / f, 0.0, 1.0);
+// a lead's half width (m): its crack's own opening (its hash), ~3% of the piece it parted (up to a plate's
+// ~2 km), the wider the more open the pack (c). A closed pack's leads too: the cover counts their young
+// ice as ice, and they freeze over by their age (leadIce): leads and young ice a tenth or so of a winter
+// pack. The widest ~300 m
+float leadHalf(uint cid, float c, float s) {
+  return min(150.0, 0.03 * min(s, 2048.0) * (0.2 + 1.6 * float(cid & 255u) / 256.0) * (1.0 + 8.0 * (1.0 - sqrt(c))));
 }
-// a floe group's cover (seaIceCover at its middle), whether it's there (its share of the pack's floes
-// there), broken (by the waves, the more of the pack the more open the ice) and its leads' half width
-// (its share of its cells): (c, there, broken, g)
-vec4 floeState(uint id, vec3 gc, vec3 w, float ice, float S) {
-  float c = seaIceCover(ice, tri0(gc, w, 512.0).a, tri0(gc, w, 64.0).r), pres = min(1.0, 1.5 * c), cc = c / max(pres, 1e-3);
-  float r1 = float(id & 65535u) / 65536.0, r2 = float(id >> 16u) / 65536.0;
-  return vec4(c, c > 0.0 && r1 <= pres ? 1.0 : 0.0, r2 < 1.0 - smoothstep(0.4, 0.9, c) ? 1.0 : 0.0, max(S / 400.0, 0.5 * S * (1.0 - sqrt(cc))));
+// how close the pack is at a point m of it (seaIceCover by its tiles there: one value for every pixel
+// that asks of m)
+float pieceCover(vec3 m, float ice) {
+  vec3 u = normalize(m), wm = pow(abs(u), vec3(4.0));
+  wm /= wm.x + wm.y + wm.z;
+  return seaIceCover(ice, tri0(m, wm, 512.0).a, tri0(m, wm, 64.0).r);
 }
-// the sea's ice at p (body-fixed, the detail period's; w its triplanar weights), its temperature's ice
-// (liquidIce) and the cover here (cPix: seaIceCover), a pixel foot m across: x how much of the pixel is
-// ice (0..1), y its rim (the floe's side and wet edge showing), z its age (0 a young floe, grey, 1 an old
-// one under snow), w its floe's cover. The pack's floes (cells ~256 m, merged a few to a floe), each as
-// close as the pack is at its middle, so their edges run straight and their leads are one width along
-// them; a broken one's pieces (~16 m, merged likewise) each its floe's whose middle it lies in, so they
-// spill across its old outline whole, further apart toward its edge where the waves work it. frz: how far
-// under the sea's freezing point it is now (C), pDay: its winter's snowfall (mm of water a day); lead: the
-// ice in the leads between whole floes (leadIce: cm, snow), 0 where the gaps stay open
+// (the lead along a cube face's edge: the two faces' hash)
+uint faceLead(uint face, int axis, bool neg) {
+  uint of = uint(axis * 2) + (neg ? 1u : 0u);
+  return floeHash(min(face, of), max(face, of), 0x4f1du, 0x2b7cu);
+}
+const int POLY_MAX = 12;
+// the piece of the pack at p (body-fixed m), the sea's temperature's ice there: its hash (id), how far p
+// is in from its edge less the lead there (e, m: < 0 in the lead), that lead's hash (lid), the pack's
+// cover at it (c), its size (m) and middle, whether it's there (an open pack's missing pieces: open
+// water). The pack subdivided (gen/liquidice.js floeOf, the same sums: its notes): each cube face in its
+// own coordinates (a great circle a straight line), its square split by a crack through near the piece's
+// centroid across its long axis, and each half again, every piece an exact convex polygon whose edges
+// keep their cracks' hashes and leads' half widths
+void floeOf(vec3 p, float ice, out uint id, out float e, out uint lid, out float c, out float size, out vec3 mid, out bool there) {
+  float R = length(p);
+  vec3 a = abs(p);
+  int ax = a.x >= a.y && a.x >= a.z ? 0 : a.y >= a.z ? 1 : 2, b = (ax + 1) % 3, d = (ax + 2) % 3;
+  bool neg = p[ax] < 0.0;
+  float sg = neg ? -1.0 : 1.0, pu = p[b] / p[ax], pv = p[d] / p[ax];
+  uint face = uint(ax * 2) + (neg ? 1u : 0u);
+  vec2 V[POLY_MAX];
+  uint EI[POLY_MAX];
+  float ES[POLY_MAX];
+  V[0] = vec2(-1.0, -1.0); V[1] = vec2(1.0, -1.0); V[2] = vec2(1.0, 1.0); V[3] = vec2(-1.0, 1.0);
+  EI[0] = faceLead(face, d, !neg); EI[1] = faceLead(face, b, neg); EI[2] = faceLead(face, d, neg); EI[3] = faceLead(face, b, !neg);
+  for (int i = 0; i < 4; i++) ES[i] = leadHalf(EI[i], 1.0, 4096.0);
+  int n = 4;
+  id = floeHash(face, 0x51ceu, 0u, 0x3a7bu);
+  c = 1.0;
+  float s = 0.0;
+  vec3 m = p;
+  for (int lvl = 0; lvl < 32; lvl++) {
+    // (its centroid and area, from its first vertex; its long axis from its vertices' spread)
+    vec2 v0 = V[0], cs = vec2(0.0);
+    float A = 0.0;
+    for (int i = 0; i < POLY_MAX; i++) {
+      if (i >= n) break;
+      vec2 xi = V[i] - v0, xj = V[(i + 1) % n] - v0;
+      float w = xi.x * xj.y - xj.x * xi.y;
+      A += w; cs += (xi + xj) * w;
+    }
+    A *= 0.5;
+    if (abs(A) < 1e-20) break;
+    vec2 cc = v0 + cs / (6.0 * A);
+    float sxx = 0.0, syy = 0.0, sxy = 0.0;
+    for (int i = 0; i < POLY_MAX; i++) {
+      if (i >= n) break;
+      vec2 x = V[i] - cc;
+      sxx += x.x * x.x; syy += x.y * x.y; sxy += x.x * x.y;
+    }
+    // (a square has no long axis: atan(0, 0) is no number on a GPU)
+    float th = abs(sxy) + abs(sxx - syy) > 1e-30 * (sxx + syy) ? 0.5 * atan(2.0 * sxy, sxx - syy) : 0.0, ext = sqrt((sxx + syy) / float(n));
+    vec3 mm;
+    mm[ax] = sg; mm[b] = sg * cc.x; mm[d] = sg * cc.y;
+    m = normalize(mm) * R;
+    s = R * sqrt(abs(A)) / pow(1.0 + dot(cc, cc), 0.75);
+    // (its crack: across its long axis, give or take 30 degrees, off its middle along it)
+    uint h = floeHash(id, uint(lvl), 0x51ceu, 0x3a7bu);
+    float tc = th + 1.5708 + float((h >> 8u) & 1023u) / 1023.0 * 1.0472 - 0.5236, off = (float((h >> 18u) & 255u) / 255.0 - 0.5) * 0.6 * ext;
+    vec2 qq = cc + vec2(cos(th), sin(th)) * off;
+    float KA = -sin(tc), KB = cos(tc), KC = -(KA * qq.x + KB * qq.y);
+    if (s < 4096.0) {
+      c = pieceCover(m, ice);
+      if (s < 12.0 + 288.0 * smoothstep(0.4, 0.95, c) || float(h & 255u) < 51.2) break;
+    }
+    if (n >= POLY_MAX - 1) break;
+    float side = KA * pu + KB * pv + KC >= 0.0 ? 1.0 : -1.0;
+    uint cid = floeHash(id, uint(lvl), 0x7a11u, 0x1f3du);
+    float g = leadHalf(cid, c, s);
+    vec2 W[POLY_MAX];
+    uint WI[POLY_MAX];
+    float WS[POLY_MAX];
+    int k = 0;
+    for (int i = 0; i < POLY_MAX; i++) {
+      if (i >= n || k >= POLY_MAX) break;
+      vec2 xi = V[i], xj = V[(i + 1) % n];
+      float di = side * (KA * xi.x + KB * xi.y + KC), dj = side * (KA * xj.x + KB * xj.y + KC);
+      if (di >= 0.0) { W[k] = xi; WI[k] = EI[i]; WS[k] = ES[i]; k++; }
+      if ((di >= 0.0) != (dj >= 0.0) && k < POLY_MAX) {
+        W[k] = xi + (xj - xi) * (di / (di - dj));
+        // (entering the kept side: this edge the old one's; leaving: the crack's)
+        if (di >= 0.0) { WI[k] = cid; WS[k] = g; } else { WI[k] = EI[i]; WS[k] = ES[i]; }
+        k++;
+      }
+    }
+    for (int i = 0; i < POLY_MAX; i++) { V[i] = W[i]; EI[i] = WI[i]; ES[i] = WS[i]; }
+    n = k;
+    id = floeHash(id, side > 0.0 ? 1u : 0u, uint(lvl), 0x9e37u);
+  }
+  // (in from its edge: the nearest of its edges' planes, less that edge's lead)
+  e = 1e20; lid = 0u;
+  for (int i = 0; i < POLY_MAX; i++) {
+    if (i >= n) break;
+    vec2 dv = V[(i + 1) % n] - V[i];
+    if (dot(dv, dv) < 1e-24) continue;
+    vec3 N3;
+    N3[b] = -dv.y; N3[d] = dv.x; N3[ax] = dv.y * V[i].x - dv.x * V[i].y;
+    float ek = abs(dot(p, normalize(N3))) - ES[i];
+    if (ek < e) { e = ek; lid = EI[i]; }
+  }
+  size = s; mid = m;
+  there = c > 0.0 && float(id & 65535u) / 65536.0 <= min(1.0, 1.5 * c);
+}
+// the sea's ice at p (body-fixed m; w its triplanar weights), its temperature's ice (liquidIce) and the
+// cover here (cPix: seaIceCover), a pixel foot m across: x how much of the pixel is ice (0..1), y its rim
+// (the floe's side and wet edge showing), z its age (0 a young piece, grey, 1 an old floe under snow), w the
+// pack's cover at its piece. frz: how far under the sea's freezing point the air over it is now (C), pDay:
+// its winter's snowfall (mm of water a day); lead: the ice in the lead there (leadIce: cm, snow)
 vec4 seaFloes(vec3 p, vec3 up, vec3 w, float ice, float cPix, float foot, float frz, float pDay, out vec2 lead) {
   // (a lead of the median age: what its leads come to from far off)
   vec2 leadFar = leadIce(32768u, frz, pDay);
@@ -426,34 +465,21 @@ vec4 seaFloes(vec3 p, vec3 up, vec3 w, float ice, float cPix, float foot, float 
   // (a pixel 64 m across or more sees the share of it there only: no floes to find, the far fade's whole)
   if (foot >= 64.0) { lead = leadFar; return vec4(cPix, 0.0, 0.7, cPix); }
   uint id, lid;
-  float e, fw = max(foot, 0.03);
-  vec3 gc;
-  floeCell(p, up, 256.0, 16.0, 0x51ceu, id, e, gc, lid);
+  float e, c, size;
+  vec3 mid;
+  bool there;
+  floeOf(p, ice, id, e, lid, c, size, mid, there);
   // (its edges ragged at a few metres and less, not drawn with a ruler: gen/liquidice.js the same)
   e += (tri(p, w, 8.0).r - 0.5) * 1.6 + (tri(p, w, 2.0).a - 0.5) * 0.5;
-  vec4 F = floeState(id, gc, w, ice, 256.0);
-  if (F.y > 0.0 && F.z < 0.5) lead = leadIce(lid, frz, pDay);
-  float x = 0.0, rim = 0.0, age = 0.55 + 0.45 * float(id >> 16u) / 65536.0, cf = F.x;
-  if (F.y > 0.0 && F.z < 0.5) { x = floeCover(e, F.w, fw); rim = 1.0 - smoothstep(F.w, F.w + 0.8 + fw, e); }
-  if (F.y > 0.0 && F.z > 0.5 && foot >= 1.0) { x = F.x / max(min(1.0, 1.5 * F.x), 1e-3); age = 0.15; }
-  if (foot < 4.0 && (F.y < 0.5 || F.z > 0.5 || e < F.w + 16.0)) {
-    uint id2, oid, lid2, olid;
-    float e2, oe;
-    vec3 gc2, ogc;
-    floeCell(p, up, 16.0, 256.0, 0x7a11u, id2, e2, gc2, lid2);
-    floeCell(gc2, up, 256.0, 16.0, 0x51ceu, oid, oe, ogc, olid);
-    vec4 O = floeState(oid, ogc, w, ice, 256.0);
-    if (O.y > 0.0 && O.z > 0.5) {
-      float g2 = max(0.15, 8.0 * (1.0 - sqrt(O.x / max(min(1.0, 1.5 * O.x), 1e-3)))) + 3.0 * (1.0 - smoothstep(0.0, 40.0, oe));
-      float x2 = mix(floeCover(e2, g2, fw), x, smoothstep(1.0, 4.0, foot));
-      if (x2 > x) { x = x2; rim = 1.0 - smoothstep(g2, g2 + 0.4 + fw, e2); age = 0.3 * float(id2 & 65535u) / 65536.0; cf = O.x; }
-    }
-  }
+  float fw = max(foot, 0.03), x = 0.0, rim = 0.0;
+  float age = (0.3 + 0.7 * smoothstep(16.0, 200.0, size)) * (0.6 + 0.4 * float(id >> 16u) / 65536.0);
+  // (box-filtered against its lead: a lead narrower than a pixel a faint line, not dashes)
+  if (there) { x = clamp(e / fw + 0.5, 0.0, 1.0); rim = 1.0 - smoothstep(0.0, 0.8 + fw, e); lead = leadIce(lid, frz, pDay); }
   // (from far off, the share of it there, of a mean age, its rims too fine to see: from 64 m pixels on,
   // the early way out's)
   float kFar = smoothstep(16.0, 64.0, foot);
   x = mix(x, cPix, kFar);
   lead = mix(lead, leadFar, kFar);
-  return vec4(x, rim * x * (1.0 - kFar), mix(age, 0.7, kFar), mix(cf, cPix, kFar));
+  return vec4(x, rim * x * (1.0 - kFar), mix(age, 0.7, kFar), mix(c, cPix, kFar));
 }
 `;

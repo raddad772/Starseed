@@ -454,8 +454,24 @@ rivers that are straighter where they should be?"):**
   sea's); winter air over the frozen sea -15 to -33 C in the north (open sea -1 to -23), the Southern
   Ocean's hardly colder (its open band rules its air). The CPU twin the same: a lead bears you from 10 cm
   of ice (was: every lead in a closed pack). SOL Earth 75 N polar twilight: thin grey leads; 56.9 N 147
-  near the edge (its sea not freezing at the climate's scale): open, dark. Still flat paint: the floes as
-  geometry next (Dave: "Why aren't the leads real geometry").
+  near the edge (its sea not freezing at the climate's scale): open, dark.
+- **The pack subdivided** (Dave: "Why not actually subdivide the ice? Why do inside outside grid sampling
+  that will just lead to a grid?"): the 3D-lattice cells are gone. Each cube face in its own coordinates
+  (u, v: a central projection, so a great circle is a straight line) starts as its square; each piece is
+  split by a crack through near its centroid (off along its length by its hash), across its long axis
+  (its vertices' spread) give or take 30 degrees, and each half again: every piece an exact convex
+  polygon (gen/liquidice.js floeOf and liquid.js floeOf the same sums, clipped level by level, <= 12
+  vertices). Stops once small enough (a close pack's ~300 m, an open one's ~12 m) or by chance below
+  ~4 km (a fifth a level: many small, few big). Each edge keeps its crack's hash and its lead's half
+  width, opened as it cracked: ~3% of the piece it parted (x0.2..1.8 by hash), wider the more open the
+  pack (x(1 + 8 (1 - sqrt c))): a closed pack's leads 5-60 m too, its young ice counted as ice and frozen
+  over by age (leadIce). A pixel's piece: its face's square clipped down the same path (~28 levels);
+  its e the nearest edge plane less that edge's lead. Tried: a crack through an estimated middle (q +-
+  n s/4): the estimate drifted off the real piece, cracks missed it: slivers and strips (fmid shots);
+  lead widths by the cover at each point along a crack: combs. GPU: atan(0, 0) (a square's long axis) is
+  NaN on the GPU (0 in JS): guarded in both. tools/floemap.mjs BY_FLOE=1 colours each floe. SOL Earth
+  56.5 N 148 from 300 m: a fractured pack, leads young and dark near its edge. Next: the floes as slabs
+  (Dave: "Why aren't the leads real geometry"), built straight from these polygons.
 - **Seasons on the land: snow through the year** (Dave: "see seasonal changes"; "refine and add"; not
   living things yet). worldsim/season.js: each world's year by climate cell, its temperature's first
   harmonic about the mean (a1 cos L + b1 sin L, L the solar longitude from the northern spring equinox,

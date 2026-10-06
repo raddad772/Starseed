@@ -11,17 +11,21 @@ export const SEA_SALT = { water: -1.8 };   // (the sea's freezing point under th
 const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 const _col = [0, 0, 0], _mat = new Float64Array(8), _p = [0, 0, 0], _a = [0, 0, 0, 0], _b = [0, 0, 0, 0], _yr = [0, 0, 0], _yi = [0, 0, 0];
 
-// gen: the world's terrain; s: its sample at d (unit, planet-fixed) where it holds liquid; sinSun:
-// the sun's latitude now (sin, the planet's frame); L: where the sun stands in the year (rad: universe.js
-// solarLongitude), for a world that keeps its year (worldsim/season.js)
-export function frozenNow(gen, s, d, sinSun, L = 0) {
+// the liquid at d now (gen: the world's terrain; s: its sample at d, unit and planet-fixed, where it holds
+// liquid; sinSun: the sun's latitude now, sin, the planet's frame; L: where the sun stands in the year,
+// rad, universe.js solarLongitude, for a world that keeps its year: worldsim/season.js) into o: all (frozen
+// the year round: the shading's own ice), kind, Tm (its year's mean, C), Ts (now), Tf (its freezing point),
+// ice (0..1: liquid.js liquidIce), Tair (the air over a frozen sea now: its leads freeze by it)
+export function liquidNow(gen, s, d, sinSun, L, o) {
   gen.shade(s, 0.05, _col, _mat, d);
-  if (!(_mat[4] > 0)) return true;   // (frozen the year round: the shading's own ice)
+  o.all = !(_mat[4] > 0);
+  if (o.all) return o;
   const kind = _mat[0], Tm = _mat[1] * 120 - 60, river = kind > 0.55 && kind < 0.85, flow = river ? _mat[2] : 0;
   let Ts;
   // (its swing there now, liquid.js liquidIce's: the season map's texels, here the climate grid's own
   // blend of the same numbers)
-  if (gen.snap && snowsBySeason(gen.p) && gen.snap.season(d[0], d[1], d[2], _yr)) {
+  const yr = gen.snap && snowsBySeason(gen.p) && gen.snap.season(d[0], d[1], d[2], _yr);
+  if (yr) {
     const follow = kind < 0.2 ? 1 : kind < 0.55 ? 0.8 : kind < 0.85 ? 0.7 : 1;
     Ts = Tm + follow * (_yr[0] * dm.cos(L) + _yr[1] * dm.sin(L));
   } else {
@@ -29,15 +33,54 @@ export function frozenNow(gen, s, d, sinSun, L = 0) {
     Ts = Tm + 70 * sinSun * d[1] * follow;
   }
   const Tf = (kind < 0.2 ? SEA_SALT[gen.p.liquid] || 0 : 0) - 3 * flow;
-  const ice = 1 - smooth(Tf - 4, Tf + 4, Ts);
-  if (ice > 0 && kind < 0.2) {
+  o.kind = kind; o.Tm = Tm; o.Ts = Ts; o.Tf = Tf; o.ice = 1 - smooth(Tf - 4, Tf + 4, Ts);
+  // (the air over the pack: liquid.js seaFloes' frz the same)
+  o.Tair = yr && gen.snap.seasonIce(d[0], d[1], d[2], _yi) ? Tm + _yi[2] + _yi[0] * dm.cos(L) + _yi[1] * dm.sin(L) : Ts;
+  return o;
+}
+const _ln = {};
+export function frozenNow(gen, s, d, sinSun, L = 0) {
+  const q = liquidNow(gen, s, d, sinSun, L, _ln);
+  if (q.all) return true;
+  if (q.ice > 0 && q.kind < 0.2) {
     const r = gen.R + Math.max(0, s[S_H]);
     _p[0] = d[0] * r; _p[1] = d[1] * r; _p[2] = d[2] * r;
-    // (the air over the pack, which its leads freeze by: liquid.js seaFloes' frz the same)
-    const Tair = gen.snap && snowsBySeason(gen.p) && gen.snap.seasonIce(d[0], d[1], d[2], _yi) ? Tm + _yi[2] + _yi[0] * dm.cos(L) + _yi[1] * dm.sin(L) : Ts;
-    return seaFloe(_p, d, ice, Math.max(Tf - Tair, 0));
+    return seaFloe(_p, d, q.ice, Math.max(q.Tf - q.Tair, 0));
   }
-  return ice > 0.5;
+  return q.ice > 0.5;
+}
+
+// the pack's ice at d now, its season's (gen; L as liquidNow's; Tm its sea's year's mean, C) into o: hi (m:
+// the floes' ice, first-year ice grown by the freezing degree days since freeze-up of the air over it,
+// 1.33 FDD^0.58 cm (Lebedev 1938), wasting through the thaw; where it never thaws old ice, 3 m) and hs (m:
+// the snow on it, the winter's fall so far at settled snow's density)
+export function packIce(gen, d, L, Tm, o) {
+  o.hi = 0.5; o.hs = 0.05;
+  if (!gen.snap || !gen.snap.seasonIce(d[0], d[1], d[2], _yi) || !gen.snap.season(d[0], d[1], d[2], _yr)) return o;
+  const Y = gen.snap.s.yearDays || 365, Tf = -1.8, Tb = Tm + _yi[2], A = Math.sqrt(_yi[0] * _yi[0] + _yi[1] * _yi[1]);
+  const fall = Math.max(0, _yr[2]) * 12 / 300;   // (m of settled snow a year at the cold half's rate)
+  if (Tb - A >= Tf) { o.hi = 0; o.hs = 0; return o; }
+  if (Tb + A <= Tf) { o.hi = 3; o.hs = Math.min(0.5, fall); return o; }
+  const th = dm.acos((Tf - Tb) / A), Yr = Y / dm.TWO_PI;
+  let x = L - dm.atan2(_yi[1], _yi[0]);
+  x -= dm.TWO_PI * Math.floor((x + dm.PI) / dm.TWO_PI);
+  // (freezing from x = th round to 2 pi - th; the degree days to angle a past freeze-up)
+  const fdd = (a) => Math.max(0, Yr * ((Tf - Tb) * a - A * (dm.sin(th + a) - dm.sin(th))));
+  const cm = (f) => Math.min(300, 1.33 * dm.pow(f, 0.58));
+  if (x >= th || x <= -th) {
+    const a = x >= th ? x - th : x + dm.TWO_PI - th;
+    o.hi = cm(fdd(a)) / 100; o.hs = fall * a / dm.TWO_PI;
+  } else {
+    o.hi = cm(fdd(dm.TWO_PI - 2 * th)) / 100 * (1 - (x + th) / (2 * th)); o.hs = 0;
+  }
+  return o;
+}
+// a floe's top above the water (m; floeAt's id, piece): its ice (the pack's, more or less by the floe:
+// older and younger ones) floating at Archimedes' freeboard (sea water 1025, ice 917 kg/m3) less its
+// snow's weight (300 kg/m3), its snow on it
+export function floeTop(pk, id, piece) {
+  const hi = pk.hi * (0.7 + 0.6 * ((id >>> 8) & 255) / 255) * (piece ? 0.6 : 1);
+  return Math.max(0, hi * (1025 - 917) / 1025 - pk.hs * 300 / 1025) + pk.hs;
 }
 
 // ---- the sea's floes, as liquid.js seaFloes draws them (its integer hash and cells, so the floe you see
@@ -48,94 +91,166 @@ const floeHash = (x, y, z, sd) => {
   h = (h ^ (h >>> 12)) >>> 0; h = Math.imul(h, 0x297a2d39) >>> 0;
   return (h ^ (h >>> 15)) >>> 0;
 };
-const _A = { id: 0, e: 0, gc: [0, 0, 0], lid: 0 }, _B = { id: 0, e: 0, gc: [0, 0, 0], lid: 0 }, _C = { id: 0, e: 0, gc: [0, 0, 0], lid: 0 };
-const _F = { c: 0, there: false, broken: false, g: 0, cc: 0 }, _O = { c: 0, there: false, broken: false, g: 0, cc: 0 };
-const wrap = (i, m) => ((i % m) + m) % m;
 // how close the pack is (liquid.js seaIceCover) at p (d its way), its temperature's ice
 const seaIceCover = (ice, p, d) => { triDetail(p, d, 512, _a); triDetail(p, d, 64, _b); return smooth(0.35, 0.75, ice + (_a[3] - 0.5) * 0.9 + (_b[0] - 0.5) * 0.35) * smooth(0, 0.15, ice); };
-// the partition of cells S m across (N to the 4096 m period) at p, merged in groups (liquid.js floeCell):
-// into o the group's hash (id), how far p is in from its edge (e, m) and its middle (gc)
-const _fp = [0, 0, 0];
-// lattice cell (cx, cy, cz)'s feature point into o (liquid.js floePoint: the middle half of the cell)
-function floePoint(cx, cy, cz, S, N, sd, o) {
-  const h = floeHash(wrap(cx, N), wrap(cy, N), wrap(cz, N), sd);
-  o[0] = (cx + 0.25 + 0.5 * (h & 1023) / 1024) * S; o[1] = (cy + 0.25 + 0.5 * ((h >>> 10) & 1023) / 1024) * S; o[2] = (cz + 0.25 + 0.5 * ((h >>> 20) & 1023) / 1024) * S;
-  return o;
-}
-const _gq = [0, 0, 0];
-// the floe a lattice cell's in (liquid.js floeGroup): its index moved on by 0 or 1 along each axis, halved
-function floeGroup(cx, cy, cz, N, sd, o) {
-  const h = floeHash(wrap(cx, N), wrap(cy, N), wrap(cz, N), sd ^ 0x5bd1);
-  o[0] = Math.floor((cx + (h & 1)) / 2); o[1] = Math.floor((cy + ((h >>> 1) & 1)) / 2); o[2] = Math.floor((cz + ((h >>> 2) & 1)) / 2);
-  return o;
-}
-const _q = [0, 0, 0], _qa = [0, 0, 0];
-// q (from p) with up stretched three times (liquid.js floeCell)
-const stretch = (q, up) => { const k = 2 * (q[0] * up[0] + q[1] * up[1] + q[2] * up[2]); q[0] += k * up[0]; q[1] += k * up[1]; q[2] += k * up[2]; return q; };
-function floeCell(p, up, S, N, sd, o) {
-  const gx = Math.floor(p[0] / S), gy = Math.floor(p[1] / S), gz = Math.floor(p[2] / S);
-  let d1 = Infinity, ax0 = gx, ay0 = gy, az0 = gz;
-  for (let k = 0; k < 27; k++) {
-    const cx = gx + (k % 3) - 1, cy = gy + (Math.floor(k / 3) % 3) - 1, cz = gz + Math.floor(k / 9) - 1;
-    floePoint(cx, cy, cz, S, N, sd, _fp);
-    _q[0] = _fp[0] - p[0]; _q[1] = _fp[1] - p[1]; _q[2] = _fp[2] - p[2]; stretch(_q, up);
-    const d = _q[0] * _q[0] + _q[1] * _q[1] + _q[2] * _q[2];
-    if (d < d1) { d1 = d; ax0 = cx; ay0 = cy; az0 = cz; }
-  }
-  floePoint(ax0, ay0, az0, S, N, sd, _fp);
-  _qa[0] = _fp[0] - p[0]; _qa[1] = _fp[1] - p[1]; _qa[2] = _fp[2] - p[2]; stretch(_qa, up);
-  const aa = _qa[0] * _qa[0] + _qa[1] * _qa[1] + _qa[2] * _qa[2];
-  floeGroup(ax0, ay0, az0, N, sd, _gq);
-  const qx = _gq[0], qy = _gq[1], qz = _gq[2], S2 = 2 * S;
-  o.id = floeHash(wrap(qx, N / 2), wrap(qy, N / 2), wrap(qz, N / 2), sd ^ 0x9e37);
-  o.gc[0] = (qx + 0.5) * S2; o.gc[1] = (qy + 0.5) * S2; o.gc[2] = (qz + 0.5) * S2;
-  let e = Infinity, nx = qx, ny = qy, nz = qz;
-  for (let k = 0; k < 27; k++) {
-    if (k === 13) continue;
-    const cx = ax0 + (k % 3) - 1, cy = ay0 + (Math.floor(k / 3) % 3) - 1, cz = az0 + Math.floor(k / 9) - 1;
-    floeGroup(cx, cy, cz, N, sd, _gq);
-    if (_gq[0] === qx && _gq[1] === qy && _gq[2] === qz) continue;
-    floePoint(cx, cy, cz, S, N, sd, _fp);
-    _q[0] = _fp[0] - p[0]; _q[1] = _fp[1] - p[1]; _q[2] = _fp[2] - p[2]; stretch(_q, up);
-    const bb = _q[0] * _q[0] + _q[1] * _q[1] + _q[2] * _q[2];
-    const eb = 0.5 * (bb - aa) / Math.sqrt((_qa[0] - _q[0]) ** 2 + (_qa[1] - _q[1]) ** 2 + (_qa[2] - _q[2]) ** 2);
-    if (eb < e) { e = eb; nx = _gq[0]; ny = _gq[1]; nz = _gq[2]; }
-  }
-  o.e = e;
-  // (the lead along that edge: its two floes', the same from both: liquid.js floeCell)
-  o.lid = (o.id ^ floeHash(wrap(nx, N / 2), wrap(ny, N / 2), wrap(nz, N / 2), sd ^ 0x9e37)) >>> 0;
-  return o;
-}
 // a lead's ice (cm) frz C under the freezing point, by its age from its floes' hash (liquid.js leadIce)
 const leadIceH = (lid, frz) => frz > 0 ? 1.33 * dm.pow(frz * -2 * dm.log(((lid & 65535) + 0.5) / 65536), 0.58) : 0;
 // (thin ice bears a walker from ~10 cm)
 const LEAD_BEARS = 10;
 const _j = [0, 0, 0, 0], _k = [0, 0, 0, 0];
-// a floe group's state (liquid.js floeState): its cover, whether it's there, broken, its leads' half width
-function floeState(id, gc, d, ice, S, o) {
-  const c = seaIceCover(ice, gc, d), pres = Math.min(1, 1.5 * c), cc = c / Math.max(pres, 1e-3);
-  o.c = c; o.cc = cc; o.there = c > 0 && (id & 65535) / 65536 <= pres; o.broken = (id >>> 16) / 65536 < 1 - smooth(0.4, 0.9, c);
-  o.g = Math.max(S / 400, 0.5 * S * (1 - Math.sqrt(cc)));
+// a lead's half width (liquid.js leadHalf) and how close the pack is at a point m of it (pieceCover)
+const leadHalf = (cid, c, s) => Math.min(150, 0.03 * Math.min(s, 2048) * (0.2 + 1.6 * (cid & 255) / 256) * (1 + 8 * (1 - Math.sqrt(c))));
+const _u = [0, 0, 0], _pr = [0, 0, 0];
+const pieceCover = (m, ice) => { const l = Math.sqrt(m[0] * m[0] + m[1] * m[1] + m[2] * m[2]); _u[0] = m[0] / l; _u[1] = m[1] / l; _u[2] = m[2] / l; return seaIceCover(ice, m, _u); };
+
+// ---- the pack subdivided (Dave: "Why not actually subdivide the ice?"; liquid.js floeOf the same sums).
+// Each cube face of the world in its own coordinates (u, v: the other two over its own, a central
+// projection: a great circle a straight line), the face's square split by a crack and each half split
+// again, every piece an exact convex polygon. A crack: a line through near the piece's middle (its
+// centroid, off along its length by its hash), across its length (its vertices' long axis) give or take
+// 30 degrees: pieces stay compact, as a floe breaks across. Splitting stops once a piece is small enough
+// (a close pack's ~300 m, an open one's ~12 m: the waves break it near its edge, Toyota et al. 2006) or
+// by chance below ~4 km (a fifth a level: sizes spread, many small, few big). Each edge keeps the crack
+// it came from: its hash, and its lead's half width, opened as the crack was (the piece it parted: its
+// size and the pack's cover at its middle), the same all along it and from both sides.
+const nrm3 = (v, k = 1) => { const l = Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]); v[0] *= k / l; v[1] *= k / l; v[2] *= k / l; return v; };
+export const POLY_MAX = 12;
+// the face p's on (o.ax its axis, o.sg its sign, o.face its index) and p's (u, v) on it
+export function faceUV(p, o) {
+  const A0 = Math.abs(p[0]), A1 = Math.abs(p[1]), A2 = Math.abs(p[2]);
+  const ax = A0 >= A1 && A0 >= A2 ? 0 : A1 >= A2 ? 1 : 2, b = (ax + 1) % 3, d = (ax + 2) % 3;
+  o.ax = ax; o.sg = p[ax] < 0 ? -1 : 1; o.face = ax * 2 + (p[ax] < 0 ? 1 : 0);
+  o.u = p[b] / p[ax]; o.v = p[d] / p[ax];
   return o;
 }
+// a face's piece to begin with: its square, each edge its lead with the face across it
+export function faceRoot(f, o) {
+  const ax = f.ax, b = (ax + 1) % 3, d = (ax + 2) % 3;
+  const across = (axis, neg) => { const of = axis * 2 + (neg ? 1 : 0); return floeHash(Math.min(f.face, of), Math.max(f.face, of), 0x4f1d, 0x2b7c); };
+  // (the edge u = -1 borders the face of axis b on the side where p[b] has the sign opposite p[ax]'s)
+  o.n = 4; o.V = o.V || new Float64Array(2 * POLY_MAX); o.EI = o.EI || new Uint32Array(POLY_MAX); o.ES = o.ES || new Float64Array(POLY_MAX);
+  const V = o.V; V[0] = -1; V[1] = -1; V[2] = 1; V[3] = -1; V[4] = 1; V[5] = 1; V[6] = -1; V[7] = 1;
+  const neg = f.sg < 0;
+  o.EI[0] = across(d, !neg); o.EI[1] = across(b, neg); o.EI[2] = across(d, neg); o.EI[3] = across(b, !neg);
+  for (let i = 0; i < 4; i++) o.ES[i] = leadHalf(o.EI[i], 1, 4096);
+  o.id = floeHash(f.face, 0x51ce, 0, 0x3a7b);
+  return o;
+}
+// a piece's centroid (cu, cv), its area (uv) and its long axis (the vertices' spread: angle, extent)
+export function pieceShape(P, o) {
+  const V = P.V, n = P.n, x0 = V[0], y0 = V[1];
+  let A = 0, cx = 0, cy = 0;
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n, xi = V[2 * i] - x0, yi = V[2 * i + 1] - y0, xj = V[2 * j] - x0, yj = V[2 * j + 1] - y0, w = xi * yj - xj * yi;
+    A += w; cx += (xi + xj) * w; cy += (yi + yj) * w;
+  }
+  A *= 0.5;
+  o.area = Math.abs(A); o.cu = x0 + cx / (6 * A); o.cv = y0 + cy / (6 * A);
+  let sxx = 0, syy = 0, sxy = 0;
+  for (let i = 0; i < n; i++) { const x = V[2 * i] - o.cu, y = V[2 * i + 1] - o.cv; sxx += x * x; syy += y * y; sxy += x * y; }
+  // (a square has no long axis: liquid.js the same)
+  o.th = Math.abs(sxy) + Math.abs(sxx - syy) > 1e-30 * (sxx + syy) ? 0.5 * dm.atan2(2 * sxy, sxx - syy) : 0; o.ext = Math.sqrt((sxx + syy) / n);
+  return o;
+}
+// a piece's size (m) and middle (3D, on the sphere of radius R) from its shape (face f)
+export function pieceMid(f, sh, R, m) {
+  const ax = f.ax, b = (ax + 1) % 3, d = (ax + 2) % 3, q = 1 + sh.cu * sh.cu + sh.cv * sh.cv;
+  m[ax] = f.sg; m[b] = f.sg * sh.cu; m[d] = f.sg * sh.cv;
+  nrm3(m, R);
+  return R * Math.sqrt(sh.area) / Math.pow(q, 0.75);
+}
+// the crack of piece P (hash id, level lvl, shape sh) into k: the line A u + B v + C = 0
+export function pieceCrack(P, lvl, sh, k) {
+  const h = floeHash(P.id, lvl, 0x51ce, 0x3a7b);
+  const th = sh.th + dm.PI * 0.5 + ((h >>> 8) & 1023) / 1023 * 1.0472 - 0.5236, off = (((h >>> 18) & 255) / 255 - 0.5) * 0.6 * sh.ext;
+  const qu = sh.cu + dm.cos(sh.th) * off, qv = sh.cv + dm.sin(sh.th) * off;
+  k.A = -dm.sin(th); k.B = dm.cos(th); k.C = -(k.A * qu + k.B * qv);
+  k.h = h; k.cid = floeHash(P.id, lvl, 0x7a11, 0x1f3d);
+  return k;
+}
+// P clipped to the side (1: A u + B v + C >= 0) of crack k into Q (its new edge the crack's, its lead's
+// half width g)
+export function clipPiece(P, k, side, g, Q) {
+  const V = P.V, n = P.n, sg = side ? 1 : -1;
+  Q.V = Q.V || new Float64Array(2 * POLY_MAX); Q.EI = Q.EI || new Uint32Array(POLY_MAX); Q.ES = Q.ES || new Float64Array(POLY_MAX);
+  let m = 0;
+  for (let i = 0; i < n && m < POLY_MAX; i++) {
+    const j = (i + 1) % n, xi = V[2 * i], yi = V[2 * i + 1], xj = V[2 * j], yj = V[2 * j + 1];
+    const di = sg * (k.A * xi + k.B * yi + k.C), dj = sg * (k.A * xj + k.B * yj + k.C);
+    if (di >= 0) { Q.V[2 * m] = xi; Q.V[2 * m + 1] = yi; Q.EI[m] = P.EI[i]; Q.ES[m] = P.ES[i]; m++; }
+    if ((di >= 0) !== (dj >= 0) && m < POLY_MAX) {
+      const t = di / (di - dj);
+      Q.V[2 * m] = xi + (xj - xi) * t; Q.V[2 * m + 1] = yi + (yj - yi) * t;
+      // (entering the kept side: this edge the old one's; leaving: the crack's)
+      if (di >= 0) { Q.EI[m] = k.cid; Q.ES[m] = g; } else { Q.EI[m] = P.EI[i]; Q.ES[m] = P.ES[i]; }
+      m++;
+    }
+  }
+  Q.n = m;
+  return Q;
+}
+// whether a piece splits again (its crack's hash, size, the pack's cover at its middle)
+export const splits = (h, s, c) => !(s < 4096 && (s < 12 + 288 * smooth(0.4, 0.95, c) || (h & 255) < 51.2));
+export const childId = (id, side, lvl) => floeHash(id, side, lvl, 0x9e37);
+const _FU = {}, _P0 = {}, _P1 = {}, _SH = {}, _KR = {}, _MID = [0, 0, 0], _N3 = [0, 0, 0];
+// an edge's plane (through the world's middle) in 3D from its line in face f's (u, v), unit, into n
+export function edgePlane(f, Au, Bv, C, n) {
+  const ax = f.ax, b = (ax + 1) % 3, d = (ax + 2) % 3;
+  n[b] = Au; n[d] = Bv; n[ax] = C;
+  return nrm3(n);
+}
+// the piece of the pack at p (liquid.js floeOf: the same splits) into o: id, e (in from its edge less the
+// lead there, m), lid, c, size, mid, there; o.P its polygon (face o.f's u, v)
+export function floeOf(p, ice, o) {
+  const f = faceUV(p, o.f || (o.f = {})), R = Math.sqrt(p[0] * p[0] + p[1] * p[1] + p[2] * p[2]);
+  let P = faceRoot(f, _P0), Q = _P1, c = 1, s = 0;
+  const m = o.mid || (o.mid = [0, 0, 0]);
+  for (let lvl = 0; lvl < 32; lvl++) {
+    const sh = pieceShape(P, _SH);
+    s = pieceMid(f, sh, R, m);
+    const k = pieceCrack(P, lvl, sh, _KR);
+    if (s < 4096) { c = pieceCover(m, ice); if (!splits(k.h, s, c)) break; }
+    if (P.n >= POLY_MAX - 1) break;
+    const side = k.A * f.u + k.B * f.v + k.C >= 0 ? 1 : 0;
+    clipPiece(P, k, side, leadHalf(k.cid, c, s), Q);
+    Q.id = childId(P.id, side, lvl);
+    const t = P; P = Q; Q = t;
+  }
+  // (in from its edge: the nearest of its edges' planes, less that edge's lead)
+  let e = Infinity, lid = 0;
+  const V = P.V, n = P.n;
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n, du = V[2 * j] - V[2 * i], dv = V[2 * j + 1] - V[2 * i + 1];
+    if (du * du + dv * dv < 1e-24) continue;
+    const Au = -dv, Bv = du, C = -(Au * V[2 * i] + Bv * V[2 * i + 1]);
+    edgePlane(f, Au, Bv, C, _N3);
+    const ek = Math.abs(p[0] * _N3[0] + p[1] * _N3[1] + p[2] * _N3[2]) - P.ES[i];
+    if (ek < e) { e = ek; lid = P.EI[i]; }
+  }
+  o.id = P.id; o.e = e; o.lid = lid; o.c = c; o.size = s; o.P = P;
+  o.there = c > 0 && (P.id & 65535) / 65536 <= Math.min(1, 1.5 * c);
+  return o;
+}
+export { leadHalf, pieceCover };
+const _FO = {};
+// what's under p (body-fixed m; d its way) of the sea's ice, its temperature's ice (0..1), into o: f (how
+// far in from the edge of the piece there less its lead, m; < 0 none: liquid.js seaFloes' own sums), id
+// (its hash), c (the pack's cover), lid (the lead's hash: lead ice it may be, leadIceH), lead (whether
+// there's a piece there whose lead it is), size (m)
+export function floeAt(p, d, ice, o) {
+  const F = floeOf(p, ice, _FO);
+  // (its edges ragged: liquid.js the same)
+  const e = F.e + (triDetail(p, d, 8, _j)[0] - 0.5) * 1.6 + (triDetail(p, d, 2, _k)[3] - 0.5) * 0.5;
+  o.c = F.c; o.lid = F.lid; o.lead = F.there; o.f = F.there ? e : -Infinity; o.id = F.id; o.size = F.size; o.piece = F.size < 64;
+  return o;
+}
+const _fa = {};
 // whether the sea's ice bears you at p (body-fixed m; d its way), its temperature's ice (0..1), frz C
 // under the sea's freezing point: a floe of the pack, a lead frozen over thick enough, or a piece of a
 // broken floe (liquid.js seaFloes)
 export function seaFloe(p, d, ice, frz = 0) {
-  floeCell(p, d, 256, 16, 0x51ce, _A);
-  // (its edges ragged: liquid.js the same)
-  _A.e += (triDetail(p, d, 8, _j)[0] - 0.5) * 1.6 + (triDetail(p, d, 2, _k)[3] - 0.5) * 0.5;
-  const F = floeState(_A.id, _A.gc, d, ice, 256, _F);
-  seaFloe.lastC = F.c; seaFloe.why = 1;   // (for tests: its cover, and what bears you: 1 a floe, 2 a piece, 3 a lead's ice)
-  if (F.there && !F.broken && _A.e > F.g) return true;
-  seaFloe.why = 3;
-  if (F.there && !F.broken && leadIceH(_A.lid, frz) >= LEAD_BEARS) return true;
-  seaFloe.why = 2;
-  if (!F.there || F.broken || _A.e < F.g + 16) {
-    floeCell(p, d, 16, 256, 0x7a11, _B);
-    const O = floeState(floeCell(_B.gc, d, 256, 16, 0x51ce, _C).id, _C.gc, d, ice, 256, _O);
-    if (O.there && O.broken) return _B.e > Math.max(0.15, 8 * (1 - Math.sqrt(O.cc))) + 3 * (1 - smooth(0, 40, _C.e));
-  }
-  seaFloe.why = 0;
-  return false;
+  const o = floeAt(p, d, ice, _fa);
+  seaFloe.lastC = o.c;   // (for tests: its cover, and what bears you: 1 a floe, 2 a piece, 3 a lead's ice)
+  seaFloe.why = o.f > 0 ? (o.piece ? 2 : 1) : o.lead && leadIceH(o.lid, frz) >= LEAD_BEARS ? 3 : 0;
+  return seaFloe.why > 0;
 }
