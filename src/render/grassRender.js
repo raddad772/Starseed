@@ -17,7 +17,7 @@ import { dirFromFaceUV, faceUVFromDir } from '../gen/cubesphere.js';
 import { S_LEN, S_H, S_TEMP, S_SAND, S_ICE, S_WDEPTH, S_RIVR } from '../gen/terrain.js';
 import { fmix32 } from '../core/rng.js';
 import { FireField } from '../sim/fireField.js';
-import { SHADOW_LAYER, SHADOW_LIGHT_UNIFORMS, receiveShadows } from './sunShadows.js';
+import { receiveShadows, COVER_LAYER, COVER_MIN_W, SHADOW_LIGHT_UNIFORMS } from './sunShadows.js';
 import { standAt } from '../gen/life/stands.js';
 import { floraSpecies, meadowAt } from '../gen/flora.js';
 import { snowWaterNow, SNOW_DEPTH_PER_MM } from './season.js';
@@ -62,7 +62,7 @@ function bladeGeometry(nb, seg, seed) {
   };
 }
 
-// a blade's shape, shared by the lit material and the shadows': from its patch's instance data
+// a blade's shape, from its patch's instance data
 //   iCorner: the ground's heights at the patch's corners over its centre's plane (u-v-, u+v-, u-v+, u+v+)
 //   iGrass: density (0..1), height (m), how wild (its own lean), the season's snow on it now (m)
 //   iBare: where it grows at the patch's corners (1, 0 bare: a creek's bed, sand, rock showing), blended
@@ -82,8 +82,15 @@ uniform float uBladeW;
 uniform float uFadeR;
 uniform float uFadeIn;
 uniform float uPatchK;
+// (drawing into the grass's cover map (sunShadows.js): x on, y the least width a blade's drawn (m); and
+// the light's way (world))
+uniform vec4 uCover;
+uniform vec3 uCoverL;
+varying float vGA;
+varying float vGSide;
 varying float vGT;
 varying float vGK;
+varying float vGS;   // (the sward's leaves above this point of the blade: its optical depth straight down)
 float grassHash(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
 vec3 grassHash3(vec3 p) {
   return fract(sin(vec3(dot(p, vec3(127.1, 311.7, 74.7)), dot(p, vec3(269.5, 183.3, 246.1)), dot(p, vec3(113.5, 271.9, 124.6)))) * 43758.5453);
@@ -127,6 +134,10 @@ vec3 grassBlade(mat4 im) {
   float gb = mix(mix(iBare.x, iBare.y, u0), mix(iBare.z, iBare.w, u0), v0);
   float dens = iGrass.x * (0.5 + n1) * smoothstep(0.25, 0.75, gb + 0.5 * (n2 - 0.5)) * (1.0 - smoothstep(uFadeR * 0.7, uFadeR, dc)) * smoothstep(uFadeIn - 8.0, uFadeIn + 2.0, dc);
   vGT = aV.x; vGK = fract(rr * 13.71);
+  // (the sun reaching down into the sward through the blades above: Beer's law over their leaf area, ~3 in
+  // a thick meadow (half of it facing the light, Monsi and Saeki 1953), the tips in the sun, the feet in
+  // the shade; the slant through it added by the material)
+  vGS = 1.5 * min(dens, 1.0) * (1.0 - aV.x);
   if (rr >= dens) return vec3(0.0);
   float t = aV.x, side = aV.y;
   float k1 = fract(rr * 7.31), k2 = fract(rr * 3.17 + aBlade.w * 0.13);
@@ -150,31 +161,20 @@ vec3 grassBlade(mat4 im) {
   float u = bx.x * 0.5 + 0.5, v = bx.y * 0.5 + 0.5;
   float hg = mix(mix(iCorner.x, iCorner.y, u), mix(iCorner.z, iCorner.w, u), v);
   float w = uBladeW * (0.6 + 0.8 * k2) * (1.0 + 0.6 * iGrass.y) * pow(1.0 - t, 0.7);
+  // (into the cover map: turned to face the light, as wide as it looks on average (2/pi of it), widened to
+  // the least width and as much fainter)
+  vGA = 1.0; vGSide = side;
+  if (uCover.x > 0.5) {
+    vec3 lM = transpose(mat3(modelMatrix)) * uCoverL;
+    vec2 hL = vec2(dot(im[0].xyz, lM), dot(im[2].xyz, lM));
+    if (dot(hL, hL) > 1e-10) { hL = normalize(hL); p = vec2(-hL.y, hL.x); }
+    float wv = w * 0.64, we = max(wv, uCover.y);
+    vGA = wv / max(we, 1e-6); w = we;
+  }
   vec2 xz = bx + (B * hb * t * t + p * w * side) * uPatchK;
   return vec3(xz.x, hg + snow + hb * t * (1.0 - 0.3 * dot(B, B) * t), xz.y);
 }
 `;
-
-// its shadow (sunShadows.js): the blades as drawn, their distance from the light
-function bladeDepthMaterial(uniforms) {
-  return new THREE.ShaderMaterial({
-    uniforms: { ...SHADOW_LIGHT_UNIFORMS, ...uniforms },
-    vertexShader: `
-uniform vec3 uLightPos;
-uniform vec3 uLightDir;
-varying float vD;
-${GLSL_BLADE}
-void main() {
-  vec4 wp = modelMatrix * instanceMatrix * vec4(grassBlade(instanceMatrix), 1.0);
-  vD = dot(uLightPos - wp.xyz, uLightDir);
-  gl_Position = projectionMatrix * viewMatrix * wp;
-}`,
-    fragmentShader: `
-varying float vD;
-void main() { gl_FragColor = vec4(vD, 0.0, 0.0, 1.0); }`,
-    side: THREE.DoubleSide,
-  });
-}
 
 // a wavelength (nm) as the eye sees it, linear RGB (a rough fit to the CIE curves: Bruton's), past our
 // eyes' ends what a flower reflecting there shows us: ultraviolet a pale violet, near-infrared a deep red
@@ -213,29 +213,45 @@ export class GrassSet {
     // the blades' shapes, near and further (fewer, broader); a material each (its width, its reach)
     this.geo = {};
     this.mats = {};
-    this.shadowMats = {};
+    this.coverMats = {};
     for (const [k, L] of Object.entries(LOD)) {
       this.geo[k] = bladeGeometry(this.fern ? Math.round(L.blades * 0.35) : L.blades, L.seg, 0x9e3779b9 ^ (k === 'near' ? 1 : 2));
       const U = {
         uWindT: this.time, uGrassWind: this.windAmp, uWindL: this.windL, uBladeW: { value: L.width * (this.fern ? 5 : 1) * (k === 'far' ? 4 : 1) },
         uFadeR: { value: k === 'near' ? 1e6 : k === 'mid' ? MID_R : FAR_R }, uFadeIn: { value: k === 'far' ? MID_R - 4 : -1e6 }, uPatchK: { value: k === 'far' ? 0.25 : 1 },
+        uCover: { value: new THREE.Vector4(0, 0, 0, 0) }, uCoverL: { value: new THREE.Vector3(0, 1, 0) },
       };
       const m = new THREE.MeshStandardMaterial({ roughness: 0.85, metalness: 0, side: THREE.DoubleSide });
       m.onBeforeCompile = (sh) => {
         Object.assign(sh.uniforms, U);
-        sh.vertexShader = sh.vertexShader.replace('#include <common>', `#include <common>\n${GLSL_BLADE}`)
+        sh.vertexShader = sh.vertexShader.replace('#include <common>', `#include <common>\n${GLSL_BLADE}\nuniform vec3 uSunShadowDir;`)
           .replace('#include <beginnormal_vertex>', 'vec3 objectNormal = vec3(0.0, 1.0, 0.0);\n#ifdef USE_TANGENT\nvec3 objectTangent = vec3(1.0, 0.0, 0.0);\n#endif')
-          .replace('#include <begin_vertex>', 'vec3 transformed = grassBlade(instanceMatrix);');
-        // (both faces lit as the ground is; dark at the foot, light at the tip, a little each its own)
-        sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vGT;\nvarying float vGK;')
+          .replace('#include <begin_vertex>', 'vec3 transformed = grassBlade(instanceMatrix);\n  vGS /= max(dot(normalize(mat3(modelMatrix) * instanceMatrix[1].xyz), uSunShadowDir), 0.08);');
+        // (both faces lit as the ground is; dark at the foot, light at the tip, a little each its own; the
+        // key light's direct share by the sward above, the slant through it the longer the lower the light)
+        sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vGT;\nvarying float vGK;\nvarying float vGS;')
           .replace('#include <normal_fragment_begin>', '#include <normal_fragment_begin>\n  normal = normalize( vNormal );')
-          .replace('#include <color_fragment>', '#include <color_fragment>\n  diffuseColor.rgb *= mix(0.3, 1.0, pow(vGT, 0.8)) * (0.82 + 0.36 * vGK);');
+          .replace('#include <color_fragment>', '#include <color_fragment>\n  diffuseColor.rgb *= mix(0.3, 1.0, pow(vGT, 0.8)) * (0.82 + 0.36 * vGK);')
+          .replace('#include <aomap_fragment>', '#include <aomap_fragment>\n  { float sw = exp(-vGS); reflectedLight.directDiffuse *= sw; reflectedLight.directSpecular *= sw; }');
       };
       m.customProgramCacheKey = () => 'grass-blades';
-      // (in the sun's shadows and the canopy's: sunShadows.js)
+      // (in the sun's shadows and the canopy's: sunShadows.js. It casts none into them: a blade's shadow is
+      // thinner than the map's texel, and as the sun moved (a game day's three hours: a hair a frame) and the
+      // blades swayed, each came and went frame by frame, a low sun's long shadows flickering across the
+      // field (Dave: "flickering every frame dramatically"); the sward shades itself, above, and its shadows
+      // on the ground beneath go into the cover map, a share of the light each, faded across its width)
       receiveShadows(m);
       this.mats[k] = m;
-      this.shadowMats[k] = bladeDepthMaterial(U);
+      if (k !== 'far') this.coverMats[k] = new THREE.ShaderMaterial({
+        uniforms: { ...U, ...SHADOW_LIGHT_UNIFORMS, uCover: { value: new THREE.Vector4(1, COVER_MIN_W, 0, 0) }, uCoverL: SHADOW_LIGHT_UNIFORMS.uLightDir },
+        vertexShader: `${GLSL_BLADE}
+void main() { gl_Position = projectionMatrix * viewMatrix * modelMatrix * instanceMatrix * vec4(grassBlade(instanceMatrix), 1.0); }`,
+        fragmentShader: `varying float vGA;
+varying float vGSide;
+void main() { gl_FragColor = vec4(vGA * 2.0 * max(0.0, 1.0 - abs(vGSide)), 0.0, 0.0, 1.0); }`,
+        side: THREE.DoubleSide, depthTest: false, depthWrite: false,
+        blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor, blendEquation: THREE.AddEquation,
+      });
     }
     // flowers, where flowering plants have evolved (plantGrade 3+): heads coloured in their pollinators'
     // window (the land's animals' eyes: biosphere.js seeing), spread across it and away from the
@@ -364,7 +380,7 @@ export class GrassSet {
     m.position.copy(T.pos);
     m.frustumCulled = true;
     m.boundingSphere = new THREE.Sphere(new THREE.Vector3(), size * 0.75 + 2);
-    if (L === 'near') { m.layers.enable(SHADOW_LAYER); m.userData.shadowNearOnly = true; m.userData.shadowMat = this.shadowMats[L]; }
+    if (this.coverMats[L]) { m.layers.enable(COVER_LAYER); m.userData.coverMat = this.coverMats[L]; }
     this.group.add(m);
     return m;
   }
@@ -411,9 +427,10 @@ export class GrassSet {
     if (thick < 0.02) return T;
     // (its ground: the heights at the patches' corners, 5 x 5, as the drawn ground has them: the near
     // field's volume where it's built (sim/nearGround.js), the heightfield's finest mesh beyond)
-    const hg = new Float64Array(25), gC = new Float32Array(25), d = [0, 0, 0], V = new THREE.Vector3();
+    const hg = new Float64Array(25), gC = new Float32Array(25), cd = new Float64Array(75), d = [0, 0, 0], V = new THREE.Vector3();
     for (let a = 0; a < 5; a++) for (let bb = 0; bb < 5; bb++) {
       dirFromFaceUV(face, u0 + du * a / 4, v0 + du * bb / 4, d);
+      cd[(a * 5 + bb) * 3] = d[0]; cd[(a * 5 + bb) * 3 + 1] = d[1]; cd[(a * 5 + bb) * 3 + 2] = d[2];
       gC[a * 5 + bb] = bare(d) ? 0 : 1;
       const g0 = b.groundHeight(V.set(d[0], d[1], d[2]));
       hg[a * 5 + bb] = b.near && b.near.field ? b.floorAt(V.multiplyScalar(R + g0 + 0.3)) : g0;
@@ -452,9 +469,6 @@ export class GrassSet {
     const base = this.veg.map((x, q) => (x + (this.dry[q] - x) * k0) * (1.35 + 0.3 * green));
     const dryTip = this.dry.map((x) => x * 1.45);
     // (the patches: their frames, their corners, their density, height and colour)
-    const eu = [0, 0, 0], ev = [0, 0, 0];
-    dirFromFaceUV(face, u0 + du, v0 + du * 0.5, eu); dirFromFaceUV(face, u0 + du * 0.5, v0 + du, ev);
-    const EU = new THREE.Vector3(eu[0] - dc[0], eu[1] - dc[1], eu[2] - dc[2]), EV = new THREE.Vector3(ev[0] - dc[0], ev[1] - dc[1], ev[2] - dc[2]);
     const n = PPT * PPT, mat = new Float32Array(n * 16), corner = new Float32Array(n * 4), grows = new Float32Array(n * 4), grass = new Float32Array(n * 4), wave = new Float32Array(n * 3), col = new Float32Array(n * 3);
     let hsh = fmix32((face * 0x9e3779b1) ^ (i * 0x85ebca6b) ^ (j * 0xc2b2ae35));
     const rnd = () => { hsh = fmix32((hsh + 0x6d2b79f5) >>> 0); return hsh / 4294967296; };
@@ -472,12 +486,16 @@ export class GrassSet {
       const dens = thick * (1 - 0.68 * kS) * (this.fern ? 0.6 : 1);
       if (dens < 0.01) { rnd(); rnd(); continue; }
       Y.set(d[0], d[1], d[2]);
-      X.copy(EU).addScaledVector(Y, -EU.dot(Y)).normalize();
-      Z.copy(EV).addScaledVector(Y, -EV.dot(Y)).addScaledVector(X, -EV.dot(X)).normalize();
-      // (the frame in metres: the patch's half-side along u and v, its blades over [-1, 1])
-      const hs = span / 2;
+      // (the frame in metres from its own corners, its blades over [-1, 1]: the cube-sphere's cells aren't
+      // squares of the tile's nominal size (away from a face's middle lines up to a third smaller, and
+      // skewed); drawn as such, neighbouring patches overlapped and the blades doubled along every edge,
+      // lines across the field (Dave))
+      const i00 = (a * 5 + bb) * 3, i10 = ((a + 1) * 5 + bb) * 3, i01 = (a * 5 + bb + 1) * 3, i11 = ((a + 1) * 5 + bb + 1) * 3;
+      X.set(cd[i10] + cd[i11] - cd[i00] - cd[i01], cd[i10 + 1] + cd[i11 + 1] - cd[i00 + 1] - cd[i01 + 1], cd[i10 + 2] + cd[i11 + 2] - cd[i00 + 2] - cd[i01 + 2]).multiplyScalar(R / 4);
+      Z.set(cd[i01] + cd[i11] - cd[i00] - cd[i10], cd[i01 + 1] + cd[i11 + 1] - cd[i00 + 1] - cd[i10 + 1], cd[i01 + 2] + cd[i11 + 2] - cd[i00 + 2] - cd[i10 + 2]).multiplyScalar(R / 4);
+      X.addScaledVector(Y, -X.dot(Y)); Z.addScaledVector(Y, -Z.dot(Y));
       Pp.set(d[0] * (R + h0), d[1] * (R + h0), d[2] * (R + h0)).sub(T.pos);
-      M.makeBasis(X.multiplyScalar(hs), Y, Z.multiplyScalar(hs)).setPosition(Pp);
+      M.makeBasis(X, Y, Z).setPosition(Pp);
       mat.set(M.elements, q * 16);
       corner[q * 4] = c00 - h0; corner[q * 4 + 1] = c10 - h0; corner[q * 4 + 2] = c01 - h0; corner[q * 4 + 3] = c11 - h0;
       grows[q * 4] = g00; grows[q * 4 + 1] = g10; grows[q * 4 + 2] = g01; grows[q * 4 + 3] = g11;
@@ -525,7 +543,8 @@ export class GrassSet {
 
   dispose() {
     this.invalidate();
-    for (const L of Object.keys(this.mats)) { this.mats[L].dispose(); this.shadowMats[L].dispose(); }
+    for (const L of Object.keys(this.mats)) this.mats[L].dispose();
+    for (const L of Object.keys(this.coverMats)) this.coverMats[L].dispose();
     if (this.fmat) { this.fmat.dispose(); this.flowerGeo.dispose(); }
   }
 }

@@ -45,6 +45,7 @@ uniform vec3 uE;      // its axes
 uniform vec3 uN;
 uniform float uL;     // its side (m)
 uniform vec3 uSunF;   // the sun's way (body-fixed)
+uniform float uSigmaS;   // the sun's beam's extinction (below)
 varying vec2 vUv;
 out highp vec4 outC;
 ${GLSL_CLOUD_N}
@@ -53,7 +54,7 @@ ${GLSL_DECKS}
 float toRadius(vec3 p, vec3 d, float rr) { float b = dot(p, d), c = dot(p, p) - rr * rr; return -b + sqrt(max(b * b - c, 0.0)); }
 // the decks' optical depth over n steps from p along d between distances t0 and t1 (the clouds'
 // generations gA, gB: the ground point's)
-float tauAlong(vec3 p, vec3 d, float t0, float t1, float foot, vec3 gA, vec3 gB) {
+float tauAlong(vec3 p, vec3 d, float t0, float t1, float foot, vec3 gA, vec3 gB, float sigma) {
   const int N = 8;
   float dt = (t1 - t0) / float(N), tau = 0.0;
   for (int s = 0; s < N; s++) {
@@ -63,7 +64,7 @@ float tauAlong(vec3 p, vec3 d, float t0, float t1, float foot, vec3 gA, vec3 gB)
     for (int k = 0; k < 3; k++) {
       if (float(k) >= uNumDecks) break;
       if (h < uDeck[k].x || h > uDeck[k].y) continue;
-      tau += deckDenG(k, x, dirF, h, deckCovG(k, x, dirF, foot, gA, gB), gA, gB, false, fr) * uSigmaG * dt;
+      tau += deckDenG(k, x, dirF, h, deckCovG(k, x, dirF, foot, gA, gB), gA, gB, true, fr) * sigma * dt;
     }
   }
   return tau;
@@ -77,9 +78,9 @@ void main() {
   vec3 gA, gB;
   cloudGens(g, gA, gB);
   // (the sun's way up through the decks; none from below the horizon)
-  float tauS = muS > 0.0 ? tauAlong(G, uSunF, toRadius(G, uSunF, uRadius + max(sb, 0.0)), toRadius(G, uSunF, uRadius + st), foot, gA, gB) : 30.0;
+  float tauS = muS > 0.0 ? tauAlong(G, uSunF, toRadius(G, uSunF, uRadius + max(sb, 0.0)), toRadius(G, uSunF, uRadius + st), foot, gA, gB, uSigmaS) : 30.0;
   // (and straight up)
-  float tauU = tauAlong(G, g, max(sb, 0.0), st, foot, gA, gB);
+  float tauU = tauAlong(G, g, max(sb, 0.0), st, foot, gA, gB, uSigmaG);
   outC = vec4(exp(-tauS), 1.0 / (1.0 + 0.1125 * tauU), exp(-tauU / max(muS, 0.05)), 1.0);
 }
 `;
@@ -94,7 +95,13 @@ export class CloudShadow {
       type: THREE.HalfFloatType, depthBuffer: false, generateMipmaps: true,
       minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter, wrapS: THREE.ClampToEdgeWrapping, wrapT: THREE.ClampToEdgeWrapping,
     });
-    const own = { uO: { value: new THREE.Vector3() }, uE: { value: new THREE.Vector3() }, uN: { value: new THREE.Vector3() }, uL: { value: 20000 }, uSunF: { value: new THREE.Vector3() }, uSigmaG: { value: sigmaG } };
+    // (the sun's beam: a few times the clouds' extinction as the sky draws them, its edges eroded as it draws
+    // them, not a real cloud's: where the sky shows the sun glowing through a thin veil the ground's shadows
+    // were gone, the sun taken as behind a cloud fifteen times as thick (Dave: "it doesn't look so overcast";
+    // a thick cloud's and an overcast's sun still blotted out); the light the overcast lets down by the
+    // real cloud's)
+    const sigmaS = Math.min(sigmaG, 3 * vu.uSigma.value);
+    const own = { uO: { value: new THREE.Vector3() }, uE: { value: new THREE.Vector3() }, uN: { value: new THREE.Vector3() }, uL: { value: 20000 }, uSunF: { value: new THREE.Vector3() }, uSigmaG: { value: sigmaG }, uSigmaS: { value: sigmaS } };
     const uniforms = { ...own };
     for (const k of ['tNoise', 'tCloudMap', 'uCloudMapMean', 'uCloudYear', 'uRadius', 'uDeck', 'uNumDecks', 'uMode', 'uShape', 'uBands', 'uJetPhase', 'uEqJet', 'uWindMax', 'uCloudClock', 'uCloudWind']) uniforms[k] = vu[k];
     this.own = own;

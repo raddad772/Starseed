@@ -9,10 +9,18 @@
 // layer SKY_LAYER (trees, shrubs); a receiver takes the sky's light by how much of the sky (cosine-
 // weighted) the canopy over and around it hides. Held in the body's own frame (the ground turns under the
 // camera), so drawn only every few frames.
+//
+// And the grass's: a blade is thinner than the sun maps' texels, and drawn into them its shadow came and
+// went as the sun moved a hair a frame and the blades swayed, a low sun's long shadows flickering across
+// the field. So the blades (on layer COVER_LAYER) are drawn into a map of their own (0..24 m, ~5 cm), each
+// as a share of the light it takes: turned to face the sun, widened to a few texels and as much fainter,
+// faded across its width, the shares added: what falls on the ground beneath (the snow between the blades)
+// a sum that moves smoothly as they do. A receiver takes the sun by exp(-k sum) (grassCover).
 import * as THREE from 'three';
 
 export const SHADOW_LAYER = 3;
 export const SKY_LAYER = 4;
+export const COVER_LAYER = 5;
 const q = typeof location !== 'undefined' ? /[?&]sunshadow=(\d)/.exec(location.search) : null;
 const ON = !(q && q[1] === '0');
 const qs = typeof location !== 'undefined' ? /[?&]skyshadow=(\d)/.exec(location.search) : null;
@@ -26,6 +34,12 @@ const SUN_ORG = CASCADES.map((c, i) => [i * CASCADES[0].size, 0]);
 const SKY_ORG = SKY_CASCADES.map((c, i) => [i * SKY_CASCADES[0].size, CASCADES[0].size]);
 const ATLAS_W = CASCADES.length * CASCADES[0].size, ATLAS_H = CASCADES[0].size + SKY_CASCADES[0].size;
 const SKY_D = SKY_CASCADES.map((c) => 2000 + c.far);   // (each sky map's camera's height over the camera)
+// (the grass's cover: in the atlas's corner the sky maps leave, beside them)
+const COVER = { far: 24, size: 1024 };
+const COVER_ORG = [SKY_CASCADES.length * SKY_CASCADES[0].size, CASCADES[0].size];
+// (the least width a blade's drawn there: 2.5 of its texels, so its share of each texel it crosses
+// changes smoothly as it moves, never a texel's centre in or out)
+export const COVER_MIN_W = 2.5 * 2 * COVER.far / COVER.size;
 
 // the sky maps softened (Dave: blended, not squares): each texel's share of a 5x5 round it under canopy, and
 // that share times the canopy top's depth below the map's camera less D, both linear so the hardware's
@@ -59,6 +73,9 @@ export const SUN_SHADOW_UNIFORMS = {
   uSunShadowVP0: { value: new THREE.Matrix4() }, uSunShadowVP1: { value: new THREE.Matrix4() },
   uSunShadowL0: { value: new THREE.Vector4() }, uSunShadowL1: { value: new THREE.Vector4() },   // xyz light position, w texel
   uSunShadowDir: { value: new THREE.Vector3(0, 1, 0) },
+  // (the grass's cover: x on, y z its corner in the atlas, w its size; its view-projection)
+  uGrassCover: { value: new THREE.Vector4(0, 0, 0, 1) },
+  uGrassCoverVP: { value: new THREE.Matrix4() },
 };
 
 // the sky's maps (body-fixed): x on, y the near map's reach, z the far one's, w the light a canopy lets
@@ -130,6 +147,12 @@ export class SunShadows {
     this.frame = 0;
     this.skyBody = null;
     this.mat = new THREE.ShaderMaterial({ uniforms: { ...SHADOW_LIGHT_UNIFORMS }, vertexShader: DEPTH_VERT, fragmentShader: DEPTH_FRAG, side: THREE.DoubleSide });
+    // (the grass's cover: its shares added, which a float target takes only with EXT_float_blend)
+    this.coverCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    this.coverCam.layers.set(COVER_LAYER);
+    this.cover = null;   // (render: whether the GPU can add into the atlas)
+    this.held = new THREE.Vector3(0, 1, 0); this.heldBody = null;   // (the sun as the maps hold it: body-fixed)
+    this.bodyUp = new THREE.Vector3(0, 1, 0); this.bodyX = new THREE.Vector3(1, 0, 0);
     SUN_SHADOW_UNIFORMS.tShadowAtlas.value = this.atlas.texture;
     // (the sky maps softened, side by side: BLUR_FRAG)
     const n = SKY_CASCADES[0].size;
@@ -164,13 +187,13 @@ export class SunShadows {
 
   // (each caster on a layer drawn in its shadow material: its own where it has one, its shape made in its
   // vertex shader; this one's otherwise; those only for the near map hidden from the far ones)
-  _swap(scene, layer) {
+  _swap(scene, layer, key = 'shadowMat') {
     const swapped = this._swapped || (this._swapped = []);
     swapped.length = 0;
     scene.traverse((o) => {
       if (!o.isMesh || !o.layers.isEnabled(layer)) return;
       swapped.push(o, o.material, o.geometry);
-      o.material = o.userData.shadowMat || this.mat;
+      o.material = o.userData[key] || this.mat;
     });
     return swapped;
   }
@@ -191,7 +214,7 @@ export class SunShadows {
   // square of half-side far snapped to its texels on the anchor (a point fixed to the ground: snapped on
   // the camera the shadows' edges would crawl as it moves)
   _place(cam, dir, far, size, D, depth) {
-    const texel = 2 * far / size, up = Math.abs(dir.y) < 0.99 ? _Y : _X;
+    const texel = 2 * far / size, up = Math.abs(dir.dot(this.bodyUp)) < 0.99 ? this.bodyUp : this.bodyX;
     cam.position.copy(dir).multiplyScalar(D);
     cam.up.copy(up);
     cam.lookAt(0, 0, 0);
@@ -211,8 +234,16 @@ export class SunShadows {
   // the maps for this frame: the camera at the world's origin (positions are camera-relative)
   render(renderer, scene) {
     const U = SUN_SHADOW_UNIFORMS, K = SKY_SHADOW_UNIFORMS;
-    if (!this.on || !this.active) { U.uSunShadow.value.x = 0; K.uSkyShadow.value.x = 0; this.skyBody = null; return; }
-    const s = this.sunDir;
+    if (!this.on || !this.active) { U.uSunShadow.value.x = 0; U.uGrassCover.value.x = 0; K.uSkyShadow.value.x = 0; this.skyBody = null; return; }
+    // (the maps held to the ground: their cameras turned with the body, the sun held in its frame and moved
+    // on a tenth of a degree at a time. Snapped to the world's centre 100 km off as the world turned under a
+    // fixed sun, the maps slid up to half a texel a frame, every leaf's and blade's shadow flickering; held
+    // so, between the sun's steps they don't change at all)
+    const qB = _q2.copy(this.bodyQInv).invert();
+    this.bodyUp.set(0, 1, 0).applyQuaternion(qB); this.bodyX.set(1, 0, 0).applyQuaternion(qB);
+    const sF = _sf.copy(this.sunDir).applyQuaternion(this.bodyQInv);
+    if (this.heldBody !== this.body || sF.dot(this.held) < HOLD_COS) { this.held.copy(sF); this.heldBody = this.body; }
+    const s = _sh.copy(this.held).applyQuaternion(qB);
     const prevTarget = renderer.getRenderTarget(), prevClear = renderer.getClearColor(_c), prevAlpha = renderer.getClearAlpha();
     renderer.setClearColor(0xffffff, 1);
     // the sun's
@@ -231,6 +262,20 @@ export class SunShadows {
     this._restore(swapped);
     U.uSunShadowDir.value.copy(s);
     U.uSunShadow.value.set(1, CASCADES[0].far, CASCADES[1].far, 0);
+    // the grass's cover: its shares added (blending one to one, no depth), cleared to none
+    if (this.cover === null) this.cover = !!(renderer.extensions.has('EXT_float_blend') && renderer.extensions.get('EXT_float_blend'));
+    if (this.cover) {
+      swapped = this._swap(scene, COVER_LAYER, 'coverMat');
+      const cam = this.coverCam, D = COVER.far * 6 + 2000;
+      this._place(cam, s, COVER.far, COVER.size, D, D + COVER.far * 3);
+      renderer.setClearColor(0x000000, 1);
+      this._region(renderer, COVER_ORG, COVER.size);
+      renderer.render(scene, cam);
+      renderer.setClearColor(0xffffff, 1);
+      this._restore(swapped);
+      U.uGrassCoverVP.value.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
+      U.uGrassCover.value.set(1, COVER_ORG[0], COVER_ORG[1], COVER.size);
+    } else U.uGrassCover.value.x = 0;
     // the sky's: a map in its turn (both at once on a new world), straight down over the camera, held in the
     // body's frame
     K.uSkyCenter.value.copy(this.anchor);
@@ -264,9 +309,11 @@ export class SunShadows {
     renderer.setRenderTarget(prevTarget);
   }
 }
-const _X = new THREE.Vector3(1, 0, 0), _Y = new THREE.Vector3(0, 1, 0), _one = new THREE.Vector3(1, 1, 1);
+const _one = new THREE.Vector3(1, 1, 1);
 const _v = new THREE.Vector3(), _r = new THREE.Vector3(), _u = new THREE.Vector3(), _w = new THREE.Vector3();
 const _m = new THREE.Matrix4(), _m2 = new THREE.Matrix4(), _q = new THREE.Quaternion(), _c = new THREE.Color();
+const _q2 = new THREE.Quaternion(), _sf = new THREE.Vector3(), _sh = new THREE.Vector3();
+const HOLD_COS = Math.cos(0.1 * Math.PI / 180);
 
 // a receiver's side: wp the point (camera-relative world), N its normal; 1 lit, 0 shadowed. Each
 // cascade's own map, the near one's edge fading into the far one's, the far one's into none (the
@@ -310,6 +357,27 @@ float sunShadowMap(vec3 wp, vec3 N) {
     sh = mix(s0, sh, smoothstep(0.75 * uSunShadow.y, uSunShadow.y, dist));
   }
   return sh;
+}
+// the grass over a point beneath it (the ground, the snow between the blades): the blades' shares of the
+// light along the sun, added (the cover map; the sun through them exp(-k sum), Beer's law); faded out at
+// the map's edge; 0 none
+uniform vec4 uGrassCover;
+uniform mat4 uGrassCoverVP;
+float grassCover(vec3 wp) {
+  if (uGrassCover.x < 0.5) return 0.0;
+  vec4 c = uGrassCoverVP * vec4(wp, 1.0);
+  vec2 uv = c.xy / c.w * 0.5 + 0.5;
+  float e = max(abs(uv.x * 2.0 - 1.0), abs(uv.y * 2.0 - 1.0));
+  if (e >= 1.0) return 0.0;
+  int n = int(uGrassCover.w);
+  vec2 st = uv * uGrassCover.w - 0.5, fr = fract(st);
+  ivec2 p0 = ivec2(floor(st)), org = ivec2(uGrassCover.yz), hi = ivec2(n - 1);
+  float a = texelFetch(tShadowAtlas, org + clamp(p0, ivec2(0), hi), 0).r;
+  float b = texelFetch(tShadowAtlas, org + clamp(p0 + ivec2(1, 0), ivec2(0), hi), 0).r;
+  float d = texelFetch(tShadowAtlas, org + clamp(p0 + ivec2(0, 1), ivec2(0), hi), 0).r;
+  float f = texelFetch(tShadowAtlas, org + clamp(p0 + ivec2(1, 1), ivec2(0), hi), 0).r;
+  float sum = mix(mix(a, b, fr.x), mix(d, f, fr.x), fr.y);
+  return sum * (1.0 - smoothstep(0.75, 1.0, e));
 }
 `;
 

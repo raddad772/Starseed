@@ -669,8 +669,13 @@ void main() {
     // (under a wood's canopy, little of the sky: sunShadows.js; and by night the moon's: moonlight.js)
     float skyBl = skyBlocked(vWorldPos), skyK = 1.0 - skyBl;
     vec3 ambient = uSunE * (skyE * wrap * skyK + canopyLit(skyBl, sunTop, muS, skyE)) + uAmbientFloor + moonLit(rel, r, up, N, keySh, 0.0, wrap, skyK);
-    // (under the grass drawn near (grassRender.js, to ~44 m): its thatch and its soil, not another lawn)
+    // (under the grass drawn near (grassRender.js, to ~44 m): its thatch and its soil, not another lawn; and
+    // in the blades' shadows, the sun reaching it through them (the grass's cover map, sunShadows.js), the
+    // sky a little hidden by them too: the snow between them darker than the open snow's)
     albedo = mix(albedo, albedo * vec3(0.5, 0.45, 0.36), veg * 0.75 * (1.0 - smoothstep(30.0, 46.0, dist)));
+    float gSum = grassCover(vWorldPos), gCov = exp(-2.2 * gSum);
+    direct *= gCov;
+    ambient *= 1.0 - 0.35 * (1.0 - exp(-0.8 * gSum));
     // far off the ground's small roughness goes unresolved, but its shadows don't: rocks,
     // furrows and a forest's canopy darken it, the more so with the sun low
     float farK = smoothstep(1500.0, 12000.0, dist);
@@ -695,7 +700,7 @@ void main() {
     float Gg = NdV / (NdV * (1.0 - kk) + kk) * ndl / (ndl * (1.0 - kk) + kk);
     float F0 = 0.04 - 0.02 * vCls2.w;
     float Fs = F0 + (1.0 - F0) * pow(1.0 - VdH, 5.0);
-    color += uSunE * sunT * Dg * Gg * Fs / (4.0 * NdV);
+    color += uSunE * sunT * gCov * Dg * Gg * Fs / (4.0 * NdV);
     // glints: snow's grains, and quartz sand's, fewer, near enough to tell apart. A grain's cell (4.5 mm)
     // smaller than a pixel is its share of the pixel's light, not all of it (a speck many times the
     // sunlit snow's brightness, coming and going with each blade swaying in front of it, flashed); and
@@ -704,13 +709,13 @@ void main() {
     float gc = foot * 220.0;
     if (gw > 0.05 && gc < 3.0 && muS > 0.0) {
       float g = grainGlint(fp, N, H, mix(0.9, 0.97, vCls1.z / max(gw, 1e-3)));
-      color += uSunE * sunT * min(g * 25.0 / max(1.0, gc * gc), 3.0) * gw * (1.0 - smoothstep(1.5, 3.0, gc));
+      color += uSunE * sunT * gCov * min(g * 25.0 / max(1.0, gc * gc), 3.0) * gw * (1.0 - smoothstep(1.5, 3.0, gc));
     }
 #else
     // wet / icy sheen
     // (an airless world's ground is regolith, frost included: matte, no gloss)
     float sp = pow(max(dot(N, H), 0.0), mix(20.0, 120.0, snow)) * (0.03 + 0.25 * snow + 0.3 * wet) * (uHasAtmo > 0.5 ? 1.0 : 0.1);
-    color += uSunE * sunT * sp * ndl;
+    color += uSunE * sunT * gCov * sp * ndl;
 #endif
   }
   // a hot world's ground glows at its own temperature (emissivity 1 - albedo), less the higher it
