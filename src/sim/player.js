@@ -310,14 +310,18 @@ export class Player {
     const v = this.vessel;
     const I = v.interior;
     this.body = v.body;
+    if(v.frameState && v.frameState.phase!=='open'){this.sVel.set(0,0,0);this.env.pressure=v.frameState.pressure;this.prompt={key:null,text:'Turnover airlock · '+v.frameState.phase};return;}
     if (I.carry) I.carry(this); // (riding a turbolift car: it moved since we looked)
+    const felt = v.type.interiorGravity === 'natural' ? v.feltGravity(new THREE.Vector3()) : null;
+    if (felt && !(felt.y < -.3 && Math.hypot(felt.x, felt.z) < -felt.y * .3)) { this.updateFreefall(dt, input, mouse, felt); return; }
+    const cabinG = felt ? -felt.y : PLATING_G;
     const up = _v4.set(0, 1, 0);
     this.lookUpdate(up, mouse);
     const fwd = this.heading.clone(), right = fwd.clone().cross(up).normalize();
     const wish = new THREE.Vector3().addScaledVector(fwd, input.axis('KeyS', 'KeyW')).addScaledVector(right, input.axis('KeyA', 'KeyD'));
     if (wish.lengthSq() > 0) wish.normalize().multiplyScalar(input.down('ShiftLeft') ? SPRINT * I.sprint : WALK);
     const vac = I.vacuumAt(this.sPos);
-    this.env.gravity = PLATING_G;
+    this.env.gravity = cabinG;
     this.env.pressure = vac ? 0 : 1; this.env.temperature = vac ? 3 : 293;
     if (this.grounded) {
       const dv = wish.clone().sub(_v1.set(this.sVel.x, 0, this.sVel.z));
@@ -329,12 +333,12 @@ export class Player {
       // air control under plating gravity
       const ac = _v1.set(wish.x - this.sVel.x, 0, wish.z - this.sVel.z).multiplyScalar(0.6 * dt);
       this.sVel.add(ac);
-      this.sVel.y -= PLATING_G * dt;
+      this.sVel.y -= cabinG * dt;
     }
     // jetpack: hold Space once off the floor (a hangar is 70 m tall)
     this.jetOn = false;
     if (input.down('Space') && !this.grounded && this.jetFuel > 0) {
-      const a = Math.max(6, PLATING_G * JET_ACCEL_SURF);
+      const a = Math.max(6, cabinG * JET_ACCEL_SURF);
       this.sVel.y += a * dt;
       if (wish.lengthSq() > 0) this.sVel.addScaledVector(_v1.copy(wish).normalize(), a * 0.6 * dt);
       if (!JET_UNLIMITED) this.jetFuel = Math.max(0, this.jetFuel - dt / JET_TIME);
@@ -355,6 +359,34 @@ export class Player {
     for (const c of v.children) if (this.childAboard(c, input)) return;
     this.bobUpdate(dt, Math.hypot(this.sVel.x, this.sVel.z));
     // an item you look at comes before the seat or lift you stand by
+    if (!(this.game.items && this.game.itemInteract(this, input))) I.interact(this, input);
+  }
+
+  // Pioneer pressure cabins: no floor adhesion in orbit. Suit jets add momentum;
+  // X deliberately brakes. Proper acceleration pushes loose occupants during burns.
+  updateFreefall(dt, input, mouse, felt) {
+    const v = this.vessel, I = v.interior, up = new THREE.Vector3(0, 1, 0);
+    this.lookUpdate(up, mouse); this.grounded = false;
+    const fwd = this.heading.clone().multiplyScalar(Math.cos(this.pitch)).addScaledVector(up, Math.sin(this.pitch));
+    const right = this.heading.clone().cross(up).normalize();
+    const thrust = fwd.multiplyScalar(input.axis('KeyS','KeyW')).addScaledVector(right, input.axis('KeyA','KeyD'));
+    thrust.y += input.axis('KeyC','Space') - (input.down('ControlLeft') ? 1 : 0);
+    if (thrust.lengthSq() > 1) thrust.normalize();
+    if (input.down('KeyX')) thrust.copy(this.sVel).multiplyScalar(-2).clampLength(0, 1);
+    this.jetOn = thrust.lengthSq() > .001 && this.jetFuel > 0;
+    this.sVel.addScaledVector(felt, dt);
+    if (this.jetOn) { this.sVel.addScaledVector(thrust, EVA_ACCEL * dt); if (!JET_UNLIMITED) this.jetFuel = Math.max(0, this.jetFuel - dt / JET_TIME); }
+    const steps = Math.max(1, Math.ceil(this.sVel.length() * dt / .2));
+    for (let i = 0; i < steps; i++) {
+      const prevY = this.sPos.y; this.sPos.addScaledVector(this.sVel, dt / steps);
+      const floor = I.floorAt(this.sPos.x, this.sPos.z, Math.max(prevY, this.sPos.y));
+      if (floor !== null && this.sPos.y < floor) { this.sPos.y = floor; this.sVel.y = Math.max(0, this.sVel.y); }
+      I.ceilingClamp(this);
+      if (I.confine(this) === 'exit') { this.exitVessel(); return; }
+    }
+    this.env.gravity = felt.length(); this.env.pressure = I.pressureAt ? I.pressureAt(this.sPos) : (I.vacuumAt(this.sPos) ? 0 : 1);
+    this.env.temperature = this.env.pressure < .1 ? 3 : 293;
+    this.bob = 0;
     if (!(this.game.items && this.game.itemInteract(this, input))) I.interact(this, input);
   }
 

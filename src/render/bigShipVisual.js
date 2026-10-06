@@ -30,7 +30,7 @@ export class BigShipVisual {
     const cone = new THREE.ConeGeometry(1, 1, 32, 1, true);
     cone.rotateX(Math.PI);
     cone.translate(0, -0.5, 0);
-    this.doorLeaves = vessel.type.slideDoors ? this.buildDoors(vessel.type.slideDoors, m.root) : [];
+    this.doorLeaves = vessel.type.slideDoors ? this.buildDoors(vessel.type.slideDoors.filter(d=>!d.modeled), m.root) : [];
     this.plumes = vessel.type.engines.map(([x, y, z, r]) => {
       const p = new THREE.Mesh(cone, plumeMaterial([0.45, 0.55, 1.0], 1));
       p.position.set(x, y, z);
@@ -81,6 +81,7 @@ export class BigShipVisual {
     if (m.rooms && m.loaded) this.showRooms();
     if (this.doorLeaves.length) this.updateDoors();
     if (m.turbolift && v.turbolift) this.updateTurbolift();
+    for (const {spec,node,p0} of m.extraParts || []) if(spec.slide)node.position.copy(p0).addScaledVector(_v.fromArray(spec.slide),v.doors[spec.door]?.open || 0);
     // strobes
     this.blink = (this.blink + dt) % 2.0;
     const on = this.blink < 0.1 || (this.blink > 0.3 && this.blink < 0.4);
@@ -174,6 +175,7 @@ export class BigShipVisual {
     this._ri = ri;
     const vis = visibleRooms(I, ri);
     for (const [id, n] of m.rooms) n.visible = vis.has(id);
+    for (const d of m.dressing || []) d.node.visible = vis.has(d.room);
     for (const L of this.doorLeaves) L.g.visible = vis.has(L.d.rooms[0]) || vis.has(L.d.rooms[1]);
     if (m.hall) m.hall.visible = [...vis].some((id) => id.startsWith('eng-') || id === 'reactor-pass');
     for (const [id, n] of m.glows) n.visible = ri < 0 || !vis.has(id);

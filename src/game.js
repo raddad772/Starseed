@@ -1,3 +1,5 @@
+import { dockAuxiliaryFleet } from './sim/auxiliaryFleet.js';
+import { AttachedFrameVisual, initDeckFrames, updateDeckFrames } from './sim/deckFrames.js';
 // Game orchestration: universe time and warp, vessel/player simulation,
 // camera, lighting, start sequence, settlement surveys, events.
 //
@@ -6,6 +8,7 @@
 // ship's zone fly in that ship's frame or sit docked in it, and everything is
 // stepped on one clock, parents before children.
 
+import { thrustAvailability } from './sim/propulsion.js';
 import { WorldSims } from './sim/worldSims.js';
 import { WorldClock } from './sim/worldClock.js';
 import { NearGround } from './sim/nearGround.js';
@@ -29,6 +32,8 @@ import { FTL, lockRadius } from './sim/ftl.js';
 import { NavComputer } from './sim/navComputer.js';
 import { ShipVisual } from './render/shipVisual.js';
 import { BigShipVisual } from './render/bigShipVisual.js';
+import { FleetVisual } from './render/fleetVisual.js';
+import { requestAirlock, outerAirlockOpen } from './sim/airlocks.js';
 import { GlbCraftVisual } from './render/glbShip.js';
 import { LightRig } from './render/lightRig.js';
 import { Hud } from './ui/hud.js';
@@ -387,12 +392,13 @@ export class Game {
     if (v.type.turbolift) v.turbolift = new Turbolift(v, v.type.turbolift);
     v.interior = makeInterior(v);
     v.target = new VesselTarget(v);
-    v.visual = v.big ? new BigShipVisual(this.engine, v) : (v.type.template ? new GlbCraftVisual(this.engine, v) : new ShipVisual(this.engine, v));
+    v.visual = v.type.frameOnly ? new AttachedFrameVisual(this.engine) : v.type.fleetAsset ? new FleetVisual(this.engine, v) : v.big ? new BigShipVisual(this.engine, v) : (v.type.template ? new GlbCraftVisual(this.engine, v) : new ShipVisual(this.engine, v));
     if (v.type.legAttach) v.legAttach = v.type.legAttach.map((a) => new THREE.Vector3(...a));
     // lit by big ships' fixtures (a shuttle's cabin stays sealed from them)
     this.lights.adopt(v.visual.model.root, v.big ? null : (o) => o.name === 'interior');
     if (v.type.viewscreen) this.addScreen(v);
     this.vessels.push(v);
+    initDeckFrames(this,v);
     return v;
   }
 
@@ -877,7 +883,7 @@ export class Game {
     if (!c || c.dead) return;
     const L = c.type.layout;
     if (!this.yacht) {
-      this.yacht = this.addVessel('yacht', 'Kestrel', 'CV-01-Y');
+      this.yacht = this.addVessel('yacht', 'Neptune 2', 'CV-01-Y');
       this.pods = L.pods.map((p, i) => this.addVessel('pod', `Pod ${i + 1}`, `CV-01-P${i + 1}`));
     }
     const put = (v, key, pos, quat, hatch) => {
@@ -896,6 +902,7 @@ export class Game {
       put(this.pods[i], p.id, p.dock.pos, q, p.hatch);
     });
     this.parkCraft();
+    dockAuxiliaryFleet(this);
   }
 
   // The carrier's vehicles and landers, parked in the starboard bay (made the
@@ -940,6 +947,7 @@ export class Game {
   // Whether a volume takes a craft: behind a door only while it is open, and
   // a snug one (a container's hold) only what fits inside it
   zoneAdmits(h, z, v) {
+    if (z.whenFree && h.attached) return false;
     if (z.door && h.doors[z.door] && h.doors[z.door].open < 0.6) return false;
     if (z.snug) {
       const r2 = v.type.radius * 2;
@@ -992,7 +1000,12 @@ export class Game {
       v.cargo = null;
       c.attached = false;
       c.leaveParent();
-      this.rehome(c, v.parent);
+      // Releasing an internal restraint keeps the craft in its closed garage.
+      // Door admission applies to arrivals, not cargo already carried inside.
+      const local = v.bodyToLocal(c.pos, _v1);
+      const hold = v.type.zones?.find(z => z.kind === 'hold' && insideBox(z, local));
+      if (hold) c.enterParent(v, hold);
+      else this.rehome(c, v.parent);
       c.idleTime = 0;
       this.message(`${v.name}: ${c.name} released`, 'nav');
       this.audio.clunk();
@@ -1064,7 +1077,7 @@ export class Game {
     let best = null, bestD = Infinity;
     for (const v of this.vessels) {
       // (a craft in its berth is boarded through its host's hatch; away from it, like any other)
-      if (v.dead || v.big || (v.home && v.parent)) continue;
+      if (v.dead || (v.big && !v.type.fleetAsset) || (v.home && v.parent)) continue;
       if (v.getWorldPos(_v2).distanceToSquared(me) > Math.pow(v.type.radius + 6, 2)) continue;
       const mine = v === p.vessel; // (aboard: its door panels; its seats are the cabin's own)
       // an open vehicle: get in from beside it (craft you walk into: by the ramp or a hatch)
@@ -1084,6 +1097,7 @@ export class Game {
       }
       if (!mine) {
         for (const e of v.type.entries || []) {
+          if (e.internal) continue;
           if (e.whenFree && v.parent) continue;
           const d = v.localToWorld(_v2.fromArray(e.outside), _v2).distanceTo(me) - 2.6;
           if (d < 0 && d < bestD) { bestD = d; best = { v, entry: e }; }
@@ -1100,12 +1114,18 @@ export class Game {
     const v = best.v;
     if (best.entry) {
       const e = best.entry;
+      if (e.airlock && !outerAirlockOpen(v, e.airlock)) {
+        const s = v.airlocks[e.airlock], busy = s.phase === 'cycling' || s.phase === 'closing';
+        p.prompt = { key: busy ? null : 'F', text: busy ? `${v.name} airlock · ${s.phase}` : `Cycle ${v.name} airlock for boarding` };
+        if (!busy && input.hit('KeyF')) requestAirlock(v, e.airlock, 'outer');
+        return;
+      }
       p.prompt = { key: 'F', text: `Climb into ${v.name} · ${e.label}` };
       if (input.hit('KeyF')) {
         p.fade = 1;
         if (e.canopy) v.boardingT = 1.6;
         p.enterVessel(v, new THREE.Vector3(...e.inside), new THREE.Vector3(), new THREE.Vector3(...(e.heading || [0, 0, -1])));
-        p.grounded = true;
+        p.grounded = v.type.interiorGravity !== 'natural';
       }
       return;
     }
@@ -1134,7 +1154,7 @@ export class Game {
   // circular equatorial orbit, phase measured from the landing site; nose
   // prograde, dorsal side out; no spin: big ships just keep their course
   placeInOrbit(v, b, alt, phase) {
-    for (const c of v.children.slice()) c.leaveParent();
+    for (const c of v.children.slice()) if(!c.type.frameOnly)c.leaveParent();
     v.dead = false; v.hull = 1; v.landed = false; v.rails = false;
     if (v.parent) v.leaveParent();
     v.body = b;
@@ -1615,9 +1635,9 @@ export class Game {
     const v = this.piloted;
     if (v) {
       if (input.hit('KeyZ')) this.cycleAssist();
-      if (input.hit('KeyY')) this.toggleClamp(v);
+      if (input.hit('KeyY')) this.toggleClamp(v.type.key === 'runabout' && v.parent?.type.clamp ? v.parent : v);
       if (input.hit('KeyG') && v.type.legs && !v.type.ground) { v.gearTarget = v.gearTarget > 0.5 ? 0 : 1; this.message(v.gearTarget ? 'Gear down' : 'Gear up'); this.audio.clunk(); }
-      if (input.hit('KeyR')) this.toggleRamp(v);
+      if (input.hit('KeyR')) this.toggleRamp(v.type.key === 'runabout' && v.parent?.type.clamp ? v.parent : v);
       if (input.hit('KeyL') && v.type.key === 'shuttle') { v.visual.floodOn = !v.visual.floodOn; }
       if (input.hit('KeyJ')) v.ftl.toggle();
       if (input.hit('KeyV')) {
@@ -1736,7 +1756,9 @@ export class Game {
     for (const v of this.vessels) if (v.type.doors && !v.dead) v.updateDoors(dt);
     // big ships' sliding doors, for the players walking aboard (at walking pace, like them)
     for (const v of this.vessels) {
-      if (!v.type.slideDoors || v.dead) continue;
+      if (v.dead) continue;
+      updateDeckFrames(v,dtReal * Math.min(this.warp,4));
+      if (!v.type.slideDoors) continue;
       const walkers = this._walkers || (this._walkers = []);
       walkers.length = 0;
       for (const p of this.players) if (p.mode === 'ship' && p.vessel === v) walkers.push(p.sPos);
@@ -1814,13 +1836,13 @@ export class Game {
   // can do in the step and never past them (an explicit step overshot, and
   // any residual rate grew into a spin)
   rotateOnly(s, dt) {
-    const w = s.angVel, L = s.limits;
+    const w = s.angVel, L = s.limits, available = thrustAvailability(s);
     if (s.assist === 0) {
       const c = s.ctrl;
-      w.x += c.pitch * L.alpha.x * dt; w.y += c.yaw * L.alpha.y * dt; w.z += c.roll * L.alpha.z * dt;
+      w.x += c.pitch * L.alpha.x * dt * available; w.y += c.yaw * L.alpha.y * dt * available; w.z += c.roll * L.alpha.z * dt * available;
     } else {
       const tr = s.rateCommand(_v1, dt < 0.1);
-      const step = (cur, want, a) => cur + THREE.MathUtils.clamp(want - cur, -a * dt, a * dt);
+      const step = (cur, want, a) => cur + THREE.MathUtils.clamp(want - cur, -a * dt * available, a * dt * available);
       w.set(step(w.x, tr.x, L.alpha.x), step(w.y, tr.y, L.alpha.y), step(w.z, tr.z, L.alpha.z));
     }
     const wl = w.length();
@@ -1968,9 +1990,9 @@ export class Game {
     for (const v of this.vessels) {
       if (v.dead || v.big || v.attached || v.landed || (v.ftl && v.ftl.state === 'cruise')) continue;
       for (const h of this.vessels) {
-        if (h === v || h.dead || !h.type.zones || h.parent !== v.parent || (!v.parent && h.body !== v.body)) continue;
+        if (h === v || h.dead || !h.type.zones || (h.parent !== v.parent && !h.deckHost) || h.body !== v.body || h === v.parent) continue;
         let local;
-        if (v.parent) {
+        if (v.parent && h.parent === v.parent) {
           if (h.lpos.distanceToSquared(v.lpos) > Math.pow(h.type.radius + 60, 2)) continue;
           local = _v1.copy(v.lpos).sub(h.lpos).applyQuaternion(_q1.copy(h.lquat).invert());
         } else {

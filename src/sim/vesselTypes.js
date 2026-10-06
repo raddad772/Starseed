@@ -1,3 +1,6 @@
+import { TENDER_YACHT } from './layouts/auxiliary.data.js';
+import { DECK_FRAME_TYPES } from './deckFrames.js';
+import { applyEstablishedRefit } from './establishedRefit.js';
 // Vessel classes: mass, thrusters, colliders, docking zones, walkable layout
 // and seats, all in each vessel's local frame (+X right, +Y up, -Z forward,
 // metres). The render models are built from these same numbers, so the hull
@@ -9,6 +12,9 @@
 // can walk; `open` sides lead out into space, `capture` rooms pull a drifting
 // spacewalker onto their floor.
 
+import { HORIZON_TYPES } from './layouts/horizon.data.js';
+import { EXPEDITION_TYPES } from './layouts/expedition.data.js';
+import { PIONEER_TYPES } from './layouts/pioneer.data.js';
 import { HULL_PROBES, SHIP_HULL_BOXES, SHIP_INTERIOR } from '../render/shipModel.js';
 import { BASTION } from './layouts/bastion.js';
 import { YACHT_DECK, YACHT_SOLIDS, YACHT_SEATS, YACHT_HULL } from './layouts/yacht.data.js';
@@ -181,7 +187,7 @@ export const CARRIER = (() => {
 // walk about; their models come from the carrier's file.
 const boxCorners = (x0, y0, z0, x1, y1, z1) => hullCorners(x0, y0, z0, x1, y1, z1);
 export const YACHT = {
-  key: 'yacht', className: "Captain's yacht", big: false, seatOnly: true,
+  key: 'yacht', className: "Neptune 2 family explorer", big: false, seatOnly: true,
   model: CARRIER.model, template: 'yacht',
   mass: 60000, I: [4.0e6, 4.5e6, 1.0e6],
   thrust: { main: 9.0, retro: 2.0, belly: 5.0, down: 1.2, lateral: 2.0 },
@@ -324,7 +330,7 @@ export const CRATE = {
 };
 
 export const TANK = {
-  key: 'tank', className: 'Hover-tank', big: false, seatOnly: true, ftl: false, model: CRAFT_MODEL, template: 'tank',
+  key: 'tank', className: 'Hover scout', big: false, seatOnly: true, ftl: false, model: CRAFT_MODEL, template: 'tank',
   livery: { main: '#5d6a45', second: '#3a4130', stripe: '#c9b46a' },
   // pads hold a ride height (pad over the ground), pushing up to `push` g; on a
   // light world they pull down too, as far as making up `feel` g of weight in
@@ -359,7 +365,7 @@ export const TANK = {
     { kind: 'bench', ...box(-1.6, -0.3, 0.6, -1.2, 0.15, 3.6) }, { kind: 'bench', ...box(1.2, -0.3, 0.6, 1.6, 0.15, 3.6) }],
   lights: [{ pos: [0, 1.6, 2.0], color: 0xfff0da, intensity: 2.5, range: 6 }],
   seats: [{ pilot: true, pos: [-0.55, -0.3, -1.6], eye: [-0.55, 0.95, -1.95], stand: [-0.55, -0.3, -0.6], heading: [0, 0, -1], label: 'Driver\'s seat' },
-    { pos: [0.55, -0.3, -1.6], eye: [0.55, 0.95, -1.95], stand: [0.55, -0.3, -0.6], heading: [0, 0, -1], label: 'Gunner\'s seat' }],
+    { pos: [0.55, -0.3, -1.6], eye: [0.55, 0.95, -1.95], stand: [0.55, -0.3, -0.6], heading: [0, 0, -1], label: 'Survey operator seat' }],
   // the compartment's screen: what a camera on the nose sees (drawn only while someone is in there)
   viewscreen: { at: [1.125, 0.925, -0.185], size: [0.75, 0.75], cam: [0, 1.05, -3.1], pitch: -0.05, fov: 62, room: 'bay', res: 320 },
   help: 'W/S drive · mouse turns · A/D strafe · Shift full power · R rear ramp · F out of the seat',
@@ -453,7 +459,23 @@ export const FIGHTER = {
   seats: [{ pilot: true, pos: [0, 0.6, -2.8], eye: [0, 1.5, -3.1], stand: [-2.9, -2.0, -2.5], heading: [-1, 0, 0], label: 'Pilot seat' }],
 };
 
+applyEstablishedRefit({carrier:CARRIER,tender:TENDER,yacht:YACHT,lifter:LIFTER,tank:TANK,aux:TENDER_YACHT});
+
+const RUNABOUT = {
+ ...CART,key:'runabout',className:'Two-person survey runabout',fleetAsset:true,model:'assets/models/runabout.glb',assetRoot:'yacht:hover_vehicle',template:'yacht:hover_vehicle',skipNodes:[],mass:1600,I:inertia(1600,2.6,2.4,4.35),
+ ...springs(1600,.25),radius:3.4,size:[2.6,2.42,4.35],cargo:{offset:[0,0,0]},interiorGravity:'artificial',combatEnabled:false,
+ ground:{kind:'hover',drive:.35,vmax:20,strafe:.25,yawRate:.8,yawAccel:.6,grip:.1,ride:.7,reach:2,push:3,feel:1},
+ legLength:.8,legAttach:[[-.97,-.43,-1.3],[.97,-.43,-1.3],[-.97,-.43,1.3],[.97,-.43,1.3]],
+ colliders:[box(-1.3,-.5,-2.2,1.3,.3,2.2)],probes:hullCorners(-1.3,-.5,-2.2,1.3,1.91,2.2),parts:[],engines:[],engineAxes:[],rooms:undefined,
+ seats:[{pilot:true,pos:[-.55,.25,.2],eye:[-.55,1.47,.1],stand:[-1.7,-.65,.1],heading:[0,0,-1],label:'Driver seat'},{pos:[.55,.25,.2],eye:[.55,1.47,.1],stand:[1.7,-.65,.1],heading:[0,0,-1],label:'Passenger seat'}],
+ help:'W/S drive · A/D strafe · Y restraint release · F leave seat'
+};
+
 export const VESSEL_TYPES = {
+  tender_yacht:TENDER_YACHT,runabout:RUNABOUT,
+  ...DECK_FRAME_TYPES,
+  ...PIONEER_TYPES,
+  ...EXPEDITION_TYPES, ...HORIZON_TYPES,
   shuttle: SHUTTLE, tender: TENDER, carrier: CARRIER, yacht: YACHT, pod: POD,
   cart: CART, crate: CRATE, tank: TANK, lifter: LIFTER, dropship: DROPSHIP, fighter: FIGHTER,
 };

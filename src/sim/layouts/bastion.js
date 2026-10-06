@@ -167,7 +167,7 @@ function win(roomId, wall, u0, u1, y0, y1) { windows.push({ room: roomId, wall, 
 // ---------------------------------------------------------------- deck 4: flight deck
 {
   const y = DECKS[4];
-  room('armory', 'Armory and magazine', 4, 'armory', [-24, y, -256], [24, y + H, -226]);
+  room('armory', 'Exploration science center', 4, 'laboratory', [-24, y, -256], [24, y + H, -226]);
   room('d4-spine', 'Flight deck spine', 4, 'corridor', [-2, y, -227], [2, y + H, 263]);
   room('l1-d4', 'Forward lift lobby', 4, 'lobby', [1, y, -220], [10, y + H, -208]);
   room('l2-d4', 'Midship lift lobby', 4, 'lobby', [1, y, -32], [10, y + H, -22]);

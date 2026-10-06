@@ -249,13 +249,13 @@ export class Hud {
     const gLocal = body.GM / (st.r * st.r);
     let head = `<h3>${body.data.name} · ${body.data.label}</h3>`;
     const host = s.parent;
-    if (p.mode === 'ship' && s.big) {
+    if (p.mode === 'ship' && (s.big || s.type.interiorGravity === 'natural')) {
       // walking aboard a big ship
       head = `<h3>${s.name} · ${s.type.className}</h3>`;
       const room = p._room;
       row('Deck', room ? room.name : '—');
-      row('Gravity', '1.00 g · plating');
-      row('Air', s.interior.vacuumAt(p.sPos) ? 'vacuum · suit sealed' : '1.0 bar', s.interior.vacuumAt(p.sPos) ? 'c-caution' : 'c-ok');
+      row('Gravity', s.type.interiorGravity === 'natural' ? `${(s.feltGravity(_v).length() / 9.81).toFixed(2)} g · natural` : '1.00 g · plating');
+      row('Air', s.interior.vacuumAt(p.sPos) ? 'vacuum · suit sealed' : `${(s.interior.pressureAt ? s.interior.pressureAt(p.sPos) : 1).toFixed(2)} bar`, s.interior.vacuumAt(p.sPos) ? 'c-caution' : 'c-ok');
       row('Ship alt', fmtAlt(alt) + ' · ' + body.data.name);
       row('Ship hull', Math.round(s.hull * 100) + ' %', s.hull < 0.5 ? 'c-warn' : 'c-ok');
     } else if (p.aboard && host) {
@@ -266,7 +266,7 @@ export class Hud {
       const lv = s.lvel;
       row('V/S', (lv.y >= 0 ? '+' : '') + lv.y.toFixed(1) + ' m/s', lv.y < -4 && s.agl < 30 ? 'c-warn' : '');
       row('Rel spd', U.fmtSpeed(lv.length()));
-      row('Gravity', `${(s.zone.gravity / 9.81).toFixed(2)} g · plating`);
+      row('Gravity', `${((typeof s.zone.gravity === 'number' ? s.zone.gravity : s.feltGravity(_v).length()) / 9.81).toFixed(2)} g · ${typeof s.zone.gravity === 'number' ? 'plating' : 'natural'}`);
       row('Hull', Math.round(s.hull * 100) + ' %', s.hull < 0.35 ? 'c-warn' : (s.hull < 0.75 ? 'c-caution' : 'c-ok'));
     } else if (piloting && s.type.ground) {
       // driving: speed, heading, the ground, the vehicle

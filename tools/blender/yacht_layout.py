@@ -58,11 +58,11 @@ def _merge(cells, nx, nz):
 
 
 def build_yacht():
-    Y = bpy.data.objects['yacht']
+    Y = bpy.data.objects.get('Neptune 2') or bpy.data.objects['yacht']
     inv = Y.matrix_world.inverted()
     parts = [Y] + [c for c in Y.children_recursive if c.type == 'MESH']
     solid = [o for o in parts if not any(s in o.name for s in OPEN) and 'hover_vehicle' not in o.name]
-    t = _tree(solid + [bpy.data.objects['yacht:hover_vehicle']], inv)
+    t = _tree(solid, inv)  # Deployable runabout is a separate runtime vessel.
     x0, x1, z0, z1 = -13.2, 13.2, -23.0, 25.4
     nx, nz = int((x1 - x0) / CELL), int((z1 - z0) / CELL)
     X = lambda i: x0 + (i + 0.5) * CELL

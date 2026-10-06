@@ -3,6 +3,9 @@
 // The same spots the browser test scripts use, as buttons.
 
 import * as THREE from 'three';
+import { boardHorizon } from '../sim/horizonFleet.js';
+import { boardExpedition } from '../sim/expeditionFleet.js';
+import { boardPioneer } from '../sim/pioneerFleet.js';
 
 // Where on the starting planet the sun stands elevDeg above the horizon (on
 // the great circle through the landing site), and the way to face it.
@@ -40,6 +43,22 @@ function standFacingSun(g, elevDeg, azOffDeg, pitch) {
 }
 
 export const TEST_SCENES = [
+  {label:'Halyard: family launch',note:'Seven berths, EVA lock and deployable two-person runabout',run:g=>{const v=g.tenderYacht;g.player.releaseControls(g.player.vessel);g.player.placeAboard(v,new THREE.Vector3(0,0,-9),new THREE.Vector3(0,0,-1));}},
+  ...['meridian', 'confluence', 'neptune3', 'cradle', 'shorebird', 'lark', 'drift'].map(key => ({
+    label: `Horizon: ${key === 'neptune3' ? 'Neptune 3' : key[0].toUpperCase() + key.slice(1)}`,
+    note: 'Civilian field-drive fleet · furnished interiors · artificial gravity · F airlocks / seats · R ramps · Y cargo',
+    run: g => boardHorizon(g, key),
+  })),
+  ...['longreach', 'crosscurrent', 'hearth', 'porter', 'kestrel', 'moth', 'skimmer'].map(key => ({
+    label: `Expedition: ${key[0].toUpperCase() + key.slice(1)}`,
+    note: 'Integrated exploration fleet · freefall · F airlocks / seats · R ramps · Y cargo · Skimmer needs atmosphere',
+    run: g => boardExpedition(g, key),
+  })),
+  ...['caravan', 'anchor', 'nomad', 'gantry', 'hopper', 'firefly', 'trail'].map(key => ({
+    label: `Pioneer: ${key[0].toUpperCase() + key.slice(1)}`,
+    note: 'Early exploration fleet · no artificial gravity · F airlocks/seats · Space/C freefall, X brakes · Y cargo clamp',
+    run: g => boardPioneer(g, key),
+  })),
   {
     label: 'Sun 37° up, facing it',
     note: 'Morning light into the sun: the ground should set the exposure, the sky may blow out a little',

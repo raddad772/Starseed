@@ -1,9 +1,11 @@
+import { interactDeckFrames } from './deckFrames.js';
 // Walkable interiors in vessel-local coordinates. Gravity plating pulls along
 // the vessel's -Y. Each interior answers the same questions for the player:
 // where is the floor, where may I stand, what can I use here, and did I just
 // walk out (down a ramp, off a deck edge, out of a hangar door)?
 
 import * as THREE from 'three';
+import { airlockPressure, interactAirlock } from './airlocks.js';
 import { SHIP_INTERIOR, SHIP_HULL_BOXES } from '../render/shipModel.js';
 
 const RADIUS = 0.3;
@@ -202,7 +204,7 @@ export class RoomInterior {
       if (r.car) continue;
       if (p.x < r.min[0] || p.x > r.max[0] || p.z < r.min[2] || p.z > r.max[2]) continue;
       if (p.y < r.min[1] - below || p.y > r.max[1]) continue;
-      if (!best || r.min[1] > best.min[1]) best = r;
+      if (!best || r.min[1] > best.min[1] || ((r.airlock || r.pressureDoor) && !best.airlock && !best.pressureDoor && r.min[1] === best.min[1])) best = r;
     }
     return best;
   }
@@ -222,7 +224,8 @@ export class RoomInterior {
     return f;
   }
 
-  vacuumAt(p) { const r = this.roomAt(p); return !!(r && r.vacuum); }
+  pressureAt(p) { if(this.v.frameState)return this.v.frameState.pressure;return airlockPressure(this.v, this.roomAt(p)); }
+  vacuumAt(p) { return this.pressureAt(p) < .1; }
 
   // the turbolift car whose cabin holds p, if any
   carAt(p, below = 0.6) {
@@ -358,6 +361,8 @@ export class RoomInterior {
 
   interact(pl, input) {
     const p = pl.sPos;
+    if (interactDeckFrames(this.v,pl,input)) return;
+    if (interactAirlock(this.v, pl, input)) return;
     // hatches to the craft this ship carries (the yacht, the escape pods)
     for (const h of this.v.type.hatches || []) {
       if (Math.hypot(p.x - h.pos[0], p.z - h.pos[2]) > 1.8 || Math.abs(p.y - h.pos[1]) > 1.2) continue;
@@ -380,6 +385,7 @@ export class RoomInterior {
     }
     // out the way you came in: a hatch, an airlock, a canopy
     for (const e of this.entries) {
+      if (e.airlock) continue; // handled by the interlocked chamber controls above
       if (e.whenFree && this.v.parent) continue;
       if (Math.hypot(p.x - e.inside[0], p.z - e.inside[2]) > 1.0 || Math.abs(p.y - e.inside[1]) > 1.2) continue;
       pl.prompt = { key: 'F', text: `Climb out · ${e.label}` };
@@ -411,8 +417,8 @@ export class RoomInterior {
       for (const st of this.tl.stations) {
         const [dx, dy, dz] = st.door;
         if (Math.abs(p.y - dy) > 1.5) continue;
-        const out = (p.z - dz) * st.end; // (out from the door onto the landing)
-        if (!((Math.abs(p.x - dx) < 1.8 && out > -0.3 && out < 4.5) || Math.hypot(p.x - st.panel[0], p.z - st.panel[2]) < 1.4)) continue;
+        const out = (st.axis === 'x' ? p.x - dx : p.z - dz) * st.end; // (out from the door onto the landing)
+        if (!((Math.abs(st.axis === 'x' ? p.z - dz : p.x - dx) < 1.8 && out > -0.3 && out < 4.5) || Math.hypot(p.x - st.panel[0], p.z - st.panel[2]) < 1.4)) continue;
         const c = this.tl.carFor(st.id), here = this.tl.stationOf(c) === st;
         const eta = !here && c.dest === st.id && this.tl.eta(c);
         pl.prompt = { key: 'F', text: here ? (c.doors > 0.5 ? `${this.tl.spec.label} · step in` : `Open the ${this.tl.spec.label.toLowerCase()}`)
@@ -506,7 +512,7 @@ export class RoomInterior {
     // longer ride counts for more)
     if (this.tl) {
       const S = this.tl.stations;
-      const front = (st) => new THREE.Vector3(st.door[0], st.door[1], st.door[2] + st.end * 1.6);
+      const front = st => new THREE.Vector3(...st.door).addScaledVector(new THREE.Vector3(st.axis === 'x' ? 1 : 0, 0, st.axis === 'x' ? 0 : 1), st.end * 1.6);
       for (const a of S) for (const b of S) {
         if (a === b) continue;
         const ia = R.findIndex((r) => r.id === a.landing), ib = R.findIndex((r) => r.id === b.landing);

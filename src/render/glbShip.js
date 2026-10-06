@@ -98,19 +98,20 @@ export function buildGlbShip(engine, vessel) {
   const root = new THREE.Group();
   const out = {
     root, parts: {}, field: null, navLights: [], rooms: new Map(), glows: new Map(), hall: null,
-    hull: liveryMaterial(vessel.livery),
+    hull: liveryMaterial(vessel.livery), dressing: [], extraParts: [],
     // the drive glow: brighter with the throttle (BigShipVisual drives it)
     glow: new THREE.MeshStandardMaterial({ color: 0x000000, emissive: new THREE.Color(0x7fb4ff), emissiveIntensity: 0.2 }),
     fields: [], loaded: false, templates: {},
   };
   const cache = {};
-  const matFor = (name, inside) => {
+  const matFor = (name, inside, original) => {
     const key = (inside ? 'i:' : 'e:') + name;
     if (cache[key]) return cache[key];
     let m;
     if (name === 'Hull' && !inside) m = out.hull;
     else if (name === 'EngineGlow') m = out.glow;
     else if (GLOW[name]) m = glowMaterial(name);
+    else if (original && !INTERIOR[name] && !EXTERIOR[name]) { const params = { color: original.color, metalness: original.metalness, roughness: original.roughness, emissive: original.emissive, emissiveIntensity: original.emissiveIntensity }; m = inside ? interiorMaterial(params) : fixtureLit(new THREE.MeshStandardMaterial(params)); }
     else if (inside) { const [c, met, r] = INTERIOR[name] || INTERIOR.Wall; m = interiorMaterial({ color: c, metalness: met, roughness: r }); }
     else { const [c, met, r] = EXTERIOR[name] || INTERIOR[name] || INTERIOR.Wall; m = fixtureLit(new THREE.MeshStandardMaterial({ color: c, metalness: met, roughness: r })); }
     return (cache[key] = m);
@@ -126,16 +127,17 @@ export function buildGlbShip(engine, vessel) {
     for (const n of nodes) {
       const name = n.userData.name || n.name;
       // (the turbolift runs inside the hull and stands in the bays: lit like the rooms)
-      const inside = name.startsWith('room:') || name === 'eng-hall' || name === 'bastion:turbolift_system';
+      const inside = name.startsWith('room:') || name === 'eng-hall' || name === 'bastion:turbolift_system' || !!n.userData.interior;
       n.traverse((o) => {
         if (!o.isMesh) return;
         const mname = o.material && o.material.name;
         if (mname === 'Glass') { o.visible = false; return; }
         if (mname === 'ForceField') return;
-        o.material = matFor(mname, inside);
+        o.material = matFor(mname, inside, o.material);
         o.castShadow = !inside && !GLOW[mname];
         o.receiveShadow = !inside && !GLOW[mname];
       });
+      if (n.userData.room_id) { out.dressing.push({ room: n.userData.room_id, node: n }); }
       if (name.startsWith('room:')) { out.rooms.set(name.slice(5), n); n.visible = false; }
       else if (name === 'eng-hall') { out.hall = n; n.visible = false; }
       else if (name.startsWith('glow:')) out.glows.set(name.slice(5), n);
@@ -157,6 +159,8 @@ export function buildGlbShip(engine, vessel) {
       } else out.parts[name] = n;
     }
     root.add(scene);
+    const names = new Map();scene.traverse(n => names.set(n.userData.name || n.name,n));
+    for (const spec of vessel.type.parts || []) { const node=names.get(spec.node);if(node)out.extraParts.push({spec,node,p0:node.position.clone()}); }
     out.loaded = true;
     if (out.onLoaded) out.onLoaded(out);
   }, (err) => console.error('ship model failed to load', vessel.type.model, err));
@@ -231,34 +235,35 @@ export class GlbCraftVisual {
     this.engine = engine;
     this.v = vessel;
     const root = new THREE.Group();
-    this.model = { root };
+    this.model = { root, loaded: false };
     engine.scene.add(root);
     const t = vessel.type;
     const hull = liveryMaterial(vessel.livery || t.livery || { main: '#b9bec4', second: '#41464c', stripe: '#8c2418' });
     this.hull = hull; // (the Paint app sets its colours)
     this.parts = [];
     const cache = {};
-    loadShipModel(t.model).then((gltf) => {
+    this.ready = loadShipModel(t.model).then((gltf) => {
       let src = null;
       gltf.scene.traverse((n) => { if (!src && (n.userData.name || n.name) === t.template) src = n; });
-      if (!src) return;
+      if (!src) throw new Error(`Missing model template ${t.template}`);
       const m = src.clone(true);
+      const remove=[];m.traverse(o=>{if(t.skipNodes?.includes(o.userData.name||o.name))remove.push(o);});for(const o of remove)o.parent?.remove(o);
       m.position.set(0, 0, 0);
       if (t.templateTurn) m.rotation.y = t.templateTurn;
       m.traverse((o) => {
         if (!o.isMesh) return;
         const name = o.material && o.material.name;
         o.material = name === 'Hull' ? hull : (cache[name] || (cache[name] = GLOW[name] ? glowMaterial(name)
-          : fixtureLit(new THREE.MeshStandardMaterial({ color: (EXTERIOR[name] || INTERIOR[name] || INTERIOR.Wall)[0], metalness: 0.6, roughness: 0.4 }))));
+          : fixtureLit(new THREE.MeshStandardMaterial({ color: (EXTERIOR[name] || INTERIOR[name])?.[0] || o.material.color, metalness: o.material.metalness ?? 0.6, roughness: o.material.roughness ?? 0.4, emissive: o.material.emissive, emissiveIntensity: o.material.emissiveIntensity }))));
         o.castShadow = o.receiveShadow = !GLOW[name];
       });
       for (const pt of t.parts || []) {
         let node = null;
-        m.traverse((o) => { if (!node && (o.userData.name || o.name) === `${t.template}:${pt.node}`) node = o; });
+        m.traverse((o) => { if (!node && (o.userData.name || o.name) === (pt.node.includes(':') ? pt.node : `${t.template}:${pt.node}`)) node = o; });
         if (node) this.parts.push({ pt, node, p0: node.position.clone(), q0: node.quaternion.clone() });
       }
-      root.add(m);
-    }, (err) => console.warn('craft model not loaded', t.model, err && err.message));
+      root.add(m); this.model.loaded = true; return this;
+    }).catch(err => { this.model.error = err.message; console.error('craft model not loaded', t.model, err.message); return this; });
   }
 
   update(dt, camWorld) {
@@ -266,7 +271,12 @@ export class GlbCraftVisual {
     root.position.copy(v.getWorldPos(_cv)).sub(camWorld);
     root.quaternion.copy(v.quat);
     root.visible = !v.dead && root.position.length() < 300000;
+    v.gear += THREE.MathUtils.clamp(v.gearTarget-v.gear,-dt/3,dt/3);
     for (const P of this.parts) {
+      if(P.pt.channel==='gearRotate'){P.node.quaternion.setFromAxisAngle(_pa.fromArray(P.pt.axis),-v.gear*P.pt.angle).multiply(P.q0);continue;}
+      if(P.pt.channel==='homeHatch'){P.node.position.copy(P.p0).addScaledVector(_pa.fromArray(P.pt.slide),v.attached&&v.home?.host===v.parent?1:0);continue;}
+      if(P.pt.channel==='rampPivot'){const u=v.doors.ramp.open;P.node.position.copy(P.p0).addScaledVector(_pa.fromArray(P.pt.slide),u);P.node.quaternion.setFromAxisAngle(_pa.set(1,0,0),u*P.pt.angle).multiply(P.q0);continue;}
+      if (P.pt.channel === 'podTilt') { P.node.quaternion.setFromAxisAngle(_pa.fromArray(P.pt.axis), v.podTilt || 0).multiply(P.q0); continue; }
       if (P.pt.slide) { P.node.position.copy(P.p0).addScaledVector(_pa.fromArray(P.pt.slide), v.doors[P.pt.door].open); continue; } // (a sliding leaf)
       _pq.setFromAxisAngle(_pa.fromArray(P.pt.axis), v.doors[P.pt.door].open * P.pt.angle);
       _ph.fromArray(P.pt.hinge);

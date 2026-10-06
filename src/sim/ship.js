@@ -40,6 +40,8 @@
 // long springs, thrust to move); see groundControl and wheelForce.
 
 import * as THREE from 'three';
+import { applyPropulsion, thrustAvailability } from './propulsion.js';
+import { initAirlocks, updateAirlocks } from './airlocks.js';
 import { propagate, orbitInfo } from '../core/kepler.js';
 import { SHUTTLE, boxPenetration, boxesNear, deckBelow, insideBox } from './vesselTypes.js';
 import { floraOf } from './floraField.js';
@@ -138,6 +140,7 @@ export class Ship {
     this.doors = {};
     for (const d of type.doors || []) this.doors[d.id] = { open: 0, target: 0 };
     for (const d of type.slideDoors || []) this.doors[d.id] = { open: 0, target: 0, hold: 0 };
+    initAirlocks(this);
     this.cargo = null;
     this.drive = { throttle: 0, steer: 0, brake: 0 }; // a ground vehicle's wheels
     this._axQ = this.quat; // this vessel's axes in the frame of the contact pass running
@@ -243,7 +246,9 @@ export class Ship {
   // (within 4.5 m, either side), closing a moment after they've gone.
   // walkers: positions in this ship's frame.
   updateSlideDoors(dt, walkers) {
+    updateAirlocks(this, dt, walkers);
     for (const d of this.type.slideDoors) {
+      if (d.airlock) continue;
       const st = this.doors[d.id];
       const uc = (d.u0 + d.u1) / 2, half = (d.u1 - d.u0) / 2;
       let near = false;
@@ -254,7 +259,7 @@ export class Ship {
         if (Math.abs(along) < 4.5 && Math.abs(across) < half + 1.5) { near = true; break; }
       }
       // (an airlock's two doors never both open; an outer one stays shut while docked)
-      if ((d.interlock && this.doors[d.interlock].open > 0.02) || (d.whenFree && this.parent)) { near = false; st.hold = 0; }
+      if ((d.interlock && (this.doors[d.interlock].open > 0.02 || this.doors[d.interlock].target > 0)) || (d.whenFree && this.parent)) { near = false; st.hold = 0; }
       st.hold = near ? 1.5 : Math.max(0, st.hold - dt);
       st.target = st.hold > 0 ? 1 : 0;
       const r = (st.target > st.open ? 3.2 : 1.4) * dt; // (quick to open, unhurried to close)
@@ -266,6 +271,7 @@ export class Ship {
     if (this.boardingT > 0) this.boardingT -= dt;
     for (const d of this.type.doors || []) {
       const st = this.doors[d.id], r = (d.speed || 0.5) * dt;
+      if(d.interlock && this.doors[d.interlock]?.open>.001 && st.target>st.open)continue;
       if (d.auto) st.target = this.boardingT > 0 ? 1 : 0; // (a canopy: up while someone climbs in or out)
       st.open += THREE.MathUtils.clamp(st.target - st.open, -r, r);
     }
@@ -741,6 +747,7 @@ export class Ship {
 
   step(dt, ctrlForce, ctrlTorque) {
     if (this.dead) return;
+    applyPropulsion(this, ctrlForce, ctrlTorque, dt);
     const b = this.body;
     if (this.landed) {
       const lifting = ctrlForce.y > this.mass * 0.4 * G0 || ctrlForce.z < -this.mass * 0.5 * G0 || ctrlForce.lengthSq() > Math.pow(this.mass * 1.2 * G0, 2) || (this.type.ground && this.wantsMove());
@@ -1261,9 +1268,10 @@ export class Ship {
   // One physics step inside the host's space
   stepLocal(dt, ctrlForce, ctrlTorque) {
     if (this.dead) return;
+    applyPropulsion(this, ctrlForce, ctrlTorque, dt);
     const p = this.parent;
     if (this.attached) {
-      const lifting = ctrlForce.y > this.mass * 0.4 * G0 || ctrlForce.lengthSq() > Math.pow(this.mass * 1.2 * G0, 2) || ((this.assist < 2 || this.type.ground) && this.wantsMove());
+      const lifting = ctrlForce.y > this.mass * 0.4 * G0 || ctrlForce.lengthSq() > Math.pow(this.mass * 1.2 * G0, 2) || ((this.assist < 2 || this.type.ground) && this.wantsMove() && thrustAvailability(this) > 0);
       if (!lifting) { this.holdAttached(); return; }
       this.attached = false;
       this.idleTime = 0;

@@ -46,7 +46,7 @@ export class Turbolift {
     }
     this.cars = [this.makeCar('car', spec.start)];
     // the spare, parked in its siding: it holds the siding and the junction's edge into it
-    this.spare = { id: 'spare', pos: this.nodes[spec.spare].clone(), node: spec.spare };
+    this.spare = spec.spare ? { id: 'spare', pos: this.nodes[spec.spare].clone(), node: spec.spare } : null;
     if (spec.spare) {
       this.holds.set('n:' + spec.spare, this.spare);
       for (const n of this.adj[spec.spare] || []) this.holds.set(key(spec.spare, n), this.spare);
