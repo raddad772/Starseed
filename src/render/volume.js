@@ -231,7 +231,7 @@ void main() {
       vec3 nT = trueUp(p, r, upC, kT);
       float muS = dot(nT, uSunDir);
       vec3 ext = e;
-      float tauAbove = 0.0;
+      float tauAbove = 0.0, tauBelow = 0.0, tlS = 0.0;
       float cd = 0.0, frac = 0.5;
       vec3 cc = vec3(1.0);
       // (the clouds' generations here on the world's clock, each carried on its wind: atmosphere.js)
@@ -241,14 +241,17 @@ void main() {
       for (int k = 0; k < 3; k++) {
         if (float(k) >= uNumDecks) break;
         vec4 dk = uDeck[k];
-        if (h > dk.y) continue;
+        // (a deck below: on the way of a sun under this height's horizontal, below)
+        if (h > dk.y && liftMu(muS) > 0.06) continue;
         vec2 cv = deckCovG(k, pf, dirF, t * gPixA, gA, gB);
         float cov = gA.x * cv.x + gB.x * cv.y;
+        if (h > dk.y) { tauBelow += dk.z * cov * (dk.y - dk.x) * 0.4 * uSigma; continue; }
         if (h < dk.x) { tauAbove += dk.z * cov * (dk.y - dk.x) * 0.4 * uSigma; continue; }
         if (seg != 1) continue;
         float fr;
         float d = deckDenG(k, pf, dirF, h, cv, gA, gB, true, fr);
         tauAbove += dk.z * cov * (dk.y - h) * 0.25 * uSigma;
+        tauBelow += dk.z * cov * (h - dk.x) * 0.25 * uSigma;
         if (d > cd) {
           cd = d; frac = fr; cc = uDeckCol[k];
           if (uMode < 0.5 && k == 0) cc = mix(cc, palette(0.5 + 0.35 * sin(lat * uBands * 2.0 + uJetPhase * 6.2832)), 0.55);
@@ -263,12 +266,18 @@ void main() {
             tl += deckDenG(k, ps, dirF, hs, cv, gA, gB, false, frs) * ds;
             ds *= 3.2;
           }
-          tauAbove += tl * uSigma * 0.8;
+          tlS = tl * uSigma * 0.8;
         }
       }
-      float tauV = tauAbove;
-      tauAbove /= max(muS, 0.06);
-      float shade = exp(-tauAbove);
+      float tauV = tauAbove + tlS;
+      // (the sun's way to here: down through what's above while it's high; when it's under this height's
+      // horizontal, up through what's below (a low sun on a deck's base from beneath, through the clear air
+      // under it: its red and pink at sunset after the ground's lost the sun, which came down through the
+      // whole deck's slant and left the bases dark); the short march along it either way)
+      float muT = liftMu(muS);   // (the true sun's height: the sky's lens, atmosphere.js)
+      float fromAbove = smoothstep(-0.02, 0.06, muT);
+      float tauSun = mix((tauBelow + tlS) / max(-muT, 0.06), tauV / max(muT, 0.06), fromAbove);
+      float shade = exp(-tauSun);
       vec3 sunT = sunTransmittance(r, muS) * shade;
       if (uHeightCube.x > 0.5 && r < uRadius + uHeightCube.z) sunT *= airShadow(uToFixed * p, uToFixed * uSunDir, uRadius);
       vec3 ms = multiScatter(r, muS) * (0.2 + 0.8 * shade);
