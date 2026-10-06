@@ -537,6 +537,19 @@ rivers that are straighter where they should be?"):**
   c)): the swell grinds them), and the chance a piece stops splitting as it is fades there (x smoothstep
   (0.5, 0.9, c)): the swell keeps breaking it, so the edge's floes are small. floemap 0.6: big rounded
   floes, smaller rounded pieces, fragments.
+- **Icebergs** (gen/icebergs.js, render/bergRender.js, sim/floeField.js BergField): calved where the
+  world's glaciers reach the sea (the snapshot's ice > 20 m on a cell beside an ocean cell: a tidewater
+  front, weighted by its thickness), spread through the sea by a breadth-first decay over BERG_SPREAD
+  2.5 km (a berg's drift of tens to hundreds of km at the world's 1/64; ~15 km to fade out), melted where
+  the sea's warm now (its temperature by the season map: none over ~8 C). Placed per 512 m cell of each
+  cube face by its hash: count by the density (~2 a cell at a front), length a power law 15-250 m, width
+  0.45-0.95 of it, a fifth or so above the water, a keel four times as deep. Drawn within 25 km (none
+  under ~4 px), one of 16 shapes (a ball pushed toward a box with rounded edges, |x|^p+|y|^p+|z|^p = 1
+  with p 3-4.5: a glacier's steep broken front; dented; its top worn flat), finer within 4 km; snow on
+  their tops, glacier blue on their sides. Solid: a box over its waterline. SOL Earth 56.4 N 149.6 (the
+  glaciated island): bergs frozen into the pack, 1,900 drawn, ~0.7 ms a frame; a walker stopped at a
+  34 m berg's 7 m side. Density 33 ms once per world. Not yet: their drift with the currents, tabular
+  bergs off ice shelves, calving seen at the fronts.
 - **Seasons on the land: snow through the year** (Dave: "see seasonal changes"; "refine and add"; not
   living things yet). worldsim/season.js: each world's year by climate cell, its temperature's first
   harmonic about the mean (a1 cos L + b1 sin L, L the solar longitude from the northern spring equinox,

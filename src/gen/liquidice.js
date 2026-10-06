@@ -130,6 +130,14 @@ function mapAt(px, w, h, m, o) {
   return o;
 }
 const _mp = [0, 0, 0, 0];
+// the sea's temperature at m now (C: its year's mean and its swing now, the season map's; null where the
+// world keeps no year)
+export function seaTempAt(gen, L, m) {
+  const S = gen.snap && gen.snap.s;
+  if (!S || !S.seasonPx || S.seasonV !== SEASON_V) return null;
+  const t = mapAt(S.seasonPx, SEASON_W, SEASON_H, m, _mp);
+  return t[3] * 120 - 60 + (t[0] - 0.5) * 100 * dm.cos(L) + (t[1] - 0.5) * 100 * dm.sin(L);
+}
 // the sea's ice by place now (L: where the sun stands in the year): render/season.js seaIceAt's sums on
 // the same map; or ice everywhere where the world keeps no year
 export function iceAt(gen, L, ice) {

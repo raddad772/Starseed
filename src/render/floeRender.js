@@ -37,15 +37,18 @@ varying vec3 vN;
 varying vec3 vFp;
 varying vec4 vAux;
 uniform vec3 uOriginF;
+uniform float uBlockKind;   // 2 a ridge's block, 3 an iceberg
 #include <common>
 #include <logdepthbuf_pars_vertex>
 void main() {
   vec4 lp = instanceMatrix * vec4(position, 1.0);
   vec4 wp = modelMatrix * lp;
   vWorld = wp.xyz;
-  vN = normalize(mat3(modelMatrix) * mat3(instanceMatrix) * normal);
+  // (its normal by the inverse of its stretch: a berg's sizes differ by its axes)
+  mat3 im = mat3(instanceMatrix);
+  vN = normalize(mat3(modelMatrix) * im * (normal / vec3(dot(im[0], im[0]), dot(im[1], im[1]), dot(im[2], im[2]))));
   vFp = uOriginF + lp.xyz;
-  vAux = vec4(0.0, 0.0, 0.0, 2.0);
+  vAux = vec4(0.0, 0.0, 0.0, uBlockKind);
   gl_Position = projectionMatrix * viewMatrix * wp;
   #include <logdepthbuf_vertex>
 }
@@ -95,11 +98,14 @@ void main() {
   vec3 alb = mix(vec3(0.42, 0.52, 0.6), vec3(0.82, 0.86, 0.9), snowy) * (0.9 + 0.2 * dI.r);
   // (a side: the floe's ice, blue where it's wet by the water, under its top's snow; a ridge's sail:
   // broken blocks, blue ice and snow in their gaps, as liquid.js's frozen sea draws them further off)
-  bool block = vAux.w > 1.5, wall = vAux.w > 0.75 && !block, sail = vAux.w > 0.25 && vAux.w < 0.75;
+  bool berg = vAux.w > 2.5, block = vAux.w > 1.5, wall = vAux.w > 0.75 && !block, sail = vAux.w > 0.25 && vAux.w < 0.75;
   if (wall) alb = mix(vec3(0.3, 0.46, 0.58), alb, smoothstep(0.35, 0.65, vAux.z / max(vAux.y, 0.01)));
   if (sail) alb = mix(vec3(0.5, 0.62, 0.7), vec3(0.85, 0.88, 0.92), smoothstep(0.35, 0.6, tri(vFp, w, 2.0).r));
   // (a block: snow on what faces up, its ice's blue-green on its broken faces)
   if (block) alb = mix(vec3(0.32, 0.52, 0.6) * (0.85 + 0.3 * tri(vFp, w, 1.0).r), vec3(0.86, 0.89, 0.93), smoothstep(0.45, 0.75, dot(normalize(vN), up)));
+  // (an iceberg: a glacier's ice, white and blue with the air in it, under its snow; bluer low down where the
+  // sea has washed it clear)
+  if (berg) alb = mix(vec3(0.55, 0.72, 0.84) * (0.9 + 0.2 * tri(vFp, w, 8.0).r), vec3(0.88, 0.91, 0.95), smoothstep(0.35, 0.75, dot(normalize(vN), up))) * mix(0.8, 1.0, smoothstep(0.0, 3.0, r - uRadius));
   vec3 pF = uToFixed * rel;
   vec3 sunA = atmoSunTransmittance(r, muS), skyE = atmoSkyIrradiance(r, muS);
   // (a top's own shadow read 15 cm over it: in a low sun its flat face shadowed itself in stripes; a
@@ -113,6 +119,11 @@ void main() {
 }
 `;
 
+// the instanced ice's material (a ridge's blocks: kind 2; icebergs: 3, render/bergRender.js)
+export function makeIceMaterial(shared, kind) {
+  return new THREE.ShaderMaterial({ uniforms: { ...shared, uOriginF: { value: new THREE.Vector3() }, uBlockKind: { value: kind } }, vertexShader: BLOCK_VERT, fragmentShader: FRAG });
+}
+
 // (for tools/glslcheck.mjs)
 export const FLOE_SHADERS = { vertexShader: VERT, fragmentShader: FRAG };
 export const BLOCK_SHADERS = { vertexShader: BLOCK_VERT, fragmentShader: FRAG };
@@ -121,7 +132,7 @@ export class FloeSet {
   constructor(body, pool, shared, group) {
     this.body = body; this.pool = pool; this.group = group;
     this.material = new THREE.ShaderMaterial({ uniforms: { ...shared }, vertexShader: VERT, fragmentShader: FRAG, side: THREE.DoubleSide });
-    this.blockMat = new THREE.ShaderMaterial({ uniforms: { ...shared, uOriginF: { value: new THREE.Vector3() } }, vertexShader: BLOCK_VERT, fragmentShader: FRAG });
+    this.blockMat = makeIceMaterial(shared, 2);
     this.box = new THREE.BoxGeometry(1, 1, 1);
     this.mesh = null; this.blocks = null; this.job = null; this.at = null; this.L = 0;
   }

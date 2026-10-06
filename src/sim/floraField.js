@@ -17,7 +17,7 @@
 import { scatterFlora, floraSpecies } from '../gen/flora.js';
 import { faceUVFromDir } from '../gen/cubesphere.js';
 import { ROCK_STRIDE, rockShapeOf } from '../gen/rocks.js';
-import { FloeField } from './floeField.js';
+import { FloeField, BergField } from './floeField.js';
 
 const CELL = 16; // m: spatial hash cell (body-fixed)
 // trunk radius at the base, as a fraction of the tree's height (render/floraRender.js)
@@ -36,6 +36,7 @@ export class FloraField {
     this._fu = { face: 0, u: 0, v: 0 };
     const t = body.data.terrain;
     this.ice = t && t.liquid === 'water' && t.ocean > 0 ? new FloeField(body) : null;
+    this.bergs = this.ice ? new BergField(body) : null;
   }
 
   get plants() { return !!(this.species && (this.species.life > 0 || this.species.densityRock > 0)); }
@@ -148,6 +149,7 @@ export class FloraField {
   near(p, radius, out = []) {
     out.length = 0;
     if (this.ice) this.ice.near(p, radius, out);
+    if (this.bergs) this.bergs.near(p, radius, out);
     if (!this.plants) return out;
     this.ensure(p);
     // (the edges of a node: its neighbours too)

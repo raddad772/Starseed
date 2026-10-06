@@ -4,8 +4,10 @@
 // on them. World state (the seed and the world's clock): worked out on demand where someone is, the floes
 // there kept a while.
 import { S_LEN } from '../gen/terrain.js';
-import { liquidNow, iceAt, floeOf, packIceAt, floeTop, floeRound } from '../gen/liquidice.js';
+import * as THREE from 'three';
+import { liquidNow, iceAt, floeOf, packIceAt, floeTop, floeRound, seaTempAt } from '../gen/liquidice.js';
 import { ridgeBlocks } from '../gen/floeslabs.js';
+import { bergsNear, bergBasis } from '../gen/icebergs.js';
 
 export class FloeField {
   constructor(body) {
@@ -54,6 +56,31 @@ export class FloeField {
         out.push({ kind: 'box', x: c3[0], y: c3[1], z: c3[2], q: qt, hx: bl / 2, hy: bt / 2, hz: bw / 2, r: Math.hypot(bl, bt, bw) / 2, h: 0 });
       });
     }
+    return out;
+  }
+}
+
+// icebergs as solid things (gen/icebergs.js, the same ones render/bergRender.js draws): each a box a little
+// inside its shape above the water (0.92 of its length and width at the waterline, its sides steep; nine
+// tenths its height), so the walker bumps into it (a berg stands metres high: no stepping onto one)
+const _X = new THREE.Vector3(), _Y = new THREE.Vector3(), _Z = new THREE.Vector3(), _M = new THREE.Matrix4(), _Q = new THREE.Quaternion(), _bx = [0, 0, 0], _by = [0, 0, 0], _bz = [0, 0, 0];
+export class BergField {
+  constructor(body) { this.body = body; }
+  near(p, radius, out) {
+    const b = this.body, gen = b.terrain;
+    if (!gen || !gen.snap) return out;
+    const R = gen.R, l = Math.hypot(p.x, p.y, p.z);
+    if (l - R > 300 || l - R < -10) return out;
+    const L = b.solarLongitude();
+    const warm = (d) => { const T = seaTempAt(gen, L, [d[0] * R, d[1] * R, d[2] * R]); return T == null ? 0 : Math.min(1, Math.max(0, T / 8)); };
+    bergsNear(gen.snap, R, [p.x / l, p.y / l, p.z / l], radius + 260, warm, (bg) => {
+      const cx = bg.dir[0] * (R + bg.hgt * 0.45), cy = bg.dir[1] * (R + bg.hgt * 0.45), cz = bg.dir[2] * (R + bg.hgt * 0.45);
+      const reach = radius + Math.hypot(bg.len, bg.wid) * 0.4;
+      if ((cx - p.x) ** 2 + (cy - p.y) ** 2 + (cz - p.z) ** 2 > reach * reach + bg.hgt * bg.hgt) return;
+      bergBasis(bg.dir, bg.yaw, _bx, _by, _bz);
+      _Q.setFromRotationMatrix(_M.makeBasis(_X.fromArray(_bx), _Y.fromArray(_by), _Z.fromArray(_bz)));
+      out.push({ kind: 'box', x: cx, y: cy, z: cz, q: [_Q.x, _Q.y, _Q.z, _Q.w], hx: bg.len * 0.46, hy: bg.hgt * 0.45, hz: bg.wid * 0.46, r: Math.hypot(bg.len, bg.hgt, bg.wid) / 2, h: 0 });
+    });
     return out;
   }
 }

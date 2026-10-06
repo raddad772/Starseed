@@ -11,6 +11,7 @@ import * as THREE from 'three';
 import { SHADOW_LAYER } from './sunShadows.js';
 import { RockSet } from './rockRender.js';
 import { FloeSet } from './floeRender.js';
+import { BergSet } from './bergRender.js';
 import { FACES, dirFromFaceUV, chunkArcSize } from '../gen/cubesphere.js';
 import { CHUNK_N, chunkIndices, FALL_STRIDE } from '../gen/chunkbuilder.js';
 import { FallFx } from './falls.js';
@@ -122,6 +123,9 @@ export class PlanetTerrain {
     if (this.hasSea && this.body.data.terrain.liquid === 'water') {
       if (!this.floeSet) this.floeSet = new FloeSet(this.body, this.pool, this.shared, this.group);
       this.floeSet.update(camFixed);
+      // (and its icebergs: bergRender.js)
+      if (!this.bergSet) this.bergSet = new BergSet(this.body, this.shared, this.group);
+      this.bergSet.update(camFixed);
     }
     return this.visibleList;
   }
@@ -600,6 +604,7 @@ export class PlanetTerrain {
     this.disposeNear();
     if (this.rockSet) this.rockSet.dispose();
     if (this.floeSet) this.floeSet.dispose();
+    if (this.bergSet) this.bergSet.dispose();
     if (this.fallFx) this.fallFx.material.dispose();
   }
 }
