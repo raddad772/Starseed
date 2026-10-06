@@ -287,6 +287,12 @@ export class WorldRenderer {
         it.group.visible = angular > 0.6;
         it.terrain.worldT = this.u.t;
         if (it.group.visible) it.terrain.update(_v2);
+        // (the dust the wind's raised where the camera is (sim/dust.js) in the sky's haze; none from high up:
+        // it's a region's, the world seen whole its own air's)
+        if (it.atmo) {
+          const dk = it.group.visible && it.terrain.dust ? 1 - THREE.MathUtils.smoothstep(_v2.length() - b.R, 20000, 80000) : 0;
+          it.atmo.setDust(this.engine.renderer, dk > 0 ? it.terrain.dust.tau * dk : 0, dk > 0 ? it.terrain.dust.salt * dk : 0);
+        }
         if (it.heightCube && it.heightCube.state === 0 && angular > 40) it.heightCube.build();
       }
       // (the clouds' shadows and the overcast's light on the ground near the camera, when it's low enough

@@ -812,12 +812,56 @@ export class Atmosphere {
       const c = body.giant.palette[0];
       this.params.uGroundAlbedo.value.set(c[0] * 0.8, c[1] * 0.8, c[2] * 0.8);
     }
+    // (the air's own aerosols, before any dust the wind raises: setDust adds it to them)
+    this.base = { mie: a.mie.slice(), mieAbs: a.mieAbs.slice(), mieH: a.mieH, mieG: a.mieG, haze: (a.haze || [0, 1000, 0, 0]).slice() };
+    this.dust = 0;
+    const dc = d.terrain && d.terrain.palette && (d.terrain.palette.regolith || d.terrain.palette.soil);
+    this.dustCol = dc ? dc.slice(0, 3) : [0.5, 0.4, 0.3];
     this.trans = lutTarget(256, 64);
     this.ms = lutTarget(32, 32);
     this.irr = lutTarget(64, 16);
     this.generate(renderer);
     this.readBack(renderer);
     this.material = this.makePassMaterial();
+  }
+
+  // the dust the wind's raised where the camera is (sim/dust.js: tau, its optical depth straight up at 550 nm)
+  // added to the air's aerosols: a few km deep (~2.5 km: a dust layer's scale height), forward-scattering
+  // (g ~0.7). What a wind lifts off fields, tracks and banks and carries is mostly the fine fraction (the
+  // coarse settles within hours): its extinction falling with wavelength, an Angstrom exponent ~1.2 (a
+  // desert storm's coarse dust ~0.3, grey: a green country's windy day nearer a smoke's), so the low sun's
+  // light through it loses its blue and the haze it lights glows orange and pink; its iron oxides taking a
+  // little more of the blue (single-scattering albedo ~0.97 red to ~0.9 blue for a tan soil, darker soils'
+  // less: Dubovik et al. 2002). The far ground lost in its haze. The LUTs made again when it's changed by a tenth or so
+  // (a few ms); none from high up (the dust is a region's, the world seen whole its own air's). And the sea's
+  // spray (salt: its optical depth): a white haze low down (~1.2 km), scattering nearly grey (a little
+  // more in the blue), taking almost nothing
+  setDust(renderer, tau, salt = 0) {
+    tau = Math.max(0, tau || 0); salt = Math.max(0, salt || 0);
+    const near = (a, b) => Math.abs(a - b) < Math.max(0.02, 0.1 * Math.max(a, b));
+    if (near(tau, this.dust) && near(salt, this.salt || 0)) return false;
+    this.dust = tau; this.salt = salt;
+    const B = this.base, p = this.params, c = this.dustCol, Hd = 2500, k = tau / Hd, Hs = 1200, ks = salt / Hs;
+    const lum = Math.max(0.05, 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]);
+    const sca = [0, 0, 0], abs = [0, 0, 0];
+    for (let i = 0; i < 3; i++) {
+      const ssa = 1 - 0.05 * Math.min(2.5, (1 - Math.min(c[i], 0.95)) / Math.max(1 - lum, 0.05)) ** 1.2;
+      const ext = k * Math.pow(550 / [680, 550, 440][i], 1.2);
+      sca[i] = ext * ssa; abs[i] = ext * (1 - ssa);
+    }
+    const ss = [0.92 * ks, ks, 1.09 * ks];
+    const eB = B.mie[1] + B.mieAbs[1], eD = sca[1] + abs[1], eS = ss[1], eT = Math.max(eB + eD + eS, 1e-12);
+    p.uMie.value.set(B.mie[0] + sca[0] + ss[0], B.mie[1] + sca[1] + ss[1], B.mie[2] + sca[2] + ss[2]);
+    p.uMieAbs.value.set(B.mieAbs[0] + abs[0], B.mieAbs[1] + abs[1], B.mieAbs[2] + abs[2]);
+    p.uMieH.value = (eB * B.mieH + eD * Hd + eS * Hs) / eT;
+    p.uMieG.value = (eB * B.mieG + eD * 0.7 + eS * 0.75) / eT;
+    // (and the near ground's haze, at the game's scale: thicker, toward the dust's colour)
+    const h = B.haze, w = tau / (tau + 0.3), hc = hazeColour(h);
+    p.uHaze.value.set(h[0] * (1 + 3 * tau + 2 * salt), h[1], h[2] + (0.12 - h[2]) * w, h[3]);
+    p.uHazeCol.value.set(hc.x + ((sca[0] + abs[0]) / Math.max(eD, 1e-12) * 0.97 - hc.x) * w, 1, hc.z + ((sca[2] + abs[2]) / Math.max(eD, 1e-12) - hc.z) * w);
+    this.generate(renderer);
+    this.readBack(renderer);
+    return true;
   }
 
   // CPU copies of the transmittance and irradiance LUTs for lighting

@@ -20,6 +20,7 @@ import { FallFx } from './falls.js';
 import { makeTerrainMaterial, makeRibbonMaterial, RIBBON_PASS, DETAIL_PERIOD } from './terrainMaterial.js';
 import { FloraSet, seatInstances } from './floraRender.js';
 import { windAt } from '../sim/wind.js';
+import { dustAt } from '../sim/dust.js';
 import { dayClock } from '../sim/fauna.js';
 import { floraOf } from '../sim/floraField.js';
 import { VCHUNK } from '../gen/volume.js';
@@ -171,6 +172,15 @@ export class PlanetTerrain {
       const w = this.wind = windAt(b, _wd.copy(camFixed).normalize(), t, b.u.sunIlluminance(b.pos), this._day, this.wind);
       if (this.floraSet) this.floraSet.setWind(_ww.copy(w.dir).applyQuaternion(b.q), w.speed, w.gust);
       if (this.grassSet) this.grassSet.setWind(w.speed, w.gust, w.dir);
+    }
+    // (the dust the wind's raised there, world state (sim/dust.js), every few seconds: the sky's haze by it,
+    // world.js)
+    const nowMs = performance.now();
+    if (this.body.terrain && this.body.terrain.snap && !(this._dustMs > nowMs - 3000)) {
+      const b = this.body, t = this.worldT || 0;
+      if (!this._dayAt || Math.abs(t - this._dayAt) > 60) { this._day = dayClock(b, t).P || 0; this._dayAt = t; }
+      this._dustMs = nowMs;
+      this.dust = dustAt(b, _wd.copy(camFixed).normalize(), t, b.u.sunIlluminance(b.pos), this._day, this.dust);
     }
     return this.visibleList;
   }
