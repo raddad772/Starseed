@@ -8,23 +8,26 @@ import { GLSL_TERRAIN_SHADOW } from './terrainShadow.js';
 import { GLSL_SUN_SHADOW, SHADOW_LAYER } from './sunShadows.js';
 import { growTree } from '../gen/life/tree.js';
 import { treeGeometry as grownMesh } from './treeMesh.js';
+import { ezTreeGeometry, barkTexture, leafTexture } from './ezTrees.js';
 
 // ---------------------------------------------------------------- geometry
 
-function finalize(parts) {
-  // parts: [{geo, part, ao(y)}] -> merged non-indexed geometry with part/ao attributes
-  const pos = [], nrm = [], partA = [], aoA = [];
+function finalize(parts, keepNormals = false) {
+  // parts: [{geo, part, ao(y)}] -> merged non-indexed geometry with part/ao attributes (and tuv: a
+  // textured part's uv, 0 for the rest)
+  const pos = [], nrm = [], partA = [], aoA = [], uvA = [];
   for (const { geo, part, aoBase = 0.6 } of parts) {
     const g = geo.index ? geo.toNonIndexed() : geo;
-    g.computeVertexNormals();
-    const p = g.attributes.position.array, n = g.attributes.normal.array;
+    if (!keepNormals || !g.attributes.normal) g.computeVertexNormals();
+    const p = g.attributes.position.array, n = g.attributes.normal.array, uv = g.attributes.uv ? g.attributes.uv.array : null;
     let maxY = 0;
     for (let i = 1; i < p.length; i += 3) maxY = Math.max(maxY, p[i]);
-    for (let i = 0; i < p.length; i += 3) {
+    for (let i = 0, v = 0; i < p.length; i += 3, v++) {
       pos.push(p[i], p[i + 1], p[i + 2]);
       nrm.push(n[i], n[i + 1], n[i + 2]);
       partA.push(part);
       aoA.push(Math.min(1, aoBase + (1 - aoBase) * Math.max(0, p[i + 1]) / Math.max(maxY, 1e-3)));
+      uvA.push(uv ? uv[v * 2] : 0, uv ? uv[v * 2 + 1] : 0);
     }
   }
   const out = new THREE.BufferGeometry();
@@ -32,6 +35,7 @@ function finalize(parts) {
   out.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
   out.setAttribute('part', new THREE.Float32BufferAttribute(partA, 1));
   out.setAttribute('ao', new THREE.Float32BufferAttribute(aoA, 1));
+  out.setAttribute('tuv', new THREE.Float32BufferAttribute(uvA, 2));
   out.computeBoundingSphere();
   return out;
 }
@@ -65,7 +69,14 @@ function grownTreeGeometry(sp) {
   return finalize([{ geo: bark, part: 0 }, { geo: leaves, part: 1, aoBase: 0.5 }]);
 }
 
-function treeGeometry(sp, rng) {
+function treeGeometry(sp, rng, g) {
+  // (EZ-Tree's for the forms it grows, textured; the grown placeholder for a tree fern, or if it fails)
+  if (sp.tree === 'conifer' || sp.tree === 'broadleaf') {
+    try {
+      const ez = ezTreeGeometry(sp, g);
+      if (ez) { const geo = finalize([{ geo: ez.bark, part: 0 }, { geo: ez.leaves, part: 1, aoBase: 0.55 }], true); geo.userData.ez = ez; return geo; }
+    } catch (err) { console.warn('ez-tree:', err); }
+  }
   if (GROWN[sp.tree]) return grownTreeGeometry(sp);
   const H = sp.treeHeight;
   const parts = [];
@@ -206,6 +217,8 @@ function rockGeometry(rng, crystals) {
 const VERT = /* glsl */`
 attribute float part;
 attribute float ao;
+attribute vec2 tuv;
+varying vec2 vUv;
 uniform float uTime;
 uniform float uWind;
 uniform float uFadeStart;
@@ -236,6 +249,7 @@ void main() {
   vNormal = normalize(mat3(modelMatrix) * mat3(im) * normal);
   vPart = part;
   vAo = ao;
+  vUv = tuv;
   vTint = vec3(1.0);
   #ifdef USE_INSTANCING_COLOR
   vTint = instanceColor;
@@ -254,6 +268,10 @@ uniform vec3 uTrunk;
 uniform vec3 uAmbientFloor;
 uniform float uFadeStart;
 uniform float uFadeEnd;
+uniform sampler2D tBark;
+uniform sampler2D tLeaf;
+uniform float uTex;
+varying vec2 vUv;
 varying vec3 vWorld;
 varying vec3 vNormal;
 varying float vPart;
@@ -289,6 +307,12 @@ void main() {
   vec3 sunA = atmoSunTransmittance(r, muS), skyE = atmoSkyIrradiance(r, muS);
   vec3 sunT = sunA * cloudLight(rel, r, muS, foot, sunA, skyE) * terrainShadow(pF, normalize(pF), uToFixed * uSunDir, uRadius) * sunShadowMap(vWorld, N);
   vec3 albedo = vPart < 0.5 ? uTrunk : vTint;
+  // (EZ-Tree's: its bark's texture over the trunk's colour; its leaf sprite cut out by its alpha, its
+  // brightness over the world's foliage colour: the leaves the world's own hue whatever the sprite's)
+  if (uTex > 0.5) {
+    if (vPart < 0.5) albedo = uTrunk * 2.4 * texture2D(tBark, vUv).rgb;
+    else if (vPart < 1.5) { vec4 lt = texture2D(tLeaf, vUv); if (lt.a < 0.5) discard; albedo = vTint * (0.35 + 1.5 * dot(lt.rgb, vec3(0.3, 0.59, 0.11))); }
+  }
   float ndl = max(dot(N, uSunDir), 0.0);
   float trans = vPart > 0.5 && vPart < 1.5 ? max(0.0, -dot(N, uSunDir)) * 0.35 : 0.0;
   vec3 c = albedo / PI * (uSunE * sunT * (ndl + trans) * vAo + (uSunE * skyE * (0.55 + 0.45 * dot(N, up)) + uAmbientFloor) * vAo);
@@ -304,13 +328,16 @@ export class FloraSet {
     const rng = new Rng(t.seed).fork('floraGeo');
     const pal = t.palette;
     this.geos = {
-      tree: treeGeometry(sp, rng.fork('tree')),
+      tree: treeGeometry(sp, rng.fork('tree'), body.data.gravity || 9.81),
       shrub: shrubGeometry(sp, rng.fork('shrub')),
       plant: plantGeometry(sp, rng.fork('plant')),
       rock: rockGeometry(rng.fork('rock'), sp.crystals),
       boulder: rockGeometry(rng.fork('boulder'), false),
     };
     this.treeFar = treeFarGeometry(sp);
+    // (EZ-Tree's middle distance: the same tree, lighter)
+    this.treeMid = null;
+    if (this.geos.tree.userData.ez) { try { const ez = ezTreeGeometry(sp, body.data.gravity || 9.81, 1); if (ez) this.treeMid = finalize([{ geo: ez.bark, part: 0 }, { geo: ez.leaves, part: 1, aoBase: 0.55 }], true); } catch (err) { console.warn('ez-tree mid:', err); } }
     this.kindDist = { tree: 1500, shrub: 380, plant: 130, rock: 320, boulder: 1300 };
     this.clearings = []; // {pos: Vector3 body-fixed on the datum sphere, r}
     this.R = body.R;
@@ -320,6 +347,7 @@ export class FloraSet {
         ...shared,
         uWind: { value: body.atm ? Math.min(1.5, 0.3 + body.atm.pressure * 0.5) : 0 },
         uTrunk: { value: new THREE.Vector3(...trunk) },
+        tBark: { value: null }, tLeaf: { value: null }, uTex: { value: 0 },
         uFadeStart: { value: 1100 },
         uFadeEnd: { value: 1500 },
       },
@@ -332,8 +360,17 @@ export class FloraSet {
       for (const key in this.material.uniforms) if (shared[key]) m.uniforms[key] = shared[key];
       m.uniforms.uFadeEnd.value = this.kindDist[k] * 0.98;
       m.uniforms.uFadeStart.value = this.kindDist[k] * 0.7;
+      // (the trees EZ-Tree grew: their textures)
+      const ez = k === 'tree' && this.geos.tree.userData.ez;
+      m.uniforms.uTex = { value: ez ? 1 : 0 };
+      m.uniforms.tBark = { value: ez ? barkTexture(ez.barkType) : null };
+      m.uniforms.tLeaf = { value: ez ? leafTexture(ez.leafType) : null };
       this.materials[k] = m;
     }
+    // (the far trees' impostor: untextured)
+    this.materials.treeFar = this.materials.tree.clone();
+    for (const key in this.materials.tree.uniforms) if (key !== 'uTex') this.materials.treeFar.uniforms[key] = this.materials.tree.uniforms[key];
+    this.materials.treeFar.uniforms.uTex = { value: 0 };
     this.colors = {
       veg: pal.veg || [0.1, 0.1, 0.1], vegDry: pal.vegDry || [0.2, 0.18, 0.12],
       rock: pal.rock, rock2: pal.rock2,
@@ -406,13 +443,19 @@ export class FloraSet {
       const kind = m.userData.kind;
       if (!(kind in this.kindDist)) continue;   // (another's: the ground's rocks fade themselves)
       m.visible = dist < this.kindDist[kind];
-      if (kind === 'tree') m.geometry = dist < 450 ? this.geos.tree : this.treeFar;
+      // (EZ-Tree's near to ~90 m, its lighter one to ~300, the impostor beyond; else near to 450)
+      if (kind === 'tree') {
+        const near = dist < (this.treeMid ? 300 : 450);
+        m.geometry = near ? (this.treeMid && dist >= 90 ? this.treeMid : this.geos.tree) : this.treeFar;
+        m.material = near ? this.materials.tree : this.materials.treeFar;
+      }
     }
   }
 
   dispose() {
     for (const k in this.geos) this.geos[k].dispose();
     this.treeFar.dispose();
+    if (this.treeMid) this.treeMid.dispose();
     this.material.dispose();
     for (const k in this.materials) this.materials[k].dispose();
   }

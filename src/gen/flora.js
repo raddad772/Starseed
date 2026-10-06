@@ -201,9 +201,18 @@ export function scatterFlora(gen, face, level, ix, iy, maxLevel, species) {
     if (species.life > 0 && slope < 0.55 && snow < 0.5) {
       // (a simulated world's life map: how much of the cover is forest and how much open
       // country, so trees stand in its forests and shrubs and grass fill its open land)
-      let fk = 1, ok = 1;
-      if (gen.snap) { fk = 0.15 + 1.7 * gen.snap.forest(dir[0], dir[1], dir[2]); ok = 0.6 + 0.8 * gen.snap.open(dir[0], dir[1], dir[2]); }
-      const pTree = veg * veg * species.densityTree * (Tc > -2 && Tc < 42 ? 1 : 0.2) * 0.5 * (1 - meadow) * fk;
+      let fk = 1, ok = 1, pTree;
+      if (gen.snap) {
+        // (a simulated world's forests as they stand: its life map's forest share closing to a canopy, ~90%
+        // of the ground under crowns ~0.3 of a tree's height across (a conifer's narrower), one candidate
+        // a 60 m2: a forest a forest, not a scatter over grass (Dave: "a woodland needs a lot more trees");
+        // its world's own luck a little more or less)
+        const f = gen.snap.forest(dir[0], dir[1], dir[2]);
+        ok = 0.6 + 0.8 * gen.snap.open(dir[0], dir[1], dir[2]);
+        const crown = species.treeHeight * (species.tree === 'conifer' || species.tree === 'spire' ? 0.2 : 0.3);
+        pTree = Math.min(0.95, f * 0.9 / (Math.PI * crown * crown) * 60) * (0.75 + 0.35 * species.densityTree) * (Tc > -2 && Tc < 42 ? 1 : 0.2) * (1 - meadow) * Math.min(1, veg * 2.5);
+        ok *= 1 - 0.7 * f;   // (the forest floor's shrubs and plants thin under its canopy)
+      } else pTree = veg * veg * species.densityTree * (Tc > -2 && Tc < 42 ? 1 : 0.2) * 0.5 * (1 - meadow) * fk;
       const pShrub = veg * species.densityShrub * 0.45 * (1 - 0.75 * meadow) * ok;
       const pPlant = veg * 0.9 * (1 + 0.4 * meadow) * (species.plantScarce ? 0.08 : 1) * ok; // (crusts only, where no plants reached land)
       if (roll < pTree) { out.tree.push(px, py, pz, rng.range(0.6, 1.25), rot, tint, slope, 0); continue; }

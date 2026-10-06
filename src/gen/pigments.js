@@ -88,14 +88,22 @@ export function surfacePhotonPeakNm(teff, air, P, g, rel = 1, aer = null) {
 export function drawPigments(rng, teff, peakNm = null) {
   const peak = peakNm ?? photonPeakNm(teff);
   const bands = [];
-  // the main band: near the peak where that's light plants can use (up to ~1050 nm)
-  const c1 = dm.clamp(peak * rng.range(0.78, 1.12), 420, 1050);
-  bands.push({ center: c1, width: rng.range(35, 110), depth: rng.range(0.8, 0.97) });
-  // a second, blue band (Soret-like), usually
-  if (rng.chance(0.7)) bands.push({ center: rng.range(400, 490), width: rng.range(18, 45), depth: rng.range(0.7, 0.95) });
+  // the main band: just short of the peak, where that's light plants can use (up to ~1050 nm): Earth's
+  // chlorophyll a takes 680 nm under a photon peak at ~685, its red edge just past (Kiang et al. 2007);
+  // now and then a world's life took another way, a band in the middle of the visible (retinal-like:
+  // purple leaves)
+  const odd = rng.chance(0.1);
+  const c1 = odd ? rng.range(500, 580) : dm.clamp(peak * rng.range(0.9, 1.01), 420, 1050);
+  bands.push({ center: c1, width: odd ? rng.range(40, 70) : rng.range(25, 60), depth: rng.range(0.85, 0.97) });
+  // its partner a little shorter, as chlorophyll b's 650 to a's 680 (a pair astride the light's slope
+  // keeps the harvest steady: Arp et al. 2020), usually
+  if (!odd && rng.chance(0.85)) bands.push({ center: c1 - rng.range(20, 45), width: rng.range(20, 40), depth: rng.range(0.6, 0.9) });
+  // a blue band (the Soret band of a ring pigment like chlorophyll), usually, and often a broader one by
+  // it, the shielding pigments' (carotenoid-like: they take the hardest light, the blue-green)
+  if (rng.chance(0.85)) bands.push({ center: rng.range(400, 470), width: rng.range(20, 45), depth: rng.range(0.75, 0.95) });
+  if (rng.chance(0.7)) bands.push({ center: rng.range(440, 510), width: rng.range(25, 50), depth: rng.range(0.55, 0.9) });
   // under dim, red stars: a broad band soaking up what visible light there is
   if (teff < 4200 && rng.chance(0.85)) bands.push({ center: rng.range(500, 680), width: rng.range(110, 200), depth: rng.range(0.75, 0.95) });
-  else if (rng.chance(0.25)) bands.push({ center: rng.range(480, 700), width: rng.range(20, 60), depth: rng.range(0.4, 0.85) });
   // the red edge: just past the longest band's long side
   let edge = 0;
   for (const b of bands) edge = Math.max(edge, b.center + b.width * 0.9);
