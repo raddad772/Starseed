@@ -253,9 +253,10 @@ void liquidSurface(vec3 fp, vec3 n, vec3 upF, float kind, float flow, float fetc
   }
   // the shore's: lines of broken water running in where it shoals, and the swash at its edge
   if (!river && !pond && depth < 1.6) {
-    // (each line torn into lace where the waves' own crests and the groups' noise leave it thin)
+    // (each line torn into lace where the groups' noise leaves it thin, the waves' own crests a little:
+    // torn by the crests first, the long swell's regular crests cut every line into a row of dashes)
     float sw = 0.5 + 0.5 * sin(6.2832 * depth / 0.4 + uTime * 1.3);
-    float lace = smoothstep(-0.2, 1.0, W.crest + (grp.x - 0.5) * 2.5);
+    float lace = smoothstep(0.2, 0.8, grp.x + 0.2 * W.crest);
     float sh = (1.0 - smoothstep(0.05, 1.6, depth)) * smoothstep(0.75, 0.97, sw) * lace + (1.0 - smoothstep(0.0, 0.15, depth)) * (0.4 + 0.6 * lace);
     foam = max(foam, clamp(sh, 0.0, 1.0) * smoothstep(0.5, 4.0, U) * 0.75);
   }

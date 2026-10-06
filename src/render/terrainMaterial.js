@@ -289,7 +289,8 @@ void main() {
   vec3 skyE = atmoSkyIrradiance(r, muS);
 
   // (the clouds': their shadows, and the sky's light under them)
-  sunT *= cloudLight(rel, r, muS, foot, sunT, skyE);
+  float cloudT = cloudLight(rel, r, muS, foot, sunT, skyE);
+  sunT *= cloudT;
   // (the ground's own shadows: a ridge's across the valley)
   vec3 pF = uToFixed * rel;
   sunT *= terrainShadow(pF, normalize(pF), uToFixed * uSunDir, uRadius);
@@ -478,7 +479,11 @@ void main() {
     // the sky in the reflected direction: its light, brighter toward the horizon, and the sun's aureole
     vec3 R = reflect(-V, Nw);
     float el = max(dot(R, up), 0.0);
-    vec3 skyRefl = uSunE * skyE / PI * (0.7 + 1.1 * pow(1.0 - el, 3.0)) + uSunE * sunT * 0.05 * pow(max(dot(R, uSunDir), 0.0), 12.0);
+    // (a clear sky brightest toward the horizon; an overcast's brightest overhead, three times its
+    // horizon's (the CIE overcast sky, (1 + 2 sin el) / 3, its irradiance kept): by how much of the sun
+    // the cloud takes)
+    float skyG = mix(0.7 + 1.1 * pow(1.0 - el, 3.0), 0.4286 * (1.0 + 2.0 * el), clamp(1.0 - cloudT, 0.0, 1.0));
+    vec3 skyRefl = uSunE * skyE / PI * skyG + uSunE * sunT * 0.05 * pow(max(dot(R, uSunDir), 0.0), 12.0);
 #ifdef RIBBON
     vec3 body;
     {

@@ -144,8 +144,11 @@ export function buildChunk(gen, face, level, ix, iy, N = CHUNK_N) {
     } else return 0;
     if (!coarse) {
       lvL[k] = L; lvK[k] = kind; lvF[k] = fetch;
-      // (its own colour where it's deep, as the terrain draws it from afar: the palette's by depth)
-      const e = kc * kc * (3 - 2 * kc);
+      // (its own colour where it's deep, as the terrain draws it from afar: the palette's by depth; the
+      // sea's its deep water's at any depth, its shallows' look from afar being its bed's, which the
+      // water's shader shows through it near: the palette's shallow cyan there too counted the bed twice,
+      // a flat glowing cyan whatever the depth)
+      const e = kind === 0 ? 1 : kc * kc * (3 - 2 * kc);
       for (let c = 0; c < 3; c++) lvC[k * 3 + c] = P.waterShallow[c] + (P.waterDeep[c] - P.waterShallow[c]) * e;
     }
     return 1;
