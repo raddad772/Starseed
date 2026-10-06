@@ -254,6 +254,9 @@ float liftMu(float mu) {
 // the haze is the game's stand-in for the distance the drawn world leaves out, and over a ray toward the
 // horizon it took the setting sun and paled the low sky (the passes' mains set it))
 float gHazeK = 1.0;
+// (the near passes' sunlit air's share: 0 for a sky pixel from low down, whose sunlit air is the true-size
+// world's, SKYVIEW_FRAG; its moonlit air, its clouds and the air's dimming of them kept)
+float gAirSun = 1.0;
 void mediumAt(float r, out vec3 scatR, out vec3 scatM, out vec3 ext) {
   float h = r - uRadius;
   float hr = h <= uKnee ? h : uKnee + (h - uKnee) / uUpper;
@@ -265,10 +268,38 @@ void mediumAt(float r, out vec3 scatR, out vec3 scatM, out vec3 ext) {
   scatM = uMie * dM + dH;
   ext = scatR + scatM + uMieAbs * dM + uAbs * dA + dH * uHaze.z;
 }
+// a drawn height (m over the datum) as the real one its air stands for, and back: real up to the knee,
+// squeezed by uUpper above it
+float realH(float h) { return h <= uKnee ? h : uKnee + (h - uKnee) / uUpper; }
+float drawnH(float hr) { return hr <= uKnee ? hr : uKnee + (hr - uKnee) * uUpper; }
+// the air at a real height (m): the true-size world's marches (the sun's way through it, the sky seen from
+// low down) take the air as it is, its upper air unsqueezed (squeezed, the drawn air above ~12 km keeps an
+// eighth of its column, so from orbit the limb is a thin line: in these marches the stratosphere, and most
+// of the ozone, an eighth of themselves, the twilight's purple and pink from the ozone the low sun's light
+// crosses edge-on (it takes the yellow-green, red and blue left) mostly gone: Dave, "gotta keep working on
+// that pink"); the ozone's band and the ground haze where the drawn air has them
+void mediumAtReal(float hr, out vec3 scatR, out vec3 scatM, out vec3 ext) {
+  float h = drawnH(hr);
+  float dR = exp(-hr / uRayleighH);
+  float dM = exp(-hr / uMieH);
+  float dA = uAbsExp > 0.5 ? dR : max(0.0, 1.0 - abs(h - uAbsCenter) / max(uAbsWidth, 1.0));
+  vec3 dH = uHaze.x * gHazeK * exp(-max(hr, 0.0) / max(uHaze.y, 1.0)) * uHazeCol;
+  scatR = uRayleigh * dR;
+  scatM = uMie * dM + dH;
+  ext = scatR + scatM + uMieAbs * dM + uAbs * dA + dH * uHaze.z;
+}
 float phaseRayleigh(float c) { return 3.0 / (16.0 * PI_A) * (1.0 + c * c); }
+// the aerosols' phase function: Cornette-Shanks at the air's mean asymmetry, and a narrow forward lobe
+// (Henyey-Greenstein, g 0.96, 15% of it): the diffraction peak a real haze's particles have and a smooth
+// one doesn't, the solar aureole, the sky within a degree or two of the sun some ten times brighter than
+// ten degrees out; a hazy sun glows, and looks bigger for it (without it a low sun's disc sat alone in an
+// even sky, "far too small": Dave)
 float phaseMie(float c, float g) {
   float g2 = g * g;
-  return 3.0 / (8.0 * PI_A) * ((1.0 - g2) * (1.0 + c * c)) / ((2.0 + g2) * pow(max(1.0 + g2 - 2.0 * g * c, 1e-4), 1.5));
+  float cs = 3.0 / (8.0 * PI_A) * ((1.0 - g2) * (1.0 + c * c)) / ((2.0 + g2) * pow(max(1.0 + g2 - 2.0 * g * c, 1e-4), 1.5));
+  const float ga = 0.96;
+  float lobe = (1.0 - ga * ga) / (4.0 * PI_A * pow(max(1.0 + ga * ga - 2.0 * ga * c, 1e-6), 1.5));
+  return 0.85 * cs + 0.15 * lobe;
 }
 // distance to the top of the atmosphere from radius r along direction cosine mu
 float distToTop(float r, float mu) {
@@ -286,6 +317,10 @@ const TRANSMITTANCE_FRAG = /* glsl */`
 ${LUT_COMMON}
 varying vec2 vUv;
 void main() {
+  // (no ground haze on the sun's way: it's the game's stand-in for the distance across the drawn ground the
+  // drawn world leaves out, not air the sunlight crosses; over a low sun's true-length way it took ~300 times
+  // its light, the setting sun a dim speck)
+  gHazeK = 0.0;
   float H = sqrt(uTop * uTop - uBottom * uBottom);
   float rho = H * vUv.y;
   float r = sqrt(rho * rho + uBottom * uBottom);
@@ -297,7 +332,8 @@ void main() {
   // through it was a few airmasses where Earth's horizon is nearly forty, the setting sun white and
   // bright; the air's layers the same at each height, the curve under them the true one's. Below the
   // true horizon (above the drawn one, which dips further), the light grazing it)
-  float K = max(uTrueK, 1.0), Rk = uRadius * K, rK = Rk + (r - uRadius), topK = Rk + (uTop - uRadius);
+  // (its heights the real ones: mediumAtReal)
+  float K = max(uTrueK, 1.0), Rk = uRadius * K, rK = Rk + realH(r - uRadius), topK = Rk + realH(uTop - uRadius);
   float muK = max(mu, -sqrt(max(0.0, 1.0 - (Rk / rK) * (Rk / rK))) + 1e-4);
   float len = max(0.0, -rK * muK + sqrt(max(rK * rK * (muK * muK - 1.0) + topK * topK, 0.0)));
   // (its steps closer near the start, squared: a low sun's way runs hundreds of km to the top, and in
@@ -310,7 +346,7 @@ void main() {
     float t = len * (u0 * u0 + u1 * u1) * 0.5, dt = len * (u1 * u1 - u0 * u0);
     float rr = sqrt(rK * rK + t * t + 2.0 * rK * muK * t);
     vec3 sR, sM, e;
-    mediumAt(rr - Rk + uRadius, sR, sM, e);
+    mediumAtReal(rr - Rk, sR, sM, e);
     od += e * dt;
   }
   gl_FragColor = vec4(exp(-od), 1.0);
@@ -403,25 +439,22 @@ vec3 multiScatter(float r, float muS) {
 }
 `;
 
-// The far sky: the air a true-size world's sky holds past what the drawn one's marches reach. The world is
-// drawn a 64th of its size under air of real height, so a ray along the ground leaves the drawn air after
-// ~40 km, where on the true world it runs ~300 km on, through the air that after sunset is still in the
-// sun: the band of orange and pink toward where the sun went down, the dusty evening's deep pink, came
-// from there and weren't drawn (Dave: "it's the sky not clouds that turn super duper pink"). So for each
-// way from where the camera stands (its height over the datum; the sun's height there), a ray on the
-// true-size sphere, its light past the drawn ray's length (marched, the same air, the same sun and multiple
-// scattering LUTs, the true horizon's shadow), dimmed by the true air between it and the camera (not by the
-// near pass's: its ground haze at the game's scale stands for the distance this light has already come,
-// and dimmed it twice); only the clouds in front take it further. Elevation mapped as its square root (most
-// rows near the horizon), azimuth from the sun's (Hillaire 2020's sky-view LUT, its far part only)
+// The sky as on the true-size world: the world is drawn a 64th of its size under air of real height, so a
+// ray along the ground left the drawn air after ~40 km where on the true world it runs ~300 km on, through
+// the air that after sunset is still in the sun: the band of orange and pink toward where the sun went down
+// came from there and wasn't drawn (Dave: "it's the sky not clouds that turn super duper pink"). So for each
+// way from where the camera stands (its height; the sun's height there as the air sees it), the sunlit
+// air's light along a ray on the true-size sphere, its air at real heights (mediumAtReal: the stratosphere
+// and its ozone whole), the true horizon's shadow; a sky pixel from low down takes its sunlit air from here
+// (the near passes keep its clouds, the moon's light and the ground's). Elevation mapped as its square
+// root (most rows near the horizon), azimuth from the sun's (Hillaire 2020's sky-view LUT)
 export const SKYVIEW_FRAG = /* glsl */`
 ${LUT_COMMON}
 uniform float uGround;
 ${SAMPLE_TRANS}
 ${SAMPLE_MS}
 uniform float uCamH;    // the camera's height over the datum (m, as drawn)
-uniform float uSunMu;   // the sun's height there (its zenith cosine)
-uniform float uSkyMaxS; // the near pass's longest march (m)
+uniform float uSunMu;   // the sun's height there (its zenith cosine, as the air sees it: liftMu)
 varying vec2 vUv;
 // (the distance along unit d from p to the sphere of radius rr from inside it; -1 if it misses from outside)
 float exitSphere(vec3 p, vec3 d, float rr) { float b = dot(p, d), c = dot(p, p) - rr * rr, q = b * b - c; return q < 0.0 ? -1.0 : -b + sqrt(q); }
@@ -430,44 +463,39 @@ void main() {
   float v = vUv.y * 2.0 - 1.0, el = sign(v) * v * v * 1.5707963, az = vUv.x * 3.14159265;
   vec3 D = vec3(cos(el) * cos(az), sin(el), cos(el) * sin(az));
   vec3 sun = vec3(sqrt(max(0.0, 1.0 - uSunMu * uSunMu)), uSunMu, 0.0);
-  float K = max(uTrueK, 1.0), Rt = uRadius * K, topH = uTop - uRadius, grH = uGround - uRadius;
-  // (the drawn ray's length: to the drawn air's top, or its ground; and the true one's)
-  vec3 cD = vec3(0.0, uRadius + uCamH, 0.0), cT = vec3(0.0, Rt + uCamH, 0.0);
-  float sD = exitSphere(cD, D, uTop), gD = hitSphere(cD, D, uGround);
-  if (gD > 0.0) sD = min(sD, gD);
-  sD = min(sD, uSkyMaxS);
-  float sT = exitSphere(cT, D, Rt + topH), gT = hitSphere(cT, D, Rt + grH);
+  // (the true-size world, its air at real heights: mediumAtReal)
+  float K = max(uTrueK, 1.0), Rt = uRadius * K, grH = uGround - uRadius, Rg = Rt + grH;
+  vec3 cT = vec3(0.0, Rt + realH(uCamH), 0.0);
+  float sT = exitSphere(cT, D, Rt + realH(uTop - uRadius)), gT = hitSphere(cT, D, Rg);
   if (gT > 0.0) sT = min(sT, gT);
-  if (!(sT > sD + 1.0)) { gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0); return; }
+  if (!(sT > 1.0)) { gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0); return; }
   float cosT = dot(D, sun), pR = phaseRayleigh(cosT), pM = phaseMie(cosT, uMieG);
-  // (steps squared from the camera over the whole true ray: the light past the drawn ray's end, dimmed by
-  // the air all the way back)
-  const int N = 40;
+  // (steps squared from the camera: along the ground the low air's few km are where the light comes from)
+  const int N = 48;
   vec3 L = vec3(0.0), T = vec3(1.0);
   for (int i = 0; i < N; i++) {
     float u0 = float(i) / float(N), u1 = float(i + 1) / float(N);
     float s = sT * (u0 * u0 + u1 * u1) * 0.5, ds = sT * (u1 * u1 - u0 * u0);
     vec3 p = cT + D * s;
-    float r = length(p), h = r - Rt, rr = uRadius + h;
+    float r = length(p), hr = r - Rt, rr = uRadius + drawnH(hr);
     vec3 sR, sM, e;
-    mediumAt(rr, sR, sM, e);
+    mediumAtReal(hr, sR, sM, e);
     vec3 Ts = exp(-e * ds);
-    if (s > sD) {
-      float muS = dot(p / r, sun);
-      float cosH = -sqrt(max(0.0, 1.0 - ((Rt + grH) / max(r, Rt + grH)) * ((Rt + grH) / max(r, Rt + grH))));
-      vec3 sunT = transmittanceToTop(rr, muS) * smoothstep(cosH - 0.004, cosH + 0.004, muS);
-      vec3 ms = multiScatter(rr, muS);
-      vec3 S = sR * (sunT * pR + ms) + sM * (sunT * pM + ms);
-      L += T * (S - S * Ts) / max(e, vec3(1e-14));
-    }
+    float muS = dot(p / r, sun);
+    float cosH = -sqrt(max(0.0, 1.0 - (Rg / max(r, Rg)) * (Rg / max(r, Rg))));
+    vec3 sunT = transmittanceToTop(rr, muS) * smoothstep(cosH - 0.004, cosH + 0.004, muS);
+    vec3 ms = multiScatter(rr, muS);
+    vec3 S = sR * (sunT * pR + ms) + sM * (sunT * pM + ms);
+    L += T * (S - S * Ts) / max(e, vec3(1e-14));
     T *= Ts;
   }
   gl_FragColor = vec4(L, 1.0);
 }
 `;
 
-// the far sky's light along a ray D (world) at the camera, per unit sun (after the near pass's own march:
-// times only its clouds' transmittance); 0 from high up (the drawn and the true world's skies one there)
+// the sunlit sky's light along a ray D (world) at the camera, per unit sun (SKYVIEW_FRAG: in place of the
+// near pass's sunlit air, times its clouds' transmittance); 0 from high up (the drawn and the true world's
+// skies one there)
 export const GLSL_SKY_FAR = /* glsl */`
 uniform sampler2D tSkyView;
 uniform vec4 uSkyView;   // x its share (1 low down, 0 from high up); y, z the drawn and the true horizon's dip there (rad)
@@ -709,7 +737,7 @@ void march(float t0, float t1, vec3 D, float tca, vec3 perp, float cosTheta, flo
     vec3 S = sR * (sunT * pR + ms) + sM * (sunT * pM + ms);
     vec3 Ts = exp(-e * dti);
     vec3 eSafe = max(e, vec3(1e-14));
-    L += T * (S - S * Ts) / eSafe;
+    L += T * (S - S * Ts) / eSafe * gAirSun;
     if (moon) {
       float muM = dot(nT, uMoonDir);
       vec3 mT = sunTransmittance(r, muM), mms = multiScatter(r, muM);
@@ -746,6 +774,7 @@ void main() {
   // (a sky pixel: nothing in it short of the air's top (the sun's disc, a moon: beyond it))
   bool skyPx = sceneDist > 1e29 || sceneDist > hit.y;
   gHazeK = skyPx ? 1.0 - uSkyView.x : 1.0;
+  gAirSun = gHazeK;
   float tca = dot(uCenter, D);
   vec3 perp = uCenter - tca * D;
   float t0 = max(hit.x, 0.0);

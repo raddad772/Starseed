@@ -169,6 +169,7 @@ void main() {
   if (hit.y <= 0.0 || hit.x > hit.y) { outL = vec4(0.0); outT = vec4(1.0); return; }
   bool skyPx = sceneDist > 1e29 || sceneDist > hit.y;   // (nothing short of the air's top: the sun's disc, a moon)
   gHazeK = skyPx ? 1.0 - uSkyView.x : 1.0;   // (no ground haze on a sky pixel's ray: atmosphere.js)
+  gAirSun = gHazeK;   // (and its sunlit air the true-size world's: SKYVIEW_FRAG)
   float tca = dot(uCenter, D);
   vec3 perp = uCenter - tca * D;
   float t0 = max(hit.x, 0.0);
@@ -271,12 +272,12 @@ void main() {
       vec3 sunT = sunTransmittance(r, muS) * shade;
       if (uHeightCube.x > 0.5 && r < uRadius + uHeightCube.z) sunT *= airShadow(uToFixed * p, uToFixed * uSunDir, uRadius);
       vec3 ms = multiScatter(r, muS) * (0.2 + 0.8 * shade);
-      vec3 S = sR * (sunT * pR + ms) + sM * (sunT * pM + ms);
+      vec3 S = (sR * (sunT * pR + ms) + sM * (sunT * pM + ms)) * gAirSun;
       // (under a deck, the sunlight it scatters down lights the air too, as it does the ground (atmosphere.js
       // cloudLight: all in 1 / (1 + 3 (1 - g) tau / 4), less the beam), the overcast's grey haze that pales
       // the far woods; from the dome below the deck, half the sphere's directions, radiance E / pi)
       float dif = max(0.0, 1.0 / (1.0 + 0.1125 * tauV) - exp(-tauV / max(muS, 0.06))) * max(muS, 0.0);
-      S += (sR + sM) * sunTransmittance(r, muS) * (dif * 0.5 / PI_A);
+      S += (sR + sM) * sunTransmittance(r, muS) * (dif * 0.5 / PI_A) * gAirSun;
       vec3 Sm = vec3(0.0), mT = vec3(0.0), mms = vec3(0.0), mT0 = vec3(0.0);
       if (moon) {
         float muM = dot(nT, uMoonDir), shM = exp(-tauV / max(muM, 0.06));
