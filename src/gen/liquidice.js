@@ -157,7 +157,7 @@ const nrm3 = (v, k = 1) => { const l = Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2
 export const POLY_MAX = 12;
 // how round a floe's corners are (m: liquid.js floeRound)
 export const floeAge = (size, id) => (0.3 + 0.7 * smooth(16, 200, size)) * (0.6 + 0.4 * (id >>> 16) / 65536);
-export const floeRound = (size, id) => size * 0.06 * (0.5 + floeAge(size, id));
+export const floeRound = (size, id, c) => size * (0.06 * (0.5 + floeAge(size, id)) + 0.32 * (1 - smooth(0.5, 0.9, c)));
 // the face p's on (o.ax its axis, o.sg its sign, o.face its index) and p's (u, v) on it
 export function faceUV(p, o) {
   const A0 = Math.abs(p[0]), A1 = Math.abs(p[1]), A2 = Math.abs(p[2]);
@@ -233,7 +233,7 @@ export function clipPiece(P, k, side, g, Q) {
   return Q;
 }
 // whether a piece splits again (its crack's hash, size, the pack's cover at its middle)
-export const splits = (h, s, c) => !(s < 4096 && (s < 12 + 288 * smooth(0.4, 0.95, c) || (h & 255) < 51.2));
+export const splits = (h, s, c) => !(s < 4096 && (s < 12 + 288 * smooth(0.4, 0.95, c) || (h & 255) < 51.2 * smooth(0.5, 0.9, c)));
 export const childId = (id, side, lvl) => floeHash(id, side, lvl, 0x9e37);
 const _FU = {}, _P0 = {}, _P1 = {}, _SH = {}, _KR = {}, _MID = [0, 0, 0], _N3 = [0, 0, 0];
 // an edge's plane (through the world's middle) in 3D from its line in face f's (u, v), unit, into n
@@ -246,14 +246,16 @@ export function edgePlane(f, Au, Bv, C, n) {
 // lead there, m), lid, c, size, mid, there; o.P its polygon (face o.f's u, v)
 export function floeOf(p, ice, o) {
   const f = faceUV(p, o.f || (o.f = {})), R = Math.sqrt(p[0] * p[0] + p[1] * p[1] + p[2] * p[2]);
-  let P = faceRoot(f, _P0), Q = _P1, c = 1, s = 0;
+  let P = faceRoot(f, _P0), Q = _P1, c = 1, s = 0, cP = -1;
   const m = o.mid || (o.mid = [0, 0, 0]);
   for (let lvl = 0; lvl < 32; lvl++) {
     const sh = pieceShape(P, _SH);
     if (!(sh.area >= 1e-20)) break;
     s = pieceMid(f, sh, R, m);
     const k = pieceCrack(P, lvl, sh, _KR);
-    if (s < 4096) { c = pieceCover(m, ice); if (!splits(k.h, s, c)) break; }
+    // (the pack's closeness for its splitting and leads: once for a ~4 km plate down to 1 km, then by
+    // piece; liquid.js's)
+    if (s < 4096) { if (cP < 0 || s < 1024) cP = pieceCover(m, ice); c = cP; if (!splits(k.h, s, c)) break; }
     if (P.n >= POLY_MAX - 1) break;
     const side = k.A * f.u + k.B * f.v + k.C >= 0 ? 1 : 0;
     clipPiece(P, k, side, crackOpen(k.cid, c, s), Q);
@@ -274,7 +276,8 @@ export function floeOf(p, ice, o) {
     if (P.ES[i] < 0 && ad < rd) { rd = ad; rh = -P.ES[i]; }
   }
   o.ridge = rh > 0 ? rh * Math.max(0, 1 - rd / (2 * rh)) : 0; o.ridgeH = rh; o.ridgeD = rd;
-  const rr = floeRound(s, P.id);
+  c = pieceCover(m, ice);
+  const rr = floeRound(s, P.id, c);
   if (e2 < rr) e = rr - Math.hypot(rr - e, rr - e2);
   o.id = P.id; o.e = e; o.lid = lid; o.c = c; o.size = s; o.P = P;
   o.there = c > 0 && (P.id & 65535) / 65536 <= Math.min(1, 1.5 * c);

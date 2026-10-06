@@ -365,11 +365,11 @@ uint faceLead(uint face, int axis, bool neg) {
 }
 const int POLY_MAX = 12;
 // how round a floe's corners are (m): ground down where floes knock together, the more the older it is,
-// ~5-9% of its size (gen/liquidice.js floeRound the same): its edge within that of two of its sides an arc
-// between them
-float floeRound(float size, uint id) {
+// ~5-9% of its size; and where the pack's open (c) and the swell works it, round as pancake ice, up to ~0.4
+// of it (gen/liquidice.js floeRound the same): its edge within that of two of its sides an arc between them
+float floeRound(float size, uint id, float c) {
   float age = (0.3 + 0.7 * smoothstep(16.0, 200.0, size)) * (0.6 + 0.4 * float(id >> 16u) / 65536.0);
-  return size * 0.06 * (0.5 + age);
+  return size * (0.06 * (0.5 + age) + 0.32 * (1.0 - smoothstep(0.5, 0.9, c)));
 }
 // the piece of the pack at p (body-fixed m), the sea's temperature's ice there: its hash (id), how far p
 // is in from its edge less the lead there (e, m: < 0 in the lead), that lead's hash (lid), the pack's
@@ -395,7 +395,7 @@ void floeOf(vec3 p, float ice, out uint id, out float e, out uint lid, out float
   int n = 4;
   id = floeHash(face, 0x51ceu, 0u, 0x3a7bu);
   c = 1.0;
-  float s = 0.0;
+  float s = 0.0, cP = -1.0;
   vec3 m = p;
   for (int lvl = 0; lvl < 32; lvl++) {
     // (its centroid and area, from its first vertex; its long axis from its vertices' spread)
@@ -427,9 +427,14 @@ void floeOf(vec3 p, float ice, out uint id, out float e, out uint lid, out float
     float tc = th + 1.5708 + float((h >> 8u) & 1023u) / 1023.0 * 1.0472 - 0.5236, off = (float((h >> 18u) & 255u) / 255.0 - 0.5) * 0.6 * ext;
     vec2 qq = cc + vec2(cos(th), sin(th)) * off;
     float KA = -sin(tc), KB = cos(tc), KC = -(KA * qq.x + KB * qq.y);
+    // (how close the pack is, for its splitting and its leads: read once for the pieces of a ~4 km plate
+    // down to 1 km (at its middle), then at each piece's own: where it breaks up small near its edge;
+    // whether a floe's there by its own: below)
     if (s < 4096.0) {
-      c = pieceCover(m, ice);
-      if (s < 12.0 + 288.0 * smoothstep(0.4, 0.95, c) || float(h & 255u) < 51.2) break;
+      if (cP < 0.0 || s < 1024.0) cP = pieceCover(m, ice);
+      c = cP;
+      // (its chance to stop as it is fades where the pack's open: the swell keeps breaking it there)
+      if (s < 12.0 + 288.0 * smoothstep(0.4, 0.95, c) || float(h & 255u) < 51.2 * smoothstep(0.5, 0.9, c)) break;
     }
     if (n >= POLY_MAX - 1) break;
     float side = KA * pu + KB * pv + KC >= 0.0 ? 1.0 : -1.0;
@@ -473,7 +478,8 @@ void floeOf(vec3 p, float ice, out uint id, out float e, out uint lid, out float
   }
   // (a ridge's sail: its height here, its sides ~27 degrees, twice as wide as it's high either side)
   ridge.w = rh > 0.0 ? rh * max(0.0, 1.0 - ridge.w / (2.0 * rh)) : 0.0;
-  float rr = floeRound(s, id);
+  c = pieceCover(m, ice);
+  float rr = floeRound(s, id, c);
   if (e2 < rr) e = rr - length(vec2(rr - e, rr - e2));
   size = s; mid = m;
   there = c > 0.0 && float(id & 65535u) / 65536.0 <= min(1.0, 1.5 * c);

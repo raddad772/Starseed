@@ -44,7 +44,7 @@ export class FloeField {
         let ridged = false;
         for (let i = 0; i < P.n; i++) if (P.ES[i] < 0) ridged = true;
         const top = floeTop(packIceAt(gen, F.mid, L, q.Tm, {}), F.id, F.size < 64);
-        fl = { P, f: { ...F.f }, mid: F.mid.slice(), rr: floeRound(F.size, F.id), top, ridged };
+        fl = { P, f: { ...F.f }, mid: F.mid.slice(), rr: floeRound(F.size, F.id, F.c), top, ridged };
         if (this.floes.size > 64) this.floes.clear();
         this.floes.set(F.id, fl);
       }

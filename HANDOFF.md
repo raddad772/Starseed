@@ -530,6 +530,13 @@ rivers that are straighter where they should be?"):**
   taller one stops you). Checked: every field block within 4 m of a crest is one the renderer draws (0 m
   apart); walking 8 m at a ridge (75 N 117): across the floe at 0.22 m, up the blocks to 1.9 m at the
   crest, down the far side, on across the next floe. First query ~20 ms (the floes), then cached.
+- Cheaper, rounder, more broken at the edge (Dave: "Keep working"): the pack's closeness for a piece's
+  splitting and leads read once for a ~4 km plate down to 1 km, then by piece (was every level: ~20
+  texture reads a pixel, now ~2 + 2 a level below 1 km); whether a floe's there by its own middle's. Where
+  the pack's open its floes round toward pancake ice (floeRound + 0.32 size x (1 - smoothstep(0.5, 0.9,
+  c)): the swell grinds them), and the chance a piece stops splitting as it is fades there (x smoothstep
+  (0.5, 0.9, c)): the swell keeps breaking it, so the edge's floes are small. floemap 0.6: big rounded
+  floes, smaller rounded pieces, fragments.
 - **Seasons on the land: snow through the year** (Dave: "see seasonal changes"; "refine and add"; not
   living things yet). worldsim/season.js: each world's year by climate cell, its temperature's first
   harmonic about the mean (a1 cos L + b1 sin L, L the solar longitude from the northern spring equinox,

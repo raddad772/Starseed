@@ -53,24 +53,25 @@ export function buildFloes(gen, dir, sinSun, L, reach = 600) {
       return hu >= u0 - hr && lu <= u0 + hr && hv >= v0 - hr && lv <= v0 + hr;
     };
     // the face's pieces, split as gen/liquidice.js floeOf splits them, down every side that reaches here
-    const stack = [{ P: faceRoot(f, {}), lvl: 0, c: 1 }];
+    const stack = [{ P: faceRoot(f, {}), lvl: 0, c: 1, cP: -1 }];
     const sh = {}, k = {}, m = [0, 0, 0];
     while (stack.length) {
       const nd = stack.pop(), Pc = nd.P;
-      let c = nd.c, leaf = false, s = 0;
+      let c = nd.c, cP = nd.cP, leaf = false, s = 0;
       const S = pieceShape(Pc, sh);
       if (!(S.area > 1e-20)) continue;
       s = pieceMid(f, S, R, m);
       const K = pieceCrack(Pc, nd.lvl, S, k);
-      if (s < 4096) { c = pieceCover(m, ice); if (!splits(K.h, s, c)) leaf = true; }
+      if (s < 4096) { if (cP < 0 || s < 1024) cP = pieceCover(m, ice); c = cP; if (!splits(K.h, s, c)) leaf = true; }
       if (!leaf && (Pc.n >= POLY_MAX - 1 || nd.lvl >= 31)) leaf = true;
-      if (leaf) { slab(f, Pc, c, s, S); continue; }
+      // (whether the floe's there: by the pack's closeness at its own middle)
+      if (leaf) { slab(f, Pc, pieceCover(m, ice), s, S); continue; }
       const g = crackOpen(K.cid, c, s);
       for (const side of [0, 1]) {
         const Q = clipPiece(Pc, K, side, g, {});
         if (Q.n < 3 || !meets(Q)) continue;
         Q.id = childId(Pc.id, side, nd.lvl);
-        stack.push({ P: Q, lvl: nd.lvl + 1, c });
+        stack.push({ P: Q, lvl: nd.lvl + 1, c, cP });
       }
     }
   }
@@ -91,7 +92,7 @@ export function buildFloes(gen, dir, sinSun, L, reach = 600) {
       const sg = n[0] * cen[0] + n[1] * cen[1] + n[2] * cen[2] >= 0 ? 1 : -1;
       E.push({ n, sg, g: Math.max(Pc.ES[i], 0.15), H: Pc.ES[i] < 0 ? -Pc.ES[i] : 0 });
     }
-    const pk = packIceAt(gen, cen, L, Tm0, {}), rr = floeRound(size, Pc.id), top = floeTop(pk, Pc.id, size < 64), age = floeAge(size, Pc.id);
+    const pk = packIceAt(gen, cen, L, Tm0, {}), rr = floeRound(size, Pc.id, c), top = floeTop(pk, Pc.id, size < 64), age = floeAge(size, Pc.id);
     // (the edge function at p: liquid.js floeOf's e, ragged; and which edge is nearest)
     let near = 0;
     const ef = (p) => {
