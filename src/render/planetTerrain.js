@@ -141,7 +141,7 @@ export class PlanetTerrain {
     }
     // (grass and ferns underfoot, where land plants grow: grassRender.js)
     if (life && this.body.data.history && this.body.data.history.plantGrade >= 1) {
-      if (!this.grassSet) this.grassSet = new GrassSet(this.body, this.group, this.pool);
+      if (!this.grassSet) this.grassSet = new GrassSet(this.body, this.group, this.pool, this.shared);
       this.grassSet.update(camFixed);
     }
     // (plants and rocks seated again where the ground under them changed: a finer tile in, or the near

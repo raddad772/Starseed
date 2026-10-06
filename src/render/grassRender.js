@@ -20,6 +20,7 @@ import { FireField } from '../sim/fireField.js';
 import { SHADOW_LAYER, SHADOW_LIGHT_UNIFORMS, receiveShadows } from './sunShadows.js';
 import { standAt } from '../gen/life/stands.js';
 import { floraSpecies, meadowAt } from '../gen/flora.js';
+import { snowWaterNow, SNOW_DEPTH_PER_MM } from './season.js';
 
 const TILE = 8, PPT = 4, NEAR_R = 16, MID_R = 44, FAR_R = 160, FAR_TILE = 32, HIGH = 120, MOVE = 1.2;
 // (near and middle: 8 m tiles of 2 m patches; far: 32 m tiles of 8 m patches, their blades broader and fewer
@@ -63,7 +64,7 @@ function bladeGeometry(nb, seg, seed) {
 
 // a blade's shape, shared by the lit material and the shadows': from its patch's instance data
 //   iCorner: the ground's heights at the patch's corners over its centre's plane (u-v-, u+v-, u-v+, u+v+)
-//   iGrass: density (0..1), height (m), how wild (its own lean), (unused)
+//   iGrass: density (0..1), height (m), how wild (its own lean), the season's snow on it now (m)
 //   iWave: where the patch lies (body-fixed x, z, wrapped): the gusts' phase runs across it
 const GLSL_BLADE = /* glsl */`
 attribute vec4 aBlade;
@@ -88,7 +89,9 @@ vec3 grassBlade(mat4 im) {
   if (aBlade.z >= dens) return vec3(0.0);
   float t = aV.x, side = aV.y;
   float k1 = fract(aBlade.z * 7.31), k2 = fract(aBlade.z * 3.17 + aBlade.w * 0.13);
-  float hb = iGrass.y * (0.45 + 0.9 * k1);
+  // (out of the season's snow: its tips standing up out of a thin fall, buried by a deep one)
+  float hb = iGrass.y * (0.45 + 0.9 * k1) - iGrass.w;
+  if (hb < 0.02) return vec3(0.0);
   vec2 f = vec2(cos(aBlade.w), sin(aBlade.w)), p = vec2(-f.y, f.x);
   // (its own lean, the wilder the more; the wind's bend, a gust's wave running across in its way)
   vec2 B = f * iGrass.z * (0.15 + 0.85 * k2);
@@ -105,7 +108,7 @@ vec3 grassBlade(mat4 im) {
   float hg = mix(mix(iCorner.x, iCorner.y, u), mix(iCorner.z, iCorner.w, u), v);
   float w = uBladeW * (0.6 + 0.8 * k2) * (1.0 + 0.6 * iGrass.y) * pow(1.0 - t, 0.7);
   vec2 xz = vec2(aBlade.x, aBlade.y) + (B * hb * t * t + p * w * side) * uPatchK;
-  return vec3(xz.x, hg + hb * t * (1.0 - 0.3 * dot(B, B) * t), xz.y);
+  return vec3(xz.x, hg + iGrass.w + hb * t * (1.0 - 0.3 * dot(B, B) * t), xz.y);
 }
 `;
 
@@ -146,8 +149,8 @@ function nmRGB(l) {
 }
 
 export class GrassSet {
-  constructor(body, group, pool) {
-    this.body = body; this.group = group;
+  constructor(body, group, pool, shared = null) {
+    this.body = body; this.group = group; this.shared = shared;
     // (the recent centuries' fires where it stands: gen/life/fire.js; a tile's grass made again as its
     // fire tile comes in)
     this.fire = pool ? new FireField(body, pool) : null;
@@ -234,6 +237,9 @@ export class GrassSet {
     // (the near field's volume made again round a new anchor: the tiles' heights from it again)
     const nf = this.body.near && this.body.near.field;
     if (nf !== this._nf) { this._nf = nf; this.invalidate(); }
+    // (the season moved on (its snow, its dry months): made again, every few days of its year)
+    const Ls = this.body.solarLongitude();
+    if (this._L0 === undefined || Math.abs(Math.atan2(Math.sin(Ls - this._L0), Math.cos(Ls - this._L0))) > 0.03) { this._L0 = Ls; this.invalidate(); }
     const b = this.body, gen = b.terrain, R = b.R, now = performance.now() / 1000;
     this.time.value += Math.min(0.1, Math.max(0, now - (this._t || now))); this._t = now;   // (the wind's: render time)
     const show = (v) => {
@@ -371,6 +377,24 @@ export class GrassSet {
     // (the tile's own centre on its ground: its meshes there, culled and ranked by distance from there)
     T.pos.set(dc[0], dc[1], dc[2]).multiplyScalar(R + hg[12]);
     const wet = Math.min(1, Math.max(0, (P - 300) / 1200)), warm = Math.min(1, Math.max(0, (tC + 4) / 24));
+    // (the season now (worldsim/season.js: the place's year, its swing about its mean and its cold half's
+    // rain): this month's warmth and rain, the snow on the ground; a month whose rain is under twice its
+    // warmth is dry (Gaussen), the grass cured to straw, in a cold one dormant, browned)
+    let snowD = 0, monthDry = 0, cold = 0;
+    const yr = this._yr || (this._yr = [0, 0, 0]);
+    if (snap.season && snap.season(dc[0], dc[1], dc[2], yr)) {
+      const L = b.solarLongitude(), A = Math.hypot(yr[0], yr[1]), ph = L - Math.atan2(yr[1], yr[0]), Tm = tC + A * Math.cos(ph);
+      const sh = this.shared;
+      if (sh && sh.uSeason && sh.uSeason.value.z > 0.5) {
+        const swe = snowWaterNow(yr[0], yr[1], yr[2], tC, L, sh.uSeason.value.y);
+        if (swe >= 1e4) return T;
+        snowD = swe * SNOW_DEPTH_PER_MM;
+      }
+      const Pw = Math.max(0, (P - 6 * yr[2]) / 6), Pm = yr[2] + (Pw - yr[2]) * (0.5 + 0.5 * Math.cos(ph));
+      const sm = (e0, e1, x) => { const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0))); return t * t * (3 - 2 * t); };
+      monthDry = Tm > 0 ? sm(1.2, 0.5, Pm / Math.max(2 * Tm, 1)) : 0;
+      cold = sm(6, -2, Tm);
+    }
     // (how tall it grows, left to itself (Dave: "growing long and wild when it can"): a dry steppe's a hand
     // high, a wet warm country's a metre and more, the cold's low; a burn's regrowth short its first years;
     // taller under a light pull. Grazing to come: the herds' densities, sim/fauna.js)
@@ -379,7 +403,7 @@ export class GrassSet {
     const dryK = 1 - wet;
     // (its colour: the foliage's where it's wet, straw where it's dry (the world's dry colour, as the ground
     // shades its open country), a fresh burn's green flush; some patches drier)
-    const k0 = Math.min(1, dryK * 1.1) * (1 - green);
+    const k0 = Math.min(1, 0.55 * dryK + 0.8 * monthDry + 0.7 * cold) * (1 - green);
     const base = this.veg.map((x, q) => (x + (this.dry[q] - x) * k0) * (1.35 + 0.3 * green));
     const dryTip = this.dry.map((x) => x * 1.45);
     // (the patches: their frames, their corners, their density, height and colour)
@@ -410,7 +434,7 @@ export class GrassSet {
       mat.set(M.elements, q * 16);
       corner[q * 4] = c00 - h0; corner[q * 4 + 1] = c10 - h0; corner[q * 4 + 2] = c01 - h0; corner[q * 4 + 3] = c11 - h0;
       const Hp = H * (0.85 + 0.3 * rnd());
-      grass[q * 4] = Math.min(1, dens); grass[q * 4 + 1] = Hp; grass[q * 4 + 2] = (this.fern ? 0.7 : 0.12 + 0.45 * Math.min(1, Hp / 1.2)) / Math.max(1, Hp * 0.6); grass[q * 4 + 3] = 0;
+      grass[q * 4] = Math.min(1, dens); grass[q * 4 + 1] = Hp; grass[q * 4 + 2] = (this.fern ? 0.7 : 0.12 + 0.45 * Math.min(1, Hp / 1.2)) / Math.max(1, Hp * 0.6); grass[q * 4 + 3] = snowD;
       const wx = d[0] * R, wz = d[2] * R;
       wave[q * 2] = wx - 2048 * Math.floor(wx / 2048); wave[q * 2 + 1] = wz - 2048 * Math.floor(wz / 2048);
       const tdr = rnd() * 0.5 * (0.3 + dryK);

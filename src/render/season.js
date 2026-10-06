@@ -103,3 +103,22 @@ float seasonFrost(vec3 fn, float n) {
 const float SNOW_DEPTH_PER_MM = ${SNOW_DEPTH_PER_MM.toFixed(6)};
 const float DDF_SNOW = ${DDF_SNOW.toFixed(1)};
 `;
+
+// the snow's water on the ground now (mm), as seasonSWE has it, for the CPU (grassRender.js: the blades
+// standing up out of a thin fall, buried by a deep one): a place's year (a1, b1 K; P the cold half's
+// precipitation, mm a month), its year's mean Ta (C), where the sun stands in its year L (rad), the melt
+// over the year per degree above freezing (mm: uSeason.y); 1e4 where the snow lasts the year
+export function snowWaterNow(a1, b1, P, Ta, L, meltYear) {
+  const A = Math.hypot(a1, b1), TAU = 2 * Math.PI;
+  if (Ta >= A) return 0;
+  const th = Ta <= -A ? 0 : Math.acos(Math.max(-1, Math.min(1, -Ta / A)));
+  const acc = 12 * P / TAU, fall = acc * (TAU - 2 * th), mr = meltYear / TAU;
+  const thaw = mr * (2 * Ta * th + 2 * A * Math.sin(th));
+  if (thaw + SUBLIM_YR <= fall) return 1e4;
+  if (th <= 0) return 0;
+  let x = L - Math.atan2(b1, a1);
+  x -= TAU * Math.floor((x + Math.PI) / TAU);
+  if (x > th) return acc * (x - th);
+  if (x < -th) return acc * (x + TAU - th);
+  return Math.max(0, fall - mr * (Ta * (x + th) + A * (Math.sin(x) + Math.sin(th))));
+}
