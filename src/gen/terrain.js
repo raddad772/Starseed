@@ -62,7 +62,8 @@ export const S_WLVL = 21;    // the water's level nearby, a river's, a creek's o
 export const S_FLX = 22, S_FLY = 23, S_FLZ = 24; // running water's way down (unit, planet-fixed; 0 still)
 export const S_FLV = 25;     // and its speed (m/s: Manning's, by its depth and slope)
 export const S_RIVR = 26;    // 1 where the water is a world-sim river's channel, 2 a creek's (riverRibbons draws them near)
-export const S_LEN = 27;
+export const S_RDEP = 27;    // a river's channel depth where its water is (m, drawn: its stage through the year, universe.js)
+export const S_LEN = 28;
 // (each rock's cohesion as a mass, Pa: how tall a sheer face of it stands: canyon walls)
 const FREEZE_MIX = { methane: 20, ethane: 20 };   // (K: a mixture's freezing point under its main liquid's)
 const ORGANIC_SAND = [0.075, 0.055, 0.035];   // (linear: tholin sand, dark brown)
@@ -317,7 +318,7 @@ export class TerrainGenerator {
   // Full sample. minWavelength (m) band-limits the fine octaves.
   sample(x, y, z, minWavelength, out) {
     const o = this.snap ? this.sampleSnap(x, y, z, minWavelength, out) : this.sampleNoise(x, y, z, minWavelength, out);
-    if (this.hScale < 1) { o[S_H] *= this.hScale; o[S_WDEPTH] *= this.hScale; if (o[S_WLVL] > -1e8) o[S_WLVL] *= this.hScale; }
+    if (this.hScale < 1) { o[S_H] *= this.hScale; o[S_WDEPTH] *= this.hScale; o[S_RDEP] *= this.hScale; if (o[S_WLVL] > -1e8) o[S_WLVL] *= this.hScale; }
     return o;
   }
 
@@ -809,6 +810,7 @@ export class TerrainGenerator {
           h += rvK * (1 - rvFade) * (Math.min(h, bank - rv.depth * this._bedShape(rv, x, y, z, half)) - h);
           if (this.wetNow && rvK >= 1) {
             wl = rvWl = stage;
+            out[S_RDEP] = rv.depth0 || rv.depth;
             // (and how it runs: down its channel, at its section's speed: _riverWater)
             out[S_FLX] = rv.fx || 0; out[S_FLY] = rv.fy || 0; out[S_FLZ] = rv.fz || 0;
             out[S_FLV] = this._riverWater(0.5 * rv.w / (1 + 0.12 * (rv.c || 0)), rv.c || 0, rv.hs, rv.slope || 0, this._rwS || (this._rwS = {})).v;
@@ -1088,6 +1090,10 @@ export class TerrainGenerator {
     };
     const strip = (m, X, ST, HW, XW, DM, V, TT, ok, Zs, TG) => {
       const P = new Float64Array(3 * m), Ac = new Float64Array(3 * m);
+      // (the river's year at each point (snapshot.js riverYear): its flow's swing against its mean,
+      // which the ribbon's shader moves its stage by)
+      const YA = new Float32Array(m), YB = new Float32Array(m), yr = this._ry || (this._ry = [0, 0]);
+      for (let i = 0; i < m; i++) if (S.riverYear(X[3 * i], X[3 * i + 1], X[3 * i + 2], yr)) { YA[i] = yr[0]; YB[i] = yr[1]; }
       for (let i = 0; i < m; i++) { const r = R + ST[i] * hs; P[3 * i] = X[3 * i] * r; P[3 * i + 1] = X[3 * i + 1] * r; P[3 * i + 2] = X[3 * i + 2] * r; }
       const ac = [0, 0, 0];
       for (let i = 0; i < m; i++) { acrossAt(m, X, ST, i, ac, TG); Ac[3 * i] = ac[0]; Ac[3 * i + 1] = ac[1]; Ac[3 * i + 2] = ac[2]; }
@@ -1130,7 +1136,7 @@ export class TerrainGenerator {
           out.nrm.push(nx, ny, nz);
           out.flow.push(sg * dx, sg * dy, sg * dz, V[k] / 9);
           out.liq.push(lq[0], lq[1], lq[2], lq[3]);
-          out.rib.push(sd, DM[k]);
+          out.rib.push(sd, DM[k], YA[k], YB[k]);
         }
         out.index.push(b, b + 1, b + 2, b + 1, b + 3, b + 2);
         // (a fall: where the water drops steeper than ~37 degrees, from the top of a run of such to its foot)
@@ -1214,7 +1220,7 @@ export class TerrainGenerator {
         out.nrm.push(nx, ny, nz);
         out.flow.push(sgn * d[0] / dl, sgn * d[1] / dl, sgn * d[2] / dl, (V[i0] + f * (V[i1] - V[i0])) / 9);
         out.liq.push(65535, Math.round(0.7 * 65535), Math.round(Math.min(1, Math.max(0, (Tc - frz + 60) / 120)) * 65535), Math.round(dm.smoothstep(0.01, 0.2, 1 - up) * 65535));
-        out.rib.push(-1 + 2 * ci / nc, DM[i0] + f * (DM[i1] - DM[i0]));
+        out.rib.push(-1 + 2 * ci / nc, DM[i0] + f * (DM[i1] - DM[i0]), 0, 0);   // (a fall's sheet: shaped by its flow, not moved with the stage)
         // (its foot: where its middle column lands)
         if (ci === nc >> 1 && foot < 0 && gl < bot + 0.1 * (top - bot) && top - bot > 0.5) foot = o;
       }

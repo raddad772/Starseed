@@ -405,7 +405,7 @@ export function buildChunk(gen, face, level, ix, iy, N = CHUNK_N) {
       NR.push(Math.round(px / pl * 127), Math.round(py / pl * 127), Math.round(pz / pl * 127));
       const Tc = fineS[f * S_LEN + S_TEMP] - 273.15;
       LQ.push(65535, Math.round(lvK[f] * 65535), Math.round(Math.min(1, Math.max(0, (Tc - frz + 60) / 120)) * 65535), Math.round(lvF[f] * 65535));
-      RB.push(0, 1);
+      RB.push(0, 1, 0, 0);
       CL.push(encodeColor(lvC[f * 3]), encodeColor(lvC[f * 3 + 1]), encodeColor(lvC[f * 3 + 2]), 255);
       return map[v];
     };

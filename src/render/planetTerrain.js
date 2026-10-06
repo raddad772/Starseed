@@ -349,7 +349,7 @@ export class PlanetTerrain {
       rg.setAttribute('nrm', new THREE.BufferAttribute(W.nrm, 3, true));
       rg.setAttribute('liq', new THREE.BufferAttribute(W.liq, 4, true));
       rg.setAttribute('flw', new THREE.BufferAttribute(W.flow, 4));
-      rg.setAttribute('rib', new THREE.BufferAttribute(W.rib, 2));
+      rg.setAttribute('rib', new THREE.BufferAttribute(W.rib, 4));
       rg.setAttribute('col', new THREE.BufferAttribute(W.col, 4, true));
       rg.setIndex(new THREE.BufferAttribute(W.index, 1));
       rg.computeBoundingSphere();

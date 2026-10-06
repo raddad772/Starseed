@@ -2,6 +2,28 @@
 
 Dave is play-testing and giving feedback in short bursts.
 
+## NOW: rivers through the year (session 39d69fa8, 2026-10-06)
+
+- **Each river's flow through its year** (season.js riverYear, SEASON_V 6; Dave: "go do gfx and planet
+  generation"): monthly runoff on the climate grid (the month's rain, the snowpack's melt by degree
+  days (DDF_SNOW), less what the warmth takes back up, Thornthwaite-like 0.37 T^1.75 mm a 30-day month;
+  four tenths of a year's runoff a baseflow let out evenly), its mean and first harmonic, carried down
+  the sim's receivers (snap.rcv, cells weighted by their solid angle) to every river cell: Q = Q0 (1 + a
+  cos L + b sin L), a and b x60 as bytes (snap.riverYear; SnapshotSampler.riverYear reads the cell round
+  a point that carries most, a river's own). Its depth at the station as Q^0.4 (Leopold and Maddock
+  1953): the ribbon's vertex shader moves its stage by its mean flow's thalweg depth (1.5x the section's
+  mean depth, carried in `rib`, now vec4: across, mean depth, a, b) times (f^0.4 - 1), to the bed in a
+  dry season, no higher than its banks (0.8 of that depth) in a flood; its banks' slopes come out of the
+  water as it falls. The wading depth the same (universe.js liquidDepthAt, from the sample's new
+  S_RDEP, the channel depth: S_LEN 28). Falls' sheets and lakes don't move.
+- SOL Earth: big rivers' swings 0.02-0.2 in the tropics (its climate's rain belt moves little), 0.6-0.9
+  at 40-52 S (snowmelt: peaks in the southern late spring and summer, the low winter frozen anyway);
+  11% of river cells swing past their mean (dry part of the year: frozen headwaters, dry-season
+  streams). 48.45 S 124.26 E (a 2.6 m channel): 1.36 m deep at Ls 20, 1.81 at the Ls 286 flood (bankfull),
+  frozen Ls 40-110 (shots in the transcript: winter snow and sastrugi, the ice; summer high water).
+- Not yet: lakes' levels through the year; the far terrain's rivers (drawn in the mesh) don't move; a
+  river losing water to the air as it crosses a desert.
+
 ## NOW: ship integration pass, Codex's fleets (session 39d69fa8, 2026-10-06)
 
 Dave: "Can we do ship integration pass on the models and features codex designed and put in", and "I want

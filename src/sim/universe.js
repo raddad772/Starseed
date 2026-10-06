@@ -5,7 +5,8 @@
 
 import * as THREE from 'three';
 import { orbitState } from '../core/kepler.js';
-import { TerrainGenerator, S_LEN, RELIEF_MAX, surfaceOf, liquidDepthOf } from '../gen/terrain.js';
+import { TerrainGenerator, S_LEN, RELIEF_MAX, surfaceOf, liquidDepthOf, S_RIVR, S_RDEP } from '../gen/terrain.js';
+import { snowsBySeason, RIVER_DEPTH_EXP } from '../gen/worldsim/season.js';
 import { dirFromFaceUV, faceUVFromDir, chunkArcSize } from '../gen/cubesphere.js';
 import { CHUNK_N } from '../gen/chunkbuilder.js';
 import * as U from '../core/units.js';
@@ -208,7 +209,18 @@ export class BodyRuntime {
     const l = dirFixed.length();
     d[0] = dirFixed.x / l; d[1] = dirFixed.y / l; d[2] = dirFixed.z / l;
     const s = gen.sample(d[0], d[1], d[2], 50, this._scratch);
-    const wd = liquidDepthOf(gen, s);
+    let wd = liquidDepthOf(gen, s);
+    // (a river's stage through its year, as its ribbon's shader moves it (terrainMaterial.js): its flow
+    // now against its mean (snapshot.js riverYear), the depth at the station as Q^0.4 times its mean
+    // flow's thalweg depth, to the bed or up to the banks)
+    if (wd > 0 && s[S_RIVR] === 1 && s[S_RDEP] > 0 && gen.snap && snowsBySeason(gen.p)) {
+      const yr = gen.snap.riverYear(d[0], d[1], d[2], this._ry || (this._ry = [0, 0]));
+      if (yr) {
+        const L = this.solarLongitude(), f = Math.min(4, Math.max(0.02, 1 + yr[0] * Math.cos(L) + yr[1] * Math.sin(L)));
+        const dT = Math.max(0.05, 0.55 * s[S_RDEP] - 0.3 * Math.min(1, gen.hScale)), shift = Math.min(0.8 * dT, Math.max(-dT, dT * (Math.pow(f, RIVER_DEPTH_EXP) - 1)));
+        wd = Math.max(0, wd + shift);
+      }
+    }
     if (wd > 0 && gen.p.liquid !== 'lava') {
       // (the season: the sun's latitude now, in this world's frame, and where it stands in the year)
       const sun = this._sunF || (this._sunF = new THREE.Vector3());

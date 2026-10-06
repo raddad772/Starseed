@@ -153,7 +153,7 @@ export function packSnapshot(W, body) {
 
 // the arrays a snapshot carries (for transfer lists and caching)
 export function snapshotBuffers(s) {
-  return ['h', 'water', 'rock', 'ice', 'river', 'melt', 'relief', 'rcv', 'Tsea', 'P', 'cover', 'forest', 'open', 'cloud', 'cloudPx', 'cloudYearPx', 'season', 'seasonPx', 'seasonIce', 'seasonIcePx', 'crat', 'dunes', 'gorge', 'ocean', 'mareLv'].filter((k) => s[k]).map((k) => s[k].buffer);
+  return ['h', 'water', 'rock', 'ice', 'river', 'melt', 'relief', 'rcv', 'Tsea', 'P', 'cover', 'forest', 'open', 'cloud', 'cloudPx', 'cloudYearPx', 'riverYear', 'season', 'seasonPx', 'seasonIce', 'seasonIcePx', 'crat', 'dunes', 'gorge', 'ocean', 'mareLv'].filter((k) => s[k]).map((k) => s[k].buffer);
 }
 
 // reads a snapshot at any direction
@@ -304,6 +304,19 @@ export class SnapshotSampler {
   }
   seaDist(x, y, z) { return this.G.sample(this.seaHops, this._d(x, y, z), this.uv); }   // (in cells)
   // the cell cell c drains into (-1 none)
+  // a river's flow through the year here (season.js riverYear): out[0], out[1] its swing's two parts
+  // against its mean, from the cell round here that carries the most (a river's own, not a neighbouring
+  // basin's); null where the world keeps none
+  riverYear(x, y, z, out) {
+    const ry = this.s.riverYear, rv = this.s.river;
+    if (!ry) return null;
+    const G = this.G, n = ry.length >> 1;
+    let best = G.cellAt(x, y, z);
+    const k = G.nbrs(best, this.ryb || (this.ryb = new Int32Array(8)));
+    for (let e = 0; e < k; e++) if (rv[this.ryb[e]] > rv[best]) best = this.ryb[e];
+    out[0] = ry[best] / 60; out[1] = ry[n + best] / 60;
+    return out;
+  }
   rcvOf(c) {
     const slot = this.s.rcv[c];
     if (slot === 255) return -1;

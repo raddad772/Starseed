@@ -78,6 +78,72 @@ export function cloudYearPixels(Nc, R, f, w) {
   return px;
 }
 
+// ---- the rivers' year: each month's runoff on the climate grid, the rain and the snow's melt over
+// what the warmth takes back up, carried down the rivers (the sim's receivers): each river cell's flow
+// through the year as its first harmonic about its mean, Q = Q0 (1 + a cos L + b sin L). A wet season's
+// rivers run high, a dry season's low (ephemeral where the year's rain comes in one season); a cold
+// winter's are low and its spring's melt floods them. Its depth at a station goes as Q^0.4 (Leopold and
+// Maddock 1953): render/terrainMaterial.js's ribbons and universe.js's wading depth alike
+export const RIVER_DEPTH_EXP = 0.4;
+// (what a month takes back up, mm: Thornthwaite's by its warmth, ~0.37 T^1.75 for a 30-day month; the
+// ground's store: four tenths of a year's runoff let out evenly, the baseflow that keeps rivers running
+// between rains)
+const BASEFLOW = 0.4;
+function runoffYear(clim, m, yearDays) {
+  const days = yearDays / 12, snow = new Float64Array(m), R = new Float64Array(12 * m);
+  for (let pass = 0; pass < 2; pass++) for (let k = 0; k < 12; k++) for (let c = 0; c < m; c++) {
+    const T = clim.Tm[k * m + c] - 273.15, P = Math.max(0, clim.Pm[k * m + c]);
+    let water = 0;
+    if (T < 0) snow[c] += P; else water = P;
+    if (T > 0 && snow[c] > 0) { const melt = Math.min(snow[c], DDF_SNOW * days * T); snow[c] -= melt; water += melt; }
+    const pet = T > 0 ? 0.37 * dm.pow(T, 1.75) * days / 30.4 : 0;
+    if (pass === 1) R[k * m + c] = Math.max(0, water - pet);
+  }
+  return R;
+}
+// each cell of the sim's grid (snap.N): its flow's swing, a and b against its mean (planar, 2 x n, the
+// receivers snap.rcv: G.nbrs slots), from the runoff of every cell upstream
+export function riverYear(snap, clim, Gc, G) {
+  const m = Gc.n, n = G.n, yd = clim.yearDays || 365;
+  const R = runoffYear(clim, m, yd);
+  // (the runoff's mean and first harmonic per climate cell; the baseflow's share even through the year)
+  const R0 = new Float32Array(m), Ra = new Float32Array(m), Rb = new Float32Array(m);
+  for (let c = 0; c < m; c++) {
+    let s0 = 0, sa = 0, sb = 0;
+    for (let k = 0; k < 12; k++) { const r = R[k * m + c], L = dm.TWO_PI * (k + 0.5) / 12; s0 += r; sa += r * dm.cos(L); sb += r * dm.sin(L); }
+    R0[c] = s0 / 12; Ra[c] = (1 - BASEFLOW) * sa / 6; Rb[c] = (1 - BASEFLOW) * sb / 6;
+  }
+  // (on the sim's grid, weighted by each cell's share of the sphere, and carried down to the sea)
+  const Q0 = new Float64Array(n), QA = new Float64Array(n), QB = new Float64Array(n), inb = new Int32Array(n), to = new Int32Array(n).fill(-1);
+  const nb = new Int32Array(8), d = [0, 0, 0], uv = { face: 0, u: 0, v: 0 }, N = G.N, te = G.tanEdges, tc = G.tanCentres;
+  for (let c = 0; c < n; c++) {
+    const r = c % (N * N), j = Math.floor(r / N), i = r - j * N;
+    const w = (te[i + 1] - te[i]) * (te[j + 1] - te[j]) / dm.pow(1 + tc[i] * tc[i] + tc[j] * tc[j], 1.5);
+    G.centre(c, d);
+    Q0[c] = w * Gc.sample(R0, d, uv); QA[c] = w * Gc.sample(Ra, d, uv); QB[c] = w * Gc.sample(Rb, d, uv);
+    const slot = snap.rcv ? snap.rcv[c] : 255;
+    if (slot !== 255) { G.nbrs(c, nb); to[c] = nb[slot]; inb[to[c]]++; }
+  }
+  const q = new Int32Array(n);
+  let qn = 0;
+  for (let c = 0; c < n; c++) if (!inb[c]) q[qn++] = c;
+  for (let i = 0; i < qn; i++) {
+    const c = q[i], o = to[c];
+    if (o < 0) continue;
+    Q0[o] += Q0[c]; QA[o] += QA[c]; QB[o] += QB[c];
+    if (--inb[o] === 0) q[qn++] = o;
+  }
+  const out = new Float32Array(2 * n);
+  for (let c = 0; c < n; c++) if (Q0[c] > 0) { out[c] = Math.max(-2, Math.min(2, QA[c] / Q0[c])); out[n + c] = Math.max(-2, Math.min(2, QB[c] / Q0[c])); }
+  return out;
+}
+// (as bytes: x 60, so the swing's two parts each run -2..2)
+export function riverYearBytes(f) {
+  const out = new Int8Array(f.length);
+  for (let i = 0; i < f.length; i++) out[i] = Math.max(-127, Math.min(127, Math.round(f[i] * 60)));
+  return out;
+}
+
 // the maps the shader reads, by latitude and longitude, from a planar field of three per climate cell
 // (snap.Nc, snap.R) and a fourth (or 255): code(k, value) each into its byte
 function pixelsOf(Nc, R, f, code, f4) {
@@ -101,7 +167,7 @@ export function seasonPixels(snap) {
   return pixelsOf(snap.Nc, snap.R, snap.season, (k, v) => (k < 2 ? v / 100 + 0.5 : k === 2 ? Math.sqrt(Math.max(0, v) / 600) : (v - 273.15 + 60) / 120), snap.Tsea);
 }
 // the maps' layout's revision: a snapshot whose maps are older is worked out again (worldSims.js)
-export const SEASON_V = 5;
+export const SEASON_V = 6;
 // (the air over a frozen sea's: a1, b1 and its year's mean against the open sea's, K / 100 + 0.5)
 export function seasonIcePixels(snap) {
   return pixelsOf(snap.Nc, snap.R, snap.seasonIce, (k, v) => v / 100 + 0.5);
@@ -152,7 +218,9 @@ export function seasonsFor(snap, climOpts) {
   const S = { season, seasonIce: ice, Tsea: snap.Tsea, Nc: snap.Nc, R: snap.R };
   // (and the clouds' year, at the cloud map's own size)
   const cloudYearPx = snap.cloudW ? cloudYearPixels(snap.Nc, snap.R, cloudHarmonics(clim, Gc.n), snap.cloudW) : null;
-  return { season, seasonPx: seasonPixels(S), seasonIce: ice, seasonIcePx: seasonIcePixels(S), cloudYearPx, yearDays: climOpts.yearDays, seasonV: SEASON_V };
+  // (and the rivers', down the sim's own receivers)
+  const rYear = snap.rcv ? riverYearBytes(riverYear(snap, { ...clim, yearDays: climOpts.yearDays }, Gc, G)) : null;
+  return { season, seasonPx: seasonPixels(S), seasonIce: ice, seasonIcePx: seasonIcePixels(S), cloudYearPx, riverYear: rYear, yearDays: climOpts.yearDays, seasonV: SEASON_V };
 }
 
 // whether a world's snow comes and goes with its seasons (p: its terrain's params): water that falls as

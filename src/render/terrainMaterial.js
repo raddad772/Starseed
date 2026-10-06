@@ -9,6 +9,7 @@ import { GLSL_SUN_SHADOW } from './sunShadows.js';
 import { GLSL_LIQUID } from './liquid.js';
 import { detailData } from '../gen/detail.js';
 import { GLSL_SEASON } from './season.js';
+import { RIVER_DEPTH_EXP } from '../gen/worldsim/season.js';
 
 export const DETAIL_PERIOD = 4096; // metres; every detail tile period divides this
 
@@ -94,7 +95,8 @@ const RIBBON_VERT = /* glsl */`
 attribute vec4 nrm;
 attribute vec4 liq;
 attribute vec4 flw;
-attribute vec2 rib;        // across it (-1..1), its mean depth (m)
+attribute vec4 rib;        // across it (-1..1), its mean depth (m), its flow's swing through the year (a, b: season.js riverYear)
+uniform vec4 uSeason;      // (x: where the sun stands in the year: the river's flow now)
 attribute vec4 col;        // (the sea's or a lake's own colour where it's deep, sqrt-coded; 0 a river's)
 uniform vec3 uOriginMod;
 uniform vec3 uOriginRel;
@@ -122,16 +124,27 @@ varying vec2 vRib;
 void main() {
   vec3 n = normalize(nrm.xyz);
   vCol = col; vMat = vec4(0.0); vExt = vec4(0.0, 1.0, 0.0, 0.5);
-  vLiq = liq; vFlw = flw; vRib = rib;
+  vLiq = liq; vFlw = flw;
   vShore = 1.0; vMorphK = 0.0; vOcc = 0.0;
   vCls0 = vec4(0.0); vCls1 = vec4(0.0); vCls2 = vec4(0.0);
-  vec4 wp = modelMatrix * vec4(position, 1.0);
+  // the river's year: its flow now against its mean (Q = Q0 (1 + a cos L + b sin L), a dry season's
+  // nearly nothing), its depth at the station as Q^0.4 (Leopold and Maddock 1953): the stage moved by
+  // its mean flow's thalweg depth (~1.5x its section's mean) times that, falling to the bed, rising no
+  // higher than its banks (~0.8 of that depth over its usual stage); the banks' slopes come out of the
+  // water as it falls (gen/terrain.js does the same for the wading depth: universe.js liquidDepthAt)
+  float shift = 0.0, fq = 1.0;
+  if (uSeason.z > 0.5 && rib.z * rib.z + rib.w * rib.w > 0.0) {
+    fq = clamp(1.0 + rib.z * cos(uSeason.x) + rib.w * sin(uSeason.x), 0.02, 4.0);
+    shift = clamp(1.5 * rib.y * (pow(fq, ${RIVER_DEPTH_EXP.toFixed(2)}) - 1.0), -1.5 * rib.y, 1.2 * rib.y);
+  }
+  vRib = vec2(rib.x, max(rib.y + shift / 1.5, 0.02));
+  vec4 wp = modelMatrix * vec4(position + n * shift, 1.0);
   vWorldPos = wp.xyz;
   vNormal = normalize(mat3(modelMatrix) * n);
-  vFixedPos = uOriginMod + position;
+  vFixedPos = uOriginMod + position + n * shift;
   vFixedNormal = n;
-  vNearRel = uNearOff + position;
-  vAnchorPos = uOriginRel + position;
+  vNearRel = uNearOff + position + n * shift;
+  vAnchorPos = uOriginRel + position + n * shift;
   gl_Position = projectionMatrix * viewMatrix * wp;
   #include <logdepthbuf_vertex>
 }
