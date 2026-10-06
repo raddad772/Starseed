@@ -1,7 +1,7 @@
 // Icebergs drawn (gen/icebergs.js: calved where the world's glaciers reach the sea, adrift round there,
 // melting where it's warm): each one of BERG_SHAPES shapes, a glacier's broken block (bergShape: steep
 // sides, rounded edges, dented, its top worn flat, a keel four times as deep as it stands; finer within
-// 4 km), sized and turned as its own,
+// 3 km), sized and turned as its own,
 // in the ice's material (floeRender.js makeIceMaterial: snow on top, glacier blue on its sides), framed
 // as gen/icebergs.js bergBasis (the walker's boxes the same). Those within ~25 km of the camera, placed
 // again as it moves on (~2 km) or the season does.
@@ -11,12 +11,12 @@ import { seaTempAt } from '../gen/liquidice.js';
 import { makeIceMaterial } from './floeRender.js';
 import { SHADOW_LAYER } from './sunShadows.js';
 
-const REACH = 25000, MOVE = 2000, HIGH = 40000;
+const REACH = 25000, MOVE = 1000, HIGH = 40000;
 
 // the shapes: a unit block of a glacier's ice (x and z -0.5..0.5, its top ~1 over the water, its keel to
 // -4): a ball pushed out toward a box with rounded edges (|x|^p + |y|^p + |z|^p = 1, p 3-4.5: its sides
 // steep, as a glacier's front breaks), dented in and out, its top worn flat; detail its facets (3 near,
-// 1 far off)
+// 2 far off)
 function bergShape(k, detail) {
   let h = (Math.imul(k + 1, 0x9e3779b1) ^ 0x51ed27) >>> 0;
   const rnd = () => { h = Math.imul(h ^ (h >>> 15), 0x2c1b3c6d) >>> 0; h = Math.imul(h ^ (h >>> 12), 0x297a2d39) >>> 0; h = (h ^ (h >>> 15)) >>> 0; return h / 4294967296; };
@@ -37,14 +37,15 @@ function bergShape(k, detail) {
   g.computeVertexNormals();
   return g;
 }
-const NEAR = 4000;
+// (fine within NEAR of where they were placed: within ~2 km of the camera, as it's placed again every MOVE)
+const NEAR = 3000;
 
 export class BergSet {
   constructor(body, shared, group) {
     this.body = body; this.group = group;
     this.material = makeIceMaterial(shared, 3);
     this.shapes = Array.from({ length: BERG_SHAPES }, (_, k) => bergShape(k, 3));
-    this.far = Array.from({ length: BERG_SHAPES }, (_, k) => bergShape(k, 1));
+    this.far = Array.from({ length: BERG_SHAPES }, (_, k) => bergShape(k, 2));
     this.meshes = []; this.at = null; this.L = 0;
   }
   update(camF) {
