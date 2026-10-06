@@ -50,6 +50,46 @@ plants you walk through, the animals you watch, and how many of each.
   (forest, open, fire-kept grassland, ferns/shrubs before grasses, tundra, desert), spread inland,
   realms (founding lineages per landmass), diversity.
 - `pigments.js`: photosynthetic pigments by the star, foliage colour via CIE.
+- `gen/life/biosphere.js`, `spectrum.js`, `ecology.js`, `creature.js` (phases 1-3, first cut): body
+  plans, the land's ruling lineage through its eras, trophic levels and flight as leaps on the
+  history's record, the light in bands and the eyes' window, the food web on the climate grid (Miami
+  NPP, a tenth a level, a level read over its range, numbers a km2 from field metabolic rates), a
+  species' body from plan, lineage, level, mass and gravity.
+- `sim/fauna.js` (world state): a world's species, a few to a level, each suited to a country (the
+  climate of a place its level lives: "temperate wet grasslands"); its herds, homes on a 512 m 3D
+  lattice through the datum sphere (each cube's own hash, as many as the food web feeds), each grazing
+  a spot and walking on to the next (an AR(1) wander about home, 100 s legs, at its walk or a trot),
+  its animals milling round (a step to a spot of their own every 12 s, then grazing, a head up now and
+  then) and filing after it on the move. Everyone who comes sees the same herds in the same places.
+- `render/faunaRender.js` + `creatureRender.js` (phase 4, first cut): herds within ~1.4 km, each
+  animal on the ground under it (its frame to the slope), its heading turning toward its motion, its
+  gait from its speed (steps quicken then lengthen; two-bone IK), four instanced draws a species.
+  Viewer state for now: flight from you within its flight distance (bigger flees sooner: Stankowich
+  2008; hunters let you nearer), turning aside from water; a hunter's 12 s dash at a herd of the level
+  under it within 90 m (the herd bolts), then 90 s before another; both drift back to the herd's path.
+  Not yet: collisions with the walker, cliffs avoided, day and night, the sea's life, flyers.
+- **Realms and their lines** (Dave: "identify islands and continents early on and give them branching
+  trees and have a chance of cross-pollination"): world.js RealmTracker now keeps its family tree
+  (each realm's parent and when it began: a split, new land colonised from the nearest realm across
+  the water, the first landmasses from the sea's stock; the interchanges when landmasses meet), and
+  the snapshot carries the realm map on the climate grid and the tree (an island the life map
+  reached later hangs off the nearest tracked realm, from when life got there). SIM 66.
+  `gen/life/lineage.js`: traits (size, legs, build, head, neck, tail, colours, pattern, crest) drift
+  as Brownian motion down each branch from the ruling lineage's radiation (its era's start), so
+  sister realms hold related animals and long-parted ones strange ones; a realm parted under 2 Myr
+  holds its parent's very species (the same names); an interchange brings lines across (up to half a
+  realm's species descended from the other's); the island rule (small grow, big shrink, the smaller
+  the island). `sim/fauna.js` realmOf: a realm's species, so many to a level as its land holds
+  (species-area), none of a level it can't keep 30 of (an island's hunters). SOL Earth: 44 realms,
+  the big continent's six species, its fresh split's the same six, islands their own (crested,
+  banded, plain...).
+- **Flyers** (Dave: "don't forget birds"): `gen/life/flyer.js` (wings from the plan's front limbs, a
+  radial plan's ring of flaps; span, beat and cruise from mass, gravity and air: Rayner, Pennycuick);
+  each realm a small flyer or two in flocks (figure-eight circuits over their country, beating in
+  bursts, gliding between, each a beat behind the next) and a big soarer where they've evolved
+  (circling thermals 90-180 m up, drifting between them, banking). Drawn as two hinged panels a wing.
+- The catalogue: Realms (how many, islands, interchanges) and Species (the four biggest realms, three
+  walkers and a flyer each: role, mass, herd or flock, where it lives, the realm its line came from).
 - `flora.js`/`floraRender.js`: the current scattered plants (to be redone: foliage-redo-later).
 - The climate's months (monsoons, dry seasons), the seasons (snow, ice, river flow).
 

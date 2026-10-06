@@ -264,6 +264,7 @@ export class WorldRenderer {
       if (it.terrain) {
         _v2.copy(camWorld).sub(b.pos).applyQuaternion(b.qInv);
         it.group.visible = angular > 0.6;
+        it.terrain.worldT = this.u.t;
         if (it.group.visible) it.terrain.update(_v2);
         if (it.heightCube && it.heightCube.state === 0 && angular > 40) it.heightCube.build();
       }

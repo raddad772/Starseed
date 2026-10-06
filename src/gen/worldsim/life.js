@@ -97,8 +97,11 @@ export class LifeMap {
     // (where the history's map has got to, life through the history: its plants where they
     // spread to, spreading on over the window)
     const P0 = env.prior;
+    // (the plates' realms keep their ids; the history map's own, and any new here, numbered past them)
+    const base = env.realmInit && env.realmInit.base != null ? env.realmInit.base : 0;
+    this.realmNext = base;
     if (P0 && tPlants != null && stage >= 7) {
-      for (let c = 0; c < n; c++) if (env.land[c] && P0.landed[c] && pot.landPot[c] > 0.02) { this.landed[c] = 1; this.since[c] = P0.since[c]; this.realm[c] = env.realmInit && env.realmInit[c] >= 0 ? env.realmInit[c] : P0.realm[c]; this.realmNext = Math.max(this.realmNext, this.realm[c] + 1); }
+      for (let c = 0; c < n; c++) if (env.land[c] && P0.landed[c] && pot.landPot[c] > 0.02) { this.landed[c] = 1; this.since[c] = P0.since[c]; this.realm[c] = env.realmInit && env.realmInit[c] >= 0 ? env.realmInit[c] : base + P0.realm[c]; this.realmNext = Math.max(this.realmNext, this.realm[c] + 1); }
       const means = P0.means || {};
       for (let t = startAgo; t > 0; t -= dt) this.spread(env, pot, dt, fliersAgo != null && t < fliersAgo, means);
       return this.finish(env, pot);
@@ -114,13 +117,13 @@ export class LifeMap {
       const comp = this.comp;
       // (the realms the plates' history made, where it tracked them: world.js RealmTracker)
       const init = env.realmInit;
-      const off = init ? 1 + Math.max(-1, ...init) : 0;
+      const off = Math.max(base, init ? 1 + Math.max(-1, ...init) : 0);
       for (let c = 0; c < n; c++) if (env.land[c] && pot.landPot[c] > 0.02) { this.landed[c] = 1; this.realm[c] = init && init[c] >= 0 ? init[c] : off + comp[c]; this.since[c] = Math.min(tPlants, age); this.realmNext = Math.max(this.realmNext, this.realm[c] + 1); }
     } else {
       // they arrive in the window: from the sea's edge where it's richest, then spread
       let best = -1;
       for (let c = 0; c < n; c++) if (env.land[c] && coastal(G, env.land, c) && (best < 0 || pot.landPot[c] > pot.landPot[best])) best = c;
-      if (best >= 0) { this.landed[best] = 1; this.realm[best] = 0; this.realmNext = 1; }
+      if (best >= 0) { this.landed[best] = 1; this.realm[best] = base; this.realmNext = base + 1; }
       for (let t = tPlants; t > 0; t -= dt) this.spread(env, pot, dt, fliersAgo != null && t < fliersAgo);
     }
     // recent spread for the long-established too (filling gaps, crossings)

@@ -13,6 +13,7 @@ import { giantPortrait, portraitLook } from '../gen/portrait.js';
 import { drawSchematic } from './briefing.js';
 import { normalizeSeed, randomSeedString } from '../core/rng.js';
 import { clockText, seasonText } from '../sim/worldClock.js';
+import { faunaOf, realmsByLand, realmOf } from '../sim/fauna.js';
 
 const TABS = [['map', 'Map'], ['planets', 'Planets'], ['settings', 'Settings'], ['controls', 'Controls']];
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
@@ -209,6 +210,16 @@ export class PauseScreen {
     if (BS && BS.land && BS.land.clade) {
       const c = BS.land.clade, p = BS.plans[BS.land.plan], fl = BS.flight.large != null ? 'big flyers' : BS.flight.small != null ? 'small flyers' : '';
       row('Animals', `${esc(c.name)}: ${c.size}, ${c.posture}, ${c.blood}-blooded, ${c.limbs} limbs <span style="opacity:0.65">(${esc(p.name)} plan: ${esc(p.text)})</span> · up to ${esc(BS.land.top)}${fl ? ' · ' + fl : ''}`);
+    }
+    // (its realms and their species, a few highlights and where they're found: this system's worlds
+    // whose sim is in: sim/fauna.js, life/lineage.js)
+    const FA = lb && BS && BS.land && lb.terrain ? faunaOf(lb) : null;
+    if (FA) {
+      const kg = (m) => (m >= 1000 ? `${(m / 1000).toFixed(1)} t` : m >= 10 ? `${Math.round(m)} kg` : m >= 1 ? `${m.toFixed(1)} kg` : `${Math.round(m * 1000)} g`);
+      const RS = realmsByLand(FA).filter((R) => R.species.length), isl = RS.filter((R) => R.island).length;
+      row('Realms', `${RS.length} with land animals${isl ? ` (${isl} island${isl > 1 ? 's' : ''})` : ''}${FA.s.realms && FA.s.realms.interchanges.length ? ` · ${FA.s.realms.interchanges.length} interchange${FA.s.realms.interchanges.length > 1 ? 's' : ''}` : ''}`);
+      row('Species', RS.slice(0, 4).map((R) => `<i>${esc(R.name)}</i> <span style="opacity:0.65">(${(R.share * 100).toFixed(R.share < 0.1 ? 1 : 0)}% of the land${R.island ? ', an island' : ''})</span>: ` +
+        R.species.filter((sp) => !sp.flyer).slice(0, 3).concat(R.species.filter((sp) => sp.flyer).slice(0, 1)).map((sp) => `<b>${esc(sp.name)}</b> <span style="opacity:0.65">${sp.role}, ${kg(sp.massKg)}${sp.herd > 1 ? `, ${sp.flyer ? 'flocks' : 'herds'} of ~${sp.herd}` : sp.level > 1 || sp.flyer ? ', alone' : ''}${sp.from !== R.id ? `, from ${esc(realmOf(FA, sp.from).name)}` : ''}</span> ${sp.flyer ? '' : 'in '}${esc(sp.habitat)}`).join('; ')).join('<br>'));
     }
     if (BS && BS.plans.length && BS.sea) row('Sea life', `${BS.plans.length} body plans · up to ${esc(BS.sea.top)}`);
     if (H && b.solid && H.airType && H.airType !== 'none') row('Sky', esc(H.airType) + (H.seaPH != null ? ` · seas pH ${H.seaPH.toFixed(1)}` : ''));

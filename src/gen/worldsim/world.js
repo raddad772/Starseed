@@ -636,7 +636,7 @@ export function worldSim(body, star, opts = {}) {
   }
   // life on the map now, with the soil and groundwater (and rivers' nutrients at the coasts)
   const life = lifeOn(Gc, clim, H, rng.fork('life'), { G, soil, E, h }, realmGc, lifeMap);
-  life.interchanges = realms.interchanges;
+  life.interchanges = realms.interchanges; life.realmTree = realms.tree;
   {
     const S = life.summary(life.env);
     log(`life: land ${(S.landCover * 100).toFixed(0)}% covered (forest ${(S.forest * 100).toFixed(0)}%, open ${(S.open * 100).toFixed(0)}%), sea life ${(S.seaLife * 100).toFixed(0)}%, ${S.realms} realms`);
@@ -738,9 +738,12 @@ function survivors(G, events, resurfaceAt, ...marks) {
 // plates. Each check finds the landmasses: land with none is colonised (a new lineage);
 // landmasses that meet mix their realms (an interchange: the Americas'); a realm split
 // across landmasses diverges, its smaller pieces becoming lineages of their own over
-// ~20 Myr (Australia's). Kept per plate frame cell, so they move with the plates
+// ~20 Myr (Australia's). Kept per plate frame cell, so they move with the plates. Its family tree
+// (Dave: "branching trees and a chance of cross-pollination"): each realm's parent and when it
+// began (a piece split off, or new land colonised from the nearest realm across the water; the
+// first landmasses each from the sea's own stock), and the interchanges (life/lineage.js)
 class RealmTracker {
-  constructor(G, rng) { this.G = G; this.rng = rng; this.next = 0; this.checks = 0; this.world = new Int32Array(G.n).fill(-1); this.interchanges = []; this.splits = 0; this._met = new Set(); }
+  constructor(G, rng) { this.G = G; this.rng = rng; this.next = 0; this.checks = 0; this.world = new Int32Array(G.n).fill(-1); this.interchanges = []; this.splits = 0; this._met = new Set(); this.tree = []; }
   check(T, h, agoMyr) {
     const G = this.G, n = G.n, w = this.world;
     // where each realm is now: carried by the plates since the last check
@@ -755,11 +758,21 @@ class RealmTracker {
     }
     const homes = new Map();   // realm -> landmasses it's on (and how much)
     const minCells = Math.max(20, Math.round(n * 0.0005));   // (specks of island don't make lineages)
+    // (each landmass's middle and its commonest realm before this check: a new one's colonists come
+    // from the nearest that has one)
+    const mid = comps.map((cells) => { let x = 0, y = 0, z = 0; for (const c of cells) { x += G.dir[c * 3]; y += G.dir[c * 3 + 1]; z += G.dir[c * 3 + 2]; } const l = Math.hypot(x, y, z) || 1; return [x / l, y / l, z / l]; });
+    const had = comps.map((cells) => { const k = new Map(); let top = -1, best = 0; for (const c of cells) if (w[c] >= 0) { const v = (k.get(w[c]) || 0) + 1; k.set(w[c], v); if (v > best) { best = v; top = w[c]; } } return cells.length >= minCells ? top : -1; });
+    const nearest = (i) => { let bj = -1, bd = -2; for (let j = 0; j < comps.length; j++) { if (j === i || had[j] < 0) continue; const d = mid[i][0] * mid[j][0] + mid[i][1] * mid[j][1] + mid[i][2] * mid[j][2]; if (d > bd) { bd = d; bj = j; } } return bj < 0 ? -1 : had[bj]; };
     comps.forEach((cells, i) => {
       if (cells.length < minCells) { for (const c of cells) w[c] = -1; return; }
       const count = new Map();
       for (const c of cells) if (w[c] >= 0) count.set(w[c], (count.get(w[c]) || 0) + 1);
-      if (!count.size) { const id = this.next++; for (const c of cells) w[c] = id; count.set(id, cells.length); }
+      if (!count.size) {
+        const id = this.next++, parent = this.checks ? nearest(i) : -1;
+        for (const c of cells) w[c] = id;
+        count.set(id, cells.length);
+        this.tree.push({ id, parent, agoMyr, how: parent < 0 ? 'first' : 'colonised' });
+      }
       else {
         // the land without a lineage takes the landmass's commonest (they spread over it)
         let top = -1, best = 0; for (const [id, k] of count) if (k > best) { best = k; top = id; }
@@ -774,7 +787,7 @@ class RealmTracker {
     for (const [id, list] of homes) {
       if (list.length < 2) continue;
       list.sort((a, b) => b[1] - a[1]);
-      for (let j = 1; j < list.length; j++) if (this.rng.next() < 0.5 && list[j][1] >= minCells) { const nid = this.next++; this.splits++; for (const c of comps[list[j][0]]) if (w[c] === id) w[c] = nid; }
+      for (let j = 1; j < list.length; j++) if (this.rng.next() < 0.5 && list[j][1] >= minCells) { const nid = this.next++; this.splits++; for (const c of comps[list[j][0]]) if (w[c] === id) w[c] = nid; this.tree.push({ id: nid, parent: id, agoMyr, how: 'split' }); }
     }
     // back into the plates' frames
     for (const P of T.plates) { if (!P.realm || P.realm.length !== n) P.realm = new Int32Array(n); P.realm.fill(-1); }
@@ -782,7 +795,7 @@ class RealmTracker {
     this.checks++;
   }
   count() { const k = new Map(); for (const r of this.world) if (r >= 0) k.set(r, (k.get(r) || 0) + 1); const min = Math.max(20, Math.round(this.G.n * 0.0005)); return [...k.values()].filter((x) => x >= min).length; }
-  onGrid(Gc) { const out = new Int32Array(Gc.n).fill(-1); for (let c = 0; c < Gc.n; c++) out[c] = this.world[this.G.cellAt(Gc.dir[c * 3], Gc.dir[c * 3 + 1], Gc.dir[c * 3 + 2])]; return out; }
+  onGrid(Gc) { const out = new Int32Array(Gc.n).fill(-1); for (let c = 0; c < Gc.n; c++) out[c] = this.world[this.G.cellAt(Gc.dir[c * 3], Gc.dir[c * 3 + 1], Gc.dir[c * 3 + 2])]; out.base = this.next; return out; }
 }
 
 // the life map on the climate grid; fine: { G, soil, E, h } to bring the fine epoch's soil,

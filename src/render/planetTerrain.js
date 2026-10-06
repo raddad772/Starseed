@@ -12,6 +12,7 @@ import { SHADOW_LAYER } from './sunShadows.js';
 import { RockSet } from './rockRender.js';
 import { FloeSet } from './floeRender.js';
 import { BergSet } from './bergRender.js';
+import { FaunaSet } from './faunaRender.js';
 import { FACES, dirFromFaceUV, chunkArcSize } from '../gen/cubesphere.js';
 import { CHUNK_N, chunkIndices, FALL_STRIDE } from '../gen/chunkbuilder.js';
 import { FallFx } from './falls.js';
@@ -126,6 +127,12 @@ export class PlanetTerrain {
       // (and its icebergs: bergRender.js)
       if (!this.bergSet) this.bergSet = new BergSet(this.body, this.shared, this.group);
       this.bergSet.update(camFixed);
+    }
+    // (the animals about, where its land has them: faunaRender.js, on the world's clock)
+    const life = this.body.data.life;
+    if (life && life.biosphere && life.biosphere.land) {
+      if (!this.faunaSet) this.faunaSet = new FaunaSet(this.body, this.group);
+      this.faunaSet.update(camFixed, this.worldT || 0);
     }
     return this.visibleList;
   }
@@ -605,6 +612,7 @@ export class PlanetTerrain {
     if (this.rockSet) this.rockSet.dispose();
     if (this.floeSet) this.floeSet.dispose();
     if (this.bergSet) this.bergSet.dispose();
+    if (this.faunaSet) this.faunaSet.dispose();
     if (this.fallFx) this.fallFx.material.dispose();
   }
 }

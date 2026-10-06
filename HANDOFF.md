@@ -2,6 +2,24 @@
 
 Dave is play-testing and giving feedback in short bursts.
 
+## NOW: animals on the ground and in the air, by realm (session 39d69fa8, 2026-10-06), SIM 66
+
+- Herds walk the land (sim/fauna.js world state: species per realm, herds on a 512 m lattice, each
+  grazing a spot then walking on, members milling on a spiral; render/faunaRender.js + creatureRender.js:
+  instanced, gaits with IK, slope-aligned, running from you and from hunters). Flocks fly (gen/life/
+  flyer.js, flocks' circuits, big soarers circling thermals). Realms' family tree in the snapshot
+  (world.js RealmTracker, snapshot.js realmsOf) and lineages down it (gen/life/lineage.js). The
+  catalogue: Realms and Species rows. LIFE.md has the detail. Tests: tools/tests/fauna.test.mjs (7).
+- Browser: `const C = await import('/tools/faunacam.js'); await C.toHerds(); await C.watchHerd(1, 6);`
+  (a free camera following a herd while the ground loads), `C.atFlock(5)`, `C.tame()`. Teleporting the
+  walker then screenshotting at once shows stale or unloaded ground: render a few seconds first.
+- Seen in the game on SOL Earth: herds of 5-10 (6 kg, crested or plain by realm), flocks of 130 g
+  flyers over a lagoon, a herd bolting 12.5 m in 3 s as you come within its flight distance; 1.2 ms a
+  frame for ~280 animals. Land animals are rare: 4 of 1719 worlds in the 152-system survey.
+- Next (Dave): the catalogue's land by landmass (continents, islands, km2) with searchable tags (a
+  tropical island's sandy beach with life) and a way to go there; worldsim/features.js already finds
+  beaches (by sand), sea cliffs, reefs, atolls.
+
 ## NOW: the climate's seasons of rain, and the life sim begun (session 39d69fa8, 2026-10-06), SIM 65
 
 - **Rain's seasons** (climate.js): the rain belt by longitude (monsoonBelt: 0.3 the zonal belt's, 0.7

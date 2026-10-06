@@ -24,7 +24,7 @@ import { dunePatches } from '../dunes.js';
 import { ROCK_UP } from './lithology.js';
 import { seasonsFor, cloudOf } from './season.js';
 
-export const SIM_VERSION = 65;   // (61: the climate's orbit eccentric, its perihelion where it falls in the year; 62: a moon's seasons its tilt to its planet's orbit; 63: a Titan's low latitudes raised as cos^2 of the latitude, not a step, drawn at the world's scale; 64: generation's last Math.sin/cos/hypot... through dmath: the folds' arcs moved an ulp, so every client holds the same bits; 65: the monsoon rain belt, the subtropics' sinking air, summer convection, the air's capacity over its own ground; life's leaps by the room each stage has)
+export const SIM_VERSION = 66;   // (61: the climate's orbit eccentric, its perihelion where it falls in the year; 62: a moon's seasons its tilt to its planet's orbit; 63: a Titan's low latitudes raised as cos^2 of the latitude, not a step, drawn at the world's scale; 64: generation's last Math.sin/cos/hypot... through dmath: the folds' arcs moved an ulp, so every client holds the same bits; 65: the monsoon rain belt, the subtropics' sinking air, summer convection, the air's capacity over its own ground; life's leaps by the room each stage has; 66: life's realms and their family tree in the snapshot)
 
 // a world's grid size: maxN for an Earth-sized one, finer cells don't help a small one
 // (N ~ sqrt(radius): Mars ~210, the Moon ~150, a moonlet 64)
@@ -137,6 +137,7 @@ export function packSnapshot(W, body) {
     out.Tsea = new Float32Array(m); out.P = Float32Array.from(W.climate.Pann);
     for (let c = 0; c < m; c++) out.Tsea[c] = W.climate.Tann[c] + (W.climate.sea[c] ? 0 : lapse * Math.max(0, W.climate.h ? W.climate.h[c] : 0));
     if (W.life) { out.cover = Float32Array.from(W.life.cover); out.forest = Float32Array.from(W.life.forest); out.open = Float32Array.from(W.life.open); }
+    if (W.life && W.life.realm && W.life.landed) Object.assign(out, realmsOf(W.life, Gc));
     // cloud cover (for the render's clouds: season.js cloudOf, by the year's rain)
     out.cloud = new Float32Array(m);
     for (let c = 0; c < m; c++) out.cloud[c] = cloudOf(W.climate.Pann[c], W.climate.upwell ? W.climate.upwell[c] : 0);
@@ -151,9 +152,44 @@ export function packSnapshot(W, body) {
   return out;
 }
 
+// life's realms on the climate grid (-1: none) and their family tree (life/lineage.js): each realm on
+// the land now with its parent and when it began (the plates' tracker's, world.js RealmTracker; one the
+// life map made since, an island's colonists, from the nearest realm the tracker knows, across the
+// water, when life reached it), the older realms those lead back to, the interchanges between them,
+// and each one's share of the land
+function realmsOf(L, Gc) {
+  const m = Gc.n, realm = new Int16Array(m).fill(-1), area = new Map();
+  let land = 0;
+  for (let c = 0; c < m; c++) if (L.landed[c] && L.realm[c] >= 0) { realm[c] = Math.min(32767, L.realm[c]); area.set(realm[c], (area.get(realm[c]) || 0) + Gc.area[c]); land += Gc.area[c]; }
+  const known = new Map((L.realmTree || []).map((r) => [r.id, r])), nodes = new Map();
+  const dist = new Int32Array(m), q = new Int32Array(m);
+  for (const [id] of area) {
+    if (known.has(id)) continue;
+    // (out from its cells, over land and sea, to the nearest of a realm the tracker knows)
+    dist.fill(-1);
+    let qn = 0, since = 0, parent = -1;
+    for (let c = 0; c < m; c++) if (realm[c] === id) { dist[c] = 0; q[qn++] = c; since = Math.max(since, L.since[c]); }
+    for (let i = 0; i < qn && parent < 0; i++) {
+      const c = q[i];
+      for (let e = Gc.nStart[c]; e < Gc.nStart[c + 1]; e++) {
+        const o = Gc.nbr[e];
+        if (dist[o] >= 0) continue;
+        dist[o] = dist[c] + 1; q[qn++] = o;
+        if (realm[o] >= 0 && known.has(realm[o])) { parent = realm[o]; break; }
+      }
+    }
+    nodes.set(id, { id, parent, agoMyr: Math.round(since * 10) / 10, how: 'island' });
+  }
+  // (and the tracker's realms on the land now, with every one they lead back to)
+  for (const [id] of area) for (let r = known.get(id); r && !nodes.has(r.id); r = known.get(r.parent)) nodes.set(r.id, { id: r.id, parent: r.parent, agoMyr: r.agoMyr, how: r.how });
+  for (const n of nodes.values()) n.land = area.has(n.id) ? +(area.get(n.id) / Math.max(land, 1e-9)).toFixed(5) : 0;
+  const interchanges = (L.interchanges || []).filter((x) => nodes.has(x.realms[0]) && nodes.has(x.realms[1])).map((x) => ({ agoMyr: x.agoMyr, realms: x.realms.slice() }));
+  return { realm, realms: { tree: [...nodes.values()].sort((a, b) => a.id - b.id), interchanges } };
+}
+
 // the arrays a snapshot carries (for transfer lists and caching)
 export function snapshotBuffers(s) {
-  return ['h', 'water', 'rock', 'ice', 'river', 'melt', 'relief', 'rcv', 'Tsea', 'P', 'cover', 'forest', 'open', 'cloud', 'cloudPx', 'cloudYearPx', 'riverYear', 'season', 'seasonPx', 'seasonIce', 'seasonIcePx', 'crat', 'dunes', 'gorge', 'ocean', 'mareLv'].filter((k) => s[k]).map((k) => s[k].buffer);
+  return ['h', 'water', 'rock', 'ice', 'river', 'melt', 'relief', 'rcv', 'Tsea', 'P', 'cover', 'forest', 'open', 'cloud', 'cloudPx', 'cloudYearPx', 'riverYear', 'realm', 'season', 'seasonPx', 'seasonIce', 'seasonIcePx', 'crat', 'dunes', 'gorge', 'ocean', 'mareLv'].filter((k) => s[k]).map((k) => s[k].buffer);
 }
 
 // reads a snapshot at any direction
