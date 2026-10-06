@@ -303,8 +303,11 @@ void main() {
     // grows and what lies bare, its own surface in place of theirs; none on a bed under water or on a
     // lava's glow
     vec4 c0 = vCls0, c1 = vCls1, c2 = vCls2;
-    if (uSeason.z > 0.5) {
-      float sn = seasonSnow(uToFixed * up, fn, vExt.a * 120.0 - 60.0, mix(d2.r, d1.r, smoothstep(250.0, 1000.0, dist)) * 0.7 + d0.a * 0.3);
+    // (or where a thin air freezes out, Mars' CO2 frost: season.js seasonFrost)
+    if (uSeason.z > 0.5 || uFrost.y > 0.5) {
+      float sn0 = mix(d2.r, d1.r, smoothstep(250.0, 1000.0, dist)) * 0.7 + d0.a * 0.3;
+      float sn = uSeason.z > 0.5 ? seasonSnow(uToFixed * up, fn, vExt.a * 120.0 - 60.0, sn0) : 0.0;
+      if (uFrost.y > 0.5) sn = max(sn, seasonFrost(fn, sn0));
       sn *= (1.0 - smoothstep(0.0, 0.02, waterEnc)) * (1.0 - smoothstep(0.0, 0.1, emissive));
       // (the year-round snow showing: a glacier's bare ice, its ablation zone, isn't; a winter's snow
       // covers it too)

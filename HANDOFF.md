@@ -561,6 +561,24 @@ rivers that are straighter where they should be?"):**
   networks over the floes, leads, white ridges, the ice down to 1.07 m (summer_ponds shot). The air over
   the summer pack runs to +15 C there (the ground-like run's summer; a melting surface holds it near 0 in
   truth): ponds saturate, the thaw's wasting by phase, so it's no matter yet.
+- **Mars' seasonal caps** (gen/frostcap.js; world.js frostTexture; render/season.js seasonFrost): a thin
+  air (under 0.05 bar, little heat carried poleward) with CO2 in it freezes out at its poles in winter.
+  Per 1-degree band of latitude through the year (Leighton and Murray 1966, one layer): the ground a slab
+  holding a season's heat (thermal inertia 250 over the year's skin depth), warmed by the day's mean sun
+  (the orbit's eccentricity, timed by Kepler: slower far out), cooling by its glow; at the frost point
+  (Brown and Ziegler 1980: 3167.8 / (28.12 - ln p), Mars 146-149 K) it holds there and the shortfall
+  freezes CO2 out of the air (5.9e5 J/kg); frost (albedo 0.6, emissivity 0.8) brighter than the ground
+  (0.25), so it keeps itself (the edges lag the sun). Three years from bare, the last kept; FROST_NL 180
+  x FROST_NS 120, ~32 ms once per world, world state (dmath). Real Mars (e 0.093, Ls_p 251): north cap
+  to 53 N in winter (real ~55-60), gone by Ls 90 (real 80-90); south to 48 S, gone by Ls 270 (real a
+  little later: its bright frost); ~0.9-1.2 t/m2 at the poles (about a metre of CO2 ice). The shader
+  reads it at the latitude the surface faces (asin(fn.y): a slope tilted toward the pole has the day's
+  sun of a place nearer it), so pole-facing slopes keep frost longest and the sunward crater walls go
+  bare first; ~10 kg/m2 hides the ground, a thin frost in patches. Rocks frost on their pole-facing
+  sides. The residual caps (water ice, the terrain's cold trap) stay. SOL Mars from above its north pole
+  at Ls 6 (the cap to ~56 N) and Ls 103 (only the residual cap); 64 N at Ls 26 (bare equator-facing
+  crater walls). Not modelled: the air's heat and pressure swing (a quarter of Mars' air goes into its
+  caps), the dark collar, the frost's walkable depth.
 - **Clouds through the year** (season.js cloudHarmonics, cloudYearPixels; SEASON_V 5): the cloud map
   was the year's mean, its rain belts still. Each month's cover from its own rain (cloudOf, snapshot.js's
   rule, as if the month's rain fell all year), its first harmonic about the year's mean, smoothed as the

@@ -4,6 +4,8 @@ import * as THREE from 'three';
 import { PlanetTerrain } from './planetTerrain.js';
 import { cloudMapPixels } from '../gen/worldsim/snapshot.js';
 import { DDF_SNOW, snowsBySeason } from '../gen/worldsim/season.js';
+import { climateOpts } from '../gen/worldsim/climate.js';
+import { frostCaps, frostPixels, FROST_NL, FROST_NS } from '../gen/frostcap.js';
 import { Atmosphere, blankCloudMap, thermalUniform, cloudLife } from './atmosphere.js';
 import { makeStarMesh } from './sky.js';
 import { makeGiantMesh, makeRingMesh } from './giant.js';
@@ -22,6 +24,19 @@ const _m4 = new THREE.Matrix4();
 // (a world's seasons before its climate's year arrives: none)
 const _blankSeason = (() => { const t = new THREE.DataTexture(new Uint8Array([128, 128, 0, 255]), 1, 1, THREE.RGBAFormat); t.needsUpdate = true; return t; })();
 function blankSeasonMap() { return _blankSeason; }
+// a world's seasonal frost where its thin air freezes out at the poles (Mars' CO2: gen/frostcap.js), as
+// a texture by the solar longitude and latitude, or null: a solid world under a thin air (under ~0.05
+// bar: one that carries little heat to its poles) with CO2 in it, and no sea
+function frostTexture(d, sys) {
+  const a = d.atmosphere, t = d.terrain;
+  if (!a || !a.comp || !(a.comp.CO2 > 0) || !(a.pressure < 0.05) || !t || !t.climate || t.liquid === 'water' || !sys || !sys.bodies) return null;
+  const host = d.kind === 'moon' ? sys.bodies[d.parentId] : null, f = frostCaps(climateOpts(d, sys.bodies[0], host), a.pressure * 1e5 * a.comp.CO2);
+  if (!f) return null;
+  const tex = new THREE.DataTexture(frostPixels(f), FROST_NS, FROST_NL, THREE.RedFormat);
+  tex.wrapS = THREE.RepeatWrapping; tex.wrapT = THREE.ClampToEdgeWrapping; tex.magFilter = THREE.LinearFilter; tex.minFilter = THREE.LinearFilter; tex.needsUpdate = true;
+  return tex;
+}
+const _blankFrost = (() => { const t = new THREE.DataTexture(new Uint8Array([0]), 1, 1, THREE.RedFormat); t.needsUpdate = true; return t; })();
 
 export class WorldRenderer {
   constructor(engine, universe, pool, detailTex, cloudNoise) {
@@ -156,7 +171,15 @@ export class WorldRenderer {
       tSeasonIce: { value: blankSeasonMap() },
       uSeason: { value: new THREE.Vector4(0, 0, 0, 0) },
       uSnowCol: { value: new THREE.Vector3(...(b.data.terrain && b.data.terrain.palette && b.data.terrain.palette.snow || [0.85, 0.87, 0.9])) },
+      // (a thin air's seasonal frost, Mars' CO2: frostTexture; where the sun stands in its year, set each
+      // frame: season.js seasonFrost)
+      tFrost: { value: _blankFrost },
+      uFrost: { value: new THREE.Vector4(0, 0, 0, 0) },
     };
+    if (b.solid) {
+      const ft = frostTexture(b.data, this.u.system);
+      if (ft) { it.shared.tFrost.value = ft; it.shared.uFrost.value.y = 1; }
+    }
     if (a) {
       const clouds = b.data.atmosphere && b.data.atmosphere.clouds;
       if (b.giant) it.volume = new VolumePass(b, a, this.cloudNoise, 0);
@@ -228,6 +251,7 @@ export class WorldRenderer {
       sh.uTime.value = this.timeSec;
       if (it.cloudClock) { const c = it.cloudClock.value, t = this.u.t, Y = Math.floor(t / c.z); c.set(t - Y * c.z, Y + 1048576, c.z, 0); }
       if (sh.uSeason && sh.uSeason.value.z > 0) sh.uSeason.value.x = b.solarLongitude();
+      if (sh.uFrost && sh.uFrost.value.y > 0) sh.uFrost.value.x = b.solarLongitude();
       // (the clouds' year: where the sun stands in it)
       if (it.atmo && it.atmo.material.uniforms.uCloudYear) {
         const L = it.cloudYearOn ? b.solarLongitude() : 0;

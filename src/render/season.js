@@ -86,6 +86,20 @@ float seasonSnow(vec3 dirF, vec3 fn, float Ta, float n) {
   c = smoothstep(n - 0.25, n + 0.25, c * 1.2 - 0.1);
   return c * (1.0 - 0.75 * smoothstep(0.35, 0.65, 1.0 - dn));
 }
+// ---- the seasons' frost where a thin air freezes out at the poles (Mars' CO2; gen/frostcap.js, world.js):
+// its mass by the solar longitude (x) and latitude (y, south to north), sqrt(kg / 2000); uFrost x: where
+// the sun stands in the year, y: on
+uniform sampler2D tFrost;
+uniform vec4 uFrost;
+// how much of a surface facing fn (planet-fixed) it covers (0..1): read at the latitude the surface faces
+// (one tilted toward the pole by a degrees has the day's sun of a place a degrees nearer it: the pole-
+// facing sides keep their frost longest, the sunward lose it first); ~10 kg/m2 (under a cm) hides the
+// ground, a thin frost lying in patches (n: the ground's own tiles, as the snow's)
+float seasonFrost(vec3 fn, float n) {
+  float m = texture(tFrost, vec2(uFrost.x / 6.28319, asin(clamp(fn.y, -1.0, 1.0)) / 3.14159 + 0.5)).r;
+  float c = 1.0 - exp(-m * m * 2000.0 / 10.0);
+  return smoothstep(n - 0.25, n + 0.25, c * 1.2 - 0.1);
+}
 const float SNOW_DEPTH_PER_MM = ${SNOW_DEPTH_PER_MM.toFixed(6)};
 const float DDF_SNOW = ${DDF_SNOW.toFixed(1)};
 `;
