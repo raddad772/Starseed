@@ -101,7 +101,7 @@ self.onmessage = (e) => {
       // the sea's floes near the camera as slabs (gen/floeslabs.js)
       const r = buildFloes(gen(m.body), m.dir, m.sinSun, m.L, m.reach);
       if (!r) { self.postMessage({ type: 'floes', job: m.job, pos: null }); return; }
-      self.postMessage({ type: 'floes', job: m.job, ...r }, [r.pos.buffer, r.nrm.buffer, r.fp.buffer, r.aux.buffer, r.idx.buffer]);
+      self.postMessage({ type: 'floes', job: m.job, ...r }, [r.pos.buffer, r.nrm.buffer, r.fp.buffer, r.aux.buffer, r.idx.buffer, r.blocks.buffer]);
       return;
     }
     if (m.type === 'hface') {

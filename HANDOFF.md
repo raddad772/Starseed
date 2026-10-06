@@ -504,6 +504,19 @@ rivers that are straighter where they should be?"):**
   frozen sea's year kept its run's swing but not its mean (that run's cells took ground's darker albedo
   and came out ~27 K warmer a year: a pack thawing at winter's end; SEASON_V 3); floe tops shadowed
   themselves in stripes in a low sun (their own shadow now read 15 cm over them).
+- **Rounded floes and ridge blocks** (Dave: "Yes" to both): a floe's corners rounded as a distance field
+  rounds them (floeRound: its two nearest edges' distances within r blend to an arc, r = size x 0.06 x
+  (0.5 + its age): ground down where floes knock together, more the older), in the shading, the walker and
+  the slabs alike. The slab outline is now that very function's zero line (its own edges' signed
+  distances less their leads, rounded, plus the ragged noise), found by bisection along rays from the
+  floe's middle every ~1 m (to 4 m further off): no separate inset or offsetting to drift from the
+  shading. (First try used |n . p| as the shading does: past the edge, out along a ray, it grew again and
+  the search found the wrong crossing: a big floe's outline missing by its ridge.) A ridge's sail now
+  carries its blocks (within 250 m): the thinner ice it was crushed from, 0.1-0.4 m thick, 0.6-2.5 m long,
+  ~one per 0.75 m2 of sail, tumbled (pitched 15-65 degrees, rolled, any yaw), their tops snow, their broken
+  faces blue-green ice; instanced boxes, casting the near sun's shadows. 75 N 117 at its winter's end, at a
+  ridge's crest: tumbled slabs, long shadows (ridge_blocks shot). Build 0.84 s (main thread), 76k
+  triangles, 4.7k blocks.
 - **Seasons on the land: snow through the year** (Dave: "see seasonal changes"; "refine and add"; not
   living things yet). worldsim/season.js: each world's year by climate cell, its temperature's first
   harmonic about the mean (a1 cos L + b1 sin L, L the solar longitude from the northern spring equinox,

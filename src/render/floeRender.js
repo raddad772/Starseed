@@ -30,6 +30,27 @@ void main() {
 }
 `;
 
+// a ridge's blocks (instanced boxes): the same shading, its faces snow where they face up, ice where not
+const BLOCK_VERT = /* glsl */`
+varying vec3 vWorld;
+varying vec3 vN;
+varying vec3 vFp;
+varying vec4 vAux;
+uniform vec3 uOriginF;
+#include <common>
+#include <logdepthbuf_pars_vertex>
+void main() {
+  vec4 lp = instanceMatrix * vec4(position, 1.0);
+  vec4 wp = modelMatrix * lp;
+  vWorld = wp.xyz;
+  vN = normalize(mat3(modelMatrix) * mat3(instanceMatrix) * normal);
+  vFp = uOriginF + lp.xyz;
+  vAux = vec4(0.0, 0.0, 0.0, 2.0);
+  gl_Position = projectionMatrix * viewMatrix * wp;
+  #include <logdepthbuf_vertex>
+}
+`;
+
 const FRAG = /* glsl */`
 uniform vec3 uSunDir;
 uniform vec3 uSunE;
@@ -74,15 +95,17 @@ void main() {
   vec3 alb = mix(vec3(0.42, 0.52, 0.6), vec3(0.82, 0.86, 0.9), snowy) * (0.9 + 0.2 * dI.r);
   // (a side: the floe's ice, blue where it's wet by the water, under its top's snow; a ridge's sail:
   // broken blocks, blue ice and snow in their gaps, as liquid.js's frozen sea draws them further off)
-  bool wall = vAux.w > 0.75, sail = vAux.w > 0.25 && !wall;
+  bool block = vAux.w > 1.5, wall = vAux.w > 0.75 && !block, sail = vAux.w > 0.25 && vAux.w < 0.75;
   if (wall) alb = mix(vec3(0.3, 0.46, 0.58), alb, smoothstep(0.35, 0.65, vAux.z / max(vAux.y, 0.01)));
   if (sail) alb = mix(vec3(0.5, 0.62, 0.7), vec3(0.85, 0.88, 0.92), smoothstep(0.35, 0.6, tri(vFp, w, 2.0).r));
+  // (a block: snow on what faces up, its ice's blue-green on its broken faces)
+  if (block) alb = mix(vec3(0.32, 0.52, 0.6) * (0.85 + 0.3 * tri(vFp, w, 1.0).r), vec3(0.86, 0.89, 0.93), smoothstep(0.45, 0.75, dot(normalize(vN), up)));
   vec3 pF = uToFixed * rel;
   vec3 sunA = atmoSunTransmittance(r, muS), skyE = atmoSkyIrradiance(r, muS);
   // (a top's own shadow read 15 cm over it: in a low sun its flat face shadowed itself in stripes; a
   // sail's, half a metre and up, still falls on it)
-  vec3 sunT = sunA * cloudLight(rel, r, muS, foot, sunA, skyE) * terrainShadow(pF, normalize(pF), uToFixed * uSunDir, uRadius) * sunShadowMap(vWorld + (wall || sail ? vec3(0.0) : up * 0.15), N);
-  vec3 N2 = normalize(mix(up, N, wall || sail ? 1.0 : 0.5));
+  vec3 sunT = sunA * cloudLight(rel, r, muS, foot, sunA, skyE) * terrainShadow(pF, normalize(pF), uToFixed * uSunDir, uRadius) * sunShadowMap(vWorld + (wall || sail || block ? vec3(0.0) : up * 0.15), N);
+  vec3 N2 = normalize(mix(up, N, wall || sail || block ? 1.0 : 0.5));
   vec3 color = alb / PI * (uSunE * sunT * max(dot(N2, uSunDir), 0.0) + (uSunE * skyE * (0.5 + 0.5 * dot(N2, up)) + uAmbientFloor));
   vec3 V = normalize(-vWorld), H = normalize(V + uSunDir);
   color += uSunE * sunT * pow(max(dot(N2, H), 0.0), mix(400.0, 40.0, snowy)) * 0.04 * step(0.0, muS);
@@ -92,17 +115,21 @@ void main() {
 
 // (for tools/glslcheck.mjs)
 export const FLOE_SHADERS = { vertexShader: VERT, fragmentShader: FRAG };
+export const BLOCK_SHADERS = { vertexShader: BLOCK_VERT, fragmentShader: FRAG };
 
 export class FloeSet {
   constructor(body, pool, shared, group) {
     this.body = body; this.pool = pool; this.group = group;
     this.material = new THREE.ShaderMaterial({ uniforms: { ...shared }, vertexShader: VERT, fragmentShader: FRAG, side: THREE.DoubleSide });
-    this.mesh = null; this.job = null; this.at = null; this.L = 0;
+    this.blockMat = new THREE.ShaderMaterial({ uniforms: { ...shared, uOriginF: { value: new THREE.Vector3() } }, vertexShader: BLOCK_VERT, fragmentShader: FRAG });
+    this.box = new THREE.BoxGeometry(1, 1, 1);
+    this.mesh = null; this.blocks = null; this.job = null; this.at = null; this.L = 0;
   }
   // camF: the camera, body-fixed
   update(camF) {
     const b = this.body, R = b.R, alt = camF.length() - R;
     if (this.mesh) this.mesh.visible = alt < HIGH;
+    if (this.blocks) this.blocks.visible = alt < HIGH;
     if (alt > HIGH || this.job) return;
     const dir = camF.clone().normalize(), L = b.solarLongitude ? b.solarLongitude() : 0;
     if (this.at && this.at.angleTo(dir) * R < MOVE && Math.abs(L - this.L) < 0.01) return;
@@ -114,7 +141,25 @@ export class FloeSet {
   }
   show(r) {
     if (this.mesh) { this.group.remove(this.mesh); this.mesh.geometry.dispose(); this.mesh = null; }
+    if (this.blocks) { this.group.remove(this.blocks); this.blocks.dispose(); this.blocks = null; }
     if (!r || !r.pos) return;
+    // (a ridge's blocks: one box each, placed, turned and sized)
+    const nb = r.blocks ? r.blocks.length / 10 : 0;
+    if (nb) {
+      const im = new THREE.InstancedMesh(this.box, this.blockMat, nb), m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), v = new THREE.Vector3(), sc = new THREE.Vector3();
+      for (let i = 0; i < nb; i++) {
+        const b = r.blocks, k = 10 * i;
+        m4.compose(v.set(b[k], b[k + 1], b[k + 2]), q.set(b[k + 3], b[k + 4], b[k + 5], b[k + 6]), sc.set(b[k + 7], b[k + 8], b[k + 9]));
+        im.setMatrixAt(i, m4);
+      }
+      im.instanceMatrix.needsUpdate = true;
+      im.position.set(r.origin[0], r.origin[1], r.origin[2]);
+      im.frustumCulled = false;
+      im.layers.enable(SHADOW_LAYER);
+      this.blockMat.uniforms.uOriginF.value.set(r.origin[0], r.origin[1], r.origin[2]);
+      this.group.add(im);
+      this.blocks = im;
+    }
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(r.pos, 3));
     g.setAttribute('normal', new THREE.BufferAttribute(r.nrm, 3));
@@ -129,5 +174,10 @@ export class FloeSet {
     this.group.add(m);
     this.mesh = m;
   }
-  dispose() { if (this.job) this.pool.cancel(this.job); if (this.mesh) { this.group.remove(this.mesh); this.mesh.geometry.dispose(); } this.material.dispose(); }
+  dispose() {
+    if (this.job) this.pool.cancel(this.job);
+    if (this.mesh) { this.group.remove(this.mesh); this.mesh.geometry.dispose(); }
+    if (this.blocks) { this.group.remove(this.blocks); this.blocks.dispose(); }
+    this.material.dispose(); this.blockMat.dispose(); this.box.dispose();
+  }
 }

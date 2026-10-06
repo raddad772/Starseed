@@ -364,6 +364,13 @@ uint faceLead(uint face, int axis, bool neg) {
   return floeHash(min(face, of), max(face, of), 0x4f1du, 0x2b7cu);
 }
 const int POLY_MAX = 12;
+// how round a floe's corners are (m): ground down where floes knock together, the more the older it is,
+// ~5-9% of its size (gen/liquidice.js floeRound the same): its edge within that of two of its sides an arc
+// between them
+float floeRound(float size, uint id) {
+  float age = (0.3 + 0.7 * smoothstep(16.0, 200.0, size)) * (0.6 + 0.4 * float(id >> 16u) / 65536.0);
+  return size * 0.06 * (0.5 + age);
+}
 // the piece of the pack at p (body-fixed m), the sea's temperature's ice there: its hash (id), how far p
 // is in from its edge less the lead there (e, m: < 0 in the lead), that lead's hash (lid), the pack's
 // cover at it (c), its size (m) and middle, whether it's there (an open pack's missing pieces: open
@@ -449,9 +456,10 @@ void floeOf(vec3 p, float ice, out uint id, out float e, out uint lid, out float
     id = floeHash(id, side > 0.0 ? 1u : 0u, uint(lvl), 0x9e37u);
   }
   // (in from its edge: the nearest of its edges' planes, less that edge's lead (a ridge's floes touch);
-  // and its nearest ridge: the way across it, away from its crest, and how far off: ridge)
+  // its corners rounded (floeRound); and its nearest ridge: the way across it, away from its crest, and
+  // how far off: ridge)
   e = 1e20; lid = 0u;
-  float rh = 0.0;
+  float rh = 0.0, e2 = 1e20;
   for (int i = 0; i < POLY_MAX; i++) {
     if (i >= n) break;
     vec2 dv = V[(i + 1) % n] - V[i];
@@ -460,11 +468,13 @@ void floeOf(vec3 p, float ice, out uint id, out float e, out uint lid, out float
     N3[b] = -dv.y; N3[d] = dv.x; N3[ax] = dv.y * V[i].x - dv.x * V[i].y;
     N3 = normalize(N3);
     float dn = dot(p, N3), ek = abs(dn) - max(ES[i], 0.15);
-    if (ek < e) { e = ek; lid = EI[i]; }
+    if (ek < e) { e2 = e; e = ek; lid = EI[i]; } else if (ek < e2) e2 = ek;
     if (ES[i] < 0.0 && abs(dn) < ridge.w) { ridge = vec4(N3 * sign(dn), abs(dn)); rh = -ES[i]; }
   }
   // (a ridge's sail: its height here, its sides ~27 degrees, twice as wide as it's high either side)
   ridge.w = rh > 0.0 ? rh * max(0.0, 1.0 - ridge.w / (2.0 * rh)) : 0.0;
+  float rr = floeRound(s, id);
+  if (e2 < rr) e = rr - length(vec2(rr - e, rr - e2));
   size = s; mid = m;
   there = c > 0.0 && float(id & 65535u) / 65536.0 <= min(1.0, 1.5 * c);
 }

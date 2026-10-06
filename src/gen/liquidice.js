@@ -148,6 +148,9 @@ export function iceAt(gen, L, ice) {
 // size and the pack's cover at its middle), the same all along it and from both sides.
 const nrm3 = (v, k = 1) => { const l = Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]); v[0] *= k / l; v[1] *= k / l; v[2] *= k / l; return v; };
 export const POLY_MAX = 12;
+// how round a floe's corners are (m: liquid.js floeRound)
+export const floeAge = (size, id) => (0.3 + 0.7 * smooth(16, 200, size)) * (0.6 + 0.4 * (id >>> 16) / 65536);
+export const floeRound = (size, id) => size * 0.06 * (0.5 + floeAge(size, id));
 // the face p's on (o.ax its axis, o.sg its sign, o.face its index) and p's (u, v) on it
 export function faceUV(p, o) {
   const A0 = Math.abs(p[0]), A1 = Math.abs(p[1]), A2 = Math.abs(p[2]);
@@ -251,8 +254,8 @@ export function floeOf(p, ice, o) {
     const t = P; P = Q; Q = t;
   }
   // (in from its edge: the nearest of its edges' planes, less that edge's lead (a ridge's floes touch);
-  // and its nearest ridge: its sail's height here, liquid.js's ridge.w)
-  let e = Infinity, lid = 0, rd = Infinity, rh = 0;
+  // its corners rounded (floeRound); and its nearest ridge: its sail's height here, liquid.js's ridge.w)
+  let e = Infinity, lid = 0, rd = Infinity, rh = 0, e2 = Infinity;
   const V = P.V, n = P.n;
   for (let i = 0; i < n; i++) {
     const j = (i + 1) % n, du = V[2 * j] - V[2 * i], dv = V[2 * j + 1] - V[2 * i + 1];
@@ -260,10 +263,12 @@ export function floeOf(p, ice, o) {
     const Au = -dv, Bv = du, C = -(Au * V[2 * i] + Bv * V[2 * i + 1]);
     edgePlane(f, Au, Bv, C, _N3);
     const ad = Math.abs(p[0] * _N3[0] + p[1] * _N3[1] + p[2] * _N3[2]), ek = ad - Math.max(P.ES[i], 0.15);
-    if (ek < e) { e = ek; lid = P.EI[i]; }
+    if (ek < e) { e2 = e; e = ek; lid = P.EI[i]; } else if (ek < e2) e2 = ek;
     if (P.ES[i] < 0 && ad < rd) { rd = ad; rh = -P.ES[i]; }
   }
   o.ridge = rh > 0 ? rh * Math.max(0, 1 - rd / (2 * rh)) : 0; o.ridgeH = rh; o.ridgeD = rd;
+  const rr = floeRound(s, P.id);
+  if (e2 < rr) e = rr - Math.hypot(rr - e, rr - e2);
   o.id = P.id; o.e = e; o.lid = lid; o.c = c; o.size = s; o.P = P;
   o.there = c > 0 && (P.id & 65535) / 65536 <= Math.min(1, 1.5 * c);
   return o;
