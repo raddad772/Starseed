@@ -96,7 +96,7 @@ export class CloudShadow {
     });
     const own = { uO: { value: new THREE.Vector3() }, uE: { value: new THREE.Vector3() }, uN: { value: new THREE.Vector3() }, uL: { value: 20000 }, uSunF: { value: new THREE.Vector3() }, uSigmaG: { value: sigmaG } };
     const uniforms = { ...own };
-    for (const k of ['tNoise', 'tCloudMap', 'uCloudMapMean', 'uRadius', 'uDeck', 'uNumDecks', 'uMode', 'uShape', 'uBands', 'uJetPhase', 'uEqJet', 'uWindMax', 'uCloudClock', 'uCloudWind']) uniforms[k] = vu[k];
+    for (const k of ['tNoise', 'tCloudMap', 'uCloudMapMean', 'uCloudYear', 'uRadius', 'uDeck', 'uNumDecks', 'uMode', 'uShape', 'uBands', 'uJetPhase', 'uEqJet', 'uWindMax', 'uCloudClock', 'uCloudWind']) uniforms[k] = vu[k];
     this.own = own;
     this.material = new THREE.ShaderMaterial({ uniforms, vertexShader: FULLSCREEN_VERT, fragmentShader: CLOUD_SHADOW_FRAG, depthTest: false, depthWrite: false, glslVersion: THREE.GLSL3 });
     this.quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.material);

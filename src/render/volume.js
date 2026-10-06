@@ -359,7 +359,7 @@ export class VolumePass {
       tMS: { value: atmo.ms.texture },
       tNoise: { value: noiseTex },
       tColor: { value: null }, tDepth: { value: null },
-      tCloudMap: { value: atmo.material.uniforms.tCloudMap ? atmo.material.uniforms.tCloudMap.value : null }, uCloudMapMean: { value: 0 },
+      tCloudMap: { value: atmo.material.uniforms.tCloudMap ? atmo.material.uniforms.tCloudMap.value : null }, uCloudMapMean: { value: 0 }, uCloudYear: atmo.material.uniforms.uCloudYear || { value: new THREE.Vector2() },
       uCenter: { value: new THREE.Vector3() },
       uSunDir: { value: new THREE.Vector3(1, 0, 0) },
       uSunE: { value: new THREE.Vector3(1, 1, 1) },

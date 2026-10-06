@@ -36,6 +36,48 @@ export function seasonHarmonics(clim, m) {
   return out;
 }
 
+// the cloud cover where a year's rain is P (mm) and its sea's cold-current upwelling up (0..1): more where
+// it rains (rising air), clear over deserts and the sinking subtropics, stratocumulus decks over cold-
+// current seas (snapshot.js's cloud map)
+export const cloudOf = (P, up) => Math.min(0.95, Math.max(0.05, 0.1 + 0.8 * Math.sqrt(Math.max(0, P) / 2500) + 0.35 * up));
+// the clouds' year by cell: each month's cover as if its rain fell all year (the tropical rain belt
+// follows the sun north and south, the monsoons come and go, the storm tracks shift with the winters),
+// its first harmonic about the year's mean, a1c (m), b1c (m) in cover (planar)
+export function cloudHarmonics(clim, m) {
+  const out = new Float32Array(2 * m);
+  for (let c = 0; c < m; c++) {
+    const up = clim.upwell ? clim.upwell[c] : 0;
+    let sa = 0, sb = 0;
+    for (let k = 0; k < 12; k++) { const v = cloudOf(12 * clim.Pm[k * m + c], up), L = dm.TWO_PI * (k + 0.5) / 12; sa += v * dm.cos(L); sb += v * dm.sin(L); }
+    out[c] = sa / 6; out[m + c] = sb / 6;
+  }
+  return out;
+}
+// the clouds' year baked at the cloud map's layout (w x w/2, snapshot.js cloudMapPixels: by latitude and
+// longitude), two bytes a pixel, a1c + 0.5, b1c + 0.5: smoothed across the climate grid's cells as the
+// cover is (the year's swing is broad: no warp)
+export function cloudYearPixels(Nc, R, f, w) {
+  const Gc = new GridLite(Nc, R), m = Gc.n, nb = new Int32Array(8);
+  const F = [0, 1].map((k) => {
+    let a = Float32Array.from(f.subarray(k * m, (k + 1) * m)), b = new Float32Array(m);
+    for (let it = 0; it < 2; it++) {
+      for (let c = 0; c < m; c++) { const n = Gc.nbrs(c, nb); let sum = a[c] * 2; for (let e = 0; e < n; e++) sum += a[nb[e]]; b[c] = sum / (n + 2); }
+      const t = a; a = b; b = t;
+    }
+    return a;
+  });
+  const hh = w / 2, px = new Uint8Array(w * hh * 2), d = [0, 0, 0], uv = { face: 0, u: 0, v: 0 };
+  for (let y = 0; y < hh; y++) {
+    const lat = ((y + 0.5) / hh - 0.5) * dm.PI, cl = dm.cos(lat), sl = dm.sin(lat);
+    for (let x = 0; x < w; x++) {
+      const lon = ((x + 0.5) / w - 0.5) * dm.TWO_PI;
+      d[0] = cl * dm.cos(lon); d[1] = sl; d[2] = cl * dm.sin(lon);
+      for (let k = 0; k < 2; k++) px[2 * (y * w + x) + k] = Math.max(0, Math.min(255, Math.round((Gc.sample(F[k], d, uv) + 0.5) * 255)));
+    }
+  }
+  return px;
+}
+
 // the maps the shader reads, by latitude and longitude, from a planar field of three per climate cell
 // (snap.Nc, snap.R) and a fourth (or 255): code(k, value) each into its byte
 function pixelsOf(Nc, R, f, code, f4) {
@@ -59,7 +101,7 @@ export function seasonPixels(snap) {
   return pixelsOf(snap.Nc, snap.R, snap.season, (k, v) => (k < 2 ? v / 100 + 0.5 : k === 2 ? Math.sqrt(Math.max(0, v) / 600) : (v - 273.15 + 60) / 120), snap.Tsea);
 }
 // the maps' layout's revision: a snapshot whose maps are older is worked out again (worldSims.js)
-export const SEASON_V = 3;
+export const SEASON_V = 5;
 // (the air over a frozen sea's: a1, b1 and its year's mean against the open sea's, K / 100 + 0.5)
 export function seasonIcePixels(snap) {
   return pixelsOf(snap.Nc, snap.R, snap.seasonIce, (k, v) => v / 100 + 0.5);
@@ -108,7 +150,9 @@ export function seasonsFor(snap, climOpts) {
   const clim = climateOn(Gc, G, snap.h, climOpts, wet, cover);
   const season = seasonHarmonics(clim, Gc.n), ice = seasonIce(Gc, G, snap, climOpts, wet, cover, clim);
   const S = { season, seasonIce: ice, Tsea: snap.Tsea, Nc: snap.Nc, R: snap.R };
-  return { season, seasonPx: seasonPixels(S), seasonIce: ice, seasonIcePx: seasonIcePixels(S), yearDays: climOpts.yearDays, seasonV: SEASON_V };
+  // (and the clouds' year, at the cloud map's own size)
+  const cloudYearPx = snap.cloudW ? cloudYearPixels(snap.Nc, snap.R, cloudHarmonics(clim, Gc.n), snap.cloudW) : null;
+  return { season, seasonPx: seasonPixels(S), seasonIce: ice, seasonIcePx: seasonIcePixels(S), cloudYearPx, yearDays: climOpts.yearDays, seasonV: SEASON_V };
 }
 
 // whether a world's snow comes and goes with its seasons (p: its terrain's params): water that falls as

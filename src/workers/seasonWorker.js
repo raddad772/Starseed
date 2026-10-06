@@ -5,7 +5,7 @@ import { seasonsFor } from '../gen/worldsim/season.js';
 self.onmessage = (e) => {
   try {
     const r = seasonsFor(e.data.snap, e.data.opts);
-    if (r) self.postMessage({ r }, [r.season.buffer, r.seasonPx.buffer, r.seasonIce.buffer, r.seasonIcePx.buffer]);
+    if (r) self.postMessage({ r }, [r.season.buffer, r.seasonPx.buffer, r.seasonIce.buffer, r.seasonIcePx.buffer, ...(r.cloudYearPx ? [r.cloudYearPx.buffer] : [])]);
     else self.postMessage({ r: null });
   } catch (err) { self.postMessage({ error: String(err && err.stack || err) }); }
 };

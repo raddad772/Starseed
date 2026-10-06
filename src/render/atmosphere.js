@@ -31,7 +31,8 @@ export const CLOUD_K = [1.0, 0.236, 0.064];
 // space, its deserts' and trade winds' skies clear, its storm tracks and rain belts under cloud.
 // Each octave fades to its mean where a pixel (foot m across) spans a few of its texels (the noise has
 // no mip levels: from space they alias to speckle), and the threshold widens by the spread that took
-// away, so a far pixel shows the fraction of it covered. Needs tNoise, tCloudMap, uCloudMapMean, uRadius.
+// away, so a far pixel shows the fraction of it covered. Needs tNoise, tCloudMap, uCloudMapMean, uRadius
+// (uCloudYear its own).
 // cloudBias's twin for the near volume's decks (their bias a uniform)
 const sstep = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 export const cloudBias = (cover) => (cover - 0.5) * 0.3 + 0.5 * sstep(0.8, 1.0, cover) - 0.5 * (1 - sstep(0.0, 0.2, cover));
@@ -46,6 +47,7 @@ export function cloudLife(windMax, bands, eqJet, R) {
   return Math.min(7200, Math.max(300, shear > 0 ? 1 / shear : 7200));
 }
 export const GLSL_CLOUD_N = /* glsl */`
+uniform vec2 uCloudYear;   // (the cloud map's year: cos, sin of the sun's place in it, 0 without)
 float cloudN(float n) { return 0.55 + (n - 0.682) * 4.3; }
 // how far a world's cover (0..1) moves the threshold: gently through the middle (an Earth's 0.52),
 // then a closed deck at 1 (a Venus: its full cover had let the weather's spread open holes, the long
@@ -67,7 +69,12 @@ float cloudCover(vec3 q, vec3 dirF, float foot, float bias) {
   // (with the simulated climate's cloud map: it moves the clouds to where it rains, as strongly as the
   // weather's own spread so the climate's belts read from space; about its own mean, the world's cover
   // setting the amount: a dry world's map and its low cover had counted its dryness twice)
-  if (uCloudMapMean > 0.0) hadley = (texture(tCloudMap, vec2(atan(dirF.z, dirF.x) / 6.2832 + 0.5, lat / 3.14159 + 0.5)).r - uCloudMapMean) * 0.8;
+  // (and its year: the swing's two parts turned by where the sun stands in it, uCloudYear cos and sin of
+  // its solar longitude, 0 without: the rain belts and the storm tracks follow the sun)
+  if (uCloudMapMean > 0.0) {
+    vec3 cm = texture(tCloudMap, vec2(atan(dirF.z, dirF.x) / 6.2832 + 0.5, lat / 3.14159 + 0.5)).rgb;
+    hadley = (cm.r + (cm.g - 0.5) * uCloudYear.x + (cm.b - 0.5) * uCloudYear.y - uCloudMapMean) * 0.8;
+  }
   return smoothstep(0.6 - bias - spread, 0.8 - bias + spread, cloudN(a * 0.6 + b * 0.4) + hadley);
 }
 // the fine texture inside covered areas (its mean far off)
@@ -837,7 +844,7 @@ export class Atmosphere {
       uCloud: { value: new THREE.Vector4(clouds ? cloudAlt(clouds.altitude) : 0, clouds ? cloudAlt(clouds.altitude + clouds.thickness) - cloudAlt(clouds.altitude) : 0, clouds ? clouds.cover : 0, clouds ? clouds.scale : 1) },
       uCloudColor: { value: new THREE.Vector4(clouds ? clouds.color[0] : 1, clouds ? clouds.color[1] : 1, clouds ? clouds.color[2] : 1, clouds ? clouds.opacity : 0) },
       uCloudOn: { value: clouds && !this.body.giant ? 1 : 0 },
-      tCloudMap: { value: blankCloudMap() }, uCloudMapMean: { value: 0 },
+      tCloudMap: { value: blankCloudMap() }, uCloudMapMean: { value: 0 }, uCloudYear: { value: new THREE.Vector2() },
       ...glowUniforms(this.body.atm.render.glow),
       uSteps: { value: 16 },
       tNoise: { value: null },

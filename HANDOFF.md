@@ -561,6 +561,17 @@ rivers that are straighter where they should be?"):**
   networks over the floes, leads, white ridges, the ice down to 1.07 m (summer_ponds shot). The air over
   the summer pack runs to +15 C there (the ground-like run's summer; a melting surface holds it near 0 in
   truth): ponds saturate, the thaw's wasting by phase, so it's no matter yet.
+- **Clouds through the year** (season.js cloudHarmonics, cloudYearPixels; SEASON_V 5): the cloud map
+  was the year's mean, its rain belts still. Each month's cover from its own rain (cloudOf, snapshot.js's
+  rule, as if the month's rain fell all year), its first harmonic about the year's mean, smoothed as the
+  cover is and baked at the cloud map's size (snap.cloudYearPx, two bytes a pixel); world.js
+  rebuildTerrain makes the cloud map RGBA (r the year's cover, g b the swing's two parts) and sets
+  uCloudYear (cos, sin of the solar longitude; 0 without) each frame, shared by the atmosphere, the near
+  volume, its shadows and every surface (GLSL_CLOUD_N declares it; cloudCover adds the swing before the
+  map's mean comes off). SOL Earth: zonal swing 0.03-0.15 of cover, most over the southern storm tracks
+  (~0.14) and either side of the equator (~0.1, the rain belt peaking ~6 weeks after each solstice, the
+  climate's thermal equator lagging the sun), the most 0.34. Seen from orbit at L 2.4 and 5.5 (same
+  moment otherwise): the belts shift, the snow with them.
 - **Seasons on the land: snow through the year** (Dave: "see seasonal changes"; "refine and add"; not
   living things yet). worldsim/season.js: each world's year by climate cell, its temperature's first
   harmonic about the mean (a1 cos L + b1 sin L, L the solar longitude from the northern spring equinox,

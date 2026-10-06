@@ -41,7 +41,7 @@ function seasonsOf(snap, opts) {
     const w = new Worker(new URL('../workers/seasonWorker.js' + location.search, import.meta.url), { type: 'module' });
     w.onmessage = (e) => { w.terminate(); if (e.data.error) { console.error('seasons failed:', e.data.error); resolve(null); } else resolve(e.data.r); };
     w.onerror = (e) => { w.terminate(); console.error('seasons worker:', e.message); resolve(null); };
-    w.postMessage({ snap: { N: snap.N, R: snap.R, Nc: snap.Nc, h: snap.h, water: snap.water, ocean: snap.ocean, cover: snap.cover, forest: snap.forest, Tsea: snap.Tsea }, opts });
+    w.postMessage({ snap: { N: snap.N, R: snap.R, Nc: snap.Nc, h: snap.h, water: snap.water, ocean: snap.ocean, cover: snap.cover, forest: snap.forest, Tsea: snap.Tsea, cloudW: snap.cloudW }, opts });
   });
 }
 

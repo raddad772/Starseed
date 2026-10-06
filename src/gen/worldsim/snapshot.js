@@ -22,7 +22,7 @@ import * as dm from '../../core/dmath.js';
 import { Noise3 } from '../../core/noise.js';
 import { dunePatches } from '../dunes.js';
 import { ROCK_UP } from './lithology.js';
-import { seasonsFor } from './season.js';
+import { seasonsFor, cloudOf } from './season.js';
 
 export const SIM_VERSION = 62;   // (61: the climate's orbit eccentric, its perihelion where it falls in the year; 62: a moon's seasons its tilt to its planet's orbit)
 
@@ -137,10 +137,9 @@ export function packSnapshot(W, body) {
     out.Tsea = new Float32Array(m); out.P = Float32Array.from(W.climate.Pann);
     for (let c = 0; c < m; c++) out.Tsea[c] = W.climate.Tann[c] + (W.climate.sea[c] ? 0 : lapse * Math.max(0, W.climate.h ? W.climate.h[c] : 0));
     if (W.life) { out.cover = Float32Array.from(W.life.cover); out.forest = Float32Array.from(W.life.forest); out.open = Float32Array.from(W.life.open); }
-    // cloud cover (for the render's clouds): more where it rains (rising air), clear over
-    // deserts and the sinking subtropics, stratocumulus decks over cold-current seas
+    // cloud cover (for the render's clouds: season.js cloudOf, by the year's rain)
     out.cloud = new Float32Array(m);
-    for (let c = 0; c < m; c++) out.cloud[c] = Math.min(0.95, Math.max(0.05, 0.1 + 0.8 * Math.sqrt(Math.max(0, W.climate.Pann[c]) / 2500) + 0.35 * (W.climate.upwell ? W.climate.upwell[c] : 0)));
+    for (let c = 0; c < m; c++) out.cloud[c] = cloudOf(W.climate.Pann[c], W.climate.upwell ? W.climate.upwell[c] : 0);
     // and baked for the render here (off the main thread): the map the clouds read
     const cm = cloudMapPixels(out, 512);
     out.cloudPx = cm.px; out.cloudW = cm.w;
@@ -154,7 +153,7 @@ export function packSnapshot(W, body) {
 
 // the arrays a snapshot carries (for transfer lists and caching)
 export function snapshotBuffers(s) {
-  return ['h', 'water', 'rock', 'ice', 'river', 'melt', 'relief', 'rcv', 'Tsea', 'P', 'cover', 'forest', 'open', 'cloud', 'cloudPx', 'season', 'seasonPx', 'seasonIce', 'seasonIcePx', 'crat', 'dunes', 'gorge', 'ocean', 'mareLv'].filter((k) => s[k]).map((k) => s[k].buffer);
+  return ['h', 'water', 'rock', 'ice', 'river', 'melt', 'relief', 'rcv', 'Tsea', 'P', 'cover', 'forest', 'open', 'cloud', 'cloudPx', 'cloudYearPx', 'season', 'seasonPx', 'seasonIce', 'seasonIcePx', 'crat', 'dunes', 'gorge', 'ocean', 'mareLv'].filter((k) => s[k]).map((k) => s[k].buffer);
 }
 
 // reads a snapshot at any direction

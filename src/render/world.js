@@ -56,7 +56,17 @@ export class WorldRenderer {
     // (baked with the snapshot; a snapshot cached before that, baked here, coarser)
     const map = !snap ? null : snap.cloudPx ? { px: snap.cloudPx, w: snap.cloudW, h: snap.cloudW / 2 } : cloudMapPixels(snap, 256);
     if (map && it.atmo) {
-      const tex = new THREE.DataTexture(map.px, map.w, map.h, THREE.RedFormat);
+      // (with its year where the seasons have it, season.js cloudYearPixels: g, b the swing's two parts
+      // about the year's cover r, so the texture blends them; the clouds turn them by the sun's place in
+      // the year, uCloudYear)
+      const yr = snap.cloudYearPx && snap.cloudYearPx.length === 2 * map.w * map.h ? snap.cloudYearPx : null;
+      let px = map.px;
+      if (yr) {
+        px = new Uint8Array(4 * map.w * map.h);
+        for (let i = 0, n = map.w * map.h; i < n; i++) { px[4 * i] = map.px[i]; px[4 * i + 1] = yr[2 * i]; px[4 * i + 2] = yr[2 * i + 1]; px[4 * i + 3] = 255; }
+      }
+      it.cloudYearOn = !!yr;
+      const tex = new THREE.DataTexture(px, map.w, map.h, yr ? THREE.RGBAFormat : THREE.RedFormat);
       // (its mean over the globe, rows weighted by their area: the clouds move about it)
       let sum = 0, wsum = 0;
       for (let y = 0; y < map.h; y++) {
@@ -131,6 +141,7 @@ export class WorldRenderer {
       // (the atmosphere's own: rebuildTerrain hands the climate's cloud map to all three)
       tCloudMap: a ? a.material.uniforms.tCloudMap : { value: blankCloudMap() },
       uCloudMapMean: a ? a.material.uniforms.uCloudMapMean : { value: 0 },
+      uCloudYear: a ? a.material.uniforms.uCloudYear : { value: new THREE.Vector2() },
       uThermal: a ? a.material.uniforms.uThermal : { value: thermalUniform(b) },
       uWindRipple: { value: windRipple(b) },
       ...(it.heightCube ? it.heightCube.uniforms : {}),
@@ -217,6 +228,11 @@ export class WorldRenderer {
       sh.uTime.value = this.timeSec;
       if (it.cloudClock) { const c = it.cloudClock.value, t = this.u.t, Y = Math.floor(t / c.z); c.set(t - Y * c.z, Y + 1048576, c.z, 0); }
       if (sh.uSeason && sh.uSeason.value.z > 0) sh.uSeason.value.x = b.solarLongitude();
+      // (the clouds' year: where the sun stands in it)
+      if (it.atmo && it.atmo.material.uniforms.uCloudYear) {
+        const L = it.cloudYearOn ? b.solarLongitude() : 0;
+        it.atmo.material.uniforms.uCloudYear.value.set(it.cloudYearOn ? Math.cos(L) : 0, it.cloudYearOn ? Math.sin(L) : 0);
+      }
       if (it.liquid) it.liquid.update(this.timeSec, _v2.copy(sh.uSunDir.value).applyMatrix3(sh.uToFixed.value));
       const angular = (b.R + (it.atmo ? it.atmo.top - b.R : 0)) / Math.max(dist, 1) * pxPerRad;
       if (it.terrain) {
