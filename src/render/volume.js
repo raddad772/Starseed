@@ -12,7 +12,7 @@
 
 import * as THREE from 'three';
 import { GLSL_RAY, GLSL_DEPTH, GLSL_ATMO_LUT, FULLSCREEN_VERT } from './glsl.js';
-import { GLSL_MEDIUM, GLSL_AIRLIGHT, GLSL_THERMAL, glowUniforms, GLSL_CLOUD_N, cloudBias } from './atmosphere.js';
+import { GLSL_MEDIUM, GLSL_AIRLIGHT, GLSL_THERMAL, glowUniforms, GLSL_CLOUD_N, cloudBias, GLSL_SKY_FAR } from './atmosphere.js';
 import { GLSL_TERRAIN_SHADOW } from './terrainShadow.js';
 
 // the decks' shapes, shared by the volume pass and the ground's cloud shadows (cloudShadow.js): their
@@ -127,14 +127,18 @@ vec3 transmittanceToTop(float r, float mu) {
   return texture(tTrans, uv).rgb;
 }
 vec3 sunTransmittance(float r, float mu) {
-  float sinH = uGround / max(r, uGround);
+  mu = liftMu(mu);
+  // (the true-size world's horizon at this height: atmosphere.js sunTransmittance)
+  float Rg = uGround * max(uTrueK, 1.0), sinH = Rg / (Rg + max(r - uGround, 0.0));
   float cosH = -sqrt(max(0.0, 1.0 - sinH * sinH));
   return transmittanceToTop(r, mu) * smoothstep(cosH - 0.004, cosH + 0.004, mu);
 }
 vec3 multiScatter(float r, float muS) {
+  muS = liftMu(muS);
   vec2 uv = clamp(vec2(muS * 0.5 + 0.5, (r - uBottom) / (uTop - uBottom)), 0.0, 1.0);
   return texture(tMS, vec2(0.5 / 32.0) + uv * (31.0 / 32.0)).rgb;
 }
+${GLSL_SKY_FAR}
 float ign(vec2 p) { return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715)))); }
 float hg(float c, float g) { float g2 = g * g; return (1.0 - g2) / (4.0 * PI_A * pow(max(1.0 + g2 - 2.0 * g * c, 1e-4), 1.5)); }
 
@@ -163,6 +167,8 @@ void main() {
   float sceneDist = isSkyDepth(depth) ? 1e30 : viewZFromDepth(depth) / max(-dView.z, 1e-4);
   vec2 hit = raySphere(uCenter, uTop, D);
   if (hit.y <= 0.0 || hit.x > hit.y) { outL = vec4(0.0); outT = vec4(1.0); return; }
+  bool skyPx = sceneDist > 1e29 || sceneDist > hit.y;   // (nothing short of the air's top: the sun's disc, a moon)
+  gHazeK = skyPx ? 1.0 - uSkyView.x : 1.0;   // (no ground haze on a sky pixel's ray: atmosphere.js)
   float tca = dot(uCenter, D);
   vec3 perp = uCenter - tca * D;
   float t0 = max(hit.x, 0.0);
@@ -197,6 +203,7 @@ void main() {
   float jitter = ign(gl_FragCoord.xy);
   vec3 L = vec3(0.0), T = vec3(1.0);
   vec3 Lth = vec3(0.0);
+  float Tc = 1.0;   // (the clouds' share of T alone: the far sky's, skyFar, behind them)
   vec3 sunDirF = uToFixed * uSunDir;
   // (the sun's height over the air along the ray as on the world's true size: atmosphere.js trueUp)
   vec3 upC = normalize(-uCenter);
@@ -288,6 +295,7 @@ void main() {
         S += sc * cc * (sunT * pC * (0.6 + 0.8 * powder) + amb);
         if (moon) Sm += sc * cc * (mT * pCm * (0.6 + 0.8 * powder) + mms * 14.0 * mix(0.45, 1.0, frac) + mT0 * 0.05 * (0.3 + 0.7 * frac));
         ext += vec3(sc);
+        Tc *= exp(-sc * dti);
         if (uFlash.w > 0.0) {
           vec3 fd = p + uCenter - uFlash.xyz;
           S += sc * vec3(0.75, 0.82, 1.0) * uFlash.w * exp(-dot(fd, fd) / 6.0e7);
@@ -314,7 +322,9 @@ void main() {
   }
   vec3 aNear, aFar;
   auroraRay(D, tca, perp, min(hit.y, sceneDist), jitter, aNear, aFar);
-  outL = vec4(L * uSunE + Lm * uMoonE + Lth + aNear + T * aFar, 1.0);
+  // (a sky pixel: the far air past this march, as on the true-size world: atmosphere.js SKYVIEW_FRAG)
+  vec3 far = skyPx ? skyFar(D) * uSunE : vec3(0.0);
+  outL = vec4(L * uSunE + Lm * uMoonE + Lth + aNear + T * aFar + Tc * far, 1.0);
   outT = vec4(T, 1.0);
 }
 `;
@@ -387,6 +397,7 @@ export class VolumePass {
     }
     const u = {
       ...atmo.params,
+      uSunLift: atmo.sunLift,
       tTrans: { value: atmo.trans.texture },
       tMS: { value: atmo.ms.texture },
       tNoise: { value: noiseTex },

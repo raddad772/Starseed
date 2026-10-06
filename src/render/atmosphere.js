@@ -237,13 +237,30 @@ uniform float uTrueK;
 vec3 trueUp(vec3 p, float r, vec3 upC, float k) { return normalize(mix(upC, p / r, 1.0 / k)); }
 float trueK(float hc) { return mix(max(uTrueK, 1.0), 1.0, smoothstep(20000.0, 60000.0, hc)); }
 const float PI_A = 3.14159265358979;
+// the sun as the air sees it from low over a drawn world (world.js: uSunLift x the drawn horizon's dip from
+// the camera, y the true world's; zero far off): its height stretched near the horizon as the sky's view is
+// (skyTrueEl), so it reddens and dims as it nears the drawn skyline and its light ends as it touches it; on
+// the true world's horizon alone it set in mid-air over the drawn skyline, or (the disc lowered instead)
+// behind hills the drawn world stands eight times steeper (Dave); below the drawn horizon, as much higher
+// as there
+uniform vec2 uSunLift;
+float liftMu(float mu) {
+  if (uSunLift.x <= uSunLift.y) return mu;
+  float e = asin(clamp(mu, -1.0, 1.0)), E1 = 0.2094;
+  if (e >= E1) return mu;
+  return sin(e >= -uSunLift.x ? E1 - (E1 - e) * (E1 + uSunLift.y) / (E1 + uSunLift.x) : e + (uSunLift.x - uSunLift.y));
+}
+// (the ground haze's share: 0 for a sky pixel's ray, which reaches no far ground for it to stand in front of;
+// the haze is the game's stand-in for the distance the drawn world leaves out, and over a ray toward the
+// horizon it took the setting sun and paled the low sky (the passes' mains set it))
+float gHazeK = 1.0;
 void mediumAt(float r, out vec3 scatR, out vec3 scatM, out vec3 ext) {
   float h = r - uRadius;
   float hr = h <= uKnee ? h : uKnee + (h - uKnee) / uUpper;
   float dR = exp(-hr / uRayleighH);
   float dM = exp(-hr / uMieH);
   float dA = uAbsExp > 0.5 ? dR : max(0.0, 1.0 - abs(h - uAbsCenter) / max(uAbsWidth, 1.0));
-  vec3 dH = uHaze.x * exp(-max(h, 0.0) / max(uHaze.y, 1.0)) * uHazeCol;
+  vec3 dH = uHaze.x * gHazeK * exp(-max(h, 0.0) / max(uHaze.y, 1.0)) * uHazeCol;
   scatR = uRayleigh * dR;
   scatM = uMie * dM + dH;
   ext = scatR + scatM + uMieAbs * dM + uAbs * dA + dH * uHaze.z;
@@ -307,9 +324,12 @@ vec3 transmittanceToTop(float r, float mu) {
   uv = vec2(0.5 / 256.0, 0.5 / 64.0) + uv * vec2(255.0 / 256.0, 63.0 / 64.0);
   return texture(tTrans, uv).rgb;
 }
-// sunlight reaching radius r with sun zenith cosine mu, incl. the planet's shadow
+// sunlight reaching radius r with sun zenith cosine mu, incl. the planet's shadow: the true-size world's
+// horizon at that height (its sun angles are the true world's, trueUp; cut off at the drawn ball's, which
+// dips several times further, the ground stayed lit by a grazing sun degrees after it had set)
 vec3 sunTransmittance(float r, float mu) {
-  float sinH = uGround / max(r, uGround);
+  mu = liftMu(mu);
+  float Rg = uGround * max(uTrueK, 1.0), sinH = Rg / (Rg + max(r - uGround, 0.0));
   float cosH = -sqrt(max(0.0, 1.0 - sinH * sinH));
   float vis = smoothstep(cosH - 0.004, cosH + 0.004, mu);
   return transmittanceToTop(r, mu) * vis;
@@ -375,10 +395,97 @@ void main() {
 const SAMPLE_MS = /* glsl */`
 uniform sampler2D tMS;
 vec3 multiScatter(float r, float muS) {
+  muS = liftMu(muS);
   vec2 uv = vec2(muS * 0.5 + 0.5, (r - uBottom) / (uTop - uBottom));
   uv = clamp(uv, vec2(0.0), vec2(1.0));
   uv = vec2(0.5 / 32.0) + uv * (31.0 / 32.0);
   return texture(tMS, uv).rgb;
+}
+`;
+
+// The far sky: the air a true-size world's sky holds past what the drawn one's marches reach. The world is
+// drawn a 64th of its size under air of real height, so a ray along the ground leaves the drawn air after
+// ~40 km, where on the true world it runs ~300 km on, through the air that after sunset is still in the
+// sun: the band of orange and pink toward where the sun went down, the dusty evening's deep pink, came
+// from there and weren't drawn (Dave: "it's the sky not clouds that turn super duper pink"). So for each
+// way from where the camera stands (its height over the datum; the sun's height there), a ray on the
+// true-size sphere, its light past the drawn ray's length (marched, the same air, the same sun and multiple
+// scattering LUTs, the true horizon's shadow), dimmed by the true air between it and the camera (not by the
+// near pass's: its ground haze at the game's scale stands for the distance this light has already come,
+// and dimmed it twice); only the clouds in front take it further. Elevation mapped as its square root (most
+// rows near the horizon), azimuth from the sun's (Hillaire 2020's sky-view LUT, its far part only)
+export const SKYVIEW_FRAG = /* glsl */`
+${LUT_COMMON}
+uniform float uGround;
+${SAMPLE_TRANS}
+${SAMPLE_MS}
+uniform float uCamH;    // the camera's height over the datum (m, as drawn)
+uniform float uSunMu;   // the sun's height there (its zenith cosine)
+uniform float uSkyMaxS; // the near pass's longest march (m)
+varying vec2 vUv;
+// (the distance along unit d from p to the sphere of radius rr from inside it; -1 if it misses from outside)
+float exitSphere(vec3 p, vec3 d, float rr) { float b = dot(p, d), c = dot(p, p) - rr * rr, q = b * b - c; return q < 0.0 ? -1.0 : -b + sqrt(q); }
+float hitSphere(vec3 p, vec3 d, float rr) { float b = dot(p, d), c = dot(p, p) - rr * rr, q = b * b - c; if (q < 0.0) return -1.0; float t = -b - sqrt(q); return t > 0.0 ? t : -1.0; }
+void main() {
+  float v = vUv.y * 2.0 - 1.0, el = sign(v) * v * v * 1.5707963, az = vUv.x * 3.14159265;
+  vec3 D = vec3(cos(el) * cos(az), sin(el), cos(el) * sin(az));
+  vec3 sun = vec3(sqrt(max(0.0, 1.0 - uSunMu * uSunMu)), uSunMu, 0.0);
+  float K = max(uTrueK, 1.0), Rt = uRadius * K, topH = uTop - uRadius, grH = uGround - uRadius;
+  // (the drawn ray's length: to the drawn air's top, or its ground; and the true one's)
+  vec3 cD = vec3(0.0, uRadius + uCamH, 0.0), cT = vec3(0.0, Rt + uCamH, 0.0);
+  float sD = exitSphere(cD, D, uTop), gD = hitSphere(cD, D, uGround);
+  if (gD > 0.0) sD = min(sD, gD);
+  sD = min(sD, uSkyMaxS);
+  float sT = exitSphere(cT, D, Rt + topH), gT = hitSphere(cT, D, Rt + grH);
+  if (gT > 0.0) sT = min(sT, gT);
+  if (!(sT > sD + 1.0)) { gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0); return; }
+  float cosT = dot(D, sun), pR = phaseRayleigh(cosT), pM = phaseMie(cosT, uMieG);
+  // (steps squared from the camera over the whole true ray: the light past the drawn ray's end, dimmed by
+  // the air all the way back)
+  const int N = 40;
+  vec3 L = vec3(0.0), T = vec3(1.0);
+  for (int i = 0; i < N; i++) {
+    float u0 = float(i) / float(N), u1 = float(i + 1) / float(N);
+    float s = sT * (u0 * u0 + u1 * u1) * 0.5, ds = sT * (u1 * u1 - u0 * u0);
+    vec3 p = cT + D * s;
+    float r = length(p), h = r - Rt, rr = uRadius + h;
+    vec3 sR, sM, e;
+    mediumAt(rr, sR, sM, e);
+    vec3 Ts = exp(-e * ds);
+    if (s > sD) {
+      float muS = dot(p / r, sun);
+      float cosH = -sqrt(max(0.0, 1.0 - ((Rt + grH) / max(r, Rt + grH)) * ((Rt + grH) / max(r, Rt + grH))));
+      vec3 sunT = transmittanceToTop(rr, muS) * smoothstep(cosH - 0.004, cosH + 0.004, muS);
+      vec3 ms = multiScatter(rr, muS);
+      vec3 S = sR * (sunT * pR + ms) + sM * (sunT * pM + ms);
+      L += T * (S - S * Ts) / max(e, vec3(1e-14));
+    }
+    T *= Ts;
+  }
+  gl_FragColor = vec4(L, 1.0);
+}
+`;
+
+// the far sky's light along a ray D (world) at the camera, per unit sun (after the near pass's own march:
+// times only its clouds' transmittance); 0 from high up (the drawn and the true world's skies one there)
+export const GLSL_SKY_FAR = /* glsl */`
+uniform sampler2D tSkyView;
+uniform vec4 uSkyView;   // x its share (1 low down, 0 from high up); y, z the drawn and the true horizon's dip there (rad)
+uniform vec3 uSkyUp;     // the camera's up (world)
+uniform vec3 uSkySunH;   // the sun's way along the ground there (world, unit): the azimuths' zero
+// a drawn elevation as the true world's (rad): the drawn horizon dips further (its ball a 64th the size: ~3
+// degrees from 140 m, the true one's 0.4), so near it the sky's elevations stretched, the true horizon's
+// onto the drawn skyline (the far sky's band sat a few degrees over the treeline, a dim gap under it, and
+// the sun set in mid-air over it: Dave), none from 12 degrees up
+const float SKY_E1 = 0.2094;
+float skyTrueEl(float e) { return e >= SKY_E1 ? e : SKY_E1 - (SKY_E1 - e) * (SKY_E1 + uSkyView.z) / (SKY_E1 + uSkyView.y); }
+vec3 skyFar(vec3 D) {
+  if (uSkyView.x <= 0.0) return vec3(0.0);
+  float s = clamp(dot(D, uSkyUp), -1.0, 1.0), el = skyTrueEl(asin(s));
+  vec3 hD = D - uSkyUp * s;
+  float hl = length(hD), az = hl > 1e-5 ? acos(clamp(dot(hD / hl, uSkySunH), -1.0, 1.0)) : 0.0;
+  float v = 0.5 + 0.5 * sign(el) * sqrt(abs(el) / 1.5707963);
+  return texture(tSkyView, vec2(az / 3.14159265, v)).rgb * uSkyView.x;
 }
 `;
 
@@ -522,6 +629,7 @@ ${LUT_COMMON}
 uniform float uGround;
 ${SAMPLE_TRANS}
 ${SAMPLE_MS}
+${GLSL_SKY_FAR}
 ${GLSL_NOISE}
 uniform sampler2D tColor;
 uniform sampler2D tDepth;
@@ -635,6 +743,9 @@ void main() {
 
   vec2 hit = raySphere(uCenter, uTop, D);
   if (hit.y <= 0.0 || hit.x > hit.y || hit.x > sceneDist) { outL = vec4(0.0); outT = vec4(1.0); return; }
+  // (a sky pixel: nothing in it short of the air's top (the sun's disc, a moon: beyond it))
+  bool skyPx = sceneDist > 1e29 || sceneDist > hit.y;
+  gHazeK = skyPx ? 1.0 - uSkyView.x : 1.0;
   float tca = dot(uCenter, D);
   vec3 perp = uCenter - tca * D;
   float t0 = max(hit.x, 0.0);
@@ -669,9 +780,11 @@ void main() {
   }
   vec3 aNear, aFar;
   auroraRay(D, tca, perp, min(hit.y, sceneDist), jitter, aNear, aFar);
+  // (a sky pixel: the far air past the drawn march, as on the true-size world, SKYVIEW_FRAG)
+  vec3 far = skyPx ? skyFar(D) : vec3(0.0);
   if (tc < 0.0) {
     march(t0, t1, D, tca, perp, cosTheta, jitter, L, T, steps, Lm);
-    outL = vec4(L * uSunE + Lm * uMoonE + gEm + aNear + T * aFar, 1.0); outT = vec4(T, 1.0);
+    outL = vec4((L + far) * uSunE + Lm * uMoonE + gEm + aNear + T * aFar, 1.0); outT = vec4(T, 1.0);
     return;
   }
   // segment before the cloud
@@ -707,7 +820,7 @@ void main() {
   }
   // final = scene * T*(1-a)*T2 + L + T*((1-a)*L2 + a*cl)
   outT = vec4(T * (1.0 - alpha) * T2, 1.0);
-  outL = vec4((L + T * ((1.0 - alpha) * L2 + alpha * cl)) * uSunE + (Lm + T * ((1.0 - alpha) * Lm2 + alpha * clm)) * uMoonE + em1 + T * (1.0 - alpha) * gEm + aNear + T * (1.0 - alpha) * T2 * aFar, 1.0);
+  outL = vec4((L + T * ((1.0 - alpha) * L2 + alpha * cl) + (1.0 - alpha) * far) * uSunE + (Lm + T * ((1.0 - alpha) * Lm2 + alpha * clm)) * uMoonE + em1 + T * (1.0 - alpha) * gEm + aNear + T * (1.0 - alpha) * T2 * aFar, 1.0);
 }
 `;
 
@@ -800,6 +913,9 @@ export class Atmosphere {
       uThermal: { value: thermalUniform(body) },
       // (the ground's heights for the air's shadows: world.js hands over its cube's uniforms)
       tHeightCube: { value: null }, uHeightCube: { value: new THREE.Vector4(0, 1, 0, 1) },
+      // (the far sky, SKYVIEW_FRAG: updateSkyView each frame where the camera is)
+      tSkyView: { value: null }, uSkyView: { value: new THREE.Vector4(0, 0, 0, 0) },
+      uSkyUp: { value: new THREE.Vector3(0, 1, 0) }, uSkySunH: { value: new THREE.Vector3(1, 0, 0) },
     };
     if (d.terrain) {
       const p = d.terrain.palette;
@@ -820,6 +936,9 @@ export class Atmosphere {
     this.trans = lutTarget(256, 64);
     this.ms = lutTarget(32, 32);
     this.irr = lutTarget(64, 16);
+    this.skyView = lutTarget(192, 128);
+    this.sunLift = { value: new THREE.Vector2(0, 0) };
+    this.params.tSkyView.value = this.skyView.texture;
     this.generate(renderer);
     this.readBack(renderer);
     this.material = this.makePassMaterial();
@@ -864,6 +983,35 @@ export class Atmosphere {
     return true;
   }
 
+  // the far sky from where the camera is (SKYVIEW_FRAG): its height over the datum (m), its up and the sun's
+  // way (world, unit), the near pass's longest march (m), its share (0 from high up: none drawn)
+  updateSkyView(renderer, camH, up, sunDir, maxS, share) {
+    const p = this.params;
+    p.uSkyView.value.x = share;
+    if (!(share > 0)) return;
+    const mu = Math.max(-1, Math.min(1, up.dot(sunDir)));
+    p.uSkyUp.value.copy(up);
+    const h = p.uSkySunH.value.copy(sunDir).addScaledVector(up, -mu);
+    if (h.lengthSq() < 1e-10) h.set(1, 0, 0).addScaledVector(up, -up.x);
+    h.normalize();
+    // (the drawn horizon's dip and the true one's: skyTrueEl)
+    const hd = Math.max(1, camH), K = Math.max(1, p.uTrueK.value);
+    p.uSkyView.value.y = Math.sqrt(2 * hd / this.radius); p.uSkyView.value.z = Math.sqrt(2 * hd / (this.radius * K));
+    if (!this.skyMat) {
+      // (its own ground haze none: that haze is the game's stand-in for the distance the drawn world leaves
+      // out, and over the true one's hundreds of km it took all the far sky's light)
+      this.skyMat = new THREE.ShaderMaterial({
+        uniforms: { ...this.params, uHaze: { value: new THREE.Vector4(0, 1000, 0, 0) }, tTrans: { value: this.trans.texture }, tMS: { value: this.ms.texture }, uCamH: { value: 0 }, uSunMu: { value: 0 }, uSkyMaxS: { value: 1e30 } },
+        vertexShader: FULLSCREEN_VERT, fragmentShader: SKYVIEW_FRAG, depthTest: false, depthWrite: false,
+      });
+    }
+    const u = this.skyMat.uniforms;
+    u.uCamH.value = Math.max(0, camH); u.uSunMu.value = this.liftMu(mu); u.uSkyMaxS.value = maxS;   // (the sun as the air sees it: liftMu)
+    const prev = renderer.getRenderTarget();
+    renderFullscreen(renderer, this.skyMat, this.skyView);
+    renderer.setRenderTarget(prev);
+  }
+
   // CPU copies of the transmittance and irradiance LUTs for lighting
   // standard materials (ship, effects) consistently with the shaders.
   readBack(renderer) {
@@ -894,8 +1042,18 @@ export class Atmosphere {
     return out;
   }
 
+  // the sun as the air sees it low over a drawn world (GLSL_MEDIUM liftMu; this.sunLift: world.js)
+  liftMu(mu) {
+    const dD = this.sunLift.value.x, dT = this.sunLift.value.y;
+    if (!(dD > dT)) return mu;
+    const e = Math.asin(Math.max(-1, Math.min(1, mu))), E1 = 0.2094;
+    if (e >= E1) return mu;
+    return Math.sin(e >= -dD ? E1 - (E1 - e) * (E1 + dT) / (E1 + dD) : e + (dD - dT));
+  }
+
   // Sunlight transmittance at radius r, sun zenith cosine mu (incl. planet shadow)
   transmittance(r, mu, out = [1, 1, 1]) {
+    mu = this.liftMu(mu);
     const top = this.top, bot = this.bottom;
     const rr = Math.min(Math.max(r, bot), top);
     const H = Math.sqrt(top * top - bot * bot);
@@ -904,7 +1062,8 @@ export class Atmosphere {
     const d = Math.max(0, -rr * mu + Math.sqrt(Math.max(disc, 0)));
     const dMin = top - rr, dMax = rho + H;
     this._bilinear(this.cpuTrans, (d - dMin) / Math.max(dMax - dMin, 1e-6), rho / H, out);
-    const sinH = this.ground / Math.max(r, this.ground);
+    // (the true-size world's horizon at this height, as the shaders' sunTransmittance)
+    const Rg = this.ground * Math.max(1, this.params.uTrueK.value), sinH = Rg / (Rg + Math.max(r - this.ground, 0));
     const cosH = -Math.sqrt(Math.max(0, 1 - sinH * sinH));
     const vis = Math.min(1, Math.max(0, (mu - (cosH - 0.01)) / 0.02));
     out[0] *= vis; out[1] *= vis; out[2] *= vis;
@@ -912,6 +1071,7 @@ export class Atmosphere {
   }
 
   skyIrradiance(r, mu, out = [0, 0, 0]) {
+    mu = this.liftMu(mu);
     const v = Math.min(Math.max((r - this.ground) / (this.top - this.ground), 0), 1);
     return this._bilinear(this.cpuIrr, mu * 0.5 + 0.5, v, out);
   }
@@ -940,6 +1100,7 @@ export class Atmosphere {
     const cloudAlt = (z) => ar && ar.upper < 1 ? atmoAlt(z, ar.knee, ar.upper) : z;
     const u = {
       ...this.params,
+      uSunLift: this.sunLift,
       tTrans: { value: this.trans.texture },
       tMS: { value: this.ms.texture },
       tColor: { value: null },
@@ -981,8 +1142,16 @@ uniform float uHasAtmo;
 uniform float uBottom;
 uniform float uTop;
 uniform float uGround;
+uniform float uTrueK;
 uniform sampler2D tTrans;
 uniform sampler2D tIrr;
+uniform vec2 uSunLift;   // (the sun as the air sees it low over a drawn world: atmosphere.js GLSL_MEDIUM liftMu)
+float liftMu(float mu) {
+  if (uSunLift.x <= uSunLift.y) return mu;
+  float e = asin(clamp(mu, -1.0, 1.0)), E1 = 0.2094;
+  if (e >= E1) return mu;
+  return sin(e >= -uSunLift.x ? E1 - (E1 - e) * (E1 + uSunLift.y) / (E1 + uSunLift.x) : e + (uSunLift.x - uSunLift.y));
+}
 vec2 transmittanceUV(float r, float mu) {
   float H = sqrt(max(0.0, uTop * uTop - uBottom * uBottom));
   float rho = sqrt(max(0.0, r * r - uBottom * uBottom));
@@ -992,7 +1161,9 @@ vec2 transmittanceUV(float r, float mu) {
   return vec2((d - dMin) / max(dMax - dMin, 1e-6), rho / max(H, 1e-6));
 }
 vec3 atmoSunTransmittance(float r, float mu) {
-  float sinH = uGround / max(r, uGround);
+  mu = liftMu(mu);
+  // (the true-size world's horizon at this height: atmosphere.js sunTransmittance)
+  float Rg = uGround * max(uTrueK, 1.0), sinH = Rg / (Rg + max(r - uGround, 0.0));
   float cosH = -sqrt(max(0.0, 1.0 - sinH * sinH));
   float vis = smoothstep(cosH - 0.01, cosH + 0.01, mu);
   if (uHasAtmo < 0.5) return vec3(vis);
@@ -1002,6 +1173,7 @@ vec3 atmoSunTransmittance(float r, float mu) {
 }
 vec3 atmoSkyIrradiance(float r, float mu) {
   if (uHasAtmo < 0.5) return vec3(0.0);
+  mu = liftMu(mu);
   vec2 uv = vec2(mu * 0.5 + 0.5, clamp((r - uGround) / (uTop - uGround), 0.0, 1.0));
   uv = vec2(0.5 / 64.0, 0.5 / 16.0) + uv * vec2(63.0 / 64.0, 15.0 / 16.0);
   return texture(tIrr, uv).rgb;

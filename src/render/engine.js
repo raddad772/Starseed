@@ -234,9 +234,9 @@ void main() {
   if (uToneCurve > 0.5) {
     // AgX holds about 6.5 stops above mid-grey before white (ACES about 5), so a
     // bright sky keeps its gradient and clouds; its neutral look is soft, so
-    // give saturation a little back
+    // give saturation back, as its "punchy" look does (+40%: Dave, "it's all pretty low-saturation")
     c = AgXToneMapping(c);
-    c = clamp(mix(vec3(dot(c, vec3(0.2126, 0.7152, 0.0722))), c, 1.2), 0.0, 1.0);
+    c = clamp(mix(vec3(dot(c, vec3(0.2126, 0.7152, 0.0722))), c, 1.4), 0.0, 1.0);
     // and contrast: an S-curve on the display-encoded value, steeper through the midtones
     // (x uContrast) and easing at the ends, so nothing clips
     vec3 t = 2.0 * pow(c, vec3(1.0 / 2.2)) - 1.0;

@@ -147,6 +147,8 @@ export class WorldRenderer {
       uBottom: { value: a ? a.bottom : b.R },
       uTop: { value: a ? a.top : b.R + 1 },
       uGround: { value: a ? a.ground : b.R },
+      uTrueK: a ? a.params.uTrueK : { value: 1 },
+      uSunLift: a ? a.sunLift : { value: new THREE.Vector2() },
       tTrans: { value: a ? a.trans.texture : null },
       tIrr: { value: a ? a.irr.texture : null },
       uCloud: { value: a ? a.material.uniforms.uCloud.value : new THREE.Vector4() },
@@ -331,6 +333,17 @@ export class WorldRenderer {
         u.uSunE.value.copy(sh.uSunE.value);
         if (u.uMoonE) { u.uMoonDir.value.copy(sh.uMoonDir.value); u.uMoonE.value.copy(sh.uMoonE.value); }
         u.uToFixed.value.copy(sh.uToFixed.value);
+        // (the far sky as on the true-size world from where the camera stands: atmosphere.js SKYVIEW_FRAG;
+        // none from high up, where the drawn world's sky is the true one's)
+        if (b.solid) {
+          const camH = alt, share = 1 - THREE.MathUtils.smoothstep(camH, 20000, 60000);
+          it.atmo.updateSkyView(this.engine.renderer, camH, _up.copy(_v).negate().normalize(), sh.uSunDir.value,
+            useVol ? 4 * it.volume.material.uniforms.uMaxDist.value : 1e30, share);
+          // (and the sun as the air sees it from here: lifted near the horizon by the same stretch, so it sets
+          // at the drawn skyline: atmosphere.js liftMu; none from high up)
+          const sk = it.atmo.params.uSkyView.value;
+          it.atmo.sunLift.value.set(sk.z + (sk.y - sk.z) * share, sk.z);
+        }
         if (useVol) {
           u.uTime.value = this.timeSec;
           this.flash = it.volume.updateLightning(dt, _v);

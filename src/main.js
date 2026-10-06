@@ -8,6 +8,7 @@ import { randomSeedString, normalizeSeed } from './core/rng.js';
 import { TEST_SCENES } from './ui/testScenes.js';
 import { PadMenu } from './ui/padMenu.js';
 import { PauseScreen } from './ui/pauseScreen.js';
+import { LoadScreen } from './ui/loadScreen.js';
 
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -37,6 +38,7 @@ window.addEventListener('unhandledrejection', (e) => reportError(e.reason && (e.
 let game = null;
 let seed = readSeed();
 let launched = false;
+let loadScreen = null;     // (ui/loadScreen.js: on arriving, until the ground round you is in)
 const canvas = $('view');
 const input = new Input(canvas);
 const settings = loadSettings();
@@ -201,6 +203,7 @@ function boot(s) {
     return;
   }
   window.game = game;
+  if (!loadScreen) loadScreen = new LoadScreen(game); else { loadScreen.game = game; loadScreen.end(); loadScreen.last = null; }
   game.screenHud.onHelpClosed = () => showPause();
   // player 1's M: the pause screen's map (anyone else's: the map in their own view)
   game.onMapKey = (p) => {
@@ -236,6 +239,8 @@ function launchGame() {
   enterGame();
   previewed = null;
   if (game) game.launch();
+  // (behind a loading screen until the ground round the start is in: ui/loadScreen.js)
+  if (loadScreen) loadScreen.begin();
 }
 // back to the briefing from the game (the pause menu's Change system)
 function toBriefing() {
@@ -362,7 +367,7 @@ boot(seed);
 
 let manual = false;
 function loop(now) {
-  if (game && !manual && !window.debugHold) { watchJoin(); game.frame(now); pause.tick(); } // debugHold: tests step frames themselves
+  if (game && !manual && !window.debugHold) { watchJoin(); game.frame(now); pause.tick(); if (loadScreen && launched) loadScreen.update(); } // debugHold: tests step frames themselves
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
@@ -383,6 +388,7 @@ window.debugRun = async (ms = 1000, frameMs = 16, onFrame = null) => {
     watchJoin();
     game.frame(performance.now());
     pause.tick();
+    if (loadScreen && launched) loadScreen.update();
     n++;
     while (performance.now() - t0 < frameMs) await tick();
   }
