@@ -5,8 +5,9 @@
 // for the ground near the camera). The world needs the same trees wherever
 // anything moves, watched or not, so this field computes them itself, on
 // demand, per node, and keeps the solid ones in a spatial hash: tree trunks
-// (upright cylinders) and rocks (spheres, sunk a little as drawn). Shrubs and
-// small plants are passable. Clearings (around landing sites) are shared with
+// (upright cylinders) and rocks (spheres, sunk a little as drawn); and on a
+// frozen sea, its pressure ridges' blocks (oriented boxes: sim/floeField.js).
+// Shrubs and small plants are passable. Clearings (around landing sites) are shared with
 // the renderer through the body, so what you see is what you hit.
 //
 // World state (a function of the seed): physics, the walker and the nav
@@ -16,6 +17,7 @@
 import { scatterFlora, floraSpecies } from '../gen/flora.js';
 import { faceUVFromDir } from '../gen/cubesphere.js';
 import { ROCK_STRIDE, rockShapeOf } from '../gen/rocks.js';
+import { FloeField } from './floeField.js';
 
 const CELL = 16; // m: spatial hash cell (body-fixed)
 // trunk radius at the base, as a fraction of the tree's height (render/floraRender.js)
@@ -32,9 +34,12 @@ export class FloraField {
     const gen = body.terrain;
     this.species = gen ? floraSpecies(gen.p) : null;
     this._fu = { face: 0, u: 0, v: 0 };
+    const t = body.data.terrain;
+    this.ice = t && t.liquid === 'water' && t.ocean > 0 ? new FloeField(body) : null;
   }
 
-  get active() { return !!(this.species && (this.species.life > 0 || this.species.densityRock > 0)); }
+  get plants() { return !!(this.species && (this.species.life > 0 || this.species.densityRock > 0)); }
+  get active() { return this.plants || !!this.ice; }
 
   nodeKey(dir) {
     faceUVFromDir(dir, this._fu);
@@ -142,7 +147,8 @@ export class FloraField {
   // Solid things within `radius` of a body-fixed point (loads the nodes there)
   near(p, radius, out = []) {
     out.length = 0;
-    if (!this.active) return out;
+    if (this.ice) this.ice.near(p, radius, out);
+    if (!this.plants) return out;
     this.ensure(p);
     // (the edges of a node: its neighbours too)
     const l = Math.hypot(p.x, p.y, p.z);

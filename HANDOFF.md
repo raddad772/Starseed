@@ -517,6 +517,19 @@ rivers that are straighter where they should be?"):**
   faces blue-green ice; instanced boxes, casting the near sun's shadows. 75 N 117 at its winter's end, at a
   ridge's crest: tumbled slabs, long shadows (ridge_blocks shot). Build 0.84 s (main thread), 76k
   triangles, 4.7k blocks.
+- **Solid ridge blocks** (Dave: "Yeah do it bro!"): the blocks are world state now, not the renderer's: by
+  the crack, the floe and the 1 m stretch along its ridged edge from its first corner (floeslabs.js
+  ridgeBlocks, kept the floe's corner roundness back from its corners), each stretch seeded by those; a
+  floe's top from the pack's ice at its own middle (packIceAt: the sea's mean from the map there), so the
+  slabs, their blocks and the walker agree. sim/floeField.js works out the blocks within reach of a point
+  (the floes about it: floeOf at it and 8 round it, kept while the season moves under ~half a degree) as
+  oriented boxes in the flora field's query (floraField near: kind 'box'; the field now on for a frozen
+  sea without plants too). The walker (player.js collideFlora): its capsule as four balls up its axis
+  against each box's nearest point, the deepest pushed out (inside: out by the shallowest face); a block
+  whose top is within 0.55 m of its feet stepped up onto (STEP_UP: you scramble a ridge block by block, a
+  taller one stops you). Checked: every field block within 4 m of a crest is one the renderer draws (0 m
+  apart); walking 8 m at a ridge (75 N 117): across the floe at 0.22 m, up the blocks to 1.9 m at the
+  crest, down the far side, on across the next floe. First query ~20 ms (the floes), then cached.
 - **Seasons on the land: snow through the year** (Dave: "see seasonal changes"; "refine and add"; not
   living things yet). worldsim/season.js: each world's year by climate cell, its temperature's first
   harmonic about the mean (a1 cos L + b1 sin L, L the solar longitude from the northern spring equinox,

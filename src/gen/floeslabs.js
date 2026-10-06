@@ -4,7 +4,7 @@
 // lead's half width, ragged as the shading's edges are (the same noise), raised to its freeboard and snow
 // (floeTop) with walls down to the water; its top in rings toward its middle so it keeps to the sphere.
 // Runs in the terrain workers; the shading draws the same pieces flat beyond reach (render/liquid.js).
-import { faceUV, faceRoot, pieceShape, pieceMid, pieceCrack, clipPiece, splits, childId, crackOpen, pieceCover, edgePlane, liquidNow, packIce, floeTop, iceAt, ridgeCrest, floeRound, floeAge, POLY_MAX } from './liquidice.js';
+import { faceUV, faceRoot, pieceShape, pieceMid, pieceCrack, clipPiece, splits, childId, crackOpen, pieceCover, edgePlane, liquidNow, packIce, packIceAt, floeTop, iceAt, ridgeCrest, floeRound, floeAge, POLY_MAX } from './liquidice.js';
 import { triDetail } from './detail.js';
 import { S_LEN } from './terrain.js';
 
@@ -14,7 +14,7 @@ const _j = [0, 0, 0, 0], _k = [0, 0, 0, 0];
 const jag = (p, d) => (triDetail(p, d, 8, _j)[0] - 0.5) * 1.6 + (triDetail(p, d, 2, _k)[3] - 0.5) * 0.5;
 
 // a point of face f at (u, v), on the sphere of radius r, into o
-function onFace(f, u, v, r, o) {
+export function onFace(f, u, v, r, o) {
   const ax = f.ax, b = (ax + 1) % 3, d = (ax + 2) % 3, l = Math.sqrt(1 + u * u + v * v);
   o[ax] = f.sg * r / l; o[b] = f.sg * u * r / l; o[d] = f.sg * v * r / l;
   return o;
@@ -28,8 +28,8 @@ export function buildFloes(gen, dir, sinSun, L, reach = 600) {
   const R = gen.R, s0 = gen.sample(dir[0], dir[1], dir[2], 8, new Float64Array(S_LEN));
   const q = liquidNow(gen, s0, dir, sinSun, L, {});
   if (q.all || !(q.ice > 0) || !(q.kind < 0.2)) return null;
-  const pk = packIce(gen, dir, L, q.Tm, {});
-  if (!(pk.hi > 0)) return null;
+  const Tm0 = q.Tm, pk0 = packIce(gen, dir, L, Tm0, {});
+  if (!(pk0.hi > 0)) return null;
   const ice = iceAt(gen, L, q.ice), origin = [dir[0] * R, dir[1] * R, dir[2] * R];
   const P = [], N = [], F = [], A = [], I = [], B = [];
   // (the faces its reach touches)
@@ -91,7 +91,7 @@ export function buildFloes(gen, dir, sinSun, L, reach = 600) {
       const sg = n[0] * cen[0] + n[1] * cen[1] + n[2] * cen[2] >= 0 ? 1 : -1;
       E.push({ n, sg, g: Math.max(Pc.ES[i], 0.15), H: Pc.ES[i] < 0 ? -Pc.ES[i] : 0 });
     }
-    const rr = floeRound(size, Pc.id), top = floeTop(pk, Pc.id, size < 64), age = floeAge(size, Pc.id);
+    const pk = packIceAt(gen, cen, L, Tm0, {}), rr = floeRound(size, Pc.id), top = floeTop(pk, Pc.id, size < 64), age = floeAge(size, Pc.id);
     // (the edge function at p: liquid.js floeOf's e, ragged; and which edge is nearest)
     let near = 0;
     const ef = (p) => {
@@ -163,7 +163,7 @@ export function buildFloes(gen, dir, sinSun, L, reach = 600) {
     // a pressure ridge's sail along each stretch of outline nearest an edge the pack closed along (H its
     // height): this floe's half, from its crest over the crack (15 cm out) down at ~27 degrees to the floe
     // 2H in (the floe across builds the other half; the walker's own tent, gen/liquidice.js floeOf); its
-    // blocks over it (ridgeBlocks)
+    // blocks over it (ridgeBlocks: by the crack, not by this outline, the walker's own)
     for (let i = 0; i < nb; i++) {
       const k = ridgeH[i];
       if (k < 0) continue;
@@ -177,39 +177,14 @@ export function buildFloes(gen, dir, sinSun, L, reach = 600) {
       };
       const ra = row(ring[i], out[i]), rb = row(ring[j], out[j]);
       for (let cc = 0; cc < 2; cc++) I.push(ra[cc], ra[cc + 1], rb[cc], rb[cc], ra[cc + 1], rb[cc + 1]);
-      ridgeBlocks(ring[i], ring[j], out[i], H, top, Pc.id ^ i);
     }
+    ridgeBlocks(f, Pc, cen, rr, top, R, (sx, sy, sz) => { const dx = sx - origin[0], dy = sy - origin[1], dz = sz - origin[2]; return dx * dx + dy * dy + dz * dz < 250 * 250; }, (c3, quat, l, t, w) => B.push(c3[0] - origin[0], c3[1] - origin[1], c3[2] - origin[2], quat[0], quat[1], quat[2], quat[3], l, t, w));
     // the walls: each piece of outline from its top to just under the water
     for (let i = 0; i < nb; i++) {
       const j = (i + 1) % nb, o = out[i];
       const a0 = put(ring[i], rt, o[0], o[1], o[2], top, 1), a1 = put(ring[j], rt, o[0], o[1], o[2], top, 1);
       const b0 = put(ring[i], R - 0.05, o[0], o[1], o[2], 0, 1), b1 = put(ring[j], R - 0.05, o[0], o[1], o[2], 0, 1);
       I.push(a0, b0, a1, a1, b0, b1);
-    }
-  }
-  // a ridge's blocks over its sail along a stretch of outline pa..pb (o: out across it; H its sail's height;
-  // top the floe's): the thinner ice it was crushed from (blocks ~0.1-0.4 m thick, 0.6-2.5 m long),
-  // tumbled every way, enough to cover the sail; only near the camera (further off the sail's own blocks
-  // are drawn: floeRender.js). Each: its middle (from origin), its turn (a quaternion), its size (l, t, w)
-  function ridgeBlocks(pa, pb, o, H, top, seed) {
-    const mx = (pa[0] + pb[0]) / 2 - origin[0], my = (pa[1] + pb[1]) / 2 - origin[1], mz = (pa[2] + pb[2]) / 2 - origin[2];
-    if (mx * mx + my * my + mz * mz > 250 * 250) return;
-    let h = (seed >>> 0) ^ 0x9e3779b9;
-    const rnd = () => { h = Math.imul(h ^ (h >>> 15), 0x2c1b3c6d) >>> 0; h = Math.imul(h ^ (h >>> 12), 0x297a2d39) >>> 0; h = (h ^ (h >>> 15)) >>> 0; return h / 4294967296; };
-    const len = Math.hypot(pb[0] - pa[0], pb[1] - pa[1], pb[2] - pa[2]), tb = 0.1 + 0.2 * Math.min(1, H / 1.5);
-    const n = Math.floor(len * 2.24 * H / 0.75 + rnd());
-    const et = [(pb[0] - pa[0]) / len, (pb[1] - pa[1]) / len, (pb[2] - pa[2]) / len];
-    for (let b = 0; b < n; b++) {
-      const t = rnd(), base = [pa[0] + (pb[0] - pa[0]) * t, pa[1] + (pb[1] - pa[1]) * t, pa[2] + (pb[2] - pa[2]) * t];
-      const bl = Math.hypot(...base), u = [base[0] / bl, base[1] / bl, base[2] / bl], Hc = H * ridgeCrest(base, u);
-      const x = rnd() * 2 * Hc, l = 0.6 + 1.9 * Math.pow(rnd(), 1.5), w = 0.5 + rnd(), th = tb * (0.7 + 0.6 * rnd());
-      const z = top + Math.max(0, Hc - x / 2) - th * 0.4 * rnd();
-      const r = R + z;
-      const c = [base[0] + o[0] * (0.15 - x), base[1] + o[1] * (0.15 - x), base[2] + o[2] * (0.15 - x)], cl = Math.hypot(...c);
-      B.push(c[0] * r / cl - origin[0], c[1] * r / cl - origin[1], c[2] * r / cl - origin[2]);
-      // (its turn: along the ridge, up and out as axes, then yawed, pitched 15-65 degrees either way and rolled)
-      const yaw = rnd() * 6.2832, pitch = (0.26 + 0.87 * rnd()) * (rnd() < 0.5 ? -1 : 1), roll = (rnd() - 0.5) * 1.05;
-      B.push(...turn(et, u, yaw, pitch, roll), l, th, w);
     }
   }
   // two rings of the top (cur's points a thinned subset of prev's, by their indices on the edge) joined
@@ -228,6 +203,43 @@ export function buildFloes(gen, dir, sinSun, L, reach = 600) {
 }
 
 const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+// a ridge's blocks over the sails of a floe (face f, its polygon Pc, middle cen, corners rr round, top
+// its top's height; R the sea's radius): along each of its edges the pack closed along, in 1 m stretches
+// from its first corner (each its own: the crack's hash, the floe's, the stretch's), kept rr back from its
+// corners (rounded there: the edge leaves the crack); in each, the thinner ice it was crushed from (blocks
+// ~0.1-0.4 m thick, 0.6-2.5 m long), tumbled every way, enough to cover the sail. Only the stretches
+// want(x, y, z) asks for (their middles); each block to put(middle, quaternion, l, t, w). The slabs' and the
+// walker's the same (sim/floeField.js)
+export function ridgeBlocks(f, Pc, cen, rr, top, R, want, put) {
+  for (let i = 0; i < Pc.n; i++) {
+    if (!(Pc.ES[i] < 0)) continue;
+    const H = -Pc.ES[i], j = (i + 1) % Pc.n;
+    const A = onFace(f, Pc.V[2 * i], Pc.V[2 * i + 1], R, [0, 0, 0]), Bv = onFace(f, Pc.V[2 * j], Pc.V[2 * j + 1], R, [0, 0, 0]);
+    const len = Math.hypot(Bv[0] - A[0], Bv[1] - A[1], Bv[2] - A[2]);
+    if (len < 2 * rr + 1) continue;
+    const et = [(Bv[0] - A[0]) / len, (Bv[1] - A[1]) / len, (Bv[2] - A[2]) / len];
+    for (let k = 0; rr + k + 1 <= len - rr; k++) {
+      const tm = rr + k + 0.5, mid = [A[0] + et[0] * tm, A[1] + et[1] * tm, A[2] + et[2] * tm];
+      if (!want(mid[0], mid[1], mid[2])) continue;
+      let h = (Math.imul(Pc.EI[i], 0x9e3779b1) ^ Math.imul(Pc.id, 0x85ebca77) ^ Math.imul(k + 1, 0xc2b2ae3d)) >>> 0;
+      const rnd = () => { h = Math.imul(h ^ (h >>> 15), 0x2c1b3c6d) >>> 0; h = Math.imul(h ^ (h >>> 12), 0x297a2d39) >>> 0; h = (h ^ (h >>> 15)) >>> 0; return h / 4294967296; };
+      const tb = 0.1 + 0.2 * Math.min(1, H / 1.5), n = Math.floor(2.24 * H / 0.75 + rnd());
+      for (let b = 0; b < n; b++) {
+        const t = rr + k + rnd(), base = [A[0] + et[0] * t, A[1] + et[1] * t, A[2] + et[2] * t];
+        const bl = Math.hypot(...base), u = [base[0] / bl, base[1] / bl, base[2] / bl];
+        // (in: across the crack, toward the floe's middle)
+        let ix = u[1] * et[2] - u[2] * et[1], iy = u[2] * et[0] - u[0] * et[2], iz = u[0] * et[1] - u[1] * et[0];
+        if (ix * (cen[0] - base[0]) + iy * (cen[1] - base[1]) + iz * (cen[2] - base[2]) < 0) { ix = -ix; iy = -iy; iz = -iz; }
+        const Hc = H * ridgeCrest(base, u), x = rnd() * 2 * Hc, l = 0.6 + 1.9 * Math.pow(rnd(), 1.5), w = 0.5 + rnd(), th = tb * (0.7 + 0.6 * rnd());
+        const z = top + Math.max(0, Hc - x / 2) - th * 0.4 * rnd(), r = R + z;
+        const c = [base[0] + ix * x, base[1] + iy * x, base[2] + iz * x], cl = Math.hypot(...c);
+        // (its turn: along the ridge, up and across as axes, then yawed, pitched 15-65 degrees either way and rolled)
+        const yaw = rnd() * 6.2832, pitch = (0.26 + 0.87 * rnd()) * (rnd() < 0.5 ? -1 : 1), roll = (rnd() - 0.5) * 1.05;
+        put([c[0] * r / cl, c[1] * r / cl, c[2] * r / cl], turn(et, u, yaw, pitch, roll), l, th, w);
+      }
+    }
+  }
+}
 // a block's turn as a quaternion (x, y, z, w): its axes along the ridge (et), up (u) and across, yawed
 // about up, pitched about along, rolled about across
 function turn(et, u, yaw, pitch, roll) {

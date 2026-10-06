@@ -10,7 +10,7 @@ import { dirFromFaceUV, faceUVFromDir, chunkArcSize } from '../gen/cubesphere.js
 import { CHUNK_N } from '../gen/chunkbuilder.js';
 import * as U from '../core/units.js';
 import { atmoReal } from '../gen/bodies.js';
-import { frozenNow, liquidNow, floeAt, packIce, floeTop, iceAt } from '../gen/liquidice.js';
+import { frozenNow, liquidNow, floeAt, packIceAt, floeTop, iceAt } from '../gen/liquidice.js';
 
 const _p = [0, 0, 0], _v = [0, 0, 0];
 const _sN = new THREE.Vector3(), _sM = new THREE.Vector3(), _sS = new THREE.Vector3();
@@ -154,7 +154,7 @@ export class BodyRuntime {
     const o = floeAt(p, d, iceAt(gen, L, q.ice), this._fa || (this._fa = {}));
     if (!(o.f > 0)) return 0;
     // (and a pressure ridge's sail on it: floeslabs.js's)
-    return floeTop(packIce(gen, d, L, q.Tm, this._pk || (this._pk = {})), o.id, o.piece) + o.ridge;
+    return floeTop(packIceAt(gen, o.mid, L, q.Tm, this._pk || (this._pk = {})), o.id, o.piece) + o.ridge;
   }
 
   // the ground under body-fixed point p (m above datum): the near field's volume where it's

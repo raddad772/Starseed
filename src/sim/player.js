@@ -35,6 +35,16 @@ const _q1 = new THREE.Quaternion(), _q2 = new THREE.Quaternion();
 const _m4 = new THREE.Matrix4();
 const _x1 = new THREE.Vector3(), _x2 = new THREE.Vector3();
 const _fl1 = new THREE.Vector3(), _fl2 = new THREE.Vector3(), _fl3 = new THREE.Vector3(), _fl4 = new THREE.Vector3();
+// (the body's capsule against a box: balls of RADIUS this far up its axis from the feet, the lowest a
+// little under them so it steps up onto a block)
+const BOX_PROBES = [0.15, 0.6, 1.05, 1.4];
+// (the highest a block's top may stand over the feet to be stepped up onto, m)
+const STEP_UP = 0.55;
+const _bx = new THREE.Vector3();
+// how far a box (half sizes hx, hy, hz, turned by qb) reaches up along pu from its middle
+function boxReach(it, qb, pu) {
+  return it.hx * Math.abs(_bx.set(1, 0, 0).applyQuaternion(qb).dot(pu)) + it.hy * Math.abs(_bx.set(0, 1, 0).applyQuaternion(qb).dot(pu)) + it.hz * Math.abs(_bx.set(0, 0, 1).applyQuaternion(qb).dot(pu));
+}
 
 export function lookQuat(up, heading, pitch, out) {
   const fwd = _v1.copy(heading).multiplyScalar(Math.cos(pitch)).addScaledVector(up, Math.sin(pitch)).normalize();
@@ -635,6 +645,43 @@ export class Player {
         p.addScaledVector(d, min - dist);
         const vn = this.fVel.dot(d);
         if (vn < 0) this.fVel.addScaledVector(d, -vn);
+      } else if (it.kind === 'box') {
+        // (a pressure ridge's block, an oriented box: the body's capsule as four balls up its axis, each
+        // against the box's nearest point to it; the deepest pushed out. Inside it: out by its shallowest
+        // face)
+        const pu = _fl1.copy(p).normalize(), qi = it._qi || (it._qi = new THREE.Quaternion(it.q[0], it.q[1], it.q[2], it.q[3]).invert());
+        const qb = it._qb || (it._qb = new THREE.Quaternion(it.q[0], it.q[1], it.q[2], it.q[3]));
+        let best = 0;
+        const n = _fl4;
+        for (const t of BOX_PROBES) {
+          const s = _fl2.copy(p).addScaledVector(pu, t);
+          s.x -= it.x; s.y -= it.y; s.z -= it.z;
+          s.applyQuaternion(qi);
+          const cx = Math.max(-it.hx, Math.min(it.hx, s.x)), cy = Math.max(-it.hy, Math.min(it.hy, s.y)), cz = Math.max(-it.hz, Math.min(it.hz, s.z));
+          const dx = s.x - cx, dy = s.y - cy, dz = s.z - cz, dist = Math.hypot(dx, dy, dz);
+          let pen;
+          if (dist > 1e-6) { pen = RADIUS - dist; if (pen > best) { best = pen; n.set(dx / dist, dy / dist, dz / dist).applyQuaternion(qb); } }
+          else {
+            const fx = it.hx - Math.abs(s.x), fy = it.hy - Math.abs(s.y), fz = it.hz - Math.abs(s.z);
+            pen = RADIUS + Math.min(fx, fy, fz);
+            if (pen > best) { best = pen; (fx <= fy && fx <= fz ? n.set(Math.sign(s.x) || 1, 0, 0) : fy <= fz ? n.set(0, Math.sign(s.y) || 1, 0) : n.set(0, 0, Math.sign(s.z) || 1)).applyQuaternion(qb); }
+          }
+        }
+        if (best <= 0) continue;
+        // (a block whose top's within a step of the feet: stepped up onto, as you scramble over a ridge
+        // block by block; a taller one stops you)
+        const lift = Math.hypot(it.x, it.y, it.z) + boxReach(it, qb, pu) - p.length();
+        if (lift > 0 && lift < STEP_UP) {
+          p.addScaledVector(pu, lift);
+          const vd = this.fVel.dot(pu);
+          if (vd < 0) this.fVel.addScaledVector(pu, -vd);
+          this.grounded = true;
+          continue;
+        }
+        p.addScaledVector(n, best);
+        const vn = this.fVel.dot(n);
+        if (vn < 0) this.fVel.addScaledVector(n, -vn);
+        if (n.dot(pu) > 0.6) this.grounded = true; // (stood on it)
       } else {
         const pu = _fl1.copy(p).normalize();
         const c = _fl2.set(it.x, it.y, it.z);

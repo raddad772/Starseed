@@ -77,6 +77,13 @@ export function packIce(gen, d, L, Tm, o) {
   }
   return o;
 }
+// the pack's ice at a floe's middle m (packIce, its sea's year's mean from the season map there: one value
+// for the slabs, their blocks and the walker alike; Tm where the world keeps no year) into o
+export function packIceAt(gen, m, L, Tm, o) {
+  const S = gen.snap && gen.snap.s, l = Math.sqrt(m[0] * m[0] + m[1] * m[1] + m[2] * m[2]), d = [m[0] / l, m[1] / l, m[2] / l];
+  if (S && S.seasonPx && S.seasonV === SEASON_V) Tm = mapAt(S.seasonPx, SEASON_W, SEASON_H, m, _mp)[3] * 120 - 60;
+  return packIce(gen, d, L, Tm, o);
+}
 // a floe's top above the water (m; floeAt's id, piece): its ice (the pack's, more or less by the floe:
 // older and younger ones) floating at Archimedes' freeboard (sea water 1025, ice 917 kg/m3) less its
 // snow's weight (300 kg/m3), its snow on it; no more snow than it floats (more and the sea floods it, the
@@ -287,7 +294,7 @@ export function floeAt(p, d, ice, o) {
   const F = floeOf(p, ice, _FO);
   // (its edges ragged: liquid.js the same)
   const e = F.e + (triDetail(p, d, 8, _j)[0] - 0.5) * 1.6 + (triDetail(p, d, 2, _k)[3] - 0.5) * 0.5;
-  o.c = F.c; o.lid = F.lid; o.lead = F.there; o.f = F.there ? e : -Infinity; o.id = F.id; o.size = F.size; o.piece = F.size < 64;
+  o.c = F.c; o.lid = F.lid; o.lead = F.there; o.f = F.there ? e : -Infinity; o.id = F.id; o.size = F.size; o.piece = F.size < 64; o.mid = F.mid; o.P = F.P; o.face = F.f;
   // (its sail's height here at its crest's: floeslabs.js's tent)
   o.ridge = F.there && F.ridgeH > 0 ? Math.max(0, F.ridgeH * ridgeCrest(p, d) - F.ridgeD / 2) : 0;
   return o;
