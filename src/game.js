@@ -1761,6 +1761,9 @@ export class Game {
     if (p.mode === 'surface') pos.copy(p.fPos);
     else if (v) pos.copy(v.pos).applyQuaternion(b.qInv);
     else pos.copy(p.ePos).applyQuaternion(b.qInv);
+    // (nobody placed yet: the start waits for its world's sim now, and its ground can't be read at
+    // the origin, a direction of nothing)
+    if (!(pos.lengthSq() > 1)) return;
     const ng = b.near || (b.near = new NearGround(b));
     const was = ng.ready;
     ng.update(pos);
