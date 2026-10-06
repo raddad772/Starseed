@@ -578,7 +578,12 @@ rivers that are straighter where they should be?"):**
   sides. The residual caps (water ice, the terrain's cold trap) stay. SOL Mars from above its north pole
   at Ls 6 (the cap to ~56 N) and Ls 103 (only the residual cap); 64 N at Ls 26 (bare equator-facing
   crater walls). Not modelled: the air's heat and pressure swing (a quarter of Mars' air goes into its
-  caps), the dark collar, the frost's walkable depth.
+  caps), the dark collar, the frost's walkable depth. Across SOL, FSPB-8DTW and LAB-100..259 three worlds
+  qualify: SOL Mars (caps to 50/-49), Femain LAB-171 (obliquity 50: to 28/-26, as Mars' high-obliquity
+  epochs), Kiabreks LAB-171 (obliquity 9: to 67, perennial CO2 at its poles, 4% of it). Gated off: worlds
+  with any liquid (two lava/sulfur moons at 26x and 495x Earth's sun had drawn polar frost) and those
+  locked to their star (no seasons; their night sides' collapse into CO2 ice not drawn yet: Uhaur
+  LAB-108, Cluxomear LAB-116, Emo LAB-176).
 - **Clouds through the year** (season.js cloudHarmonics, cloudYearPixels; SEASON_V 5): the cloud map
   was the year's mean, its rain belts still. Each month's cover from its own rain (cloudOf, snapshot.js's
   rule, as if the month's rain fell all year), its first harmonic about the year's mean, smoothed as the

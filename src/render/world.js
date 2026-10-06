@@ -26,10 +26,12 @@ const _blankSeason = (() => { const t = new THREE.DataTexture(new Uint8Array([12
 function blankSeasonMap() { return _blankSeason; }
 // a world's seasonal frost where its thin air freezes out at the poles (Mars' CO2: gen/frostcap.js), as
 // a texture by the solar longitude and latitude, or null: a solid world under a thin air (under ~0.05
-// bar: one that carries little heat to its poles) with CO2 in it, and no sea
+// bar: one that carries little heat to its poles) with CO2 in it, and no liquid on it (a sea's heat; a
+// lava or sulfur moon's poles hold no frost). A world locked to its star has no seasons: its night side's
+// cold trap (the air collapsing onto it as CO2 ice) is another thing, not drawn yet
 function frostTexture(d, sys) {
   const a = d.atmosphere, t = d.terrain;
-  if (!a || !a.comp || !(a.comp.CO2 > 0) || !(a.pressure < 0.05) || !t || !t.climate || t.liquid === 'water' || !sys || !sys.bodies) return null;
+  if (!a || !a.comp || !(a.comp.CO2 > 0) || !(a.pressure < 0.05) || !t || !t.climate || t.liquid || !sys || !sys.bodies) return null;
   const host = d.kind === 'moon' ? sys.bodies[d.parentId] : null, f = frostCaps(climateOpts(d, sys.bodies[0], host), a.pressure * 1e5 * a.comp.CO2);
   if (!f) return null;
   const tex = new THREE.DataTexture(frostPixels(f), FROST_NS, FROST_NL, THREE.RedFormat);
