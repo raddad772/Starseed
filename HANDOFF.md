@@ -2,6 +2,44 @@
 
 Dave is play-testing and giving feedback in short bursts.
 
+## NOW: the climate's seasons of rain, and the life sim begun (session 39d69fa8, 2026-10-06), SIM 65
+
+- **Rain's seasons** (climate.js): the rain belt by longitude (monsoonBelt: 0.3 the zonal belt's, 0.7
+  of each 10-degree sector's own thermal maximum, to 25 degrees: it swings out over a summer continent);
+  the subtropics' sinking air a smooth band at the Hadley cell's edge from that belt (the winter
+  tropics' dry season), the drizzle held off under it too; summer convection over hot land; the
+  circulation's rain only tempered by stability (it had all gone with it, so a continent colder than
+  its latitude's sea had no rain in spring and autumn); the air's capacity from the air over the cell,
+  half way from its band's to its ground's (held to the band's, interiors had their rain from cold air
+  wringing out what reached it, through the winter). Koppen's summer half the warmest six months
+  (a continent whose ground lags the sun had its frozen first spring month counted as summer).
+  Same terrain, SOL Earth: Ds 23.9% -> 8.3% of land, Dw 2.1 -> 18.9 (its interiors swing 66 K: Siberia's
+  winters), B 22.5 -> 18. The tropics' dry/wet month ratio unchanged (0.35: its tropical land mostly
+  highland and slope-rained); Aw stays rare there. opts.trace looks at each month's rain rate, water
+  and rain (scratchpad trace2.mjs).
+- **Life's leaps in the room they have** (evolve.js; Dave: the jumps a chance per Myr "depending on how
+  much of the planet is covered"): seaRoom, landRoom (sea share from the world's water, land the rest
+  as continents grow, less ice, x its size; square root, x Earth's) scale each stage's chance and the
+  origin's. Stage counts over 1719 bodies about as before; SOL Earth's timeline unchanged.
+- **Plant grades as leaps** (evolve.js): mosses with the first land plants, then vascular plants
+  (ferns), seed plants (trees), flowering plants (faster with land animals), grasses (only with them):
+  each a chance per Myr in the land's room (difficulties ~0.04, 0.045, 0.25, 0.08 Gyr x the world's
+  luck), lost with land life (easier again). floraStage and maxTreeM from the grades (was a timetable
+  after the first land plants: 50, 90, 300 Myr). Their own RNG streams: the stages' luck unchanged.
+  The series now records seaRoom, landRoom, dose, plantGrade.
+- **The life sim, phase 1** (LIFE.md, the plan; CLAUDE.md points there): `gen/life/biosphere.js` (body
+  plans drawn at the seas' first animals, the land's plan by how its skeleton bears gravity, trophic
+  levels and flight as leaps on a replay of the history's record, lost from the top in its extinctions,
+  the land's ruling lineage turning over after each great one, the visual window), `gen/life/
+  spectrum.js` (the ground's light in 8 bands 330-930 nm, under 5 m of water, receptor peaks),
+  `gen/life/ecology.js` (Miami-model productivity x cover, a tenth per level, a level read over its
+  range, numbers a km2 from field metabolic rates), `gen/life/creature.js` (a species' body from plan,
+  lineage, level, mass, gravity). On each body as `life.biosphere`; the catalogue's Plants, Animals
+  and Sea life rows. SOL Earth: three plans, an eight-limbed two-sided one on land (the Miabison:
+  small, upright, warm-blooded), land to predators, sea to predators of predators, small flyers.
+  Next: the herds near the player (render/creatureRender.js written: bodies, gaits, IK), plants'
+  geometry, the spectra, the catalogue's species.
+
 ## NOW: rivers through the year (session 39d69fa8, 2026-10-06)
 
 - **Each river's flow through its year** (season.js riverYear, SEASON_V 6; Dave: "go do gfx and planet

@@ -165,6 +165,9 @@ export function evolveWorld(ctx) {
   // the life clock's luck: each stage's difficulty for this world
   const lr = rng.fork('life-stages');
   const difficulty = DIFFICULTY.map((d) => d * lr.lognormal(1, 0.4));
+  // (the plants' own luck, in streams of their own: the life stages' draws stay as they were)
+  const plr = rng.fork('plant-grades'), pl = rng.fork('plant-leaps');
+  const plantDiff = [0, 0.04, 0.045, 0.25, 0.08].map((d) => d * plr.lognormal(1, 0.4));
   // usable light: photons in the 400-750 nm band oxygen-making photosynthesis can use,
   // vs the Sun's at Earth (per unit of sunlight a cool star sends more, redder photons)
   const parK = parPhotons(star.teff || SUN_TEFF) / parPhotons(SUN_TEFF);
@@ -179,7 +182,7 @@ export function evolveWorld(ctx) {
   const belts = host && !host.solid && host.massEarth > 50 && ctx.aHost > 0
     ? 1 + 2e5 * Math.min(4, host.massEarth / 317.8) * dm.exp(-(ctx.aHost / Math.max(host.radiusM || 7e7, 1)) / 2.5) : 1;
   const debris = (star.debris ? star.debris.level : 1) * focus, spike = star.debris ? star.debris.spike : null;
-  const sizeK = dm.pow(1.62 / g, 0.17), areaKm2 = 4 * dm.PI * Rkm * Rkm;
+  const sizeK = dm.pow(1.62 / g, 0.17), areaKm2 = 4 * dm.PI * Rkm * Rkm, worldA = areaKm2 / 5.1e8;
   const impactRate = (D, tG) => {   // craters >= D km per Myr (impacts.js's law)
     const tau = Math.max(0, 4.3 - tG);
     let n1 = 5.44e-14 * 6.93 * dm.exp(6.93 * tau) + 8.38e-4;
@@ -197,6 +200,11 @@ export function evolveWorld(ctx) {
   let regime = massE > 0.2 ? 'mobile' : 'stagnant', dynamo = true, tStop = null, tDyn = null;
   let life = { origin: null, photo: null, goe: null, euk: null, complex: null, animals: null, plants: null, landAnimals: null, extinct: null };
   let stage = 0, div = 0, everLife = false, lastSterile = null, offFor = 0, snowSince = 0;
+  // the land plants' grades once they're ashore (LIFE.md): -1 none, 0 mosses and liverworts, 1 vascular
+  // plants (ferns, club mosses), 2 seed plants (the first trees that seed), 3 flowering plants, 4 grasses;
+  // when each arose (Gyr), and which were once lost (easier again)
+  let plantGrade = -1;
+  const plantT = [null, null, null, null, null], plantRegained = new Uint8Array(5);
   let solvent = null, backbone = null;   // life's chemistry (biochem.js), set when it starts
   let capsTold = -1;                     // (when the caps last sublimed, as told)
   const regained = new Uint8Array(9);   // stages once evolved and lost (relatives remain: easier again)
@@ -254,7 +262,9 @@ export function evolveWorld(ctx) {
     if (years > 0.02) darken(t, years, 'impact', `a ${Math.round(D)} km impact darkens the sky for ${years >= 1 ? years.toFixed(1) + ' years' : Math.round(years * 12) + ' months'}`);
   };
   let T = 0, A = 0.3, ice = 0;
-  const series = { t: [], T: [], P: [], pCO2: [], pO2: [], oceans: [], ice: [], heat: [], snowball: [], mobile: [], rain: [], stage: [], div: [], light: [], pH2: [], pCH4: [] };
+  const series = { t: [], T: [], P: [], pCO2: [], pO2: [], oceans: [], ice: [], heat: [], snowball: [], mobile: [], rain: [], stage: [], div: [], light: [], pH2: [], pCH4: [], seaRoom: [], landRoom: [], dose: [], plantGrade: [] };
+  // (the last step's room and the land's radiation, for the series: the biosphere's replay, life/biosphere.js)
+  let roomSea = 0, roomLand = 0, doseNow = 0;
   const events = [];
   const ev = (t, kind, text) => events.push({ t, ago: age - t, kind, text });
   const landAt = (t) => dm.clamp(0.3 * (1 - dm.exp(-t / 1.0)), 0.02, 0.6);
@@ -510,9 +520,20 @@ export function evolveWorld(ctx) {
     }
     // light at the surface (x Earth's usable photons): the star, thick air, the ice
     const lightNow = parK * S(t) * dm.exp(-0.04 * Math.max(0, P - 1)) * (snow ? 0.02 : 1) * (lipNow ? 0.75 : 1);
+    // how much of the world life has to work with (x Earth's; square root: its populations aren't
+    // all independent tries): its sea's share of the surface from its water (Earth's one ocean
+    // 0.71, a tenth ~0.3, ten nearly all), its land the rest as the continents grow, less the ice;
+    // and its size. A leap's chance goes with its stage's own room: a world of shallow seas and a
+    // sliver of land had rolled as often as one of oceans and continents (Dave: the jumps a chance
+    // per Myr "depending on how much of the planet is covered")
+    const seaFrac = 1 - dm.exp(-1.24 * dm.sqrt(Math.max(0, oceans))), iceK = 1 - 0.8 * ice;
+    const seaRoom = solventNow === 'water' ? dm.sqrt(Math.max(0, seaFrac * iceK * worldA / 0.71))
+      : dm.sqrt(worldA) * (solventNow ? 1 : 0);
+    const landRoom = dm.sqrt(Math.max(0, (1 - seaFrac) * dm.clamp(landAt(t) / 0.3, 0, 1) * iceK * worldA / 0.29));
+    roomSea = seaRoom; roomLand = landRoom;
     // life's start: chemistry's chance, more with energy to drive it (vents' heat, tides,
-    // shores drying and wetting)
-    const chem = dm.clamp(0.5 + 0.5 * dm.sqrt(Math.max(H, 0)), 0.3, 2) * (landAt(t) > 0.02 ? 1.2 : 1);
+    // shores drying and wetting), and more sea to try it in
+    const chem = dm.clamp(0.5 + 0.5 * dm.sqrt(Math.max(H, 0)), 0.3, 2) * (landAt(t) > 0.02 ? 1.2 : 1) * dm.clamp(seaRoom, 0.05, 3);
     // (starting in the dark under ice, without shores drying and wetting, is much harder)
     const startK = { water: 1, 'ammonia-water': 0.3, 'under ice': 0.004, hydrocarbon: 0.01 }[solventNow] ?? 0;
     if (stage === 0 && habitable && lifeRate > 0 && rng.next() < 1 - dm.exp(-lifeRate * chem * startK * dt)) {
@@ -614,6 +635,7 @@ export function evolveWorld(ctx) {
       // (the giant's belts too, cut by the moon's own field and air: Ganymede's field helps)
       const dose = (xuvAt(t) / 0.32 * (1 - 0.95 * ozone) / 0.05 * shield + (belts - 1) * shield / 2.5) * dm.exp(-(P - 1) / 2);
       const radCurve = (R, kill, Rdeep = R) => (1 + 0.6 * R / (R + 2)) * dm.exp(-(Rdeep / kill) * (Rdeep / kill));
+      doseNow = dose;
       // the sea: a few metres of water stop UV and the star's particles, so sea life gets
       // mutation from the sunlit layer (~1% of the surface dose) while the deep water is a
       // refuge (~0.1%): only the deadliest skies touch it
@@ -640,6 +662,8 @@ export function evolveWorld(ctx) {
       else if (next === 6) rate = warmth * prod * seaRad(50) * oxCurve;
       else if (next === 7) rate = warmth * prod * radCurve(dose, 20) * (landAt(t) > 0.05 ? 1 : 0);
       else if (next === 8) rate = warmth * prod * radCurve(dose, 10) * oxCurve;
+      // (in the room each stage has: the sea's for the sea's stages, the land's for the land's)
+      rate *= next >= 7 ? landRoom : seaRoom;
       // life already on land under a sky turned deadly (the field dies, the ozone thins, the
       // star flares) withers back to the sea
       if (stage >= 7 && dose > 60) {
@@ -657,6 +681,25 @@ export function evolveWorld(ctx) {
           ev(t, STAGE_KEYS[next] === 'goe' ? 'oxygenation' : STAGE_KEYS[next] === 'photo' ? 'photosynthesis' : STAGE_KEYS[next], STAGE_TEXT[next]);
         }
       }
+      // the land plants' grades: each a chance per Myr on the same clock (not a timetable), in the
+      // land's room, with warmth, light and the land's radiation, faster after an extinction;
+      // flowering plants faster with animals on land to carry their pollen, grasses only with
+      // grazers. Difficulty (Gyr at an Earth's pace): vascular ~0.04 after the first land plants,
+      // seed plants ~0.045 after them, flowering plants ~0.25 more, grasses ~0.08 after flowers
+      if (stage >= 7) {
+        if (plantGrade < 0) { plantGrade = 0; plantT[0] = t; }
+        const ng = plantGrade + 1;
+        if (ng <= 4) {
+          let pr = warmth * prod * radCurve(dose, 20) * landRoom;
+          if (ng === 3) pr *= stage >= 8 ? 1 : 0.25;
+          if (ng === 4) pr *= stage >= 8 ? 1 : 0;
+          const hz = pr * grad * boost * (plantRegained[ng] ? 2 : 1) * dt / plantDiff[ng];
+          if (pr > 0 && pl.next() < 1 - dm.exp(-hz)) {
+            plantGrade = ng; plantT[ng] = t;
+            ev(t, 'plants', ['', 'vascular plants rise: ferns and club mosses, standing on stems that carry water', 'seeds: the first true trees, and forests away from the water\'s edge', 'flowers, and the animals that carry their pollen', 'grasses spread across the drier country, with the grazers'][ng]);
+          }
+        }
+      } else if (plantGrade >= 0) { for (let k = 0; k <= plantGrade; k++) { plantRegained[k] = 1; plantT[k] = null; } plantGrade = -1; }
       // diversity toward what the stage and the light support (faster after an extinction)
       // (logistic, solved exactly over the step: recoveries take ~5-20 Myr)
       const cap = Math.max(1e-4, DIV_CAP[stage] * dm.clamp(prod * warmth, 0.15, 1.5));
@@ -675,6 +718,7 @@ export function evolveWorld(ctx) {
       // (and a cold world's warm spells: spellsOf)
       series.rain.push(liquid ? dm.exp(0.07 * (T - 288)) : spellsOf(T, Ptot()));
       series.stage.push(stage); series.div.push(stage > 0 ? div : 0);
+      series.seaRoom.push(roomSea); series.landRoom.push(roomLand); series.dose.push(stage > 0 ? doseNow : 0); series.plantGrade.push(plantGrade);
       series.light.push(parK * S(t) * (snow ? 0.02 : 1));
     }
     t += dt; i++;
@@ -717,8 +761,16 @@ export function evolveWorld(ctx) {
   // came ~85 Myr after its first land plants), then diverse forests and grasslands;
   // the tallest trees on Earth reach ~115 m, scaled here by gravity (taller where weaker)
   const plantsMyr = life.plants != null && stage >= 7 ? (age - life.plants) * 1000 : 0;
-  const floraStage = plantsMyr <= 0 ? (level >= 1 ? 0 : -1) : plantsMyr < 50 ? 1 : plantsMyr < 90 ? 2 : plantsMyr < 300 ? 3 : 4;
-  const maxTreeM = floraStage >= 3 ? Math.min(250, (floraStage === 3 ? 30 + 60 * (plantsMyr - 90) / 210 : 110) * dm.pow(9.81 / Math.max(ctx.gravity, 1), 0.5)) : floraStage === 2 ? 4 : floraStage === 1 ? 0.3 : 0;
+  // (the flora by the grades its history reached, not by a timetable: mosses ground cover, vascular
+  // plants shrubs and ferns, seed plants forests, flowering plants diverse forests and grasslands)
+  const floraStage = plantGrade < 0 ? (level >= 1 ? 0 : -1) : plantGrade === 0 ? 1 : plantGrade === 1 ? 2 : plantGrade === 2 ? 3 : 4;
+  // (the tallest: a moss's few cm; tree ferns and club-moss trees to ~30 m as they've had time; seed
+  // trees on toward ~110 m over ~150 Myr (redwoods'); x the square root of gravity's, Earth's over its)
+  const sinceMyr = (k) => plantT[k] != null ? (age - plantT[k]) * 1000 : 0;
+  const gK = dm.pow(9.81 / Math.max(ctx.gravity, 1), 0.5);
+  const maxTreeM = plantGrade >= 2 ? Math.min(250, (30 + 80 * dm.clamp(sinceMyr(2) / 150, 0, 1)) * gK)
+    : plantGrade === 1 ? Math.min(250, (2 + 28 * dm.clamp(sinceMyr(1) / 40, 0, 1)) * gK) : plantGrade === 0 ? 0.3 : 0;
+  const plantGrades = plantT.map((tt) => (tt != null ? age - tt : null));   // (Gyr ago each arose, null: not now)
   // the air now, by gas (bar): water vapour at half saturation over seas
   // (a runaway's seas are in the air: an Earth ocean is ~270 bar of steam; a Titan keeps
   // a few % methane from its seas and ices)
@@ -762,7 +814,7 @@ export function evolveWorld(ctx) {
     solvent: stage > 0 ? solvent : null, backbone: stage > 0 ? backbone : null,
     metabolisms: stage > 0 ? energyOf({ air, P, solvent, oceans, redox }).pairs.map((p) => p[0]) : [],
     extinctions, bigImpacts, floodBasalts: lips, superEruptions, eruption, recovering, radiusKm: Rkm, tidal, fresh, belts,
-    plantsMyr, floraStage, floraName: ['bare', 'microbial crusts', 'ground cover', 'shrubs and ferns', 'forests', 'diverse forests and grasslands'][floraStage + 1], maxTreeM,
+    plantsMyr, plantGrade, plantGrades, floraStage, floraName: ['bare', 'microbial crusts', 'ground cover', 'shrubs and ferns', 'forests', 'diverse forests and grasslands'][floraStage + 1], maxTreeM,
     series, events, carbon,
     exception: exc,
   };

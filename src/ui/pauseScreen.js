@@ -200,6 +200,17 @@ export class PauseScreen {
       const last = (H.extinctions || []).filter((e) => e.loss >= 0.99).pop();
       row('Life', `none now${last ? ` (ended ${agoText(last.ago)})` : ''}`);
     } else if (b.life) row('Life', esc(b.life.level));
+    // its plants' grades and its animals (worldsim/evolve.js plantGrade; gen/life/biosphere.js)
+    const BS = b.life && b.life.biosphere;
+    if (H && H.lifeStage >= 7 && H.plantGrade >= 0) {
+      const grades = ['mosses', 'ferns', 'seed trees', 'flowers', 'grasses'].slice(0, H.plantGrade + 1);
+      row('Plants', `${grades.join(', ')}${H.maxTreeM > 1 ? ` · trees to ${Math.round(H.maxTreeM)} m` : ''}`);
+    }
+    if (BS && BS.land && BS.land.clade) {
+      const c = BS.land.clade, p = BS.plans[BS.land.plan], fl = BS.flight.large != null ? 'big flyers' : BS.flight.small != null ? 'small flyers' : '';
+      row('Animals', `${esc(c.name)}: ${c.size}, ${c.posture}, ${c.blood}-blooded, ${c.limbs} limbs <span style="opacity:0.65">(${esc(p.name)} plan: ${esc(p.text)})</span> · up to ${esc(BS.land.top)}${fl ? ' · ' + fl : ''}`);
+    }
+    if (BS && BS.plans.length && BS.sea) row('Sea life', `${BS.plans.length} body plans · up to ${esc(BS.sea.top)}`);
     if (H && b.solid && H.airType && H.airType !== 'none') row('Sky', esc(H.airType) + (H.seaPH != null ? ` · seas pH ${H.seaPH.toFixed(1)}` : ''));
     if (H && b.solid) row('Field', H.field > 0.05 ? `${H.field.toFixed(1)}× Earth's` : 'none');
     const now = [];

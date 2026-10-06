@@ -198,6 +198,10 @@ export function climate(G, opts) {
     let best = 0, bestT = -1e9;
     for (let b = 0; b <= 36; b++) if (zn[b] && zm[b] / zn[b] > bestT) { bestT = zm[b] / zn[b]; best = (b - 18) * 2.5 * dm.PI / 180; }
     const itcz = opts.locked ? 0 : best * 0.7;
+    // (and by longitude: the rain belt pulled toward each sector's own warmest latitude, out over a
+    // summer continent and back over the sea: the monsoons. 0.3 the zonal belt's, 0.7 of 0.8 of the
+    // sector's thermal maximum (to 25 degrees), the sectors smoothed round)
+    const itczC = monsoonBelt(lat, G, Tmm, itcz, opts.locked);
     // the air: each band's mean at sea level, cooling with height over land. Ground
     // warmer than its band's air heats it from below (it rises: showers, the summer
     // monsoon), colder ground chills it (stable: winter continents, cold-current coasts, dry)
@@ -211,7 +215,7 @@ export function climate(G, opts) {
       stab[c] = dm.clamp(1 + (Tmm[c] + lift - Tb[bandOf[c]]) / 8, 0.2, 2) * (1 - 0.8 * coolCoast[c]);
     }
     const wind = windField(G, lat, itcz, nH, opts.locked ? opts.substellar : null, spin);
-    rainMonth(G, geo, h, sea, Tmm, Tair, stab, wind, itcz, lat, Pm.subarray(m * n, (m + 1) * n), opts.locked, vegCover);
+    rainMonth(G, geo, h, sea, Tmm, Tair, stab, wind, itczC, lat, Pm.subarray(m * n, (m + 1) * n), opts.locked, vegCover, opts.trace ? (o) => opts.trace(m, { ...o, itczC, stab }) : null);
   }
   // global scale: ~1000 mm/yr on an Earth, rising ~2.5%/K, with the sea's share; the rise
   // spent by ~330 K (a hothouse's rain is heavy, not millions of times Earth's), and none reaching
@@ -320,7 +324,33 @@ function windField(G, lat, itcz, nH, substellar, spin = 1) {
 // a month's rain: evaporation, carried downwind, rained out where air rises or cools.
 // T: the ground's temperature (evaporation); Tair: the air's (what it can hold);
 // stab: how readily the air rises off this ground this month (warm ground, unstable)
-function rainMonth(G, geo, h, sea, T, Tair, stab, wind, itcz, lat, out, locked, cover) {
+// the rain belt's latitude by cell this month: the zonal belt's (itcz) and its sector's thermal
+// maximum's (36 sectors of longitude, 2.5-degree bands within 35 degrees, 0.8 of it to 25 degrees),
+// 0.3 and 0.7, the sectors' maxima smoothed with their neighbours' (over a continent the belt swings
+// ~17 degrees each way: Africa's ~15)
+function monsoonBelt(lat, G, T, itcz, locked) {
+  const n = G.n, out = new Float64Array(n).fill(locked ? 0 : itcz);
+  if (locked) return out;
+  const NS = 36, NB = 29, sum = new Float64Array(NS * NB), cnt = new Float64Array(NS * NB), best = new Float64Array(NS);
+  const sec = new Int32Array(n), d = G.dir;
+  for (let c = 0; c < n; c++) {
+    sec[c] = Math.min(NS - 1, Math.floor((dm.atan2(d[c * 3 + 2], d[c * 3]) + dm.PI) / dm.TWO_PI * NS));
+    const b = Math.round(lat[c] * 180 / dm.PI / 2.5) + 14;
+    if (b < 0 || b >= NB) continue;
+    sum[sec[c] * NB + b] += T[c]; cnt[sec[c] * NB + b]++;
+  }
+  for (let s = 0; s < NS; s++) {
+    let bt = -1e9, bl = itcz;
+    for (let b = 0; b < NB; b++) { const k = s * NB + b; if (cnt[k] && sum[k] / cnt[k] > bt) { bt = sum[k] / cnt[k]; bl = (b - 14) * 2.5 * dm.PI / 180; } }
+    best[s] = Math.max(-0.436, Math.min(0.436, 0.8 * bl));
+  }
+  const sm = new Float64Array(NS);
+  for (let s = 0; s < NS; s++) sm[s] = (best[(s + NS - 1) % NS] + 2 * best[s] + best[(s + 1) % NS]) / 4;
+  for (let c = 0; c < n; c++) out[c] = 0.3 * itcz + 0.7 * sm[sec[c]];
+  return out;
+}
+
+function rainMonth(G, geo, h, sea, T, Tair, stab, wind, itcz, lat, out, locked, cover, trace = null) {
   const n = G.n;
   const qs = (t) => dm.exp(0.0687 * (t - 273)); // water the air can hold (relative, Clausius-Clapeyron)
   // (a cell's evaporation fills only a small part of what the air holds: air crossing a
@@ -330,9 +360,19 @@ function rainMonth(G, geo, h, sea, T, Tair, stab, wind, itcz, lat, out, locked, 
   for (let c = 0; c < n; c++) {
     Es[c] = EVAP * qs(T[c]);
     // how readily it rains here: the rising rain belt, the sinking subtropics (where the
-    // Hadley cells come down, warming and drying: the great deserts' belt), fronts, slopes
-    const a = Math.abs(lat[c] - itcz), band = wind.band;
-    const rise = locked ? 0.25 + 0.75 * Math.max(0, 1 - a) : (a < 0.18 ? 1.0 : (Math.abs(a - band) < 0.2 ? 0.04 : (a > band && a < 2 * band ? 0.45 : 0.25)));
+    // Hadley cells come down, warming and drying: the great deserts' belt), fronts, slopes.
+    // Smooth across them, and the sinking air's band as far from this sector's rain belt as the
+    // cells reach: when the belt has gone into the summer hemisphere the winter side's tropics lie
+    // under the season's strong cell's descent, their dry season (the savannas' year; it had
+    // rained on them a third as hard in their dry months as their wet, Aw ~2% of SOL Earth's land)
+    const a = Math.abs(lat[c] - itcz[c]), band = wind.band;
+    const belt = dm.exp(-(a / 0.16) * (a / 0.16)), sinkA = (a - band) / 0.2, sink = 0.9 * dm.exp(-sinkA * sinkA);
+    const storms = 0.2 * dm.smoothstep(band, band + 0.15, a) * (1 - dm.smoothstep(2 * band - 0.1, 2 * band + 0.15, a));
+    const rise = locked ? 0.25 + 0.75 * Math.max(0, 1 - a) : (0.25 + 0.75 * belt + storms) * (1 - sink);
+    // (and hot ground's own showers: summer convection over land, the continents' summer rain
+    // maximum; none where the air sinks. It had rained on the interiors more in winter, from cold
+    // air wringing out what reached it, than in summer: Dsa a fifth of SOL Earth's land)
+    const conv = locked || sea[c] ? 0 : 0.05 * dm.smoothstep(283, 303, T[c]) * Math.min(1, stab[c]) * (1 - sink);
     // upslope: the wind blowing into higher ground
     let up = 0;
     for (let k = G.nStart[c]; k < G.nStart[c + 1]; k++) {
@@ -342,7 +382,11 @@ function rainMonth(G, geo, h, sea, T, Tair, stab, wind, itcz, lat, out, locked, 
       if (along > 0) up = Math.max(up, along * dz / 1000);
     }
     // (over the open sea it rains out less: the sea exports moisture to the land)
-    r[c] = Math.min(0.9, (0.015 + 0.1 * rise) * stab[c] * (sea[c] ? 0.5 : 1) + 0.3 * up);
+    // (the storms' and the belt's rain lifted by the circulation, the air's stability only tempering
+    // it, the drizzle too held off under sinking air; the convection its own: it had all gone with
+    // the stability, so a continent colder than its latitude's sea in spring and autumn had no rain
+    // at all those months, and its summer looked dry beside its winter)
+    r[c] = Math.min(0.9, (0.015 * (1 - 0.8 * sink) + 0.1 * rise) * (0.5 + 0.5 * stab[c]) * (sea[c] ? 0.5 : 1) + 0.3 * up + conv);
   }
   // carry the moisture downwind to a steady state. The sea evaporates freely; land gives
   // back at most 60% of what rained on it (plants and soil: a desert has nothing to give)
@@ -362,8 +406,13 @@ function rainMonth(G, geo, h, sea, T, Tair, stab, wind, itcz, lat, out, locked, 
       const back = cover ? 0.2 + 0.5 * cover[c] : 0.6;
       const E = sea[c] ? Es[c] : Math.min(back * Es[c], back * prev[c]);
       const held = E + (wsum > 0 ? inflow / wsum * 0.99 : 0);
-      // too much for the air to hold (cold): it comes out
-      const cap = qs(Tair[c]) * 1.2;
+      // too much for the air to hold (cold): it comes out. The air over this cell, its band's tempered
+      // half way to the ground under it (a winter continent chills the air crossing it: what it brings
+      // in snows out near the coast and the interior stays dry, Siberia's winter; a summer one warms
+      // it and it holds its water until it rises. Held to the band's alone, a continent's interior had
+      // most of its rain from this, through the winter, and none in the month before its convection
+      // began: a fifth of SOL Earth's land Dsa)
+      const cap = qs(0.5 * Tair[c] + 0.5 * T[c]) * 1.2;
       const over = Math.max(0, held - cap);
       q2[c] = held - over;
       out[c] = r[c] * q2[c] + over;
@@ -372,6 +421,8 @@ function rainMonth(G, geo, h, sea, T, Tair, stab, wind, itcz, lat, out, locked, 
     prev.set(out);
     const t = q; q = q2; q2 = t;
   }
+  // (opts.trace: a look at each month's rain rate, the air's water and the rain, for tuning)
+  if (trace) trace({ r: Float64Array.from(r), q: Float64Array.from(q), out: Float64Array.from(out) });
 }
 
 // Köppen climate from 12 months (K, mm); north: the northern hemisphere
@@ -379,9 +430,12 @@ function koppenOf(c, n, Tm, Pm, north) {
   const t = [], p = [];
   for (let m = 0; m < 12; m++) { t.push(Tm[m * n + c] - 273.15); p.push(Pm[m * n + c]); }
   const tMax = Math.max(...t), tMin = Math.min(...t), tAnn = t.reduce((a, b) => a + b) / 12, pAnn = p.reduce((a, b) => a + b);
-  // (months count from the northern spring equinox: the north's summer half is 0-5)
-  const sumIdx = north ? [0, 1, 2, 3, 4, 5] : [6, 7, 8, 9, 10, 11];
-  const winIdx = north ? [6, 7, 8, 9, 10, 11] : [0, 1, 2, 3, 4, 5];
+  // (its summer half: its warmest six months running, as Koppen's own (Peel et al. 2007: the warmer of
+  // the two halves); by the sun's half of the year, a continent whose ground lags the sun had its
+  // still-frozen first month of spring counted as summer, and its interiors read dry-summer, Ds)
+  let s0 = 0, best = -Infinity;
+  for (let k = 0; k < 12; k++) { let sum = 0; for (let j = 0; j < 6; j++) sum += t[(k + j) % 12]; if (sum > best + 1e-9) { best = sum; s0 = k; } }
+  const sumIdx = [0, 1, 2, 3, 4, 5].map((j) => (s0 + j) % 12), winIdx = [6, 7, 8, 9, 10, 11].map((j) => (s0 + j) % 12);
   const pSum = sumIdx.reduce((a, i) => a + p[i], 0), pWin = winIdx.reduce((a, i) => a + p[i], 0);
   if (tMax < 10) return tMax < 0 ? 'EF' : 'ET';
   const th = 20 * tAnn + (pSum >= 0.7 * pAnn ? 280 : pSum >= 0.3 * pAnn ? 140 : 0);

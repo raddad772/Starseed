@@ -10,6 +10,7 @@ import * as dm from '../core/dmath.js';
 import * as U from '../core/units.js';
 import { hzSeff } from './star.js';
 import { drawPigments, albedoRGB, surfacePhotonPeakNm, photonPeakNm } from './pigments.js';
+import { biosphereOf } from './life/biosphere.js';
 import { SUBSTANCES } from './worldsim/liquids.js';
 import { evolveWorld } from './worldsim/evolve.js';
 import { hsv, mixRGB, scaleRGB, hexToLinear, jitterColor, blackbodyRGB } from './color.js';
@@ -640,6 +641,8 @@ export function buildBody(rng, proto, star, host) {
     };
     life.dryColor = mixRGB(life.vegColor, hexToLinear('#a08a5c'), lr.range(0.35, 0.6));
     if (life.level === 'microbial mats') life.density *= 0.35;
+    // its biosphere: body plans, the food web's levels, flight, the light its eyes see by (LIFE.md 1)
+    life.biosphere = biosphereOf({ gravity: b.gravity, atmosphere: atm }, hist, lr.fork('biosphere'), star, atm ? atm.render : null, atm ? rayleighRel(atm.comp) / 1.02 : 1);
   } else if (atm) atm.life = false;
   b.life = life;
 
