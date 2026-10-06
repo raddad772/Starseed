@@ -154,7 +154,7 @@ export function packSnapshot(W, body) {
 
 // the arrays a snapshot carries (for transfer lists and caching)
 export function snapshotBuffers(s) {
-  return ['h', 'water', 'rock', 'ice', 'river', 'melt', 'relief', 'rcv', 'Tsea', 'P', 'cover', 'forest', 'open', 'cloud', 'cloudPx', 'season', 'seasonPx', 'crat', 'dunes', 'gorge', 'ocean', 'mareLv'].filter((k) => s[k]).map((k) => s[k].buffer);
+  return ['h', 'water', 'rock', 'ice', 'river', 'melt', 'relief', 'rcv', 'Tsea', 'P', 'cover', 'forest', 'open', 'cloud', 'cloudPx', 'season', 'seasonPx', 'seasonIce', 'seasonIcePx', 'crat', 'dunes', 'gorge', 'ocean', 'mareLv'].filter((k) => s[k]).map((k) => s[k].buffer);
 }
 
 // reads a snapshot at any direction
@@ -438,11 +438,17 @@ export class SnapshotSampler {
   rain(x, y, z) { return this.Gc ? this._gcRead(this.s.P, x, y, z) : null; }
   // the year there (season.js): its temperature's swing about the mean (a1, b1, K) and its cold half's
   // precipitation (mm a month) into out; false where the world keeps none
-  season(x, y, z, out) {
-    const f = this.s.season;
+  season(x, y, z, out) { return this._read3('season', x, y, z, out); }
+  // the air's year over a frozen sea there (season.js seasonIce): a1, b1 and its mean against the open
+  // sea's (K)
+  seasonIce(x, y, z, out) { return this._read3('seasonIce', x, y, z, out); }
+  _read3(k, x, y, z, out) {
+    const f = this.s[k];
     if (!this.Gc || !f) return false;
-    if (!this._sea) { const m = this.Gc.n; this._sea = [f.subarray(0, m), f.subarray(m, 2 * m), f.subarray(2 * m, 3 * m)]; }
-    out[0] = this._gcRead(this._sea[0], x, y, z); out[1] = this._gcRead(this._sea[1], x, y, z); out[2] = this._gcRead(this._sea[2], x, y, z);
+    const c = this._p3 || (this._p3 = {});
+    if (!c[k]) { const m = this.Gc.n; c[k] = [f.subarray(0, m), f.subarray(m, 2 * m), f.subarray(2 * m, 3 * m)]; }
+    const F = c[k];
+    out[0] = this._gcRead(F[0], x, y, z); out[1] = this._gcRead(F[1], x, y, z); out[2] = this._gcRead(F[2], x, y, z);
     return true;
   }
   // how much of a sand sea it is there (0..1: its cells blended, so the edges thin out)

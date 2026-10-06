@@ -35,10 +35,11 @@ export function seasonHarmonics(clim, m) {
   return out;
 }
 
-// the map the shader reads (snap.season, snap.Nc, snap.R)
-export function seasonPixels(snap) {
-  const Gc = new SimGrid(snap.Nc, snap.R), m = Gc.n, f = snap.season;
-  const A = f.subarray(0, m), B = f.subarray(m, 2 * m), P = f.subarray(2 * m, 3 * m);
+// the maps the shader reads, by latitude and longitude, from a planar field of three per climate cell
+// (snap.Nc, snap.R): code(k, value) each into its byte
+function pixelsOf(Nc, R, f, code) {
+  const Gc = new SimGrid(Nc, R), m = Gc.n;
+  const F = [f.subarray(0, m), f.subarray(m, 2 * m), f.subarray(2 * m, 3 * m)];
   const W = SEASON_W, H = SEASON_H, px = new Uint8Array(W * H * 4), d = [0, 0, 0], uv = { face: 0, u: 0, v: 0 };
   const b8 = (x) => Math.max(0, Math.min(255, Math.round(x * 255)));
   for (let j = 0; j < H; j++) {
@@ -47,17 +48,51 @@ export function seasonPixels(snap) {
       const lon = ((i + 0.5) / W - 0.5) * dm.TWO_PI;
       d[0] = cl * dm.cos(lon); d[1] = sl; d[2] = cl * dm.sin(lon);
       const o = 4 * (j * W + i);
-      px[o] = b8(Gc.sample(A, d, uv) / 100 + 0.5);
-      px[o + 1] = b8(Gc.sample(B, d, uv) / 100 + 0.5);
-      px[o + 2] = b8(Math.sqrt(Math.max(0, Gc.sample(P, d, uv)) / 600));
+      for (let k = 0; k < 3; k++) px[o + k] = b8(code(k, Gc.sample(F[k], d, uv)));
       px[o + 3] = 255;
     }
   }
   return px;
 }
+export function seasonPixels(snap) {
+  return pixelsOf(snap.Nc, snap.R, snap.season, (k, v) => (k < 2 ? v / 100 + 0.5 : Math.sqrt(Math.max(0, v) / 600)));
+}
+// (the air over a frozen sea's: a1, b1 and its year's mean against the open sea's, K / 100 + 0.5)
+export function seasonIcePixels(snap) {
+  return pixelsOf(snap.Nc, snap.R, snap.seasonIce, (k, v) => v / 100 + 0.5);
+}
 
-// a snapshot cached before its seasons were kept: its climate run again on its finished surface (its
-// heights, seas and lakes, plants' cover, as the sim's last pass had them), ~0.7 s. snap: a world's
+// the air's year over a sea that freezes in winter: its ice cuts the sea's heat off (its winters as
+// cold as land's), so the climate run again with every sea cell whose coldest month falls below the
+// sea's freezing point as frozen ground; per climate cell a1, b1 and the year's mean against the open
+// sea's (K), planar (the open year's own where the sea never freezes). What the leads between its floes
+// freeze over by (render/liquid.js leadIce, gen/liquidice.js)
+function seasonIce(Gc, G, snap, climOpts, wet, cover, clim) {
+  const m = Gc.n, n = wet.length, Tf = 273.15 - 1.8, froze = new Uint8Array(m);
+  let any = 0;
+  for (let c = 0; c < m; c++) {
+    if (!clim.sea || !clim.sea[c]) continue;
+    let lo = Infinity;
+    for (let k = 0; k < 12; k++) lo = Math.min(lo, clim.Tm[k * m + c]);
+    if (lo < Tf) { froze[c] = 1; any = 1; }
+  }
+  const out = new Float32Array(3 * m);
+  if (!any) { out.set(seasonHarmonics(clim, m).subarray(0, 2 * m)); return out; }
+  const wet2 = new Uint8Array(n), d = [0, 0, 0];
+  for (let c = 0; c < n; c++) { if (!wet[c]) continue; G.centre(c, d); wet2[c] = froze[Gc.cellAt(d[0], d[1], d[2])] ? 0 : 1; }
+  const clim2 = climateOn(Gc, G, snap.h, climOpts, wet2, cover);
+  const h1 = seasonHarmonics(clim, m), h2 = seasonHarmonics(clim2, m);
+  for (let c = 0; c < m; c++) {
+    const f = froze[c];
+    out[c] = f ? h2[c] : h1[c]; out[m + c] = f ? h2[m + c] : h1[m + c];
+    if (f) { let s1 = 0, s2 = 0; for (let k = 0; k < 12; k++) { s1 += clim.Tm[k * m + c]; s2 += clim2.Tm[k * m + c]; } out[2 * m + c] = (s2 - s1) / 12; }
+  }
+  return out;
+}
+
+// a world's seasons from its snapshot: its climate run again on its finished surface (its heights, seas
+// and lakes, plants' cover, as the sim's last pass had them), and once more for its frozen seas' air,
+// ~1.4 s. snap: a world's
 // snapshot (snapshot.js); climOpts: its climate's inputs (climate.js climateOpts)
 export function seasonsFor(snap, climOpts) {
   if (!snap.Nc || !snap.h) return null;
@@ -65,9 +100,11 @@ export function seasonsFor(snap, climOpts) {
   // (open water for the climate: the sea and the lakes, as the sim's last pass reckoned it)
   const wet = new Uint8Array(n);
   for (let c = 0; c < n; c++) wet[c] = (snap.ocean && snap.ocean[c]) || (snap.water && snap.water[c] - snap.h[c] >= 1) ? 1 : 0;
-  const clim = climateOn(Gc, G, snap.h, climOpts, wet, snap.cover ? { cover: snap.cover, forest: snap.forest } : null);
-  const season = seasonHarmonics(clim, Gc.n);
-  return { season, seasonPx: seasonPixels({ season, Nc: snap.Nc, R: snap.R }), yearDays: climOpts.yearDays };
+  const cover = snap.cover ? { cover: snap.cover, forest: snap.forest } : null;
+  const clim = climateOn(Gc, G, snap.h, climOpts, wet, cover);
+  const season = seasonHarmonics(clim, Gc.n), ice = seasonIce(Gc, G, snap, climOpts, wet, cover, clim);
+  const S = { season, seasonIce: ice, Nc: snap.Nc, R: snap.R };
+  return { season, seasonPx: seasonPixels(S), seasonIce: ice, seasonIcePx: seasonIcePixels(S), yearDays: climOpts.yearDays };
 }
 
 // whether a world's snow comes and goes with its seasons (p: its terrain's params): water that falls as

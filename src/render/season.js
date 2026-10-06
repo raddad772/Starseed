@@ -1,6 +1,6 @@
 // The seasons' snow in the shaders: the ground's (terrainMaterial.js) and its rocks' (rockRender.js), the
 // same snowpack. Their uniforms are the world's shared ones (world.js setSeasonMap, solarLongitude).
-import { SUBLIM_YR } from '../gen/worldsim/season.js';
+import { SUBLIM_YR, DDF_SNOW } from '../gen/worldsim/season.js';
 
 // (seasonal snow's bulk density, kg/m3: ~0.3 of water's once it has settled, Sturm et al. 2010; its
 // depth, m, per mm of its water)
@@ -13,6 +13,9 @@ export const GLSL_SEASON = /* glsl */`
 // uSeason x: where the sun stands in the year (L, rad from the northern spring equinox), y: the melt
 // over the year per degree above freezing (mm), z: on
 uniform sampler2D tSeasonMap;
+// (the air's year over a frozen sea, worldsim/season.js seasonIce: r, g its a1, b1, b its year's mean
+// against the open sea's, K / 100 + 0.5)
+uniform sampler2D tSeasonIce;
 uniform vec4 uSeason;
 uniform vec3 uSnowCol;
 // the snow's water on the ground now (mm), at a place (dirF its direction, planet-fixed) whose year's mean
@@ -25,6 +28,11 @@ uniform vec3 uSnowCol;
 vec3 seasonYear(vec3 dirF) {
   vec4 m = texture(tSeasonMap, vec2(atan(dirF.z, dirF.x) / 6.28319 + 0.5, asin(clamp(dirF.y, -1.0, 1.0)) / 3.14159 + 0.5));
   return vec3((m.r - 0.5) * 100.0, (m.g - 0.5) * 100.0, m.b * m.b * 600.0);
+}
+// (the air over a frozen sea there: its temperature now against the open sea's year's mean, K)
+float seasonIceNow(vec3 dirF) {
+  vec4 m = texture(tSeasonIce, vec2(atan(dirF.z, dirF.x) / 6.28319 + 0.5, asin(clamp(dirF.y, -1.0, 1.0)) / 3.14159 + 0.5));
+  return (m.b - 0.5) * 100.0 + (m.r - 0.5) * 100.0 * cos(uSeason.x) + (m.g - 0.5) * 100.0 * sin(uSeason.x);
 }
 float seasonSWE(vec3 dirF, float Ta) {
   vec3 yr = seasonYear(dirF);
@@ -59,4 +67,5 @@ float seasonSnow(vec3 dirF, vec3 fn, float Ta, float n) {
   return c * (1.0 - 0.75 * smoothstep(0.35, 0.65, 1.0 - dn));
 }
 const float SNOW_DEPTH_PER_MM = ${SNOW_DEPTH_PER_MM.toFixed(6)};
+const float DDF_SNOW = ${DDF_SNOW.toFixed(1)};
 `;

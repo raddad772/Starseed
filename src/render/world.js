@@ -75,11 +75,13 @@ export class WorldRenderer {
   setSeasonMap(bodyId, map) {
     const it = this.items.find((x) => x.body.data && x.body.data.id === bodyId);
     if (!it || !it.shared || !it.shared.tSeasonMap) return;
-    const tex = new THREE.DataTexture(map.px, map.w, map.h, THREE.RGBAFormat);
-    tex.wrapS = THREE.RepeatWrapping; tex.magFilter = THREE.LinearFilter; tex.minFilter = THREE.LinearFilter; tex.needsUpdate = true;
-    const old = it.shared.tSeasonMap.value;
-    it.shared.tSeasonMap.value = tex;
-    if (old && old !== _blankSeason) old.dispose();
+    const texOf = (px) => { const t = new THREE.DataTexture(px, map.w, map.h, THREE.RGBAFormat); t.wrapS = THREE.RepeatWrapping; t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearFilter; t.needsUpdate = true; return t; };
+    for (const [k, px] of [['tSeasonMap', map.px], ['tSeasonIce', map.icePx]]) {
+      if (!px) continue;
+      const old = it.shared[k].value;
+      it.shared[k].value = texOf(px);
+      if (old && old !== _blankSeason) old.dispose();
+    }
     // (y: the snow's melt over the year per degree above freezing, mm: its degree-day factor times its
     // year's days)
     // (z: on, where its snow comes and goes with them)
@@ -140,6 +142,7 @@ export class WorldRenderer {
       // (the seasons on its land: its climate's year by place, setSeasonMap; where the sun stands in its
       // year, set each frame: terrainMaterial.js seasonSnow)
       tSeasonMap: { value: blankSeasonMap() },
+      tSeasonIce: { value: blankSeasonMap() },
       uSeason: { value: new THREE.Vector4(0, 0, 0, 0) },
       uSnowCol: { value: new THREE.Vector3(...(b.data.terrain && b.data.terrain.palette && b.data.terrain.palette.snow || [0.85, 0.87, 0.9])) },
     };

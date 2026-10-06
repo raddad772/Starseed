@@ -421,8 +421,16 @@ void main() {
     liquidSurface(fp, fn, upF, kind, flow, fetch, depthW, foot, wn, grp, vFlw.xyz, fv, nF, wr, foam);
     // (the sea's ice: how close its pack is here (liquid.js seaIceCover); the waves die in it, the short
     // chop at once and the swell within a few floes (Squire 2007), so its leads lie calm, no whitecaps)
-    float ice = liquidIce(Tm, kind, flow, upF), iceC = kind < 0.2 && ice > 0.0 ? seaIceCover(ice, nW.a, nG.r) : 0.0;
-    vec4 fl = kind < 0.2 ? seaFloes(fp, upF, w, ice, iceC, foot) : vec4(ice, 0.0, 1.0, 0.0);
+    vec2 tsf = liquidTs(Tm, kind, flow, upF);
+    float ice = 1.0 - smoothstep(tsf.y - 4.0, tsf.y + 4.0, tsf.x), iceC = kind < 0.2 && ice > 0.0 ? seaIceCover(ice, nW.a, nG.r) : 0.0;
+    // (the leads freeze over by how cold it is, under snow by the winter's fall: a month's of the year's
+    // twelve, a day's of its days)
+    float pDay = uSeason.z > 0.5 ? 12.0 * seasonYear(upF).z * DDF_SNOW / max(uSeason.y, 1.0) : 0.0;
+    vec2 lead = vec2(0.0);
+    // (the air over the pack, which the leads freeze by: its ice keeps the sea's heat from it, worldsim/
+    // season.js seasonIce; the open sea's own where the world keeps no year)
+    float Tair = uSeason.z > 0.5 ? Tm + seasonIceNow(upF) : tsf.x;
+    vec4 fl = kind < 0.2 ? seaFloes(fp, upF, w, ice, iceC, foot, max(tsf.y - Tair, 0.0), pDay, lead) : vec4(ice, 0.0, 1.0, 0.0);
     float calm = smoothstep(0.05, 0.6, max(iceC, fl.w));
     nF = normalize(mix(nF, upF, 0.9 * calm)); wr *= 1.0 - 0.8 * calm; foam *= 1.0 - calm;
     // (a falling sheet carries no river's ripples: its own surface, streaked below)
@@ -580,10 +588,17 @@ void main() {
     // frozen: the sea's ice as floes (liquid.js seaFloes: gen/liquidice.js reads the same, so where it's
     // drawn is where it bears you), their rims blue-grey where their sides and wet edges show, the young
     // ones grey, the old under snow; a lake's and a pond's ice whole, under snow where it's long frozen.
-    // In a closed pack's leads the sea freezes over at once: nilas, dark and grey
+    // The leads between whole floes freeze over as they age (liquid.js leadIce): open water just opened,
+    // then nilas, grey and grey-white ice by its thickness (albedo ~0.07 rising to ~0.4 over a few tens
+    // of cm: Brandt et al. 2005), under snow once it bears it
     if (ice > 0.0) {
       vec4 dI = nW, dJ = nG;
-      if (kind < 0.2) color = mix(color, vec3(0.06, 0.07, 0.08) / PI * (uSunE * sunT * max(muS, 0.0) + uSunE * skyE), (1.0 - fl.x) * 0.75 * smoothstep(0.85, 1.0, fl.w));
+      if (kind < 0.2) {
+        float lIce = smoothstep(0.3, 1.5, lead.x) * (1.0 - fl.x);
+        vec3 lAlb = mix(vec3(0.07 + 0.33 * (1.0 - exp(-lead.x / 10.0))) * vec3(0.92, 0.97, 1.0), vec3(0.82, 0.86, 0.9), lead.y);
+        color = mix(color, lAlb / PI * (uSunE * sunT * max(muS, 0.0) + uSunE * skyE), lIce);
+        albedo = mix(albedo, lAlb, lIce);
+      }
       ice = fl.x;
       // (snow on a floe as old as it is, drifted a little across it)
       float snowy = smoothstep(0.3, 0.7, fl.z + (dJ.a - 0.5) * 0.25) * (1.0 - 0.7 * fl.y / max(fl.x, 1e-3));

@@ -293,7 +293,8 @@ void liquidSurface(vec3 fp, vec3 n, vec3 upF, float kind, float flow, float fetc
 // swing there now, the sea's its own (the climate's sea keeps its heat: a few degrees), a lake's and a
 // river's the air's a little damped, a pond's the air's. Else the sun's latitude, the hemisphere's, and
 // how fast that water follows: the sea slowest, a pond quickest
-float liquidIce(float Tm, float kind, float flow, vec3 upF) {
+// (its temperature now and its freezing point, C)
+vec2 liquidTs(float Tm, float kind, float flow, vec3 upF) {
   float Ts;
   if (uSeason.z > 0.5) {
     vec3 yr = seasonYear(upF);
@@ -304,8 +305,12 @@ float liquidIce(float Tm, float kind, float flow, vec3 upF) {
     Ts = Tm + 70.0 * uLiquid2.w * upF.y * follow;
   }
   float Tf = (kind < 0.2 ? uLiquid2.z : 0.0) - (kind > 0.55 && kind < 0.85 ? 3.0 * flow : 0.0);
+  return vec2(Ts, Tf);
+}
+float liquidIce(float Tm, float kind, float flow, vec3 upF) {
+  vec2 t = liquidTs(Tm, kind, flow, upF);
   // (over a few degrees: the marginal ice)
-  return 1.0 - smoothstep(Tf - 4.0, Tf + 4.0, Ts);
+  return 1.0 - smoothstep(t.y - 4.0, t.y + 4.0, t.x);
 }
 // ---- the sea's ice as floes (gen/liquidice.js reads the same, so where it's drawn is where it bears
 // you). Sea ice breaks along its fractures into plates: cells of a partition of space (each cell's nearest
@@ -344,7 +349,7 @@ vec3 floeGroup(vec3 c, float N, uint seed) {
 // feature points fall in one cube 2S across: a floe of a few cells, irregular, its sizes spread): the
 // group's hash (id), how far p is in from the group's edge (e, m: the nearest bisector with a cell of
 // another group) and the group's middle (gc)
-void floeCell(vec3 p, vec3 up, float S, float N, uint seed, out uint id, out float e, out vec3 gc) {
+void floeCell(vec3 p, vec3 up, float S, float N, uint seed, out uint id, out float e, out vec3 gc, out uint lid) {
   // (its nearest feature point, then the edges round that point's own cell. Measured with up stretched
   // three times: the cells are a 3D lattice's and the sea a slice through it, and a cell whose point lay
   // well above or below the slice touched it only in slivers along two floes' boundary, regular as the
@@ -362,17 +367,32 @@ void floeCell(vec3 p, vec3 up, float S, float N, uint seed, out uint id, out flo
   id = floeHash(uint(wa.x), uint(wa.y), uint(wa.z), seed ^ 0x9e37u);
   gc = (ga + 0.5) * 2.0 * S;
   e = 1e20;
+  vec3 gn = ga;
   for (int k = 0; k < 27; k++) {
     if (k == 13) continue;
-    vec3 cb = ca + vec3(float(k % 3), float((k / 3) % 3), float(k / 9)) - 1.0;
-    if (floeGroup(cb, N, seed) == ga) continue;
+    vec3 cb = ca + vec3(float(k % 3), float((k / 3) % 3), float(k / 9)) - 1.0, gb = floeGroup(cb, N, seed);
+    if (gb == ga) continue;
     vec3 b = floePoint(cb, S, N, seed) - p;
     b += 2.0 * dot(b, up) * up;
     // (p at the origin: its distance to the two points' bisector)
-    e = min(e, 0.5 * (dot(b, b) - dot(a, a)) / length(a - b));
+    float eb = 0.5 * (dot(b, b) - dot(a, a)) / length(a - b);
+    if (eb < e) { e = eb; gn = gb; }
   }
+  // (the lead along that edge: the two floes either side of it, the same from both)
+  vec3 wn = mod(gn, 0.5 * N);
+  lid = id ^ floeHash(uint(wn.x), uint(wn.y), uint(wn.z), seed ^ 0x9e37u);
 }
 vec4 tri0(vec3 p, vec3 w, float period);
+vec4 tri(vec3 p, vec3 w, float period);
+// a lead's ice now (cm), its time since it opened (days: the pack's leads open with each passing storm,
+// ages spread exponentially about ~2 days, from its two floes' hash) at frz C under the sea's freezing
+// point: grown by freezing degree days, 1.33 FDD^0.58 (Lebedev 1938); and its snow (0..1): a winter's
+// fall (pDay mm of water a day) over that time, once it bears snow without flooding (5+ cm)
+vec2 leadIce(uint lid, float frz, float pDay) {
+  float age = -2.0 * log((float(lid & 65535u) + 0.5) / 65536.0);
+  float h = frz > 0.0 ? 1.33 * pow(frz * age, 0.58) : 0.0;
+  return vec2(h, (1.0 - exp(-pDay * age / 12.0)) * smoothstep(3.0, 8.0, h));
+}
 // how much of a pixel foot m across is floe, its middle e m in from the floe's edge and its lead g m wide
 // either side of that edge: the pixel's span less the lead's water in it (box-filtered: a lead narrower
 // than a pixel, a closed pack's metre or so seen from far off, a faint line, not broken into dashes by
@@ -395,25 +415,33 @@ vec4 floeState(uint id, vec3 gc, vec3 w, float ice, float S) {
 // one under snow), w its floe's cover. The pack's floes (cells ~256 m, merged a few to a floe), each as
 // close as the pack is at its middle, so their edges run straight and their leads are one width along
 // them; a broken one's pieces (~16 m, merged likewise) each its floe's whose middle it lies in, so they
-// spill across its old outline whole, further apart toward its edge where the waves work it
-vec4 seaFloes(vec3 p, vec3 up, vec3 w, float ice, float cPix, float foot) {
+// spill across its old outline whole, further apart toward its edge where the waves work it. frz: how far
+// under the sea's freezing point it is now (C), pDay: its winter's snowfall (mm of water a day); lead: the
+// ice in the leads between whole floes (leadIce: cm, snow), 0 where the gaps stay open
+vec4 seaFloes(vec3 p, vec3 up, vec3 w, float ice, float cPix, float foot, float frz, float pDay, out vec2 lead) {
+  // (a lead of the median age: what its leads come to from far off)
+  vec2 leadFar = leadIce(32768u, frz, pDay);
+  lead = vec2(0.0);
   if (cPix <= 0.0 && ice <= 0.0) return vec4(0.0);
   // (a pixel 64 m across or more sees the share of it there only: no floes to find, the far fade's whole)
-  if (foot >= 64.0) return vec4(cPix, 0.0, 0.7, cPix);
-  uint id;
+  if (foot >= 64.0) { lead = leadFar; return vec4(cPix, 0.0, 0.7, cPix); }
+  uint id, lid;
   float e, fw = max(foot, 0.03);
   vec3 gc;
-  floeCell(p, up, 256.0, 16.0, 0x51ceu, id, e, gc);
+  floeCell(p, up, 256.0, 16.0, 0x51ceu, id, e, gc, lid);
+  // (its edges ragged at a few metres and less, not drawn with a ruler: gen/liquidice.js the same)
+  e += (tri(p, w, 8.0).r - 0.5) * 1.6 + (tri(p, w, 2.0).a - 0.5) * 0.5;
   vec4 F = floeState(id, gc, w, ice, 256.0);
+  if (F.y > 0.0 && F.z < 0.5) lead = leadIce(lid, frz, pDay);
   float x = 0.0, rim = 0.0, age = 0.55 + 0.45 * float(id >> 16u) / 65536.0, cf = F.x;
   if (F.y > 0.0 && F.z < 0.5) { x = floeCover(e, F.w, fw); rim = 1.0 - smoothstep(F.w, F.w + 0.8 + fw, e); }
   if (F.y > 0.0 && F.z > 0.5 && foot >= 1.0) { x = F.x / max(min(1.0, 1.5 * F.x), 1e-3); age = 0.15; }
   if (foot < 4.0 && (F.y < 0.5 || F.z > 0.5 || e < F.w + 16.0)) {
-    uint id2, oid;
+    uint id2, oid, lid2, olid;
     float e2, oe;
     vec3 gc2, ogc;
-    floeCell(p, up, 16.0, 256.0, 0x7a11u, id2, e2, gc2);
-    floeCell(gc2, up, 256.0, 16.0, 0x51ceu, oid, oe, ogc);
+    floeCell(p, up, 16.0, 256.0, 0x7a11u, id2, e2, gc2, lid2);
+    floeCell(gc2, up, 256.0, 16.0, 0x51ceu, oid, oe, ogc, olid);
     vec4 O = floeState(oid, ogc, w, ice, 256.0);
     if (O.y > 0.0 && O.z > 0.5) {
       float g2 = max(0.15, 8.0 * (1.0 - sqrt(O.x / max(min(1.0, 1.5 * O.x), 1e-3)))) + 3.0 * (1.0 - smoothstep(0.0, 40.0, oe));
@@ -425,6 +453,7 @@ vec4 seaFloes(vec3 p, vec3 up, vec3 w, float ice, float cPix, float foot) {
   // the early way out's)
   float kFar = smoothstep(16.0, 64.0, foot);
   x = mix(x, cPix, kFar);
+  lead = mix(lead, leadFar, kFar);
   return vec4(x, rim * x * (1.0 - kFar), mix(age, 0.7, kFar), mix(cf, cPix, kFar));
 }
 `;

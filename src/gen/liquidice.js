@@ -9,7 +9,7 @@ import * as dm from '../core/dmath.js';
 export const SEA_SALT = { water: -1.8 };   // (the sea's freezing point under the fresh's, C)
 
 const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
-const _col = [0, 0, 0], _mat = new Float64Array(8), _p = [0, 0, 0], _a = [0, 0, 0, 0], _b = [0, 0, 0, 0], _yr = [0, 0, 0];
+const _col = [0, 0, 0], _mat = new Float64Array(8), _p = [0, 0, 0], _a = [0, 0, 0, 0], _b = [0, 0, 0, 0], _yr = [0, 0, 0], _yi = [0, 0, 0];
 
 // gen: the world's terrain; s: its sample at d (unit, planet-fixed) where it holds liquid; sinSun:
 // the sun's latitude now (sin, the planet's frame); L: where the sun stands in the year (rad: universe.js
@@ -33,7 +33,9 @@ export function frozenNow(gen, s, d, sinSun, L = 0) {
   if (ice > 0 && kind < 0.2) {
     const r = gen.R + Math.max(0, s[S_H]);
     _p[0] = d[0] * r; _p[1] = d[1] * r; _p[2] = d[2] * r;
-    return seaFloe(_p, d, ice);
+    // (the air over the pack, which its leads freeze by: liquid.js seaFloes' frz the same)
+    const Tair = gen.snap && snowsBySeason(gen.p) && gen.snap.seasonIce(d[0], d[1], d[2], _yi) ? Tm + _yi[2] + _yi[0] * dm.cos(L) + _yi[1] * dm.sin(L) : Ts;
+    return seaFloe(_p, d, ice, Math.max(Tf - Tair, 0));
   }
   return ice > 0.5;
 }
@@ -46,7 +48,7 @@ const floeHash = (x, y, z, sd) => {
   h = (h ^ (h >>> 12)) >>> 0; h = Math.imul(h, 0x297a2d39) >>> 0;
   return (h ^ (h >>> 15)) >>> 0;
 };
-const _A = { id: 0, e: 0, gc: [0, 0, 0] }, _B = { id: 0, e: 0, gc: [0, 0, 0] }, _C = { id: 0, e: 0, gc: [0, 0, 0] };
+const _A = { id: 0, e: 0, gc: [0, 0, 0], lid: 0 }, _B = { id: 0, e: 0, gc: [0, 0, 0], lid: 0 }, _C = { id: 0, e: 0, gc: [0, 0, 0], lid: 0 };
 const _F = { c: 0, there: false, broken: false, g: 0, cc: 0 }, _O = { c: 0, there: false, broken: false, g: 0, cc: 0 };
 const wrap = (i, m) => ((i % m) + m) % m;
 // how close the pack is (liquid.js seaIceCover) at p (d its way), its temperature's ice
@@ -87,7 +89,7 @@ function floeCell(p, up, S, N, sd, o) {
   const qx = _gq[0], qy = _gq[1], qz = _gq[2], S2 = 2 * S;
   o.id = floeHash(wrap(qx, N / 2), wrap(qy, N / 2), wrap(qz, N / 2), sd ^ 0x9e37);
   o.gc[0] = (qx + 0.5) * S2; o.gc[1] = (qy + 0.5) * S2; o.gc[2] = (qz + 0.5) * S2;
-  let e = Infinity;
+  let e = Infinity, nx = qx, ny = qy, nz = qz;
   for (let k = 0; k < 27; k++) {
     if (k === 13) continue;
     const cx = ax0 + (k % 3) - 1, cy = ay0 + (Math.floor(k / 3) % 3) - 1, cz = az0 + Math.floor(k / 9) - 1;
@@ -96,11 +98,19 @@ function floeCell(p, up, S, N, sd, o) {
     floePoint(cx, cy, cz, S, N, sd, _fp);
     _q[0] = _fp[0] - p[0]; _q[1] = _fp[1] - p[1]; _q[2] = _fp[2] - p[2]; stretch(_q, up);
     const bb = _q[0] * _q[0] + _q[1] * _q[1] + _q[2] * _q[2];
-    e = Math.min(e, 0.5 * (bb - aa) / Math.sqrt((_qa[0] - _q[0]) ** 2 + (_qa[1] - _q[1]) ** 2 + (_qa[2] - _q[2]) ** 2));
+    const eb = 0.5 * (bb - aa) / Math.sqrt((_qa[0] - _q[0]) ** 2 + (_qa[1] - _q[1]) ** 2 + (_qa[2] - _q[2]) ** 2);
+    if (eb < e) { e = eb; nx = _gq[0]; ny = _gq[1]; nz = _gq[2]; }
   }
   o.e = e;
+  // (the lead along that edge: its two floes', the same from both: liquid.js floeCell)
+  o.lid = (o.id ^ floeHash(wrap(nx, N / 2), wrap(ny, N / 2), wrap(nz, N / 2), sd ^ 0x9e37)) >>> 0;
   return o;
 }
+// a lead's ice (cm) frz C under the freezing point, by its age from its floes' hash (liquid.js leadIce)
+const leadIceH = (lid, frz) => frz > 0 ? 1.33 * dm.pow(frz * -2 * dm.log(((lid & 65535) + 0.5) / 65536), 0.58) : 0;
+// (thin ice bears a walker from ~10 cm)
+const LEAD_BEARS = 10;
+const _j = [0, 0, 0, 0], _k = [0, 0, 0, 0];
 // a floe group's state (liquid.js floeState): its cover, whether it's there, broken, its leads' half width
 function floeState(id, gc, d, ice, S, o) {
   const c = seaIceCover(ice, gc, d), pres = Math.min(1, 1.5 * c), cc = c / Math.max(pres, 1e-3);
@@ -108,14 +118,18 @@ function floeState(id, gc, d, ice, S, o) {
   o.g = Math.max(S / 400, 0.5 * S * (1 - Math.sqrt(cc)));
   return o;
 }
-// whether the sea's ice bears you at p (body-fixed m; d its way), its temperature's ice (0..1): a floe
-// of the pack, or a piece of a broken one (liquid.js seaFloes); a closed pack's leads frozen over
-export function seaFloe(p, d, ice) {
-  const F = floeState(floeCell(p, d, 256, 16, 0x51ce, _A).id, _A.gc, d, ice, 256, _F);
-  seaFloe.lastC = F.c; seaFloe.why = 3;   // (for tests: its cover, and what bears you: 1 a floe, 2 a piece, 3 the closed pack)
-  if (F.c >= 0.98) return true;
-  seaFloe.why = 1;
+// whether the sea's ice bears you at p (body-fixed m; d its way), its temperature's ice (0..1), frz C
+// under the sea's freezing point: a floe of the pack, a lead frozen over thick enough, or a piece of a
+// broken floe (liquid.js seaFloes)
+export function seaFloe(p, d, ice, frz = 0) {
+  floeCell(p, d, 256, 16, 0x51ce, _A);
+  // (its edges ragged: liquid.js the same)
+  _A.e += (triDetail(p, d, 8, _j)[0] - 0.5) * 1.6 + (triDetail(p, d, 2, _k)[3] - 0.5) * 0.5;
+  const F = floeState(_A.id, _A.gc, d, ice, 256, _F);
+  seaFloe.lastC = F.c; seaFloe.why = 1;   // (for tests: its cover, and what bears you: 1 a floe, 2 a piece, 3 a lead's ice)
   if (F.there && !F.broken && _A.e > F.g) return true;
+  seaFloe.why = 3;
+  if (F.there && !F.broken && leadIceH(_A.lid, frz) >= LEAD_BEARS) return true;
   seaFloe.why = 2;
   if (!F.there || F.broken || _A.e < F.g + 16) {
     floeCell(p, d, 16, 256, 0x7a11, _B);

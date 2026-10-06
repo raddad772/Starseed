@@ -157,7 +157,7 @@ export class WorldSims {
     const cached = await dbGet(await this.dbP, this.key(id));
     if (cached) {
       // (one cached before its seasons were kept: worked out once, kept, and the world shown with them)
-      if (cached.Nc && !cached.season) {
+      if (cached.Nc && !cached.seasonIce) {
         const b = this.game.system.bodies[id], host = b.kind === 'moon' ? this.game.system.bodies[b.parentId] : null;
         const r = await seasonsOf(cached, climateOpts(b, this.game.system.bodies[0], host));
         if (r) { Object.assign(cached, r); dbPut(await this.dbP, this.key(id), cached); }
@@ -313,7 +313,7 @@ export class WorldSims {
     g.pool.setSnapshot(id, snap);                    // (the terrain workers')
     if (g.world.rebuildTerrain) g.world.rebuildTerrain(id);
     // (and its seasons, kept with it, for its land's snow through the year)
-    if (snap.seasonPx && g.world.setSeasonMap) g.world.setSeasonMap(id, { px: snap.seasonPx, w: SEASON_W, h: SEASON_H, yearDays: snap.yearDays || 365 });
+    if (snap.seasonPx && g.world.setSeasonMap) g.world.setSeasonMap(id, { px: snap.seasonPx, icePx: snap.seasonIcePx, w: SEASON_W, h: SEASON_H, yearDays: snap.yearDays || 365 });
     console.log(`world sim ${fromCache ? 'from cache' : `done in ${((snap.ms || 0) / 1000).toFixed(1)} s`}: ${b.name} (${snap.path}, N ${snap.N})`);
     if (this.onReady) this.onReady(id, snap);
     this.requestRefine(id, snap);

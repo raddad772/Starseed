@@ -443,6 +443,19 @@ rivers that are straighter where they should be?"):**
   The CPU twin maps a sea patch top-down for checking: tools/floemap.mjs (shots floemap*.png).
   Cheaper far off: a pixel 64 m or wider returns the far fade's values at once (no cell searches); the
   floe's age, rim and middle cover fade to them over 16-64 m with its cover, so there's no ring there.
+  Leads (Dave: "Those big black stripes painted on the ground look weird"): each lead between two whole
+  floes has its time since it opened (floeCell's lid: the two floes' hashes, the same from both sides;
+  exponential about ~2 days) and freezes over by freezing degree days, 1.33 FDD^0.58 cm (Lebedev 1938),
+  its albedo by thickness (open water, nilas, grey, grey-white: ~0.07 to ~0.4, Brandt et al. 2005), snow
+  on it once it bears it (the winter's fall over its age); edges ragged at a few metres (the 8 m and 2 m
+  tiles). By the air over the pack, not the sea's temperature (its EBM sea keeps its heat: -2 C under a
+  closed pack): season.js seasonIce, the climate once more with every sea cell whose coldest month freezes
+  as frozen ground (ice cuts the sea's heat off), a second map tSeasonIce (a1, b1, mean against the open
+  sea's); winter air over the frozen sea -15 to -33 C in the north (open sea -1 to -23), the Southern
+  Ocean's hardly colder (its open band rules its air). The CPU twin the same: a lead bears you from 10 cm
+  of ice (was: every lead in a closed pack). SOL Earth 75 N polar twilight: thin grey leads; 56.9 N 147
+  near the edge (its sea not freezing at the climate's scale): open, dark. Still flat paint: the floes as
+  geometry next (Dave: "Why aren't the leads real geometry").
 - **Seasons on the land: snow through the year** (Dave: "see seasonal changes"; "refine and add"; not
   living things yet). worldsim/season.js: each world's year by climate cell, its temperature's first
   harmonic about the mean (a1 cos L + b1 sin L, L the solar longitude from the northern spring equinox,
