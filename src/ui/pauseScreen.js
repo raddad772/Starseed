@@ -220,7 +220,7 @@ export class PauseScreen {
     if (PL && PL.places.length) {
       const k = {}; for (const p of PL.places) k[p.kind] = (k[p.kind] || 0) + 1;
       const word = { continent: 'continent', 'large island': 'large island', island: 'island', islet: 'islet' };
-      if (PL.features) row('Places', Object.entries(k).sort((x, y) => y[1] - x[1]).map(([x, nn]) => `${nn} ${x}${nn > 1 ? (x.endsWith('s') ? '' : 's') : ''}`).join(' · '));
+      if (PL.features) row('Places', Object.entries(k).sort((x, y) => y[1] - x[1]).map(([x, nn]) => `${nn} ${x}${nn > 1 ? (x.endsWith('s') ? '' : x.endsWith('o') ? 'es' : 's') : ''}`).join(' · '));
       else row('Places', ['continent', 'large island', 'island', 'islet'].filter((x) => k[x]).map((x) => `${k[x]} ${word[x]}${k[x] > 1 ? 's' : ''}`).concat(PL.groups.length ? [`${PL.groups.length} archipelago${PL.groups.length > 1 ? 's' : ''}`] : []).join(' · '));
     }
     if (BS && BS.plans.length && BS.sea) row('Sea life', `${BS.plans.length} body plans · up to ${esc(BS.sea.top)}`);
