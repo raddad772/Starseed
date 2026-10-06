@@ -23,10 +23,18 @@ Dave's queue, in the order he raised it (keep this list current):
    when built and again when the ground under them refines or the near field is rebuilt, a budget a frame;
    a chunk rebuilt keeps its plants (seated again) instead of scattering them anew; rebuilds behind the
    trees' jobs.
-   Noted: near the ground with 2 workers (the test tab) trees can take minutes: hundreds of fine chunks,
-   ~1 s each (shade() ~53 us a fine point), rank ahead of the flora jobs; consider trees before the finest
-   chunks. A straight ledge in the ground near 18.66N 59.63W (the near field's edge against the
+   Noted: a hidden in-app pane throttles the test page to a standstill (that, not the code, was the slow
+   loading); with it shown, trees load in ~40 s with 2 workers. A straight ledge in the ground near 18.66N 59.63W (the near field's edge against the
    heightfield?) seen at sunset from 2.5 m.
+2b. Forest light and grass (Dave, same day): DONE canopy light (4c517be: green light passed down by the
+   crowns, the canopy's sky maps softened, no squares); grass as GPU blades (33dd1a3: 2 m patches,
+   long and wild by climate, meadows open, thatch under it, gusts across). Left, in order: grass from
+   altitude (a far tier of sparser clumps to ~200 m, the ground reading as grass beyond, wind waves
+   across meadows seen from the air); grass drying by season (the dry half of the year, from the
+   climate's season data); darkness at the trunks' feet in any weather (screen-space AO, HBAO/GTAO);
+   check the leaves' sparkle against the sky after the mip-scaled alpha; probe GI (option 2: a probe
+   grid filled from the maps; option 3 later, WebGPU compute beside WebGL). Test tip: the in-app pane
+   must be shown (a hidden pane throttles the page to a standstill); ?tilegpu=0 for a hidden tab.
 3. Soil at walking scale: the world sim's soil depth and water table (worldsim/soil.js) into the
    snapshot (SIM bump), refined by slope and curvature; trees by root depth, grass by a few cm, bare rock
    and scree where none, wetland plants where the water table is at the surface.
