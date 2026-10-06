@@ -35,7 +35,7 @@ export class FireField {
   }
   ask(key, c) {
     if (this.jobs.has(key) || !this.pool) return;
-    const job = this.pool.submit({ type: 'fire', body: this.body.id, face: c.face, ti: c.ti, tj: c.tj, o2K: this.o2K, seed: this.seed }, 1);   // (an 8 km tile's, rarely asked: ahead of the chunks' stream)
+    const job = this.pool.submit({ type: 'fire', body: this.body.id, face: c.face, ti: c.ti, tj: c.tj, o2K: this.o2K, seed: this.seed }, 3.5);   // (an 8 km tile's, rarely asked: after the ground under the camera and the near field's first ring, ahead of the rest)
     this.jobs.set(key, job);
     job.promise.then((r) => {
       this.jobs.delete(key);

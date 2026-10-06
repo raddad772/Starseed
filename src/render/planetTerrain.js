@@ -179,7 +179,9 @@ export class PlanetTerrain {
       let ready = true;
       for (const c of node.children) {
         c.lastSeen = this.frame;
-        if (c.state !== 2) { ready = false; this.request(c, this.nodeDistance(c)); }
+        // (each asked for as near as its parent: a node shows its children only once all four are in, so
+        // a far sibling held the whole region, the camera's ground with it, at the parent's level)
+        if (c.state !== 2) { ready = false; this.request(c, Math.min(dist, this.nodeDistance(c))); }
       }
       if (ready) {
         for (const c of node.children) this.select(c);
@@ -312,6 +314,12 @@ export class PlanetTerrain {
   }
 
   priority(node, dist) {
+    // (the column of chunks the camera stands in, at every level, before anything else: the ground under
+    // you down to its finest; behind it, the near field's volume and the rest stream in. Left to its
+    // levels' order, the near field's hundreds of chunks came first and a level-4 chunk, its vertices
+    // 300 m apart, stayed under the camera: a coast's one triangle from the sea to the land, its low
+    // middle shaded as a beach, white sand and teal over the grass)
+    if (dist < node.arc * 0.25) return -50 + node.level * 0.1;
     // coarse levels first (they unblock whole regions), then by distance
     return node.level * 0.6 + Math.log2(1 + dist / Math.max(node.arc, 1)) * 1.5 - (node.level < 3 ? 100 : 0);
   }
