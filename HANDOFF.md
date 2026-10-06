@@ -78,7 +78,11 @@ Dave's queue, in the order he raised it (keep this list current):
    from orbit (that wants streaming ahead of the camera). And (88913ad) the sky through a gentle fisheye
    about the zenith from low down (atmosphere.js lensZ, sky.js SKY_LENS): the sun, moons, planets and stars
    rise and set at the drawn skyline (Dave's idea); the air's optics through it backwards. Scratchpad
-   lens_*. Was: the solar aureole (dust and droplets' narrow forward peak; the sun's disc is true size, 0.52 deg,
+   lens_*, moon_* (moonrise checked: rises at the skyline, stars unbroken to it). Sunset clouds lit from
+   beneath when the sun is under their horizontal (020c5e6, volume.js; cl_grid). Seen, not looked at: in the
+   anti-sun sky at sun -1.5 to -3 deg (cl_anti_m1p5/m3) a straight diagonal light/dark boundary across the
+   frame: the earth's shadow should be a level arch; suspect the cloud-shadow map's square or the near
+   pass's edge. Was: the solar aureole (dust and droplets' narrow forward peak; the sun's disc is true size, 0.52 deg,
    and reads tiny in the 72 deg view without it). Dave: "more dramatic; it's the sky not clouds that turn
    super pink".
 13. Dave's new asks, in order (the loading screen DONE, af5c907); the caprock scarps (or a fault scarp:
