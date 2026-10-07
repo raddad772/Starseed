@@ -12,6 +12,8 @@ class NoCache(http.server.SimpleHTTPRequestHandler):
         # workers rather than copied to each)
         self.send_header('Cross-Origin-Opener-Policy', 'same-origin')
         self.send_header('Cross-Origin-Embedder-Policy', 'require-corp')
+        # the JS self-profiler (new Profiler(...)): where a frame's time goes, sampled, in a test tab
+        self.send_header('Document-Policy', 'js-profiling')
         super().end_headers()
     def log_message(self, *a):
         pass

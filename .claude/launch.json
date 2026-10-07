@@ -4,8 +4,22 @@
     {
       "name": "starseed",
       "runtimeExecutable": "python3",
-      "runtimeArgs": ["/Users/dave/dev/starseed/tools/serve.py", "8765", "/Users/dave/dev/starseed"],
+      "runtimeArgs": [
+        "/Users/dave/dev/starseed/tools/serve.py",
+        "8765",
+        "/Users/dave/dev/starseed"
+      ],
       "port": 8765
+    },
+    {
+      "name": "starseed-test",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "/Users/dave/dev/starseed/tools/serve.py",
+        "8766",
+        "/Users/dave/dev/starseed"
+      ],
+      "port": 8766
     }
   ]
 }
