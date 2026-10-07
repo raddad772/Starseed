@@ -24,7 +24,7 @@
 import * as dm from '../core/dmath.js';
 import { Noise3 } from '../core/noise.js';
 import { Rng, hashInts } from '../core/rng.js';
-import { S_LEN, S_H, S_WDEPTH, S_MOUNT, S_ROUGH, S_SAND, S_ICE, S_TEMP } from './terrain.js';
+import { S_LEN, S_H, S_WDEPTH, S_MOUNT, S_ROUGH, S_SAND, S_ICE, S_TEMP, S_RIVR } from './terrain.js';
 import { ROCKS } from './worldsim/lithology.js';
 import { MAT_W0, MAT_N } from './matclasses.js';
 import { fireAtDir, fireMark } from './life/fire.js';
@@ -96,7 +96,8 @@ export class VolumeField {
     if (s[S_SAND] > 0) { hard *= 1 - s[S_SAND]; cave *= 1 - s[S_SAND]; }
     // (nor on a glacier: its ice is smooth)
     if (s[S_ICE] > 0) { const k = 1 - dm.smoothstep(0, 4, s[S_ICE]); hard *= k; cave *= k; }
-    b = { H: s[S_H], hard, cave };
+    // (a river's or a creek's channel (not the sea's: its waves cut their own notch, below))
+    b = { H: s[S_H], hard, cave, wet: s[S_RIVR] > 0 ? 1 : 0 };
     this.base.set(key, b);
     return b;
   }
@@ -110,7 +111,12 @@ export class VolumeField {
     const sx = (this.baseAt(i + 4, k).H - this.baseAt(i - 4, k).H) / 8, sz = (this.baseAt(i, k + 4).H - this.baseAt(i, k - 4).H) / 8;
     const s8 = Math.sqrt(sx * sx + sz * sz);
     const a = this.a, px = a.o[0] + i * a.e[0] + k * a.n[0], py = a.o[1] + i * a.e[1] + k * a.n[1], pz = a.o[2] + i * a.e[2] + k * a.n[2];
-    const wc = smooth(0.28, 0.65, s8) * b.hard;
+    // (running water planes its bed: no treads, risers or standing beds in a channel or a few metres
+    // either side of it; down a fall the face its water pours over as the heightfield has it, the sheet
+    // drawn there (render/falls.js), not a tread stood out across it, its water pouring from under a ledge)
+    const wet = Math.max(b.wet, this.baseAt(i + 3, k).wet, this.baseAt(i - 3, k).wet, this.baseAt(i, k + 3).wet, this.baseAt(i, k - 3).wet,
+      0.5 * Math.max(this.baseAt(i + 6, k).wet, this.baseAt(i - 6, k).wet, this.baseAt(i, k + 6).wet, this.baseAt(i, k - 6).wet));
+    const wc = smooth(0.28, 0.65, s8) * b.hard * (1 - wet);
     let Hc = H;
     if (wc > 0) {
       const S = 5 + 9 * (0.5 + 0.5 * this.nStep.noise(px / 420, py / 420, pz / 420));
