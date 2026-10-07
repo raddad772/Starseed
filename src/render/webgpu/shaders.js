@@ -1,3 +1,6 @@
+import { SCANNED_MATERIALS, SEASONS, GROUND } from './materials.js';
+import { code as PHYSICAL_LIGHTING } from './generated/lighting.js';
+
 export const FRAME = /* wgsl */`
 struct Frame {
   viewProjection: mat4x4f,
@@ -11,6 +14,8 @@ struct Object {
   nearUpEnabled: vec4f,
   nearBand: vec4f,
   surface: vec4f,
+  originMod: vec4f,
+  originRel: vec4f,
 };
 struct BodyLight { sunDir: vec4f, sunE: vec4f, ambient: vec4f, center: vec4f };
 @group(0) @binding(0) var<uniform> frame: Frame;
@@ -28,20 +33,27 @@ fn octDecode(e: vec2f) -> vec3f {
 }
 `;
 
-export const TERRAIN = FRAME + /* wgsl */`
+export const TERRAIN = FRAME + SCANNED_MATERIALS + SEASONS + GROUND + /* wgsl */`
 struct Vertex {
   positionOcc: vec4f, morph: vec4f, normalShore: vec4f, morphNormal: vec4f,
-  color: vec4f, morphColor: vec4f, ext: vec4f,
+  color: vec4f, morphColor: vec4f, ext: vec4f, mat: vec4f, cls0: vec4f, cls1: vec4f, cls2: vec4f,
 };
 @group(1) @binding(0) var<storage, read> vertices: array<Vertex>;
 struct Varying {
   @builtin(position) position: vec4f,
-  @location(0) normal: vec3f,
+  @location(0) worldPos: vec3f,
   @location(1) color: vec4f,
   @location(2) nearRel: vec3f,
   @location(3) occShore: vec2f,
   @location(4) ext: vec4f,
   @location(5) @interpolate(flat) objectIndex: u32,
+  @location(6) fixedPos: vec3f,
+  @location(7) fixedNormal: vec3f,
+  @location(8) mat: vec4f,
+  @location(9) cls0: vec4f,
+  @location(10) cls1: vec4f,
+  @location(11) cls2: vec4f,
+  @location(12) anchorPos: vec3f,
 };
 @vertex fn vertexMain(@builtin(vertex_index) vi: u32, @builtin(instance_index) oi: u32) -> Varying {
   let v = vertices[vi]; let o = objects[oi];
@@ -54,26 +66,39 @@ struct Varying {
     p -= o.nearUpEnabled.xyz * (0.4 * (1.0 - smoothstep(0.97 * o.nearBand.x, o.nearBand.x, dn)));
   }
   var out: Varying;
-  out.position = frame.viewProjection * o.model * vec4f(p, 1.0);
-  out.normal = normalize((o.model * vec4f(normalize(mix(v.normalShore.xyz, v.morphNormal.xyz, m)), 0.0)).xyz);
+  out.worldPos = (o.model * vec4f(p, 1.0)).xyz;
+  out.position = frame.viewProjection * vec4f(out.worldPos, 1.0);
+  out.fixedNormal = normalize(mix(v.normalShore.xyz, v.morphNormal.xyz, m));
+  out.fixedPos = o.originMod.xyz + p; out.anchorPos = o.originRel.xyz + p;
+  out.mat = v.mat; out.cls0 = v.cls0; out.cls1 = v.cls1; out.cls2 = v.cls2;
   out.color = mix(v.color, v.morphColor, m);
   out.nearRel = o.nearOffMorphEnd.xyz + p;
   out.occShore = vec2f(v.positionOcc.w, mix(v.normalShore.w, v.morphNormal.w, m));
   out.ext = v.ext; out.objectIndex = oi;
   return out;
 }
-struct GBuffer { @location(0) albedoAO: vec4f, @location(1) normalMaterial: vec4f, @location(2) emission: vec4f };
+struct GBuffer { @location(0) albedoAO: vec4f, @location(1) normalMaterial: vec4f, @location(2) emission: vec4f, @location(3) surface: vec4f };
 @fragment fn fragmentMain(v: Varying) -> GBuffer {
   let o = objects[v.objectIndex];
+  let dx = dpdx(v.fixedPos); let dy = dpdy(v.fixedPos);
+  let foot = length(fwidth(v.worldPos));
   if (o.nearUpEnabled.w > 0.5) {
     let dn = length(v.nearRel - o.nearUpEnabled.xyz * dot(v.nearRel, o.nearUpEnabled.xyz));
     if (o.nearBand.y < 0.5) { if (dn < 0.97 * o.nearBand.x && v.occShore.y <= 0.0) { discard; } }
     else if (dn < o.nearBand.z || dn > o.nearBand.w) { discard; }
   }
+  let b = bodies[u32(o.surface.x)];
+  let rel = v.worldPos - b.center.xyz;
+  let up = normalize(rel);
+  let surface = groundSurface(v.color, v.mat, v.ext, v.cls0, v.cls1, v.cls2,
+    v.fixedPos, v.anchorPos, dx, dy, normalize(v.fixedNormal), material.toFixed * up,
+    length(v.worldPos), foot, dot(up, b.sunDir.xyz), v.occShore.y);
   var out: GBuffer;
-  out.albedoAO = vec4f(v.color.rgb * v.color.rgb, 1.0 - clamp(v.occShore.x, 0.0, 1.0));
-  out.normalMaterial = vec4f(octEncode(normalize(v.normal)), v.ext.z, o.surface.x);
-  out.emission = vec4f(0.0);
+  out.albedoAO = vec4f(clamp(surface.albedo, vec3f(0.0), vec3f(1.0)), surface.ao);
+  out.normalMaterial = vec4f(octEncode(normalize(transpose(material.toFixed) * surface.normal)), surface.roughness, o.surface.x);
+  // Separate cave occlusion from scan AO: the former attenuates both sun and sky.
+  out.emission = vec4f(surface.emission, 1.0 - 0.94 * clamp(v.occShore.x, 0.0, 1.0));
+  out.surface = vec4f(0.0, v.ext.y, surface.snow, 0.04 - 0.02 * v.cls2.w);
   return out;
 }
 `;
@@ -87,26 +112,32 @@ struct Fullscreen { @builtin(position) position: vec4f, @location(0) uv: vec2f }
 }
 `;
 
-export const LIGHTING = FRAME + FULLSCREEN + /* wgsl */`
+export const LIGHTING = FRAME + FULLSCREEN + PHYSICAL_LIGHTING + /* wgsl */`
 @group(1) @binding(0) var albedoAO: texture_2d<f32>;
 @group(1) @binding(1) var normalMaterial: texture_2d<f32>;
 @group(1) @binding(2) var emission: texture_2d<f32>;
 @group(1) @binding(3) var depth: texture_depth_2d;
+@group(1) @binding(4) var surface: texture_2d<f32>;
 @fragment fn light(v: Fullscreen) -> @location(0) vec4f {
   let pixel = vec2i(v.position.xy);
   let z = textureLoad(depth, pixel, 0);
-  if (z == 0.0) { return vec4f(0.0, 0.0, 0.0, 1.0); }
+  if (z == 0.0) { discard; }
   let a = textureLoad(albedoAO, pixel, 0);
-  if (frame.sizeExposure.w > 0.5) { return vec4f(a.rgb, 1.0); }
+
   let m = textureLoad(normalMaterial, pixel, 0);
-  let b = bodies[u32(m.w)]; let n = octDecode(m.xy);
+  if (u32(m.w) != u32(global.uBodyIndex)) { discard; }
+  if (frame.sizeExposure.w > 0.5) { return vec4f(a.rgb, 1.0); }
+  let n = octDecode(m.xy);
   let ndc = vec4f(v.uv * vec2f(2.0, -2.0) + vec2f(-1.0, 1.0), z, 1.0);
   let hp = frame.inverseViewProjection * ndc;
   let p = hp.xyz / hp.w;
-  let up = normalize(p - b.center.xyz);
-  let sky = 0.15 * (0.3 + 0.7 * max(dot(n, up), 0.0));
-  let irradiance = b.sunE.xyz * (max(dot(n, b.sunDir.xyz), 0.0) + sky * a.a) + b.ambient.xyz * a.a;
-  let lit = a.rgb * irradiance / 3.14159265 + textureLoad(emission, pixel, 0).rgb;
+  let e = textureLoad(emission, pixel, 0);
+  let s = textureLoad(surface, pixel, 0);
+  // Reconstruct a neighboring point at this depth for a conservative pixel footprint.
+  let nx = frame.inverseViewProjection * (ndc + vec4f(2.0 / frame.sizeExposure.x, 0.0, 0.0, 0.0));
+  let ny = frame.inverseViewProjection * (ndc + vec4f(0.0, 2.0 / frame.sizeExposure.y, 0.0, 0.0));
+  let foot = length(abs(nx.xyz / nx.w - p) + abs(ny.xyz / ny.w - p));
+  let lit = deferredLight(p, n, a.rgb, m.z, a.a, s.y, s.w, e.a, s.x, foot) + e.rgb;
   return vec4f(lit, 1.0);
 }
 `;

@@ -8,24 +8,29 @@ Written by session 39d69fa8 as the handoff to Astra. Read HANDOFF.md and CLAUDE.
 
 ## Implementation status (Codex, 2026-10-07)
 
-The full migration is in progress. The first opt-in checkpoint is implemented, **GPU-fixture verified**:
+The full migration is in progress. `?renderer=webgpu` is opt-in; WebGL remains the default until parity.
 
-- `?renderer=webgpu` presents a raw WebGPU terrain G-buffer, separate lighting and post pass; WebGL stays
-  the default. The temporary WebGL backend still creates legacy resources and supplies the comparison
-  frame. This is not the finished renderer and must not be used as the default yet.
-- Heightfield and near-volume geometry use the existing worker data, morphing, camera-relative transforms,
-  and near-field cutouts. Depth is `depth32float`, reversed 0..1, cleared to zero.
-- Current terrain shading is the step-0 base-albedo/sun approximation. Detailed materials, shadows,
-  other opaque objects, water, sky, atmosphere, adaptive exposure, culling and new capabilities remain.
-- `tools/webgpu-compare.js` captures both backends from one scene/camera and measures full/flat/full GPU
-  passes. `tools/gpu-measure.js` dispatches to it on WebGPU. Readback copies a persistent output texture;
-  optional timestamp queries are collected asynchronously. Performance parity has not been measured.
-- `node --test tools/tests/webgpu.test.mjs`: 3 passing tests (depth across astronomical ranges, frustum /
-  reconstruction, normalized and interleaved worker attributes). The three WGSL modules pass offline
-  Naga validation. `tools/tests/webgpu.html` is the finite GPU fixture for overlap/depth, capture,
-  resize and disposal; passed in the in-app browser (4,232 foreground and 14,776 background pixels; timestamp queries available).
+- Raw WebGPU terrain/near-volume G-buffer, reversed `depth32float`, shared physical lighting,
+  scanned material arrays, seasons, frost, wetness, wind ripples and thermal emission are implemented.
+- Atmosphere LUTs, sky view, cloud shadow, aerial/cloud march and composite now run on the raw device,
+  followed by native luminance/adaptation, bloom and the existing AgX/ACES tone mapping.
+- Existing GLSL equations are translated offline with pinned Naga 0.1.0 (`tools/shaders/`); checked-in
+  WGSL runs directly in the browser. There is no runtime compiler or new browser dependency.
+- A temporary WebGL producer bridge still supplies scene/resource descriptions and reference captures.
+  Its render-target recipes are reproduced on WebGPU, without WebGL pixel readbacks. Removing this
+  bridge follows opaque/forward/shadow parity. Other opaque objects, native geometry shadows, liquids,
+  space background, GPU culling, clustered lights, decals and GTAO are still pending.
+- `tools/tests/webgpu.html` passes on the GPU: overlap/reversed depth, capture, resize and disposal.
+  `node --test tools/tests/webgpu.test.mjs`: 4 passing tests, including std140 parameter packing.
+  Generated shaders compile offline and on the browser device without validation errors.
+- `tools/tests/webgpu-scenes.html` performs finite, same-camera comparisons with two workers. The wood
+  comparison passes at 1280x960, with fixed incident-light exposure for both renderers. Terrain and
+  atmosphere are visually comparable; objects/shadows are visibly absent on WebGPU at this checkpoint.
+  Measured drained totals were about 17–19 ms for this incomplete scene; this is **not a parity or
+  performance claim**. Timestamp scopes may overlap on this adapter, so the tool also reports drained
+  totals and flags implausible sums. Wood-near-tree, gorge and elevated parity runs remain required.
 - Dave confirmed this is the only agent working on the computer and no coordination messages are needed.
-  The finite GPU fixture runs on the test server at port 8766. Full-scene comparisons are next.
+  The finite GPU fixtures use the test server on port 8766.
 
 ## Why
 

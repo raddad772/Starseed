@@ -4,9 +4,16 @@ import * as THREE from 'three';
 import { createDevice, bufferWithData, shaderModule, readRGBA, PassTimer } from './device.js';
 import { reversedPerspective, packTerrain } from './math.js';
 import { TERRAIN, LIGHTING, POST } from './shaders.js';
+import { TextureCache } from './textures.js';
+import { SurfaceCache } from './surfaces.js';
+import { FullscreenPasses } from './passes.js';
+import { ProgramBindings } from './program.js';
+import { AirPass } from './air.js';
+import { PostPass } from './post.js';
+import { layout as lightLayout } from './generated/lighting.js';
 
-const OBJECT_FLOATS = 36;
-const GB_FORMATS = ['rgba8unorm', 'rgba16float', 'rgba16float'];
+const OBJECT_FLOATS = 44;
+const GB_FORMATS = ['rgba8unorm', 'rgba16float', 'rgba16float', 'rgba8unorm'];
 const value = (u, name, fallback = 0) => u[name]?.value ?? fallback;
 const vec = (data, offset, v) => { data[offset] = v?.x || 0; data[offset + 1] = v?.y || 0; data[offset + 2] = v?.z || 0; };
 
@@ -27,9 +34,16 @@ export class DeferredRenderer {
     this.stats = { calls: 0, triangles: 0, geometries: 0, passes: {} };
     this.timer = new PassTimer(this.device, gpu.timestamp);
     this.frameData = new Float32Array(36);
+    this.textures = new TextureCache(this.device);
+    this.surfaces = new SurfaceCache(this.device, this.textures);
+    this.passes = new FullscreenPasses(this.device, this.textures, this.format); this.textures.passes = this.passes;
+    this.air = new AirPass(this.device, this.passes, this.textures);
+    this.post = new PostPass(this.device, this.passes, this.textures, this.air);
+    this.lightBindings = new ProgramBindings(this.device, lightLayout, this.textures);
   }
   async init() {
     const d = this.device, S = GPUShaderStage;
+    await Promise.all([this.passes.init(), this.air.init()]);
     this.frameLayout = d.createBindGroupLayout({ label: 'frame and world', entries: [
       { binding: 0, visibility: S.VERTEX | S.FRAGMENT, buffer: { type: 'uniform' } },
       { binding: 1, visibility: S.VERTEX | S.FRAGMENT, buffer: { type: 'read-only-storage' } },
@@ -41,6 +55,7 @@ export class DeferredRenderer {
     this.gbufferLayout = d.createBindGroupLayout({ label: 'G-buffer inputs', entries: [
       ...[0, 1, 2].map((binding) => ({ binding, visibility: S.FRAGMENT, texture: { sampleType: 'unfilterable-float' } })),
       { binding: 3, visibility: S.FRAGMENT, texture: { sampleType: 'depth' } },
+      { binding: 4, visibility: S.FRAGMENT, texture: { sampleType: 'unfilterable-float' } },
     ] });
     this.postLayout = d.createBindGroupLayout({ label: 'HDR input', entries: [{ binding: 0, visibility: S.FRAGMENT, texture: { sampleType: 'unfilterable-float' } }] });
     this.frameBuffer = d.createBuffer({ label: 'camera', size: 144, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
@@ -50,14 +65,14 @@ export class DeferredRenderer {
     ]);
     const layout = (second) => d.createPipelineLayout({ bindGroupLayouts: [this.frameLayout, second] });
     this.terrainPipeline = await d.createRenderPipelineAsync({
-      label: 'terrain G-buffer', layout: layout(this.geometryLayout),
+      label: 'terrain G-buffer', layout: d.createPipelineLayout({ bindGroupLayouts: [this.frameLayout, this.geometryLayout, this.surfaces.layout] }),
       vertex: { module: terrain, entryPoint: 'vertexMain' },
       fragment: { module: terrain, entryPoint: 'fragmentMain', targets: GB_FORMATS.map((format) => ({ format })) },
       primitive: { topology: 'triangle-list', cullMode: 'back', frontFace: 'ccw' },
       depthStencil: { format: 'depth32float', depthWriteEnabled: true, depthCompare: 'greater' },
     });
     this.lightPipeline = await d.createRenderPipelineAsync({
-      label: 'deferred lighting', layout: layout(this.gbufferLayout),
+      label: 'deferred lighting', layout: d.createPipelineLayout({ bindGroupLayouts: [this.frameLayout, this.gbufferLayout, this.lightBindings.layout] }),
       vertex: { module: lighting, entryPoint: 'fullscreen' },
       fragment: { module: lighting, entryPoint: 'light', targets: [{ format: 'rgba16float' }] },
     });
@@ -113,7 +128,7 @@ export class DeferredRenderer {
   target(view) {
     let t = this.targets.get(view);
     if (t && t.width === view.width && t.height === view.height) return t;
-    if (t) for (const texture of t.textures) texture.destroy();
+    if (t) { this.air.release(t); this.post.release(t); for (const texture of t.textures) texture.destroy(); }
     const d = this.device, width = view.width, height = view.height;
     const make = (label, format, extra = 0) => d.createTexture({ label, size: [width, height], format, usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | extra });
     const gbuffer = GB_FORMATS.map((format, i) => make(`G-buffer ${i}`, format));
@@ -121,7 +136,7 @@ export class DeferredRenderer {
     const hdr = make('lit HDR', 'rgba16float');
     const output = make('presented frame', this.format, GPUTextureUsage.COPY_SRC);
     t = { width, height, gbuffer, depth, hdr, output, textures: [...gbuffer, depth, hdr, output] };
-    t.lightGroup = d.createBindGroup({ layout: this.gbufferLayout, entries: [...gbuffer, depth].map((tex, binding) => ({ binding, resource: tex.createView() })) });
+    t.lightGroup = d.createBindGroup({ layout: this.gbufferLayout, entries: [gbuffer[0], gbuffer[1], gbuffer[2], depth, gbuffer[3]].map((tex, binding) => ({ binding, resource: tex.createView() })) });
     t.postGroup = d.createBindGroup({ layout: this.postLayout, entries: [{ binding: 0, resource: hdr.createView() }] });
     this.targets.set(view, t);
     return t;
@@ -135,14 +150,15 @@ export class DeferredRenderer {
     this.inverse.copy(this.viewProjection).invert();
     // Three's frustum extraction knows the WebGPU clip convention and reversed Z.
     this.frustum.setFromProjectionMatrix(this.viewProjection, THREE.WebGPUCoordinateSystem, true);
-    const draw = [], lights = [], bodyIds = new Map();
+    const draw = [], lights = [], bodyIds = new Map(), surfaces = new Map();
     engine.scene.traverseVisible((object) => {
       if (!object.isMesh || !object.geometry.attributes.nrm || !object.material.uniforms?.uMorph) return;
       if (!object.layers.test(camera.layers)) return;
       if (object.frustumCulled && !this.frustum.intersectsObject(object)) return;
       const u = object.material.uniforms, key = u.uCenter;
       if (!bodyIds.has(key)) { bodyIds.set(key, lights.length); lights.push(u); }
-      draw.push({ object, u, body: bodyIds.get(key), geometry: this.geometry(object.geometry) });
+      if (!surfaces.has(key)) surfaces.set(key, this.surfaces.get(u, object.material.defines?.MAT_MODE || 0));
+      draw.push({ object, u, body: bodyIds.get(key), surface: surfaces.get(key), geometry: this.geometry(object.geometry) });
     });
     this.ensureCapacity(draw.length, lights.length);
     draw.forEach(({ object, u, body }, i) => {
@@ -154,6 +170,7 @@ export class DeferredRenderer {
       data[k + 28] = value(u, 'uNear').y; data[k + 29] = value(u, 'uNearMode');
       data[k + 30] = value(u, 'uNearBand').x; data[k + 31] = value(u, 'uNearBand').y;
       data[k + 32] = body;
+      vec(data, k + 36, value(u, 'uOriginMod')); vec(data, k + 40, value(u, 'uOriginRel'));
     });
     lights.forEach((u, i) => {
       const k = i * 16, data = this.bodyData;
@@ -169,7 +186,14 @@ export class DeferredRenderer {
     d.queue.writeBuffer(this.frameBuffer, 0, data);
     if (draw.length) d.queue.writeBuffer(this.objectBuffer, 0, this.objectData, 0, draw.length * OBJECT_FLOATS);
     if (lights.length) d.queue.writeBuffer(this.bodyBuffer, 0, this.bodyData, 0, lights.length * 16);
-    const t = this.target(view), encoder = d.createCommandEncoder({ label: 'deferred frame' });
+    // Shadow geometry is the next port. Do not sample uninitialized legacy render targets.
+    const lightGroups = lights.map((u, i) => this.lightBindings.get(u.uCenter || u, {
+      ...u, uBodyIndex: { value: i }, uSunShadow: { value: null }, uSkyShadow: { value: null },
+      uGrassCover: { value: null }, uTrunkSky: { value: null }, uRockSky: { value: null },
+      tShadowAtlas: { value: null }, tSkyRings: { value: null },
+      ...(!u.tCloudShadow?.value?.userData?.webgpuRecipe ? { tCloudShadow: { value: null }, uCSOn: { value: 0 } } : {}),
+    }).group);
+    const t = this.target(view); let encoder = d.createCommandEncoder({ label: 'deferred frame' });
     this.timer.begin();
     let pass = encoder.beginRenderPass({ label: 'G-buffer',
       colorAttachments: t.gbuffer.map((texture) => ({ view: texture.createView(), clearValue: [0, 0, 0, 0], loadOp: 'clear', storeOp: 'store' })),
@@ -178,7 +202,8 @@ export class DeferredRenderer {
     });
     pass.setPipeline(this.terrainPipeline); pass.setBindGroup(0, this.frameGroup);
     let triangles = 0;
-    draw.forEach(({ geometry: g }, i) => {
+    draw.forEach(({ geometry: g, surface }, i) => {
+      pass.setBindGroup(2, surface.group);
       pass.setBindGroup(1, g.bindGroup); pass.setIndexBuffer(g.indexBuffer, g.indexFormat);
       pass.drawIndexed(g.count, 1, 0, 0, i); triangles += g.count / 3;
     });
@@ -186,8 +211,18 @@ export class DeferredRenderer {
     for (const [label, texture, pipeline, group] of [
       ['lighting', t.hdr, this.lightPipeline, t.lightGroup], ['post', t.output, this.postPipeline, t.postGroup],
     ]) {
+      if (label === 'post') {
+        d.queue.submit([encoder.finish()]);
+        const hdr = this.air.render(engine, t);
+        encoder = d.createCommandEncoder({ label: 'post and present' });
+        if (engine.toneMat) { this.post.render(engine, t, hdr); continue; }
+        t.postGroup = d.createBindGroup({ layout: this.postLayout, entries: [{ binding: 0, resource: hdr.createView() }] });
+      }
       pass = encoder.beginRenderPass({ label, colorAttachments: [{ view: texture.createView(), clearValue: [0, 0, 0, 1], loadOp: 'clear', storeOp: 'store' }], timestampWrites: this.timer.writes(label) });
-      pass.setPipeline(pipeline); pass.setBindGroup(0, this.frameGroup); pass.setBindGroup(1, group); pass.draw(3); pass.end();
+      pass.setPipeline(pipeline); pass.setBindGroup(0, this.frameGroup); pass.setBindGroup(1, label === 'post' ? t.postGroup : group);
+      if (label === 'lighting') { for (const body of lightGroups) { pass.setBindGroup(2, body); pass.draw(3); } }
+      else pass.draw(3);
+      pass.end();
     }
     if (!view.out) {
       const canvasTexture = this.context.getCurrentTexture();
@@ -218,8 +253,8 @@ export class DeferredRenderer {
   dispose() {
     if (this.disposed) return; this.disposed = true;
     for (const geometry of [...this.geometries]) geometry.dispose();
-    for (const target of this.targets.values()) for (const texture of target.textures) texture.destroy();
-    this.targets.clear(); this.timer.dispose();
+    for (const target of this.targets.values()) { this.air.release(target); this.post.release(target); for (const texture of target.textures) texture.destroy(); }
+    this.targets.clear(); this.timer.dispose(); this.surfaces.dispose(); this.lightBindings.dispose(); this.passes.dispose(); this.textures.dispose();
     this.frameBuffer?.destroy(); this.objectBuffer?.destroy(); this.bodyBuffer?.destroy();
     this.releaseContext(); this.device.destroy();
   }

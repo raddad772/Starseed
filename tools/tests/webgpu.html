@@ -44,11 +44,11 @@ try {
   renderer.render(engine);
   const shot = await renderer.capture();
   const center = (96 * 256 + 128) * 4;
-  check(shot.pixels[center] > 100 && shot.pixels[center + 2] < 5, 'Near triangle must cover the farther one');
+  check(shot.pixels[center] > 100 && shot.pixels[center] > shot.pixels[center + 2] * 3, 'Near triangle must cover the farther one');
   let red = 0, blue = 0;
   for (let i = 0; i < shot.pixels.length; i += 4) {
-    if (shot.pixels[i] > 100 && shot.pixels[i + 2] < 5) red++;
-    if (shot.pixels[i + 2] > 100 && shot.pixels[i] < 5) blue++;
+    if (shot.pixels[i] > 100 && shot.pixels[i] > shot.pixels[i + 2] * 3) red++;
+    if (shot.pixels[i + 2] > 100 && shot.pixels[i + 2] > shot.pixels[i] * 3) blue++;
   }
   check(red > 100 && blue > 100, 'Both surfaces must render with decoded vertex colors');
   check(renderer.stats.calls === 2, 'Both visible meshes must be submitted');

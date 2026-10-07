@@ -1,0 +1,15 @@
+import * as transmittance from './transmittance.js';
+import * as multiscattering from './multiscattering.js';
+import * as irradiance from './irradiance.js';
+import * as skyview from './skyview.js';
+import * as cloudshadow from './cloudshadow.js';
+import * as atmosphere from './atmosphere.js';
+import * as volume from './volume.js';
+import * as composite from './composite.js';
+import * as luminance from './luminance.js';
+import * as adapt from './adapt.js';
+import * as bright from './bright.js';
+import * as bloomdown from './bloomdown.js';
+import * as bloomup from './bloomup.js';
+import * as tonemap from './tonemap.js';
+export const passes = [{name:'transmittance',key:'af93d9a5',outputs:1,...transmittance},{name:'multiscattering',key:'dc3fb042',outputs:1,...multiscattering},{name:'irradiance',key:'8c51ecbf',outputs:1,...irradiance},{name:'skyview',key:'42237ae1',outputs:1,...skyview},{name:'cloudshadow',key:'e631032a',outputs:1,...cloudshadow},{name:'atmosphere',key:'c055889d',outputs:2,...atmosphere},{name:'volume',key:'e232c619',outputs:2,...volume},{name:'composite',key:'d6906679',outputs:1,...composite},{name:'luminance',key:'caa1ed26',outputs:1,...luminance},{name:'adapt',key:'1119180b',outputs:1,...adapt},{name:'bright',key:'df23b936',outputs:1,...bright},{name:'bloomdown',key:'de212918',outputs:1,...bloomdown},{name:'bloomup',key:'a43d0cd1',outputs:1,...bloomup},{name:'tonemap',key:'2ca6e091',outputs:1,...tonemap}];

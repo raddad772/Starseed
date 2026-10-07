@@ -47,3 +47,15 @@ test('worker attributes keep their normalization and source arrays unchanged', (
   assert.deepEqual([...normal], [0, 32767, -32768, 1234]);
   assert.deepEqual([...color], [128, 64, 255, 0]);
 });
+
+import { packUniforms } from '../../src/render/webgpu/uniforms.js';
+import { prepare } from '../shaders/translate.mjs';
+test('translated uniform layouts preserve vec3/scalar packing, matrices and arrays', () => {
+  const { metadata } = prepare('uniform vec3 a; uniform float b; uniform mat3 m; uniform vec3 c[2]; uniform int n; void main(){}');
+  const packed = packUniforms(metadata, { a: { value: [1,2,3] }, b: { value: 4 }, m: { value: [5,6,7,8,9,10,11,12,13] }, c: { value: [[14,15,16],[17,18,19]] }, n: { value: 7 } });
+  const f = new Float32Array(packed), ints = new Int32Array(packed);
+  assert.deepEqual([...f.slice(0,4)],[1,2,3,4]);
+  assert.deepEqual([...f.slice(4,16)],[5,6,7,0,8,9,10,0,11,12,13,0]);
+  assert.deepEqual([...f.slice(16,24)],[14,15,16,0,17,18,19,0]);
+  assert.equal(ints[24],7);
+});

@@ -1,0 +1,17 @@
+<!doctype html><meta charset="utf-8"><title>Starseed renderer comparisons</title>
+<style>body{margin:0;background:#10151b;color:#ddd;font:14px system-ui}header{padding:12px}iframe{border:0;width:1280px;height:960px}img{display:block;max-width:100%}pre{white-space:pre-wrap}button,a{margin:8px}</style>
+<header><b>Same-scene renderer comparisons</b> — finite test driver, two workers. <button id="run">Run wood comparison</button><pre id="status">Ready</pre></header>
+<div id="results"></div><iframe id="game" title="Test game"></iframe>
+<script type="module">
+const frame=document.querySelector('iframe'), status=document.querySelector('#status');
+document.querySelector('#run').onclick=()=>{
+  document.querySelector('#run').disabled=true;status.textContent='Loading test game…';
+  frame.onload=()=>{const s=frame.contentDocument.createElement('script');s.type='module';s.src='/tools/webgpu-scene-driver.js';frame.contentDocument.body.append(s);};
+  frame.src='/?seed=SOL&workers=2&renderer=webgpu&date=2026-10-06T23:08';
+};
+window.addEventListener('message',(event)=>{
+ if(event.source!==frame.contentWindow || event.origin!==location.origin || event.data.type!=='webgpu-test') return;
+ const d=event.data;status.textContent=JSON.stringify(d.report,null,2);
+ if(d.image){const a=document.createElement('a');a.href=d.image;a.download='webgpu-'+d.name+'.png';a.textContent='Save '+d.name+' comparison';const img=document.createElement('img');img.src=d.image;img.alt=d.name+' WebGL (left) and WebGPU (right)';document.querySelector('#results').append(a,img);}
+});
+</script>

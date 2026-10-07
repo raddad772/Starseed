@@ -9,6 +9,8 @@
 
 import * as THREE from 'three';
 import { DeferredRenderer } from './webgpu/renderer.js';
+import { recordPasses } from './webgpu/record.js';
+import { passes as fullscreenPrograms } from './webgpu/generated/passes.js';
 import { FULLSCREEN_VERT, GLSL_DEPTH } from './glsl.js';
 import { renderFullscreen } from './atmosphere.js';
 import { VOLUME_COMPOSITE_FRAG } from './volume.js';
@@ -359,6 +361,7 @@ export class Engine {
       });
     }
     this.renderer = renderer;
+    if (this.backend === 'webgpu') recordPasses(renderer, fullscreenPrograms.map(p => p.key));
     // a shader that fails to compile silently drops whatever it draws: surface it
     renderer.debug.onShaderError = (gl, program, vs, fs) => {
       const log = [vs, fs].map((sh) => gl.getShaderInfoLog(sh) || '').join(' ').trim();
@@ -489,6 +492,7 @@ export class Engine {
 
   // the exposure in use now (a 1x1 GPU readback: for the debug readout only)
   readExposure() {
+    if (this.backend === 'webgpu') return this.webgpu?.targets.get(this.view)?.post?.exposure || 1;
     const rt = this.rtAdapt[this.adaptIdx];
     const b = new Float32Array(4);
     this.renderer.readRenderTargetPixels(rt, 0, 0, 1, 1, b);
@@ -631,7 +635,7 @@ export class Engine {
   // (eye adaptation); animate: false for a second view in the same frame
   // (time-driven effects advance once per frame)
   render(dt, sky, atmos, animate = true) {
-    this.frameInputs = { sky, atmos };
+    this.frameInputs = { sky, atmos, dt };
     if (this.backend === 'webgpu') {
       if (animate) this.time += dt;
       if (this.webgpu && !this.webgpuError) this.webgpu.render(this, animate);
