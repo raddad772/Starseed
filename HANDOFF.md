@@ -42,8 +42,17 @@ Dave's queue, in the order he raised it (keep this list current):
    grazing (the herds are world state), wallows and mud by water, bare patches on thin soil, mounds.
 5. A flashlight (hand light) for the dark nights now.
 6. An alien world with life to compare: a different star's light, a different air; screenshots.
-7. Far wooded mountains seen from km away (the ground's canopy colour on far slopes).
-8. The moon on the sea (glints) and on floes; the sky shadow's cost (+8 ms: fewer taps, early out).
+7. Far wooded mountains seen from km away (the ground's canopy colour on far slopes). Looked at
+   (2026-10-06, 3S 51W, forest 0.79): the far colour follows the life map (cover 0.56: about half of it
+   canopy, the open ground between straw in a ~1000 mm climate, a cerrado's look) and the fire sim (hills
+   burned 8-20 times in three centuries kept open: life/stands.js). Fixed what was wrong: plants cut on
+   slopes from the rock's ~28 drawn degrees (mountains are drawn ~8x steeper than the world's own), now
+   to ~45, none by ~60 (55a7dc1); coral sand drawn as bright as snow, white blotches across the forest
+   (sands at measured albedos, 611ef3b). Still: forested mountains want a wetter, unburned place to show.
+8. The moon on the sea (glints) and on floes: DONE (f2ee257: the moon's glitter path and the moonlit
+   sky's reflection, the sea had been black; f9e7cec: floes and bergs by moonlight, they'd been black;
+   4c08f44: falls' spray and mist by moonlight, a moonbow). Scratchpad moon_sea_cmp2, floe_cmp. The sky
+   shadow's cost: its early out (3e1c24e).
 9. Flashing (Dave: "feels like it's going to give an epileptic fit"): DONE (d153ddc). Snow and sand grain
    glints were single pixels many times the snow's brightness, popping as blades swayed past and bloomed
    into orbs (a black dot where the buffer overflowed). Glints now filtered by the pixel's footprint; bloom's
@@ -175,6 +184,11 @@ Dave's queue, in the order he raised it (keep this list current):
      scree. Near ground (fcee53b): no treads or standing beds in and beside a river's channel (the fall
      had poured from under a ledge stood out across it). On foot the fall now pours over its lip.
      Scratchpad fall_nf2, cliff_s5.
+   - Stalls (4d5d501): the clouds' light under the camera read back from the GPU every eighth frame at
+     once (the CPU waiting on everything queued: up to 300 ms in the test tab, CPU frame p90 310 ms), and
+     the sky's LUTs when the dust remade them: both now read through a polled fence (p90 21 ms).
+   - Grass none under the water's surface as drawn (3dd22fc). Tried and reverted: a noise nudge to the
+     ground classes' boundary (no zigzag case found to show it on).
 
 ## NOW: fire through the recent centuries (session 39d69fa8, 2026-10-06), SIM 68
 
