@@ -122,6 +122,33 @@ Dave's queue, in the order he raised it (keep this list current):
    - The weather's dust and spray (sim/dust.js) add to the world's mean.
    Scratchpad: v6_*, mt_v6, night_v6_open, earth_v4. Recipes: Mars 15N 30E, Titan 10N 40E
    (S.findTime / freecam.placeAt).
+16. Dave's goal (2026-10-06 late): "finish exposure. Get waterfalls nice. Knock off items in the todo
+   list. Increase quality and optimize"; and "Mars seems too desolate can you check images from NASA";
+   "Maybe use similar dynamic range to human eye?". Done so far:
+   - Exposure (ff007ca): the scene's natural light drawn with a pre-exposure gain by the light as it
+     is at the camera (world.js lightGain, up to NIGHT_GAIN), in place of the moon's fixed one. The eye's
+     give-back below an overcast day (0.1 stop a stop), night vision by the light as it is. Titan's
+     sunset shows (it was black); a full moon's night is as before.
+   - Dust: the weather's dust (sim/dust.js) by the aerosol sim's own physics against the world's mean,
+     in place of it; a dry world's frozen ground lifts dust (Mars had none); Mars' dust index through
+     Hapke with internal scattering (its measured k at all three wavelengths).
+   - Mars ground (46edd1e), from NASA's rover panoramas (Curiosity's Glen Torridon and Murray Buttes,
+     Pathfinder's Rock Garden, the Namib dune): a dry world's lag of stones and boulders, its craters'
+     ejecta, its dune sand basalt-dark; stones' CO2 frost by a damped face tilt. Still to do: bedrock
+     plates where the cover's thin (Gale's), buttes with caprock and talus aprons.
+   - Falls: spray as fine drops, mist as small wisps, the bow a faint shimmer (it was a lit ball), the
+     plunge pool white along the impact line (it was all white), steep normals averaged over a cliff's
+     face (it was fluted), a brink shaded as its rock (yellow-green stripes) (46edd1e, df7774b,
+     86a8fb6). The "mesa" at 3.06N 39.71W is a lava flow's edge (andesite region), not a fault (the
+     nearest fault 2.7 km off, 2.8 m throw). Still to do: its brink rounded and talus at its foot need
+     the near field's volume (sub-cell), not the heightfield; grass to the pool's edge (the grass's own
+     sampling: the channel's fall zones could clear it).
+   - Hand light (df7774b): L on foot, the pad's LT; ~1500 cd, the gain, a third of it in the meter.
+   - The canopy's sky shadow skips its 25 reads with no canopy near (3e1c24e: ~10 ms a frame open).
+   - Frozen falls (icicles): the fall's sheet an ice curtain of rounded columns a few tenths of a metre
+     across, blue in the gaps, below ~8 C under its river's freezing; no spray then (planetTerrain.js).
+     Checked by forcing the freeze in the test tab's shader (scratchpad ice3_*): no cold fall found yet
+     to see one in its season.
 
 ## NOW: fire through the recent centuries (session 39d69fa8, 2026-10-06), SIM 68
 

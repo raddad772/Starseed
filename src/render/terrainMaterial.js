@@ -677,6 +677,31 @@ void main() {
       color = mix(color, iceCol, ice);
       albedo = mix(albedo, iceAlb, ice);
     }
+    // (a fall in a hard freeze: its spray and its sheet's edges frozen to the face in columns and hanging
+    // icicles, the water running on behind them till it too stops; blue where the ice is thin, white where
+    // it's thick and full of bubbles. Well colder than its river's freezing: its turbulence keeps it open
+    // ~8 C longer)
+    if (fallK > 0.0) {
+      float iceF = 1.0 - smoothstep(tsf.y - 12.0, tsf.y - 4.0, tsf.x);
+      if (iceF > 0.0) {
+        vec3 dnI = upF - fn * dot(upF, fn);
+        vec3 downI = -dnI / max(length(dnI), 1e-4), acrI = normalize(cross(fn, downI));
+        vec2 qi = vec2(dot(fp, acrI), dot(fp, downI));
+        // (columns a few tenths of a metre across, drawn out down the face; rounded by their own slope across,
+        // the gaps between them deep blue)
+        // (the detail tile's own grain ~a fifteenth of it: read at a fifth of a tile a metre across, its
+        // features a few tenths of a metre)
+        vec2 qa = vec2(qi.x * 0.2, qi.y * 0.015), qb = vec2(qi.x * 0.6 + 0.3, qi.y * 0.04);
+        float cols = texture(tDetail, qa).r * 0.6 + texture(tDetail, qb).a * 0.4;
+        float colsX = texture(tDetail, qa + vec2(0.01, 0.0)).r * 0.6 + texture(tDetail, qb + vec2(0.03, 0.0)).a * 0.4;
+        float thick = smoothstep(0.35, 0.7, cols);
+        vec3 alb = mix(vec3(0.2, 0.4, 0.56), vec3(0.88, 0.93, 0.97), thick);
+        vec3 nI = normalize(Nw - transpose(uToFixed) * acrI * (colsX - cols) * 30.0);
+        vec3 litI = uSunE * sunT * max(dot(nI, uSunDir), 0.0) + uSunE * skyE * 0.7;
+        float spI = pow(max(dot(nI, normalize(V + uSunDir)), 0.0), 60.0) * 0.6;
+        color = mix(color, alb / PI * litI + uSunE * sunT * spI * step(0.0, muS), fallK * iceF);
+      }
+    }
     dbgW = uDebug > 6.5 ? vec3(fallK, dbgWhite, river ? 1.0 : 0.0) : uDebug < 2.5 ? vec3(ice) : uDebug < 3.5 ? vec3(Tm / 40.0) : uDebug < 4.5 ? vec3(foam) : uDebug < 5.5 ? vLiq.xyz : vec3(wr * 4.0);
   } else {
     float wrap = 0.5 + 0.5 * dot(N, up);

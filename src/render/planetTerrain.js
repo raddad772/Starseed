@@ -24,6 +24,7 @@ import { dustAt } from '../sim/dust.js';
 import { dayClock } from '../sim/fauna.js';
 import { floraOf } from '../sim/floraField.js';
 import { VCHUNK } from '../gen/volume.js';
+import { S_LEN, S_TEMP } from '../gen/terrain.js';
 
 // each material class's share (12 a vertex, matclasses.js) as three vec4 attributes over one buffer
 function setClassAttrs(g, cls) {
@@ -417,7 +418,20 @@ export class PlanetTerrain {
       u.uFallW.value = d.falls[best + 5];
       if (u.uFallAcr) u.uFallAcr.value.set(d.falls[best + 7], d.falls[best + 8], d.falls[best + 9]);
       this.fallFx = this.fallFx || new FallFx(this.shared);
-      const fx = this.fallFx.make(d.falls, d.origin);
+      // (frozen in a hard freeze: no spray, as the terrain's shader draws its ice; its temperature now at
+      // its foot, a river's (liquid.js liquidTs), against its freezing ~8 C below the river's)
+      let frozen = 0;
+      const b = this.body, gen = b && b.terrain;
+      if (gen && gen.snap && gen.p && gen.p.liquid) {
+        const fx0 = d.origin[0] + d.falls[best], fy0 = d.origin[1] + d.falls[best + 1], fz0 = d.origin[2] + d.falls[best + 2], fl = Math.hypot(fx0, fy0, fz0);
+        const s = this._fs || (this._fs = new Float64Array(S_LEN)), yr = this._fy || (this._fy = [0, 0, 0]);
+        gen.sample(fx0 / fl, fy0 / fl, fz0 / fl, 50, s);
+        let Ts = s[S_TEMP] - 273.15;
+        if (gen.snap.season && gen.snap.season(fx0 / fl, fy0 / fl, fz0 / fl, yr) && b.solarLongitude) { const L = b.solarLongitude(); Ts += 0.7 * (yr[0] * Math.cos(L) + yr[1] * Math.sin(L)); }
+        const t = Math.min(1, Math.max(0, (Ts - (-12)) / 8));
+        frozen = 1 - t * t * (3 - 2 * t);
+      }
+      const fx = frozen > 0.95 ? null : this.fallFx.make(d.falls, d.origin, frozen);
       // (drawn in the engine's soft-particle pass, where its chunk is: falls.js FallFx.soft)
       if (fx && FallFx.soft) { fx.userData.owner = m; m.userData.fx = fx; FallFx.soft.scene.add(fx); }
     }

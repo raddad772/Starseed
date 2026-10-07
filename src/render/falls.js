@@ -186,7 +186,8 @@ export class FallFx {
     });
   }
   // falls: chunkbuilder.js's (FALL_STRIDE floats each); origin: the chunk's (the planet's frame)
-  make(falls, origin) {
+  // (frozen 0..1: a hard freeze's share, its spray and mist the less)
+  make(falls, origin, frozen = 0) {
     const g = this.material.uniforms.uFall1.value.x, vSheet = this.material.uniforms.uFall1.value.y, mistK = this.material.uniforms.uFall2.value.y;
     const foot = [], upv = [], fall = [], seed = [];
     let rs = (falls[0] * 7919 + falls[1] * 104729 + falls[2] * 1299709) | 0;
@@ -197,8 +198,8 @@ export class FallFx {
       const vImp = Math.min(Math.sqrt(2 * g * drop), vSheet);
       const ux = origin[0] + x, uy = origin[1] + y, uz = origin[2] + z, ul = Math.hypot(ux, uy, uz);
       // (its share of particles: by its width and how hard it lands)
-      const nSpray = Math.round(Math.min(1200, Math.max(48, width * vImp * 4)));
-      const nMist = Math.round(Math.min(720, Math.max(0, width * Math.sqrt(drop) * 3.6)) * mistK);
+      const nSpray = Math.round(Math.min(1200, Math.max(48, width * vImp * 4)) * (1 - frozen));
+      const nMist = Math.round(Math.min(720, Math.max(0, width * Math.sqrt(drop) * 3.6)) * mistK * (1 - frozen));
       for (let k = 0; k < nSpray + nMist; k++) {
         // (along the line it lands on, its lip's width; a ring of it where that way isn't known)
         const s = (rnd() - 0.5) * width;
