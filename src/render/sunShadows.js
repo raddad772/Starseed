@@ -156,7 +156,8 @@ export class SunShadows {
     SUN_SHADOW_UNIFORMS.tShadowAtlas.value = this.atlas.texture;
     // (the sky maps softened, side by side: BLUR_FRAG)
     const n = SKY_CASCADES[0].size;
-    this.skySoft = new THREE.WebGLRenderTarget(n * SKY_CASCADES.length, n, { type: THREE.HalfFloatType, format: THREE.RGFormat, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false, generateMipmaps: false });
+    // (mipmapped: its coarse levels the canopy's mean over a wide reach, for skyShadowMap's early out)
+    this.skySoft = new THREE.WebGLRenderTarget(n * SKY_CASCADES.length, n, { type: THREE.HalfFloatType, format: THREE.RGFormat, minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false, generateMipmaps: true });
     SKY_SHADOW_UNIFORMS.tSkySoft.value = this.skySoft.texture;
     this.blurMat = new THREE.ShaderMaterial({
       uniforms: { tAtlas: { value: this.atlas.texture }, uOrg: { value: new THREE.Vector2() }, uN: { value: n }, uD: { value: 0 }, uOutOrg: { value: new THREE.Vector2() } },
@@ -403,6 +404,10 @@ float skyShadowMap(float u0, float nTex, float D, mat4 VP, vec4 L, vec3 upF, flo
   vec2 uv = c.xy / c.w * 0.5 + 0.5;
   float edge = 45.0 / (2.0 * ext);
   if (any(lessThan(uv, vec2(edge))) || any(greaterThan(uv, vec2(1.0 - edge)))) return -1.0;
+  // (no canopy anywhere near: its mean over twice the rings' reach, the map's coarse level, nothing. Most
+  // of an open view's ground; the 25 reads a point below otherwise cost ~10 ms a frame)
+  float lodE = log2(180.0 * nTex / (2.0 * ext));
+  if (textureLod(tSkySoft, vec2((u0 + uv.x) * ${(1 / SKY_CASCADES.length).toFixed(6)}, uv.y), lodE).r < 0.002) return 0.0;
   // (a bias: the point's own leaves, a texel and a little more, aren't over it)
   float d = dot(L.xyz - pF, upF) - (0.3 + 1.5 * L.w);
   float blocked = 0.0;
@@ -417,7 +422,7 @@ float skyShadowMap(float u0, float nTex, float D, mat4 VP, vec4 L, vec3 upF, flo
       float ang = (float(k) + 0.5 * float(j)) * 1.0471976;
       vec2 tuv = clamp(uv + vec2(cos(ang), sin(ang)) * (r / (2.0 * ext)), vec2(0.5 / nTex), vec2(1.0 - 0.5 / nTex));
       // (the softened map, blended between texels: the canopy's share there and its top)
-      vec2 sc = texture(tSkySoft, vec2((u0 + tuv.x) * ${(1 / SKY_CASCADES.length).toFixed(6)}, tuv.y)).rg;
+      vec2 sc = textureLod(tSkySoft, vec2((u0 + tuv.x) * ${(1 / SKY_CASCADES.length).toFixed(6)}, tuv.y), 0.0).rg;
       if (sc.r > 0.003) {
         float dh = d - (D + sc.g / sc.r);
         if (dh > 0.0) { float h2 = dh * dh; acc += sc.r * (b * b / (b * b + h2) - a * a / (a * a + h2 + 1e-6)); }
