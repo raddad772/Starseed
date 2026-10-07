@@ -116,11 +116,14 @@ void cloudGens(vec3 dirF, out vec3 gA, out vec3 gB) {
   float ph = 1.1 * dirF.x + 0.7 * dirF.z - 0.5 * dirF.y + 0.35 * sin(2.3 * dirF.y + 1.7 * dirF.x - 0.9 * dirF.z);
   float s = uCloudClock.x / T + ph + 4.0;
   float a = floor(s), fa = s - a, b = floor(s + 0.5), fb = s + 0.5 - b;
-  // (the front ragged: where the hand-over falls jittered by noise over the globe (~10 and ~4 km cells on a
+  // (the front wavy: where the hand-over falls moved by three long waves over the globe (40 to 80 km on a
   // drawn world, up to a sixth of a life), its weights only, not the ages, so the clouds don't shear; a
   // smooth front ran a ruler line across the sky, two generations meeting along it (Dave: the diagonal
-  // edge in the twilight). Under a fifth either way, a generation's weight never reaches its index's turn)
-  float j = 0.16 * (textureLod(tNoise, dirF * 9.0, 0.0).g - textureLod(tNoise, dirF * 23.0 + 0.37, 0.0).g);
+  // edge in the twilight). Smooth waves, not noise: cellular noise's half-km cells and sharp ridges cut
+  // the hand-over into patches, each generation's clouds stood in them with straight walls, under a far
+  // deck as hanging columns (the drips). Under a fifth either way, a weight never reaches its index's turn)
+  float j = 0.065 * (sin(dot(dirF, vec3(5.1, 3.7, -4.3)) + 1.3) + sin(dot(dirF, vec3(-3.9, 7.3, 6.1)) + 0.4)
+                   + 0.6 * sin(dot(dirF, vec3(11.3, -8.9, 7.7)) + 2.1));
   float fj = fract(s + j);
   float wa = smoothstep(0.4, 0.6, 1.0 - abs(2.0 * fj - 1.0));
   gA = vec3(wa, (fa - 0.5) * T, 2.0 * (uCloudClock.y + a));

@@ -42,8 +42,13 @@ float deckDensity(int i, vec3 q, float h, float cov, bool detail, out float frac
   float x = (h - dk.x) / max(top - dk.x, 1.0);
   frac = clamp(x, 0.0, 1.0);
   if (x < 0.0 || x > 1.0) return 0.0;
-  float prof = smoothstep(0.0, 0.08, x) * smoothstep(1.0, 0.6, x);
-  float d = clamp((base * prof - (1.0 - cov)) / max(cov, 0.05), 0.0, 1.0);
+  // a cell's strength (its noise over the coverage's floor) sets its top: weak edges low, cores high,
+  // so a cell's domed about as tall as it's wide; a small fragment's a low lump, not a full-depth column
+  float e = clamp((base - (1.0 - cov)) / max(cov, 0.05), 0.0, 1.0);
+  float xt = sqrt(e);
+  if (x > xt) return 0.0;
+  float prof = smoothstep(0.0, 0.08, x) * (1.0 - smoothstep(0.6 * xt, xt, x));
+  float d = e * prof;
   if (detail && d > 0.001) {
     vec4 det = texture(tNoise, q / uShape.y);
     float er = (det.g * 0.625 + det.b * 0.25 + det.a * 0.125) * 0.55 * (1.0 - d);
