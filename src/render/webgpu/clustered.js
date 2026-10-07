@@ -26,12 +26,13 @@ const SHADE=CLUSTER_LIGHTING+FULLSCREEN+/* wgsl */`
 @group(1) @binding(1) var normals:texture_2d<f32>;
 @group(1) @binding(2) var surface:texture_2d<f32>;
 @group(1) @binding(3) var depth:texture_depth_2d;
+@group(1) @binding(4) var visibility:texture_2d<f32>;
 fn oct(e:vec2f)->vec3f{var n=vec3f(e,1.0-abs(e.x)-abs(e.y));let t=max(-n.z,0.0);n.x+=select(t,-t,n.x>=0.0);n.y+=select(t,-t,n.y>=0.0);return normalize(n);}
 @fragment fn shade(v:Fullscreen)->@location(0) vec4f{
  let px=vec2i(v.position.xy);let d=textureLoad(depth,px,0);if(d<=0.0){discard;}
  let hp=clusterFrame.inverseVP*vec4f(v.uv*vec2f(2.0,-2.0)+vec2f(-1.0,1.0),d,1.0);let world=hp.xyz/hp.w;
  let m=textureLoad(normals,px,0);let kind=u32(m.w)%16u;let alb=textureLoad(albedo,px,0);let s=textureLoad(surface,px,0);
- return vec4f(clusterLight(world,oct(m.xy),alb,s,m.z,kind,v.position.xy),0.0);
+ return vec4f(clusterLight(world,oct(m.xy),vec4f(alb.rgb,alb.a*textureLoad(visibility,px,0).r),s,m.z,kind,v.position.xy),0.0);
 }
 `;
 export class ClusteredLights {
@@ -40,7 +41,7 @@ export class ClusteredLights {
   const d=this.device,S=GPUShaderStage;
   const entries=type=>[{binding:0,visibility:S.COMPUTE|S.FRAGMENT,buffer:{type:'uniform'}},{binding:1,visibility:S.COMPUTE|S.FRAGMENT,buffer:{type:'read-only-storage'}},{binding:2,visibility:S.COMPUTE|S.FRAGMENT,buffer:{type}}];
   this.computeLayout=d.createBindGroupLayout({entries:entries('storage')});this.shadeLayout=d.createBindGroupLayout({entries:entries('read-only-storage')});
-  this.texturesLayout=d.createBindGroupLayout({entries:[0,1,2,3].map(binding=>({binding,visibility:S.FRAGMENT,texture:{sampleType:binding===3?'depth':'unfilterable-float'}}))});
+  this.texturesLayout=d.createBindGroupLayout({entries:[0,1,2,3,4].map(binding=>({binding,visibility:S.FRAGMENT,texture:{sampleType:binding===3?'depth':'unfilterable-float'}}))});
   const [cull,shade]=await Promise.all([shaderModule(d,'cluster light assignment',CULL),shaderModule(d,'cluster local lighting',SHADE)]);
   this.compute=await d.createComputePipelineAsync({layout:d.createPipelineLayout({bindGroupLayouts:[this.computeLayout]}),compute:{module:cull,entryPoint:'cull'}});
   this.shade=await d.createRenderPipelineAsync({layout:d.createPipelineLayout({bindGroupLayouts:[this.shadeLayout,this.texturesLayout]}),vertex:{module:shade,entryPoint:'fullscreen'},fragment:{module:shade,entryPoint:'shade',targets:[{format:'rgba16float',blend:{color:{operation:'add',srcFactor:'one',dstFactor:'one'},alpha:{operation:'add',srcFactor:'zero',dstFactor:'one'}}}]}});
@@ -64,7 +65,7 @@ export class ClusteredLights {
   if(!this.lightBuffer||n>this.capacity){this.lightBuffer?.destroy();this.capacity=2**Math.ceil(Math.log2(Math.max(32,n)));this.lightBuffer=d.createBuffer({label:'local lights',size:this.capacity*96,usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST});}
   if(n)d.queue.writeBuffer(this.lightBuffer,0,new Float32Array(lights.flat()));
   const gx=Math.ceil(t.width/TILE),gy=Math.ceil(t.height/TILE),count=gx*gy*SLICES;
-  if(!t.clusters){t.clusters=d.createBuffer({label:'3D light clusters',size:count*STRIDE*4,usage:GPUBufferUsage.STORAGE});t.clusterTextures=d.createBindGroup({layout:this.texturesLayout,entries:[t.gbuffer[0],t.gbuffer[1],t.gbuffer[3],t.depth].map((texture,binding)=>({binding,resource:texture.createView()}))});}
+  if(!t.clusters){t.clusters=d.createBuffer({label:'3D light clusters',size:count*STRIDE*4,usage:GPUBufferUsage.STORAGE});t.clusterTextures=d.createBindGroup({layout:this.texturesLayout,entries:[t.shadedGbuffer[0],t.shadedGbuffer[1],t.shadedGbuffer[3],t.depth,t.ao].map((texture,binding)=>({binding,resource:texture.createView()}))});}
   const cam=engine.view.camera,data=this.frame;data.set(inverse.elements);data.set(cam.matrixWorldInverse.elements,16);data.set((engine.lightRig?.nativeToRoom||new THREE.Matrix4()).elements,32);
   const tan=Math.tan(cam.fov*Math.PI/360);data.set([t.width,t.height,tan*cam.aspect,tan,gx,gy,n,0,cam.near,20000,0,0],48);d.queue.writeBuffer(this.param,0,data);
   const group=layout=>d.createBindGroup({layout,entries:[this.param,this.lightBuffer,t.clusters].map((buffer,binding)=>({binding,resource:{buffer}}))});

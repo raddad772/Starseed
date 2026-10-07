@@ -1,5 +1,6 @@
 // Runs inside the test iframe. Never load in a player's tab.
 import * as THREE from 'three';
+import { floraOf } from '../src/sim/floraField.js';
 import * as tk from './testkit.js';
 import * as S from './scenic.js';
 import { capture, measure, measureCulling } from './webgpu-compare.js';
@@ -21,9 +22,17 @@ try {
   if(name==='vessel'){gm.debugFree=false;gm.startAboard();}
   if(name==='elevated'){gm.debugFree=true;gm.freecam.placeAt(b,18.66,-59.63,150,40,-20);}
   report({stage:'Streaming '+name+' terrain'});await S.drain(35);
+  let treePlacement;
+  if(name==='wood'){
+    const spawn=gm.player.fPos.clone(),trees=floraOf(b).near(spawn,200).filter(t=>t.kind==='tree').map(t=>({t,p:new THREE.Vector3(t.x,t.y,t.z)})).filter(e=>e.p.distanceTo(spawn)>15).sort((a,c)=>a.p.distanceToSquared(spawn)-c.p.distanceToSquared(spawn));
+    if(!trees.length)throw Error('No tree beyond 15 m in the wood fixture');
+    const {t,p}=trees[0],away=spawn.clone().sub(p).projectOnPlane(p.clone().normalize()).normalize(),at=p.clone().addScaledVector(away,3);
+    gm.player.placeOnSurface(b,at.clone().normalize(),away.clone().negate());gm.player.pitch=-0.1;
+    treePlacement={spawnDistance:p.distanceTo(spawn),cameraDistance:3,treeHeight:t.h};await S.drain(15);
+  }
   for(let i=0;i<10;i++){gm.frame(performance.now());await new Promise(r=>setTimeout(r,0));}
   report({stage:'Capturing both renderers'});
   const shot=await capture(gm),timing=await measure(gm,5),culling=await measureCulling(gm,5);
-  report({stage:'Complete',world,stats:shot.stats,timing,culling,error:gm.engine.webgpuError?.message},shot.sideBySide,name);
+  report({stage:'Complete',world,treePlacement,stats:shot.stats,timing,culling,error:gm.engine.webgpuError?.message},shot.sideBySide,name);
 } catch(error){report({stage:'Failed',error:error.stack||String(error)});}
 finally { window.debugHold=true; }

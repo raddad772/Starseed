@@ -8,6 +8,7 @@
 <pre id="result">Compiling…</pre>
 <script type="module">
 import * as THREE from 'three';
+import { SurfaceDecal } from '../../src/render/webgpu/gbuffer-effects.js';
 import { DeferredRenderer } from '../../src/render/webgpu/renderer.js';
 const canvas = document.getElementById('view'), result = document.getElementById('result');
 const errors = [];
@@ -128,11 +129,27 @@ try {
   renderer.opaque.culler.enabled=false;renderer.render(engine);const uncullShot=await renderer.capture();
   check(cullShot.pixels.every((v,i)=>Math.abs(v-uncullShot.pixels[i])<=1),'Indirect instance rendering must preserve visible pixels');
   renderer.opaque.culler.enabled=true;instances.dispose();instGeo.dispose();instMat.dispose();
+  scene.clear();
+  const decalGeo=new THREE.PlaneGeometry(3,3),decalMat=new THREE.MeshStandardMaterial({color:0xffffff}),decalPlane=new THREE.Mesh(decalGeo,decalMat);decalPlane.position.z=-3;scene.add(decalPlane);
+  const decal=new SurfaceDecal({color:0xff0000,opacity:1,edge:0.05});decal.position.z=-3;decal.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),new THREE.Vector3(0,0,1));decal.scale.set(1,1,1);scene.add(decal);
+  renderer.flat=true;renderer.render(engine);const decalPixels=(await renderer.capture()).pixels,mid=(48*128+64)*4;
+  check(decalPixels[mid]>150&&decalPixels[mid+1]<10,'A surface decal must alter the lit material at its projected position');
+  check(decalPixels[mid+32*4+1]>150,'A surface decal must stay inside its projector');scene.remove(decal);
+  renderer.flat=false;
+  const cubeGeo=new THREE.BoxGeometry(0.6,0.6,0.6),cube=new THREE.Mesh(cubeGeo,decalMat);cube.position.set(0.3,0,-2.65);scene.add(cube);
+  const sun=new THREE.DirectionalLight(0xffffff,Math.PI),ambient=new THREE.HemisphereLight(0xffffff,0xffffff,0);sun.position.set(0,0,1);scene.add(sun,ambient);
+  renderer.render(engine);const aoOn=await renderer.capture(),aoTarget=renderer.targets.get(view).ao;
+  const aoRead=renderer.device.createBuffer({size:256*96,usage:GPUBufferUsage.COPY_DST|GPUBufferUsage.MAP_READ}),aoEncoder=renderer.device.createCommandEncoder();aoEncoder.copyTextureToBuffer({texture:aoTarget},{buffer:aoRead,bytesPerRow:256},[128,96]);renderer.device.queue.submit([aoEncoder.finish()]);await aoRead.mapAsync(GPUMapMode.READ);
+  const aoBytes=new Uint8Array(aoRead.getMappedRange());let minAO=255;for(let y=0;y<96;y++)for(let x=0;x<128;x++)minAO=Math.min(minAO,aoBytes[y*256+x]);aoRead.unmap();aoRead.destroy();
+  check(minAO<220,'GTAO must detect contact occlusion beside a raised surface');
+  renderer.gtao.enabled=false;renderer.render(engine);const aoOff=await renderer.capture();
+  check(aoOn.pixels.every((v,i)=>Math.abs(v-aoOff.pixels[i])<=1),'GTAO must leave direct-only sunlight unchanged');
+  renderer.gtao.enabled=true;scene.remove(cube,decalPlane);cubeGeo.dispose();decalGeo.dispose();decalMat.dispose();
   roomGeo.dispose();roomMat.dispose();
   const validationError = await renderer.device.popErrorScope();
   check(!validationError, validationError?.message);
   check(!errors.length, errors.join('\n'));
-  window.testResult = { status: 'passed', redPixels: red, bluePixels: blue, timestampQuery: renderer.timestamp, opaquePipelines:8,forwardPipelines:7,clusteredLights:{dark,lit,sealed,overlapping:70},transparent,offscreen:true,visibleInstances,stats: renderer.stats };
+  window.testResult = { status: 'passed', redPixels: red, bluePixels: blue, timestampQuery: renderer.timestamp, opaquePipelines:8,forwardPipelines:7,clusteredLights:{dark,lit,sealed,overlapping:70},transparent,offscreen:true,visibleInstances,decals:true,minAO,aoDirectUnchanged:true,stats: renderer.stats };
 } catch (error) {
   window.testResult = { status: 'failed', error: error.stack || String(error), validationErrors: errors };
 } finally {

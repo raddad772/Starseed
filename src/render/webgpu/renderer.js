@@ -14,6 +14,8 @@ import { OpaquePass } from './opaque.js';
 import { ShadowPass } from './shadows.js';
 import { ClusteredLights } from './clustered.js';
 import { ForwardPass } from './forward.js';
+import { GTAO } from './gtao.js';
+import { GBufferEffects } from './gbuffer-effects.js';
 import { Background } from './background.js';
 import { layout as lightLayout } from './generated/lighting.js';
 
@@ -47,13 +49,15 @@ export class DeferredRenderer {
     this.post = new PostPass(this.device, this.passes, this.textures, this.air);
     this.shadows = new ShadowPass(this.device,this.textures,this.passes);
     this.localLights = new ClusteredLights(this.device);
+    this.gtao = new GTAO(this.device);
+    this.materialEffects = new GBufferEffects(this.device);
     this.forward = new ForwardPass(this.device,this.textures,this.localLights);
     this.opaque = new OpaquePass(this.device, this.textures);
     this.lightBindings = new ProgramBindings(this.device, lightLayout, this.textures);
   }
   async init() {
     const d = this.device, S = GPUShaderStage;
-    await Promise.all([this.passes.init(), this.air.init(), this.opaque.init(), this.shadows.init(), this.forward.init(), this.localLights.init()]);
+    await Promise.all([this.passes.init(), this.air.init(), this.opaque.init(), this.shadows.init(), this.forward.init(), this.localLights.init(), this.gtao.init(), this.materialEffects.init()]);
     this.frameLayout = d.createBindGroupLayout({ label: 'frame and world', entries: [
       { binding: 0, visibility: S.VERTEX | S.FRAGMENT, buffer: { type: 'uniform' } },
       { binding: 1, visibility: S.VERTEX | S.FRAGMENT, buffer: { type: 'read-only-storage' } },
@@ -66,6 +70,7 @@ export class DeferredRenderer {
       ...[0, 1, 2].map((binding) => ({ binding, visibility: S.FRAGMENT, texture: { sampleType: 'unfilterable-float' } })),
       { binding: 3, visibility: S.FRAGMENT, texture: { sampleType: 'depth' } },
       { binding: 4, visibility: S.FRAGMENT, texture: { sampleType: 'unfilterable-float' } },
+      { binding: 5, visibility: S.FRAGMENT, texture: { sampleType: 'unfilterable-float' } },
     ] });
     this.postLayout = d.createBindGroupLayout({ label: 'HDR input', entries: [{ binding: 0, visibility: S.FRAGMENT, texture: { sampleType: 'unfilterable-float' } }] });
     this.frameBuffer = d.createBuffer({ label: 'camera', size: 144, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
@@ -141,12 +146,15 @@ export class DeferredRenderer {
     if (t) { this.air.release(t); this.post.release(t); this.localLights.release(t); for (const texture of t.textures) texture.destroy(); }
     const d = this.device, width = view.width, height = view.height;
     const make = (label, format, extra = 0) => d.createTexture({ label, size: [width, height], format, ...(format===this.format?{viewFormats:[this.format+'-srgb']} : {}), usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | extra });
-    const gbuffer = GB_FORMATS.map((format, i) => make(`G-buffer ${i}`, format));
-    const depth = make('reversed depth', 'depth32float');
+    const gbuffer = GB_FORMATS.map((format, i) => make(`G-buffer ${i}`, format, GPUTextureUsage.COPY_SRC));
+    const depth = make('reversed depth', 'depth32float', GPUTextureUsage.COPY_SRC);
+    const ground = ['rgba8unorm','rgba16float','rgba8unorm','depth32float'].map((format,i)=>make(`underlying terrain ${i}`,format,GPUTextureUsage.COPY_DST));
+    const shadedGbuffer = GB_FORMATS.map((format,i)=>make(`processed G-buffer ${i}`,format));
+    const ao = make('indirect visibility','r8unorm',GPUTextureUsage.COPY_SRC);
     const hdr = make('lit HDR', 'rgba16float', GPUTextureUsage.COPY_SRC);
     const output = make('presented frame', this.format, GPUTextureUsage.COPY_SRC);
-    t = { width, height, gbuffer, depth, hdr, output, textures: [...gbuffer, depth, hdr, output] };
-    t.lightGroup = d.createBindGroup({ layout: this.gbufferLayout, entries: [gbuffer[0], gbuffer[1], gbuffer[2], depth, gbuffer[3]].map((tex, binding) => ({ binding, resource: tex.createView() })) });
+    t = { width, height, gbuffer, shadedGbuffer, ground, ao, depth, hdr, output, textures: [...gbuffer, ...shadedGbuffer, ...ground, ao, depth, hdr, output] };
+    t.lightGroup = d.createBindGroup({ layout: this.gbufferLayout, entries: [shadedGbuffer[0], shadedGbuffer[1], shadedGbuffer[2], depth, shadedGbuffer[3], ao].map((tex, binding) => ({ binding, resource: tex.createView() })) });
     t.postGroup = d.createBindGroup({ layout: this.postLayout, entries: [{ binding: 0, resource: hdr.createView() }] });
     if(view.out)this.textures.renderTargets.set(view.out.texture,{gpuEntry:true,texture:output,view:output.createView({format:this.format+'-srgb'}),sampler:this.textures.linear});
     this.targets.set(view, t);
@@ -241,8 +249,13 @@ export class DeferredRenderer {
       pass.setBindGroup(1, g.bindGroup); pass.setIndexBuffer(g.indexBuffer, g.indexFormat);
       pass.drawIndexed(g.count, 1, 0, 0, i); triangles += g.count / 3;
     });
+    pass.end();
+    this.materialEffects.captureGround(encoder,t);
+    pass = encoder.beginRenderPass({label:'opaque G-buffer',colorAttachments:t.gbuffer.map(texture=>({view:texture.createView(),loadOp:'load',storeOp:'store'})),depthStencilAttachment:{view:t.depth.createView(),depthLoadOp:'load',depthStoreOp:'store'},timestampWrites:this.timer.writes('opaque')});
     triangles += this.opaque.draw(pass, opaque);
     pass.end();
+    this.materialEffects.render(encoder,engine,t,this.inverse);
+    this.gtao.render(encoder,t,this.inverse,camera);
     for (const [label, texture, pipeline, group] of [
       ['lighting', t.hdr, this.lightPipeline, t.lightGroup], ['post', t.output, this.postPipeline, t.postGroup],
     ]) {
@@ -296,7 +309,7 @@ export class DeferredRenderer {
     if (this.disposed) return; this.disposed = true;
     for (const geometry of [...this.geometries]) geometry.dispose();
     for (const target of this.targets.values()) { this.air.release(target); this.post.release(target); this.localLights.release(target); for (const texture of target.textures) texture.destroy(); }
-    this.targets.clear(); this.timer.dispose(); this.surfaces.dispose(); this.background.dispose(); this.shadows.dispose(); this.opaque.dispose(); this.forward.dispose(); this.localLights.dispose(); this.lightBindings.dispose(); this.passes.dispose(); this.textures.dispose();
+    this.targets.clear(); this.timer.dispose(); this.surfaces.dispose(); this.background.dispose(); this.shadows.dispose(); this.opaque.dispose(); this.forward.dispose(); this.localLights.dispose(); this.gtao.dispose(); this.materialEffects.dispose(); this.lightBindings.dispose(); this.passes.dispose(); this.textures.dispose();
     this.frameBuffer?.destroy(); this.objectBuffer?.destroy(); this.bodyBuffer?.destroy();
     this.releaseContext(); this.device.destroy();
   }

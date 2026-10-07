@@ -119,6 +119,7 @@ export const LIGHTING = FRAME + FULLSCREEN + PHYSICAL_LIGHTING + /* wgsl */`
 @group(1) @binding(2) var emission: texture_2d<f32>;
 @group(1) @binding(3) var depth: texture_depth_2d;
 @group(1) @binding(4) var surface: texture_2d<f32>;
+@group(1) @binding(5) var indirectVisibility: texture_2d<f32>;
 @fragment fn light(v: Fullscreen) -> @location(0) vec4f {
   let pixel = vec2i(v.position.xy);
   let z = textureLoad(depth, pixel, 0);
@@ -140,7 +141,7 @@ export const LIGHTING = FRAME + FULLSCREEN + PHYSICAL_LIGHTING + /* wgsl */`
   let foot = length(abs(nx.xyz / nx.w - p) + abs(ny.xyz / ny.w - p));
   let kind = u32(m.w) % 16u;
   let selfShaded = kind == 3u || kind == 7u;
-  let lit = deferredLight(p, n, a.rgb, m.z, a.a, s.y, s.w, select(e.a, 1.0, selfShaded), s.x, foot, s.z, f32(kind), select(1.0, max(0.0, -e.a), selfShaded)) + e.rgb;
+  let lit = deferredLight(p, n, a.rgb, m.z, a.a, s.y, s.w, select(e.a, 1.0, selfShaded), s.x, foot, s.z, f32(kind), select(1.0, max(0.0, -e.a), selfShaded), textureLoad(indirectVisibility,pixel,0).r) + e.rgb;
   return vec4f(lit, 1.0);
 }
 `;

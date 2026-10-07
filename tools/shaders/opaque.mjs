@@ -28,6 +28,7 @@ attribute vec3 position;attribute vec3 normal;attribute vec4 instance0;attribute
 `;
 let rock=clean(R.FRAG);rock=rock.slice(0,rock.indexOf('float muS = dot(up, uSunDir);'))+'materialOutput(albedo,N,rough,ao,0.0,0.0,0.04);\n}';
 let flora=clean(F.FRAG);flora=flora.slice(0,flora.indexOf('float ndl = max(dot(N, uSunDir), 0.0);'))+'materialOutput(albedo,N,0.8,ao,(vPart>0.5 && vPart<1.5?0.35:0.0)*(1.0-snowK),0.0,0.04);\n}';
+flora=flora.replace(/float seam\s*=\s*0\.0;[\s\S]*?(?=float snowK\s*=\s*0\.0;)/,'float ao=vAo;\n');
 flora=flora.replace(/vec3 sunA = atmoSunTransmittance[\s\S]*?vec3 sunT = sunTop \* keySh;/,'float skyBl=skyBlocked(vWorld),skyK=1.0-skyBl;');
 flora=flora.replace('float foot = length(fwidth(vWorld));', 'float foot = length(fwidth(vWorld));\nvec2 uvDx=dFdx(vUv),uvDy=dFdy(vUv);\nvec3 fdx=uToFixed*dFdx(vWorld),fdy=uToFixed*dFdy(vWorld);');
 flora=flora.replace('vec3 fdx = dFdx(pF), fdy = dFdy(pF);','').replaceAll('texture2D(tBark, vUv)','textureGrad(tBark,vUv,uvDx,uvDy)').replaceAll('texture2D(tLeaf, vUv)','textureGrad(tLeaf,vUv,uvDx,uvDy)').replace('ddx = dFdx(tx), ddy = dFdy(tx)','ddx = uvDx * vec2(textureSize(tLeaf,0)), ddy = uvDy * vec2(textureSize(tLeaf,0))');
