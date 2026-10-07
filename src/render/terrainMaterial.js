@@ -434,7 +434,8 @@ void main() {
     float fallK0 = smoothstep(0.13, 0.3, 1.0 - dot(normalize(vFixedNormal), uToFixed * up));
     if (fallK0 > 0.0) {
       float zf0 = uFallTop > 0.0 ? max(uFallTop - r, 0.0) : 4.0;
-      depthW = mix(depthW, clamp(max(vRib.y, 0.1) * max(vFlw.w * 9.0, 0.5) / (sqrt(2.0 * uLiquid2.x * zf0) + 0.5), 0.03, 1.0), fallK0);
+      depthW = mix(depthW, clamp(max(vRib.y, 0.1) * max(vFlw.w * 9.0, 0.5) / (sqrt(2.0 * uLiquid2.x * zf0) + 0.5), 0.03, 1.0)
+                           * mix(0.15, 1.0, smoothstep(0.0, 0.5, 1.0 - vRib.x * vRib.x)), fallK0);
     }
 #else
     float depthW = vShore * vShore * 64.0;
@@ -593,14 +594,25 @@ void main() {
       vec3 down = -dn / max(length(dn), 1e-4), acr = normalize(cross(fn, down));
       float zf = uFallTop > 0.0 ? max(uFallTop - r, 0.0) : 4.0;
       float v = min(sqrt(2.0 * uFall1.x * zf) + 0.3, uFall1.y);
-      float L = 1.0 + 0.35 * v;
       float t1 = fract(uTime * 0.4), t2 = fract(uTime * 0.4 + 0.5), wa = 1.0 - abs(2.0 * t1 - 1.0);
-      // (ropes a metre or few across, drawn out down the fall and carried at its speed: the noise at
-      // two scales across the face)
-      vec2 q = vec2(dot(fp, acr) * 0.03, dot(fp, down) * 0.03 / L);
-      float sA = texture(tDetail, q - vec2(0.0, v * t1 * 2.5 * 0.03 / L)).r + 0.5 * texture(tDetail, q * 2.0 - vec2(0.0, v * t1 * 5.0 * 0.03 / L)).a;
-      float sB = texture(tDetail, q + vec2(0.37, 0.0) - vec2(0.0, v * t2 * 2.5 * 0.03 / L)).r + 0.5 * texture(tDetail, q * 2.0 + vec2(0.11, 0.0) - vec2(0.0, v * t2 * 5.0 * 0.03 / L)).a;
-      float st = 0.5 + (mix(sB, sA, wa) - 0.75) * 1.6;
+      // (ropes of water: smooth streaks ~0.6 m across and ~6 m long, drawn out the more the faster it
+      // falls, carried down at its speed; a finer set ~0.2 m across within them. The detail's smooth field
+      // only (its 8-cell lattice: a tile 8 features across); the fine field's per-texel octave, stretched
+      // ten times down the face, aliased into a lattice of dark dots)
+      float L = 1.0 + 0.12 * v;
+      // (measured from the fall's foot: its directions come from the pixel's normal, and from the far
+      // fixed origin (kilometres) their least wobble moved the streaks metres a pixel: read at the noise's
+      // coarsest level, the sheet one even white with a lattice of dark dots)
+      vec3 pS = vFixedPos - uOriginMod - (uFallTop > 0.0 ? uFallFoot : vec3(0.0));
+      vec2 q = vec2(dot(pS, acr) / 4.8, dot(pS, down) / (48.0 * L));
+      float dv = v * 2.5 / (48.0 * L);
+      vec2 qA = q - vec2(0.0, dv * t1), qB = q + vec2(0.37, 0.0) - vec2(0.0, dv * t2);
+      float bA = texture(tDetail, qA).r, bB = texture(tDetail, qB).r;
+      float sA = bA + 0.45 * texture(tDetail, q * vec2(3.0, 2.0) + vec2(0.53, 0.0) - vec2(0.0, 2.0 * dv * t1)).r;
+      float sB = bB + 0.45 * texture(tDetail, q * vec2(3.0, 2.0) + vec2(0.11, 0.0) - vec2(0.0, 2.0 * dv * t2)).r;
+      float st = clamp(0.5 + (mix(sB, sA, wa) - 0.725) * 2.2, 0.0, 1.0);
+      // (a rope's round: the ropes' slope across, 0.15 m on, so each catches the light on its sun side)
+      float gS = mix(texture(tDetail, qB + vec2(0.031, 0.0)).r - bB, texture(tDetail, qA + vec2(0.031, 0.0)).r - bA, wa) / 0.15;
       // (glassy at its lip, breaking up as it falls: its turbulent surface takes in air from the lip
       // down, white streaks that thicken, until it's broken through at Horeni's length (1956: ~6 q^0.32
       // m, q its unit discharge, m^2/s); the sooner the denser the air tears it. Its water thinner
@@ -612,12 +624,17 @@ void main() {
 #endif
       float br = clamp(zf / (6.0 * pow(qU, 0.32)), 0.0, 1.0);
       float aer = mix(0.25, 0.95, uFall2.y) * smoothstep(0.0, 0.5, zf);
-      float jets = smoothstep(0.62 - 0.5 * br, 0.8 - 0.5 * br, st + 0.3 * (edge - 1.0));
+      // (white along the ropes: a quarter of the face at its lip, most of it once broken through)
+      float th = mix(0.72, 0.22, br);
+      // (its sides fray: thinner there, its ropes apart, torn to strands)
+      float jets = smoothstep(th - 0.14, th + 0.14, st + 0.75 * (edge - 1.0));
       float white = clamp(aer * jets, 0.0, 1.0);
       dbgWhite = white;
-      vec3 nS = normalize(Nw + transpose(uToFixed) * acr * (st - 0.5) * 0.8);
+      vec3 nS = normalize(Nw + transpose(uToFixed) * acr * clamp(gS * 1.6, -0.9, 0.9));
       vec3 litS = uSunE * sunT * max(dot(nS, uSunDir), 0.0) + uSunE * skyE * 0.6;
-      color = mix(color, mix(color * 0.8, vec3(0.8) / PI * litS, white), fallK);
+      // (white water as bright as it's thick: the ropes' cores scatter most, their thin skirts less)
+      float albS = mix(0.5, 0.92, smoothstep(0.15, 0.85, st));
+      color = mix(color, mix(color * 0.8, vec3(albS) / PI * litS, white), fallK);
       foam *= 1.0 - fallK;
     }
     if (uFallTop > 0.0) {
@@ -686,7 +703,8 @@ void main() {
       if (iceF > 0.0) {
         vec3 dnI = upF - fn * dot(upF, fn);
         vec3 downI = -dnI / max(length(dnI), 1e-4), acrI = normalize(cross(fn, downI));
-        vec2 qi = vec2(dot(fp, acrI), dot(fp, downI));
+        vec3 pI = vFixedPos - uOriginMod - (uFallTop > 0.0 ? uFallFoot : vec3(0.0));   // (from the foot: the sheet's)
+        vec2 qi = vec2(dot(pI, acrI), dot(pI, downI));
         // (columns a few tenths of a metre across, drawn out down the face; rounded by their own slope across,
         // the gaps between them deep blue)
         // (the detail tile's own grain ~a fifteenth of it: read at a fifth of a tile a metre across, its

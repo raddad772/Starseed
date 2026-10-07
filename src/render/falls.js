@@ -85,7 +85,7 @@ void main() {
   vec3 wind = e1 * (al < 0.52 || al > 1.05 ? -1.0 : 1.0) * uFall2.w * (al < 0.09 ? 0.45 : al < 0.52 ? 0.9 : al < 1.05 ? 1.25 : 0.8) * 0.4;
   float az = aSeed.y * 6.2832;
   vec3 out1 = e1 * cos(az) + e2 * sin(az);
-  vec3 p; float life, size, a;
+  vec3 p, vel = vec3(0.0); float life, size, a;
   if (mist) {
     // carried out on the air the fall drags down (spent in a second or so), lifted by it, drifting
     // on the wind, settling at its Stokes speed; spreading as it goes
@@ -93,12 +93,14 @@ void main() {
     life = min(life, 60.0);
     float t = fract(uTime / life + aSeed.x) * life;
     float vOut = vImp * mix(0.15, 0.35, aSeed.z);
-    p = aFoot + out1 * vOut * 1.2 * (1.0 - exp(-t / 1.2)) + aUp * (vImp * 0.08 * 3.0 * (1.0 - exp(-t / 3.0)) - uFall2.x * t)
+    // (lifted by the air it drags, each wisp its own way: some low along the pool, some up the face; all
+    // rising alike they'd stood in a row at one height, a line of puffs)
+    p = aFoot + out1 * vOut * 1.2 * (1.0 - exp(-t / 1.2)) + aUp * (vImp * 0.24 * mix(0.25, 1.5, pow(fract(aSeed.x * 7.31 + aSeed.w * 3.17), 2.0)) * (1.0 - exp(-t / 3.0)) - uFall2.x * t)
       + wind * (t - 3.0 * (1.0 - exp(-t / 3.0)));
     float k = t / life;
-    // (a haze of it: many small wisps, not a few puffs)
-    size = (0.3 + 0.05 * aFall.z) * mix(0.5, 1.4, aSeed.z) * mix(0.35, 1.0, sqrt(k));
-    a = 0.07 * uFall2.y * smoothstep(0.0, 0.12, k) * (1.0 - smoothstep(0.5, 1.0, k));
+    // (a haze of it: many faint wisps, each spreading as it goes (the air's eddies mix it out), not a few puffs)
+    size = (0.4 + 0.07 * aFall.z) * mix(0.5, 1.5, aSeed.z) * mix(0.3, 1.6, sqrt(k));
+    a = 0.045 * uFall2.y * smoothstep(0.0, 0.12, k) * (1.0 - smoothstep(0.45, 1.0, k));
   } else {
     // a drop thrown up off the foot: toward its terminal speed (down, and with the wind) at its drag
     // time; ballistic in a vacuum
@@ -111,9 +113,11 @@ void main() {
     life = clamp(2.0 * up0 / g / (1.0 + up0 / max(uFall1.z, 0.01)), 0.15, 12.0) + 0.1;
     float t = fract(uTime / life + aSeed.x) * life;
     p = aFoot + vT * t + (v0v - vT) * tau * (1.0 - exp(-t / tau));
-    // (each one a little cloud of the drops thrown together, millimetres each: faint, a haze where many are)
-    size = mix(0.08, 0.3, aSeed.y);
-    a = 0.2 * smoothstep(0.0, 0.05, t / life) * (1.0 - smoothstep(0.75, 1.0, t / life));
+    vel = vT + (v0v - vT) * exp(-t / tau);
+    // (each one a few drops thrown together, millimetres each, seen as the eye sees them: drawn out along
+    // their way over a thirtieth of a second, a streak, not a lit bead)
+    size = mix(0.012, 0.04, aSeed.y);
+    a = 0.55 * smoothstep(0.0, 0.05, t / life) * (1.0 - smoothstep(0.75, 1.0, t / life));
   }
   vec4 wp = modelMatrix * vec4(p, 1.0);
   // lit as the air there is: the sun through the air (a forward-scattering phase: bright against the
@@ -142,7 +146,16 @@ void main() {
   vMist = mist ? 1.0 : 0.0;
   vS = aSeed.zw;
   vec4 mv = viewMatrix * wp;
-  mv.xy += corner * size;
+  if (mist) mv.xy += corner * size;
+  else {
+    // (the streak: from where it was a thirtieth of a second ago to here, as wide as its drops; as faint
+    // as it's long, the same light spread along it)
+    vec3 ds = (viewMatrix * (modelMatrix * vec4(vel * 0.033, 0.0))).xyz;
+    float L = length(ds.xy);
+    vec2 ax = L > 1e-4 ? ds.xy / L : vec2(0.0, 1.0);
+    mv.xy += -ds.xy * 0.5 + ax * corner.x * (0.5 * L + size) + vec2(-ax.y, ax.x) * corner.y * size;
+    vA *= size / (size + 0.5 * L);
+  }
   vZ = -mv.z;
   gl_Position = projectionMatrix * mv;
 }
@@ -160,7 +173,8 @@ uniform sampler2D tSceneDepth;
 ${GLSL_DEPTH}
 #include <common>
 void main() {
-  float r = length(vUv);
+  // (a mist's puff round; a spray's streak a rod, soft along its sides and ends)
+  float r = vMist > 0.5 ? length(vUv) : max(abs(vUv.y), smoothstep(0.5, 1.0, abs(vUv.x)));
   if (r > 1.0) discard;
   // (behind the scene's surface: hidden; near it: faded over a metre or so (a drop's spray less))
   float dRaw = texelFetch(tSceneDepth, ivec2(gl_FragCoord.xy), 0).r;
@@ -169,7 +183,7 @@ void main() {
   float soft = clamp((zs - vZ) / (vMist > 0.5 ? 1.5 : 0.2), 0.0, 1.0);
   float a = vA * soft * (1.0 - smoothstep(0.2, 1.0, r));
   // (a puff of mist, or of spray, uneven within)
-  a *= 0.4 + 1.2 * texture(tDetail, vUv * 0.25 + vS).a;
+  if (vMist > 0.5) a *= 0.4 + 1.2 * texture(tDetail, vUv * 0.25 + vS).a;
   gl_FragColor = vec4(vCol, a);
 }
 `;
@@ -198,8 +212,8 @@ export class FallFx {
       const vImp = Math.min(Math.sqrt(2 * g * drop), vSheet);
       const ux = origin[0] + x, uy = origin[1] + y, uz = origin[2] + z, ul = Math.hypot(ux, uy, uz);
       // (its share of particles: by its width and how hard it lands)
-      const nSpray = Math.round(Math.min(1200, Math.max(48, width * vImp * 4)) * (1 - frozen));
-      const nMist = Math.round(Math.min(720, Math.max(0, width * Math.sqrt(drop) * 3.6)) * mistK * (1 - frozen));
+      const nSpray = Math.round(Math.min(3000, Math.max(120, width * vImp * 10)) * (1 - frozen));
+      const nMist = Math.round(Math.min(1200, Math.max(0, width * Math.sqrt(drop) * 6)) * mistK * (1 - frozen));
       for (let k = 0; k < nSpray + nMist; k++) {
         // (along the line it lands on, its lip's width; a ring of it where that way isn't known)
         const s = (rnd() - 0.5) * width;
