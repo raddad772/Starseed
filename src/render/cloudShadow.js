@@ -57,6 +57,7 @@ float toRadius(vec3 p, vec3 d, float rr) { float b = dot(p, d), c = dot(p, p) - 
 float tauAlong(vec3 p, vec3 d, float t0, float t1, float foot, vec3 gA, vec3 gB, float sigma) {
   const int N = 8;
   float dt = (t1 - t0) / float(N), tau = 0.0;
+  gDeckFoot = foot;
   for (int s = 0; s < N; s++) {
     vec3 x = p + d * (t0 + (float(s) + 0.5) * dt);
     float r = length(x), h = r - uRadius, fr;

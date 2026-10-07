@@ -32,10 +32,18 @@ float coverage(int i, vec3 dirF, vec3 q, float foot, float clim) {
   }
   return cloudCoverC(q, foot, uDeck[i].w, clim);
 }
+// the pixel's foot (m) where the decks are read: set by the caller (the noise's contrast by it, below)
+float gDeckFoot = 0.0;
 // density of deck i at q (height h); cov precomputed; detail adds erosion
 float deckDensity(int i, vec3 q, float h, float cov, bool detail, out float frac) {
   vec4 dk = uDeck[i];
-  float base = texture(tNoise, q / uShape.x).r;
+  // (the noise's values lie at 0.68 +- 0.05 (noise3d.js): spread over 0..1 through its distribution (this
+  // smoothstep is near its CDF), so a deck's coverage is the share of it that's cloud. Read raw, any cover
+  // over ~0.45 closed the deck into a smooth sheet: no cells, no seams, no breaks. Where a pixel spans a
+  // few of its texels it's read raw again, its spread small: the noise has no mip levels, and spread it
+  // aliased to speckle (a gas giant from orbit))
+  float raw = texture(tNoise, q / uShape.x).r;
+  float base = mix(smoothstep(0.58, 0.78, raw), raw, cloudFade(gDeckFoot, uShape.x));
   float tower = texture(tNoise, q / (uShape.x * 4.0) + 0.21).g;
   // the deck top rises and falls: convective towers and troughs
   float top = dk.y - (dk.y - dk.x) * 0.55 * (1.0 - tower);
@@ -244,6 +252,7 @@ void main() {
       vec3 cc = vec3(1.0);
       // (the clouds' generations here on the world's clock, each carried on its wind: atmosphere.js)
       vec3 pf = uToFixed * p, dirF = pf / r, gA, gB;
+      gDeckFoot = t * gPixA;
       float lat = asin(clamp(dirF.y, -1.0, 1.0));
       cloudGens(dirF, gA, gB);
       float clim = uMode > 0.5 ? cloudClimate(dirF) : 0.0;
