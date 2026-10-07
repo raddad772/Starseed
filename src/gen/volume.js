@@ -24,7 +24,7 @@
 import * as dm from '../core/dmath.js';
 import { Noise3 } from '../core/noise.js';
 import { Rng, hashInts } from '../core/rng.js';
-import { S_LEN, S_H, S_WDEPTH, S_MOUNT, S_ROUGH, S_SAND, S_ICE, S_TEMP, S_RIVR } from './terrain.js';
+import { S_LEN, S_H, S_WDEPTH, S_MOUNT, S_ROUGH, S_SAND, S_ICE, S_TEMP, S_RIVR, S_WLVL } from './terrain.js';
 import { ROCKS } from './worldsim/lithology.js';
 import { MAT_W0, MAT_N, MC } from './matclasses.js';
 import { fireAtDir, fireMark } from './life/fire.js';
@@ -75,11 +75,12 @@ export class VolumeField {
     this.terr = new Map();   // column -> { Hc, wc, s8, cm, dip }
     this.tal = new Map();    // column -> its ground with the talus at a face's foot
     this.cols = new Map();   // column -> { ...terr, gc }
+    this.colsR = new Map();  // column -> the same without talus or brink
     this.pts = new Map();    // lattice point -> density (the physics' cache)
   }
 
   _key(i, k) { return (i + 32768) * 65536 + (k + 32768); }
-  _trim() { if (this.base.size > 1500000) { this.base.clear(); this.terr.clear(); this.tal.clear(); this.cols.clear(); } if (this.pts.size > 200000) this.pts.clear(); }
+  _trim() { if (this.base.size > 1500000) { this.base.clear(); this.terr.clear(); this.tal.clear(); this.cols.clear(); this.colsR.clear(); } if (this.pts.size > 200000) this.pts.clear(); }
 
   // the heightfield and the rock under column (i, k)
   baseAt(i, k) {
@@ -102,8 +103,9 @@ export class VolumeField {
     if (s[S_SAND] > 0) { hard *= 1 - s[S_SAND]; cave *= 1 - s[S_SAND]; }
     // (nor on a glacier: its ice is smooth)
     if (s[S_ICE] > 0) { const k = 1 - dm.smoothstep(0, 4, s[S_ICE]); hard *= k; cave *= k; }
-    // (a river's or a creek's channel (not the sea's: its waves cut their own notch, below))
-    b = { H: s[S_H], hard, cave, wet: s[S_RIVR] > 0 ? 1 : 0 };
+    // (a river's or a creek's channel, or its flank a little above its water (the sample's water level nearby:
+    // the river's, a creek's, a lake's shore); not the sea's, its waves cut their own notch, below)
+    b = { H: s[S_H], hard, cave, wet: s[S_RIVR] > 0 || (s[S_WLVL] > -1e8 && s[S_H] - s[S_WLVL] < 2.5) ? 1 : 0 };
     this.base.set(key, b);
     return b;
   }
@@ -117,12 +119,11 @@ export class VolumeField {
     const sx = (this.baseAt(i + 4, k).H - this.baseAt(i - 4, k).H) / 8, sz = (this.baseAt(i, k + 4).H - this.baseAt(i, k - 4).H) / 8;
     const s8 = Math.sqrt(sx * sx + sz * sz);
     const a = this.a, px = a.o[0] + i * a.e[0] + k * a.n[0], py = a.o[1] + i * a.e[1] + k * a.n[1], pz = a.o[2] + i * a.e[2] + k * a.n[2];
-    // (running water planes its bed: no treads, risers or standing beds in a channel or a few metres
-    // either side of it; down a fall the face its water pours over as the heightfield has it, the sheet
-    // drawn there (render/falls.js), not a tread stood out across it, its water pouring from under a ledge)
-    const wet = Math.max(b.wet, this.baseAt(i + 3, k).wet, this.baseAt(i - 3, k).wet, this.baseAt(i, k + 3).wet, this.baseAt(i, k - 3).wet,
-      0.5 * Math.max(this.baseAt(i + 6, k).wet, this.baseAt(i - 6, k).wet, this.baseAt(i, k + 6).wet, this.baseAt(i, k - 6).wet));
-    const wc = smooth(0.28, 0.65, s8) * b.hard * (1 - wet);
+    // (running water planes its bed: no treads, risers or standing beds in a channel or on its flanks just
+    // over its water; down a fall the face its water pours over as the heightfield has it, the sheet drawn
+    // there (render/falls.js), not a tread stood out across it, its water pouring from under a ledge. From
+    // the column's own sample: its neighbours read for it had multiplied the samples a column costs)
+    const wc = smooth(0.28, 0.65, s8) * b.hard * (1 - b.wet);
     let Hc = H;
     if (wc > 0) {
       const S = 5 + 9 * (0.5 + 0.5 * this.nStep.noise(px / 420, py / 420, pz / 420));
@@ -195,8 +196,11 @@ export class VolumeField {
   }
 
   // the column with the slope of its ground (the terraced surface and its talus: how far a face is from
-  // vertical)
-  colAt(i, k) {
+  // vertical); fine false: without the talus and the rounded brink (cells of 4 m and more can't hold them,
+  // and the near field's footprints and empty chunks needn't: their searches round each column had cost the
+  // main thread seconds of samples as the near field moved on)
+  colAt(i, k, fine = true) {
+    if (!fine) return this.colRaw(i, k);
     const key = this._key(i, k);
     let c = this.cols.get(key);
     if (c) return c;
@@ -208,10 +212,24 @@ export class VolumeField {
     return c;
   }
 
-  // the ground between columns (bilinear)
-  hcAt(x, z) {
+  // the terraced surface's column alone (no talus, no brink)
+  colRaw(i, k) {
+    const key = this._key(i, k);
+    let c = this.colsR.get(key);
+    if (c) return c;
+    const t = this.terrAt(i, k);
+    const gx = (this.terrAt(i + 1, k).Hc - this.terrAt(i - 1, k).Hc) / 2, gz = (this.terrAt(i, k + 1).Hc - this.terrAt(i, k - 1).Hc) / 2;
+    const gc = Math.sqrt(gx * gx + gz * gz);
+    c = { Hc: t.Hc, tal: 0, wc: t.wc, s8: t.s8, cm: t.cm, dip: t.dip, gc, ux: gc > 1e-6 ? gx / gc : 0, uz: gc > 1e-6 ? gz / gc : 0 };
+    this.colsR.set(key, c);
+    return c;
+  }
+
+  // the ground between columns (bilinear; fine as colAt)
+  hcAt(x, z, fine = true) {
     const i = Math.floor(x), k = Math.floor(z), fx = x - i, fz = z - k;
-    const a = this.talAt(i, k), b = this.talAt(i + 1, k), c = this.talAt(i, k + 1), d = this.talAt(i + 1, k + 1);
+    const g = fine ? (a2, b2) => this.talAt(a2, b2) : (a2, b2) => this.terrAt(a2, b2).Hc;
+    const a = g(i, k), b = g(i + 1, k), c = g(i, k + 1), d = g(i + 1, k + 1);
     return (a * (1 - fx) + b * fx) * (1 - fz) + (c * (1 - fx) + d * fx) * fz;
   }
 
@@ -229,8 +247,9 @@ export class VolumeField {
   // leave out what they can't hold (the finest rubble at 2 m, the rest and the beds' ledges
   // fading by 8 m, caves past 2 m), so far rings don't shimmer
   density(i, j, k, s = 1) {
+    const fine = s <= 2;
     if (s !== 1) { i *= s; j *= s; k *= s; }
-    const a = this.a, c = this.colAt(i, k);
+    const a = this.a, c = this.colAt(i, k, fine);
     const px = a.o[0] + i * a.e[0] + j * a.u[0] + k * a.n[0];
     const py = a.o[1] + i * a.e[1] + j * a.u[1] + k * a.n[1];
     const pz = a.o[2] + i * a.e[2] + j * a.u[2] + k * a.n[2];
@@ -248,7 +267,7 @@ export class VolumeField {
       if (this.hasSea) out -= 3 * dm.exp(-((r - 0.8) / 1.3) * ((r - 0.8) / 1.3));
       out *= c.wc;
       // ...by reading the terraced surface that far up the slope (into the cliff)
-      d = this.hcAt(i + out * c.ux, k + out * c.uz) - r;
+      d = this.hcAt(i + out * c.ux, k + out * c.uz, fine) - r;
     }
     if (c.cm > 0.02 && s <= 2) {
       const depth = c.Hc - r;
@@ -355,7 +374,7 @@ export function buildVolumeChunk(field, ci, cj, ck, level = 0) {
   {
     let hlo = Infinity, hhi = -Infinity, cave = false;
     for (let z = 0; z < GN; z++) for (let x = 0; x < GN; x++) {
-      const c = field.colAt((i0 + x - B) * S, (k0 + z - B) * S);
+      const c = field.colAt((i0 + x - B) * S, (k0 + z - B) * S, S <= 2);
       if (c.Hc < hlo) hlo = c.Hc; if (c.Hc > hhi) hhi = c.Hc;
       if (c.cm > 0.02 && S <= 2) cave = true;
     }
@@ -459,7 +478,7 @@ export function buildVolumeChunk(field, ci, cj, ck, level = 0) {
     nrmV[0] = nx; nrmV[1] = ny; nrmV[2] = nz;
     gen.shade(s, slope, cc, mm, nrmV);
     // rock faces banded by their beds
-    const colm = field.colAt(Math.round(i0 * S + lx), Math.round(k0 * S + lz));
+    const colm = field.colAt(Math.round(i0 * S + lx), Math.round(k0 * S + lz), S <= 2);
     if (mm[2] > 0.15 && colm.wc > 0.05) {
       const b = field.bedShade(r, colm.dip), k = 1 + (0.86 + 0.28 * b - 1) * Math.min(1, mm[2] * 1.5);
       cc[0] *= k * (1 + 0.05 * (b - 0.5)); cc[1] *= k; cc[2] *= k * (1 - 0.05 * (b - 0.5));

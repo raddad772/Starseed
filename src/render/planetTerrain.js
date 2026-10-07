@@ -581,7 +581,7 @@ export class PlanetTerrain {
         // below for caves (deep near the player)
         let hmin = Infinity, hmax = -Infinity;
         for (let a = 0; a <= 2; a++) for (let b2 = 0; b2 <= 2; b2++) {
-          const col = F.colAt(Math.round(x0 + a * size / 2), Math.round(z0 + b2 * size / 2));
+          const col = F.colAt(Math.round(x0 + a * size / 2), Math.round(z0 + b2 * size / 2), false);
           if (col.Hc < hmin) hmin = col.Hc;
           if (col.Hc > hmax) hmax = col.Hc;
         }
