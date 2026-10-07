@@ -107,6 +107,8 @@ const BED_WALL = 3;
 // the soil's depth against the ground's curvature (_soilK: m, the exponent's scale; a hollow's 0.02 /m
 // doubles it. At 60 a quarter of a lava plateau's ground stood at either clamp)
 const SOIL_CURV = 35;
+// the loose covers among lithology.js's rocks (alluvium, regolith, the sands): a skin over the bedrock
+const LOOSE = ROCKS.map((r) => r.name === 'alluvium' || r.name === 'regolith' || /sand$/.test(r.name));
 
 function smin(a, b, k) { const h = dm.clamp(0.5 + 0.5 * (b - a) / k, 0, 1); return b + (a - b) * h - k * h * (1 - h); }
 function smax(a, b, k) { return -smin(-a, -b, k); }
@@ -2310,10 +2312,23 @@ export class TerrainGenerator {
     // (its contacts as wide as the vertices reading them are apart: chunkbuilder.js's _shadeSp)
     S.rockSoft = this._shadeSp || 0;
     let rt = S.rockAt(x, y, z, h / this.hScale), r2 = S.rock2;
-    const mix = S.rockMix;
+    let mix = S.rockMix;
     S.rockSoft = 0;
     // (where no tile of the terrain's has laid out the beds: the same beds the tiles have)
     if (!S.rockPyr) { rt = this._bedRock(x, y, z, h, rt); r2 = mix > 0 ? this._bedRock(x, y, z, h, r2) : rt; }
+    // (a loose cover (a river's gravels, a lava's broken top, sand) holds no steeper than its rest,
+    // ~35 degrees: on a face cut through it, a gorge's wall or the beds' steps, the bedrock under it,
+    // the world sim's own as the beds read it (_beds). The tiles' rock is the ground's skin, their
+    // cells wider than a gorge: its walls stood dressed in the river's gravels, pebbles blotched up them)
+    if (S.rockPyr && slope > 0.15 && (LOOSE[rt] || (mix > 0 && LOOSE[r2]))) {
+      const rb = S.rockAtWarped(S.rockWarp(x, y, z, this._cw || (this._cw = [0, 0, 0])), h / this.hScale);
+      if (!LOOSE[rb]) {
+        const k = dm.smoothstep(0.15, 0.3, slope);
+        if (!LOOSE[rt]) { if (k * mix > 0) r2 = rb; }
+        else if (k >= 0.5) { r2 = rt; rt = rb; mix = 1 - k; }
+        else { r2 = rb; mix = k; }
+      }
+    }
     const c1 = this.rockLin[rt] || P.rock, c2 = this.rockLin[r2] || P.rock, rc = this._rcol || (this._rcol = [0, 0, 0]);
     for (let k = 0; k < 3; k++) rc[k] = c1[k] + (c2[k] - c1[k]) * mix;
     // (a dune sea's sand over it)

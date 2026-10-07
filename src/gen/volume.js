@@ -183,7 +183,10 @@ export class VolumeField {
     // it, not the cone banked against its gorge's wall
     const gx = this.terrAt(i + 2, k).Hc - this.terrAt(i - 2, k).Hc, gz = this.terrAt(i, k + 2).Hc - this.terrAt(i, k - 2).Hc, gl = Math.sqrt(gx * gx + gz * gz);
     const down = gl > 1e-6 ? (H0 - this.terrAt(i - Math.round(4 * gx / gl), k - Math.round(4 * gz / gl)).Hc) / 4 : 0;
-    if (!this.baseAt(i, k).chan && down < 0.6) {
+    // (and 12 m on: a bench partway up, the face going on down below it, had held patches of it up a spur
+    // and along a gorge's wall; the foot's ground runs on out across the floor)
+    const down12 = gl > 1e-6 ? (H0 - this.terrAt(i - Math.round(12 * gx / gl), k - Math.round(12 * gz / gl)).Hc) / 12 : 0;
+    if (!this.baseAt(i, k).chan && down < 0.6 && down12 < 0.35) {
       // (a face anywhere near: the ground 4 or 11 m off a few metres higher)
       let near = false;
       for (let q = 0; q < 4 && !near; q++) {
@@ -526,13 +529,19 @@ export function buildVolumeChunk(field, ci, cj, ck, level = 0) {
     }
     // (talus: the face's own rock fallen and broken, scree: its colour (the ground shaded as rock), its
     // stones and grit, few plants on it yet)
-    if (colm.tal > 0.15) {
-      const kt = Math.min(1, (colm.tal - 0.15) / 0.6), c2 = _tc, m2 = _tm;
+    // (the face's own rock, its broken faces fresh: a shade paler than the weathered face, not darker; its
+    // stones over the face's own material, not instead of it: wholly the gravel's dark scan and a shade
+    // under the face it stood as a stain at the face's foot)
+    // (and broken, not rolled: the face's own rock's grain over half of it, grit and a little gravel the
+    // rest. Wholly the gravel's scan, a river's rounded pebbles, it stood as a conglomerate pasted on the
+    // face, its top a hard line where the cone thinned over half a metre)
+    if (colm.tal > 0.1) {
+      const kt = smooth(0.1, 1.2, colm.tal), c2 = _tc, m2 = _tm;
       gen.shade(s, 0.62, c2, m2, nrmV);
-      for (let q = 0; q < 3; q++) cc[q] += (c2[q] * 0.95 - cc[q]) * kt;
+      for (let q = 0; q < 3; q++) cc[q] += (c2[q] * 1.12 - cc[q]) * kt;
       mm[0] *= 1 - 0.8 * kt; mm[2] = Math.max(mm[2], 0.7 * kt);
-      for (let q = MAT_W0; q < MAT_N; q++) mm[q] *= 1 - kt;
-      mm[MAT_W0 + MC.gravel] += kt;
+      for (let q = MAT_W0; q < MAT_N; q++) mm[q] *= 1 - 0.5 * kt;
+      mm[MAT_W0 + MC.regolith] += 0.3 * kt; mm[MAT_W0 + MC.gravel] += 0.2 * kt;
     }
     // (the recent fires' marks on the ground, as the heightfield's chunks have them: not on bare rock faces)
     if (mm[2] < 0.5 && r > 0) fireMark(gen, fireAtDir(gen, ux, uy, uz), cc);
