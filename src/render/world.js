@@ -80,6 +80,7 @@ export class WorldRenderer {
     it.group.remove(it.terrain.group);
     it.terrain.dispose();
     it.terrain = new PlanetTerrain(it.body, this.pool, it.shared);
+    it.terrain.gpuLOD = !!this.engine.renderer.isNativeWebGPU;
     it.group.add(it.terrain.group);
     if (it.heightCube) it.heightCube.invalidate();
     // its clouds where its climate puts them
@@ -227,6 +228,7 @@ export class WorldRenderer {
     Object.assign(it.shared, it.cloudShadow ? it.cloudShadow.uniforms : noCloudShadow(b.data.atmosphere && b.data.atmosphere.clouds));
     if (b.solid) {
       it.terrain = new PlanetTerrain(b, this.pool, it.shared);
+      it.terrain.gpuLOD = !!this.engine.renderer.isNativeWebGPU;
       it.group.add(it.terrain.group);
     } else if (b.giant) {
       it.mesh = makeGiantMesh(b, it.shared);

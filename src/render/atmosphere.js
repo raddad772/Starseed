@@ -1148,6 +1148,11 @@ export class Atmosphere {
   // (a fence polled, the copies a frame or two late), when the weather's dust remakes them in play: read
   // at once the CPU waited on everything the GPU had queued, a hitch
   readBack(renderer, wait = true) {
+    if (renderer.isNativeWebGPU) {
+      wait = false;
+      this.cpuTrans ||= { w: 2, h: 2, data: new Float32Array(16).fill(1) };
+      this.cpuIrr ||= { w: 2, h: 2, data: new Float32Array(16).fill(0) };
+    }
     if (!wait) {
       if (this._rbBusy) { this._rbAgain = true; return; }
       this._rbBusy = true;

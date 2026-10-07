@@ -55,7 +55,7 @@ struct Varying {
   @location(11) cls2: vec4f,
   @location(12) anchorPos: vec3f,
 };
-@vertex fn vertexMain(@builtin(vertex_index) vi: u32, @builtin(instance_index) oi: u32) -> Varying {
+@vertex fn vertexMain(@builtin(vertex_index) vi: u32, @location(0) oi: u32) -> Varying {
   let v = vertices[vi]; let o = objects[oi];
   let d = distance(v.morph.xyz, o.camMorphStart.xyz);
   let m = clamp((d - o.camMorphStart.w) / max(o.nearOffMorphEnd.w - o.camMorphStart.w, 0.001), 0.0, 1.0);

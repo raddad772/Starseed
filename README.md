@@ -7,7 +7,7 @@ a seed.
 **Play:** https://raddad772.github.io/Starseed/ (try `?seed=FSPB-8DTW`)
 
 - Keyboard and mouse or an Xbox-style controller; press H (or R3) in game for the controls.
-- Runs best in Chrome or another Chromium browser; needs WebGL 2.
+- Requires a browser with WebGPU enabled. The raw WebGPU renderer uses reversed depth, deferred lighting, clustered lights and native compute culling.
 
 ## Run locally
 

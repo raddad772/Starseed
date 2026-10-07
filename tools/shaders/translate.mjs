@@ -61,6 +61,15 @@ export async function translate(name, source, output, compiler, options={}) {
   const run=spawnSync(process.execPath,[compiler,'--input-kind','glsl','--shader-stage',options.stage||'frag','--keep-coordinate-space',path.relative(process.cwd(),input),path.relative(process.cwd(),out)],{encoding:'utf8'});
   if(run.status!==0)throw Error(name+': '+run.stdout+'\n'+run.stderr);
   let code=await fs.readFile(out,'utf8');
+  // Naga emits natural WGSL array strides. GLSL std140 scalar/vec2 arrays
+  // require 16-byte elements; preserve that ABI before packing their uniforms.
+  for(const field of metadata.uniforms.filter(u=>u.count&&u.size<12)){
+    const pattern=new RegExp('('+field.name+': array<)([^,]+)(, '+field.count+'>)');
+    const type=code.match(pattern)?.[2];if(!type)throw Error('Missing uniform array '+field.name);
+    const wrapper='Std140_'+field.name;
+    code='struct '+wrapper+' { @align(16) @size(16) value: '+type+' }\n'+code.replace(pattern,'$1'+wrapper+'$3');
+    code=code.replace(new RegExp('(global\\.'+field.name+'\\[[^\\]]+\\])','g'),'$1.value');
+  }
   if(options.library) code=code.slice(0,code.indexOf('@fragment'));
   await fs.writeFile(path.join(output,name+'.js'), '// Generated offline from the existing renderer equations. See tools/shaders/.\nexport const layout = '+JSON.stringify(metadata,null,2)+';\nexport const code = /* wgsl */`\n'+code+'`;\n');
   return {code,layout:metadata};

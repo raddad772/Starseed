@@ -14,6 +14,8 @@ import { OpaquePass } from './opaque.js';
 import { ShadowPass } from './shadows.js';
 import { ClusteredLights } from './clustered.js';
 import { ForwardPass } from './forward.js';
+import { TerrainCuller } from './culling.js';
+import { MapPass } from './map.js';
 import { GTAO } from './gtao.js';
 import { GBufferEffects } from './gbuffer-effects.js';
 import { Background } from './background.js';
@@ -50,6 +52,8 @@ export class DeferredRenderer {
     this.shadows = new ShadowPass(this.device,this.textures,this.passes);
     this.localLights = new ClusteredLights(this.device);
     this.gtao = new GTAO(this.device);
+    this.map = new MapPass(this.device,this.format);
+    this.terrainCuller = new TerrainCuller(this.device);
     this.materialEffects = new GBufferEffects(this.device);
     this.forward = new ForwardPass(this.device,this.textures,this.localLights);
     this.opaque = new OpaquePass(this.device, this.textures);
@@ -57,7 +61,7 @@ export class DeferredRenderer {
   }
   async init() {
     const d = this.device, S = GPUShaderStage;
-    await Promise.all([this.passes.init(), this.air.init(), this.opaque.init(), this.shadows.init(), this.forward.init(), this.localLights.init(), this.gtao.init(), this.materialEffects.init()]);
+    await Promise.all([this.passes.init(), this.air.init(), this.opaque.init(), this.shadows.init(), this.forward.init(), this.localLights.init(), this.gtao.init(), this.materialEffects.init(), this.map.init(), this.terrainCuller.init()]);
     this.frameLayout = d.createBindGroupLayout({ label: 'frame and world', entries: [
       { binding: 0, visibility: S.VERTEX | S.FRAGMENT, buffer: { type: 'uniform' } },
       { binding: 1, visibility: S.VERTEX | S.FRAGMENT, buffer: { type: 'read-only-storage' } },
@@ -81,7 +85,7 @@ export class DeferredRenderer {
     const layout = (second) => d.createPipelineLayout({ bindGroupLayouts: [this.frameLayout, second] });
     this.terrainPipeline = await d.createRenderPipelineAsync({
       label: 'terrain G-buffer', layout: d.createPipelineLayout({ bindGroupLayouts: [this.frameLayout, this.geometryLayout, this.surfaces.layout] }),
-      vertex: { module: terrain, entryPoint: 'vertexMain' },
+      vertex: { module: terrain, entryPoint: 'vertexMain', buffers:[{arrayStride:4,stepMode:'instance',attributes:[{shaderLocation:0,offset:0,format:'uint32'}]}] },
       fragment: { module: terrain, entryPoint: 'fragmentMain', targets: GB_FORMATS.map((format) => ({ format })) },
       primitive: { topology: 'triangle-list', cullMode: 'back', frontFace: 'ccw' },
       depthStencil: { format: 'depth32float', depthWriteEnabled: true, depthCompare: 'greater' },
@@ -104,7 +108,8 @@ export class DeferredRenderer {
       this.objectCapacity = 2 ** Math.ceil(Math.log2(Math.max(64, objects)));
       const size = this.objectCapacity * OBJECT_FLOATS * 4;
       if (size > d.limits.maxStorageBufferBindingSize) throw new Error('Visible geometry exceeds the WebGPU object buffer limit');
-      this.objectBuffer?.destroy();
+      this.objectBuffer?.destroy();this.objectIndices?.destroy();
+      this.objectIndices=bufferWithData(d,'terrain object indices',Uint32Array.from({length:this.objectCapacity},(_,i)=>i),GPUBufferUsage.VERTEX);
       this.objectBuffer = d.createBuffer({ label: 'objects', size, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
       this.objectData = new Float32Array(this.objectCapacity * OBJECT_FLOATS);
     }
@@ -124,12 +129,14 @@ export class DeferredRenderer {
     let entry = this.geometryCache.get(g);
     if (entry) return entry;
     const vertices = packTerrain(g);
+    if(!g.boundingSphere)g.computeBoundingSphere();const sphere=g.boundingSphere.clone();
+    let morphMargin=0;for(let i=0;i<vertices.length;i+=44)morphMargin=Math.max(morphMargin,Math.hypot(vertices[i]-vertices[i+4],vertices[i+1]-vertices[i+5],vertices[i+2]-vertices[i+6]));sphere.radius+=morphMargin;
     const indices = g.index?.array || Uint32Array.from({ length: g.attributes.position.count }, (_, i) => i);
     if (vertices.byteLength > this.device.limits.maxStorageBufferBindingSize) throw new Error('Terrain chunk exceeds the WebGPU vertex buffer limit');
     const vertexBuffer = bufferWithData(this.device, 'terrain vertices', vertices, GPUBufferUsage.STORAGE);
     const indexBuffer = bufferWithData(this.device, 'terrain indices', indices, GPUBufferUsage.INDEX);
     entry = {
-      vertexBuffer, indexBuffer, indexFormat: indices instanceof Uint16Array ? 'uint16' : 'uint32', count: indices.length,
+      sphere, vertexBuffer, indexBuffer, indexFormat: indices instanceof Uint16Array ? 'uint16' : 'uint32', count: indices.length,
       bindGroup: this.device.createBindGroup({ layout: this.geometryLayout, entries: [{ binding: 0, resource: { buffer: vertexBuffer } }] }),
     };
     entry.dispose = () => {
@@ -174,7 +181,7 @@ export class DeferredRenderer {
     const draw = [], opaqueObjects = [], pendingStandard = [], lights = [], bodyIds = new Map(), surfaces = new Map();
     engine.scene.traverseVisible((object) => {
       if (!object.isMesh || !object.layers.test(camera.layers)) return;
-      if (object.frustumCulled && !this.frustum.intersectsObject(object)) return;
+      if (!object.geometry.attributes.nrm && object.frustumCulled && !this.frustum.intersectsObject(object)) return;
       const materials=Array.isArray(object.material)?object.geometry.groups.map(group=>({material:object.material[group.materialIndex],group})):[{material:object.material}];
       for(const {material,group} of materials){
         if(!material||material.transparent||!material.visible)continue;
@@ -236,6 +243,7 @@ export class DeferredRenderer {
     }).group);
     const t = this.target(view); let encoder = d.createCommandEncoder({ label: 'deferred frame' });
     this.opaque.culler.encode(encoder,opaque,this.frustum,camera);
+    this.terrainCuller.encode(encoder,draw,this.frustum);
     this.timer.begin();
     let pass = encoder.beginRenderPass({ label: 'G-buffer',
       colorAttachments: t.gbuffer.map((texture) => ({ view: texture.createView(), clearValue: [0, 0, 0, 0], loadOp: 'clear', storeOp: 'store' })),
@@ -247,7 +255,7 @@ export class DeferredRenderer {
     draw.forEach(({ geometry: g, surface }, i) => {
       pass.setBindGroup(2, surface.group);
       pass.setBindGroup(1, g.bindGroup); pass.setIndexBuffer(g.indexBuffer, g.indexFormat);
-      pass.drawIndexed(g.count, 1, 0, 0, i); triangles += g.count / 3;
+      pass.setVertexBuffer(0,this.objectIndices,i*4,4);pass.drawIndexedIndirect(this.terrainCuller.args,i*20); triangles += g.count / 3;
     });
     pass.end();
     this.materialEffects.captureGround(encoder,t);
@@ -309,8 +317,8 @@ export class DeferredRenderer {
     if (this.disposed) return; this.disposed = true;
     for (const geometry of [...this.geometries]) geometry.dispose();
     for (const target of this.targets.values()) { this.air.release(target); this.post.release(target); this.localLights.release(target); for (const texture of target.textures) texture.destroy(); }
-    this.targets.clear(); this.timer.dispose(); this.surfaces.dispose(); this.background.dispose(); this.shadows.dispose(); this.opaque.dispose(); this.forward.dispose(); this.localLights.dispose(); this.gtao.dispose(); this.materialEffects.dispose(); this.lightBindings.dispose(); this.passes.dispose(); this.textures.dispose();
-    this.frameBuffer?.destroy(); this.objectBuffer?.destroy(); this.bodyBuffer?.destroy();
+    this.targets.clear(); this.timer.dispose(); this.surfaces.dispose(); this.background.dispose(); this.shadows.dispose(); this.opaque.dispose(); this.forward.dispose(); this.localLights.dispose(); this.gtao.dispose(); this.map.dispose(); this.terrainCuller.dispose(); this.materialEffects.dispose(); this.lightBindings.dispose(); this.passes.dispose(); this.textures.dispose();
+    this.frameBuffer?.destroy(); this.objectBuffer?.destroy(); this.objectIndices?.destroy(); this.bodyBuffer?.destroy();
     this.releaseContext(); this.device.destroy();
   }
 }

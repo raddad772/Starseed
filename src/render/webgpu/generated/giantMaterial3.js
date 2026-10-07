@@ -179,6 +179,7 @@ export const layout = {
   "attributes": []
 };
 export const code = /* wgsl */`
+struct Std140_uStormSpin { @align(16) @size(16) value: f32 }
 struct Params {
     uBodyIndex: f32,
     uSunDir: vec3<f32>,
@@ -193,7 +194,7 @@ struct Params {
     uEqJet: f32,
     uStorm: array<vec4<f32>, 3>,
     uStormCol: array<vec3<f32>, 3>,
-    uStormSpin: array<f32, 3>,
+    uStormSpin: array<Std140_uStormSpin, 3>,
     uNumStorms: f32,
     uPolar: vec3<f32>,
     uHexagon: f32,
@@ -579,12 +580,12 @@ fn giantColor(d: vec3<f32>, detail: f32, bandShade: ptr<function, f32>) -> vec3<
                     let _e161 = r;
                     k = (1f - (_e160 / (_e161 * 1.6f)));
                     let _e167 = i_3;
-                    let _e169 = global.uStormSpin[_e167];
+                    let _e169 = global.uStormSpin[_e167].value;
                     let _e170 = k;
                     let _e172 = k;
                     let _e176 = global.uGiantTime;
                     let _e179 = i_3;
-                    let _e181 = global.uStormSpin[_e179];
+                    let _e181 = global.uStormSpin[_e179].value;
                     ang = ((((_e169 * _e170) * _e172) * 5f) + ((_e176 * 0.0004f) * _e181));
                     let _e185 = c;
                     axis = _e185;

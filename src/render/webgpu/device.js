@@ -85,7 +85,7 @@ export class PassTimer {
       await this.read.mapAsync(GPUMapMode.READ);
       const values = new BigUint64Array(this.read.getMappedRange());
       const out = {};
-      labels.forEach((label, i) => { out[label] = Number(values[i * 2 + 1] - values[i * 2]) / 1e6; });
+      labels.forEach((label, i) => { const ns=values[i*2+1]-values[i*2]; if(ns>=0n)out[label]=Number(ns)/1e6; });
       this.last = out;
       this.read.unmap();
     } finally { this.pending = false; }

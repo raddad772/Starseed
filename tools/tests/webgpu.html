@@ -8,6 +8,7 @@
 <pre id="result">Compiling…</pre>
 <script type="module">
 import * as THREE from 'three';
+import { readRGBA } from '../../src/render/webgpu/device.js';
 import { SurfaceDecal } from '../../src/render/webgpu/gbuffer-effects.js';
 import { DeferredRenderer } from '../../src/render/webgpu/renderer.js';
 const canvas = document.getElementById('view'), result = document.getElementById('result');
@@ -40,7 +41,7 @@ try {
     object.position.z = -distance; scene.add(object); return object;
   };
   // Submit near first: the farther triangle must fail the reversed depth test.
-  const front = mesh(2, 0.7, [255, 0, 0]); mesh(4, 3, [0, 0, 255]);
+  const front = mesh(2, 0.7, [255, 0, 0]); mesh(4, 3, [0, 0, 255]);const hiddenChunk=mesh(2,1,[0,255,0]);hiddenChunk.position.x=100;
   renderer.device.pushErrorScope('validation');
   renderer.render(engine);
   const shot = await renderer.capture();
@@ -52,7 +53,9 @@ try {
     if (shot.pixels[i + 2] > 100 && shot.pixels[i + 2] > shot.pixels[i] * 3) blue++;
   }
   check(red > 100 && blue > 100, 'Both surfaces must render with decoded vertex colors');
-  check(renderer.stats.calls === 2, 'Both visible meshes must be submitted');
+  check(renderer.stats.calls === 3, 'Resident chunks must reach GPU visibility selection');
+  const chunkRead=renderer.device.createBuffer({size:60,usage:GPUBufferUsage.COPY_DST|GPUBufferUsage.MAP_READ}),chunkEncoder=renderer.device.createCommandEncoder();chunkEncoder.copyBufferToBuffer(renderer.terrainCuller.args,0,chunkRead,0,60);renderer.device.queue.submit([chunkEncoder.finish()]);await chunkRead.mapAsync(GPUMapMode.READ);const chunkData=new Uint32Array(chunkRead.getMappedRange()),chunkCounts=[1,6,11].map(i=>chunkData[i]);chunkRead.unmap();chunkRead.destroy();
+  check(chunkCounts.join(',')==='1,1,0','GPU chunk visibility must reject the off-screen resident chunk');scene.remove(hiddenChunk);hiddenChunk.geometry.dispose();hiddenChunk.material.dispose();
   scene.remove(front); front.geometry.dispose(); front.material.dispose();
   renderer.render(engine);
   check(renderer.stats.geometries === 1, 'Disposed chunk buffers must be released');
@@ -130,6 +133,12 @@ try {
   check(cullShot.pixels.every((v,i)=>Math.abs(v-uncullShot.pixels[i])<=1),'Indirect instance rendering must preserve visible pixels');
   renderer.opaque.culler.enabled=true;instances.dispose();instGeo.dispose();instMat.dispose();
   scene.clear();
+  const lodGeo=new THREE.PlaneGeometry(1,1),lodMat=new THREE.MeshBasicMaterial({color:0x00ff00}),lodMesh=new THREE.InstancedMesh(lodGeo,lodMat,3);lodMesh.userData.gpuLOD=[3,5];
+  for(let i=0;i<3;i++)lodMesh.setMatrixAt(i,new THREE.Matrix4().makeTranslation(0,0,-2-i*2));scene.add(lodMesh);
+  renderer.opaque.culler.enabled=false;renderer.render(engine);const lodShot=await renderer.capture();
+  scene.remove(lodMesh);const lodExpected=new THREE.Mesh(lodGeo,lodMat);lodExpected.position.z=-4;scene.add(lodExpected);renderer.render(engine);const expectedShot=await renderer.capture();
+  check(lodShot.pixels.every((v,i)=>Math.abs(v-expectedShot.pixels[i])<=1),'GPU LOD must choose only the middle-distance instance, including without frustum rejection');
+  renderer.opaque.culler.enabled=true;scene.clear();lodMesh.dispose();lodGeo.dispose();lodMat.dispose();
   const decalGeo=new THREE.PlaneGeometry(3,3),decalMat=new THREE.MeshStandardMaterial({color:0xffffff}),decalPlane=new THREE.Mesh(decalGeo,decalMat);decalPlane.position.z=-3;scene.add(decalPlane);
   const decal=new SurfaceDecal({color:0xff0000,opacity:1,edge:0.05});decal.position.z=-3;decal.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),new THREE.Vector3(0,0,1));decal.scale.set(1,1,1);scene.add(decal);
   renderer.flat=true;renderer.render(engine);const decalPixels=(await renderer.capture()).pixels,mid=(48*128+64)*4;
@@ -145,11 +154,27 @@ try {
   renderer.gtao.enabled=false;renderer.render(engine);const aoOff=await renderer.capture();
   check(aoOn.pixels.every((v,i)=>Math.abs(v-aoOff.pixels[i])<=1),'GTAO must leave direct-only sunlight unchanged');
   renderer.gtao.enabled=true;scene.remove(cube,decalPlane);cubeGeo.dispose();decalGeo.dispose();decalMat.dispose();
+  scene.clear();
+  const giantGeo=new THREE.SphereGeometry(1,32,24),giantMat=new THREE.ShaderMaterial({uniforms:{...front.material.uniforms,uRadius:{value:1},uPal:{value:Array.from({length:6},()=>new THREE.Vector3(1,0,0))},uPolar:{value:new THREE.Vector3(0,0,1)},uStormSpin:{value:[1,2,3]},uNumStorms:{value:0},uBands:{value:4}}});giantMat.userData.webgpu={kind:'giant'};
+  const giant=new THREE.Mesh(giantGeo,giantMat);giant.position.z=-2.5;giant.rotation.x=Math.PI/2;scene.add(giant);renderer.flat=true;renderer.render(engine);const giantPixels=(await renderer.capture()).pixels;
+  check(giantPixels[mid+2]>giantPixels[mid]+30,'Uniforms following scalar arrays must preserve the polar color');scene.remove(giant);giantGeo.dispose();giantMat.dispose();renderer.flat=false;
+  const mapGeo=new THREE.PlaneGeometry(2,2),mapMat=new THREE.MeshBasicMaterial({color:0x00ff00}),mapPlane=new THREE.Mesh(mapGeo,mapMat);mapPlane.position.z=-2;scene.add(mapPlane);
+  const orbitGeo=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-1,0,-1.5),new THREE.Vector3(1,0,-1.5)]),orbitMat=new THREE.LineDashedMaterial({color:0xff0000,dashSize:0.1,gapSize:0.1,transparent:true}),orbit=new THREE.Line(orbitGeo,orbitMat);orbit.computeLineDistances();scene.add(orbit);engine.webgpu=renderer;
+  renderer.map.render(engine,scene,camera,{x:0,y:0,w:128,h:96});const mapShot=await readRGBA(renderer.device,renderer.map.color,128,96,renderer.format);
+  let orbitPixels=0,mapPixels=0;for(let i=0;i<mapShot.pixels.length;i+=4){if(mapShot.pixels[i]>150&&mapShot.pixels[i+1]<50)orbitPixels++;if(mapShot.pixels[i+1]>150)mapPixels++;}
+  check(orbitPixels>10&&mapPixels>500,'Native map must draw both dashed orbits and body meshes');scene.remove(orbit);orbitGeo.dispose();orbitMat.dispose();
+  // Both views share a canvas but own exposure/targets. Rendering the second
+  // must preserve the first half, including after a map frame.
+  const leftView={...view,width:64,rect:{x:0,y:0,w:64,h:96}},rightView={...view,width:64,rect:{x:64,y:0,w:64,h:96}};camera.aspect=2/3;
+  engine.view=leftView;renderer.render(engine,true);engine.view=rightView;mapMat.color.set(0xff0000);renderer.render(engine,false);
+  const splitShot=await readRGBA(renderer.device,renderer.context.getCurrentTexture(),128,96,renderer.format),leftMid=(48*128+32)*4,rightMid=(48*128+96)*4;
+  check(splitShot.pixels[leftMid+1]>100&&splitShot.pixels[leftMid]<10&&splitShot.pixels[rightMid]>100&&splitShot.pixels[rightMid+1]<10,'Split screen must preserve separate view rectangles');
+  renderer.releaseView(leftView);renderer.releaseView(rightView);engine.view=view;camera.aspect=4/3;mapGeo.dispose();mapMat.dispose();
   roomGeo.dispose();roomMat.dispose();
   const validationError = await renderer.device.popErrorScope();
   check(!validationError, validationError?.message);
   check(!errors.length, errors.join('\n'));
-  window.testResult = { status: 'passed', redPixels: red, bluePixels: blue, timestampQuery: renderer.timestamp, opaquePipelines:8,forwardPipelines:7,clusteredLights:{dark,lit,sealed,overlapping:70},transparent,offscreen:true,visibleInstances,decals:true,minAO,aoDirectUnchanged:true,stats: renderer.stats };
+  window.testResult = { status: 'passed', redPixels: red, bluePixels: blue, timestampQuery: renderer.timestamp, opaquePipelines:8,forwardPipelines:7,clusteredLights:{dark,lit,sealed,overlapping:70},transparent,offscreen:true,visibleInstances,decals:true,minAO,aoDirectUnchanged:true,scalarArrayABI:true,chunkCounts,gpuLOD:true,map:{orbitPixels,mapPixels},splitScreen:true,stats: renderer.stats };
 } catch (error) {
   window.testResult = { status: 'failed', error: error.stack || String(error), validationErrors: errors };
 } finally {

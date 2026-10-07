@@ -799,6 +799,25 @@ export class FloraSet {
     const ud = owner.userData, show = dist < this.kindDist.tree;
     if (owner.instanceMatrix.version !== ud.mv) { ud.mv = owner.instanceMatrix.version; ud.iib[0].needsUpdate = true; }   // (seated anew)
     if (!owner.boundingSphere) owner.computeBoundingSphere();
+    if (this.gpuLOD) {
+      if (!ud.gpuPlaced) {
+        const [mI,cI,tI]=ud.iib,near=this.treeMid?TREE_FULL:TREE_ONE,mid=this.treeMid?TREE_MID:TREE_ONE;
+        const bases=[this.geos.tree,this.treeMid||this.geos.tree,this.treeFar],ranges=[[0,near],[near,mid],[mid,this.kindDist.tree]];
+        ud.views.forEach((v,j)=>{
+          v.count=j===1&&!this.treeMid?0:owner.count;
+          v.instanceMatrix=new THREE.InterleavedBufferAttribute(mI,16,0);
+          v.instanceColor=new THREE.InterleavedBufferAttribute(cI,3,0);
+          v.userData.fTa=new THREE.InterleavedBufferAttribute(tI,1,0);
+          v.userData.gpuLOD=ranges[j];
+          const g=this.wrap(v,bases[j]);g.setAttribute('fTa',v.userData.fTa);v.geometry=g;
+          v.material=j===2?this.materials.treeFar:this.materials.tree;
+          v.userData.shadowMat=j===2?this.shadowMats.treeFar:this.shadowMats.tree;
+        });
+        ud.gpuPlaced=true;
+      }
+      for(const v of ud.views){v.visible=show&&v.count>0;v.boundingSphere=owner.boundingSphere;}
+      return;
+    }
     let place = !ud.placed;
     if (show && dist >= (this.treeMid ? TREE_MID : TREE_ONE)) {
       if (ud.cuts[0] || ud.cuts[1]) { ud.cuts = [0, 0]; place = true; }

@@ -316,6 +316,7 @@ export class PlanetTerrain {
   ensureFloraSet() {
     if (this.floraSet) return;
     this.floraSet = new FloraSet(this.body, this.shared);
+    this.floraSet.gpuLOD = !!this.gpuLOD;
     this.floraSet.clearings = this.body.floraClearings || (this.body.floraClearings = []);
     // (the ground's rocks: gen/rocks.js, carried with the flora; drawn in their node's flora group)
     this.rockSet = new RockSet(this.body, this.shared);

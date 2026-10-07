@@ -187,6 +187,7 @@ let previewed = null;
 function boot(s) {
   if (game) { game.engine.dispose(); game.dispose(); game = null; }
   try {
+    if (!navigator.gpu) throw new Error('WebGPU is unavailable');
     game = new Game(canvas, input, s, {
       workers: params.get('workers') ? +params.get('workers') : undefined,
       worldsim: params.get('worldsim') !== '0', simN: params.get('simN') ? +params.get('simN') : undefined,
@@ -199,9 +200,11 @@ function boot(s) {
     });
   } catch (err) {
     console.error(err);
-    fatal('Could not start the renderer (' + err.message + '). Starseed Infinite needs a browser with WebGL 2.');
+    fatal('Could not start the renderer (' + err.message + '). Starseed Infinite needs a browser with WebGPU enabled.');
     return;
   }
+  const startingGame = game;
+  game.engine.webgpuReady.catch((err) => { if (game === startingGame) fatal('Could not start WebGPU: ' + err.message); });
   window.game = game;
   if (!loadScreen) loadScreen = new LoadScreen(game); else { loadScreen.game = game; loadScreen.end(); loadScreen.last = null; }
   game.screenHud.onHelpClosed = () => showPause();

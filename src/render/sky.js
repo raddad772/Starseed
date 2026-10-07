@@ -167,7 +167,7 @@ export class Sky {
     const cc = new THREE.CubeCamera(1, 100, this.cubeRT);
     const prevAuto = renderer.autoClear;
     renderer.autoClear = true;
-    cc.update(renderer, bakeScene);
+    if (!renderer.isNativeWebGPU) cc.update(renderer, bakeScene);
     renderer.autoClear = prevAuto;
     mat.dispose();
 

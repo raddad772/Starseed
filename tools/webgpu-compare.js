@@ -74,3 +74,20 @@ export async function measureCulling(game,frames=7){
   return {samples,changedPixelFraction:changed/(cullPixels.length/4),meanChannelDelta:sum/(cullPixels.length/4*3),maxDelta,note:'Same scene, camera and uniforms; includes main-view and shadow instance culling.'};
  }finally{[main.enabled,shadow.enabled,E.meterUp,E.meterDown]=saved;E.view.adaptReset=true;}
 }
+
+// Explicit test-only comparison: drain the GL queue with a real pixel read,
+// then repeat native drawing in the same load. Includes CPU submission cost.
+export async function measureReference(game,frames=5){
+ const E=game.engine;if(!E._render)return null;const {sky,atmos}=E.frameInputs,gpu=await E.webgpuReady,result=[];
+ for(const backend of ['webgpu','webgl','webgpu']){
+  const samples=[],half=new Uint16Array(4);
+  for(let i=0;i<frames+3;i++){
+   await gpu.device.queue.onSubmittedWorkDone();const start=performance.now();
+   if(backend==='webgl'){E._render(0,sky,atmos,true);E.renderer.readRenderTargetPixels(E.view.rtAdapt[E.view.adaptIdx],0,0,1,1,half);}
+   else{gpu.render(E);await gpu.device.queue.onSubmittedWorkDone();}
+   if(i>=3)samples.push(performance.now()-start);
+  }
+  result.push({backend,drainedMs:samples.sort((a,b)=>a-b)[samples.length>>1]});
+ }
+ return {samples:result,note:'Same-load full-frame medians, including CPU submission. Native includes GTAO and material contact processing.'};
+}

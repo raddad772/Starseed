@@ -260,6 +260,10 @@ export class MapView {
     this.shipMarker.scale.setScalar(5 / pxPerRad * ds);
     place(sp, this.shipLabel);
     this.updateTrajectory();
+    if (r.isNativeWebGPU) {
+      g.engine.webgpu?.map.render(g.engine,this.scene,cam,rc);
+      return;
+    }
     const prevAuto = r.autoClear;
     r.setRenderTarget(null);
     const gy = window.innerHeight - rc.y - rc.h; // (GL: from the bottom)
