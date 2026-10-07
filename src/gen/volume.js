@@ -171,6 +171,24 @@ export class VolumeField {
         }
         if (best > 0) h = H0 + best;
       }
+      // (and its brink rounded: the edge a face falls from worn back by the weather and the soil creeping
+      // over it, a quarter circle ~15% of the face's height (at most 2.5 m) instead of a knife edge)
+      let low = 0, drop = false;
+      for (let q = 0; q < 4 && !drop; q++) {
+        const ox = q === 0 ? 1 : q === 1 ? -1 : 0, oz = q === 2 ? 1 : q === 3 ? -1 : 0;
+        if (H0 - this.terrAt(i + 2 * ox, k + 2 * oz).Hc > 2 || H0 - this.terrAt(i + 4 * ox, k + 4 * oz).Hc > 3) drop = true;
+      }
+      for (let q = 0; q < 8 && drop; q++) {
+        const ca = TAL_DIR[q * 2], sa = TAL_DIR[q * 2 + 1];
+        for (let n = 0; n < 4; n++) {
+          const d = TAL_D[n], fall = H0 - this.terrAt(i + Math.round(d * ca), k + Math.round(d * sa)).Hc;
+          if (fall < Math.max(2, 1.5 * d)) continue;
+          const Rb = Math.min(2.5, 0.15 * fall), x = Math.max(0, d - 0.5);
+          if (x < Rb) low = Math.max(low, Rb - Math.sqrt(Rb * Rb - (Rb - x) * (Rb - x)));
+          break;
+        }
+      }
+      h -= low;
     }
     this.tal.set(key, h);
     return h;
@@ -185,7 +203,7 @@ export class VolumeField {
     const t = this.terrAt(i, k);
     const gx = (this.talAt(i + 1, k) - this.talAt(i - 1, k)) / 2, gz = (this.talAt(i, k + 1) - this.talAt(i, k - 1)) / 2;
     const gc = Math.sqrt(gx * gx + gz * gz), Ht = this.talAt(i, k);
-    c = { Hc: Ht, tal: Ht - t.Hc, wc: t.wc * Math.max(0, 1 - (Ht - t.Hc) / 0.8), s8: t.s8, cm: t.cm, dip: t.dip, gc, ux: gc > 1e-6 ? gx / gc : 0, uz: gc > 1e-6 ? gz / gc : 0 };
+    c = { Hc: Ht, tal: Ht - t.Hc, wc: t.wc * Math.max(0, Math.min(1, 1 - (Ht - t.Hc) / 0.8)), s8: t.s8, cm: t.cm, dip: t.dip, gc, ux: gc > 1e-6 ? gx / gc : 0, uz: gc > 1e-6 ? gz / gc : 0 };
     this.cols.set(key, c);
     return c;
   }
