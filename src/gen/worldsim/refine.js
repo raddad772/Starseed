@@ -345,9 +345,14 @@ function catrom(t, w) { const t2 = t * t, t3 = t2 * t; w[0] = (-t3 + 2 * t2 - t)
 
 // a level of the terrain's tiles held sparsely (the pyramid's finer levels, near where the
 // player is: gen/terrainTiles.js): tiles by index, each { h (Float32Array, m), rw } of a kept square
+// (every tile put or dropped in this thread stamps it: what's read off the levels is stale (the rivers'
+// profiles on their ground: channels.js riverProfile))
+let _pyrStamp = 0;
+export const pyrStamp = () => _pyrStamp;
 export class TileSet {
   constructor(L) { this.L = L; this.n = 1 << L; this.tiles = new Map(); }
-  put(face, ti, tj, t) { this.tiles.set((face * this.n + tj) * this.n + ti, t); }
+  put(face, ti, tj, t) { this.tiles.set((face * this.n + tj) * this.n + ti, t); _pyrStamp++; }
+  drop(T) { if (this.tiles.delete(T)) _pyrStamp++; }
 }
 
 // reads a level by place: the refinement (dense, refine.js) or a TileSet. sample(d) sets: h (m),
@@ -427,6 +432,26 @@ export class RefineReader {
         if (w > this._wb) { this._wb = w; this.tH = H; this.tRW = RW; this.tFL = tile ? tile.fl : R.fl; this.tRC = tile ? tile.rcv : R.rcv; this.tOff = off; this.ri = i; this.rj = j; this.rbx.set(bx); this.rby.set(by); this.tTile = tile; this.tfi = fi; this.tfj = fj; this.tF = f; this.tU = u; this.tV = v; }
       }
     }
+  }
+
+  // the ground's slope at the last sample (m/m): its cell's central differences, in the tile weighing
+  // most there (0 where none)
+  slope() {
+    const H = this.tH, off = this.tOff, i = this.ri, j = this.rj, c = this.cell || 0;
+    if (!H || !(c > 0) || i < 1 || j < 1 || i >= K - 1 || j >= K - 1) return 0;
+    const o = off + j * K + i, gx = H[o + 1] - H[o - 1], gy = H[o + K] - H[o - K];
+    return Math.sqrt(gx * gx + gy * gy) / (2 * c);
+  }
+
+  // the water gathered at the last sample (0..1: its cells' log drainage, ln A / ln 1e11, between them):
+  // 0 where there's no tile's flow there
+  flowAt() {
+    const fl = this.tFL, off = this.tOff, fi = this.tfi, fj = this.tfj;
+    if (!fl) return 0;
+    const i = Math.floor(fi), j = Math.floor(fj), fx = fi - i, fy = fj - j;
+    if (i < 0 || j < 0 || i >= K - 1 || j >= K - 1) return 0;
+    const o = off + j * K + i;
+    return ((fl[o] * (1 - fx) + fl[o + 1] * fx) * (1 - fy) + (fl[o + K] * (1 - fx) + fl[o + K + 1] * fx) * fy) / 255;
   }
 
   // the nearest creek to the last sample: this level's drainage (its cells with at least

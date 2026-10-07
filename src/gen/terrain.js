@@ -28,7 +28,7 @@ import { canyonTable, wallSet, wallFit, wallAt, wallReach } from './canyon.js';
 import { buildChannel, chanNearest, chanSwing, chanBraid, nearOut, chanFlow, nfOf, ZONE } from './channels.js';
 import { craterFloor, TILE_CELLS } from './worldsim/impacts.js';
 import { SnapshotSampler } from './worldsim/snapshot.js';
-import { RIVER_REC, BIG_REC } from './worldsim/refine.js';
+import { RIVER_REC, BIG_REC, pyrStamp } from './worldsim/refine.js';
 import { snowYear, snowsBySeason } from './worldsim/season.js';
 import { TRUE_SCALE, MT, KEEP } from './tileshape.js';
 import { meanderField, riverPattern } from './meanders.js';
@@ -65,7 +65,8 @@ export const S_FLV = 25;     // and its speed (m/s: Manning's, by its depth and 
 export const S_RIVR = 26;    // 1 where the water is a world-sim river's channel, 2 a creek's (riverRibbons draws them near)
 export const S_RDEP = 27;    // a river's channel depth where its water is (m, drawn: its stage through the year, universe.js)
 export const S_POOL = 28;    // a wetland's pool here: 0..1 (its water's depth over the ground against the grain's spread; 0 none)
-export const S_LEN = 29;
+export const S_BEDS = 29;    // how far the beds' steps hold the ground here (_beds): on a hard bed's tread or face 0..1
+export const S_LEN = 30;
 // (each rock's cohesion as a mass, Pa: how tall a sheer face of it stands: canyon walls)
 const FREEZE_MIX = { methane: 20, ethane: 20 };   // (K: a mixture's freezing point under its main liquid's)
 const ORGANIC_SAND = [0.075, 0.055, 0.035];   // (linear: tholin sand, dark brown)
@@ -89,6 +90,19 @@ const KAPPA = [1.2, 0.8, 0.3, 1.5];   // (SUITES: sed, volc, xtal, loose)
 // what the refinement's cells resolve of a canyon (cells across): its profile averaged that wide
 // is the levels' dip
 const CANYON_LAM = 1.5;
+// the beds' steps (_beds): a hard bed's least hardness (geology.js columns, 0..1); a face's width across
+// (m); how much of the land's slope a tread keeps; a joint's opened width each side (m: and the cells
+// jointAt reads them at, so only the master joints, every few: at every joint an edge was a dotted line)
+// and how far an edge is worn back along one (m)
+const BED_HARD = 0.55, BED_RISER = 2, BED_KEEP = 0.12, BED_JOINT = 6, BED_NOTCH = 7;
+// (and by the water gathered over it, how far an edge is worn back at most (m: a gully's re-entrant); its
+// apron's height (of the face's) and slope (tan ~33 degrees, scree's rest), and how far above soft rock a
+// bed's fallen blocks are looked for (m))
+const BED_GULLY = 35, BED_APRON = 0.4, BED_SCREE = 0.65, BED_APRON_UP = 14;
+// (the least slope a face is reckoned on: m/m)
+const BED_FLAT = 0.06;
+// (and a river's banks cut into one: how steeply they stand, rise over run)
+const BED_WALL = 3;
 
 function smin(a, b, k) { const h = dm.clamp(0.5 + 0.5 * (b - a) / k, 0, 1); return b + (a - b) * h - k * h * (1 - h); }
 function smax(a, b, k) { return -smin(-a, -b, k); }
@@ -715,6 +729,12 @@ export class TerrainGenerator {
       }
       h += sum * amp * (h < 0 ? 0.4 : 1) * calm;
     }
+    // the beds' steps: treads and faces where hard beds cap soft ones (_beds), by the levels' ground (its
+    // hills below them ride on the treads: read with them every knoll crossing a bed's base stood as a
+    // ring of cliff)
+    this._hardHere = 0.5;
+    let bedRaise = 0;
+    if (S.rockAtWarped) { bedRaise = this._beds(h0, x, y, z, minWavelength, finRd ? finRd.slope() : 0, finRd ? finRd.flowAt() : 0); h += bedRaise; out[S_BEDS] = this._bedK; }
     const rough = dm.clamp(0.3 + 0.9 * mMask, 0.1, 1.4) * (p.roughness ?? 1);
     out[S_ROUGH] = rough;
     let grainA = 0, grainS = 0;
@@ -756,6 +776,9 @@ export class TerrainGenerator {
     // below them) follow the sim's heights along the line, so the water only runs downhill
     let wl = -1e9;
     let rv = iceH > 30 ? null : this._riverAt(x, y, z);
+    // (a channel made just now read the levels along its river (channels.js riverProfile): the finest
+    // one's last reading, the creeks' below, read here again)
+    if (this._chBuilt) { this._chBuilt = false; if (finRd) finRd.sample(S._d(x, y, z)); }
     // (where its line runs below the sea it's drowned: the sea's, its valley already cut through
     // the low sea's ages (the refinement's). Its banks held up to the datum built levees out
     // across the shelf, drawn as canals in the sea; it fades out over its last few metres)
@@ -825,6 +848,20 @@ export class TerrainGenerator {
         }
       }
     }
+    // (a fall's gorge's head: a bowl round its plunge pool (channels.js pools), its walls rising from it as
+    // the gorge's do; not the river's own channel above its lip. Read off the river's nearest point alone
+    // the gorge's walls had stopped at a line where that point went from below the lip to above it, a
+    // knife-edged spur standing up beside the fall)
+    if (rv && rv.poolCh && rv.poolD < 120 && !drowned) {
+      const P = rv.poolCh.pools, k = rv.poolI, Rp = P[k + 3];
+      const onLip = rv.bch === rv.poolCh && rv.t < P[k + 5] && rv.dist < 0.65 * rv.w;
+      if (!onLip) {
+        const bankP = (this.wetNow ? Math.max(P[k + 4], 0) : P[k + 4]) + 1 + 0.05 * (rv.depth0 || rv.depth);
+        const tanP = 1 + (BED_WALL - 1) * (this._hardHere ?? 0.5);
+        const cone = bankP + tanP * Math.max(0, rv.poolD - Rp) / this.hScale;
+        if (h > cone) h += rvK * (cone - h);
+      }
+    }
     // (how far the river raised the ground here, its floodplain and banks built up to its level: the
     // creeks crossing them are built up with them, as a floodplain's tributaries are; cut at their own
     // level they stood in trenches metres deep through it. And they give way to it over a width or so
@@ -844,7 +881,7 @@ export class TerrainGenerator {
     const seaOver = h < 0 && !lk && p.liquid && this.contThreshold > -1e8 && (sea >= 0 ? sea >= 0.02 : !(h0 > 1.5 * amp || S.seaDist(x, y, z) > 1.5));
     let crk = finRd && finest <= 60 && ckNear > 0 && !seaOver && finRd.creekAt(Math.min(CREEK_A, 30 * finest * finest));
     if (crk) {
-      if (finRd.cd < 1.5) h -= Math.max(0, h - (finRd.ch + finRd.cwc * finRd.cd) / this.hScale - rvRise) * ckNear;
+      if (finRd.cd < 1.5) h -= Math.max(0, h - (finRd.ch + finRd.cwc * finRd.cd) / this.hScale - rvRise - bedRaise) * ckNear;
       if (finRd.cA < CREEK_A) crk = finRd.creekAt(CREEK_A);
     }
     if (crk) {
@@ -863,7 +900,9 @@ export class TerrainGenerator {
         // (with water in it the banks are laid to the line, so it runs downhill; a dry world's
         // gully only cuts down: two creeks a cell or two apart, their lines at different heights,
         // would otherwise step the ground between them in rungs)
-        const bank = finRd.ch / this.hScale + 0.2 + rvRise, pull = bank - h;
+        // (and on a bed's tread, at its level: a creek runs on the cap and drops off its edge, where it
+        // has none it cut a slot as deep as the bed down every creek)
+        const bank = finRd.ch / this.hScale + 0.2 + rvRise + bedRaise, pull = bank - h;
         h += (this.wetNow ? pull : Math.min(0, pull)) * dm.smoothstep(flank, half * 1.2, dist);
         const wet = this.wetNow && A > CREEK_WET && seen && fin > 0.5;
         // (its water's level, beside it too: where the shore meets it)
@@ -1498,10 +1537,18 @@ export class TerrainGenerator {
     const mig = Math.sqrt((rv.mx || 0) ** 2 + (rv.my || 0) ** 2 + (rv.mz || 0) ** 2);
     const ex = x - rv.ax, ey = y - rv.ay, ez = z - rv.az, el = Math.sqrt(ex * ex + ey * ey + ez * ez);
     const cosM = mig > 1e-9 && el > 1e-12 ? (ex * rv.mx + ey * rv.my + ez * rv.mz) / (mig * el) : 0;
-    const tanB = 0.6 + (0.15 + 1.45 * dm.smoothstep(-0.35, 0.35, cosM) - 0.6) * dm.smoothstep(0, 0.3, mig);
+    let tanB = 0.6 + (0.15 + 1.45 * dm.smoothstep(-0.35, 0.35, cosM) - 0.6) * dm.smoothstep(0, 0.3, mig);
     // (its height above the bank, capped by the bank's slope, then laid level within a flood's reach;
     // heights in the sim's metres, the ground's hScale of them, distances the ground's)
     const upO = -pull, fp = 1.5 / this.hScale + 0.1 * rv.depth;
+    // (entrenched in hard rock (a gorge below a fall, a river cut down through a cap) its walls stand near
+    // sheer where it cuts into them, the outside of its bends; on the inside the slope it left as it swung
+    // across while it cut down (an entrenched meander's slip-off slope), steeper than a point bar's. Sheer
+    // both sides they ran on as a slot of even depth, a ditch. By how deep it's cut and the country's rock,
+    // both smooth: by whether the point stood on a bed's tread, a point here and there kept a sheer wall
+    // among gentle ones round it, and stood up as a spire)
+    const sideK = 0.75 + (0.3 + 0.7 * dm.smoothstep(-0.35, 0.35, cosM) - 0.75) * dm.smoothstep(0, 0.3, mig);
+    tanB += (BED_WALL - tanB) * dm.smoothstep(2 * rv.depth, 6 * rv.depth, upO) * (this._hardHere ?? 0.5) * sideK;
     let up = Math.min(upO, tanB / this.hScale * Math.max(0, rv.dist - half));
     up *= dm.smoothstep(0.5 * fp, fp, up);
     return up - upO;
@@ -1759,8 +1806,25 @@ export class TerrainGenerator {
   }
 
 
+  // the levels' ground at q where the terrain's finer tiles cover it: o.h (the sim's m), o.w (how fully,
+  // 0..1; 0 where only the refinement does: so the refinement's own tiles, made from the rivers, read
+  // them as they always were). For the rivers' profiles (channels.js windowProfile)
+  _pyrGround(q, o) {
+    const S = this.snap;
+    o.h = 0; o.w = 0;
+    if (!S.pyr) return o;
+    let h = S.ref && S.ref.sample(q) ? S.ref.h / this.hScale : S.h(q[0], q[1], q[2]);
+    for (const rd of S.pyrReaders()) if (rd.sample(q)) { h += (rd.h / this.hScale - h) * rd.w; o.w = Math.max(o.w, rd.w); }
+    o.h = h;
+    return o;
+  }
+
   _riverAt(x, y, z) {
     const S = this.snap, s = S.s;
+    // (the rivers' profiles and channels read the levels' ground: made again once a tile of them has come
+    // or gone)
+    const st = pyrStamp();
+    if (st !== this._rivStamp) { this._rivStamp = st; if (this._chC) this._chC.clear(); if (this._rivWin) this._rivWin.clear(); }
     if (S.riv) return this._refRiverAt(x, y, z);
     if (!s.rcv) return null;
     const G = S.G, R = this.R, c0 = G.cellAt(x, y, z);
@@ -1893,7 +1957,7 @@ export class TerrainGenerator {
     const c0 = G.cellAt(x, y, z), nn = G.nbrs(c0, nb);
     const Fr = this._frames(), FB = Fr.B, MF = this._mf || (this._mf = meanderField()), MA = this._meanderA(), Lk = this._rivLinks();
     const cn = this._rcn || (this._rcn = nearOut()), ox = this._rox || (this._rox = nearOut());
-    let best = null, bs = 1e30, bch = null;
+    let best = null, bs = 1e30, bch = null, pD = 1e30, pI = -1, pCh = null;
     ox.d2 = Infinity; ox.ch = null;
     for (let q = -1; q < nn; q++) {
       const c = q < 0 ? c0 : nb[q];
@@ -1911,6 +1975,11 @@ export class TerrainGenerator {
           chanNearest(ch, x, y, z, minW, cn, 0);
           if (!cn.ch) continue;
           if (ch.nOx) chanNearest(ch, x, y, z, minW, ox, 1, true);
+          // (and the nearest of the falls' plunge pools: the gorges' heads, sampleSnap)
+          if (ch.pools) for (let k = 0; k < ch.pools.length; k += 6) {
+            const P = ch.pools, px = P[k] - x, py = P[k + 1] - y, pz = P[k + 2] - z, d = Math.sqrt(px * px + py * py + pz * pz) * R;
+            if (d < pD) { pD = d; pI = k; pCh = ch; }
+          }
           const dist = Math.sqrt(cn.d2) * R, w = 2 * cn.half;
           if (dist - w < bs) {
             bs = dist - w; bch = ch;
@@ -1959,6 +2028,7 @@ export class TerrainGenerator {
     }
     if (best) {
       best.axis = best.dist; best.belt = 0; best.ox = 1e9; best.oxAge = 1; best.oxW = 0; best.nb = 0;
+      best.poolD = pD; best.poolI = pI; best.poolCh = pCh; best.bch = bch;
       if (bch) {
         // (its valley's line: how far off it, and the belt its channel swings across there; where it
         // braids, its threads' too, a width wider)
@@ -2020,6 +2090,7 @@ export class TerrainGenerator {
     const bset = building || new Set();
     bset.add(r);
     ch = buildChannel(this, r, bset);
+    this._chBuilt = true;
     bset.delete(r);
     C.set(r, ch);
     return ch;
@@ -2463,6 +2534,89 @@ export class TerrainGenerator {
     if (this._lsand) return this._lsand;
     const b = this.rockLin[ROCK['black sand']] || [0.03, 0.03, 0.03], d = P.regolith || P.soil || b;
     return (this._lsand = [0, 1, 2].map((k) => b[k] + (d[k] - b[k]) * 0.33));
+  }
+
+  // The beds' steps (trap and caprock country). Where a hard bed lies on markedly softer rock (a lava
+  // flow's core on the broken top of the one below; sandstone or limestone on shale) the soft rock wears
+  // back under it and the hard one breaks off in blocks, its face standing: the land on it holds at its
+  // top (a tread: the stripped surface, keeping a little of the land's slope) and drops at its edge in a
+  // face as tall as the bed to the ground at its foot, the face where the levels' smooth ground crosses
+  // the bed's middle (so the steps keep its mean: where it crops out the bed is a smooth slope to the
+  // levels, a step really), wandering with the ground's contours round every spur and into every
+  // hollow. Worn back
+  // where the ground gathers water (each hollow and gully coming over it a re-entrant, spurs between)
+  // and along the master joints (notches: a ragged plan); the creeks run on the tread and drop off its
+  // edge (below). At its foot an apron: the blocks fallen from it and the soft rock under it worn back to
+  // scree's slope, up to a share of its height (a sheer face the whole way down to a flat plain stood as
+  // a wall). The beds as the river's profile reads them (channels.js riverProfile), so a river's fall
+  // stands where it crosses an edge the land has too: they had disagreed, the river held up on a bed's
+  // top over land that wasn't, its floodplain raised to it and broken off in a straight wall at the
+  // fall. Under deep soil the face is a steep slope (the soil creeping over it), not a cliff. h: the
+  // levels' ground (the sim's m); minW the sampling's spacing; g the land's slope (m/m) over the finest
+  // level's cells; flow the water gathered there (its flowAt). Returns the land's rise (the sim's m);
+  // sets _bedK (how far the steps hold it: 0..1) and _hardHere (how hard the country's rock: the banks'
+  // walls, _banked)
+  _beds(h, x, y, z, minW, g, flow) {
+    this._bedK = 0;
+    const S = this.snap, hs = this.hScale, zd = h * hs;
+    // (none under the sea, nor from far off: the levels' cells there are far coarser than a bed)
+    const far = 1 - dm.smoothstep(100, 300, minW);
+    if (zd < 0.5 || far <= 0) return 0;
+    const rk = S.rockAtWarped(S.rockWarp(x, y, z, this._cw || (this._cw = [0, 0, 0])), h);
+    const nm = ROCKS[rk] && ROCKS[rk].name, su = nm && !DEPOSITS.has(nm) ? SUITE[nm] : null;
+    // (the country's rock, how hard: how steeply what cuts into it stands, _banked)
+    if (ROCKS[rk]) this._hardHere = dm.clamp(1.25 - 0.4 * ROCKS[rk].k, 0, 1);
+    if (su !== 'sed' && su !== 'volc') return 0;
+    const d = this._bd || (this._bd = [0, 0, 0]), uv = this._buv || (this._buv = { face: 0, u: 0, v: 0 });
+    d[0] = x; d[1] = y; d[2] = z;
+    faceUVFromDir(d, uv);
+    const Mu = this._Mu || (this._Mu = faceMetres(this.R));
+    const o = bedAt(this, uv.face, uv.u, uv.v, uv.u * Mu, uv.v * Mu, BED_JOINT, this._bo || (this._bo = { bed: 0, weak: 0 }));
+    // (the face's width across: a couple of metres, wider where the sampling can't hold that, and under
+    // deep soil; as a rise in the column's metres, by the land's slope there)
+    const soil = S.soil && this.p.liquid === 'water' ? S.soil(x, y, z) : null;
+    // (and on near-level ground wider still: the bed's base there is no line but a plain, and read at its
+    // slope a hair either side of it decided cap or no cap, the bed cut along the joints into fins)
+    const wr = Math.max(BED_RISER, 0.75 * minW) * (1 + 5 * (soil == null ? 0 : dm.smoothstep(0.6, 2.5, soil))), gs = Math.max(g, BED_FLAT);
+    const col = worldColumn((this.p.seed && this.p.seed[0]) | 0, su, 0), Hd = col.hard, lo = col.lo, n = Hd.length;
+    // (the edge worn back where the ground gathers water, by its drainage (the finest tiles' flow: a
+    // hollow a little, a gully further): each one coming over it cuts back a re-entrant, the edge's spurs
+    // standing between them; and along the master joints, notches)
+    // (only where the ground falls away enough to make an edge: across a near-level spread of a bed's
+    // base every joint had cut it into strips, a field of fins)
+    const back = (o.weak * BED_NOTCH + BED_GULLY * dm.smoothstep(0.3, 0.55, flow || 0)) * dm.smoothstep(0.04, 0.15, g);
+    const z0 = zd + o.bed, zc = z0 - back * gs;
+    const i = Math.round(zc - lo);
+    if (i < 1 || i >= n - 1) return 0;
+    // (the bed: its run of one rock, hard, its top and its base, and the rock under its base softer; or, in
+    // soft rock, the hard bed a little above whose fallen blocks lie here. One rock's run, not every hard
+    // rock's: a sandstone on a limestone are two beds, each its own step, not one 40 m cap)
+    const Ty = col.type;
+    let ib = i;
+    if (Hd[i] < BED_HARD) {
+      while (ib + 1 < n && Hd[ib] < BED_HARD && ib - i < BED_APRON_UP) ib++;
+      if (Hd[ib] < BED_HARD) return 0;
+    } else while (ib > 0 && Ty[ib - 1] === Ty[i] && i - ib < 60) ib--;
+    let it = ib;
+    while (it + 1 < n && Ty[it + 1] === Ty[ib] && it - ib < 60) it++;
+    const hc = Hd[ib];
+    if (ib < 1 || Hd[ib - 1] > 0.6 * hc || it - ib < 2) return 0;
+    const zb = ib + lo - 0.5, zt = it + lo + 0.5, zm = 0.5 * (zb + zt);
+    // its face where the levels' ground crosses its middle: above it the tread at its top, below it, as
+    // far as its base, the ground at its base (the cap broken back off it), so the steps keep the levels'
+    // mean (raised only, the land rose by a whole bed wherever one cropped out); faded in over the face's
+    // width
+    const f = dm.smoothstep(zm, zm + wr * gs, zc);
+    const tread = zt - BED_KEEP * (zt - z0), under = zc < zb ? z0 : z0 - (Math.min(zc, zm) - zb);
+    let to = under + f * (tread - under);
+    // and at its foot the blocks fallen from the face (and the soft rock under it worn back to a slope):
+    // an apron up to a share of the face's height, at scree's angle of rest out from it
+    const xf = (zm - zc) / gs, top = zb + BED_APRON * (zt - zb);
+    to = Math.max(to, xf <= 0 ? top : top - BED_SCREE * xf);
+    const dz = (to - z0) * far;
+    if (!(Math.abs(dz) > 1e-4)) return 0;
+    this._bedK = Math.max(f, dm.smoothstep(0, 1, Math.abs(dz))) * far;
+    return dz / hs;
   }
 
   _bedRock(x, y, z, h, rock) {

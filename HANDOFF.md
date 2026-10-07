@@ -115,7 +115,29 @@ Dave's queue, in the order he raised it (keep this list current):
    with grass growing up through them; frozen falls with icicles in winter.
    Since: rim rounded and talus (2362846, 1cc2944), the sheet's moire gone (56fc89d), mud and grass at the
    pool (67adaf0); marsh pools with reeds round them (31ded1f: shading, not lakes; scratchpad
-   pools_cmp4). Still: a gorge cut back below the fall, the wall's ragged plan.
+   pools_cmp4). The wall itself (Dave, 2026-10-07: "fix that cliff"): it wasn't the land's at all. The
+   river's profile (channels.js riverProfile) holds a river level on a hard bed and drops it at the
+   bed's edge (the fall), but the land had no such bed: the river ran up to 12 m over ground the finer
+   tiles had cut deeper, its floodplain raised to it, broken off across the valley in straight lines
+   (the nearest-reach boundaries) at the fall. Now (plan views: scratchpad shots/cliff_plan_*):
+   - the land has the beds' steps (terrain.js _beds): on each bed (one rock's run) over markedly softer
+     rock, a tread at its top and the ground at its foot, the face where the levels' smooth ground
+     crosses the bed's middle (so the mean holds: raised only, plateaus had stood 45 m up), worn back
+     by the master joints and the drainage over it, faded on near-level ground (else a field of fins
+     along the joints), a scree apron at its foot (40% of its height); lava flows step trap country,
+     sandstone and limestone caps sedimentary;
+   - the river's profile reads the finer tiles' ground along its line (never above it, never rising),
+     its falls where it crosses the beds; caches cleared as tiles come (refine.js pyrStamp). The world
+     sim's workers (no tiles) read it as before, so the refinement and the tiles don't change;
+   - a fall has worn back at least half way up its cap (more for a big river): a gorge below it, its
+     walls sheer on the outside of bends, the slip-off slope inside, by how deep it's cut and the
+     country's rock (smoothly: by the point's own bed a spire stood up here and there); a bowl round
+     its plunge pool (channels.js pools); fall faces 2 m wide at least (a 1 m one was a row of teeth);
+   - the near volume's noise terraces off where the beds make steps (S_BEDS); its wet band 1.2 m.
+   Seen: the 3.06N fall now ~8 m at the head of a ~150 m gorge, the plateau stepped, the old vantage a
+   meadow with the river's trench; sandstone mountains (31.5S 7.5W) stepped benches under snow; a
+   chalk scarp (43.5S 27W) a low notched band. Cost ~2 us a sample (16 -> 18). Open: the gorge's walls
+   smooth close up (no beds in their faces), a spur's top at a tight bend still comes to a point.
 14. The anti-sun twilight's diagonal edge (item 12's "seen, not looked at"): DONE (cb90627). It was the
    clouds' hand-over front: each place turns its clouds over to the next generation at its own time, the
    phase a near-linear function of place, so the band where two generations meet ran ruler-straight (~6.5

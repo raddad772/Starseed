@@ -31,15 +31,21 @@ const GROUP = 8;
 // over shale: Gilbert 1907; Lamb and Dietrich 2009): the drop the cap's run would carry stands at
 // its downstream edge, a fall, its top a lip near level; where a river leaves hard rock for its own
 // alluvium, the same (a fall line). Loose ground erodes alike: a lowland river stays smooth.
-// The world sim's heights hold at the ends of windows WIN_RECS reaches long (~2-3 km: the scale a
-// river's knickzones gather its relief over; Niagara's falls carry half the drop between its lakes,
-// 58 km apart, so this is if anything short), and within one the drop goes where the rock puts it.
-// Each window worked out once, for every reach in it (gen._rivWin). Returns t -> m for reach r, or
-// null (none of this: its smooth profile)
+// Its ground: the levels' along its line (the terrain's finer tiles where they're in, else the
+// refinement's), never above its own record's banks, and never rising downstream (each piece no higher
+// than any above it, from its source): the river runs in what the land holds. Read off its record alone
+// it ran up to 12 m over ground the finer tiles had cut deeper, its floodplain raised to it and broken
+// off in a straight wall where it fell. Worked out a window of WIN_RECS reaches at a time (~2-3 km: the
+// scale a river's knickzones gather its relief over; Niagara's falls carry half the drop between its
+// lakes, 58 km apart, so this is if anything short), each from where the one above it ended, and within
+// one the drop goes where the rock puts it. Each window kept (gen._rivWin; the levels' tiles changing
+// clear it: terrain.js _riverAt). Returns t -> m for reach r, or null (none of this: its smooth profile)
 const WIN_RECS = 16, NSEG = 16;
 // (how far a fall's lip has worn back in its middle, of its water's width: Niagara's Horseshoe Falls
 // stands back a few tenths of its width from its ends)
 export const HORSESHOE = 0.3;
+// (how far a fall has worn back up its cap: windowProfile)
+const GORGE_W = 12, GORGE_0 = 20, GORGE_MAX = 0.6;
 // (a fall zone's floats: buildChannel's ch.zones)
 export const ZONE = 8;
 // (a braided river's threads: each the channel's curve this much of a period on from the last, the
@@ -53,26 +59,33 @@ function riverProfile(gen, r) {
   // (its place along its stretch of river, from the stretch's head: the window it's in)
   let head = r, pos = 0;
   for (let g = 0; g < 100000; g++) { const u = upOf(head); if (u < 0 || u === r) break; head = u; pos++; }
-  const w0 = pos - (pos % WIN_RECS);
-  const C = gen._rivWin || (gen._rivWin = new Map()), key = head * 65536 + (w0 / WIN_RECS);
-  let W = C.get(key);
-  if (!W) {
-    if (C.size > 4000) C.clear();
+  const C = gen._rivWin || (gen._rivWin = new Map());
+  if (C.size > 4000) C.clear();
+  // (window w of the stretch, from where window w - 1 ended)
+  const winOf = (w) => {
+    const key = head * 65536 + w;
+    let W = C.get(key);
+    if (W !== undefined) return W;
+    const e0 = w > 0 && gen.snap.pyr ? (winOf(w - 1) || { end: Infinity }).end : Infinity;
     // (the window's reaches, downstream)
     const recs = [];
     let q = head;
-    for (let i = 0; i < w0 && q >= 0; i++) q = dnOf(q);
+    for (let i = 0; i < w * WIN_RECS && q >= 0; i++) q = dnOf(q);
     for (let i = 0; i < WIN_RECS && q >= 0; i++) { recs.push(q); q = dnOf(q); }
-    W = windowProfile(gen, recs);
+    W = windowProfile(gen, recs, e0);
     C.set(key, W);
-  }
+    return W;
+  };
+  const W = winOf(Math.floor(pos / WIN_RECS));
   const P = W && W.get(r);
   if (!P) return null;
   const { H, steps, len } = P, n = NSEG;
-  // (each face: steep, a few metres across at most, in the ground's metres: its top's t and its foot's)
-  const faces = [];
+  // (each face: steep, a few metres across at most, in the ground's metres: its top's t and its foot's.
+  // In the game's a couple of metres at least: a metre across, its lip was a crease the near ground's 1 m
+  // lattice drew as a row of teeth where it ran across the lattice)
+  const faces = [], fw = gen.snap.pyr ? 2 : 1, fk = gen.snap.pyr ? 0.2 : 0.1;
   for (let j = 0; j < steps.length; j += 2) {
-    const e = Math.max(1, 0.1 * Math.abs(steps[j + 1]) * gen.hScale) / Math.max(len, 1);
+    const e = Math.max(fw, fk * Math.abs(steps[j + 1]) * gen.hScale) / Math.max(len, 1);
     faces.push(steps[j] - e, steps[j] + e);
   }
   const fn = (t) => {
@@ -85,15 +98,43 @@ function riverProfile(gen, r) {
   return fn;
 }
 // a window's reaches' profiles: Map(reach -> { H (NSEG + 1 heights, the sim's m), steps (t, drop
-// pairs), len }), or null
-function windowProfile(gen, recs) {
+// pairs), len }) with .end (its ground where it ends, for the window below), or null. e0: the ground
+// where the window above ended (Infinity at the stretch's head)
+function windowProfile(gen, recs, e0) {
   const Rv = gen.snap.riv, rec = Rv.rec, m = recs.length;
   if (!m) return null;
-  const N = m * NSEG, k = new Float64Array(N), drop = new Float64Array(N), lens = new Float64Array(m);
-  const fr = new Float64Array(9), MB = gen._meanderB ? gen._meanderB() : null;
+  // (live: a generator that reads the terrain's finer tiles, the game's; the world sim's workers' (no
+  // tiles: they make the refinement and the tiles, from the rivers) read the rivers as they always were,
+  // so what they make doesn't change: no ground along it but its record's, no window carried on from
+  // the one above, no gorge)
+  const live = !!gen.snap.pyr;
+  if (!live) e0 = Infinity;
+  const N = m * NSEG, k = new Float64Array(N), drop = new Float64Array(N), lens = new Float64Array(m), env = new Float64Array(N + 1);
+  const fr = new Float64Array(9), MB = gen._meanderB ? gen._meanderB() : null, d = [0, 0, 0];
   const hsAt = (q, t) => { const b = q * RIVER_REC, u = 1 - t; return (u * u * rec[b + 9] + 2 * t * u * rec[b + 10] + t * t * rec[b + 11]) / gen.hScale; };
-  const D = hsAt(recs[0], 0) - hsAt(recs[m - 1], 1);
-  if (!(D > 0.5)) return null;
+  // (a point t along a record's frame, the frame read into fr: into d, unit)
+  const at = (t) => {
+    const u = 1 - t, a0 = u * u, a1 = 2 * t * u, a2 = t * t;
+    const x = a0 * fr[0] + a1 * fr[3] + a2 * fr[6], y = a0 * fr[1] + a1 * fr[4] + a2 * fr[7], z = a0 * fr[2] + a1 * fr[5] + a2 * fr[8];
+    const l = Math.sqrt(x * x + y * y + z * z);
+    d[0] = x / l; d[1] = y / l; d[2] = z / l;
+    return d;
+  };
+  // (the ground along it: each piece's top, no higher than its record's banks nor than any above it;
+  // the levels' where the finer tiles cover it, else the record's)
+  let e = e0;
+  const pg = { h: 0, w: 0 };
+  for (let j = 0; j < m; j++) {
+    const q = recs[j];
+    gen._meanderFrame(q, fr);
+    for (let i = 0; i <= (j === m - 1 ? NSEG : NSEG - 1); i++) {
+      const t = i / NSEG, hr = hsAt(q, t);
+      if (!live) { env[j * NSEG + i] = hr; continue; }
+      if (gen._pyrGround) gen._pyrGround(at(t), pg);
+      e = Math.min(e, hr, pg.w > 0 ? hr + (pg.h - hr) * pg.w : Infinity);
+      env[j * NSEG + i] = e;
+    }
+  }
   for (let j = 0; j < m; j++) {
     const q = recs[j];
     gen._meanderFrame(q, fr);
@@ -105,40 +146,51 @@ function windowProfile(gen, recs) {
     const rq = Rv.rock ? Rv.rock[q] : 255, nq = ROCKS[rq] && ROCKS[rq].name;
     const kq = nq && DEPOSITS.has(nq) ? ROCKS[rq].k : MB && MB[q] > 0 ? K_ALLUVIUM : NaN;
     for (let i = 0; i < NSEG; i++) {
-      const t = (i + 0.5) / NSEG, u = 1 - t, a0 = u * u, a1 = 2 * t * u, a2 = t * t;
-      const x = a0 * fr[0] + a1 * fr[3] + a2 * fr[6], y = a0 * fr[1] + a1 * fr[4] + a2 * fr[7], z = a0 * fr[2] + a1 * fr[5] + a2 * fr[8];
-      const l = Math.sqrt(x * x + y * y + z * z);
-      // (its bed's rock: a little under its banks, in the ground's metres (hs: the sim's, hScale to them))
-      k[j * NSEG + i] = kq === kq ? kq : gen._channelRockK(x / l, y / l, z / l, hsAt(q, t) * gen.hScale - 1);
-      // (each piece's drop as the smooth profile has it; a rise (the sim's sampling) none)
-      drop[j * NSEG + i] = Math.max(0, hsAt(q, i / NSEG) - hsAt(q, (i + 1) / NSEG)) / k[j * NSEG + i];
+      const c = j * NSEG + i, p = at((i + 0.5) / NSEG);
+      // (its bed's rock: a little under its ground, in the ground's metres (the sim's, hScale to them))
+      k[c] = kq === kq ? kq : gen._channelRockK(p[0], p[1], p[2], (live ? 0.5 * (env[c] + env[c + 1]) : hsAt(q, (i + 0.5) / NSEG)) * gen.hScale - 1);
+      drop[c] = Math.max(0, live ? env[c] - env[c + 1] : hsAt(q, i / NSEG) - hsAt(q, (i + 1) / NSEG)) / k[c];
     }
   }
-  // (caps: each run of one rock with markedly softer rock just below it, in the window)
+  const D = env[0] - env[N];
+  if (!live && !(D > 0.5)) return null;
+  // (caps: each run of one rock with markedly softer rock just below it, in the window. Its fall has worn
+  // back up the run from its end, leaving a gorge below it: its plunge pool undercutting the cap, the
+  // cap's face breaking off, so the lip creeps upstream (Niagara's 11 km since the ice left; a stream's a
+  // few hundred metres). As far back as GORGE_W of its widths and GORGE_0 m, the bigger the river the
+  // further, and never past GORGE_MAX of the run: its lip still on the cap. Below it the river runs in
+  // the gorge at the foot's level, the land beside it still the cap's (terrain.js _beds, _banked's walls))
+  const pieceLen = (i) => lens[Math.floor(i / NSEG)] / NSEG;
   const steps = [];
-  for (let a = 0; a < N;) {
+  if (D > 0.5) for (let a = 0; a < N;) {
     let b = a;
     while (b + 1 < N && k[b + 1] === k[a]) b++;
     if (b + 1 < N && k[b + 1] >= 1.5 * k[a]) {
-      let run = 0;
-      for (let i = a; i <= b; i++) { run += 0.9 * drop[i]; drop[i] *= 0.1; }
-      steps.push(b + 1, run);
+      let run = 0, runLen = 0;
+      for (let i = a; i <= b; i++) { run += 0.9 * drop[i]; drop[i] *= 0.1; runLen += pieceLen(i); }
+      const Wd = 2 * (Rv.half ? Rv.half[recs[Math.floor(b / NSEG)]] : 0);
+      // (and at least half way up it: the land's face stands where its ground crosses the bed's middle,
+      // terrain.js _beds; below that the land is at the bed's foot, and so is the river)
+      let back = live ? Math.max(0.5 * runLen, Math.min(GORGE_MAX * runLen, GORGE_W * Wd + GORGE_0)) : 0, s = b + 1;
+      while (s - 1 > a && back >= pieceLen(s - 1)) { back -= pieceLen(s - 1); s--; }
+      steps.push(s, run);
     }
     a = b + 1;
   }
   let total = 0;
   for (let i = 0; i < N; i++) total += drop[i];
   for (let j = 1; j < steps.length; j += 2) total += steps[j];
-  if (!(total > 1e-9)) return null;
-  const sc = D / total, out = new Map();
-  let h = hsAt(recs[0], 0), si = 0;
+  if (!live && !(total > 1e-9)) return null;
+  // (a window that hardly falls: its ground as it is)
+  const sc = total > 1e-9 && D > 0.5 ? D / total : 0, out = new Map();
+  let h = env[0], si = 0;
   for (let j = 0; j < m; j++) {
     const H = new Float64Array(NSEG + 1), st = [];
     H[0] = h;
     for (let i = 0; i < NSEG; i++) {
       // (a step at this piece's upstream edge: within this reach, just inside it)
       while (si < steps.length && steps[si] === j * NSEG + i) { st.push(Math.max(i / NSEG, 0.5 / NSEG / 4), steps[si + 1] * sc); si += 2; }
-      H[i + 1] = H[i] - drop[j * NSEG + i] * sc;
+      H[i + 1] = sc > 0 ? H[i] - drop[j * NSEG + i] * sc : env[j * NSEG + i + 1];
     }
     // (H: the reach's heights without its steps; riverProfile takes them off where they stand)
     out.set(recs[j], { H, steps: st, len: lens[j] });
@@ -146,6 +198,7 @@ function windowProfile(gen, recs) {
     for (let s = 1; s < st.length; s += 2) stepSum += st[s];
     h = H[NSEG] - stepSum;
   }
+  out.end = env[N];
   return out;
 }
 
@@ -400,6 +453,25 @@ export function buildChannel(gen, r, building) {
   }
   ch.pts = Float32Array.from(P3); ch.at = Float32Array.from(A6);
   ch.pc = Int32Array.from(pcs); ch.kind = Uint8Array.from(kinds); ch.age = Float32Array.from(ages);
+  // (each fall's plunge pool, where its jet comes down past its foot, on its channel as drawn near: x, y,
+  // z (unit), its radius (m: the water's width, its gorge's head round it), its banks' level there, and
+  // its lip's t. terrain.js rounds the gorge's head into a bowl about it)
+  if (gen.snap.pyr && ch.zones && ch.zones.length && pcs.length) {
+    const pools = [], Ap = ch.at, Pp = ch.pts, Lc = Math.max(len, 1);
+    for (let z = 0; z < ch.zones.length; z += ZONE) {
+      const tp = Math.min(1, ch.zones[z + 3] + (ch.zones[z + 7] + 1) / Lc);
+      for (let k = pcs[0]; k < pcs[1] - 1; k++) {
+        const ta = Ap[k * 7 + 5], tb = Ap[(k + 1) * 7 + 5];
+        if ((tp - ta) * (tp - tb) > 0) continue;
+        const f = tb !== ta ? (tp - ta) / (tb - ta) : 0, a = k * 6, b = a + 6;
+        let px = Pp[a] + Pp[a + 3] + f * (Pp[b] + Pp[b + 3] - Pp[a] - Pp[a + 3]), py = Pp[a + 1] + Pp[a + 4] + f * (Pp[b + 1] + Pp[b + 4] - Pp[a + 1] - Pp[a + 4]), pz = Pp[a + 2] + Pp[a + 5] + f * (Pp[b + 2] + Pp[b + 5] - Pp[a + 2] - Pp[a + 5]);
+        const pl = Math.sqrt(px * px + py * py + pz * pz);
+        pools.push(px / pl, py / pl, pz / pl, 1.4 * Math.max(ch.zones[z + 5], Ap[k * 7]), hsOf(tp), ch.zones[z + 2]);
+        break;
+      }
+    }
+    if (pools.length) ch.pools = Float64Array.from(pools);
+  }
   // (bounds of each run of up to eight segments, over the line and its swing both, so any
   // nearness drawn between them is inside; and the whole)
   const gb = [], gi = [], np = ch.pts.length / 6;

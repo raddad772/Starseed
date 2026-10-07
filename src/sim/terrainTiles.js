@@ -146,7 +146,7 @@ export class TerrainTiles {
         return { T, d: f !== uv.face ? 1e9 : Math.hypot(-1 + (ti + 0.5) * s - uv.u, -1 + (tj + 0.5) * s - uv.v) };
       }).sort((a, c) => c.d - a.d);
       for (const { T } of far.slice(0, set.tiles.size - MAX_TILES)) {
-        set.tiles.delete(T);
+        set.drop(T);
         this.game.pool.dropPyrTile(b.data.id, L, T);
       }
     }

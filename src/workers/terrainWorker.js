@@ -47,7 +47,7 @@ self.onmessage = (e) => {
       if (!P) { P = new Map(); pyrs.set(m.id, P); }
       let set = P.get(m.L);
       if (!set) { set = new TileSet(m.L); P.set(m.L, set); }
-      if (m.type === 'ptile') set.put(m.face, m.ti, m.tj, m.tile); else set.tiles.delete(m.T);
+      if (m.type === 'ptile') set.put(m.face, m.ti, m.tj, m.tile); else set.drop(m.T);
       const g = gens.get(m.id);
       if (g && g.snap && g.snap.pyr !== P) g.snap.attachPyr(P);
       for (const k of [...fields.keys()]) if (k.startsWith(m.id + '|')) fields.delete(k);

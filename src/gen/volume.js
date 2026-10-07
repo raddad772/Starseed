@@ -24,7 +24,7 @@
 import * as dm from '../core/dmath.js';
 import { Noise3 } from '../core/noise.js';
 import { Rng, hashInts } from '../core/rng.js';
-import { S_LEN, S_H, S_WDEPTH, S_MOUNT, S_ROUGH, S_SAND, S_ICE, S_TEMP, S_RIVR, S_WLVL } from './terrain.js';
+import { S_LEN, S_H, S_WDEPTH, S_MOUNT, S_ROUGH, S_SAND, S_ICE, S_TEMP, S_RIVR, S_WLVL, S_BEDS } from './terrain.js';
 import { ROCKS } from './worldsim/lithology.js';
 import { MAT_W0, MAT_N, MC } from './matclasses.js';
 import { fireAtDir, fireMark } from './life/fire.js';
@@ -105,7 +105,9 @@ export class VolumeField {
     if (s[S_ICE] > 0) { const k = 1 - dm.smoothstep(0, 4, s[S_ICE]); hard *= k; cave *= k; }
     // (a river's or a creek's channel, or its flank a little above its water (the sample's water level nearby:
     // the river's, a creek's, a lake's shore); not the sea's, its waves cut their own notch, below)
-    b = { H: s[S_H], hard, cave, wet: s[S_RIVR] > 0 || (s[S_WLVL] > -1e8 && s[S_H] - s[S_WLVL] < 2.5) ? 1 : 0 };
+    // (the flank a metre or so over the water: a gorge's walls above it stand as rock faces, their foot
+    // planed; the whole 2.5 m left the wall's foot as the bare column, sawtoothed along a diagonal)
+    b = { H: s[S_H], hard, cave, wet: s[S_RIVR] > 0 || (s[S_WLVL] > -1e8 && s[S_H] - s[S_WLVL] < 1.2) ? 1 : 0, beds: s[S_BEDS] };
     this.base.set(key, b);
     return b;
   }
@@ -131,7 +133,9 @@ export class VolumeField {
       const tt = (H + warp) / S, fl = Math.floor(tt);
       let Ht = S * (fl + smooth(0.41, 0.59, tt - fl)) - warp;
       Ht += 0.15 * (H - Ht);                 // (treads keep a little of the slope)
-      Hc = H + wc * (Ht - H);
+      // (none where the heightfield has the beds' own steps (terrain.js _beds): their faces stand as they
+      // are, these only where it's steep in rock with no bed to make one)
+      Hc = H + wc * (1 - b.beds) * (Ht - H);
     }
     const cm = b.cave * smooth(0.1, 0.45, this.nReg.noise(px / 320, py / 320, pz / 320));
     const dip = 1.2 * this.nStep.noise(px / 180 + 5.3, py / 180, pz / 180);
