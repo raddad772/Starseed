@@ -15,21 +15,27 @@ import { TRUNK } from '../sim/floraField.js';
 
 // ---------------------------------------------------------------- geometry
 
+// (how much darker a trunk's bark is at the ground: finalize's foot)
+const FOOT_DARK = 0.45;
 function finalize(parts, keepNormals = false) {
   // parts: [{geo, part, ao(y)}] -> merged non-indexed geometry with part/ao attributes (and tuv: a
   // textured part's uv, 0 for the rest)
+  // (aoTop: the height its ao runs up to (else its own top: a tree's foot's the trunk's); foot: the
+  // bark's band at the ground darkened, damp and soil-splashed, the junction's corner (m: its fall-off))
   const pos = [], nrm = [], partA = [], aoA = [], uvA = [];
-  for (const { geo, part, aoBase = 0.6 } of parts) {
+  for (const { geo, part, aoBase = 0.6, aoTop = 0, foot = 0 } of parts) {
     const g = geo.index ? geo.toNonIndexed() : geo;
     if (!keepNormals || !g.attributes.normal) g.computeVertexNormals();
     const p = g.attributes.position.array, n = g.attributes.normal.array, uv = g.attributes.uv ? g.attributes.uv.array : null;
     let maxY = 0;
     for (let i = 1; i < p.length; i += 3) maxY = Math.max(maxY, p[i]);
+    if (aoTop) maxY = aoTop;
     for (let i = 0, v = 0; i < p.length; i += 3, v++) {
       pos.push(p[i], p[i + 1], p[i + 2]);
       nrm.push(n[i], n[i + 1], n[i + 2]);
       partA.push(part);
-      aoA.push(Math.min(1, aoBase + (1 - aoBase) * Math.max(0, p[i + 1]) / Math.max(maxY, 1e-3)));
+      const y0 = Math.max(0, p[i + 1]);
+      aoA.push(Math.min(1, aoBase + (1 - aoBase) * y0 / Math.max(maxY, 1e-3)) * (foot ? 1 - FOOT_DARK * Math.exp(-y0 / foot) : 1));
       uvA.push(uv ? uv[v * 2] : 0, uv ? uv[v * 2 + 1] : 0);
     }
   }
@@ -74,12 +80,19 @@ function grownTreeGeometry(sp) {
   return finalize([{ geo: bark, part: 0 }, { geo: leaves, part: 1, aoBase: 0.5 }]);
 }
 
+// an EZ-Tree's parts for finalize: its bark, its foot flared into its roots (ao as the trunk's), its leaves
+function ezParts(ez) {
+  ez.bark.computeBoundingBox();
+  const top = ez.bark.boundingBox.max.y, foot = 0.55 * ez.footR;
+  return [{ geo: ez.bark, part: 0, foot }, { geo: ez.flare, part: 0, aoTop: top, foot }, { geo: ez.leaves, part: 1, aoBase: 0.55 }];
+}
+
 function treeGeometry(sp, rng, g) {
   // (EZ-Tree's for the forms it grows, textured; the grown placeholder for a tree fern, or if it fails)
   if (sp.tree === 'conifer' || sp.tree === 'broadleaf') {
     try {
       const ez = ezTreeGeometry(sp, g);
-      if (ez) { const geo = finalize([{ geo: ez.bark, part: 0 }, { geo: ez.leaves, part: 1, aoBase: 0.55 }], true); geo.userData.ez = ez; return geo; }
+      if (ez) { const geo = finalize(ezParts(ez), true); geo.userData.ez = ez; return geo; }
     } catch (err) { console.warn('ez-tree:', err); }
   }
   if (GROWN[sp.tree]) return grownTreeGeometry(sp);
@@ -550,7 +563,7 @@ export class FloraSet {
     this.treeFar = treeFarGeometry(sp);
     // (EZ-Tree's middle distance: the same tree, lighter)
     this.treeMid = null;
-    if (this.geos.tree.userData.ez) { try { const ez = ezTreeGeometry(sp, body.data.gravity || 9.81, 1); if (ez) this.treeMid = finalize([{ geo: ez.bark, part: 0 }, { geo: ez.leaves, part: 1, aoBase: 0.55 }], true); } catch (err) { console.warn('ez-tree mid:', err); } }
+    if (this.geos.tree.userData.ez) { try { const ez = ezTreeGeometry(sp, body.data.gravity || 9.81, 1); if (ez) this.treeMid = finalize(ezParts(ez), true); } catch (err) { console.warn('ez-tree mid:', err); } }
     this.kindDist = { tree: 1500, shrub: 380, plant: 130, rock: 320, boulder: 1300 };
     this.clearings = []; // {pos: Vector3 body-fixed on the datum sphere, r}
     this.R = body.R;
