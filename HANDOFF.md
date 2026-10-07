@@ -206,6 +206,11 @@ Dave's queue, in the order he raised it (keep this list current):
    - Stalls (4d5d501): the clouds' light under the camera read back from the GPU every eighth frame at
      once (the CPU waiting on everything queued: up to 300 ms in the test tab, CPU frame p90 310 ms), and
      the sky's LUTs when the dust remade them: both now read through a polled fence (p90 21 ms).
+   - Frame cost measured (2026-10-07, quiet machine, whole frames with gl.finish: the GPU timer queries
+     here (EXT_disjoint_timer_query on this Mac) read ~150 ms a frame and every pass alike: bogus, don't
+     trust engine.gpuMs or profilePasses on it). At 2048x1536: 33N 78W from 90 m ~13-16 ms (the clouds
+     off: no change); on foot at the 18 m fall ~12.5 ms, the terrain's whole group (chunks, trees, rocks,
+     animals, grass) ~5.7 ms of it; no one grass tier measurable alone. Nothing urgent to optimise there.
    - Grass none under the water's surface as drawn (3dd22fc). Tried and reverted: a noise nudge to the
      ground classes' boundary (no zigzag case found to show it on).
    - Seen, open: from 25 km up (33N 78W, sun 40, looking down 35 deg; scratchpad air25_cmp*) the land is
