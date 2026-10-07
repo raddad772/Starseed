@@ -149,16 +149,14 @@ Dave's queue, in the order he raised it (keep this list current):
      across, blue in the gaps, below ~8 C under its river's freezing; no spray then (planetTerrain.js).
      Checked by forcing the freeze in the test tab's shader (scratchpad ice3_*): no cold fall found yet
      to see one in its season.
-   - Seen, open: from low down the far cloud deck shows vertical "drips" (scratchpad haze90b,
-     vol_fullres). Not the half-res composite (still there at full res), not the base's ramp nor the
-     coverage edges as walls (both tried, no change). They span ~3.5 deg at ~30 km, the deck's
-     2 km depth, ~300 m wide: not the march's sampling either (96 steps the same as 40). They're the density
-     model's: deckDensity takes d = (base x prof - (1 - cov)) / cov, so where the coverage is ~1 (its
-     threshold is steep: mostly 0 or 1) a patch however small fills the deck's whole depth (2 km on SOL
-     Earth): small fragments stand as 300 m wide, 2 km tall towers, seen from afar as drips. Real cumulus
-     are about as tall as wide, stratocumulus decks a few hundred metres thick. Fix: a cloud's height by
-     its horizontal size (the coverage's extent round it, or the deck's type: thin for stratiform), and
-     the coverage remapping the noise rather than setting its floor.
+   - The far cloud deck's vertical "drips" from low down (scratchpad haze90b, drip_iso2, drip_wave_cmp):
+     DONE (56cf03d). Not the half-res composite, the base ramp, the coverage edges, the march's steps (96
+     the same as 40), the base noise or the detail erosion (each switched off in the test tab's shader, no
+     change). They were the clouds' generations' hand-over: item 14's jitter (cellular noise, half-km cells
+     with sharp ridges) cut the hand-over band into patches, each generation's clouds standing in its
+     patches with straight walls (the weights are by direction: the same at every height). The front's now
+     moved by three long sine waves (40-80 km): no patches, still no ruler line, two texture reads fewer.
+     Also a deck cell's top by its strength (weak edges low, cores high).
    - The ground's game-scale haze from 90 m now reads as the sky does (haze90): item 12's note closed.
 
 ## NOW: fire through the recent centuries (session 39d69fa8, 2026-10-06), SIM 68
