@@ -1110,7 +1110,7 @@ export class Atmosphere {
     p.uHaze.value.set(h[0] * (1 + 3 * xD + 2 * xS), h[1], h[2] + (0.12 - h[2]) * w, h[3]);
     p.uHazeCol.value.set(hc.x + ((sca[0] + abs[0]) / Math.max(eD, 1e-12) * 0.97 - hc.x) * w, 1, hc.z + ((sca[2] + abs[2]) / Math.max(eD, 1e-12) - hc.z) * w);
     this.generate(renderer);
-    this.readBack(renderer);
+    this.readBack(renderer, false);
     return true;
   }
 
@@ -1144,8 +1144,27 @@ export class Atmosphere {
   }
 
   // CPU copies of the transmittance and irradiance LUTs for lighting
-  // standard materials (ship, effects) consistently with the shaders.
-  readBack(renderer) {
+  // standard materials (ship, effects) consistently with the shaders. wait false: read without waiting
+  // (a fence polled, the copies a frame or two late), when the weather's dust remakes them in play: read
+  // at once the CPU waited on everything the GPU had queued, a hitch
+  readBack(renderer, wait = true) {
+    if (!wait) {
+      if (this._rbBusy) { this._rbAgain = true; return; }
+      this._rbBusy = true;
+      const rdA = (rt) => {
+        const half = new Uint16Array(rt.width * rt.height * 4);
+        return renderer.readRenderTargetPixelsAsync(rt, 0, 0, rt.width, rt.height, half).then(() => {
+          const out = new Float32Array(half.length);
+          for (let i = 0; i < half.length; i++) out[i] = THREE.DataUtils.fromHalfFloat(half[i]);
+          return { w: rt.width, h: rt.height, data: out };
+        });
+      };
+      Promise.all([rdA(this.trans), rdA(this.irr)]).then(([t, i]) => { this.cpuTrans = t; this.cpuIrr = i; }).catch(() => {}).finally(() => {
+        this._rbBusy = false;
+        if (this._rbAgain) { this._rbAgain = false; this.readBack(renderer, false); }
+      });
+      return;
+    }
     const rd = (rt) => {
       const n = rt.width * rt.height * 4;
       const half = new Uint16Array(n);

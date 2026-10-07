@@ -154,14 +154,20 @@ export class CloudShadow {
     U.uCSOrigin.value.copy(o); U.uCSE.value.copy(E); U.uCSN.value.copy(N); U.uCSInvL.value = 1 / L;
     // (the clouds' light on the ground under the camera, read back every few frames while the camera is
     // under the decks: the standard materials' sun and sky (game.js computeLighting) dimmed as the
-    // ground's are, a herd or a ship in a cloud's shadow as dark as the grass it stands on)
-    if (alt < this.base) {
-      if (((this._rb = (this._rb || 0) + 1) & 7) === 1) {
+    // ground's are, a herd or a ship in a cloud's shadow as dark as the grass it stands on. Read without
+    // waiting: a fence polled, its value a frame or two late; read at once, the CPU waited on everything
+    // the GPU had queued, a stall every eighth frame (up to 300 ms on a loaded GPU))
+    this._under = alt < this.base;
+    if (this._under) {
+      if (((this._rb = (this._rb || 0) + 1) & 7) === 1 && !this._rbBusy) {
         const p = up.clone().multiplyScalar(R).sub(o);
         const x = Math.max(0, Math.min(CS_SIZE - 1, Math.floor((p.dot(E) / L + 0.5) * CS_SIZE))), y = Math.max(0, Math.min(CS_SIZE - 1, Math.floor((p.dot(N) / L + 0.5) * CS_SIZE)));
         const buf = this._buf || (this._buf = new Uint16Array(4)), f = THREE.DataUtils.fromHalfFloat;
-        renderer.readRenderTargetPixels(this.rt, x, y, 1, 1, buf);
-        this.atCam = { dir: f(buf[0]), tot: f(buf[1]), up: f(buf[2]) };
+        this._rbBusy = true;
+        renderer.readRenderTargetPixelsAsync(this.rt, x, y, 1, 1, buf)
+          .then(() => { if (this._under) this.atCam = { dir: f(buf[0]), tot: f(buf[1]), up: f(buf[2]) }; })
+          .catch(() => {})
+          .finally(() => { this._rbBusy = false; });
       }
     } else this.atCam = null;
     // (the level as wide as the patch of deck a point sees overhead: the dome out to ~60 degrees from the
