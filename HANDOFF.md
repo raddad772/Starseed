@@ -161,7 +161,15 @@ Dave's queue, in the order he raised it (keep this list current):
    (vb sqrt(2 z / g): ~1.2 m for this shallow stream) but the profile's face runs 4 m at least
    (channels.js fw, 2 m either side of the step, so the lip isn't a crease the near lattice draws as
    teeth): the sheet stood inside the rock. Now it's never nearer the lip than the face itself plus 0.3 m
-   (FALL_OFF): where the water isn't thrown clear it runs down the face, a horsetail.
+   (FALL_OFF): where the water isn't thrown clear it runs down the face, a horsetail (dabfd12). Up close
+   it then showed U-shaped bands, a curtain's folds: the streaks' axes came off each pixel's normal,
+   which swings round the horseshoe. On the ribbon they're now by its own lines (rib.x across over the
+   water's width, down by how far it has fallen): vertical ropes, glassy between (terrainMaterial.js).
+   Scratchpad fall-gorge-head, fall-sheet-before/after. Open: the spray reads as white flecks against
+   the rock from ~20 m (each particle a clump of drops at alpha 0.55; candidates: fainter and more of
+   them, or a pixel-footprint fade as the glints have), and one near particle drew as a crisp white
+   square ~1.5 m from the camera; the face behind a sheet thrown clear could be undercut in the near
+   volume (a recess behind the fall).
 14. The anti-sun twilight's diagonal edge (item 12's "seen, not looked at"): DONE (cb90627). It was the
    clouds' hand-over front: each place turns its clouds over to the next generation at its own time, the
    phase a near-linear function of place, so the band where two generations meet ran ruler-straight (~6.5
