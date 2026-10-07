@@ -297,8 +297,9 @@ void main() { gl_FragColor = vec4(vGA * 2.0 * max(0.0, 1.0 - abs(vGSide)), 0.0, 
 
   // camF: the camera, body-fixed
   update(camF) {
-    // (the near field's volume made again round a new anchor: the tiles' heights from it again)
-    const nf = this.body.near && this.body.near.field;
+    // (the near field's volume made again round a new anchor: the tiles' heights from it again, once it's
+    // drawn (floorAt reads it only then: made again as it was made, the tiles took the heightfield's))
+    const ng = this.body.near, nf = ng && ng.ready ? ng.field : null;
     if (nf !== this._nf) { this._nf = nf; this.invalidate(); }
     // (the season moved on (its snow, its dry months): made again, every few days of its year)
     const Ls = this.body.solarLongitude();

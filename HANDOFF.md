@@ -28,10 +28,9 @@ Dave's queue, in the order he raised it (keep this list current):
    heightfield?) seen at sunset from 2.5 m.
 2b. Forest light and grass (Dave, same day): DONE canopy light (4c517be: green light passed down by the
    crowns, the canopy's sky maps softened, no squares); grass as GPU blades (33dd1a3: 2 m patches,
-   long and wild by climate, meadows open, thatch under it, gusts across). Left, in order: grass from
-   altitude (a far tier of sparser clumps to ~200 m, the ground reading as grass beyond, wind waves
-   across meadows seen from the air); grass drying by season (the dry half of the year, from the
-   climate's season data); darkness at the trunks' feet in any weather (screen-space AO, HBAO/GTAO);
+   long and wild by climate, meadows open, thatch under it, gusts across). Since: a far tier to ~160 m
+   (203ba19); drying by season, cured to straw in the dry months, browned in the cold (4e712cf). Left, in
+   order: wind waves across meadows seen from the air; darkness at the trunks' feet in any weather (screen-space AO, HBAO/GTAO);
    check the leaves' sparkle against the sky after the mip-scaled alpha; probe GI (option 2: a probe
    grid filled from the maps; option 3 later, WebGPU compute beside WebGL). Test tip: the in-app pane
    must be shown (a hidden pane throttles the page to a standstill); ?tilegpu=0 for a hidden tab.

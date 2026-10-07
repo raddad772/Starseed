@@ -233,10 +233,11 @@ export class FaunaSet {
     _u.copy(_p).normalize();
     // (the ground as it's drawn: the near field's floor where it's built, the heightfield's beyond; asked
     // again as it moves a step, the volume's search not cheap)
-    if (!m.gp || m.gp.distanceToSquared(_p) > 0.09 || m.gnf !== (b.near && b.near.field)) {
+    const gnf = b.near && b.near.ready ? b.near.field : null;   // (the near field once it's drawn: floorAt's)
+    if (!m.gp || m.gp.distanceToSquared(_p) > 0.09 || m.gnf !== gnf) {
       const g0 = b.groundHeight(_u);
       m.gh = b.near && b.near.field ? b.floorAt(_g.copy(_u).multiplyScalar(R + g0 + 0.3)) : g0;
-      m.gp = (m.gp || new THREE.Vector3()).copy(_p); m.gnf = b.near && b.near.field;
+      m.gp = (m.gp || new THREE.Vector3()).copy(_p); m.gnf = gnf;
     }
     const gh = m.gh;
     _g.copy(_u).multiplyScalar(R + gh);
