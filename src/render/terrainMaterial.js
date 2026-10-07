@@ -350,7 +350,7 @@ void main() {
     if (tK > 0.0) {
       float mv = c2.y * tK;
       c2.y -= mv; c2.x += mv;
-      albedo = mix(albedo, uSoilCol * (0.8 + 0.4 * d2.g), tK * 0.85);
+      albedo = mix(albedo, uSoilCol, tK);
       veg *= 1.0 - tK;
     }
 #if MAT_MODE > 0
@@ -364,7 +364,7 @@ void main() {
     // (and the tens of metres between the scans' 16 m and the 512 m tile: the 64 m tile, moved by the
     // 4 km one so it makes no lattice)
     float v = (d0.r - 0.5) * 0.25 * midK + (d1.r - 0.5) * 0.55 * farK + (d2.r - 0.5) * 0.3 * midK * (0.4 + 1.2 * d0.a);
-    albedo *= 1.0 + v * mix(0.85, 1.35, rockAmt) * (1.0 - snow * 0.6);
+    albedo *= 1.0 + v * (1.0 - tK) * mix(0.85, 1.35, rockAmt) * (1.0 - snow * 0.6);
     // (none of the fine materials on a bed deep under the water's own surface, chunkbuilder.js: ~5 to 20 m)
     float under = 1.0 - smoothstep(0.03, 0.06, waterEnc);
     float kF = (1.0 - smoothstep(60.0, 260.0, dist)) * under;
@@ -407,7 +407,7 @@ void main() {
     albedo = mix(albedo, albedo * 0.72, snow * smoothstep(0.55, 0.8, d3.a) * fineK * 0.6);
     // multi-scale brightness variation down to sub-metre grain
     float v = (d0.r - 0.5) * 0.25 * midK + (d1.r - 0.5) * 0.55 * farK + (d2.r - 0.5) * 0.45 * midK * (0.4 + 1.2 * d0.a) + (d3.a - 0.5) * 0.45 * fineK + (d4.r - 0.5) * 0.5 * grainK;
-    albedo *= 1.0 + v * mix(0.85, 1.35, rockAmt) * (1.0 - snow * 0.6);
+    albedo *= 1.0 + v * (1.0 - tK) * mix(0.85, 1.35, rockAmt) * (1.0 - snow * 0.6);
     // bump detail: rock strong, vegetation soft, snow smooth
     vec3 nf = fn;
     float bumpK = mix(0.45, 1.25, rockAmt) * (1.0 - snow * 0.6);

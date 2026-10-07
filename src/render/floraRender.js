@@ -12,6 +12,7 @@ import { growTree } from '../gen/life/tree.js';
 import { treeGeometry as grownMesh } from './treeMesh.js';
 import { ezTreeGeometry, barkTexture, leafTexture } from './ezTrees.js';
 import { TRUNK } from '../sim/floraField.js';
+import { MAT_UNIFORMS, GLSL_MATERIALS, trackMaterial } from './materials.js';
 
 // ---------------------------------------------------------------- geometry
 
@@ -354,6 +355,7 @@ ${GLSL_TERRAIN_SHADOW}
 ${GLSL_SUN_SHADOW}
 ${GLSL_SKY_SHADOW}
 ${GLSL_MOON}
+${GLSL_MATERIALS}
 void main() {
   #include <logdepthbuf_fragment>
   // (in the clouds' shadow as the ground under it is)
@@ -389,13 +391,35 @@ void main() {
   // the soil the ground round it shows (terrainMaterial.js, the trunks' map). Its bark run to the ground
   // clean had met the soil there in a line, plastic)
   // (the soil over its grain, not instead of it: the bark's light and dark through it, the soil speckled)
+  // (and at the very bottom, where it meets the ground, the ground itself: its soil's colour, lit as the
+  // ground is (facing up, its sky hidden by the trunks as the ground's is (trunkSky), none of the bark's own
+  // darkening), so bark and ground are one surface at the line and there's no crease to see. Soiled but lit
+  // as bark down to the line, they had met in a straight polygonal seam whatever its colour (Dave))
+  float seam = 0.0;
   if (vPart < 0.5) {
     float sn1 = texture(tNoise, vLocal * 1.3).r, sn2 = texture(tNoise, vLocal * 5.0 + 3.1).r, sn3 = texture(tNoise, vLocal * 17.0 + 7.7).r;
     float soilK = 1.0 - smoothstep(0.02, 0.32, vSnow.z - 0.3 * (sn1 - 0.5) - 0.16 * (sn2 - 0.5) - 0.06 * (sn3 - 0.5));
     float grain = dot(albedo, vec3(0.3, 0.59, 0.11)) / max(dot(uTrunk * 1.2, vec3(0.3, 0.59, 0.11)), 1e-4);
     vec3 soil = uSoilCol * clamp(0.55 + 0.5 * grain, 0.4, 1.4) * (0.7 + 0.6 * sn3);
     albedo = mix(albedo, soil, soilK * 0.8);
+    seam = 1.0 - smoothstep(0.0, 0.2, vSnow.z + 0.08 * (sn1 - 0.5) + 0.04 * (sn3 - 0.5));
   }
+  // (the ground's own scanned soil there, as terrainMaterial.js reads it: the same planet-fixed place in its
+  // detail period, projected as the ground faces (up), so its colour, grain, bumps and occlusion run on
+  // across the line. Lit as bark in plain soil's colour, it had stood out from the ground a shade lighter)
+  MatS sm = MatS(vec3(1.0), 0.5, normalize(pF), 0.8, 1.0);
+  vec3 fdx = dFdx(pF), fdy = dFdy(pF);
+  if (seam > 0.0) {
+#if MAT_MODE > 0
+    float dW = length(vWorld);
+    float kF = 1.0 - smoothstep(60.0, 260.0, dW), kM = (1.0 - smoothstep(1800.0, 3500.0, dW)) * mix(0.6, 1.0, smoothstep(5.0, 60.0, dW));
+    sm = matGround(vec4(0.0), vec4(0.0), vec4(1.0, 0.0, 0.0, 0.0), mod(pF, 4096.0), fdx, fdy, normalize(pF), kF, kM);
+#endif
+    albedo = mix(albedo, uSoilCol * sm.ratio, seam);
+    N = normalize(mix(N, transpose(uToFixed) * sm.n, seam));
+    skyK *= mix(1.0, trunkSky(vWorld), seam);
+  }
+  float ao = mix(vAo, sm.ao, seam), aoD = mix(vAo, mix(1.0, sm.ao, 0.35), seam);
   // (the snow on it: what lies open to the sky holds what fell on it, in clumps; and banked round its foot)
   float snowK = 0.0;
   if (vSnow.x + vSnow.y > 0.0) {
@@ -421,8 +445,8 @@ void main() {
   float trans = vPart > 0.5 && vPart < 1.5 ? max(0.0, -dot(N, uSunDir)) * 0.35 * (1.0 - snowK) : 0.0;
   float leaf = vPart > 0.5 && vPart < 1.5 ? 0.35 : 0.0;
   vec3 moon = moonLit(rel, r, up, N, keySh, leaf, 0.55 + 0.45 * dot(N, up), skyK);
-  vec3 c = albedo / PI * (uSunE * sunT * (ndl + trans) * vAo + (uSunE * (skyE * (0.55 + 0.45 * dot(N, up)) * skyK + canopyLit(skyBl, sunTop, muS, skyE)) + uAmbientFloor + moon) * vAo);
-  c += albedo / PI * handLit(vWorld, N) * vAo;
+  vec3 c = albedo / PI * (uSunE * sunT * (ndl + trans) * aoD + (uSunE * (skyE * (0.55 + 0.45 * dot(N, up)) * skyK + canopyLit(skyBl, sunTop, muS, skyE)) + uAmbientFloor + moon) * ao);
+  c += albedo / PI * handLit(vWorld, N) * ao;
   gl_FragColor = vec4(c, 1.0);
 }
 `;
@@ -586,6 +610,7 @@ export class FloraSet {
         ...shared,
         uWindV: { value: new THREE.Vector4() },
         uTrunk: { value: new THREE.Vector3(...trunk) },
+        ...MAT_UNIFORMS,
         tBark: { value: null }, tLeaf: { value: null }, uTex: { value: 0 },
         uFadeStart: { value: 1100 },
         uFadeEnd: { value: 1500 },
@@ -608,12 +633,16 @@ export class FloraSet {
       m.uniforms.uTex = { value: ez ? 1 : 0 };
       m.uniforms.tBark = { value: ez ? barkTexture(ez.barkType) : null };
       m.uniforms.tLeaf = { value: ez ? leafTexture(ez.leafType) : null };
+      // (the scans shared, not copied: they're loaded after; the materials' mode with the terrain's)
+      m.uniforms.tMatA = MAT_UNIFORMS.tMatA; m.uniforms.tMatN = MAT_UNIFORMS.tMatN;
+      trackMaterial(m);
       this.materials[k] = m;
     }
     // (the far trees' impostor: untextured)
     this.materials.treeFar = this.materials.tree.clone();
     for (const key in this.materials.tree.uniforms) if (key !== 'uTex') this.materials.treeFar.uniforms[key] = this.materials.tree.uniforms[key];
     this.materials.treeFar.uniforms.uTex = { value: 0 };
+    trackMaterial(this.materials.treeFar);
     if (!this.treeFar.boundingBox) this.treeFar.computeBoundingBox();
     this.materials.treeFar.uniforms.uTopY = { value: this.treeFar.boundingBox.max.y };
     // (and their shadows')
