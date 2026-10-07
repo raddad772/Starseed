@@ -30,7 +30,7 @@ export const PAD_LAYOUT = {
     lb: 'Tap: next target · aboard: next route',
     buttons: {
       A: ['Space', 'Jump · hold: jetpack'], B: ['KeyB', 'Summon ship'], X: ['KeyF', 'Use: seats, lifts, ramps'], Y: ['KeyP', 'Back to pilot seat'],
-      RB: ['KeyT', 'Target under reticle'], RT: ['ShiftLeft', 'Run'], LT: null,
+      RB: ['KeyT', 'Target under reticle'], RT: ['ShiftLeft', 'Run'], LT: ['KeyL', 'Hand light'],
       L3: ['ShiftLeft', 'Run'], R3: ['KeyH', 'This layout'],
       UP: ['Tab', 'Route aboard · next target'], DOWN: ['KeyK', 'Settlement survey'], LEFT: ['Backquote', 'Quick menu'], RIGHT: ['KeyN', 'Nav computer'],
       VIEW: ['KeyM', 'System map'],

@@ -176,6 +176,7 @@ void main() {
   float Gg = NdV / (NdV * (1.0 - kk) + kk) * ndl / (ndl * (1.0 - kk) + kk);
   float Fs = 0.04 + 0.96 * pow(1.0 - VdH, 5.0);
   color += uSunE * sunT * Dg * Gg * Fs / (4.0 * NdV);
+  color += albedo / PI * handLit(vWorld, N) * ao;
   if (uThermal.x > 0.0) color += (vec3(1.0) - clamp(albedo, 0.0, 1.0)) * blackbodyGlow(uThermal.x - uThermal.y * (r - uRadius));
   gl_FragColor = vec4(color, 1.0);
 }

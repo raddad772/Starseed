@@ -415,6 +415,7 @@ export class PlanetTerrain {
       u.uFallTop.value = d.falls[best + 3];
       u.uFallFoot.value.set(d.falls[best], d.falls[best + 1], d.falls[best + 2]);
       u.uFallW.value = d.falls[best + 5];
+      if (u.uFallAcr) u.uFallAcr.value.set(d.falls[best + 7], d.falls[best + 8], d.falls[best + 9]);
       this.fallFx = this.fallFx || new FallFx(this.shared);
       const fx = this.fallFx.make(d.falls, d.origin);
       // (drawn in the engine's soft-particle pass, where its chunk is: falls.js FallFx.soft)

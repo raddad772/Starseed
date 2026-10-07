@@ -14,7 +14,7 @@ import { CloudShadow, noCloudShadow } from './cloudShadow.js';
 import { loadMaterials, windRipple } from './materials.js';
 import { HeightCube } from './terrainShadow.js';
 import { SUN_SHADOW_UNIFORMS, SKY_SHADOW_UNIFORMS } from './sunShadows.js';
-import { moonLight, NIGHT_GAIN, GAIN_REF } from './moonlight.js';
+import { moonLight, NIGHT_GAIN, GAIN_REF, HAND_LIGHT } from './moonlight.js';
 const _nsA = [0, 0, 0], _nsB = [0, 0, 0], _lg = new THREE.Vector3(), _lg2 = new THREE.Vector3();
 import { Liquid } from './liquid.js';
 import { fallPhysics, FallFx } from './falls.js';
@@ -174,6 +174,7 @@ export class WorldRenderer {
       // (its moons' light: the brightest's direction and light, moonlight.js)
       uMoonDir: { value: new THREE.Vector3(0, 1, 0) },
       uMoonE: { value: new THREE.Vector3() },
+      ...HAND_LIGHT,
       uDebug: { value: 0 },
       tNoise: { value: this.cloudNoise },
       // (the atmosphere's own: rebuildTerrain hands the climate's cloud map to all three)
@@ -261,6 +262,24 @@ export class WorldRenderer {
     return Math.min(NIGHT_GAIN, Math.max(1, GAIN_REF / Math.max(E, 1e-12)));
   }
 
+  // the hand light (handLight on: game.js, L on foot): from the camera's lower right along its look, a
+  // torch's ~1500 cd (300 lm in a 15 degree beam), a white LED's colour, with the pre-exposure gain; a
+  // three.js spot the same for its own materials (grass, ships). handMeter: its light on what it's
+  // pointed at (~6 m) for the exposure's meter (game.js updateMeter)
+  _updateHand() {
+    const H = HAND_LIGHT, cam = this.engine.camera;
+    if (!this.handLight || !cam) { H.uHandE.value.set(0, 0, 0); if (this._spot) this._spot.intensity = 0; this.handMeter = 0; return; }
+    const q = cam.quaternion, I = 1500 / 1e5 * (this.sunGain || 1);
+    this.handMeter = I / 36;
+    H.uHandPos.value.set(0.25, -0.3, 0).applyQuaternion(q).add(cam.position);
+    H.uHandDir.value.set(0, -0.08, -1).normalize().applyQuaternion(q);
+    H.uHandE.value.set(I, I * 0.95, I * 0.86);
+    if (!this._spot) { this._spot = new THREE.SpotLight(0xfff2dc, 0, 0, 0.45, 0.35, 2); this.engine.scene.add(this._spot, this._spot.target); }
+    this._spot.intensity = I;
+    this._spot.position.copy(H.uHandPos.value);
+    this._spot.target.position.copy(H.uHandPos.value).add(H.uHandDir.value);
+  }
+
   update(camWorld, dt) {
     this.timeSec += dt;
     this.flash = 0;
@@ -279,6 +298,7 @@ export class WorldRenderer {
     const G = this.lightGain(camWorld);
     this.sunGain = G > 0 ? G : 1; this.moonGain = G > 0 ? G : NIGHT_GAIN;
     this.engine.nightShift = Math.log2(this.sunGain);
+    this._updateHand();
     for (const it of this.items) {
       const b = it.body;
       _v.copy(b.pos).sub(camWorld);
@@ -299,6 +319,9 @@ export class WorldRenderer {
       sh.uSunDir.value.copy(b.pos).negate().normalize();
       const E = this.u.sunIlluminance(b.pos);
       sh.uSunE.value.copy(this.starColor).multiplyScalar(E * this.sunGain);
+      // (the night's own light, starlight and the air's glow (~0.001 lux), with the gain: a moonless night's
+      // as it was beside a full moon's drawn at NIGHT_GAIN)
+      if (sh.uAmbientFloor) sh.uAmbientFloor.value.set(1e-4, 1e-4, 1.3e-4).multiplyScalar(this.sunGain / NIGHT_GAIN);
       sh.uCenter.value.copy(_v);
       // its night's light: its brightest moon's (or, from a moon, its planet's); none by day where the
       // camera is (the sun's thousands of times brighter: not worth the ground's shaders' while)

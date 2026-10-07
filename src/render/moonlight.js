@@ -41,9 +41,31 @@ export function moonLight(u, b, out = { E: 0, dir: new THREE.Vector3(0, 1, 0), b
 // cloudLight called first): rel from the world's centre (r its length, up rel / r), N the normal, sh the
 // key shadow map's (sunShadows.js: the moon's at night), trans how much comes through from behind (leaves),
 // wrap the sky's share by the normal, skyK the canopy's (skyShadow)
+// a hand light (a torch: world.js handLight): its place and way (the scene's frame, the camera at its
+// origin), its intensity x colour (candela, in the scene's light: Earth's sunlight 1 ~ 1e5 lux, with the
+// pre-exposure gain), its beam's cos half angles (full inside x, none outside y); shared by every world
+export const HAND_LIGHT = {
+  uHandPos: { value: new THREE.Vector3() }, uHandDir: { value: new THREE.Vector3(0, 0, -1) },
+  uHandE: { value: new THREE.Vector3() }, uHandCone: { value: new THREE.Vector2(0.97, 0.9) },
+};
+
 export const GLSL_MOON = /* glsl */`
 uniform vec3 uMoonDir;
 uniform vec3 uMoonE;
+uniform vec3 uHandPos;
+uniform vec3 uHandDir;
+uniform vec3 uHandE;
+uniform vec2 uHandCone;
+// the hand light on a surface at wp (the scene's frame) facing N: its irradiance, by the inverse square,
+// in its beam (a faint halo round it, a torch's spill)
+vec3 handLit(vec3 wp, vec3 N) {
+  if (uHandE.g <= 0.0) return vec3(0.0);
+  vec3 L = uHandPos - wp;
+  float d2 = max(dot(L, L), 0.25);
+  vec3 l = L * inversesqrt(d2);
+  float c = dot(-l, uHandDir), k = max(smoothstep(uHandCone.y, uHandCone.x, c), 0.04 * smoothstep(uHandCone.y - 0.3, uHandCone.y, c));
+  return uHandE * k * max(dot(N, l), 0.0) / d2;
+}
 vec3 moonLit(vec3 rel, float r, vec3 up, vec3 N, float sh, float trans, float wrap, float skyK) {
   if (uMoonE.g <= 0.0) return vec3(0.0);
   float muM = dot(up, uMoonDir);

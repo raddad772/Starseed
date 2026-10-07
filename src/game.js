@@ -1751,6 +1751,10 @@ export class Game {
         this.camMode = { first: 'chase', chase: 'landing', landing: 'first' }[this.camMode] || 'first';
         this.message({ first: 'Cockpit view', chase: 'Chase view', landing: 'Landing view: level, above and behind' }[this.camMode], 'nav');
       }
+    } else if (input.hit('KeyL')) {
+      // (a hand light, out of a ship: render/world.js handLight)
+      this.world.handLight = !this.world.handLight;
+      this.message(this.world.handLight ? 'Hand light on' : 'Hand light off');
     }
   }
 
@@ -2337,6 +2341,8 @@ export class Game {
     const lum = (c) => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
     let E = rig.camE;
     if (!rig.inside && !this.inCabin()) E += 0.5 * L.sunIntensity * lum(L.sunColor) + lum(L.skyColor);
+    // (a hand light's on what it's pointed at, a third of it: the eye mostly kept to the dark round it)
+    if (this.world.handMeter) E += this.world.handMeter / 3;
     this.engine.meterRef = Math.max(1e-7, 0.18 * E / Math.PI);
     // from a pilot seat the world outside sets the exposure, not the cockpit
     this.engine.meterNearCut = !this.screenPass && this.player.mode === 'seat' && this.camMode === 'first' ? 3.5 : 0;

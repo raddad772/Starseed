@@ -168,6 +168,7 @@ uniform vec3 uOriginMod;
 uniform float uFallTop;     // (this chunk's biggest fall: falls.js; 0 none)
 uniform vec3 uFallFoot;
 uniform float uFallW;
+uniform vec3 uFallAcr;   // (its lip's way across, unit; 0 where it isn't known)
 uniform vec4 uFall1;
 uniform vec4 uFall2;
 uniform vec3 uAmbientFloor;
@@ -623,8 +624,11 @@ void main() {
       // (the plunge pool: churned white where it lands, the rest broken into patches and streaks the water
       // carries off downstream at its own pace; the water itself between them. A thin fall churns less:
       // how hard it lands, its share the air shatters)
+      // (how far from the line it lands along, its lip's width: a curtain lands as a line, not a point)
       vec3 Lf = vFixedPos - uOriginMod - uFallFoot;
-      float dF = length(Lf) / max(uFallW * 1.2 + 2.0, 2.0);
+      float hasA = step(0.5, dot(uFallAcr, uFallAcr));
+      float al = clamp(dot(Lf, uFallAcr), -0.5 * uFallW, 0.5 * uFallW) * hasA;
+      float dF = length(Lf - uFallAcr * al) / mix(max(uFallW * 1.2 + 2.0, 2.0), 3.0 + 0.15 * uFallW, hasA);
       float flL = length(vFlw.xyz);
       vec3 fd = flL > 1e-4 ? vFlw.xyz / flL : normalize(cross(upF, vec3(0.0, 0.0, 1.0)) + vec3(1e-4, 0.0, 0.0));
       vec3 fa = normalize(cross(upF, fd));
@@ -699,6 +703,8 @@ void main() {
 #endif
     // (under overhangs and in caves: little sky and less sun)
     color *= 1.0 - 0.94 * vOcc;
+    // (a hand light: moonlight.js)
+    color += albedo / PI * handLit(vWorldPos, N);
     vec3 V = normalize(-vWorldPos);
     vec3 H = normalize(V + uSunDir);
 #if MAT_MODE > 0
@@ -790,7 +796,7 @@ export function makeTerrainMaterial(shared) {
       uOriginRel: { value: new THREE.Vector3() },
       uFallTop: { value: 0 },
       uFallFoot: { value: new THREE.Vector3() },
-      uFallW: { value: 0 },
+      uFallW: { value: 0 }, uFallAcr: { value: new THREE.Vector3() },
     },
     vertexShader: VERT,
     fragmentShader: FRAG,

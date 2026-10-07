@@ -393,6 +393,7 @@ void main() {
   float leaf = vPart > 0.5 && vPart < 1.5 ? 0.35 : 0.0;
   vec3 moon = moonLit(rel, r, up, N, keySh, leaf, 0.55 + 0.45 * dot(N, up), skyK);
   vec3 c = albedo / PI * (uSunE * sunT * (ndl + trans) * vAo + (uSunE * (skyE * (0.55 + 0.45 * dot(N, up)) * skyK + canopyLit(skyBl, sunTop, muS, skyE)) + uAmbientFloor + moon) * vAo);
+  c += albedo / PI * handLit(vWorld, N) * vAo;
   gl_FragColor = vec4(c, 1.0);
 }
 `;
