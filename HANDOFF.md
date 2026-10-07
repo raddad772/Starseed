@@ -37,7 +37,12 @@ Dave's queue, in the order he raised it (keep this list current):
    must be shown (a hidden pane throttles the page to a standstill); ?tilegpu=0 for a hidden tab.
 3. Soil at walking scale: the world sim's soil depth and water table (worldsim/soil.js) into the
    snapshot (SIM bump), refined by slope and curvature; trees by root depth, grass by a few cm, bare rock
-   and scree where none, wetland plants where the water table is at the surface.
+   and scree where none, wetland plants where the water table is at the surface. DONE v1 (3143ec8, SIM
+   69): packed and read (snapshot soil(), wtd(), wetland(); forest() thinned where trees can't root);
+   thin soil shows rock and thins plants and grass (water worlds only); wetlands soaked, green, reeds tall.
+   SOL: 26% of land at soil.js's 5 cm floor, 81% of it desert; 1.8% wetland. Scratchpad wetland_b,
+   desert_soil. Still: refined by curvature (hollows deep, crests thin) and the local slope; scree at
+   faces' feet from it; open water in a wetland (ponds, the item 13 marshes) needs the water drawn.
 4. Open ground's variety (Dave: "muddy patches where there's no trees"): game trails between water and
    grazing (the herds are world state), wallows and mud by water, bare patches on thin soil, mounds.
 5. A flashlight (hand light) for the dark nights now.
