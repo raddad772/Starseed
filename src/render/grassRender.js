@@ -14,7 +14,7 @@
 // edge of its reach.
 import * as THREE from 'three';
 import { dirFromFaceUV, faceUVFromDir } from '../gen/cubesphere.js';
-import { S_LEN, S_H, S_TEMP, S_SAND, S_ICE, S_WDEPTH, S_RIVR, S_WLVL } from '../gen/terrain.js';
+import { S_LEN, S_H, S_TEMP, S_SAND, S_ICE, S_WDEPTH, S_RIVR, S_WLVL, S_POOL } from '../gen/terrain.js';
 import { fmix32 } from '../core/rng.js';
 import { FireField } from '../sim/fireField.js';
 import { receiveShadows, COVER_LAYER, COVER_MIN_W, SHADOW_LIGHT_UNIFORMS } from './sunShadows.js';
@@ -402,9 +402,14 @@ void main() { gl_FragColor = vec4(vGA * 2.0 * max(0.0, 1.0 - abs(vGSide)), 0.0, 
     // the heightfield, a river's bank planed, and grass had stood in a plunge pool's shallows)
     const bare = (dd, hd) => {
       gen.sample(dd[0], dd[1], dd[2], 2, s2);
-      if (s2[S_SAND] > 0.3 || s2[S_ICE] > 0 || s2[S_WDEPTH] > 0.05 || s2[S_RIVR] > 0 || (gen.p.liquid && s2[S_H] < 0.25)) return true;
+      // (a wetland's reeds and sedges stand in its pools' shallows, a third of a metre deep)
+      const marshy = snap.wetland && gen.p.liquid === 'water' && snap.wetland(dd[0], dd[1], dd[2]) > 0.3;
+      if (s2[S_SAND] > 0.3 || s2[S_ICE] > 0 || s2[S_WDEPTH] > (marshy ? 0.35 : 0.05) || s2[S_RIVR] > 0 || (gen.p.liquid && s2[S_H] < 0.25)) return true;
       // (nor on the mud a bank's water level rises over through the year: a fifth of a metre over it, drawn)
-      if (s2[S_WLVL] > -1e8 && s2[S_WLVL] > hd - 0.2 && gen.p.liquid === 'water') return true;
+      if (!marshy && s2[S_WLVL] > -1e8 && s2[S_WLVL] > hd - 0.2 && gen.p.liquid === 'water') return true;
+      if (marshy && s2[S_WLVL] > hd + 0.35) return true;
+      // (a wetland pool's open water: its reeds round its edges, not across it)
+      if (s2[S_POOL] > 0.7) return true;
       if (snap.rockAt) {
         const hs = s2[S_H] / (gen.hScale || 1);
         if (snap.rockAt(dd[0], dd[1], dd[2], hs) >= 11) return true;

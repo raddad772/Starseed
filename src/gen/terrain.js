@@ -64,7 +64,8 @@ export const S_FLX = 22, S_FLY = 23, S_FLZ = 24; // running water's way down (un
 export const S_FLV = 25;     // and its speed (m/s: Manning's, by its depth and slope)
 export const S_RIVR = 26;    // 1 where the water is a world-sim river's channel, 2 a creek's (riverRibbons draws them near)
 export const S_RDEP = 27;    // a river's channel depth where its water is (m, drawn: its stage through the year, universe.js)
-export const S_LEN = 28;
+export const S_POOL = 28;    // a wetland's pool here: 0..1 (its water's depth over the ground against the grain's spread; 0 none)
+export const S_LEN = 29;
 // (each rock's cohesion as a mass, Pa: how tall a sheer face of it stands: canyon walls)
 const FREEZE_MIX = { methane: 20, ethane: 20 };   // (K: a mixture's freezing point under its main liquid's)
 const ORGANIC_SAND = [0.075, 0.055, 0.035];   // (linear: tholin sand, dark brown)
@@ -329,7 +330,7 @@ export class TerrainGenerator {
     const R = this.R;
     const relief = this.relief;
     for (let i = 0; i < S_LEN; i++) out[i] = 0;
-    out[S_DX] = x; out[S_DY] = y; out[S_DZ] = z; out[S_WLVL] = -1e9;
+    out[S_DX] = x; out[S_DY] = y; out[S_DZ] = z; out[S_WLVL] = -1e9; out[S_POOL] = 0;
 
     const c = this.continentalness(x, y, z, out);
     const qx = this._qx, qy = this._qy, qz = this._qz;
@@ -647,7 +648,7 @@ export class TerrainGenerator {
     const p = this.p, S = this.snap, R = this.R;
     this._minW = minWavelength;   // (the rivers' meanders: only where they can be seen)
     for (let i = 0; i < S_LEN; i++) out[i] = 0;
-    out[S_DX] = x; out[S_DY] = y; out[S_DZ] = z; out[S_WLVL] = -1e9;
+    out[S_DX] = x; out[S_DY] = y; out[S_DZ] = z; out[S_WLVL] = -1e9; out[S_POOL] = 0;
     // (the world's refinement where it has one: the world sim's surface with what its water cut)
     const ref = S.ref && S.ref.sample(S._d(x, y, z)) ? S.ref : null;
     let h = ref ? ref.h / this.hScale : S.h(x, y, z);
@@ -716,19 +717,23 @@ export class TerrainGenerator {
     }
     const rough = dm.clamp(0.3 + 0.9 * mMask, 0.1, 1.4) * (p.roughness ?? 1);
     out[S_ROUGH] = rough;
+    let grainA = 0, grainS = 0;
     {
       // (the ground's grain below what the terrain's levels simulate: none of its features)
       const df = R / this.lamDetail;
       let fx = x * df, fy = y * df, fz = z * df, lam = this.lamDetail, a = (gT ? dm.clamp(gT.lr / 4 * dm.pow(this.lamDetail / 20000, 0.55), 1, 120) / this.hScale : (p.relief || 3000) * 0.006) * rough, sum = 0;
+      let gv = 0;
       for (let o = 0; o < 11; o++) {
         if (lam < minWavelength) break;
         const kp = keep(lam, true);
-        if (kp > 0) sum += a * this.nDetail.noise(fx, fy, fz) * dm.smoothstep(minWavelength, minWavelength * 2, lam) * kp;
+        if (kp > 0) { const ak = a * dm.smoothstep(minWavelength, minWavelength * 2, lam) * kp; sum += ak * this.nDetail.noise(fx, fy, fz); gv += ak * ak; }
         a *= 0.57; lam *= 0.5;
         const nx = ROT[0] * fx + ROT[1] * fy + ROT[2] * fz, ny = ROT[3] * fx + ROT[4] * fy + ROT[5] * fz, nz = ROT[6] * fx + ROT[7] * fy + ROT[8] * fz;
         fx = nx * 2.0 - 0.7; fy = ny * 2.0 + 1.1; fz = nz * 2.0 + 2.3;
       }
-      h += sum * (h < 0 ? 0.5 : 1) * calm;
+      grainS = sum * (h < 0 ? 0.5 : 1) * calm;
+      h += grainS;
+      grainA = 0.17 * Math.sqrt(gv) * calm;   // (the grain's spread here: its octaves as drawn, measured: 0.17 a unit)
     }
     // a lake's surface is level and fills its basin out to the contour of its level (looked
     // up a little off true, so shores wander rather than follow the sim's cells), inside a
@@ -971,6 +976,21 @@ export class TerrainGenerator {
         let top = itHb + H - r * dm.exp(-H / r);
         if (h < 0 && S.s.sea) top = Math.max(top, 0.1 * (top - h));
         if (top > h) { out[S_ICE] = top - h; h += (top - h) * dm.smoothstep(0.5 * r, 2 * r, H); wl = -1e9; }
+      }
+    }
+    // (a wetland's pools: its water table a little under its ground's mean, the ground's own grain (its
+    // hummocks and hollows) standing out of it, the hollows full: more of them the wetter (soil.js's
+    // wetlands, now, where the world has its water). Seen where the grain's drawn, near. Their water a few
+    // centimetres over the ground, drawn by its shading (S_POOL), not as a lake: a lake's level is the chunk's,
+    // and pools laid as lakes stood as flat sheets the chunks' size)
+    out[S_POOL] = 0;
+    if (S.s.wetland && p.liquid === 'water' && this.wetNow && grainA > 0 && h > 0 && wl < h) {
+      const wf = S.wetland(x, y, z);
+      if (wf > 0.2) {
+        // (the level against the ground as it lies without its grain, whatever has moved it since: a lake's
+        // rim, a river's banks)
+        const pl = h - grainS - grainA * (1.2 - 1.2 * wf);
+        if (pl > h) out[S_POOL] = Math.min(1, (pl - h) / (0.3 * grainA));
       }
     }
     out[S_H] = h;
@@ -2343,6 +2363,15 @@ export class TerrainGenerator {
         mat[0] = vegW;
         mat[2] = rockW * (1 - vegW);   // (the rock showing through them)
       }
+    }
+    // (a wetland's pools: standing water over the ground, dark and still, the sky in it (wet's gloss whole))
+    const pool = s[S_POOL] > 0 && soilD != null ? dm.smoothstep(0, 1, s[S_POOL]) : 0;
+    if (pool > 0) {
+      // (a few centimetres of water over peat and mud: near black face on (water hands back 2% of the sky
+      // looking straight down), the sky's light in it at a slant the shader's)
+      const ws = P.soil || ground, k = 0.85 * pool;
+      r += (ws[0] * 0.14 - r) * k; g += (ws[1] * 0.15 - g) * k; b += (ws[2] * 0.19 - b) * k;
+      mat[6] = Math.max(mat[6], pool); mat[0] *= 1 - 0.6 * pool;
     }
     // (a wetland's ground soaked: darker, glossy)
     if (wetK > 0) { r *= 1 - 0.3 * wetK; g *= 1 - 0.22 * wetK; b *= 1 - 0.15 * wetK; mat[6] = Math.max(mat[6], 0.6 * wetK); }

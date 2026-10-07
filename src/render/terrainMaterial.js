@@ -795,6 +795,13 @@ void main() {
     float sp = pow(max(dot(N, H), 0.0), mix(20.0, 120.0, snow)) * (0.03 + 0.25 * snow + 0.3 * wet) * (uHasAtmo > 0.5 ? 1.0 : 0.1);
     color += uSunE * sunT * gCov * sp * ndl;
 #endif
+    // (a wetland's pool (wet whole: gen/terrain.js S_POOL): still water mirroring the sky, the more the
+    // more grazing (Fresnel, water's 2% face on), over the dark ground under it)
+    float poolK = smoothstep(0.85, 1.0, wet);
+    if (poolK > 0.0) {
+      float cP = max(dot(up, V), 1e-3), Fp = 0.02 + 0.98 * pow(1.0 - cP, 5.0);
+      color = mix(color, color * (1.0 - Fp) + uSunE * skyE / PI * 1.1 * Fp + uSunE * sunT * 0.05 * pow(max(dot(reflect(-V, up), uSunDir), 0.0), 200.0), poolK);
+    }
   }
   // a hot world's ground glows at its own temperature (emissivity 1 - albedo), less the higher it
   // stands; and under a sky its air makes opaque, it gives back the air's glow from all round (albedo
