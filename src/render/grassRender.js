@@ -14,7 +14,7 @@
 // edge of its reach.
 import * as THREE from 'three';
 import { dirFromFaceUV, faceUVFromDir } from '../gen/cubesphere.js';
-import { S_LEN, S_H, S_TEMP, S_SAND, S_ICE, S_WDEPTH, S_RIVR } from '../gen/terrain.js';
+import { S_LEN, S_H, S_TEMP, S_SAND, S_ICE, S_WDEPTH, S_RIVR, S_WLVL } from '../gen/terrain.js';
 import { fmix32 } from '../core/rng.js';
 import { FireField } from '../sim/fireField.js';
 import { receiveShadows, COVER_LAYER, COVER_MIN_W, SHADOW_LIGHT_UNIFORMS } from './sunShadows.js';
@@ -398,9 +398,12 @@ void main() { gl_FragColor = vec4(vGA * 2.0 * max(0.0, 1.0 - abs(vGSide)), 0.0, 
     // tile): its water, ice, sand (the rock showing a sand: quartz, coral, black (lithology.js), or a beach's
     // on low ground by the sea, as the terrain shades it: terrain.js shadeSnap))
     const s2 = this._s2 || (this._s2 = new Float64Array(S_LEN));
-    const bare = (dd) => {
+    // (and under the water's surface as the ground's drawn (hd): the near field's volume can lie lower than
+    // the heightfield, a river's bank planed, and grass had stood in a plunge pool's shallows)
+    const bare = (dd, hd) => {
       gen.sample(dd[0], dd[1], dd[2], 2, s2);
       if (s2[S_SAND] > 0.3 || s2[S_ICE] > 0 || s2[S_WDEPTH] > 0.05 || s2[S_RIVR] > 0 || (gen.p.liquid && s2[S_H] < 0.25)) return true;
+      if (s2[S_WLVL] > -1e8 && s2[S_WLVL] > hd + 0.05) return true;
       if (snap.rockAt) {
         const hs = s2[S_H] / (gen.hScale || 1);
         if (snap.rockAt(dd[0], dd[1], dd[2], hs) >= 11) return true;
@@ -431,9 +434,9 @@ void main() { gl_FragColor = vec4(vGA * 2.0 * max(0.0, 1.0 - abs(vGSide)), 0.0, 
     for (let a = 0; a < 5; a++) for (let bb = 0; bb < 5; bb++) {
       dirFromFaceUV(face, u0 + du * a / 4, v0 + du * bb / 4, d);
       cd[(a * 5 + bb) * 3] = d[0]; cd[(a * 5 + bb) * 3 + 1] = d[1]; cd[(a * 5 + bb) * 3 + 2] = d[2];
-      gC[a * 5 + bb] = bare(d) ? 0 : 1;
       const g0 = b.groundHeight(V.set(d[0], d[1], d[2]));
       hg[a * 5 + bb] = b.near && b.near.field ? b.floorAt(V.multiplyScalar(R + g0 + 0.3)) : g0;
+      gC[a * 5 + bb] = bare(d, hg[a * 5 + bb]) ? 0 : 1;
     }
     const span = size / PPT;
     // (the tile's own centre on its ground: its meshes there, culled and ranked by distance from there)
