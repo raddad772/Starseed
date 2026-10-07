@@ -149,6 +149,13 @@ Dave's queue, in the order he raised it (keep this list current):
      across, blue in the gaps, below ~8 C under its river's freezing; no spray then (planetTerrain.js).
      Checked by forcing the freeze in the test tab's shader (scratchpad ice3_*): no cold fall found yet
      to see one in its season.
+   - Seen, open: from low down the far cloud deck shows vertical "drips" (scratchpad haze90b,
+     vol_fullres). Not the half-res composite (still there at full res), not the base's ramp nor the
+     coverage edges as walls (both tried, no change). They span ~3.5 deg at ~30 km, the deck's
+     2 km depth, ~300 m wide: likely the march undersampling a ray grazing the deck (40 steps over tens of km),
+     its few samples' horizontal places shared by the rays above and below. Next: adaptive steps
+     through the deck slab (more where a ray's inside it), or a slab-traversal estimate at grazing angles.
+   - The ground's game-scale haze from 90 m now reads as the sky does (haze90): item 12's note closed.
 
 ## NOW: fire through the recent centuries (session 39d69fa8, 2026-10-06), SIM 68
 
