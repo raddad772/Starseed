@@ -26,6 +26,7 @@ import { Noise3 } from '../core/noise.js';
 import { Rng, hashInts } from '../core/rng.js';
 import { S_LEN, S_H, S_WDEPTH, S_MOUNT, S_ROUGH, S_SAND, S_ICE, S_TEMP, S_RIVR, S_WLVL, S_BEDS } from './terrain.js';
 import { ROCKS } from './worldsim/lithology.js';
+import { SUITE, DEPOSITS, worldColumn } from './geology.js';
 import { MAT_W0, MAT_N, MC } from './matclasses.js';
 import { fireAtDir, fireMark } from './life/fire.js';
 
@@ -44,6 +45,18 @@ const TAL_D = [1, 2, 3, 4, 6, 8, 11];
 const _tc = [0, 0, 0], _tm = new Float64Array(MAT_N);
 
 const smooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+// which bed of a rock column (geology.js) height z (m) is in: its runs of one rock counted up from its
+// foot (kept on the column)
+function bedIndex(col, z) {
+  let B = col._beds;
+  if (!B) {
+    const T = col.type;
+    B = col._beds = new Int32Array(T.length);
+    for (let i = 1; i < T.length; i++) B[i] = B[i - 1] + (T[i] !== T[i - 1] ? 1 : 0);
+  }
+  const i = Math.round(z - col.lo);
+  return B[i < 0 ? 0 : i >= B.length ? B.length - 1 : i];
+}
 
 // a local frame on the surface at body-fixed point pos: { o (on the datum sphere), e, u, n },
 // right-handed (e x u = n, as the lattice's x, y, z: the mesh's triangles face out of the rock)
@@ -69,6 +82,7 @@ export class VolumeField {
     this.nCb = new Noise3(rng.seed32('vol-cave-b'));
     this.nReg = new Noise3(rng.seed32('vol-cave-region'));
     this.bedSeed = rng.seed32('vol-beds');
+    this.colSeed = (gen.p.seed && gen.p.seed[0]) | 0;   // (the world's rock columns: geology.js worldColumn)
     this.hasSea = !!gen.p.liquid && gen.contThreshold > -1e8;
     this.s = new Float64Array(S_LEN);
     this.base = new Map();   // column -> { H, hard, cave }
@@ -91,11 +105,17 @@ export class VolumeField {
     let x = a.o[0] + i * a.e[0] + k * a.n[0], y = a.o[1] + i * a.e[1] + k * a.n[1], z = a.o[2] + i * a.e[2] + k * a.n[2];
     const l = Math.sqrt(x * x + y * y + z * z); x /= l; y /= l; z /= l;
     g.sample(x, y, z, MINW, s);
-    let hard, cave;
+    let hard, cave, col = null, bed = 0, massive = false;
     if (g.snap) {
-      const rt = g.snap.rockAt(x, y, z, s[S_H] / g.hScale);
+      // (the rock as the land's steps read it (terrain.js _beds): the bedrock's, its weathered top or a
+      // loose skin over it aside; read at the surface a lava country's faces were 'regolith', soft, bedless)
+      const rt = g.snap.rockAtWarped ? g.snap.rockAtWarped(g.snap.rockWarp(x, y, z, this._rw || (this._rw = [0, 0, 0])), s[S_H] / g.hScale) : g.snap.rockAt(x, y, z, s[S_H] / g.hScale);
       hard = ROCK_HARD[rt] ?? 0.6; cave = ROCK_CAVE[rt] ?? 0.05;
       if (g.snap.ice(x, y, z) > 10) { hard *= 0.25; cave = 0; }
+      // (its beds: the world's column for its rock (geology.js), where they stand here, as the land's steps
+      // read them (terrain.js _beds); a granite's none)
+      const nm = ROCKS[rt] && ROCKS[rt].name, su = nm && !DEPOSITS.has(nm) ? SUITE[nm] : null;
+      if (su === 'sed' || su === 'volc') { col = worldColumn(this.colSeed, su, 0); bed = g._bedOff(x, y, z); } else massive = su === 'xtal';
     } else {
       hard = Math.min(1, 0.45 + 0.4 * s[S_MOUNT] + 0.25 * s[S_ROUGH]); cave = 0.15;
     }
@@ -107,7 +127,7 @@ export class VolumeField {
     // the river's, a creek's, a lake's shore); not the sea's, its waves cut their own notch, below)
     // (the flank a metre or so over the water: a gorge's walls above it stand as rock faces, their foot
     // planed; the whole 2.5 m left the wall's foot as the bare column, sawtoothed along a diagonal)
-    b = { H: s[S_H], hard, cave, wet: s[S_RIVR] > 0 || (s[S_WLVL] > -1e8 && s[S_H] - s[S_WLVL] < 1.2) ? 1 : 0, beds: s[S_BEDS] };
+    b = { H: s[S_H], hard, cave, wet: s[S_RIVR] > 0 || (s[S_WLVL] > -1e8 && s[S_H] - s[S_WLVL] < 1.2) ? 1 : 0, chan: s[S_RIVR] > 0 || (s[S_WLVL] > -1e8 && s[S_H] - s[S_WLVL] < 0.3), beds: s[S_BEDS], col, bed, massive };
     this.base.set(key, b);
     return b;
   }
@@ -139,7 +159,7 @@ export class VolumeField {
     }
     const cm = b.cave * smooth(0.1, 0.45, this.nReg.noise(px / 320, py / 320, pz / 320));
     const dip = 1.2 * this.nStep.noise(px / 180 + 5.3, py / 180, pz / 180);
-    t = { Hc, wc, s8, cm, dip };
+    t = { Hc, wc, s8, cm, dip, col: b.col, bed: b.bed, massive: b.massive };
     this.terr.set(key, t);
     return t;
   }
@@ -154,7 +174,16 @@ export class VolumeField {
     if (h !== undefined) return h;
     const H0 = this.terrAt(i, k).Hc;
     h = H0;
-    if (!this.baseAt(i, k).wet) {
+    // (only where the ground will hold it: scree comes to rest where the slope under it eases off, at a
+    // face's foot or on a ledge (the ground falling away gently downhill); on the face itself, or a spur's
+    // flanks, it slides on down. Piled wherever a face rose above, it had stuck to the steeps like
+    // frosting)
+    // (and the ground 4 m on down: a ledge a metre or two wide on the face held a dark blot of it; a foot's
+    // ground runs on). Not in the water's channel, but above its edge: a river carries off what falls into
+    // it, not the cone banked against its gorge's wall
+    const gx = this.terrAt(i + 2, k).Hc - this.terrAt(i - 2, k).Hc, gz = this.terrAt(i, k + 2).Hc - this.terrAt(i, k - 2).Hc, gl = Math.sqrt(gx * gx + gz * gz);
+    const down = gl > 1e-6 ? (H0 - this.terrAt(i - Math.round(4 * gx / gl), k - Math.round(4 * gz / gl)).Hc) / 4 : 0;
+    if (!this.baseAt(i, k).chan && down < 0.6) {
       // (a face anywhere near: the ground 4 or 11 m off a few metres higher)
       let near = false;
       for (let q = 0; q < 4 && !near; q++) {
@@ -211,7 +240,7 @@ export class VolumeField {
     const t = this.terrAt(i, k);
     const gx = (this.talAt(i + 1, k) - this.talAt(i - 1, k)) / 2, gz = (this.talAt(i, k + 1) - this.talAt(i, k - 1)) / 2;
     const gc = Math.sqrt(gx * gx + gz * gz), Ht = this.talAt(i, k);
-    c = { Hc: Ht, tal: Ht - t.Hc, wc: t.wc * Math.max(0, Math.min(1, 1 - (Ht - t.Hc) / 0.8)), s8: t.s8, cm: t.cm, dip: t.dip, gc, ux: gc > 1e-6 ? gx / gc : 0, uz: gc > 1e-6 ? gz / gc : 0 };
+    c = { Hc: Ht, tal: Ht - t.Hc, wc: t.wc * Math.max(0, Math.min(1, 1 - (Ht - t.Hc) / 0.8)), s8: t.s8, cm: t.cm, dip: t.dip, col: t.col, bed: t.bed, massive: t.massive, gc, ux: gc > 1e-6 ? gx / gc : 0, uz: gc > 1e-6 ? gz / gc : 0 };
     this.cols.set(key, c);
     return c;
   }
@@ -224,7 +253,7 @@ export class VolumeField {
     const t = this.terrAt(i, k);
     const gx = (this.terrAt(i + 1, k).Hc - this.terrAt(i - 1, k).Hc) / 2, gz = (this.terrAt(i, k + 1).Hc - this.terrAt(i, k - 1).Hc) / 2;
     const gc = Math.sqrt(gx * gx + gz * gz);
-    c = { Hc: t.Hc, tal: 0, wc: t.wc, s8: t.s8, cm: t.cm, dip: t.dip, gc, ux: gc > 1e-6 ? gx / gc : 0, uz: gc > 1e-6 ? gz / gc : 0 };
+    c = { Hc: t.Hc, tal: 0, wc: t.wc, s8: t.s8, cm: t.cm, dip: t.dip, col: t.col, bed: t.bed, massive: t.massive, gc, ux: gc > 1e-6 ? gx / gc : 0, uz: gc > 1e-6 ? gz / gc : 0 };
     this.colsR.set(key, c);
     return c;
   }
@@ -237,15 +266,23 @@ export class VolumeField {
     return (a * (1 - fx) + b * fx) * (1 - fz) + (c * (1 - fx) + d * fx) * fz;
   }
 
-  // bedding: +1 a hard bed, -1 a soft one, at radial height r (m)
-  strata(r, dip) {
-    const z = (r + dip) / 2.7, L = Math.floor(z), f = z - L;
+  // bedding at radial height r (m) in column c (colAt's): +1 a hard bed standing out of a face, -1 a soft
+  // one cut back. The real beds where the rock has them (a lava flow's core out, its broken top in; a
+  // sandstone out of its shales), a fine lamination over them; a granite none (its faces its joints'); with
+  // no world sim, the lamination alone
+  strata(r, c) {
+    const z = (r + c.dip) / 2.7, L = Math.floor(z), f = z - L;
     const h0 = hashInts(L + 1000000, this.bedSeed) / 4294967296, h1 = hashInts(L + 1000001, this.bedSeed) / 4294967296;
-    return 2 * (h0 + (h1 - h0) * smooth(0.82, 1, f)) - 1;
+    const lam = 2 * (h0 + (h1 - h0) * smooth(0.82, 1, f)) - 1;
+    if (c.col) return 0.75 * Math.max(-1, Math.min(1, (c.col.at(r + c.bed) - 0.5) * 2.5)) + 0.25 * lam;
+    return c.massive ? 0 : lam;
   }
 
-  // the bed's shade (for the colour banding on rock faces)
-  bedShade(r, dip) { return hashInts(Math.floor((r + dip) / 2.7) + 2000000, this.bedSeed) / 4294967296; }
+  // the bed's shade (for the colour banding on rock faces): each real bed its own, else the lamination's
+  bedShade(r, c) {
+    if (c.col) { const z = r + c.bed; return hashInts(bedIndex(c.col, z) + 3000000, this.bedSeed) / 4294967296; }
+    return hashInts(Math.floor((r + c.dip) / 2.7) + 2000000, this.bedSeed) / 4294967296;
+  }
 
   // density at lattice point (i, j, k) of cell size s (m): positive in rock. Coarser cells
   // leave out what they can't hold (the finest rubble at 2 m, the rest and the beds' ledges
@@ -267,7 +304,7 @@ export class VolumeField {
       // how far this height's face stands out (m): hard beds out, soft in, knobbly, the notch
       const fine = s < 2 ? 0.5 * this.nRub.noise(px / 2.3 + 7.1, py / 2.3, pz / 2.3) : 0;
       const coarse = s < 4 ? this.nRub.noise(px / 4.7, py / 4.7, pz / 4.7) : 0;
-      let out = (s < 4 ? 1.5 : 0.75) * this.strata(r, c.dip) + 0.8 * (coarse + fine);
+      let out = (s < 4 ? 1.5 : 0.75) * this.strata(r, c) + 0.8 * (coarse + fine);
       if (this.hasSea) out -= 3 * dm.exp(-((r - 0.8) / 1.3) * ((r - 0.8) / 1.3));
       out *= c.wc;
       // ...by reading the terraced surface that far up the slope (into the cliff)
@@ -484,7 +521,7 @@ export function buildVolumeChunk(field, ci, cj, ck, level = 0) {
     // rock faces banded by their beds
     const colm = field.colAt(Math.round(i0 * S + lx), Math.round(k0 * S + lz), S <= 2);
     if (mm[2] > 0.15 && colm.wc > 0.05) {
-      const b = field.bedShade(r, colm.dip), k = 1 + (0.86 + 0.28 * b - 1) * Math.min(1, mm[2] * 1.5);
+      const b = field.bedShade(r, colm), k = 1 + (0.86 + 0.28 * b - 1) * Math.min(1, mm[2] * 1.5);
       cc[0] *= k * (1 + 0.05 * (b - 0.5)); cc[1] *= k; cc[2] *= k * (1 - 0.05 * (b - 0.5));
     }
     // (talus: the face's own rock fallen and broken, scree: its colour (the ground shaded as rock), its

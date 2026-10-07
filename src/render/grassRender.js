@@ -14,7 +14,7 @@
 // edge of its reach.
 import * as THREE from 'three';
 import { dirFromFaceUV, faceUVFromDir } from '../gen/cubesphere.js';
-import { S_LEN, S_H, S_TEMP, S_SAND, S_ICE, S_WDEPTH, S_RIVR, S_WLVL, S_POOL } from '../gen/terrain.js';
+import { S_LEN, S_H, S_TEMP, S_SAND, S_ICE, S_WDEPTH, S_RIVR, S_WLVL, S_POOL, S_SOILK } from '../gen/terrain.js';
 import { fmix32 } from '../core/rng.js';
 import { FireField } from '../sim/fireField.js';
 import { receiveShadows, COVER_LAYER, COVER_MIN_W, SHADOW_LIGHT_UNIFORMS } from './sunShadows.js';
@@ -426,7 +426,9 @@ void main() { gl_FragColor = vec4(vGA * 2.0 * max(0.0, 1.0 - abs(vGSide)), 0.0, 
     const c = snap.Gc ? snap.Gc.sample(snap.s.cover, dc) : 0.5, open = snap.s.open ? snap.Gc.sample(snap.s.open, dc) : 0.5, forest = snap.forest(dc[0], dc[1], dc[2]);
     // (its soil (soil.js): grass roots in a few centimetres, none on bare rock; a wetland's water table at
     // the ground: its reeds and sedges tall and green the year round)
-    const soilD = snap.soil && gen.p.liquid === 'water' ? snap.soil(dc[0], dc[1], dc[2]) : null;
+    // (by the ground's shape there, as the ground has it: terrain.js _soilK)
+    let soilD = snap.soil && gen.p.liquid === 'water' ? snap.soil(dc[0], dc[1], dc[2]) : null;
+    if (soilD != null) { gen.sample(dc[0], dc[1], dc[2], 2, s2); soilD *= s2[S_SOILK] || 1; }
     const thinS = soilD == null ? 0 : 1 - Math.min(1, Math.max(0, (soilD - 0.01) / 0.07));
     const wtdH = soilD == null ? 99 : snap.wtd(dc[0], dc[1], dc[2]);
     const marsh = soilD == null ? 0 : Math.max(snap.wetland(dc[0], dc[1], dc[2]), Math.min(1, Math.max(0, (1.2 - wtdH) / 1.05))) * (1 - thinS);

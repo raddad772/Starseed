@@ -443,6 +443,17 @@ export class RefineReader {
     return Math.sqrt(gx * gx + gy * gy) / (2 * c);
   }
 
+  // the ground's curvature at the last sample (1/m: its Laplacian, + a hollow, - a nose or crest), over its
+  // cells, blended between the four round it (a cell's own read alone stepped at their edges)
+  curv() {
+    const H = this.tH, off = this.tOff, fi = this.tfi, fj = this.tfj, c = this.cell || 0;
+    if (!H || !(c > 0)) return 0;
+    const i = Math.floor(fi), j = Math.floor(fj), fx = fi - i, fy = fj - j;
+    if (i < 1 || j < 1 || i >= K - 2 || j >= K - 2) return 0;
+    const L = (o) => H[o + 1] + H[o - 1] + H[o + K] + H[o - K] - 4 * H[o], o = off + j * K + i;
+    return ((L(o) * (1 - fx) + L(o + 1) * fx) * (1 - fy) + (L(o + K) * (1 - fx) + L(o + K + 1) * fx) * fy) / (c * c);
+  }
+
   // the water gathered at the last sample (0..1: its cells' log drainage, ln A / ln 1e11, between them):
   // 0 where there's no tile's flow there
   flowAt() {

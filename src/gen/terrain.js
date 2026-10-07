@@ -66,7 +66,8 @@ export const S_RIVR = 26;    // 1 where the water is a world-sim river's channel
 export const S_RDEP = 27;    // a river's channel depth where its water is (m, drawn: its stage through the year, universe.js)
 export const S_POOL = 28;    // a wetland's pool here: 0..1 (its water's depth over the ground against the grain's spread; 0 none)
 export const S_BEDS = 29;    // how far the beds' steps hold the ground here (_beds): on a hard bed's tread or face 0..1
-export const S_LEN = 30;
+export const S_SOILK = 30;   // the soil here against the world sim's for the place (_soilK: hollows deeper, crests and steeps thinner)
+export const S_LEN = 31;
 // (each rock's cohesion as a mass, Pa: how tall a sheer face of it stands: canyon walls)
 const FREEZE_MIX = { methane: 20, ethane: 20 };   // (K: a mixture's freezing point under its main liquid's)
 const ORGANIC_SAND = [0.075, 0.055, 0.035];   // (linear: tholin sand, dark brown)
@@ -103,6 +104,9 @@ const BED_GULLY = 35, BED_APRON = 0.4, BED_SCREE = 0.65, BED_APRON_UP = 14;
 const BED_FLAT = 0.06;
 // (and a river's banks cut into one: how steeply they stand, rise over run)
 const BED_WALL = 3;
+// the soil's depth against the ground's curvature (_soilK: m, the exponent's scale; a hollow's 0.02 /m
+// doubles it. At 60 a quarter of a lava plateau's ground stood at either clamp)
+const SOIL_CURV = 35;
 
 function smin(a, b, k) { const h = dm.clamp(0.5 + 0.5 * (b - a) / k, 0, 1); return b + (a - b) * h - k * h * (1 - h); }
 function smax(a, b, k) { return -smin(-a, -b, k); }
@@ -729,12 +733,15 @@ export class TerrainGenerator {
       }
       h += sum * amp * (h < 0 ? 0.4 : 1) * calm;
     }
+    // the soil here by the ground's shape (_soilK)
+    const gFin = finRd ? finRd.slope() : 0;
+    out[S_SOILK] = this._soilK(finRd ? finRd.curv() : 0, gFin);
     // the beds' steps: treads and faces where hard beds cap soft ones (_beds), by the levels' ground (its
     // hills below them ride on the treads: read with them every knoll crossing a bed's base stood as a
     // ring of cliff)
-    this._hardHere = 0.5;
+    this._hardHere = 0.5; this._soilHere = out[S_SOILK];
     let bedRaise = 0;
-    if (S.rockAtWarped) { bedRaise = this._beds(h0, x, y, z, minWavelength, finRd ? finRd.slope() : 0, finRd ? finRd.flowAt() : 0); h += bedRaise; out[S_BEDS] = this._bedK; }
+    if (S.rockAtWarped) { bedRaise = this._beds(h0, x, y, z, minWavelength, gFin, finRd ? finRd.flowAt() : 0); h += bedRaise; out[S_BEDS] = this._bedK; }
     const rough = dm.clamp(0.3 + 0.9 * mMask, 0.1, 1.4) * (p.roughness ?? 1);
     out[S_ROUGH] = rough;
     let grainA = 0, grainS = 0;
@@ -2333,7 +2340,7 @@ export class TerrainGenerator {
     // (a water world's soil, weathered by its rain; a dry world's ground its regolith and dust, as before. Thin
     // where the ground wears faster than it's made, soil.js's floor of 5 cm: mostly deserts (their rock
     // plateaus and stony ground showing), the steep and the high)
-    const soilD = S.soil && p.liquid === 'water' ? S.soil(x, y, z) : null, thinSoil = soilD == null ? 0 : 1 - dm.smoothstep(0.03, 0.25, soilD);
+    const soilD = S.soil && p.liquid === 'water' ? S.soil(x, y, z) * (s[S_SOILK] || 1) : null, thinSoil = soilD == null ? 0 : 1 - dm.smoothstep(0.03, 0.25, soilD);
     // (a wetland: the water table at the ground on the flat (soil.js: a fen, a marsh, a bog), or under a foot
     // of it: its soil dark and soaked, its plants lush, not straw, whatever the month)
     const wtd = soilD == null ? null : S.wtd(x, y, z);
@@ -2536,6 +2543,16 @@ export class TerrainGenerator {
     return (this._lsand = [0, 1, 2].map((k) => b[k] + (d[k] - b[k]) * 0.33));
   }
 
+  // The soil at walking scale against the world sim's for the place (its soil.js: a place's mean): on a
+  // nose or a crest the soil creeps off as fast as the rock weathers into it, thin; in a hollow it gathers,
+  // deep (colluvium), a steady state where its production falls off with its depth (Heimsath et al. 1997:
+  // h = h* ln(P0 / E), E the convexity's lowering), so its depth goes as the log of the convexity: here a
+  // factor exp(SOIL_CURV x curvature); and on slopes past ~35 degrees stripped by the slides. curv: the
+  // ground's Laplacian (1/m) over the finest level's cells; g its slope (m/m)
+  _soilK(curv, g) {
+    return dm.clamp(dm.exp(SOIL_CURV * curv), 0.3, 3) * (1 - 0.8 * dm.smoothstep(0.6, 1.0, g));
+  }
+
   // The beds' steps (trap and caprock country). Where a hard bed lies on markedly softer rock (a lava
   // flow's core on the broken top of the one below; sandstone or limestone on shale) the soft rock wears
   // back under it and the hard one breaks off in blocks, its face standing: the land on it holds at its
@@ -2574,7 +2591,7 @@ export class TerrainGenerator {
     const o = bedAt(this, uv.face, uv.u, uv.v, uv.u * Mu, uv.v * Mu, BED_JOINT, this._bo || (this._bo = { bed: 0, weak: 0 }));
     // (the face's width across: a couple of metres, wider where the sampling can't hold that, and under
     // deep soil; as a rise in the column's metres, by the land's slope there)
-    const soil = S.soil && this.p.liquid === 'water' ? S.soil(x, y, z) : null;
+    const soil = S.soil && this.p.liquid === 'water' ? S.soil(x, y, z) * (this._soilHere ?? 1) : null;
     // (and on near-level ground wider still: the bed's base there is no line but a plain, and read at its
     // slope a hair either side of it decided cap or no cap, the bed cut along the joints into fins)
     const wr = Math.max(BED_RISER, 0.75 * minW) * (1 + 5 * (soil == null ? 0 : dm.smoothstep(0.6, 2.5, soil))), gs = Math.max(g, BED_FLAT);

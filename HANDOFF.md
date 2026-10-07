@@ -136,8 +136,18 @@ Dave's queue, in the order he raised it (keep this list current):
    - the near volume's noise terraces off where the beds make steps (S_BEDS); its wet band 1.2 m.
    Seen: the 3.06N fall now ~8 m at the head of a ~150 m gorge, the plateau stepped, the old vantage a
    meadow with the river's trench; sandstone mountains (31.5S 7.5W) stepped benches under snow; a
-   chalk scarp (43.5S 27W) a low notched band. Cost ~2 us a sample (16 -> 18). Open: the gorge's walls
-   smooth close up (no beds in their faces), a spur's top at a tight bend still comes to a point.
+   chalk scarp (43.5S 27W) a low notched band. Cost ~2 us a sample (16 -> 18). Open: a spur's top at a
+   tight bend still comes to a point.
+   Then: the near volume's faces from the real beds (volume.js strata: the column's hardness at the
+   face's height, a lava flow's core out and its broken top in, a fine lamination over it; granite none;
+   each bed its own shade), its rock read as the land's steps read it (rockAtWarped: the pyramid's
+   rockAt gave the flows' soft tops, 'regolith', bedless); scree (talAt) only where the ground runs on
+   gently downhill for 4 m (a foot, not the face: Dave, "it's gotta happen at the base too or it looks
+   like frosting sticking to it") and not only off the water's 1.2 m band, its channel's 0.3 m; the soil
+   by the ground's shape (terrain.js _soilK, S_SOILK: exp(35 x the finest cells' Laplacian), thin past
+   ~35 degrees), read by the ground's shading, the beds' faces and the grass. NB the free camera has no
+   near volume: views of faces, scree and talus need the player placed there (placeOnSurface).
+   Open: the scree's gravel shades much darker than the face it fell from (a stain).
 14. The anti-sun twilight's diagonal edge (item 12's "seen, not looked at"): DONE (cb90627). It was the
    clouds' hand-over front: each place turns its clouds over to the next generation at its own time, the
    phase a near-linear function of place, so the band where two generations meet ran ruler-straight (~6.5
