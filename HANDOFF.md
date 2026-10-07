@@ -152,9 +152,13 @@ Dave's queue, in the order he raised it (keep this list current):
    - Seen, open: from low down the far cloud deck shows vertical "drips" (scratchpad haze90b,
      vol_fullres). Not the half-res composite (still there at full res), not the base's ramp nor the
      coverage edges as walls (both tried, no change). They span ~3.5 deg at ~30 km, the deck's
-     2 km depth, ~300 m wide: likely the march undersampling a ray grazing the deck (40 steps over tens of km),
-     its few samples' horizontal places shared by the rays above and below. Next: adaptive steps
-     through the deck slab (more where a ray's inside it), or a slab-traversal estimate at grazing angles.
+     2 km depth, ~300 m wide: not the march's sampling either (96 steps the same as 40). They're the density
+     model's: deckDensity takes d = (base x prof - (1 - cov)) / cov, so where the coverage is ~1 (its
+     threshold is steep: mostly 0 or 1) a patch however small fills the deck's whole depth (2 km on SOL
+     Earth): small fragments stand as 300 m wide, 2 km tall towers, seen from afar as drips. Real cumulus
+     are about as tall as wide, stratocumulus decks a few hundred metres thick. Fix: a cloud's height by
+     its horizontal size (the coverage's extent round it, or the deck's type: thin for stratiform), and
+     the coverage remapping the noise rather than setting its floor.
    - The ground's game-scale haze from 90 m now reads as the sky does (haze90): item 12's note closed.
 
 ## NOW: fire through the recent centuries (session 39d69fa8, 2026-10-06), SIM 68
