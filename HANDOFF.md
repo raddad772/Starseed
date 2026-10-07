@@ -199,8 +199,11 @@ Dave's queue, in the order he raised it (keep this list current):
      smeared in streaks converging in perspective, the coasts in regular saw teeth. In the vertex colours
      themselves (vCol alone shows them; the normals are smooth); not the air's terrain shadows nor the
      ground's (each switched off, no change). A line of samples at 400 m and 50 m there is smooth: not
-     plain aliasing on that line. Next: the far chunks' own vertices (their sample wavelength, skirts,
-     the coast's per-vertex water/land switch) read back from a mesh in view.
+     plain aliasing on that line. Not the LOD morph either (vCol without mcol the same; air_morph_cmp on
+     Rasora: most of the view fully morphed to its parent level). The teeth are the mesh's spacing: from
+     25 km up its triangles ~1 km, ~20 px; the shore (vShore's zero, interpolated) a straight line in each.
+     Fix candidates: a finer split at altitude (SPLIT_K, cost), or the shore and colour per pixel from the
+     height cube far off.
 
 ## NOW: fire through the recent centuries (session 39d69fa8, 2026-10-06), SIM 68
 
