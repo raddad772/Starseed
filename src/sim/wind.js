@@ -13,6 +13,7 @@
 // ground in a strong one (world.js: the haze).
 import * as THREE from 'three';
 import { hash3f } from '../core/rng.js';
+import { beltWind } from '../gen/worldsim/aerosols.js';
 
 const smooth = (t) => t * t * (3 - 2 * t);
 // smooth noise in two numbers (a place's lattice and time), 0..1
@@ -22,12 +23,13 @@ function noise2(x, y, seed) {
   return (h(0, 0) * (1 - fx) + h(1, 0) * fx) * (1 - fy) + (h(0, 1) * (1 - fx) + h(1, 1) * fx) * fy;
 }
 
-// the belt's mean wind (m/s) of a world's data: its air's density and the sunlight on it
+// the belt's mean wind (m/s) of a world's data: the power its air carries off the sunlit ground into its
+// winds, against its density (gen/worldsim/aerosols.js beltWind: a thin air carries little, a Mars's ~13
+// m/s, not the 20 of its density alone; Titan's ~1 under its haze), none without air
 export function windBase(d, sunE = 1) {
   const a = d.atmosphere, P = a ? a.pressure || 0 : 0;
   if (!(P > 0)) return 0;
-  const rho = P * 1e5 * ((a.mu || 29) / 1000) / (8.314 * Math.max(d.Tsurf || 288, 30));
-  return Math.min(20, Math.max(0.3, 7 * Math.pow(Math.max(sunE, 1e-3), 0.3) * Math.pow(1.2 / Math.max(rho, 0.01), 0.33)));
+  return beltWind(P, a.mu || 29, d.Tsurf || 288, a.tau || 0, Math.max(sunE, 1e-3) * (a.render && a.render.sunSurf != null ? a.render.sunSurf : 1));
 }
 
 const _e = new THREE.Vector3(), _n = new THREE.Vector3(), _s = new THREE.Vector3();

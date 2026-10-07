@@ -13,6 +13,7 @@ import { drawPigments, albedoRGB, surfacePhotonPeakNm, photonPeakNm } from './pi
 import { biosphereOf } from './life/biosphere.js';
 import { SUBSTANCES } from './worldsim/liquids.js';
 import { evolveWorld } from './worldsim/evolve.js';
+import { aerosolsOf } from './worldsim/aerosols.js';
 import { hsv, mixRGB, scaleRGB, hexToLinear, jitterColor, blackbodyRGB } from './color.js';
 
 const LOG10 = (x) => dm.log10(x);
@@ -98,7 +99,7 @@ const MINERALS = {
   slate: { rock: '#4b5058', rock2: '#646a72', regolith: '#6d6a66', sand: '#8f877c' },
 };
 
-function pickMinerals(rng, kind, wetPast = false) {
+function pickMinerals(rng, kind, wetPast = false, knownKey = null) {
   let key;
   if (kind === 'organic') key = 'organic';
   else if (kind === 'icy') key = rng.weighted([[5, 'ice'], [2, 'tholin'], [1, 'slate']]);
@@ -108,6 +109,8 @@ function pickMinerals(rng, kind, wetPast = false) {
   else if (kind === 'ferric') key = rng.weighted(wetPast ? [[5, 'ferric'], [2, 'ochre'], [0, 'basalt']] : [[5, 'ferric'], [2, 'ochre'], [1, 'basalt']]);
   else if (kind === 'airless') key = rng.weighted([[4, 'anorth'], [3, 'basalt'], [2, 'carbon'], [1, 'slate'], [1, 'ochre']]);
   else key = rng.weighted([[3, 'granite'], [3, 'basalt'], [2, 'ochre'], [2, 'slate'], [1, 'olivine'], [1, 'ferric']]);
+  // (a known world's (the Solar System's: Mars' iron-oxide red): an input, the same draws made either way)
+  if (knownKey && MINERALS[knownKey]) key = knownKey;
   const m = MINERALS[key];
   const out = { family: key };
   for (const k in m) out[k] = jitterColor(rng, hexToLinear(m[k]), 0.12);
@@ -225,21 +228,21 @@ function glowRGB(T) {
 }
 
 // The sky's optics from what's in the air (WORLDSIM.md 19: one way for every world, no
-// world-type buckets): Rayleigh scattering from the gas mix; ozone from oxygen; and the
-// aerosols the world's state makes, summed, each with its own scattering, absorption
-// (colour), height and forward-scattering:
-//   dust      mineral dust off dry ground, more in thin air (Mars' butterscotch), its
-//             colour the world's own regolith
-//   sulfate   sulfuric-acid droplets from SO2 and water vapour (Venus' yellow decks), and
-//             from an eruption under way
-//   organic   tholin haze where methane outweighs ~a fifth of the CO2 (Titan's orange)
-//   salt      sea-salt and water haze over seas (the faint white of Earth's horizon)
-//   soot      an impact winter's black (exceptional.js)
+// world-type buckets): Rayleigh scattering from the gas mix; ozone from oxygen; and the aerosols
+// simulated from the world's state (worldsim/aerosols.js): each kind from its source to its sink, its
+// particles' sizes from that and their optics from what they're made of (Mie theory, fractal aggregates):
+//   tholin haze  the star's UV breaking methane, the specks clumping as they fall (Titan's orange)
+//   dust         wind and dust devils off dry ground, the ground's own colour (Mars' butterscotch, and
+//                its sunset's blue)
+//   sea salt     whitecaps on a sea of water
+//   sulfate      SO2 oxidised, a flood-basalt eruption's; and the sea's algae's DMS
+//   organic      land plants' terpenes (a forest's blue distance)
+//   soot         an impact winter's
 // a height in the air (m above the datum) as drawn: real up to the knee, squeezed by upper
 // above it (atmosphereRender); and back (a drawn height to the real one the air's density is at)
 export const atmoAlt = (z, knee, upper) => z <= knee ? z : knee + (z - knee) * upper;
 export const atmoReal = (z, knee, upper) => z <= knee || !(upper < 1) ? z : knee + (z - knee) / upper;
-function atmosphereRender(rng, b, atm, Tsurf, dustColor) {
+function atmosphereRender(rng, b, atm, Tsurf, dustColor, ctx = {}) {
   const g = b.gravity, h = b.history || {};
   const Tcol = Math.max(60, Tsurf * 0.88);
   const H = U.K_B * Tcol / (atm.mu * U.AMU * g);
@@ -249,47 +252,21 @@ function atmosphereRender(rng, b, atm, Tsurf, dustColor) {
   const P = atm.pressure, air = h.air || {};
   const seas = b.hydrosphere ? b.hydrosphere.oceanFraction : 0;
   const wet = b.hydrosphere && b.hydrosphere.liquid === 'water' ? 1 : 0;
-  const pops = [];
-  // dust: dry ground and wind lift it; thin air holds it long (Mars), thick air settles it
   const dry = wet ? Math.max(0, 0.5 - seas) * 0.3 : 1;
-  if (dry > 0.01 && !(atm.type === 'titan')) {
-    const k = dry * rng.range(0.6, 1.6) * Math.min(4, dm.sqrt(P / 0.006)) * (P > 2 ? 2 / P : 1);
-    const d = dustColor;
-    pops.push({ k, sca: [1.8e-5 * (0.6 + d[0]), 1.4e-5 * (0.6 + d[1]), 1.0e-5 * (0.6 + d[2])], abs: [2e-6, 5e-6, 1.1e-5], H: 11000 * (3.71 / g), g: 0.65 });
-  }
-  // sulfate: SO2 with water vapour (or a hothouse's acid deck), and an eruption's
-  const so2 = (air.SO2 || 0) + (air.H2S || 0) * 0.5;
-  if (so2 > 1e-7 || h.eruption || (h.runaway && P > 3)) {
-    const k = Math.min(3, (h.runaway ? dm.pow(P / 90, 0.5) : 0) + dm.sqrt(so2 / 1.5e-5) * 0.3 + (h.eruption ? 0.4 : 0));
-    pops.push({ k, sca: [2.0e-5, 1.9e-5, 1.6e-5], abs: [0.1e-6, 0.4e-6, 1.6e-6], H: 6000 * (8.87 / g), g: 0.72 });
-  }
-  // organic haze: methane photolysis products, when methane rivals the CO2
-  const ch4 = air.CH4 || 0, co2 = air.CO2 || 0;
-  if ((ch4 > 1e-4 && ch4 > 0.2 * co2) || atm.type === 'titan') {
-    const k = Math.min(3, dm.pow(Math.max(P, 0.05) / 1.5, 0.8) * (atm.type === 'titan' ? 1 : dm.clamp(ch4 / 1e-3, 0.2, 1)));
-    pops.push({ k, sca: [3.2e-5, 2.2e-5, 1.0e-5], abs: [0.6e-5, 1.6e-5, 3.5e-5], H: 40000 * (1.35 / g), g: 0.7 });
-  }
-  // salt and water haze: over seas, in moist air
-  if (wet) {
-    const k = dm.clamp(P, 0.3, 3) * rng.range(0.6, 1.6) * (0.4 + seas);
-    pops.push({ k, sca: [3.996e-6, 3.996e-6, 3.996e-6], abs: [0.444e-6, 0.444e-6, 0.444e-6], H: 1200 * (9.81 / g), g: 0.78 });
-  }
-  // soot: an impact winter
-  if (h.fresh && h.fresh.kind === 'impact-winter' && h.fresh.sootTau > 0.05) {
-    const k = Math.min(30, h.fresh.sootTau) / 3;
-    pops.push({ k, sca: [0.5e-5, 0.5e-5, 0.5e-5], abs: [3e-5, 3e-5, 3e-5], H: 15000 * (9.81 / g), g: 0.6 });
-  }
-  // a faint high haze on any air with nothing else (CO2 ice crystals, a little dust)
-  if (!pops.length) pops.push({ k: rng.range(0.4, 1.2) * dm.pow(P, 0.4), sca: [4e-6, 4e-6, 4e-6], abs: [0.3e-6, 0.3e-6, 0.3e-6], H: 3000 * (9.81 / g), g: 0.76 });
-  // summed: extinction-weighted height and asymmetry
-  const mie = [0, 0, 0], mieAbs = [0, 0, 0];
-  let wsum = 0, Hm = 0, gm = 0;
-  for (const q of pops) {
-    for (let i = 0; i < 3; i++) { mie[i] += q.sca[i] * q.k; mieAbs[i] += q.abs[i] * q.k; }
-    const w = q.k * (q.sca[1] + q.abs[1]);
-    wsum += w; Hm += w * q.H; gm += w * q.g;
-  }
-  const mieH = wsum > 0 ? Hm / wsum : 1200, mieG = wsum > 0 ? gm / wsum : 0.78;
+  // the aerosols, simulated (the star's UV now relative to the Sun's, as evolve.js has it)
+  const star = ctx.star || {}, age = h.age || 4.6, act = star.activeGyr || 0.1;
+  const xuv = dm.pow(star.xuv || 1, 0.6) * (age < act ? 1.6 : dm.pow(age / act, -1.2) * 1.6 + 0.3) / 0.32;
+  const rot = b.rotation || {};
+  const aer = aerosolsOf({
+    P, T: Tsurf, mu: atm.mu || 29, g, comp: atm.comp || {}, tauIR: atm.tau || 0, sunE: ctx.S ?? b.insolation ?? 1, uv: xuv,
+    albedo: atm.albedo ?? b.albedo ?? 0.3, seaFrac: seas, liquid: b.hydrosphere ? b.hydrosphere.liquid : null,
+    regolithRGB: dustColor, regolithN: 1.55, fines: 15, so2: (air.SO2 || 0) + (air.H2S || 0) * 0.5, eruption: !!h.eruption,
+    Rm: b.radiusM || b.R, sootTau: h.fresh && h.fresh.kind === 'impact-winter' ? h.fresh.sootTau || 0 : 0,
+    acidDeck: !!(h.runaway && P > 3), deckT: h.runaway && P > 3 ? 0.025 : 1,
+    day: (rot.periodRealH || (ctx.dayH || 24)) * 3600, lifeStage: h.lifeStage, floraStage: h.floraStage,
+  });
+  const { mieH, mieG, mieF, mieGL } = aer.render;
+  let { mie, mieAbs } = aer.render;
   const ozone = air.O2 || atm.comp.O2 ? [0.650e-6, 1.881e-6, 0.085e-6].map((x) => x * (atm.comp.O2 || 0) / 0.21) : [0, 0, 0];
   // Atmosphere extends until density ~ e^-12 of the surface value
   const scaleMax = Math.max(H, mieH * 0.6);
@@ -301,7 +278,7 @@ function atmosphereRender(rng, b, atm, Tsurf, dustColor) {
   const hazeK = P < 0.002 ? 0 : 3e-4 * dm.sqrt(Math.min(P, 3)) * (0.5 + 0.7 * seas + 0.4 * dry);
   // (its colour by wavelength, an Angstrom exponent: a land with plants' fine haze (organics, sulphate)
   // ~1.3, taking the blue; a sea's salt and a desert's dust coarse, nearly grey)
-  const angstrom = dm.clamp(1.3 - 0.9 * dry - 0.4 * seas * (1 - dry), 0.2, 1.6);
+  const angstrom = dm.clamp(aer.angstrom, 0.2, 1.6);
   const haze = [hazeK, 700 * dm.sqrt(9.81 / g), 0.1, angstrom];
   // the air above the knee squeezed (a solid world's), by the square root of the game's length
   // scale (~0.32): below it, the air as it is (skies, haze, clouds and summits in real air), above
@@ -313,12 +290,20 @@ function atmosphereRender(rng, b, atm, Tsurf, dustColor) {
   const upK = typeof location !== 'undefined' && /[?&]airup=([\d.]+)/.exec(location.search);
   const knee = b.solid && !sqOff ? Math.max(12000, 1.4 * H) : Infinity, upper = b.solid && !sqOff ? (upK ? +upK[1] : Math.sqrt(U.LEN_SCALE)) : 1;
   const sq = (z) => atmoAlt(z, knee, upper);
+  // (the air's drawn shell holds the aerosols' whole column: a deep haze's scale height can outrun its top,
+  // Titan's ~126 km to ~104, and the column the sim made kept)
+  const realTop = Math.min(12.5 * scaleMax, 0.35 * b.R + 5 * H), keepCol = 1 / Math.max(0.05, 1 - dm.exp(-realTop / mieH));
+  mie = mie.map((x) => x * keepCol); mieAbs = mieAbs.map((x) => x * keepCol);
   const ozC = 25000 * (H / 8500), ozW = 15000 * (H / 8500);
   return {
-    rayleigh, rayleighH: H, mie, mieAbs, mieH, mieG, haze, knee, upper,
+    rayleigh, rayleighH: H, mie, mieAbs, mieH, mieG, mieF, mieGL, haze, knee, upper,
     ozone, ozoneCenter: sq(ozC), ozoneWidth: sq(ozC + ozW) - sq(ozC), absorptionExp: false,
-    height: sq(Math.min(12.5 * scaleMax, 0.35 * b.R + 5 * H)),
-    aerosols: pops.length,
+    height: sq(realTop),
+    aerosols: aer.pops.length,
+    // (what's in the air, and the weather's own dust and spray per unit optical depth: render/atmosphere.js
+    // setDust; the share of sunlight reaching the ground (an acid deck, a haze), the winds' power)
+    aer: aer.pops.map((q) => ({ name: q.name, tau: q.tau.map((x) => +x.toPrecision(3)), ssa: q.ssa.map((x) => +x.toFixed(3)), H: Math.round(q.H) })),
+    dustUnit: aer.dust, saltUnit: aer.salt, sunSurf: aer.tSurf, wind: aer.wind, aerDiag: aer.diag,
   };
 }
 
@@ -654,9 +639,9 @@ export function buildBody(rng, proto, star, host) {
     atm && atm.type === 'titan' ? 'organic' :
     b.comp.water > ICY_WATER && Tsurf < 200 ? 'icy' :
       (tidalHeating > 0.6 && b.comp.water < 0.15 ? 'volcanic' :
-        (atm && atm.type === 'mars' ? 'ferric' : (!atm ? 'airless' : 'any'))), hist && hist.oceans0 > 0.01);
+        (atm && atm.type === 'mars' ? 'ferric' : (!atm ? 'airless' : 'any'))), hist && hist.oceans0 > 0.01, proto.known && proto.known.minerals);
   if (atm) {
-    atm.render = atmosphereRender(rng.fork('optics'), b, atm, Tsurf, minerals.regolith);
+    atm.render = atmosphereRender(rng.fork('optics'), b, atm, Tsurf, minerals.regolith, { star, S });
     atm.clouds = cloudLayer(rng.fork('clouds'), atm, hydro, Tsurf, atm.render.rayleighH);
     atm.render.glow = airGlow(b, star, hist, atm, S);
   }

@@ -351,7 +351,7 @@ const SOL = {
     { name: 'Mercury', aAU: 0.387, massEarth: 0.0553, iron: 0.68, water: 1e-5, known: { rotH: 1407.6, obliquityDeg: 0.03 } },
     { name: 'Venus', aAU: 0.723, massEarth: 0.815, iron: 0.31, water: 2e-4, known: { rotH: 5832.5, obliquityDeg: 2.6, retro: true } },
     { name: 'Earth', aAU: 1.0, massEarth: 1.0, iron: 0.32, water: 2.6e-4, known: { rotH: 23.93, obliquityDeg: 23.44 } },
-    { name: 'Mars', aAU: 1.524, massEarth: 0.107, iron: 0.24, water: 1.2e-4, known: { rotH: 24.62, obliquityDeg: 25.19 } },
+    { name: 'Mars', aAU: 1.524, massEarth: 0.107, iron: 0.24, water: 1.2e-4, known: { rotH: 24.62, obliquityDeg: 25.19, minerals: 'ferric' } },
     { name: 'Jupiter', aAU: 5.2, massEarth: 317.8, envelope: 0.9 },
     { name: 'Saturn', aAU: 9.58, massEarth: 95.2, envelope: 0.8 },
     { name: 'Uranus', aAU: 19.2, massEarth: 14.5, envelope: 0.15 },

@@ -454,6 +454,34 @@ The order agreed: work down this list; keep the statuses current.
   300 seeds, 318 of 1332 aired worlds' peaks moved toward the red; one of seven worlds with land
   plants changed.
 - **Aurora and airglow:** bodies.js airGlow, with the shader shared by both sky passes (see step 7).
+- **Aerosols simulated (2026-10-06, Dave: "we want this to arise from proper simulation. don't just do
+  band-aids"):** `worldsim/aerosols.js` replaces the hand-set populations. Each kind runs from source to
+  sink, its sizes come from that, and its optics from its material:
+  - **Tholin haze:** the star's FUV (4e16 photons/m^2/s at 1 AU x activity) breaks methane where its
+    optical depth reaches 1; 8% of the carbon goes to haze, less with CO2 and O2. Specks of 0.05 um
+    coagulate (Brownian, continuum with slip and free-molecular) into fractal aggregates as they fall
+    (Stokes with Cunningham slip, eddies); optics by RDG-FA.
+  - **Dust:** saltation (Shao-Lu threshold, White flux) over land winds with a drag partition, plus
+    dust devils (ALPHA_DD 1e-9 kg/J x engine efficiency x sensible heat). 30% of dry land is erodible.
+    Kok's emitted sizes, each kept aloft by settling and rain-out. The index comes from the regolith
+    colour by a Hapke inversion with 5 um grains (checked: Mars' measured k back to 3.5-6.6 um).
+  - **Sea salt:** Gong 2003 whitecaps.
+  - **Sulfate:** SO2 oxidised, plus a flood-basalt eruption's.
+  - **Life's haze:** DMS sulfate from algae; secondary organics from land plants.
+  - **Soot:** an impact winter's.
+  - **Optics:** Mie (BHMIE) over sizes at 680/550/440 nm. The phase per channel is fitted as
+    (1-f) CS(g) + f HG(G) (uMieG/uMieF/uMieGL), and the weather's dust gets its own optics after a
+    day aloft.
+  - **Wind:** `beltWind`, from the power the air carries off the ground. Mars gets ~13 m/s rather
+    than 20. sim/wind.js uses it.
+  - **Sol (seed 'SOL'):** Earth 0.17 at 550 (salt 0.10, dust 0.05); Mars 0.51 (ssa 0.97/0.90/0.77,
+    `known.minerals: 'ferric'`); Titan 2.0/3.5/6.3 with 2690-speck aggregates and 2e-13 kg/m^2/s
+    production (Huygens: ~3000 specks, 3-5).
+  - **Multiple scattering:** now a two-stream adding solve per LUT texel on the true-size column
+    (MS_FRAG), plus the true-size sky irradiance. Hillaire's estimate lost a deep haze's colour.
+  - **Still:** the weather's dust and spray (sim/dust.js) add to the base, not deviate from it;
+    Venus's acid deck's own transmission (0.025) is fixed; the vertical profile is one exponential
+    per world.
 
 Still: city lights, a full multi-band surface spectrum for the sun's colour in the render (it uses
 its own LUTs from the same coefficients) |

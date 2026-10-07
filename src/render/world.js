@@ -14,7 +14,8 @@ import { CloudShadow, noCloudShadow } from './cloudShadow.js';
 import { loadMaterials, windRipple } from './materials.js';
 import { HeightCube } from './terrainShadow.js';
 import { SUN_SHADOW_UNIFORMS, SKY_SHADOW_UNIFORMS } from './sunShadows.js';
-import { moonLight } from './moonlight.js';
+import { moonLight, NIGHT_GAIN } from './moonlight.js';
+const _nsA = [0, 0, 0], _nsB = [0, 0, 0];
 import { Liquid } from './liquid.js';
 import { fallPhysics, FallFx } from './falls.js';
 import { RIBBON_PASS } from './terrainMaterial.js';
@@ -289,6 +290,16 @@ export class WorldRenderer {
       sh.uMoonDir.value.copy(ml.dir);
       if (this._lens && this._lens.item === it) lensDrawn(sh.uMoonDir.value, this._lens);
       sh.uMoonE.value.copy(this.starColor).multiplyScalar(near && sunUp > 0.1 ? 0 : ml.E);
+      // (the share of the light here that's the moon's, drawn NIGHT_GAIN brighter: the eye's night vision
+      // goes by the light as it is (engine.js uNightShift). A moonlit night's ~0.2 lux is the rods'; Titan's
+      // noon, a thousandth of Earth's daylight under its haze (~100 lux), the cones', not the film-blue night
+      // it had been)
+      if (near) {
+        const lum = (c) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+        const at = (mu) => it.atmo ? lum(it.atmo.skyIrradiance(dist, mu, _nsA)) + lum(it.atmo.transmittance(dist, mu, _nsB)) * Math.max(mu, 0) : Math.max(mu, 0);
+        const muM = camUp.dot(ml.dir), sunL = E * at(sunUp), moonL = ml.E > 0 && muM > 0 ? ml.E * at(muM) : 0;
+        this.engine.nightShift = Math.log2(NIGHT_GAIN) * moonL / Math.max(sunL + moonL, 1e-30);
+      }
       if (ss && b.solid && it.terrain && near && dist - b.R < ssBest) {
         // (the shadows the key light's: the sun's, or by night the moon's when it's up)
         const moonKey = ml.E > 0 && sunUp < -0.05 && camUp.dot(ml.dir) > 0.02;

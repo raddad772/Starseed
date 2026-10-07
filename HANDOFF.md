@@ -91,6 +91,26 @@ Dave's queue, in the order he raised it (keep this list current):
    rounded rim, talus at its foot, ledges, a gorge cut back below the fall, ragged plan); the fall's sheet
    (a flat ribbon with a moire, grass to the plunge pool, the river below hidden); marshes, mud and ponds
    with grass growing up through them; frozen falls with icicles in winter.
+14. The anti-sun twilight's diagonal edge (item 12's "seen, not looked at"): DONE (cb90627). It was the
+   clouds' hand-over front: each place turns its clouds over to the next generation at its own time, the
+   phase a near-linear function of place, so the band where two generations meet ran ruler-straight (~6.5
+   km on a drawn world). Its place is now jittered by noise over the globe, so it follows the clouds'
+   shapes. The climate's cloud map is read through a cubic B-spline, once per point. Scratchpad
+   diag_front_cmp.
+15. Mars and Titan skies (Dave: "let's check a mars and titan sunrise and set"; then "we want this to
+   arise from proper simulation. don't just do band-aids"): the aerosols are simulated
+   (worldsim/aerosols.js; WORLDSIM.md item 19's notes have the physics). The sky shader's aerosol phase is
+   per channel; sim/wind.js uses beltWind; Sol's Mars is `known.minerals: 'ferric'`. The
+   multiple-scattering LUT is a two-stream adding solve on the true-size column (MS_FRAG), and the sky
+   irradiance LUT marches the true-size world. Seen: Mars noon is butterscotch; its sunset has a
+   blue-white glow at the sun. Its twilight (-2 deg) goes blue over most of the frame: real physics
+   (extinction is flat to slightly red, so a grazing path's light comes out bluish) plus blue absorption
+   lower than Mars' (ssa 0.77 at 440 vs ~0.65). Titan before the two-stream solve: the stars were gone
+   at noon, but the sky was a grey-blue dome over a maroon horizon. Hillaire's estimate lost the deep
+   haze's colour; a JS mirror of the two-stream solve (scratchpad ts.mjs) gives Titan's diffuse light at
+   1 : 0.6 : 0.22 (orange), Mars' at 1 : 0.86 : 0.68 and Earth's at 1 : 1.12 : 1.38. Earth's base
+   aerosol is now 0.17 at 550 (was 0.003): check its sky and sunsets. Recipes: Mars 15N 30E, Titan 10N
+   40E (S.findTime / freecam.placeAt; scratchpad v3_*, v4_*).
 
 ## NOW: fire through the recent centuries (session 39d69fa8, 2026-10-06), SIM 68
 

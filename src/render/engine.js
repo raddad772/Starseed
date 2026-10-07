@@ -196,6 +196,7 @@ uniform float uMaxExp;
 uniform float uExposureBias;
 uniform float uBloom;
 uniform vec3 uWhiteBalance;
+uniform float uNightShift;
 uniform float uTime;
 uniform float uVignette;
 uniform vec3 uFlash;
@@ -225,9 +226,11 @@ void main() {
   c = min(c, vec3(6e4));
   c *= exposure;
   c += texture(tBloom, vUv).rgb * uBloom;
-  // (night vision: in a moonlit night's dark the eye's rods take over, colour fading and leaning blue:
-  // the Purkinje shift; by the light it's adapted to: an overcast day's ~2^-9, a full moon's ~2^-13)
-  float scot = 1.0 - smoothstep(-13.5, -11.0, texture(tAdapt, vec2(0.5)).r);
+  // (night vision: in the dark the eye's rods take over, colour fading and leaning blue: the Purkinje
+  // shift; by the light it's adapted to as it really is (uNightShift: a moonlit night's drawn 2^13
+  // brighter), mesopic between ~5 cd/m^2 (2^-14.3 here: Earth's noon ~2^-4) and ~0.005 (2^-24.3): a full
+  // moon's ~2^-26 the rods', an overcast day's or Titan's hazy noon (~2^-13.7, ~100 lux) the cones')
+  float scot = 1.0 - smoothstep(-24.3, -14.3, texture(tAdapt, vec2(0.5)).r - uNightShift);
   // (and leaning further blue than the eye does, film's night: its convention, read at once as night)
   if (scot > 0.0) { float Yl = dot(c, vec3(0.2126, 0.7152, 0.0722)); c = mix(c, Yl * vec3(0.55, 0.82, 1.55), 0.8 * scot); }
   c *= uWhiteBalance;
@@ -413,6 +416,10 @@ export class Engine {
   set exposureBias(v) { this.view.exposureBias = v; }
   get meterRef() { return this.view.meterRef; }
   set meterRef(v) { this.view.meterRef = v; }
+  // (log2 of the gain the light here is drawn with over what it is: a moonlit night's NIGHT_GAIN, by day
+  // none; the night vision goes by the light as it is)
+  get nightShift() { return this.view.nightShift || 0; }
+  set nightShift(v) { this.view.nightShift = v; }
   get meterNearCut() { return this.view.meterNearCut; }
   set meterNearCut(v) { this.view.meterNearCut = v; }
   get radialBlur() { return this.view.radialBlur; }
@@ -470,7 +477,7 @@ export class Engine {
       tColor: { value: null }, tBloom: { value: null }, tAdapt: { value: null },
       uKey: { value: 0.18 }, uMinExp: { value: 0.04 }, uMaxExp: { value: 260 }, uExposureBias: { value: 1 }, uBloom: { value: 0.9 },
       toneMappingExposure: { value: 1 }, uToneCurve: { value: 1 }, uContrast: { value: 0.22 },
-      uWhiteBalance: { value: this.whiteBalance }, uTime: { value: 0 }, uVignette: { value: 0.35 }, uFlash: { value: null }, uRadial: { value: 0 }, uEncode: { value: 1 },
+      uWhiteBalance: { value: this.whiteBalance }, uNightShift: { value: 0 }, uTime: { value: 0 }, uVignette: { value: 0.35 }, uFlash: { value: null }, uRadial: { value: 0 }, uEncode: { value: 1 },
     });
   }
 
@@ -770,6 +777,7 @@ export class Engine {
     t.tAdapt.value = adapt;
     t.uExposureBias.value = V.exposureBias;
     t.uFlash.value = V.flash;
+    t.uNightShift.value = V.nightShift || 0;
     t.uToneCurve.value = this.toneCurve === 'aces' ? 0 : 1;
     t.uBloom.value = bloomTex ? this.bloomStrength * 0.06 : 0;
     t.uTime.value = this.time;

@@ -233,7 +233,9 @@ uniform float uRayleighH;
 uniform vec3 uMie;
 uniform vec3 uMieAbs;
 uniform float uMieH;
-uniform float uMieG;
+uniform vec3 uMieG;    // the aerosols' phase per channel (aerosols.js fitPhase): the broad lobe's asymmetry,
+uniform vec3 uMieF;    // the forward lobe's share,
+uniform vec3 uMieGL;   // and its asymmetry
 uniform vec3 uAbs;
 uniform float uAbsCenter;
 uniform float uAbsWidth;
@@ -315,17 +317,19 @@ void mediumAtReal(float hr, out vec3 scatR, out vec3 scatM, out vec3 ext) {
   ext = scatR + scatM + uMieAbs * dM + uAbs * dA + dH * uHaze.z;
 }
 float phaseRayleigh(float c) { return 3.0 / (16.0 * PI_A) * (1.0 + c * c); }
-// the aerosols' phase function: Cornette-Shanks at the air's mean asymmetry, and a narrow forward lobe
-// (Henyey-Greenstein, g 0.96, 15% of it): the diffraction peak a real haze's particles have and a smooth
-// one doesn't, the solar aureole, the sky within a degree or two of the sun some ten times brighter than
-// ten degrees out; a hazy sun glows, and looks bigger for it (without it a low sun's disc sat alone in an
-// even sky, "far too small": Dave)
-float phaseMie(float c, float g) {
+// the aerosols' phase function per channel: a broad Cornette-Shanks lobe and a forward Henyey-Greenstein one,
+// each channel's shares and spreads fitted to the world's aerosols' own (gen/worldsim/aerosols.js: Mie
+// theory over their sizes, and fractal aggregates'). The forward lobe the particles' diffraction peak, the
+// solar aureole (a hazy sun glows, and looks bigger for it: Dave); where they take the blue (a red world's
+// dust) what blue they scatter they scatter into it, round the sun: a Martian sunset's blue
+float phaseCS(float c, float g) {
   float g2 = g * g;
-  float cs = 3.0 / (8.0 * PI_A) * ((1.0 - g2) * (1.0 + c * c)) / ((2.0 + g2) * pow(max(1.0 + g2 - 2.0 * g * c, 1e-4), 1.5));
-  const float ga = 0.96;
-  float lobe = (1.0 - ga * ga) / (4.0 * PI_A * pow(max(1.0 + ga * ga - 2.0 * ga * c, 1e-6), 1.5));
-  return 0.85 * cs + 0.15 * lobe;
+  return 3.0 / (8.0 * PI_A) * ((1.0 - g2) * (1.0 + c * c)) / ((2.0 + g2) * pow(max(1.0 + g2 - 2.0 * g * c, 1e-4), 1.5));
+}
+float phaseHG(float c, float g) { return (1.0 - g * g) / (4.0 * PI_A * pow(max(1.0 + g * g - 2.0 * g * c, 1e-6), 1.5)); }
+vec3 phaseMie(float c) {
+  return mix(vec3(phaseCS(c, uMieG.r), phaseCS(c, uMieG.g), phaseCS(c, uMieG.b)),
+             vec3(phaseHG(c, uMieGL.r), phaseHG(c, uMieGL.g), phaseHG(c, uMieGL.b)), uMieF);
 }
 // distance to the top of the atmosphere from radius r along direction cosine mu
 float distToTop(float r, float mu) {
@@ -396,73 +400,103 @@ vec3 sunTransmittance(float r, float mu) {
   float vis = smoothstep(cosH - 0.004, cosH + 0.004, mu);
   return transmittanceToTop(r, mu) * vis;
 }
+// (for the LUTs built on the true-size world: the sunlight at true radius rK (the true world's radius Rk),
+// its true cosine mu there: the transmittance LUT at the drawn radius it stands for, cut at the true world's
+// horizon from that height)
+vec3 sunAtTrue(float rK, float Rk, float mu) {
+  float rD = uRadius + drawnH(rK - Rk);
+  float gK = Rk + realH(uGround - uRadius), sinH = gK / max(rK, gK);
+  float cosH = -sqrt(max(0.0, 1.0 - sinH * sinH));
+  return transmittanceToTop(clamp(rD, uBottom, uTop), mu) * smoothstep(cosH - 0.004, cosH + 0.004, mu);
+}
 `;
 
-const MS_FRAG = /* glsl */`
+export const MS_FRAG = /* glsl */`
 ${LUT_COMMON}
 uniform float uGround;
 uniform vec3 uGroundAlbedo;
 ${SAMPLE_TRANS}
 varying vec2 vUv;
+// The light scattered more than once: the mean intensity of the air's diffuse light at a height, for a sun
+// at true cosine muS (the in-scatter of it, sigma_s x this, the sky's multiple scattering). A plane-parallel
+// two-stream solve of the air's column on the world's true size at real heights (64 layers, each its own
+// scattering, absorption and asymmetry by channel; the aerosols' forward peak left in the beam:
+// delta-Eddington), the sun reaching each layer as through the true world's curved air (pseudo-spherical: a
+// sun set at the ground still lighting the air above), the layers added from the ground up and the top
+// down (the adding method: exact for any depth). Hillaire's estimate (the second order over the sphere, the
+// rest its geometric series) went wrong in a deep haze: light diffusing through dozens of scatterings,
+// each taking a little more of the blue, comes out orange under Titan's; summed as if each order escaped
+// alike, its colour was lost, the sky lavender
+vec3 mieAsym() {
+  vec3 g = uMieG, g2 = g * g;
+  vec3 csm = 3.0 * g * (4.0 + g2) / (5.0 * (2.0 + g2));
+  return mix(csm, uMieGL, uMieF);
+}
+const int NL = 64;
+// layer i of NL between the ground's height hG and the air's top hT (real m, squared spacing: fine low
+// down): its diffuse reflectance R and transmittance T, and the direct beam's light it scatters up Su and
+// down Sd
+void msLayer(int i, float hG, float hT, float muS, float Rk, vec3 gM, out vec3 R, out vec3 T, out vec3 Su, out vec3 Sd) {
+  float a0 = float(i) / float(NL), a1 = float(i + 1) / float(NL);
+  float h0 = hG + (hT - hG) * a0 * a0, h1 = hG + (hT - hG) * a1 * a1, hm = 0.5 * (h0 + h1);
+  vec3 sR, sM, e;
+  mediumAtReal(hm, sR, sM, e);
+  vec3 sc = sR + sM, tau = e * (h1 - h0);
+  vec3 w = sc / max(e, vec3(1e-20)), g = sM * gM / max(sc, vec3(1e-20)), f = g * g;
+  vec3 tauP = tau * (1.0 - w * f), wP = w * (1.0 - f) / max(1.0 - w * f, vec3(1e-6)), gP = (g - f) / max(1.0 - f, vec3(1e-6));
+  vec3 g1 = 2.0 - wP * (1.0 + gP), g2 = wP * (1.0 - gP);
+  vec3 k = sqrt(max(g1 * g1 - g2 * g2, vec3(0.0))), kt = min(k * tauP, vec3(30.0));
+  vec3 ep = exp(kt), em = exp(-kt);
+  vec3 sh = mix(tauP * (1.0 + kt * kt / 6.0), (ep - em) / (2.0 * max(k, vec3(1e-9))), step(vec3(1e-3), kt));
+  vec3 den = 0.5 * (ep + em) + g1 * sh;
+  R = g2 * sh / den; T = 1.0 / den;
+  vec3 S = sunAtTrue(Rk + hm, Rk, muS) * w * tau * (1.0 - f);
+  vec3 up = clamp(0.5 - 0.75 * gP * muS, 0.0, 1.0);
+  Su = S * up; Sd = S * (1.0 - up);
+}
 void main() {
+  gHazeK = 0.0;
   float muS = vUv.x * 2.0 - 1.0;
   float r = uBottom + (uTop - uBottom) * clamp(vUv.y, 0.002, 0.998);
-  vec3 sunDir = vec3(0.0, muS, sqrt(max(0.0, 1.0 - muS * muS)));
-  vec3 pos = vec3(0.0, r, 0.0);
-  const int SQ = 8;
-  const int STEPS = 20;
-  vec3 lumTotal = vec3(0.0), fms = vec3(0.0);
-  for (int i = 0; i < SQ; i++) {
-    for (int j = 0; j < SQ; j++) {
-      float th = 2.0 * PI_A * (float(i) + 0.5) / float(SQ);
-      float ph = acos(1.0 - 2.0 * (float(j) + 0.5) / float(SQ));
-      vec3 dir = vec3(cos(th) * sin(ph), cos(ph), sin(th) * sin(ph));
-      float mu = dir.y;
-      float tMax = distToTop(r, mu);
-      bool ground = hitsGround(r, mu, uGround);
-      if (ground) tMax = -r * mu - sqrt(max(0.0, r * r * (mu * mu - 1.0) + uGround * uGround));
-      vec3 thr = vec3(1.0), L = vec3(0.0), MS = vec3(0.0);
-      for (int s = 0; s < STEPS; s++) {
-        // (squared steps: the ground haze near the start)
-        float u0 = float(s) / float(STEPS), u1 = float(s + 1) / float(STEPS);
-        float t = tMax * (u0 * u0 + u1 * u1) * 0.5, dt = tMax * (u1 * u1 - u0 * u0);
-        vec3 p = pos + dir * t;
-        float rr = length(p);
-        vec3 sR, sM, e;
-        mediumAt(rr, sR, sM, e);
-        vec3 sct = sR + sM;
-        vec3 Ts = exp(-e * dt);
-        vec3 sunT = sunTransmittance(rr, dot(p / rr, sunDir));
-        vec3 S = sct * sunT / (4.0 * PI_A);
-        vec3 eSafe = max(e, vec3(1e-12));
-        L += thr * (S - S * Ts) / eSafe;
-        MS += thr * (sct - sct * Ts) / eSafe;
-        thr *= Ts;
-      }
-      if (ground) {
-        vec3 p = pos + dir * tMax;
-        vec3 n = normalize(p);
-        vec3 sunT = sunTransmittance(length(p), dot(n, sunDir));
-        L += thr * sunT * max(dot(n, sunDir), 0.0) * uGroundAlbedo / PI_A;
-      }
-      lumTotal += L / float(SQ * SQ);
-      fms += MS / float(SQ * SQ);
-    }
+  float K = max(uTrueK, 1.0), Rk = uRadius * K;
+  float hG = realH(uGround - uRadius), hT = realH(uTop - uRadius), hP = max(realH(r - uRadius), hG);
+  int jP = int(floor(sqrt(clamp((hP - hG) / max(hT - hG, 1.0), 0.0, 1.0)) * float(NL) + 0.5));
+  vec3 gM = mieAsym(), R, T, Su, Sd;
+  // (from the ground up to the point: the reflectance of all below, and the light coming up from it)
+  vec3 Rb = uGroundAlbedo, U = uGroundAlbedo * sunAtTrue(Rk + hG, Rk, muS) * max(muS, 0.0);
+  for (int i = 0; i < NL; i++) {
+    if (i >= jP) break;
+    msLayer(i, hG, hT, muS, Rk, gM, R, T, Su, Sd);
+    vec3 d = 1.0 / max(1.0 - R * Rb, vec3(1e-6));
+    U = Su + T * (U + Rb * Sd) * d;
+    Rb = R + T * T * Rb * d;
   }
-  vec3 psi = lumTotal / max(vec3(1.0) - fms, vec3(1e-3));
-  gl_FragColor = vec4(psi, 1.0);
+  // (from the top down to it: the reflectance of all above, and the light coming down from it)
+  vec3 Ra = vec3(0.0), D = vec3(0.0);
+  for (int n = 0; n < NL; n++) {
+    int i = NL - 1 - n;
+    if (i < jP) break;
+    msLayer(i, hG, hT, muS, Rk, gM, R, T, Su, Sd);
+    vec3 d = 1.0 / max(1.0 - R * Ra, vec3(1e-6));
+    D = Sd + T * (D + Ra * Su) * d;
+    Ra = R + T * T * Ra * d;
+  }
+  vec3 Fd = (D + Ra * U) / max(1.0 - Ra * Rb, vec3(1e-6));
+  vec3 Fu = U + Rb * Fd;
+  gl_FragColor = vec4((Fu + Fd) / (2.0 * PI_A), 1.0);
 }
 `;
 
 const SAMPLE_MS = /* glsl */`
 uniform sampler2D tMS;
-vec3 multiScatter(float r, float muS) {
-  muS = liftMu(muS);
-  vec2 uv = vec2(muS * 0.5 + 0.5, (r - uBottom) / (uTop - uBottom));
+// (at the true world's sun cosine muT: the LUTs' own coordinate)
+vec3 multiScatterAt(float r, float muT) {
+  vec2 uv = vec2(muT * 0.5 + 0.5, (r - uBottom) / (uTop - uBottom));
   uv = clamp(uv, vec2(0.0), vec2(1.0));
   uv = vec2(0.5 / 32.0) + uv * (31.0 / 32.0);
   return texture(tMS, uv).rgb;
 }
+vec3 multiScatter(float r, float muS) { return multiScatterAt(r, liftMu(muS)); }
 `;
 
 // The sky as on the true-size world: the world is drawn a 64th of its size under air of real height, so a
@@ -495,7 +529,8 @@ void main() {
   float sT = exitSphere(cT, D, Rt + realH(uTop - uRadius)), gT = hitSphere(cT, D, Rg);
   if (gT > 0.0) sT = min(sT, gT);
   if (!(sT > 1.0)) { gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0); return; }
-  float cosT = dot(D, sun), pR = phaseRayleigh(cosT), pM = phaseMie(cosT, uMieG);
+  float cosT = dot(D, sun), pR = phaseRayleigh(cosT);
+  vec3 pM = phaseMie(cosT);
   // (steps squared from the camera: along the ground the low air's few km are where the light comes from)
   const int N = 48;
   vec3 L = vec3(0.0), T = vec3(1.0);
@@ -545,43 +580,49 @@ vec3 skyFar(vec3 D) {
 }
 `;
 
-const IRRADIANCE_FRAG = /* glsl */`
+export const IRRADIANCE_FRAG = /* glsl */`
 ${LUT_COMMON}
 uniform float uGround;
 uniform vec3 uGroundAlbedo;
 ${SAMPLE_TRANS}
 ${SAMPLE_MS}
 varying vec2 vUv;
-// Sky irradiance on a horizontal surface at radius r (per unit sun illuminance)
+// Sky irradiance on a horizontal surface at radius r (per unit sun illuminance): the sky over it on the
+// world's true size at real heights (as the multiple scattering's), its LUT's sun cosine the true one
 void main() {
+  gHazeK = 0.0;
   float muS = vUv.x * 2.0 - 1.0;
   float r = uGround + (uTop - uGround) * clamp(vUv.y, 0.0, 1.0) + 1.0;
+  float K = max(uTrueK, 1.0), Rk = uRadius * K;
+  float rK = Rk + realH(r - uRadius), topK = Rk + realH(uTop - uRadius);
   vec3 sunDir = vec3(0.0, muS, sqrt(max(0.0, 1.0 - muS * muS)));
-  vec3 pos = vec3(0.0, r, 0.0);
+  vec3 pos = vec3(0.0, rK, 0.0);
   vec3 E = vec3(0.0);
-  const int NA = 8, NB = 6, STEPS = 14;
+  const int NA = 8, NB = 6, STEPS = 16;
   for (int a = 0; a < NA; a++) {
     for (int b = 0; b < NB; b++) {
       float th = 2.0 * PI_A * (float(a) + 0.5) / float(NA);
       float ct = (float(b) + 0.5) / float(NB); // cosine-weighted bands
       float st = sqrt(1.0 - ct * ct);
       vec3 dir = vec3(cos(th) * st, ct, sin(th) * st);
-      float tMax = distToTop(r, ct);
+      float tMax = max(0.0, -rK * ct + sqrt(max(rK * rK * (ct * ct - 1.0) + topK * topK, 0.0)));
       vec3 thr = vec3(1.0), L = vec3(0.0);
       float cs = dot(dir, sunDir);
+      vec3 pM = phaseMie(cs);
+      float pR = phaseRayleigh(cs);
       for (int s = 0; s < STEPS; s++) {
-        // (squared steps: the ground haze near the start)
+        // (squared steps: the low air near the start)
         float u0 = float(s) / float(STEPS), u1 = float(s + 1) / float(STEPS);
         float t = tMax * (u0 * u0 + u1 * u1) * 0.5, dt = tMax * (u1 * u1 - u0 * u0);
         vec3 p = pos + dir * t;
         float rr = length(p);
         vec3 sR, sM, e;
-        mediumAt(rr, sR, sM, e);
+        mediumAtReal(rr - Rk, sR, sM, e);
         vec3 Ts = exp(-e * dt);
         float mus = dot(p / rr, sunDir);
-        vec3 sunT = sunTransmittance(rr, mus);
-        vec3 ms = multiScatter(rr, mus);
-        vec3 S = sR * (sunT * phaseRayleigh(cs) + ms) + sM * (sunT * phaseMie(cs, uMieG) + ms);
+        vec3 sunT = sunAtTrue(rr, Rk, mus);
+        vec3 ms = multiScatterAt(uRadius + drawnH(rr - Rk), mus);
+        vec3 S = sR * (sunT * pR + ms) + sM * (sunT * pM + ms);
         vec3 eSafe = max(e, vec3(1e-12));
         L += thr * (S - S * Ts) / eSafe;
         thr *= Ts;
@@ -744,9 +785,11 @@ void march(float t0, float t1, vec3 D, float tca, vec3 perp, float cosTheta, flo
   bool sq = t0 < 1.0 && length(uCenter) - uRadius < 4.0 * uHaze.y;
   vec3 upC = normalize(-uCenter);
   float kT = trueK(length(uCenter) - uRadius);
-  float pR = phaseRayleigh(cosTheta), pM = phaseMie(cosTheta, uMieG);
+  float pR = phaseRayleigh(cosTheta);
+  vec3 pM = phaseMie(cosTheta);
   bool moon = uMoonE.g > 0.0;
-  float cosM = dot(D, uMoonDir), pRm = phaseRayleigh(cosM), pMm = phaseMie(cosM, uMieG);
+  float cosM = dot(D, uMoonDir), pRm = phaseRayleigh(cosM);
+  vec3 pMm = phaseMie(cosM);
   for (int i = 0; i < 32; i++) {
     if (i >= steps) break;
     float t = t0 + (float(i) + jitter) * dt;
@@ -970,7 +1013,10 @@ export class Atmosphere {
       uHazeCol: { value: hazeColour(a.haze) },
       uKnee: { value: a.knee != null && isFinite(a.knee) ? a.knee : 1e12 },
       uUpper: { value: a.upper || 1 },
-      uMieG: { value: a.mieG },
+      // (the aerosols' phase per channel: aerosols.js's fit; a giant's single asymmetry with the old aureole)
+      uMieG: { value: v3(Array.isArray(a.mieG) ? a.mieG : [a.mieG ?? 0.76, a.mieG ?? 0.76, a.mieG ?? 0.76]) },
+      uMieF: { value: v3(Array.isArray(a.mieF) ? a.mieF : [0.15, 0.15, 0.15]) },
+      uMieGL: { value: v3(Array.isArray(a.mieGL) ? a.mieGL : [0.96, 0.96, 0.96]) },
       uAbs: { value: v3(a.ozone) },
       uAbsCenter: { value: a.ozoneCenter || 0 },
       uAbsWidth: { value: a.ozoneWidth || 1 },
@@ -995,7 +1041,9 @@ export class Atmosphere {
       this.params.uGroundAlbedo.value.set(c[0] * 0.8, c[1] * 0.8, c[2] * 0.8);
     }
     // (the air's own aerosols, before any dust the wind raises: setDust adds it to them)
-    this.base = { mie: a.mie.slice(), mieAbs: a.mieAbs.slice(), mieH: a.mieH, mieG: a.mieG, haze: (a.haze || [0, 1000, 0, 0]).slice() };
+    this.base = { mie: a.mie.slice(), mieAbs: a.mieAbs.slice(), mieH: a.mieH, haze: (a.haze || [0, 1000, 0, 0]).slice(),
+      ph: [0, 1, 2].map((c) => [this.params.uMieG.value.getComponent(c), this.params.uMieF.value.getComponent(c), this.params.uMieGL.value.getComponent(c)]),
+      dustUnit: a.dustUnit || null, saltUnit: a.saltUnit || null };
     this.dust = 0;
     const dc = d.terrain && d.terrain.palette && (d.terrain.palette.regolith || d.terrain.palette.soil);
     this.dustCol = dc ? dc.slice(0, 3) : [0.5, 0.4, 0.3];
@@ -1027,19 +1075,26 @@ export class Atmosphere {
     if (near(tau, this.dust) && near(salt, this.salt || 0)) return false;
     this.dust = tau; this.salt = salt;
     const B = this.base, p = this.params, c = this.dustCol, Hd = 2500, k = tau / Hd, Hs = 1200, ks = salt / Hs;
+    // (each's optics per unit optical depth at 550 nm: the world's own (aerosols.js: its dust off its ground,
+    // a day on the wind; its sea's spray), else as before: a tan soil's)
     const lum = Math.max(0.05, 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]);
-    const sca = [0, 0, 0], abs = [0, 0, 0];
+    const DU = B.dustUnit || { ext: [0, 1, 2].map((i) => Math.pow(550 / [680, 550, 440][i], 1.2)), ssa: [0, 1, 2].map((i) => 1 - 0.05 * Math.min(2.5, (1 - Math.min(c[i], 0.95)) / Math.max(1 - lum, 0.05)) ** 1.2), fit: [[0.7, 0.15, 0.96], [0.7, 0.15, 0.96], [0.7, 0.15, 0.96]] };
+    const SU = B.saltUnit || { ext: [0.92, 1, 1.09], ssa: [1, 1, 1], fit: [[0.75, 0.15, 0.96], [0.75, 0.15, 0.96], [0.75, 0.15, 0.96]] };
+    const sca = [0, 0, 0], abs = [0, 0, 0], ss = [0, 0, 0], sa = [0, 0, 0];
     for (let i = 0; i < 3; i++) {
-      const ssa = 1 - 0.05 * Math.min(2.5, (1 - Math.min(c[i], 0.95)) / Math.max(1 - lum, 0.05)) ** 1.2;
-      const ext = k * Math.pow(550 / [680, 550, 440][i], 1.2);
-      sca[i] = ext * ssa; abs[i] = ext * (1 - ssa);
+      const e = k * DU.ext[i]; sca[i] = e * DU.ssa[i]; abs[i] = e * (1 - DU.ssa[i]);
+      const es = ks * SU.ext[i]; ss[i] = es * SU.ssa[i]; sa[i] = es * (1 - SU.ssa[i]);
     }
-    const ss = [0.92 * ks, ks, 1.09 * ks];
-    const eB = B.mie[1] + B.mieAbs[1], eD = sca[1] + abs[1], eS = ss[1], eT = Math.max(eB + eD + eS, 1e-12);
+    const eB = B.mie[1] + B.mieAbs[1], eD = sca[1] + abs[1], eS = ss[1] + sa[1], eT = Math.max(eB + eD + eS, 1e-12);
     p.uMie.value.set(B.mie[0] + sca[0] + ss[0], B.mie[1] + sca[1] + ss[1], B.mie[2] + sca[2] + ss[2]);
-    p.uMieAbs.value.set(B.mieAbs[0] + abs[0], B.mieAbs[1] + abs[1], B.mieAbs[2] + abs[2]);
+    p.uMieAbs.value.set(B.mieAbs[0] + abs[0] + sa[0], B.mieAbs[1] + abs[1] + sa[1], B.mieAbs[2] + abs[2] + sa[2]);
     p.uMieH.value = (eB * B.mieH + eD * Hd + eS * Hs) / eT;
-    p.uMieG.value = (eB * B.mieG + eD * 0.7 + eS * 0.75) / eT;
+    // (the phase: each channel's lobes, weighted by what each scatters in it)
+    for (let i = 0; i < 3; i++) {
+      const wB = B.mie[i], wD = sca[i], wS = ss[i], wT = Math.max(wB + wD + wS, 1e-12);
+      const mixp = (j) => (wB * B.ph[i][j] + wD * DU.fit[i][j] + wS * SU.fit[i][j]) / wT;
+      p.uMieG.value.setComponent(i, mixp(0)); p.uMieF.value.setComponent(i, mixp(1)); p.uMieGL.value.setComponent(i, mixp(2));
+    }
     // (and the near ground's haze, at the game's scale: thicker, toward the dust's colour)
     const h = B.haze, w = tau / (tau + 0.3), hc = hazeColour(h);
     p.uHaze.value.set(h[0] * (1 + 3 * tau + 2 * salt), h[1], h[2] + (0.12 - h[2]) * w, h[3]);

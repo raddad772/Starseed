@@ -195,12 +195,14 @@ void main() {
   tOut = clamp(min(tOut, tIn + uMaxDist), tIn, t1);
 
   float cosT = dot(D, uSunDir);
-  float pR = phaseRayleigh(cosT), pM = phaseMie(cosT, uMieG);
+  float pR = phaseRayleigh(cosT);
+  vec3 pM = phaseMie(cosT);
   float pC = mix(hg(cosT, 0.62), hg(cosT, -0.22), 0.3);
   // (the moon's, by night: the air and the clouds lit from its way too, Lm)
   bool moon = uMoonE.g > 0.0;
   float cosM = dot(D, uMoonDir);
-  float pRm = phaseRayleigh(cosM), pMm = phaseMie(cosM, uMieG), pCm = mix(hg(cosM, 0.62), hg(cosM, -0.22), 0.3);
+  float pRm = phaseRayleigh(cosM), pCm = mix(hg(cosM, 0.62), hg(cosM, -0.22), 0.3);
+  vec3 pMm = phaseMie(cosM);
   vec3 Lm = vec3(0.0);
   float jitter = ign(gl_FragCoord.xy);
   vec3 L = vec3(0.0), T = vec3(1.0);
