@@ -67,6 +67,8 @@ uniform vec4 uFall2;
 uniform float uTime;
 uniform vec3 uSunDir;
 uniform vec3 uSunE;
+uniform vec3 uMoonDir;
+uniform vec3 uMoonE;
 uniform vec3 uCenter;
 varying vec3 vCol;
 varying float vA;
@@ -139,6 +141,17 @@ void main() {
     vec3 bowC = vec3(exp(-pow((d - 0.8) / 0.45, 2.0)), exp(-pow((d - 0.1) / 0.45, 2.0)), exp(-pow((d + 0.7) / 0.45, 2.0)));
     // (faint: a few drops among many at its angle, a shimmer across the spray, not lit beads)
     c += uSunE * sunT * bowC * 0.12;
+  }
+  // (by night the moon's light on them the same way: a moonlit plume, and its bow, a moonbow)
+  if (uMoonE.g > 0.0) {
+    float muM = dot(up, uMoonDir), cosM = dot(-uMoonDir, toCam);
+    vec3 moonT = atmoSunTransmittance(r, max(muM, 0.0)) * step(-0.02, muM);
+    float phM = (1.0 - hg * hg) / pow(1.0 + hg * hg - 2.0 * hg * cosM, 1.5) * 0.25;
+    c += uMoonE * moonT * phM + uMoonE * atmoSkyIrradiance(r, muM) / PI * 0.8;
+    if (!mist) {
+      float Am = acos(clamp(dot(toCam, uMoonDir), -1.0, 1.0)), dm = (Am - uFall2.z) * 57.2958;
+      c += uMoonE * moonT * vec3(exp(-pow((dm - 0.8) / 0.45, 2.0)), exp(-pow((dm - 0.1) / 0.45, 2.0)), exp(-pow((dm + 0.7) / 0.45, 2.0))) * 0.12;
+    }
   }
   vCol = c;
   vA = a;
