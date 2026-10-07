@@ -218,10 +218,10 @@ Dave's queue, in the order he raised it (keep this list current):
      Fix candidates: a finer split at altitude (SPLIT_K, cost), or the shore and colour per pixel from the
      height cube far off. Tried the latter (a per-pixel sea edge from the cube past 25 of its texels): no
      change. The streaks stay with the volume pass off (coast_novol) and even drawing the cube's height alone
-     per pixel (coast_hc): they're the geometry. Most likely the far chunks' sea vertices sit on the bed
-     (hundreds of metres drawn down) beside land ones, so each coastal triangle is a steep wall, seen from
-     above as teeth and as streaks converging on the nadir; and far mountains drawn 8x steep. Next: far
-     chunks' sea vertices at the sea's surface (or a shallow bed) away from the near field.
+     per pixel (coast_hc): so they come with the geometry (the mesh's positions), not its shading. A
+     candidate, unchecked: the far chunks' sea vertices on the bed beside land ones (but at ~1 km spacing a
+     bed 50 m down is only ~3 degrees, so likely not walls); others: skirts at chunk edges showing, the LOD
+     morph's positions. Next: read a far coastal chunk's positions back and draw them side on.
 
 ## NOW: fire through the recent centuries (session 39d69fa8, 2026-10-06), SIM 68
 
