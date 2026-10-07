@@ -156,8 +156,10 @@ Dave's queue, in the order he raised it (keep this list current):
      Hapke with internal scattering (its measured k at all three wavelengths).
    - Mars ground (46edd1e), from NASA's rover panoramas (Curiosity's Glen Torridon and Murray Buttes,
      Pathfinder's Rock Garden, the Namib dune): a dry world's lag of stones and boulders, its craters'
-     ejecta, its dune sand basalt-dark; stones' CO2 frost by a damped face tilt. Still to do: bedrock
-     plates where the cover's thin (Gale's), buttes with caprock and talus aprons.
+     ejecta, its dune sand basalt-dark; stones' CO2 frost by a damped face tilt. Bedrock plates where the
+     dust's thin (539aad6, scratchpad mars_plates_ab). Talus at faces' feet is the near field's (1cc2944),
+     so a butte or a chaos raft has it when walked to; from afar a raft (km in the sim, ~10 m drawn) stands
+     as a sheer-walled block with a notched rim (the heightfield's grid): still to do, its apron far off.
    - Falls: spray as fine drops, mist as small wisps, the bow a faint shimmer (it was a lit ball), the
      plunge pool white along the impact line (it was all white), steep normals averaged over a cliff's
      face (it was fluted), a brink shaded as its rock (yellow-green stripes) (46edd1e, df7774b,
