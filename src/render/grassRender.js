@@ -243,6 +243,7 @@ export class GrassSet {
           .replace('#include <color_fragment>', '#include <color_fragment>\n  diffuseColor.rgb *= mix(0.3, 1.0, pow(vGT, 0.8)) * (0.82 + 0.36 * vGK);')
           .replace('#include <aomap_fragment>', '#include <aomap_fragment>\n  { float sw = exp(-vGS); reflectedLight.directDiffuse *= sw; reflectedLight.directSpecular *= sw; }');
       };
+      m.userData.webgpu = { kind: 'grass', uniforms: { ...shared, ...U } };
       m.customProgramCacheKey = () => 'grass-blades';
       // (in the sun's shadows and the canopy's: sunShadows.js. It casts none into them: a blade's shadow is
       // thinner than the map's texel, and as the sun moved (a game day's three hours: a hair a frame) and the
@@ -273,6 +274,7 @@ void main() { gl_FragColor = vec4(vGA * 2.0 * max(0.0, 1.0 - abs(vGSide)), 0.0, 
       this.flowerCols.push([0.62, 0.62, 0.58]);
       this.flowerGeo = new THREE.CircleGeometry(1, 6); this.flowerGeo.rotateX(-Math.PI / 2);
       this.fmat = new THREE.MeshStandardMaterial({ roughness: 0.7, side: THREE.DoubleSide });
+      this.fmat.userData.webgpu = { kind: 'standard', uniforms: shared };
       this.fmat.onBeforeCompile = (sh) => { sh.fragmentShader = sh.fragmentShader.replace('#include <normal_fragment_begin>', '#include <normal_fragment_begin>\n  normal = normalize( vNormal );'); };
       receiveShadows(this.fmat);
     }

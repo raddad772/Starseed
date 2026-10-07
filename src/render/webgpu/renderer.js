@@ -10,6 +10,7 @@ import { FullscreenPasses } from './passes.js';
 import { ProgramBindings } from './program.js';
 import { AirPass } from './air.js';
 import { PostPass } from './post.js';
+import { OpaquePass } from './opaque.js';
 import { layout as lightLayout } from './generated/lighting.js';
 
 const OBJECT_FLOATS = 44;
@@ -39,11 +40,12 @@ export class DeferredRenderer {
     this.passes = new FullscreenPasses(this.device, this.textures, this.format); this.textures.passes = this.passes;
     this.air = new AirPass(this.device, this.passes, this.textures);
     this.post = new PostPass(this.device, this.passes, this.textures, this.air);
+    this.opaque = new OpaquePass(this.device, this.textures);
     this.lightBindings = new ProgramBindings(this.device, lightLayout, this.textures);
   }
   async init() {
     const d = this.device, S = GPUShaderStage;
-    await Promise.all([this.passes.init(), this.air.init()]);
+    await Promise.all([this.passes.init(), this.air.init(), this.opaque.init()]);
     this.frameLayout = d.createBindGroupLayout({ label: 'frame and world', entries: [
       { binding: 0, visibility: S.VERTEX | S.FRAGMENT, buffer: { type: 'uniform' } },
       { binding: 1, visibility: S.VERTEX | S.FRAGMENT, buffer: { type: 'read-only-storage' } },
@@ -150,16 +152,37 @@ export class DeferredRenderer {
     this.inverse.copy(this.viewProjection).invert();
     // Three's frustum extraction knows the WebGPU clip convention and reversed Z.
     this.frustum.setFromProjectionMatrix(this.viewProjection, THREE.WebGPUCoordinateSystem, true);
-    const draw = [], lights = [], bodyIds = new Map(), surfaces = new Map();
+    const draw = [], opaqueObjects = [], pendingStandard = [], lights = [], bodyIds = new Map(), surfaces = new Map();
     engine.scene.traverseVisible((object) => {
-      if (!object.isMesh || !object.geometry.attributes.nrm || !object.material.uniforms?.uMorph) return;
-      if (!object.layers.test(camera.layers)) return;
+      if (!object.isMesh || !object.layers.test(camera.layers)) return;
       if (object.frustumCulled && !this.frustum.intersectsObject(object)) return;
-      const u = object.material.uniforms, key = u.uCenter;
+      const material = object.material;
+      if (Array.isArray(material) || material.transparent || !material.visible) return;
+      const u = material.uniforms || material.userData.webgpu?.uniforms;
+      const terrain = object.geometry.attributes.nrm && u?.uMorph;
+      if (!terrain && !this.opaque.program(material)) return;
+      if (!u?.uCenter) { pendingStandard.push({object,material}); return; }
+      const key = u.uCenter;
       if (!bodyIds.has(key)) { bodyIds.set(key, lights.length); lights.push(u); }
-      if (!surfaces.has(key)) surfaces.set(key, this.surfaces.get(u, object.material.defines?.MAT_MODE || 0));
-      draw.push({ object, u, body: bodyIds.get(key), surface: surfaces.get(key), geometry: this.geometry(object.geometry) });
+      if (terrain) {
+        if (!surfaces.has(key)) surfaces.set(key, this.surfaces.get(u, material.defines?.MAT_MODE || 0));
+        draw.push({ object, u, body: bodyIds.get(key), surface: surfaces.get(key), geometry: this.geometry(object.geometry) });
+      } else opaqueObjects.push({object, material, body: bodyIds.get(key)});
     });
+    // Lit meshes without a planetary material (vessels, fauna, items) use the
+    // nearest visible body's atmosphere. Scene lighting supplies the space case.
+    for (const entry of pendingStandard) {
+      const p = new THREE.Vector3().setFromMatrixPosition(entry.object.matrixWorld);
+      let body = 0, distance = Infinity;
+      lights.forEach((u,i) => { const r = p.distanceTo(u.uCenter.value) - (u.uRadius?.value || 0); if (r < distance) {distance=r;body=i;} });
+      if (!lights.length) {
+        let sun=null, ambient=null;engine.scene.traverseVisible(o=>{if(o.isDirectionalLight&&!sun)sun=o;if(o.isHemisphereLight&&!ambient)ambient=o;});
+        const dir=sun?sun.position.clone().sub(sun.target.position).normalize():new THREE.Vector3(0,1,0);
+        lights.push({uCenter:{value:new THREE.Vector3(0,-1e12,0)},uRadius:{value:1},uSunDir:{value:dir},uSunE:{value:sun?sun.color.clone().multiplyScalar(sun.intensity):new THREE.Color(1,1,1)},uAmbientFloor:{value:ambient?ambient.color.clone().multiplyScalar(ambient.intensity):new THREE.Color(0.001,0.001,0.001)}});
+      }
+      opaqueObjects.push({...entry,body});
+    }
+    const opaque = opaqueObjects.map(({object, material, body}) => this.opaque.prepare(object,material,body,this.projection,camera)).filter(Boolean);
     this.ensureCapacity(draw.length, lights.length);
     draw.forEach(({ object, u, body }, i) => {
       const k = i * OBJECT_FLOATS, data = this.objectData;
@@ -207,6 +230,7 @@ export class DeferredRenderer {
       pass.setBindGroup(1, g.bindGroup); pass.setIndexBuffer(g.indexBuffer, g.indexFormat);
       pass.drawIndexed(g.count, 1, 0, 0, i); triangles += g.count / 3;
     });
+    triangles += this.opaque.draw(pass, opaque);
     pass.end();
     for (const [label, texture, pipeline, group] of [
       ['lighting', t.hdr, this.lightPipeline, t.lightGroup], ['post', t.output, this.postPipeline, t.postGroup],
@@ -236,7 +260,7 @@ export class DeferredRenderer {
     d.queue.submit([encoder.finish()]);
     if (timed) this.timingReady = this.timer.harvest().catch(this.onError);
     this.lastView = view;
-    this.stats = { calls: draw.length, triangles, geometries: this.geometries.size, submitMs: performance.now() - start, passes: this.timer.last };
+    this.stats = { calls: draw.length + opaque.length, triangles, geometries: this.geometries.size, submitMs: performance.now() - start, passes: this.timer.last };
     engine.gpuMs = Object.values(this.timer.last).reduce((sum, n) => sum + n, 0);
   }
   async capture(view = this.lastView) {
@@ -254,7 +278,7 @@ export class DeferredRenderer {
     if (this.disposed) return; this.disposed = true;
     for (const geometry of [...this.geometries]) geometry.dispose();
     for (const target of this.targets.values()) { this.air.release(target); this.post.release(target); for (const texture of target.textures) texture.destroy(); }
-    this.targets.clear(); this.timer.dispose(); this.surfaces.dispose(); this.lightBindings.dispose(); this.passes.dispose(); this.textures.dispose();
+    this.targets.clear(); this.timer.dispose(); this.surfaces.dispose(); this.opaque.dispose(); this.lightBindings.dispose(); this.passes.dispose(); this.textures.dispose();
     this.frameBuffer?.destroy(); this.objectBuffer?.destroy(); this.bodyBuffer?.destroy();
     this.releaseContext(); this.device.destroy();
   }

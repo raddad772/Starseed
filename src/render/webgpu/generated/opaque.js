@@ -1,0 +1,17 @@
+import * as rockVertex from './rockVertex.js';
+import * as rockMaterial0 from './rockMaterial0.js';
+import * as rockMaterial2 from './rockMaterial2.js';
+import * as rockMaterial3 from './rockMaterial3.js';
+import * as floraVertex from './floraVertex.js';
+import * as floraMaterial0 from './floraMaterial0.js';
+import * as floraMaterial2 from './floraMaterial2.js';
+import * as floraMaterial3 from './floraMaterial3.js';
+import * as floeVertex from './floeVertex.js';
+import * as floeMaterial3 from './floeMaterial3.js';
+import * as iceblockVertex from './iceblockVertex.js';
+import * as iceblockMaterial3 from './iceblockMaterial3.js';
+import * as grassVertex from './grassVertex.js';
+import * as grassMaterial3 from './grassMaterial3.js';
+import * as standardVertex from './standardVertex.js';
+import * as standardMaterial3 from './standardMaterial3.js';
+export const opaquePrograms = [{name:'rock',key:'fa255f4f',mode:0,vertex:rockVertex,fragment:rockMaterial0},{name:'rock',key:'fa255f4f',mode:2,vertex:rockVertex,fragment:rockMaterial2},{name:'rock',key:'fa255f4f',mode:3,vertex:rockVertex,fragment:rockMaterial3},{name:'flora',key:'69cb4a0',mode:0,vertex:floraVertex,fragment:floraMaterial0},{name:'flora',key:'69cb4a0',mode:2,vertex:floraVertex,fragment:floraMaterial2},{name:'flora',key:'69cb4a0',mode:3,vertex:floraVertex,fragment:floraMaterial3},{name:'floe',key:'34e08112',mode:3,vertex:floeVertex,fragment:floeMaterial3},{name:'iceblock',key:'4eaf0f32',mode:3,vertex:iceblockVertex,fragment:iceblockMaterial3},{name:'grass',key:'grass',mode:3,vertex:grassVertex,fragment:grassMaterial3},{name:'standard',key:'standard',mode:3,vertex:standardVertex,fragment:standardMaterial3}];

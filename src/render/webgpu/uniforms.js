@@ -11,7 +11,7 @@ export function packUniforms(layout, uniforms, data = new ArrayBuffer(layout.byt
     } else {
       const count = Number(field.type.match(/vec(\d)/)?.[1] || 1);
       const dst = /^(i|b)/.test(field.type) ? i : /^u/.test(field.type) ? u : f;
-      for (let k = 0; k < count; k++) dst[offset + k] = count === 1 ? (value ?? 0) : value?.getComponent?.(k) ?? value?.[k] ?? 0;
+      for (let k = 0; k < count; k++) dst[offset + k] = count === 1 ? (value ?? 0) : value?.getComponent?.(k) ?? (value?.isColor ? value[['r','g','b'][k]] : value?.[k]) ?? 0;
     }
   };
   for (const field of layout.uniforms) {

@@ -4,9 +4,8 @@ import { packUniforms } from './uniforms.js';
 
 const dimension = (type) => ({ sampler2D: '2d', sampler2DArray: '2d-array', sampler3D: '3d', samplerCube: 'cube' })[type];
 export class ProgramBindings {
-  constructor(device, descriptor, textures) {
+  constructor(device, descriptor, textures, visibility = GPUShaderStage.FRAGMENT) {
     this.device = device; this.descriptor = descriptor; this.textures = textures; this.entries = new Map(); this.fallbacks = new Map();
-    const visibility = GPUShaderStage.FRAGMENT;
     this.layout = device.createBindGroupLayout({ entries: [
       ...(descriptor.uniforms.length ? [{ binding: 0, visibility, buffer: { type: 'uniform' } }] : []),
       ...descriptor.textures.flatMap(t => [

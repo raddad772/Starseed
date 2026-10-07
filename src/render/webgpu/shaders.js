@@ -95,10 +95,10 @@ struct GBuffer { @location(0) albedoAO: vec4f, @location(1) normalMaterial: vec4
     length(v.worldPos), foot, dot(up, b.sunDir.xyz), v.occShore.y);
   var out: GBuffer;
   out.albedoAO = vec4f(clamp(surface.albedo, vec3f(0.0), vec3f(1.0)), surface.ao);
-  out.normalMaterial = vec4f(octEncode(normalize(transpose(material.toFixed) * surface.normal)), surface.roughness, o.surface.x);
+  out.normalMaterial = vec4f(octEncode(normalize(transpose(material.toFixed) * surface.normal)), surface.roughness, o.surface.x * 16.0);
   // Separate cave occlusion from scan AO: the former attenuates both sun and sky.
   out.emission = vec4f(surface.emission, 1.0 - 0.94 * clamp(v.occShore.x, 0.0, 1.0));
-  out.surface = vec4f(0.0, v.ext.y, surface.snow, 0.04 - 0.02 * v.cls2.w);
+  out.surface = vec4f(0.0, v.ext.y, 0.0, 0.04 - 0.02 * v.cls2.w);
   return out;
 }
 `;
@@ -125,7 +125,7 @@ export const LIGHTING = FRAME + FULLSCREEN + PHYSICAL_LIGHTING + /* wgsl */`
   let a = textureLoad(albedoAO, pixel, 0);
 
   let m = textureLoad(normalMaterial, pixel, 0);
-  if (u32(m.w) != u32(global.uBodyIndex)) { discard; }
+  if (u32(m.w / 16.0) != u32(global.uBodyIndex)) { discard; }
   if (frame.sizeExposure.w > 0.5) { return vec4f(a.rgb, 1.0); }
   let n = octDecode(m.xy);
   let ndc = vec4f(v.uv * vec2f(2.0, -2.0) + vec2f(-1.0, 1.0), z, 1.0);
@@ -137,7 +137,8 @@ export const LIGHTING = FRAME + FULLSCREEN + PHYSICAL_LIGHTING + /* wgsl */`
   let nx = frame.inverseViewProjection * (ndc + vec4f(2.0 / frame.sizeExposure.x, 0.0, 0.0, 0.0));
   let ny = frame.inverseViewProjection * (ndc + vec4f(0.0, 2.0 / frame.sizeExposure.y, 0.0, 0.0));
   let foot = length(abs(nx.xyz / nx.w - p) + abs(ny.xyz / ny.w - p));
-  let lit = deferredLight(p, n, a.rgb, m.z, a.a, s.y, s.w, e.a, s.x, foot) + e.rgb;
+  let kind = u32(m.w) % 16u;
+  let lit = deferredLight(p, n, a.rgb, m.z, a.a, s.y, s.w, select(e.a, 1.0, e.a < 0.0), s.x, foot, s.z, f32(kind), select(1.0, -e.a, e.a < 0.0)) + e.rgb;
   return vec4f(lit, 1.0);
 }
 `;

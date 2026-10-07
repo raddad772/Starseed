@@ -219,7 +219,8 @@ export const layout = {
     }
   ],
   "bytes": 224,
-  "group": 0
+  "group": 0,
+  "attributes": []
 };
 export const code = /* wgsl */`
 struct Params {

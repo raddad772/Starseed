@@ -3,7 +3,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-export function prepare(source, group = 2) {
+export function prepare(source, group = 2, options = {}) {
   source = source.replace(/\/\*[\s\S]*?\*\//g,'').replace(/\/\/[^\n]*/g,'').replace(/precision\s+\w+\s+\w+;/g,'');
   const uniforms=[],textures=[],seen=new Map();
   source=source.replace(/uniform\s+(?:(?:highp|mediump|lowp)\s+)?(\w+)\s+(\w+)\s*(\[\s*\d+\s*\])?\s*;/g,(all,type,name,array)=>{
@@ -29,7 +29,7 @@ export function prepare(source, group = 2) {
   });
   // LUTs and position-based cloud sampling are explicitly level zero in deferred
   // lighting. Existing textureGrad/textureLod calls retain their selected footprints.
-  source=source.replace(/\btexture\s*\(/g, 'sampleImplicit(');
+  source=source.replace(/\btexture(?:2D|Cube)?\s*\(/g, 'sampleImplicit(');
   let idx=0;
   while((idx=source.indexOf('sampleImplicit(',idx))>=0){
     const open=idx+'sampleImplicit'.length;let end=open+1,depth=1;
@@ -45,16 +45,19 @@ export function prepare(source, group = 2) {
     }
     source=helpers+source;
   }
-  let location=0;source=source.replace(/varying\s+(\w+)\s+(\w+)\s*;/g,(_,type,name)=>`layout(location=${location++}) in ${type} ${name};`);
+  const varyings=options.varyings || [...source.matchAll(/varying\s+(\w+)\s+(\w+)\s*;/g)].map(m=>m[2]);
+  source=source.replace(/varying\s+(\w+)\s+(\w+)\s*;/g,(_,type,name)=>`layout(location=${varyings.indexOf(name)}) ${options.stage==='vert'?'out':'in'} ${type} ${name};`);
+  const attributes=[];
+  source=source.replace(/attribute\s+(\w+)\s+(\w+)\s*;/g,(_,type,name)=>{const location=attributes.length;attributes.push({name,type,location});return `layout(location=${location}) in ${type} ${name};`;});
   if(source.includes('gl_FragColor')){prefix+='layout(location=0) out vec4 fragmentColor;\n';source=source.replaceAll('gl_FragColor','fragmentColor');}
-  return {source:prefix+source,metadata:{uniforms, textures, bytes, group}};
+  return {source:prefix+source,metadata:{uniforms, textures, bytes, group,attributes}};
 }
 export async function translate(name, source, output, compiler, options={}) {
   if(options.screen) source=source.replace(/(vec2 ndc =[^;]+;)/g, '$1 ndc.y = -ndc.y;');
-  const {source:glsl,metadata}=prepare(source,options.group??2);
+  const {source:glsl,metadata}=prepare(source,options.group??2,options);
   const dir=path.join(output,'intermediate');await fs.mkdir(dir,{recursive:true});
   const input=path.join(dir,name+'.glsl'),out=path.join(dir,name+'.wgsl');await fs.writeFile(input,glsl);
-  const run=spawnSync(process.execPath,[compiler,'--input-kind','glsl','--shader-stage','frag',path.relative(process.cwd(),input),path.relative(process.cwd(),out)],{encoding:'utf8'});
+  const run=spawnSync(process.execPath,[compiler,'--input-kind','glsl','--shader-stage',options.stage||'frag','--keep-coordinate-space',path.relative(process.cwd(),input),path.relative(process.cwd(),out)],{encoding:'utf8'});
   if(run.status!==0)throw Error(name+': '+run.stdout+'\n'+run.stderr);
   let code=await fs.readFile(out,'utf8');
   if(options.library) code=code.slice(0,code.indexOf('@fragment'));

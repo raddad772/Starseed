@@ -16,16 +16,21 @@ The full migration is in progress. `?renderer=webgpu` is opt-in; WebGL remains t
   followed by native luminance/adaptation, bloom and the existing AgX/ACES tone mapping.
 - Existing GLSL equations are translated offline with pinned Naga 0.1.0 (`tools/shaders/`); checked-in
   WGSL runs directly in the browser. There is no runtime compiler or new browser dependency.
+- Rocks, flora and impostors, grass, floes/bergs and standard PBR objects now write the G-buffer.
+  Existing deformation, snow, alpha cutout and material equations are retained; metalness and grass
+  self-shadowing feed the common lighting pass. Six material families pass finite GPU validation,
+  including shared geometry and disposal. The wood comparison now contains matching trees and grass;
+  native shadows are the next parity requirement. Multi-material vessels and bespoke patches remain.
 - A temporary WebGL producer bridge still supplies scene/resource descriptions and reference captures.
   Its render-target recipes are reproduced on WebGPU, without WebGL pixel readbacks. Removing this
-  bridge follows opaque/forward/shadow parity. Other opaque objects, native geometry shadows, liquids,
+  bridge follows opaque/forward/shadow parity. Native geometry shadows, vessel-specific shader patches, liquids,
   space background, GPU culling, clustered lights, decals and GTAO are still pending.
 - `tools/tests/webgpu.html` passes on the GPU: overlap/reversed depth, capture, resize and disposal.
   `node --test tools/tests/webgpu.test.mjs`: 4 passing tests, including std140 parameter packing.
   Generated shaders compile offline and on the browser device without validation errors.
 - `tools/tests/webgpu-scenes.html` performs finite, same-camera comparisons with two workers. The wood
   comparison passes at 1280x960, with fixed incident-light exposure for both renderers. Terrain and
-  atmosphere are visually comparable; objects/shadows are visibly absent on WebGPU at this checkpoint.
+  atmosphere are visually comparable; native geometry shadows are still absent on WebGPU at this checkpoint.
   Measured drained totals were about 17–19 ms for this incomplete scene; this is **not a parity or
   performance claim**. Timestamp scopes may overlap on this adapter, so the tool also reports drained
   totals and flags implausible sums. Wood-near-tree, gorge and elevated parity runs remain required.
