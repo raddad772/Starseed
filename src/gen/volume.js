@@ -26,7 +26,7 @@ import { Noise3 } from '../core/noise.js';
 import { Rng, hashInts } from '../core/rng.js';
 import { S_LEN, S_H, S_WDEPTH, S_MOUNT, S_ROUGH, S_SAND, S_ICE, S_TEMP, S_RIVR } from './terrain.js';
 import { ROCKS } from './worldsim/lithology.js';
-import { MAT_W0, MAT_N } from './matclasses.js';
+import { MAT_W0, MAT_N, MC } from './matclasses.js';
 import { fireAtDir, fireMark } from './life/fire.js';
 
 export const VCHUNK = 32;          // cells per chunk side (1 m cells)
@@ -37,6 +37,11 @@ const GN = VCHUNK + 1 + 2 * B;     // density samples per axis
 // how each rock stands: hardness (cliffs, ledges) and how readily it holds caves
 const ROCK_HARD = ROCKS.map((r) => Math.max(0, Math.min(1, 1.25 - 0.4 * r.k)));
 const ROCK_CAVE = ROCKS.map((r) => ({ limestone: 1, chalk: 0.6, basalt: 0.5, sandstone: 0.25, andesite: 0.15, granite: 0.06 }[r.name] ?? 0.03));
+
+// the talus search: eight ways round (cos, sin) and the distances out (m)
+const TAL_DIR = Float64Array.from([0, 1, 2, 3, 4, 5, 6, 7].flatMap((q) => [dm.cos(q * Math.PI / 4), dm.sin(q * Math.PI / 4)]));
+const TAL_D = [1, 2, 3, 4, 6, 8, 11];
+const _tc = [0, 0, 0], _tm = new Float64Array(MAT_N);
 
 const smooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
@@ -68,12 +73,13 @@ export class VolumeField {
     this.s = new Float64Array(S_LEN);
     this.base = new Map();   // column -> { H, hard, cave }
     this.terr = new Map();   // column -> { Hc, wc, s8, cm, dip }
+    this.tal = new Map();    // column -> its ground with the talus at a face's foot
     this.cols = new Map();   // column -> { ...terr, gc }
     this.pts = new Map();    // lattice point -> density (the physics' cache)
   }
 
   _key(i, k) { return (i + 32768) * 65536 + (k + 32768); }
-  _trim() { if (this.base.size > 1500000) { this.base.clear(); this.terr.clear(); this.cols.clear(); } if (this.pts.size > 200000) this.pts.clear(); }
+  _trim() { if (this.base.size > 1500000) { this.base.clear(); this.terr.clear(); this.tal.clear(); this.cols.clear(); } if (this.pts.size > 200000) this.pts.clear(); }
 
   // the heightfield and the rock under column (i, k)
   baseAt(i, k) {
@@ -133,23 +139,61 @@ export class VolumeField {
     return t;
   }
 
-  // the column with the slope of its terraced surface (how far a face is from vertical)
+  // the column's ground with talus: the rock fallen from a face piled at its foot as scree at its angle of
+  // repose (~35 degrees), up to about a third of the face's height (a face's rockfall, kept from the
+  // weather a long while), a cone running out half the face's height from it. The nearest face within ~11 m
+  // each of eight ways; none where water runs (a river carries it off). Returns the height (m)
+  talAt(i, k) {
+    const key = this._key(i, k);
+    let h = this.tal.get(key);
+    if (h !== undefined) return h;
+    const H0 = this.terrAt(i, k).Hc;
+    h = H0;
+    if (!this.baseAt(i, k).wet) {
+      // (a face anywhere near: the ground 4 or 11 m off a few metres higher)
+      let near = false;
+      for (let q = 0; q < 4 && !near; q++) {
+        const ox = q === 0 ? 1 : q === 1 ? -1 : 0, oz = q === 2 ? 1 : q === 3 ? -1 : 0;
+        if (this.terrAt(i + 4 * ox, k + 4 * oz).Hc - H0 > 2.5 || this.terrAt(i + 11 * ox, k + 11 * oz).Hc - H0 > 4) near = true;
+      }
+      if (near) {
+        let best = 0;
+        for (let q = 0; q < 8; q++) {
+          const ca = TAL_DIR[q * 2], sa = TAL_DIR[q * 2 + 1];
+          for (let n = 0; n < TAL_D.length; n++) {
+            const d = TAL_D[n], rise = this.terrAt(i + Math.round(d * ca), k + Math.round(d * sa)).Hc - H0;
+            if (rise < Math.max(2, d)) continue;
+            // (a face reached: its height, its top a few metres further in)
+            const top = Math.max(rise, this.terrAt(i + Math.round((d + 4) * ca), k + Math.round((d + 4) * sa)).Hc - H0);
+            best = Math.max(best, Math.min(6, 0.35 * top) - Math.max(0, d - 1) * 0.7);
+            break;
+          }
+        }
+        if (best > 0) h = H0 + best;
+      }
+    }
+    this.tal.set(key, h);
+    return h;
+  }
+
+  // the column with the slope of its ground (the terraced surface and its talus: how far a face is from
+  // vertical)
   colAt(i, k) {
     const key = this._key(i, k);
     let c = this.cols.get(key);
     if (c) return c;
     const t = this.terrAt(i, k);
-    const gx = (this.terrAt(i + 1, k).Hc - this.terrAt(i - 1, k).Hc) / 2, gz = (this.terrAt(i, k + 1).Hc - this.terrAt(i, k - 1).Hc) / 2;
-    const gc = Math.sqrt(gx * gx + gz * gz);
-    c = { Hc: t.Hc, wc: t.wc, s8: t.s8, cm: t.cm, dip: t.dip, gc, ux: gc > 1e-6 ? gx / gc : 0, uz: gc > 1e-6 ? gz / gc : 0 };
+    const gx = (this.talAt(i + 1, k) - this.talAt(i - 1, k)) / 2, gz = (this.talAt(i, k + 1) - this.talAt(i, k - 1)) / 2;
+    const gc = Math.sqrt(gx * gx + gz * gz), Ht = this.talAt(i, k);
+    c = { Hc: Ht, tal: Ht - t.Hc, wc: t.wc * Math.max(0, 1 - (Ht - t.Hc) / 0.8), s8: t.s8, cm: t.cm, dip: t.dip, gc, ux: gc > 1e-6 ? gx / gc : 0, uz: gc > 1e-6 ? gz / gc : 0 };
     this.cols.set(key, c);
     return c;
   }
 
-  // the terraced surface between columns (bilinear)
+  // the ground between columns (bilinear)
   hcAt(x, z) {
     const i = Math.floor(x), k = Math.floor(z), fx = x - i, fz = z - k;
-    const a = this.terrAt(i, k).Hc, b = this.terrAt(i + 1, k).Hc, c = this.terrAt(i, k + 1).Hc, d = this.terrAt(i + 1, k + 1).Hc;
+    const a = this.talAt(i, k), b = this.talAt(i + 1, k), c = this.talAt(i, k + 1), d = this.talAt(i + 1, k + 1);
     return (a * (1 - fx) + b * fx) * (1 - fz) + (c * (1 - fx) + d * fx) * fz;
   }
 
@@ -401,6 +445,16 @@ export function buildVolumeChunk(field, ci, cj, ck, level = 0) {
     if (mm[2] > 0.15 && colm.wc > 0.05) {
       const b = field.bedShade(r, colm.dip), k = 1 + (0.86 + 0.28 * b - 1) * Math.min(1, mm[2] * 1.5);
       cc[0] *= k * (1 + 0.05 * (b - 0.5)); cc[1] *= k; cc[2] *= k * (1 - 0.05 * (b - 0.5));
+    }
+    // (talus: the face's own rock fallen and broken, scree: its colour (the ground shaded as rock), its
+    // stones and grit, few plants on it yet)
+    if (colm.tal > 0.15) {
+      const kt = Math.min(1, (colm.tal - 0.15) / 0.6), c2 = _tc, m2 = _tm;
+      gen.shade(s, 0.62, c2, m2, nrmV);
+      for (let q = 0; q < 3; q++) cc[q] += (c2[q] * 0.95 - cc[q]) * kt;
+      mm[0] *= 1 - 0.8 * kt; mm[2] = Math.max(mm[2], 0.7 * kt);
+      for (let q = MAT_W0; q < MAT_N; q++) mm[q] *= 1 - kt;
+      mm[MAT_W0 + MC.gravel] += kt;
     }
     // (the recent fires' marks on the ground, as the heightfield's chunks have them: not on bare rock faces)
     if (mm[2] < 0.5 && r > 0) fireMark(gen, fireAtDir(gen, ux, uy, uz), cc);
