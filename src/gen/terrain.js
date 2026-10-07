@@ -2297,7 +2297,12 @@ export class TerrainGenerator {
     // plants: the life map's cover, forest in the foliage colour, open country drier
     if (P.veg) {
       const cov = S.cover(x, y, z), fo = S.forest(x, y, z), op = S.open(x, y, z);
-      let vegW = dm.clamp(cov * 1.2, 0, 1) * (1 - rockW) * (1 - 0.8 * sandW) * dm.smoothstep(-6, 2, Tc) * (1 - 0.7 * volc);
+      // (plants hold where soil does: the rock showing on a slope steeper than ~45 degrees, thinning them
+      // to none by ~60, not from the rock's own ~28 degrees: a mountain's flanks drawn ~8x steeper than the
+      // world's own (heights at an eighth, distances at a sixty-fourth) had stood bare where its life map
+      // has them wooded; the bare rock's colour by slope as before, a plantless world's unchanged)
+      const rockV = rockW * dm.smoothstep(0.2, 0.48, slope);
+      let vegW = dm.clamp(cov * 1.2, 0, 1) * (1 - rockV) * (1 - 0.8 * sandW) * dm.smoothstep(-6, 2, Tc) * (1 - 0.7 * volc);
       if (vegW > 0) {
         // (the forest as its stands (life/stands.js): near, where its trees are drawn, the floor under a
         // stand its litter, the open country's grass between; far off, where they aren't, a stand's dark
@@ -2313,9 +2318,10 @@ export class TerrainGenerator {
         const sg = (fl[1] + (P.veg[1] - fl[1]) * 0.3) * 0.75 * (1 - far) + P.veg[1] * 0.8 * far;
         const sb = (fl[2] + (P.veg[2] - fl[2]) * 0.3) * 0.75 * (1 - far) + P.veg[2] * 0.8 * far;
         vr += (sr - vr) * k; vg += (sg - vg) * k; vb += (sb - vb) * k;
-        vegW = Math.max(vegW, k * (1 - rockW));
+        vegW = Math.max(vegW, k * (1 - rockV));
         r += (vr - r) * vegW; g += (vg - g) * vegW; b += (vb - b) * vegW;
         mat[0] = vegW;
+        mat[2] = rockW * (1 - vegW);   // (the rock showing through them)
       }
     }
     // rivers: wet darker ground on the floodplain (the water itself is above)
