@@ -327,13 +327,20 @@ export function buildChunk(gen, face, level, ix, iy, N = CHUNK_N) {
       gen._bed = seaBed[fk] === 1;
       // (a cliff's brink is its bare rock: a vertex with the ground falling away steeply beside it shaded
       // as the face it tops, not the grass behind it (its colour ran down the face's tall triangles in
-      // stripes))
+      // stripes); its eight neighbours, the diagonals too: a cliff across the grid's diagonal is drawn as a
+      // staircase of tall panels, and each step's inner corner, nothing below it square on, had kept its
+      // grass, an olive edge down every panel. And its foot the face's scree, not turf: the ground rising
+      // steeply beside it (its grass had run up the face from below))
       let slp = 1 - up;
       if (slp < 0.6 && spacing < 40) {
-        const rc = pl, rl = Math.hypot(fineP[(fk - 1) * 3], fineP[(fk - 1) * 3 + 1], fineP[(fk - 1) * 3 + 2]), rr = Math.hypot(fineP[(fk + 1) * 3], fineP[(fk + 1) * 3 + 1], fineP[(fk + 1) * 3 + 2]);
-        const rd = Math.hypot(fineP[(fk - FV) * 3], fineP[(fk - FV) * 3 + 1], fineP[(fk - FV) * 3 + 2]), ru = Math.hypot(fineP[(fk + FV) * 3], fineP[(fk + FV) * 3 + 1], fineP[(fk + FV) * 3 + 2]);
-        const drop = rc - Math.min(rl, rr, rd, ru);
+        let lo = Infinity, hi = -Infinity;
+        for (const o of [-1, 1, -FV, FV, -FV - 1, -FV + 1, FV - 1, FV + 1]) {
+          const q = (fk + o) * 3, rq = Math.hypot(fineP[q], fineP[q + 1], fineP[q + 2]);
+          if (rq < lo) lo = rq; if (rq > hi) hi = rq;
+        }
+        const drop = pl - lo, rise = hi - pl;
         if (drop > 2 * spacing) slp = Math.max(slp, Math.min(0.9, 0.3 * drop / spacing));
+        if (rise > 2.5 * spacing) slp = Math.max(slp, Math.min(0.72, 0.22 * rise / spacing));
       }
       gen.shade(s, slp, col, mat, nv);
       gen._bed = false;
