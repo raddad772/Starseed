@@ -197,7 +197,7 @@ Dave's queue, in the order he raised it (keep this list current):
      scree. Near ground (fcee53b): no treads or standing beds in and beside a river's channel (the fall
      had poured from under a ledge stood out across it). On foot the fall now pours over its lip.
      Scratchpad fall_nf2, cliff_s5. Talus (1cc2944): scree at faces' feet in the near field, ~35 degrees,
-     a third of the face's height, the face's rock broken (talus_cmp). Still: the brink rounded.
+     a third of the face's height, the face's rock broken (talus_cmp); brinks rounded (a quarter circle, brink_cmp).
    - Stalls (4d5d501): the clouds' light under the camera read back from the GPU every eighth frame at
      once (the CPU waiting on everything queued: up to 300 ms in the test tab, CPU frame p90 310 ms), and
      the sky's LUTs when the dust remade them: both now read through a polled fence (p90 21 ms).
