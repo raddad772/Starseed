@@ -325,7 +325,17 @@ export function buildChunk(gen, face, level, ix, iy, N = CHUNK_N) {
       const up = (nx * px + ny * py + nz * pz) / pl;
       nv[0] = nx; nv[1] = ny; nv[2] = nz;
       gen._bed = seaBed[fk] === 1;
-      gen.shade(s, 1 - up, col, mat, nv);
+      // (a cliff's brink is its bare rock: a vertex with the ground falling away steeply beside it shaded
+      // as the face it tops, not the grass behind it (its colour ran down the face's tall triangles in
+      // stripes))
+      let slp = 1 - up;
+      if (slp < 0.6 && spacing < 40) {
+        const rc = pl, rl = Math.hypot(fineP[(fk - 1) * 3], fineP[(fk - 1) * 3 + 1], fineP[(fk - 1) * 3 + 2]), rr = Math.hypot(fineP[(fk + 1) * 3], fineP[(fk + 1) * 3 + 1], fineP[(fk + 1) * 3 + 2]);
+        const rd = Math.hypot(fineP[(fk - FV) * 3], fineP[(fk - FV) * 3 + 1], fineP[(fk - FV) * 3 + 2]), ru = Math.hypot(fineP[(fk + FV) * 3], fineP[(fk + FV) * 3 + 1], fineP[(fk + FV) * 3 + 2]);
+        const drop = rc - Math.min(rl, rr, rd, ru);
+        if (drop > 2 * spacing) slp = Math.max(slp, Math.min(0.9, 0.3 * drop / spacing));
+      }
+      gen.shade(s, slp, col, mat, nv);
       gen._bed = false;
       // (the recent centuries' fires on the ground near: this year's burn charred, last year's darkened,
       // then a flush of green for a few years; gen/life/fire.js, its tiles kept on the generator)
