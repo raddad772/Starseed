@@ -330,6 +330,24 @@ Dave's queue, in the order he raised it (keep this list current):
      bed 50 m down is only ~3 degrees, so likely not walls); others: skirts at chunk edges showing, the LOD
      morph's positions. Next: read a far coastal chunk's positions back and draw them side on.
 
+## Deferred or not: measurements (session 39d69fa8, 2026-10-07)
+Dave asked whether a deferred renderer would pay (other players' GPUs, many lights to come: landing
+lights, structures, fires; decals: mud, trails, puddles; flowers). Measured in the test tab, in the wood at
+18.66N 59.63W at eye level, 2048x1536, by draining the GPU around each pass (scratch script
+tools/blender/out/_claude_measure.js, git-ignored: patches every surface's output to its albedo ("flat":
+the compiler drops the lighting) or to a constant added per fragment (the overdraw count)):
+- per pass (ms): shadow maps 23.6, opaque scene 30.3, water 1.6, sky 1.0, air/clouds 6.9, composite 1.3,
+  soft 0.4, transparent 1.0, post 1.9; the frame ~76 drained. 599 draws, 4.2M triangles in the scene.
+- the opaque scene (reversed-Z, early depth rejection working): GPU 26 ms, of it lighting 11.9 (45%);
+  1.89 fragments shaded a covered pixel (the spawn's meadow view: 1.7).
+- the same with logarithmic depth (?logdepth=1: what a browser without EXT_clip_control gets, every
+  shader writing gl_FragDepth): the scene GPU 57-63 ms, lighting 40.8 ms (~6.5 fragments lit a pixel:
+  none rejected before shading), "flat" 19 ms.
+- Read: deferred (lighting once a pixel) saves ~5.6 ms gross here on reversed-Z (~4 net, a G-buffer's
+  traffic not yet measured), ~35 ms on log depth. WebGPU's 0..1 depth makes reversed-Z native (no log
+  depth anywhere). The shadow maps' 23.6 ms is untouched by either: next to look at (draws a cascade,
+  CPU vs GPU).
+
 ## NOW: fire through the recent centuries (session 39d69fa8, 2026-10-06), SIM 68
 
 - gen/life/fire.js (LIFE.md has the model): 8 km fire tiles, 300 years on 32 m cells, run in the
