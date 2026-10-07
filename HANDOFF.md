@@ -225,6 +225,13 @@ Dave's queue, in the order he raised it (keep this list current):
      load: grass ~7-8 ms (4.3M triangles loaded: 4200-triangle patches within 22 m, 600-650 to 180 m), the
      terrain chunks in the main view 4-8 ms, drawing the shadow maps ~7 ms (near map ~370 chunks, far
      ~1100), the sun maps' sampling ~2 ms. In the slow state half resolution saves 26 ms: fill-bound then.
+     The air march (b978ef8): on foot 98% of pixels' rays end within 50 m and each took 18 steps; now
+     about a step a 250 m (GPU -10 ms in the wood, -3 from 150 m up). Checked by rendering the volume pass
+     twice with the same uniforms and comparing scene x T + L (scratch scripts in this session's log).
+   - Left from the air (150 m up over open country, GPU ~53 ms): the volume pass ~22 ms (the cloud shell's
+     40 steps ~10 of it: 30 steps saves 2.4 ms but changes the clouds 2.5% a pixel, up to 190% at edges;
+     not taken), the scanned ground materials 11.5 ms (biplanar instead of triplanar 2.6 ms; their
+     anisotropy 16 -> 8 1.8 ms, -> 1 3.3 ms: options, not taken), the air's terrain shadow 2.3 ms.
    - Earlier (gl.finish, so CPU only): 33N 78W from 90 m ~13-16 ms; on foot at the 18 m fall ~12.5 ms.
    - Grass none under the water's surface as drawn (3dd22fc). Tried and reverted: a noise nudge to the
      ground classes' boundary (no zigzag case found to show it on).
