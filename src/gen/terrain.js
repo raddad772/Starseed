@@ -2220,7 +2220,10 @@ export class TerrainGenerator {
     for (let k = 0; k < 3; k++) rc[k] = c1[k] + (c2[k] - c1[k]) * mix;
     // (a dune sea's sand over it)
     // (a hydrocarbon world's dunes are its haze's organics: dark brown sand, Titan's ~0.1 albedo)
-    if (s[S_SAND] > 0) { const sc = p.liquid === 'methane' || p.liquid === 'ethane' ? ORGANIC_SAND : this.rockLin[ROCK['quartz sand']]; if (sc) for (let k = 0; k < 3; k++) rc[k] += (sc[k] - rc[k]) * s[S_SAND]; }
+    // (where no water weathers the rock, its sand is the rock's own grains, basalt's dark, a little of the
+    // world's dust on them: Mars' dunes ~0.1 albedo against its bright dust; quartz is what's left after
+    // water has taken the rest)
+    if (s[S_SAND] > 0) { const sc = p.liquid === 'methane' || p.liquid === 'ethane' ? ORGANIC_SAND : p.liquid ? this.rockLin[ROCK['quartz sand']] : this._lithicSand(P); if (sc) for (let k = 0; k < 3; k++) rc[k] += (sc[k] - rc[k]) * s[S_SAND]; }
     // (how much of it is sand: quartz, coral, black sand, lithology.js; no bedrock shows there)
     let sandW = Math.max((rt >= 11 ? 1 - mix : 0) + (r2 >= 11 ? mix : 0), s[S_SAND]), sandOver = s[S_SAND];
     // (a beach's runnels stay sand: the fine tiles' rills cut through its few metres of sand to the
@@ -2397,6 +2400,13 @@ export class TerrainGenerator {
   // a rock of a suite (geology.js) shows its column's bed at this height, tilted and folded as
   // the tiles have it, so a tile's beds carry on past its edge (seen at this sampling's grain);
   // deposits and loose ground as they are
+  // a dry world's dune sand: the rock's own grains (black sand's colour), a third of the world's dust over them
+  _lithicSand(P) {
+    if (this._lsand) return this._lsand;
+    const b = this.rockLin[ROCK['black sand']] || [0.03, 0.03, 0.03], d = P.regolith || P.soil || b;
+    return (this._lsand = [0, 1, 2].map((k) => b[k] + (d[k] - b[k]) * 0.33));
+  }
+
   _bedRock(x, y, z, h, rock) {
     const nm = ROCKS[rock] && ROCKS[rock].name, su = nm && !DEPOSITS.has(nm) ? SUITE[nm] : null;
     if (!su) return rock;

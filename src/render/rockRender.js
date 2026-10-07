@@ -149,9 +149,12 @@ void main() {
     rough = mix(rough, 0.75, sk);
     ao = mix(ao, 1.0, sk);
   }
-  // (a thin air's frost, Mars' CO2: on the sides of it that face the pole the longest)
+  // (a thin air's frost, Mars' CO2: on the sides of it that face the pole the longest; a stone's face a third
+  // as tilted as it is, for the heat it takes through itself from its sunlit side and from the warm ground
+  // round it: its north face no polar slope, frost on stones at 15N had been)
   if (uFrost.y > 0.5) {
-    float fk = seasonFrost(uToFixed * N, 0.5);
+    vec3 nT = normalize(up + (N - up * dot(N, up)) * 0.33);
+    float fk = seasonFrost(uToFixed * nT, 0.5);
     albedo = mix(albedo, uSnowCol, fk);
     rough = mix(rough, 0.75, fk);
   }

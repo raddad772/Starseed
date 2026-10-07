@@ -96,8 +96,9 @@ void main() {
     p = aFoot + out1 * vOut * 1.2 * (1.0 - exp(-t / 1.2)) + aUp * (vImp * 0.08 * 3.0 * (1.0 - exp(-t / 3.0)) - uFall2.x * t)
       + wind * (t - 3.0 * (1.0 - exp(-t / 3.0)));
     float k = t / life;
-    size = (0.6 + 0.12 * aFall.z) * mix(0.5, 1.4, aSeed.z) * mix(0.35, 1.0, sqrt(k));
-    a = 0.16 * uFall2.y * smoothstep(0.0, 0.12, k) * (1.0 - smoothstep(0.5, 1.0, k));
+    // (a haze of it: many small wisps, not a few puffs)
+    size = (0.3 + 0.05 * aFall.z) * mix(0.5, 1.4, aSeed.z) * mix(0.35, 1.0, sqrt(k));
+    a = 0.07 * uFall2.y * smoothstep(0.0, 0.12, k) * (1.0 - smoothstep(0.5, 1.0, k));
   } else {
     // a drop thrown up off the foot: toward its terminal speed (down, and with the wind) at its drag
     // time; ballistic in a vacuum
@@ -111,8 +112,8 @@ void main() {
     float t = fract(uTime / life + aSeed.x) * life;
     p = aFoot + vT * t + (v0v - vT) * tau * (1.0 - exp(-t / tau));
     // (each one a little cloud of the drops thrown together, millimetres each: faint, a haze where many are)
-    size = mix(0.25, 0.8, aSeed.y);
-    a = 0.22 * smoothstep(0.0, 0.05, t / life) * (1.0 - smoothstep(0.75, 1.0, t / life));
+    size = mix(0.08, 0.3, aSeed.y);
+    a = 0.2 * smoothstep(0.0, 0.05, t / life) * (1.0 - smoothstep(0.75, 1.0, t / life));
   }
   vec4 wp = modelMatrix * vec4(p, 1.0);
   // lit as the air there is: the sun through the air (a forward-scattering phase: bright against the
@@ -132,7 +133,8 @@ void main() {
     // (the bow: its angle from the antisolar point; red outside, violet in)
     float A = acos(clamp(dot(toCam, uSunDir), -1.0, 1.0)), d = (A - uFall2.z) * 57.2958;
     vec3 bowC = vec3(exp(-pow((d - 0.8) / 0.45, 2.0)), exp(-pow((d - 0.1) / 0.45, 2.0)), exp(-pow((d + 0.7) / 0.45, 2.0)));
-    c += uSunE * sunT * bowC * 3.0;
+    // (faint: a few drops among many at its angle, a shimmer across the spray, not lit beads)
+    c += uSunE * sunT * bowC * 0.12;
   }
   vCol = c;
   vA = a;
@@ -195,8 +197,8 @@ export class FallFx {
       const vImp = Math.min(Math.sqrt(2 * g * drop), vSheet);
       const ux = origin[0] + x, uy = origin[1] + y, uz = origin[2] + z, ul = Math.hypot(ux, uy, uz);
       // (its share of particles: by its width and how hard it lands)
-      const nSpray = Math.round(Math.min(400, Math.max(16, width * vImp * 1.5)));
-      const nMist = Math.round(Math.min(240, Math.max(0, width * Math.sqrt(drop) * 1.2)) * mistK);
+      const nSpray = Math.round(Math.min(1200, Math.max(48, width * vImp * 4)));
+      const nMist = Math.round(Math.min(720, Math.max(0, width * Math.sqrt(drop) * 3.6)) * mistK);
       for (let k = 0; k < nSpray + nMist; k++) {
         // (along the line it lands on, its lip's width; a ring of it where that way isn't known)
         const s = (rnd() - 0.5) * width;

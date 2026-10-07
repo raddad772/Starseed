@@ -83,6 +83,35 @@ function encodeShore(d) {
 // scratch buffers reused between chunks
 let scratchN = 0, fineS, fineP, coarseS, coarseP, fineNrm, coarseNrm, coarseCol, rivWd, lvL, lvK, lvF, lvC, seaBed, cSeaBed;
 
+// a grid's steep normals (V x V, fineP's positions FV wide with a ring round them) averaged with the steep
+// ones round them facing the same way (a 5 x 5 patch): a cliff across the grid's cells is a staircase,
+// each step its own normal
+const _smN = { a: null };
+function smoothSteepNormals(N, P, V, FV) {
+  const n = V * V * 3;
+  if (!_smN.a || _smN.a.length < n) _smN.a = new Float32Array(n);
+  const out = _smN.a;
+  out.set(N.subarray(0, n));
+  for (let j = 0; j < V; j++) for (let i = 0; i < V; i++) {
+    const o = (j * V + i) * 3, c = ((j + 1) * FV + (i + 1)) * 3;
+    const pl = Math.hypot(P[c], P[c + 1], P[c + 2]) || 1, ux = P[c] / pl, uy = P[c + 1] / pl, uz = P[c + 2] / pl;
+    const nx = N[o], ny = N[o + 1], nz = N[o + 2];
+    if (nx * ux + ny * uy + nz * uz > 0.75) continue;
+    let sx = 0, sy = 0, sz = 0;
+    for (let dj = -2; dj <= 2; dj++) for (let di = -2; di <= 2; di++) {
+      const ii = i + di, jj = j + dj;
+      if (ii < 0 || jj < 0 || ii >= V || jj >= V) continue;
+      const q = (jj * V + ii) * 3, mx = N[q], my = N[q + 1], mz = N[q + 2];
+      if (mx * ux + my * uy + mz * uz > 0.8 || mx * nx + my * ny + mz * nz < 0.3) continue;
+      const w = 1 / (1 + di * di + dj * dj);
+      sx += mx * w; sy += my * w; sz += mz * w;
+    }
+    const l = Math.hypot(sx, sy, sz);
+    if (l > 1e-6) { out[o] = sx / l; out[o + 1] = sy / l; out[o + 2] = sz / l; }
+  }
+  N.set(out.subarray(0, n));
+}
+
 export function buildChunk(gen, face, level, ix, iy, N = CHUNK_N) {
   const R = gen.R;
   const V = N + 1;
@@ -199,6 +228,10 @@ export function buildChunk(gen, face, level, ix, iy, N = CHUNK_N) {
       fineNrm[o] = nx; fineNrm[o + 1] = ny; fineNrm[o + 2] = nz;
     }
   }
+  // (a cliff's face running across the grid stands as a staircase of its cells, each step its own normal:
+  // fluted top to bottom; its normals averaged over the face nearby (steep ones facing the same way), so
+  // it reads as the face it is)
+  smoothSteepNormals(fineNrm, fineP, V, FV);
 
   // ---- coarse (parent-level) grid
   const hasParent = level > 0, nv = [0, 0, 0];

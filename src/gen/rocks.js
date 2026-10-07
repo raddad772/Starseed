@@ -6,7 +6,10 @@
 //   erratics  ground the ice once covered (the ground layer's glacial history): big rounded boulders
 //             left on otherwise soft ground
 //   streams   a steep stream's bed and banks: rounded cobbles
-//   ejecta    an airless world's craters: blocks thrown out round the rims
+//   ejecta    a dry world's craters (no rain, no rivers, no soil-making to bury or wear them: an airless
+//             one's, Mars', Venus'): blocks thrown out round the rims
+//   lag       a dry world's plains: the cobbles and boulders the wind leaves as it takes the fines (a
+//             desert pavement; Mars' rock-strewn plains, Pathfinder's ~20% of the ground)
 // and nothing on sand that's moving, under snow, under water, on a meadow's soil. Sizes from a
 // power law (many small, few large); half buried (more for old erratics); the rock the ground's own.
 // Per rock (ROCK_STRIDE floats): x, y, z (from the node's origin), radius (m), yaw, tilt, seed,
@@ -36,7 +39,7 @@ export function scatterRocks(gen, face, level, ix, iy, maxLevel, seed) {
   const s = new Float64Array(S_LEN), s2 = new Float64Array(S_LEN), col = [0, 0, 0], mat = new Float64Array(MAT_N), col2 = [0, 0, 0], mat2 = new Float64Array(MAT_N);
   const dir = [0, 0, 0], d2 = [0, 0, 0], gl = {};
   const hasSea = !!gen.p.liquid && gen.contThreshold > -1e8;
-  const airless = !gen.p.liquid && !(gen.p.airP > 0.001);
+  const airless = !gen.p.liquid && !(gen.p.airP > 0.001), dry = !gen.p.liquid;
   const S = gen.snap;
   // (a point d metres from dir along the ground, east (k 0) or north (k 1))
   const east = [0, 0, 0], north = [0, 0, 0];
@@ -66,7 +69,7 @@ export function scatterRocks(gen, face, level, ix, iy, maxLevel, seed) {
     if (snow + ice > 0.75) continue;   // (buried)
     // (the most the cues below could give, from what the ground shows: most candidates end here)
     const damp0 = (1 - 0.95 * dm.smoothstep(0.3, 0.8, sand * (1 - rockSh))) * (1 - 0.7 * cover) * (1 - 0.6 * soil * (1 - rockSh)) * (1 - snow);
-    if (r0 >= 2.1 * damp0 * (2 * rockSh + (S ? 0.15 : 0.1) + (s[S_WET] > 0 ? 0.5 : 0) + (airless ? 0.25 : 0) + 1.6 * dm.smoothstep(0.02, 0.15, slope))) continue;
+    if (r0 >= 2.1 * damp0 * (2 * rockSh + (S ? 0.15 : 0.1) + (s[S_WET] > 0 ? 0.5 : 0) + (dry ? 0.4 : 0) + 1.6 * dm.smoothstep(0.02, 0.15, slope))) continue;
     // the cues
     let pBed = 0, pTalus = 0, pErr = 0, pStream = 0, pEj = 0;
     const g = S && S.ground ? S.ground(dir[0], dir[1], dir[2], gl) : null;
@@ -85,19 +88,21 @@ export function scatterRocks(gen, face, level, ix, iy, maxLevel, seed) {
     }
     if (g) pErr = dm.smoothstep(0.2, 0.7, g.glac) * 0.03 * (1 - sand);
     if (s[S_WET] > 0 && slope > 0.06) pStream = s[S_WET] * dm.smoothstep(0.06, 0.25, slope) * 0.5;
-    if (airless) pEj = Math.min(1, s[S_CRATER] * 1.5 + 0.15) * 0.25;
+    let pLag = 0;
+    if (dry) { pEj = Math.min(1, s[S_CRATER] * 1.5 + 0.15) * (airless ? 0.25 : 0.2); pLag = 0.18 * (1 - sand) * dm.smoothstep(0.15, 0.03, slope); }
     const damp = (1 - 0.95 * dm.smoothstep(0.3, 0.8, sand * (1 - rockSh))) * (1 - 0.7 * cover) * (1 - 0.6 * soil * (1 - rockSh)) * (1 - snow);
-    const pAll = (pBed + pTalus + pErr + pStream + pEj) * damp;
+    const pAll = (pBed + pTalus + pErr + pStream + pEj + pLag) * damp;
     if (r0 >= pAll) continue;
     // which cue put it here, and so its size and shape
     let pick = r1 * pAll / Math.max(damp, 1e-6), kind;
-    if ((pick -= pTalus) < 0) kind = 'talus'; else if ((pick -= pBed) < 0) kind = 'bed'; else if ((pick -= pErr) < 0) kind = 'err'; else if ((pick -= pStream) < 0) kind = 'stream'; else kind = 'ej';
+    if ((pick -= pTalus) < 0) kind = 'talus'; else if ((pick -= pBed) < 0) kind = 'bed'; else if ((pick -= pErr) < 0) kind = 'err'; else if ((pick -= pStream) < 0) kind = 'stream'; else if ((pick -= pLag) < 0) kind = 'lag'; else kind = 'ej';
     let rad, round, sink;
     const pl = (rmin, rmax, a) => Math.min(rmax, rmin * dm.pow(1 - r2 * 0.999, -1 / a));
     if (kind === 'talus') { rad = pl(0.15, 3.5, 1.6) * (1 + 0.6 * dm.smoothstep(0.6, 0.15, slope)); round = 0.1; sink = 0.15; }
     else if (kind === 'bed') { rad = pl(0.1, 2.2, 1.8); round = 0.05 + 0.25 * loose; sink = 0.25 + 0.3 * loose; }
     else if (kind === 'err') { rad = pl(0.8, 4.5, 1.4); round = 0.75; sink = 0.3; }
     else if (kind === 'stream') { rad = pl(0.08, 1.2, 2.0); round = 0.85; sink = 0.25; }
+    else if (kind === 'lag') { rad = pl(0.1, 1.5, 2.0); round = 0.2; sink = 0.2; }
     else { rad = pl(0.1, 3, 1.5); round = 0.15; sink = 0.2; }
     if (g && g.youth > 0.3) round *= 0.6;
     // its rock: the class the ground shows (stream cobbles and erratics: the rock's, worn); its colour
@@ -231,7 +236,7 @@ export function scatterStones(gen, face, level, ix, iy, maxLevel, seed) {
   const rng = new Rng([hashInts(seed, face, level), hashInts(ix, iy, 5311), seed ^ 0x6c8e9cf5, (ix * 97) ^ (iy * 2654435761)]);
   const s = new Float64Array(S_LEN), col = [0, 0, 0], mat = new Float64Array(MAT_N), dir = [0, 0, 0];
   const hasSea = !!gen.p.liquid && gen.contThreshold > -1e8;
-  const airless = !gen.p.liquid && !(gen.p.airP > 0.001);
+  const dry = !gen.p.liquid;
   const G = Math.max(2, Math.round(arc / 6)), cells = [];
   for (let j = 0; j < G; j++) for (let i = 0; i < G; i++) {
     dirFromFaceUV(face, u0 + (i + 0.5) / G * size, v0 + (j + 0.5) / G * size, dir);
@@ -241,7 +246,8 @@ export function scatterStones(gen, face, level, ix, iy, maxLevel, seed) {
     let rockSh = 0, cls = MC.igneous, best = 0;
     for (const c of ROCK_CLASSES) { const w = mat[MAT_W0 + c]; rockSh += w; if (w > best) { best = w; cls = c; } }
     const sand = mat[MAT_W0 + MC.sand], snow = mat[MAT_W0 + MC.snow] + mat[MAT_W0 + MC.ice], cover = mat[MAT_W0 + MC.cover], gravel = mat[MAT_W0 + MC.gravel];
-    let dens = (1.2 * rockSh + 1.0 * gravel + (airless ? 0.5 : 0.08)) * (1 - 0.9 * sand) * (1 - snow) * (1 - 0.8 * cover);
+    // (a dry world's ground a lag of stones, nothing to make soil over them: the Moon's, Mars')
+    let dens = (1.2 * rockSh + 1.0 * gravel + (dry ? 0.6 : 0.08)) * (1 - 0.9 * sand) * (1 - snow) * (1 - 0.8 * cover);
     cells.push(Math.max(0, Math.min(1.5, dens)), cls);
   }
   // (up to ~0.25 stones a square metre where it's stoniest)

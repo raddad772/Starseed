@@ -620,8 +620,19 @@ void main() {
       foam *= 1.0 - fallK;
     }
     if (uFallTop > 0.0) {
-      float dF = length(vFixedPos - uOriginMod - uFallFoot) / max(uFallW * 1.2 + 2.0, 2.0);
-      foam = max(foam, (1.0 - smoothstep(0.25, 1.0, dF)) * mix(0.35, 0.95, uFall2.y) * (0.6 + 0.8 * (grp.x - 0.5)) * (1.0 - fallK));
+      // (the plunge pool: churned white where it lands, the rest broken into patches and streaks the water
+      // carries off downstream at its own pace; the water itself between them. A thin fall churns less:
+      // how hard it lands, its share the air shatters)
+      vec3 Lf = vFixedPos - uOriginMod - uFallFoot;
+      float dF = length(Lf) / max(uFallW * 1.2 + 2.0, 2.0);
+      float flL = length(vFlw.xyz);
+      vec3 fd = flL > 1e-4 ? vFlw.xyz / flL : normalize(cross(upF, vec3(0.0, 0.0, 1.0)) + vec3(1e-4, 0.0, 0.0));
+      vec3 fa = normalize(cross(upF, fd));
+      vec2 q2 = vec2(dot(Lf, fa), dot(Lf, fd) - uTime * max(flL * 9.0, 0.4)) * 0.18;
+      float fz = texture(tDetail, q2).r * 0.65 + texture(tDetail, q2 * 2.7 + 0.31).a * 0.35;
+      float core = 1.0 - smoothstep(0.05, 0.45, dF), ring = 1.0 - smoothstep(0.2, 1.0, dF);
+      float fm = max(core * 0.9, ring * smoothstep(0.55 - 0.3 * ring, 0.8, fz));
+      foam = max(foam, fm * mix(0.35, 0.95, uFall2.y) * (1.0 - fallK));
     }
     color = mix(color, vec3(0.75) / PI * lit, clamp(foam, 0.0, 1.0));
     // frozen: the sea's ice as floes (liquid.js seaFloes: gen/liquidice.js reads the same, so where it's
