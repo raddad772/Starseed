@@ -189,6 +189,12 @@ Dave's queue, in the order he raised it (keep this list current):
      the sky's LUTs when the dust remade them: both now read through a polled fence (p90 21 ms).
    - Grass none under the water's surface as drawn (3dd22fc). Tried and reverted: a noise nudge to the
      ground classes' boundary (no zigzag case found to show it on).
+   - Seen, open: from 25 km up (33N 78W, sun 40, looking down 35 deg; scratchpad air25_cmp*) the land is
+     smeared in streaks converging in perspective, the coasts in regular saw teeth. In the vertex colours
+     themselves (vCol alone shows them; the normals are smooth); not the air's terrain shadows nor the
+     ground's (each switched off, no change). A line of samples at 400 m and 50 m there is smooth: not
+     plain aliasing on that line. Next: the far chunks' own vertices (their sample wavelength, skirts,
+     the coast's per-vertex water/land switch) read back from a mesh in view.
 
 ## NOW: fire through the recent centuries (session 39d69fa8, 2026-10-06), SIM 68
 
