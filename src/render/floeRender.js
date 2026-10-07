@@ -8,6 +8,7 @@ import { GLSL_SURFACE_ATMO, GLSL_CLOUD_N, GLSL_CLOUD_SHADOW } from './atmosphere
 import { GLSL_TERRAIN_SHADOW } from './terrainShadow.js';
 import { GLSL_SUN_SHADOW, SHADOW_LAYER } from './sunShadows.js';
 import { GLSL_SEASON } from './season.js';
+import { GLSL_MOON } from './moonlight.js';
 
 const REACH = 600, MOVE = 150, HIGH = 3000;
 
@@ -81,6 +82,7 @@ ${GLSL_CLOUD_N}
 ${GLSL_CLOUD_SHADOW}
 ${GLSL_TERRAIN_SHADOW}
 ${GLSL_SUN_SHADOW}
+${GLSL_MOON}
 vec4 tri(vec3 p, vec3 w, float period) {
   return texture(tDetail, p.yz / period) * w.x + texture(tDetail, p.zx / period + 0.37) * w.y + texture(tDetail, p.xy / period + 0.71) * w.z;
 }
@@ -124,7 +126,8 @@ void main() {
   vec3 sunA = atmoSunTransmittance(r, muS), skyE = atmoSkyIrradiance(r, muS);
   // (a top's own shadow read 15 cm over it: in a low sun its flat face shadowed itself in stripes; a
   // sail's, half a metre and up, still falls on it)
-  vec3 sunT = sunA * cloudLight(rel, r, muS, foot, sunA, skyE) * terrainShadow(pF, normalize(pF), uToFixed * uSunDir, uRadius) * sunShadowMap(vWorld + (wall || sail || block ? vec3(0.0) : up * 0.15), N);
+  float keySh = sunShadowMap(vWorld + (wall || sail || block ? vec3(0.0) : up * 0.15), N);
+  vec3 sunT = sunA * cloudLight(rel, r, muS, foot, sunA, skyE) * terrainShadow(pF, normalize(pF), uToFixed * uSunDir, uRadius) * keySh;
   vec3 N2 = normalize(mix(up, N, wall || sail || block ? 1.0 : 0.5));
   // (a berg's faces broken: the ice's own fractures and melt hollows, the 8 m and 2 m tiles' slopes)
   if (berg) {
@@ -139,7 +142,9 @@ void main() {
     vec3 t1 = normalize(cross(up, vec3(0.0, 1.0, 0.0) + up * 0.01)), t2 = cross(up, t1);
     N2 = normalize(N2 + ((s1.g - 0.5) * t1 + (s1.b - 0.5) * t2) * 0.35 * (1.0 - smoothstep(0.2, 2.0, foot)) + ((s2.g - 0.5) * t1 + (s2.b - 0.5) * t2) * 0.25 * (1.0 - smoothstep(1.0, 8.0, foot)));
   }
-  vec3 color = alb / PI * (uSunE * sunT * max(dot(N2, uSunDir), 0.0) + (uSunE * skyE * (0.5 + 0.5 * dot(N2, up)) + uAmbientFloor));
+  // (and by night the moon's, the sun's shadow map then its; a hand light's)
+  vec3 color = alb / PI * (uSunE * sunT * max(dot(N2, uSunDir), 0.0) + (uSunE * skyE * (0.5 + 0.5 * dot(N2, up)) + uAmbientFloor)
+    + moonLit(rel, r, up, N2, keySh, 0.0, 0.5 + 0.5 * dot(N2, up), 1.0) + handLit(vWorld, N2));
   vec3 V = normalize(-vWorld), H = normalize(V + uSunDir);
   color += uSunE * sunT * pow(max(dot(N2, H), 0.0), mix(400.0, 40.0, snowy)) * 0.04 * step(0.0, muS);
   color += uSunE * sunT * pow(max(dot(normalize(mix(up, N2, 0.2)), H), 0.0), 600.0) * 0.4 * pond * step(0.0, muS);
