@@ -45,7 +45,9 @@ function sourceAt(gen, d, L) {
   // (frozen ground lifts none where its soil holds water (ice binds it, snow covers it); a dry world's cold
   // ground, Mars', lifts as any)
   if (Tm < 0 && gen.p.liquid === 'water') return 0;
-  const soil = 0.2 + 0.8 * Math.max(0, 1 - 1.3 * cov), dry = Math.max(1 - sm(150, 600, P), 0.25 + 0.75 * monthDry);
+  // (its loose ground: the bare share (none under a closed cover: its plants' drag and roots, its litter),
+  // and a little anywhere, fields, tracks and banks; 20% of a forest's floor had lifted as a desert's)
+  const soil = 0.06 + 0.94 * Math.max(0, 1 - 1.3 * cov), dry = Math.max(1 - sm(150, 600, P), 0.25 + 0.75 * monthDry);
   return soil * dry;
 }
 
@@ -78,15 +80,26 @@ export function dustAt(b, dirF, t, sunE, day, out = { tau: 0, salt: 0, src: 0 })
   _ax.copy(dirF).cross(_w.dir);
   if (_ax.lengthSq() < 1e-12) return out;
   _ax.normalize();
+  // (each source's lifting over a spread of times, not one instant's: the dust over a place is what was
+  // raised upwind over the hours before it came, spread out on the way (a plume a day from its source a
+  // day or more wide in time); and lifting grows steeply with the wind (above its threshold ~U^3), so one
+  // gust's instant at a point had stood for days: a forest's sky a dust storm's (optical depth 3, the cap)
+  // more often than the desert's upwind of it)
   let dust = 0, salt = 0;
   for (let k = 0; k < DIST.length; k++) {
     _p.copy(dirF).applyAxisAngle(_ax, -DIST[k] / Rt);
     const src = sourceAt(gen, _p, L);
     if (k === 0) out.src = Math.max(0, src);
     if (src === 0) continue;
-    const U = windAt(b, _p, t - DIST[k] / CARRY, sunE, day, _w2).speed;
-    if (src < 0) { salt += W[k] * Math.pow(U, 3.41); continue; }
-    if (E.dust) dust += W[k] * src * dustEmission(E.dust, U);
+    const tk = t - DIST[k] / CARRY, spread = 6 * 3600 + 0.5 * DIST[k] / CARRY;
+    let em = 0, sp = 0;
+    for (let j = -2; j <= 2; j++) {
+      const U = windAt(b, _p, tk + 0.5 * j * spread, sunE, day, _w2).speed;
+      if (src < 0) sp += Math.pow(U, 3.41) / 5;
+      else if (E.dust) em += dustEmission(E.dust, U) / 5;
+    }
+    if (src < 0) salt += W[k] * sp;
+    else dust += W[k] * src * em;
   }
   // (the weights sum to 1: against the world's mean source and lifting, the world's mean optical depth)
   const srcMean = meanSource(b, L);
