@@ -1,4 +1,6 @@
 uniform vec4 uBase;
+uniform vec2 uLivery;uniform vec3 uPaint1;uniform vec3 uPaint2;uniform vec3 uPaint3;
+varying vec3 vObjPos;varying vec3 vObjN;
 uniform vec3 uEmissive;
 uniform vec4 uPBR; // roughness, metalness, alpha cutoff, AO intensity
 uniform vec4 uFlags; // vertex colors, unlit, normal map, flat shading
@@ -15,7 +17,16 @@ void main(){
  vec2 uv0=texUV(uChannels.x,mapTransform),uvR=texUV(uChannels.z,roughnessMapTransform),uvM=texUV(uChannels.w,metalnessMapTransform);
  vec2 uvE=texUV(uChannels2.x,emissiveMapTransform),uvA=texUV(uChannels2.y,aoMapTransform),uvAlpha=texUV(uChannels2.z,alphaMapTransform);
  vec4 base=uBase*textureGrad(map,uv0,dFdx(uv0),dFdy(uv0));
- if(uFlags.x>0.5)base*=vColor;else base.rgb*=vColor.rgb;
+ if(uLivery.x>0.5){
+  vec4 mask=vec4(vColor.rgb,uLivery.y>0.5?vColor.a:0.0);
+  vec3 paint=mix(mix(uPaint1,uPaint2,mask.g),uPaint3,mask.b);
+  vec3 an=abs(vObjN);vec2 q=an.x>max(an.y,an.z)?vObjPos.zy:(an.y>an.z?vObjPos.xz:vObjPos.xy);
+  vec2 f=fract(q/vec2(9.0,4.5))-0.5,fw=fwidth(q/vec2(9.0,4.5));
+  float fade=1.0-smoothstep(0.03,0.12,max(fw.x,fw.y));
+  float seam=fade*max(1.0-smoothstep(0.0,1.5*fw.x+0.004,0.5-abs(f.x)),1.0-smoothstep(0.0,1.5*fw.y+0.004,0.5-abs(f.y)));
+  float tone=fract(sin(dot(floor(q/vec2(9.0,4.5)),vec2(12.9898,78.233)))*43758.5453);
+  base.rgb*=paint*(0.9+0.12*tone)*(1.0-0.35*seam)*(1.0-0.45*mask.a);
+ }else if(uFlags.x>0.5)base*=vColor;else base.rgb*=vColor.rgb;
  base.a*=textureGrad(alphaMap,uvAlpha,dFdx(uvAlpha),dFdy(uvAlpha)).g;
  float rough=uPBR.x*textureGrad(roughnessMap,uvR,dFdx(uvR),dFdy(uvR)).g;
  float metal=uPBR.y*textureGrad(metalnessMap,uvM,dFdx(uvM),dFdy(uvM)).b;

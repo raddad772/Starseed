@@ -1,3 +1,4 @@
+import { InstanceCuller } from './culling.js';
 import * as THREE from 'three';
 import { bufferWithData, shaderModule } from './device.js';
 import { ProgramBindings } from './program.js';
@@ -7,8 +8,8 @@ export const GBUFFER_FORMATS = ['rgba8unorm','rgba16float','rgba16float','rgba8u
 import { attribute, fields, layouts, pack, version } from './geometry.js';
 const disabledShadows={uSunShadow:{value:null},uSkyShadow:{value:null},uGrassCover:{value:null},uTrunkSky:{value:null},uRockSky:{value:null},tShadowAtlas:{value:null},tSkyRings:{value:null}};
 export class OpaquePass {
- constructor(device,textures,descriptors=opaquePrograms){this.descriptors=descriptors;this.uniformOverrides=disabledShadows;this.device=device;this.textures=textures;this.programs=new Map();this.materialKeys=new WeakMap();this.meshes=new Map();this.geometryCache=new Map();this.white=new THREE.DataTexture(new Uint8Array([255,255,255,255]),1,1);this.white.needsUpdate=true;}
- async init(){await Promise.all(this.descriptors.map(async p=>{
+ constructor(device,textures,descriptors=opaquePrograms){this.culler=new InstanceCuller(device);this.descriptors=descriptors;this.uniformOverrides=disabledShadows;this.device=device;this.textures=textures;this.programs=new Map();this.materialKeys=new WeakMap();this.meshes=new Map();this.geometryCache=new Map();this.white=new THREE.DataTexture(new Uint8Array([255,255,255,255]),1,1);this.white.needsUpdate=true;}
+ async init(){await this.culler.init();await Promise.all(this.descriptors.map(async p=>{
   const vertexBindings=new ProgramBindings(this.device,p.vertex.layout,this.textures,GPUShaderStage.VERTEX),fragmentBindings=new ProgramBindings(this.device,p.fragment.layout,this.textures);
   const [vertex,fragment]=await Promise.all([shaderModule(this.device,p.name+' vertex',p.vertex.code),shaderModule(this.device,p.name+' material '+p.mode,p.fragment.code)]);
   const program={...p,vertexDescriptor:p.vertex,vertex,fragment,vertexBindings,fragmentBindings,pipelines:new Map()};this.programs.set(p.key+':'+p.mode,program);this.programs.set(p.name+':'+p.mode,program);
@@ -19,21 +20,22 @@ export class OpaquePass {
   const f=fields(p.vertexDescriptor.layout,object),key=JSON.stringify(f.map(a=>[a.name,a.inst]));let e=variants.get(key);const versions=f.filter(f=>!f.inst).map(f=>version(attribute(object,f.name))).join(',')+':'+version(g.index);
   if(!e||e.versions!==versions){e?.vertices?.destroy();e?.indices?.destroy();const vertexData=pack(object,f,false,g.attributes.position.count);const idx=g.index?.array;e={fields:f,layout:layouts(f),versions,vertices:vertexData.length?bufferWithData(this.device,'opaque vertices',vertexData,GPUBufferUsage.VERTEX):null,indices:idx?bufferWithData(this.device,'opaque indices',idx,GPUBufferUsage.INDEX):null,indexFormat:idx instanceof Uint16Array?'uint16':'uint32',count:idx?.length||g.attributes.position.count};variants.set(key,e);}return e;
  }
- mesh(object,p,g,material){let entries=this.meshes.get(object);if(!entries){entries=new Map();this.meshes.set(object,entries);const release=()=>{for(const e of entries.values()){e.instances?.destroy();e.p.vertexBindings.release(e);e.p.fragmentBindings.release(e);}this.meshes.delete(object);object.removeEventListener('dispose',release);};entries.release=release;object.addEventListener('dispose',release);}
+ mesh(object,p,g,material){let entries=this.meshes.get(object);if(!entries){entries=new Map();this.meshes.set(object,entries);const release=()=>{for(const e of entries.values()){e.cullRelease?.();e.instances?.destroy();e.p.vertexBindings.release(e);e.p.fragmentBindings.release(e);}this.meshes.delete(object);object.removeEventListener('dispose',release);};entries.release=release;object.addEventListener('dispose',release);}
   const key=p.name+':'+p.mode+':'+material.id;let e=entries.get(key);if(!e){e={p};entries.set(key,e);}const count=object.isInstancedMesh?object.count:object.geometry.isInstancedBufferGeometry?object.geometry.instanceCount:1;
   const versions=g.fields.filter(f=>f.inst).map(f=>version(attribute(object,f.name))).join(',')+':'+count;
-  if(e.versions!==versions||e.geometry!==g){const data=pack(object,g.fields,true,count);if(data.length){if(!e.instances||e.bytes<data.byteLength){e.instances?.destroy();e.instances=this.device.createBuffer({label:'opaque instances',size:Math.max(4,data.byteLength),usage:GPUBufferUsage.VERTEX|GPUBufferUsage.COPY_DST});e.bytes=data.byteLength;}this.device.queue.writeBuffer(e.instances,0,data);}e.versions=versions;e.geometry=g;}
+  if(e.versions!==versions||e.geometry!==g){const data=pack(object,g.fields,true,count);if(data.length){if(!e.instances||e.bytes<data.byteLength){e.instances?.destroy();e.instances=this.device.createBuffer({label:'opaque instances',size:Math.max(4,data.byteLength),usage:GPUBufferUsage.VERTEX|GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_SRC|GPUBufferUsage.COPY_DST});e.bytes=data.byteLength;}this.device.queue.writeBuffer(e.instances,0,data);}e.versions=versions;e.geometry=g;}
   e.count=count;return e;
  }
  pipeline(p,g,material){const key=JSON.stringify(g.layout)+':'+material.side;let pipeline=p.pipelines.get(key);if(!pipeline){pipeline=this.device.createRenderPipeline({label:p.name+' G-buffer',layout:this.device.createPipelineLayout({bindGroupLayouts:[p.vertexBindings.layout,p.fragmentBindings.layout]}),vertex:{module:p.vertex,entryPoint:'main',buffers:g.layout},fragment:{module:p.fragment,entryPoint:'main',targets:GBUFFER_FORMATS.map(format=>({format}))},primitive:{topology:'triangle-list',cullMode:material.side===THREE.DoubleSide?'none':material.side===THREE.BackSide?'front':'back',frontFace:'ccw'},depthStencil:{format:'depth32float',depthWriteEnabled:true,depthCompare:'greater'}});p.pipelines.set(key,pipeline);}return pipeline;}
  prepare(object,material,body,projection,camera){const p=this.program(material);if(!p)return null;const g=this.geometry(object,p),e=this.mesh(object,p,g,material);if(!e.count)return null;
-  const family={rock:1,flora:2,grass:3,standard:4,floe:6,iceblock:6,giant:7}[p.name]||0;
+  const family={rock:1,flora:2,grass:3,standard:material.customProgramCacheKey?.().startsWith('interior')?5:4,floe:6,iceblock:6,giant:7}[p.name]||0;
   const u={...material.uniforms,...material.userData.webgpu?.uniforms,...this.uniformOverrides,modelMatrix:{value:object.matrixWorld},viewMatrix:{value:camera.matrixWorldInverse},projectionMatrix:{value:projection},uBodyIndex:{value:body*16+family}};
   if(p.name==='standard')Object.assign(u,this.standardUniforms(object,material));
   const vg=p.vertexBindings.get(e,u).group,fg=p.fragmentBindings.get(e,u).group;
   return {p,g,e,pipeline:this.pipeline(p,g,material),vg,fg,object};
  }
  standardUniforms(object,m){const maps=['map','normalMap','roughnessMap','metalnessMap','emissiveMap','aoMap','alphaMap'];const u={
+  ...m.userData.livery,uLivery:{value:[m.userData.livery?1:0,object.geometry.attributes.color?.itemSize===4?1:0]},
   normalMatrix:{value:new THREE.Matrix3().getNormalMatrix(object.matrixWorld)},uUseColor:{value:m.vertexColors?1:0},
   uBase:{value:[m.color?.r??1,m.color?.g??1,m.color?.b??1,m.opacity??1]},
   uEmissive:{value:[(m.emissive?.r||0)*(m.emissiveIntensity??1),(m.emissive?.g||0)*(m.emissiveIntensity??1),(m.emissive?.b||0)*(m.emissiveIntensity??1)]},
@@ -42,6 +44,6 @@ export class OpaquePass {
   uChannels:{value:maps.slice(0,4).map(k=>m[k]?.channel||0)},uChannels2:{value:maps.slice(4).map(k=>m[k]?.channel||0)},
  };for(const key of maps){const t=m[key]?.image?m[key]:this.white;if(t.matrixAutoUpdate)t.updateMatrix();u[key]={value:t};u[key+'Transform']={value:t.matrix};}return u;
  }
- draw(pass,draw){let triangles=0;for(const d of draw){pass.setPipeline(d.pipeline);pass.setBindGroup(0,d.vg);pass.setBindGroup(1,d.fg);if(d.g.vertices)pass.setVertexBuffer(0,d.g.vertices);if(d.e.instances)pass.setVertexBuffer(1,d.e.instances);const range=d.object.geometry.drawRange,start=Math.max(range.start||0,d.group?.start||0),end=Math.min(d.g.count,(range.start||0)+range.count,(d.group?.start||0)+(d.group?.count??Infinity)),count=Math.max(0,end-start);if(d.g.indices){pass.setIndexBuffer(d.g.indices,d.g.indexFormat);pass.drawIndexed(count,d.e.count,start);}else pass.draw(count,d.e.count,start);triangles+=count*d.e.count/3;}return triangles;}
- dispose(){for(const entries of [...this.meshes.values()])entries.release();for(const variants of [...this.geometryCache.values()])variants.release();for(const p of new Set(this.programs.values())){p.vertexBindings.dispose();p.fragmentBindings.dispose();}this.programs.clear();this.white.dispose();}
+ draw(pass,draw){let triangles=0;for(const d of draw){pass.setPipeline(d.pipeline);pass.setBindGroup(0,d.vg);pass.setBindGroup(1,d.fg);if(d.g.vertices)pass.setVertexBuffer(0,d.g.vertices);if(d.e.instances)pass.setVertexBuffer(1,d.instanceBuffer||d.e.instances,d.instanceOffset||0,d.instanceSize);const range=d.object.geometry.drawRange,start=Math.max(range.start||0,d.group?.start||0),end=Math.min(d.g.count,(range.start||0)+range.count,(d.group?.start||0)+(d.group?.count??Infinity)),count=Math.max(0,end-start);if(d.g.indices){pass.setIndexBuffer(d.g.indices,d.g.indexFormat);if(d.indirect)pass.drawIndexedIndirect(d.indirect,d.indirectOffset||0);else pass.drawIndexed(count,d.e.count,start);}else if(d.indirect)pass.drawIndirect(d.indirect,d.indirectOffset||0);else pass.draw(count,d.e.count,start);triangles+=count*d.e.count/3;}return triangles;}
+ dispose(){this.culler.dispose();for(const entries of [...this.meshes.values()])entries.release();for(const variants of [...this.geometryCache.values()])variants.release();for(const p of new Set(this.programs.values())){p.vertexBindings.dispose();p.fragmentBindings.dispose();}this.programs.clear();this.white.dispose();}
 }

@@ -20,13 +20,49 @@ export const layout = {
       "offset": 16
     },
     {
+      "name": "uLivery",
+      "type": "vec2",
+      "count": 0,
+      "align": 8,
+      "size": 8,
+      "stride": 8,
+      "offset": 32
+    },
+    {
+      "name": "uPaint1",
+      "type": "vec3",
+      "count": 0,
+      "align": 16,
+      "size": 12,
+      "stride": 12,
+      "offset": 48
+    },
+    {
+      "name": "uPaint2",
+      "type": "vec3",
+      "count": 0,
+      "align": 16,
+      "size": 12,
+      "stride": 12,
+      "offset": 64
+    },
+    {
+      "name": "uPaint3",
+      "type": "vec3",
+      "count": 0,
+      "align": 16,
+      "size": 12,
+      "stride": 12,
+      "offset": 80
+    },
+    {
       "name": "uEmissive",
       "type": "vec3",
       "count": 0,
       "align": 16,
       "size": 12,
       "stride": 12,
-      "offset": 32
+      "offset": 96
     },
     {
       "name": "uPBR",
@@ -35,7 +71,7 @@ export const layout = {
       "align": 16,
       "size": 16,
       "stride": 16,
-      "offset": 48
+      "offset": 112
     },
     {
       "name": "uFlags",
@@ -44,7 +80,7 @@ export const layout = {
       "align": 16,
       "size": 16,
       "stride": 16,
-      "offset": 64
+      "offset": 128
     },
     {
       "name": "uNormalScale",
@@ -53,7 +89,7 @@ export const layout = {
       "align": 8,
       "size": 8,
       "stride": 8,
-      "offset": 80
+      "offset": 144
     },
     {
       "name": "mapTransform",
@@ -62,7 +98,7 @@ export const layout = {
       "align": 16,
       "size": 48,
       "stride": 48,
-      "offset": 96
+      "offset": 160
     },
     {
       "name": "normalMapTransform",
@@ -71,7 +107,7 @@ export const layout = {
       "align": 16,
       "size": 48,
       "stride": 48,
-      "offset": 144
+      "offset": 208
     },
     {
       "name": "roughnessMapTransform",
@@ -80,7 +116,7 @@ export const layout = {
       "align": 16,
       "size": 48,
       "stride": 48,
-      "offset": 192
+      "offset": 256
     },
     {
       "name": "metalnessMapTransform",
@@ -89,7 +125,7 @@ export const layout = {
       "align": 16,
       "size": 48,
       "stride": 48,
-      "offset": 240
+      "offset": 304
     },
     {
       "name": "emissiveMapTransform",
@@ -98,7 +134,7 @@ export const layout = {
       "align": 16,
       "size": 48,
       "stride": 48,
-      "offset": 288
+      "offset": 352
     },
     {
       "name": "aoMapTransform",
@@ -107,7 +143,7 @@ export const layout = {
       "align": 16,
       "size": 48,
       "stride": 48,
-      "offset": 336
+      "offset": 400
     },
     {
       "name": "alphaMapTransform",
@@ -116,7 +152,7 @@ export const layout = {
       "align": 16,
       "size": 48,
       "stride": 48,
-      "offset": 384
+      "offset": 448
     },
     {
       "name": "uChannels",
@@ -125,7 +161,7 @@ export const layout = {
       "align": 16,
       "size": 16,
       "stride": 16,
-      "offset": 432
+      "offset": 496
     },
     {
       "name": "uChannels2",
@@ -134,7 +170,7 @@ export const layout = {
       "align": 16,
       "size": 12,
       "stride": 12,
-      "offset": 448
+      "offset": 512
     }
   ],
   "textures": [
@@ -188,7 +224,7 @@ export const layout = {
       "samplerBinding": 14
     }
   ],
-  "bytes": 464,
+  "bytes": 528,
   "group": 1,
   "attributes": []
 };
@@ -196,6 +232,10 @@ export const code = /* wgsl */`
 struct Params {
     uBodyIndex: f32,
     uBase: vec4<f32>,
+    uLivery: vec2<f32>,
+    uPaint1_: vec3<f32>,
+    uPaint2_: vec3<f32>,
+    uPaint3_: vec3<f32>,
     uEmissive: vec3<f32>,
     uPBR: vec4<f32>,
     uFlags: vec4<f32>,
@@ -254,6 +294,8 @@ var<private> gAlbedo: vec4<f32>;
 var<private> gNormal: vec4<f32>;
 var<private> gEmission: vec4<f32>;
 var<private> gSurface: vec4<f32>;
+var<private> vObjPos_1: vec3<f32>;
+var<private> vObjN_1: vec3<f32>;
 var<private> vWorld_1: vec3<f32>;
 var<private> vNormal_1: vec3<f32>;
 var<private> vColor_1: vec4<f32>;
@@ -269,35 +311,35 @@ fn octEncode(n: vec3<f32>) -> vec2<f32> {
     var local_2: vec2<f32>;
 
     n_1 = n;
-    let _e51 = n_1;
-    let _e52 = n_1;
-    let _e55 = n_1;
     let _e59 = n_1;
-    n_1 = (_e51 / vec3(((abs(_e52.x) + abs(_e55.y)) + abs(_e59.z))));
-    let _e65 = n_1;
-    if (_e65.z >= 0f) {
-        let _e69 = n_1;
-        local_2 = _e69.xy;
-    } else {
-        let _e72 = n_1;
+    let _e60 = n_1;
+    let _e63 = n_1;
+    let _e67 = n_1;
+    n_1 = (_e59 / vec3(((abs(_e60.x) + abs(_e63.y)) + abs(_e67.z))));
+    let _e73 = n_1;
+    if (_e73.z >= 0f) {
         let _e77 = n_1;
-        if (_e77.x >= 0f) {
+        local_2 = _e77.xy;
+    } else {
+        let _e80 = n_1;
+        let _e85 = n_1;
+        if (_e85.x >= 0f) {
             local = 1f;
         } else {
             local = -1f;
         }
-        let _e85 = local;
-        let _e86 = n_1;
-        if (_e86.y >= 0f) {
+        let _e93 = local;
+        let _e94 = n_1;
+        if (_e94.y >= 0f) {
             local_1 = 1f;
         } else {
             local_1 = -1f;
         }
-        let _e94 = local_1;
-        local_2 = ((vec2(1f) - abs(_e72.yx)) * vec2<f32>(_e85, _e94));
+        let _e102 = local_1;
+        local_2 = ((vec2(1f) - abs(_e80.yx)) * vec2<f32>(_e93, _e102));
     }
-    let _e98 = local_2;
-    return _e98;
+    let _e106 = local_2;
+    return _e106;
 }
 
 fn materialOutput(albedo: vec3<f32>, normal: vec3<f32>, roughness: f32, ao: f32, trans: f32, wet: f32, F0_: f32) {
@@ -316,20 +358,20 @@ fn materialOutput(albedo: vec3<f32>, normal: vec3<f32>, roughness: f32, ao: f32,
     trans_1 = trans;
     wet_1 = wet;
     F0_1 = F0_;
-    let _e63 = albedo_1;
-    let _e68 = clamp(_e63, vec3(0f), vec3(1f));
-    let _e69 = ao_1;
-    gAlbedo = vec4<f32>(_e68.x, _e68.y, _e68.z, clamp(_e69, 0f, 1f));
-    let _e77 = normal_1;
-    let _e79 = octEncode(normalize(_e77));
-    let _e80 = roughness_1;
-    let _e81 = global.uBodyIndex;
-    gNormal = vec4<f32>(_e79.x, _e79.y, _e80, _e81);
+    let _e71 = albedo_1;
+    let _e76 = clamp(_e71, vec3(0f), vec3(1f));
+    let _e77 = ao_1;
+    gAlbedo = vec4<f32>(_e76.x, _e76.y, _e76.z, clamp(_e77, 0f, 1f));
+    let _e85 = normal_1;
+    let _e87 = octEncode(normalize(_e85));
+    let _e88 = roughness_1;
+    let _e89 = global.uBodyIndex;
+    gNormal = vec4<f32>(_e87.x, _e87.y, _e88, _e89);
     gEmission = vec4<f32>(0f, 0f, 0f, 1f);
-    let _e90 = trans_1;
-    let _e91 = wet_1;
-    let _e93 = F0_1;
-    gSurface = vec4<f32>(_e90, _e91, 0f, _e93);
+    let _e98 = trans_1;
+    let _e99 = wet_1;
+    let _e101 = F0_1;
+    gSurface = vec4<f32>(_e98, _e99, 0f, _e101);
     return;
 }
 
@@ -341,25 +383,25 @@ fn texUV(channel: i32, transform: mat3x3<f32>) -> vec2<f32> {
 
     channel_1 = channel;
     transform_1 = transform;
-    let _e59 = transform_1;
-    let _e60 = channel_1;
-    if (_e60 == 1i) {
-        let _e63 = vUv1_1;
-        local_4 = _e63;
+    let _e69 = transform_1;
+    let _e70 = channel_1;
+    if (_e70 == 1i) {
+        let _e73 = vUv1_1;
+        local_4 = _e73;
     } else {
-        let _e64 = channel_1;
-        if (_e64 == 2i) {
-            let _e67 = vUv2_1;
-            local_3 = _e67;
+        let _e74 = channel_1;
+        if (_e74 == 2i) {
+            let _e77 = vUv2_1;
+            local_3 = _e77;
         } else {
-            let _e68 = vUv_1;
-            local_3 = _e68;
+            let _e78 = vUv_1;
+            local_3 = _e78;
         }
-        let _e70 = local_3;
-        local_4 = _e70;
+        let _e80 = local_3;
+        local_4 = _e80;
     }
-    let _e72 = local_4;
-    return (_e59 * vec3<f32>(_e72.x, _e72.y, 1f)).xy;
+    let _e82 = local_4;
+    return (_e69 * vec3<f32>(_e82.x, _e82.y, 1f)).xy;
 }
 
 fn main_1() {
@@ -375,11 +417,23 @@ fn main_1() {
     var uvA: vec2<f32>;
     var uvAlpha: vec2<f32>;
     var base: vec4<f32>;
+    var local_5: f32;
+    var mask: vec4<f32>;
+    var paint: vec3<f32>;
+    var an: vec3<f32>;
+    var local_6: vec2<f32>;
+    var local_7: vec2<f32>;
+    var q: vec2<f32>;
+    var f: vec2<f32>;
+    var fw: vec2<f32>;
+    var fade: f32;
+    var seam: f32;
+    var tone: f32;
     var rough: f32;
     var metal: f32;
     var ao_2: f32;
     var emit: vec3<f32>;
-    var local_5: vec3<f32>;
+    var local_8: vec3<f32>;
     var N: vec3<f32>;
     var mapN: vec3<f32>;
     var q1_: vec3<f32>;
@@ -388,201 +442,273 @@ fn main_1() {
     var B: vec3<f32>;
     var scale: f32;
 
-    let _e55 = vWorld_1;
-    let _e56 = dpdx(_e55);
-    dpX = _e56;
-    let _e58 = vWorld_1;
-    let _e59 = dpdy(_e58);
-    dpY = _e59;
-    let _e61 = global.uChannels;
-    let _e63 = global.normalMapTransform;
-    let _e64 = texUV(_e61.y, _e63);
-    nUV = _e64;
-    let _e66 = nUV;
-    let _e67 = dpdx(_e66);
-    dx = _e67;
-    let _e69 = nUV;
-    let _e70 = dpdy(_e69);
-    dy = _e70;
-    let _e72 = global.uChannels;
-    let _e74 = global.mapTransform;
-    let _e75 = texUV(_e72.x, _e74);
-    uv0_ = _e75;
-    let _e77 = global.uChannels;
-    let _e79 = global.roughnessMapTransform;
-    let _e80 = texUV(_e77.z, _e79);
-    uvR = _e80;
+    let _e65 = vWorld_1;
+    let _e66 = dpdx(_e65);
+    dpX = _e66;
+    let _e68 = vWorld_1;
+    let _e69 = dpdy(_e68);
+    dpY = _e69;
+    let _e71 = global.uChannels;
+    let _e73 = global.normalMapTransform;
+    let _e74 = texUV(_e71.y, _e73);
+    nUV = _e74;
+    let _e76 = nUV;
+    let _e77 = dpdx(_e76);
+    dx = _e77;
+    let _e79 = nUV;
+    let _e80 = dpdy(_e79);
+    dy = _e80;
     let _e82 = global.uChannels;
-    let _e84 = global.metalnessMapTransform;
-    let _e85 = texUV(_e82.w, _e84);
-    uvM = _e85;
-    let _e87 = global.uChannels2_;
-    let _e89 = global.emissiveMapTransform;
-    let _e90 = texUV(_e87.x, _e89);
-    uvE = _e90;
-    let _e92 = global.uChannels2_;
-    let _e94 = global.aoMapTransform;
-    let _e95 = texUV(_e92.y, _e94);
-    uvA = _e95;
+    let _e84 = global.mapTransform;
+    let _e85 = texUV(_e82.x, _e84);
+    uv0_ = _e85;
+    let _e87 = global.uChannels;
+    let _e89 = global.roughnessMapTransform;
+    let _e90 = texUV(_e87.z, _e89);
+    uvR = _e90;
+    let _e92 = global.uChannels;
+    let _e94 = global.metalnessMapTransform;
+    let _e95 = texUV(_e92.w, _e94);
+    uvM = _e95;
     let _e97 = global.uChannels2_;
-    let _e99 = global.alphaMapTransform;
-    let _e100 = texUV(_e97.z, _e99);
-    uvAlpha = _e100;
-    let _e102 = global.uBase;
-    let _e103 = uv0_;
-    let _e104 = uv0_;
-    let _e105 = dpdx(_e104);
-    let _e106 = uv0_;
-    let _e107 = dpdy(_e106);
-    let _e108 = textureSampleGrad(mapTexture, mapSampler, _e103, _e105, _e107);
-    base = (_e102 * _e108);
-    let _e111 = global.uFlags;
-    if (_e111.x > 0.5f) {
-        let _e115 = base;
-        let _e116 = vColor_1;
-        base = (_e115 * _e116);
-    } else {
-        let _e118 = base;
-        let _e120 = base;
-        let _e122 = vColor_1;
-        let _e124 = (_e120.xyz * _e122.xyz);
-        base.x = _e124.x;
-        base.y = _e124.y;
-        base.z = _e124.z;
-    }
-    let _e132 = base;
-    let _e134 = uvAlpha;
-    let _e135 = uvAlpha;
-    let _e136 = dpdx(_e135);
-    let _e137 = uvAlpha;
-    let _e138 = dpdy(_e137);
-    let _e139 = textureSampleGrad(alphaMapTexture, alphaMapSampler, _e134, _e136, _e138);
-    base.w = (_e132.w * _e139.y);
-    let _e142 = global.uPBR;
-    let _e144 = uvR;
-    let _e145 = uvR;
-    let _e146 = dpdx(_e145);
-    let _e147 = uvR;
-    let _e148 = dpdy(_e147);
-    let _e149 = textureSampleGrad(roughnessMapTexture, roughnessMapSampler, _e144, _e146, _e148);
-    rough = (_e142.x * _e149.y);
-    let _e153 = global.uPBR;
-    let _e155 = uvM;
-    let _e156 = uvM;
-    let _e157 = dpdx(_e156);
-    let _e158 = uvM;
-    let _e159 = dpdy(_e158);
-    let _e160 = textureSampleGrad(metalnessMapTexture, metalnessMapSampler, _e155, _e157, _e159);
-    metal = (_e153.y * _e160.z);
-    let _e165 = uvA;
-    let _e166 = uvA;
-    let _e167 = dpdx(_e166);
-    let _e168 = uvA;
-    let _e169 = dpdy(_e168);
-    let _e170 = textureSampleGrad(aoMapTexture, aoMapSampler, _e165, _e167, _e169);
-    let _e172 = global.uPBR;
-    ao_2 = mix(1f, _e170.x, _e172.w);
-    let _e176 = global.uEmissive;
-    let _e177 = uvE;
-    let _e178 = uvE;
-    let _e179 = dpdx(_e178);
-    let _e180 = uvE;
-    let _e181 = dpdy(_e180);
-    let _e182 = textureSampleGrad(emissiveMapTexture, emissiveMapSampler, _e177, _e179, _e181);
-    emit = (_e176 * _e182.xyz);
-    let _e186 = global.uFlags;
-    if (_e186.w > 0.5f) {
-        let _e190 = dpX;
-        let _e191 = dpY;
-        local_5 = cross(_e190, _e191);
-    } else {
-        let _e193 = vNormal_1;
-        local_5 = _e193;
-    }
-    let _e195 = local_5;
-    N = normalize(_e195);
-    let _e199 = gl_FrontFacing_1;
-    if !(_e199) {
-        let _e201 = N;
-        N = -(_e201);
-    }
-    let _e203 = nUV;
-    let _e204 = dx;
-    let _e205 = dy;
-    let _e206 = textureSampleGrad(normalMapTexture, normalMapSampler, _e203, _e204, _e205);
-    mapN = ((_e206.xyz * 2f) - vec3(1f));
-    let _e214 = global.uFlags;
-    if (_e214.z > 0.5f) {
+    let _e99 = global.emissiveMapTransform;
+    let _e100 = texUV(_e97.x, _e99);
+    uvE = _e100;
+    let _e102 = global.uChannels2_;
+    let _e104 = global.aoMapTransform;
+    let _e105 = texUV(_e102.y, _e104);
+    uvA = _e105;
+    let _e107 = global.uChannels2_;
+    let _e109 = global.alphaMapTransform;
+    let _e110 = texUV(_e107.z, _e109);
+    uvAlpha = _e110;
+    let _e112 = global.uBase;
+    let _e113 = uv0_;
+    let _e114 = uv0_;
+    let _e115 = dpdx(_e114);
+    let _e116 = uv0_;
+    let _e117 = dpdy(_e116);
+    let _e118 = textureSampleGrad(mapTexture, mapSampler, _e113, _e115, _e117);
+    base = (_e112 * _e118);
+    let _e121 = global.uLivery;
+    if (_e121.x > 0.5f) {
         {
-            let _e218 = mapN;
-            let _e220 = mapN;
-            let _e222 = global.uNormalScale;
-            let _e223 = (_e220.xy * _e222);
-            mapN.x = _e223.x;
-            mapN.y = _e223.y;
-            let _e228 = dpY;
-            let _e229 = N;
-            q1_ = cross(_e228, _e229);
-            let _e232 = N;
-            let _e233 = dpX;
-            q0_ = cross(_e232, _e233);
-            let _e236 = q1_;
-            let _e237 = dx;
-            let _e240 = q0_;
-            let _e241 = dy;
-            T = ((_e236 * _e237.x) + (_e240 * _e241.x));
-            let _e246 = q1_;
-            let _e247 = dx;
-            let _e250 = q0_;
-            let _e251 = dy;
-            B = ((_e246 * _e247.y) + (_e250 * _e251.y));
-            let _e256 = T;
-            let _e257 = T;
-            let _e259 = B;
-            let _e260 = B;
-            scale = inverseSqrt(max(max(dot(_e256, _e257), dot(_e259, _e260)), 0.00000000000000000001f));
-            let _e267 = T;
-            let _e268 = mapN;
-            let _e270 = scale;
-            let _e273 = B;
-            let _e274 = mapN;
-            let _e276 = scale;
-            let _e280 = N;
-            let _e281 = mapN;
-            N = normalize((((_e267 * (_e268.x * _e270)) + (_e273 * (_e274.y * _e276))) + (_e280 * _e281.z)));
+            let _e125 = vColor_1;
+            let _e126 = _e125.xyz;
+            let _e127 = global.uLivery;
+            if (_e127.y > 0.5f) {
+                let _e131 = vColor_1;
+                local_5 = _e131.w;
+            } else {
+                local_5 = 0f;
+            }
+            let _e135 = local_5;
+            mask = vec4<f32>(_e126.x, _e126.y, _e126.z, _e135);
+            let _e141 = global.uPaint1_;
+            let _e142 = global.uPaint2_;
+            let _e143 = mask;
+            let _e147 = global.uPaint3_;
+            let _e148 = mask;
+            paint = mix(mix(_e141, _e142, vec3(_e143.y)), _e147, vec3(_e148.z));
+            let _e153 = vObjN_1;
+            an = abs(_e153);
+            let _e156 = an;
+            let _e158 = an;
+            let _e160 = an;
+            if (_e156.x > max(_e158.y, _e160.z)) {
+                let _e164 = vObjPos_1;
+                local_7 = _e164.zy;
+            } else {
+                let _e166 = an;
+                let _e168 = an;
+                if (_e166.y > _e168.z) {
+                    let _e171 = vObjPos_1;
+                    local_6 = _e171.xz;
+                } else {
+                    let _e173 = vObjPos_1;
+                    local_6 = _e173.xy;
+                }
+                let _e176 = local_6;
+                local_7 = _e176;
+            }
+            let _e178 = local_7;
+            q = _e178;
+            let _e180 = q;
+            f = (fract((_e180 / vec2<f32>(9f, 4.5f))) - vec2(0.5f));
+            let _e190 = q;
+            let _e195 = fwidth((_e190 / vec2<f32>(9f, 4.5f)));
+            fw = _e195;
+            let _e200 = fw;
+            let _e202 = fw;
+            fade = (1f - smoothstep(0.03f, 0.12f, max(_e200.x, _e202.y)));
+            let _e208 = fade;
+            let _e212 = fw;
+            let _e218 = f;
+            let _e227 = fw;
+            let _e233 = f;
+            seam = (_e208 * max((1f - smoothstep(0f, ((1.5f * _e212.x) + 0.004f), (0.5f - abs(_e218.x)))), (1f - smoothstep(0f, ((1.5f * _e227.y) + 0.004f), (0.5f - abs(_e233.y))))));
+            let _e242 = q;
+            tone = fract((sin(dot(floor((_e242 / vec2<f32>(9f, 4.5f))), vec2<f32>(12.9898f, 78.233f))) * 43758.547f));
+            let _e257 = base;
+            let _e259 = base;
+            let _e261 = paint;
+            let _e264 = tone;
+            let _e270 = seam;
+            let _e276 = mask;
+            let _e281 = (_e259.xyz * (((_e261 * (0.9f + (0.12f * _e264))) * (1f - (0.35f * _e270))) * (1f - (0.45f * _e276.w))));
+            base.x = _e281.x;
+            base.y = _e281.y;
+            base.z = _e281.z;
+        }
+    } else {
+        let _e288 = global.uFlags;
+        if (_e288.x > 0.5f) {
+            let _e292 = base;
+            let _e293 = vColor_1;
+            base = (_e292 * _e293);
+        } else {
+            let _e295 = base;
+            let _e297 = base;
+            let _e299 = vColor_1;
+            let _e301 = (_e297.xyz * _e299.xyz);
+            base.x = _e301.x;
+            base.y = _e301.y;
+            base.z = _e301.z;
         }
     }
-    let _e286 = base;
-    let _e288 = global.uPBR;
-    if (_e286.w < _e288.z) {
+    let _e309 = base;
+    let _e311 = uvAlpha;
+    let _e312 = uvAlpha;
+    let _e313 = dpdx(_e312);
+    let _e314 = uvAlpha;
+    let _e315 = dpdy(_e314);
+    let _e316 = textureSampleGrad(alphaMapTexture, alphaMapSampler, _e311, _e313, _e315);
+    base.w = (_e309.w * _e316.y);
+    let _e319 = global.uPBR;
+    let _e321 = uvR;
+    let _e322 = uvR;
+    let _e323 = dpdx(_e322);
+    let _e324 = uvR;
+    let _e325 = dpdy(_e324);
+    let _e326 = textureSampleGrad(roughnessMapTexture, roughnessMapSampler, _e321, _e323, _e325);
+    rough = (_e319.x * _e326.y);
+    let _e330 = global.uPBR;
+    let _e332 = uvM;
+    let _e333 = uvM;
+    let _e334 = dpdx(_e333);
+    let _e335 = uvM;
+    let _e336 = dpdy(_e335);
+    let _e337 = textureSampleGrad(metalnessMapTexture, metalnessMapSampler, _e332, _e334, _e336);
+    metal = (_e330.y * _e337.z);
+    let _e342 = uvA;
+    let _e343 = uvA;
+    let _e344 = dpdx(_e343);
+    let _e345 = uvA;
+    let _e346 = dpdy(_e345);
+    let _e347 = textureSampleGrad(aoMapTexture, aoMapSampler, _e342, _e344, _e346);
+    let _e349 = global.uPBR;
+    ao_2 = mix(1f, _e347.x, _e349.w);
+    let _e353 = global.uEmissive;
+    let _e354 = uvE;
+    let _e355 = uvE;
+    let _e356 = dpdx(_e355);
+    let _e357 = uvE;
+    let _e358 = dpdy(_e357);
+    let _e359 = textureSampleGrad(emissiveMapTexture, emissiveMapSampler, _e354, _e356, _e358);
+    emit = (_e353 * _e359.xyz);
+    let _e363 = global.uFlags;
+    if (_e363.w > 0.5f) {
+        let _e367 = dpX;
+        let _e368 = dpY;
+        local_8 = cross(_e367, _e368);
+    } else {
+        let _e370 = vNormal_1;
+        local_8 = _e370;
+    }
+    let _e372 = local_8;
+    N = normalize(_e372);
+    let _e376 = gl_FrontFacing_1;
+    if !(_e376) {
+        let _e378 = N;
+        N = -(_e378);
+    }
+    let _e380 = nUV;
+    let _e381 = dx;
+    let _e382 = dy;
+    let _e383 = textureSampleGrad(normalMapTexture, normalMapSampler, _e380, _e381, _e382);
+    mapN = ((_e383.xyz * 2f) - vec3(1f));
+    let _e391 = global.uFlags;
+    if (_e391.z > 0.5f) {
+        {
+            let _e395 = mapN;
+            let _e397 = mapN;
+            let _e399 = global.uNormalScale;
+            let _e400 = (_e397.xy * _e399);
+            mapN.x = _e400.x;
+            mapN.y = _e400.y;
+            let _e405 = dpY;
+            let _e406 = N;
+            q1_ = cross(_e405, _e406);
+            let _e409 = N;
+            let _e410 = dpX;
+            q0_ = cross(_e409, _e410);
+            let _e413 = q1_;
+            let _e414 = dx;
+            let _e417 = q0_;
+            let _e418 = dy;
+            T = ((_e413 * _e414.x) + (_e417 * _e418.x));
+            let _e423 = q1_;
+            let _e424 = dx;
+            let _e427 = q0_;
+            let _e428 = dy;
+            B = ((_e423 * _e424.y) + (_e427 * _e428.y));
+            let _e433 = T;
+            let _e434 = T;
+            let _e436 = B;
+            let _e437 = B;
+            scale = inverseSqrt(max(max(dot(_e433, _e434), dot(_e436, _e437)), 0.00000000000000000001f));
+            let _e444 = T;
+            let _e445 = mapN;
+            let _e447 = scale;
+            let _e450 = B;
+            let _e451 = mapN;
+            let _e453 = scale;
+            let _e457 = N;
+            let _e458 = mapN;
+            N = normalize((((_e444 * (_e445.x * _e447)) + (_e450 * (_e451.y * _e453))) + (_e457 * _e458.z)));
+        }
+    }
+    let _e463 = base;
+    let _e465 = global.uPBR;
+    if (_e463.w < _e465.z) {
         discard;
     }
-    let _e291 = base;
-    let _e293 = N;
-    let _e294 = rough;
-    let _e298 = ao_2;
-    materialOutput(_e291.xyz, _e293, clamp(_e294, 0.04f, 1f), _e298, 0f, 0f, 0.04f);
-    let _e303 = metal;
-    gSurface.z = _e303;
-    let _e304 = gEmission;
-    let _e306 = emit;
-    gEmission.x = _e306.x;
-    gEmission.y = _e306.y;
-    gEmission.z = _e306.z;
-    let _e313 = global.uFlags;
-    if (_e313.y > 0.5f) {
+    let _e468 = base;
+    let _e470 = N;
+    let _e471 = rough;
+    let _e475 = ao_2;
+    materialOutput(_e468.xyz, _e470, clamp(_e471, 0.04f, 1f), _e475, 0f, 0f, 0.04f);
+    let _e480 = metal;
+    gSurface.z = _e480;
+    let _e481 = gEmission;
+    let _e483 = emit;
+    gEmission.x = _e483.x;
+    gEmission.y = _e483.y;
+    gEmission.z = _e483.z;
+    let _e490 = global.uFlags;
+    if (_e490.y > 0.5f) {
         {
-            let _e317 = gAlbedo;
+            let _e494 = gAlbedo;
             gAlbedo.x = 0f;
             gAlbedo.y = 0f;
             gAlbedo.z = 0f;
-            let _e324 = gEmission;
-            let _e326 = gEmission;
-            let _e328 = base;
-            let _e330 = (_e326.xyz + _e328.xyz);
-            gEmission.x = _e330.x;
-            gEmission.y = _e330.y;
-            gEmission.z = _e330.z;
+            let _e501 = gEmission;
+            let _e503 = gEmission;
+            let _e505 = base;
+            let _e507 = (_e503.xyz + _e505.xyz);
+            gEmission.x = _e507.x;
+            gEmission.y = _e507.y;
+            gEmission.z = _e507.z;
             return;
         }
     } else {
@@ -591,7 +717,9 @@ fn main_1() {
 }
 
 @fragment 
-fn main(@location(0) vWorld: vec3<f32>, @location(1) vNormal: vec3<f32>, @location(2) vColor: vec4<f32>, @location(3) vUv: vec2<f32>, @location(4) vUv1_: vec2<f32>, @location(5) vUv2_: vec2<f32>, @builtin(front_facing) gl_FrontFacing: bool) -> FragmentOutput {
+fn main(@location(0) vObjPos: vec3<f32>, @location(1) vObjN: vec3<f32>, @location(2) vWorld: vec3<f32>, @location(3) vNormal: vec3<f32>, @location(4) vColor: vec4<f32>, @location(5) vUv: vec2<f32>, @location(6) vUv1_: vec2<f32>, @location(7) vUv2_: vec2<f32>, @builtin(front_facing) gl_FrontFacing: bool) -> FragmentOutput {
+    vObjPos_1 = vObjPos;
+    vObjN_1 = vObjN;
     vWorld_1 = vWorld;
     vNormal_1 = vNormal;
     vColor_1 = vColor;
@@ -600,10 +728,10 @@ fn main(@location(0) vWorld: vec3<f32>, @location(1) vNormal: vec3<f32>, @locati
     vUv2_1 = vUv2_;
     gl_FrontFacing_1 = gl_FrontFacing;
     main_1();
-    let _e95 = gAlbedo;
-    let _e97 = gNormal;
-    let _e99 = gEmission;
-    let _e101 = gSurface;
-    return FragmentOutput(_e95, _e97, _e99, _e101);
+    let _e111 = gAlbedo;
+    let _e113 = gNormal;
+    let _e115 = gEmission;
+    let _e117 = gSurface;
+    return FragmentOutput(_e111, _e113, _e115, _e117);
 }
 `;

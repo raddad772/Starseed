@@ -110,6 +110,7 @@ export class ShadowPass {
       if(!output){const texture=this.device.createTexture({label:'additive coverage',size:[rect.z,rect.w],format:'rgba16float',usage:GPUTextureUsage.RENDER_ATTACHMENT|GPUTextureUsage.TEXTURE_BINDING});output={texture,view:texture.createView()};this.temporary.set(key,output);}
     }
     const encoder=this.device.createCommandEncoder({label:'shadow casters'});
+    this.geometry.culler.encode(encoder,draws,this.frustum,camera);
     let pass=encoder.beginRenderPass({colorAttachments:[{view:output.view,loadOp:additive?'clear':'load',storeOp:'store',clearValue:[0,0,0,0]}],...(!additive?{depthStencilAttachment:{view:e.depth.createView(),depthLoadOp:'load',depthStoreOp:'store'}}:{})});
     if(!additive)this.region(pass,rect);
     this.geometry.draw(pass,draws);pass.end();

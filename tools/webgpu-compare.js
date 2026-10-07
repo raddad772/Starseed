@@ -58,3 +58,19 @@ export async function measure(game, frames = 12) {
     return { samples, timestampQuery: gpu.timestamp, note: 'Timestamp scopes can overlap on this adapter; drained totals include all passes. Full/flat still runs the atmosphere and post.', size: [engine.width, engine.height], ...gpu.stats };
   } finally { gpu.flat = oldFlat; }
 }
+
+export async function measureCulling(game,frames=7){
+ const E=game.engine,gpu=await E.webgpuReady,main=gpu.opaque.culler,shadow=gpu.shadows.geometry.culler;
+ const saved=[main.enabled,shadow.enabled,E.meterUp,E.meterDown];const samples=[];let uncullPixels,cullPixels;
+ try{
+  E.meterUp=E.meterDown=0;
+  for(const enabled of [false,true,false]){
+   main.enabled=shadow.enabled=enabled;const ms=[];
+   for(let i=0;i<frames+3;i++){E.view.adaptReset=true;await gpu.device.queue.onSubmittedWorkDone();const start=performance.now();gpu.render(E);await gpu.device.queue.onSubmittedWorkDone();if(i>=3)ms.push(performance.now()-start);}
+   samples.push({enabled,drainedMs:ms.sort((a,b)=>a-b)[ms.length>>1]});
+   const shot=await gpu.capture();if(enabled)cullPixels=shot.pixels;else if(!uncullPixels)uncullPixels=shot.pixels;
+  }
+  let changed=0,maxDelta=0,sum=0;for(let i=0;i<cullPixels.length;i+=4){let delta=0;for(let c=0;c<3;c++){const d=Math.abs(cullPixels[i+c]-uncullPixels[i+c]);delta=Math.max(delta,d);sum+=d;}if(delta>2)changed++;maxDelta=Math.max(maxDelta,delta);}
+  return {samples,changedPixelFraction:changed/(cullPixels.length/4),meanChannelDelta:sum/(cullPixels.length/4*3),maxDelta,note:'Same scene, camera and uniforms; includes main-view and shadow instance culling.'};
+ }finally{[main.enabled,shadow.enabled,E.meterUp,E.meterDown]=saved;E.view.adaptReset=true;}
+}

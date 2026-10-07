@@ -334,6 +334,7 @@ export class EngineView {
   }
 
   dispose() {
+    this.engine.webgpu?.releaseView(this);
     for (const t of [this.rtScene, this.rtA, this.rtB, this.rtLum, ...this.rtAdapt, this.rtVolume, this.fxTarget, this.rtWaterDepth, this.out, ...this.bloomLevels, ...this.bloomUp]) if (t) t.dispose();
     this.depthTex.dispose();
   }

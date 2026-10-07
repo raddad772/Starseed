@@ -276,7 +276,7 @@ export class WorldRenderer {
     H.uHandPos.value.set(0.25, -0.3, 0).applyQuaternion(q).add(cam.position);
     H.uHandDir.value.set(0, -0.08, -1).normalize().applyQuaternion(q);
     H.uHandE.value.set(I, I * 0.95, I * 0.86);
-    if (!this._spot) { this._spot = new THREE.SpotLight(0xfff2dc, 0, 0, 0.45, 0.35, 2); this.engine.scene.add(this._spot, this._spot.target); }
+    if (!this._spot) { this._spot = new THREE.SpotLight(0xfff2dc, 0, 0, 0.45, 0.35, 2); this._spot.userData.webgpuHandLight = true; this.engine.scene.add(this._spot, this._spot.target); }
     this._spot.intensity = I;
     this._spot.position.copy(H.uHandPos.value);
     this._spot.target.position.copy(H.uHandPos.value).add(H.uHandDir.value);

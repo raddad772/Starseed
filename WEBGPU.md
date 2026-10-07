@@ -27,9 +27,18 @@ The full migration is in progress. `?renderer=webgpu` is opt-in; WebGL remains t
   stars use instanced quads. Sun and giant materials write the G-buffer. Gorge water and the space
   background have same-camera captures; giant polar color parity remains open. Eight opaque and seven
   forward pipeline families pass the finite GPU fixture.
+- Vessel paint masks/plate seams, interior-only materials, transparent PBR and canopy Fresnel are native.
+  Clustered local lighting assigns all fixture candidates and scene point/spot lights on the GPU, with
+  room bounds and an overflow path. The finite fixture verifies 70 overlapping lights and no light leak
+  outside their room. Native viewscreen sampling and view disposal also pass. The carrier comparison
+  has comparable fixture illumination; full vessel coverage remains part of final parity.
+- Batched compute culling compacts instance attributes and writes indirect arguments for vegetation,
+  rocks and their shadow casters. Its finite fixture rejects two of three instances while preserving
+  visible pixels. Same-load wood timings are currently neutral: ~31.9 ms enabled, ~30.5–31.4 disabled;
+  0.00065% of pixels differ by more than two byte levels (maximum four). No speedup is claimed.
 - A temporary WebGL producer bridge still supplies scene/resource descriptions and reference captures.
   Its render-target recipes are reproduced on WebGPU, without WebGL pixel readbacks. Removing this
-  bridge follows opaque/forward/shadow parity. Vessel-specific shader patches and glass, GPU culling, clustered lights, decals and GTAO are still pending.
+  bridge follows opaque/forward/shadow parity. Decals, intersection blending, GTAO, native resource-producer replacement and final parity are still pending.
 - `tools/tests/webgpu.html` passes on the GPU: overlap/reversed depth, capture, resize and disposal.
   `node --test tools/tests/webgpu.test.mjs`: 5 passing tests, including std140 packing and interleaved tree LOD views.
   Generated shaders compile offline and on the browser device without validation errors.

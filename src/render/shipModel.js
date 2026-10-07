@@ -206,6 +206,7 @@ export function buildShip(name = 'SS-01') {
   // ...and like glass, clear looked through square on but more and more a sheen at a slant
   // (Fresnel), so from outside the canopy reads as glass, not a hole; from inside (its back
   // faces) it stays clear, with no sheen in the pilot's eyes
+  glassMat.userData.webgpuCanopy = true;
   glassMat.onBeforeCompile = (sh) => {
     sh.fragmentShader = sh.fragmentShader.replace('#include <opaque_fragment>', `#include <opaque_fragment>
       if (gl_FrontFacing) {

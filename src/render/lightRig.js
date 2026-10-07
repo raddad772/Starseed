@@ -120,7 +120,8 @@ function fixtureBox(type, f) {
 
 export class LightRig {
   constructor(engine) {
-    this.engine = engine;
+    this.engine = engine; engine.lightRig = this;
+    this.nativeCameraWorld = new THREE.Vector3(); this.nativeCameraQuat = new THREE.Quaternion(); this.nativeToRoom = FIX_UNIFORMS.uFixToLocal.value;
     this.sun = new THREE.DirectionalLight(0xffffff, 1);
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(2048, 2048);
@@ -148,9 +149,16 @@ export class LightRig {
     walk(root);
   }
 
+  // The native renderer clusters every candidate, without the WebGL uniform-array cap.
+  forEachNativeFixture(fn) {
+    const inverse=this.nativeCameraQuat.clone().invert();
+    for(const c of this._cand){const f=c.f;fn(c.w.clone().sub(this.nativeCameraWorld).applyQuaternion(inverse),[c.col.r*f.intensity,c.col.g*f.intensity,c.col.b*f.intensity],f.range,c.box?BOUNCE_ROOM:BOUNCE_OPEN,c.box);}
+  }
+
   // extra: lights that aren't a ship's fixtures (a field lamp put down, a
   // turbolift car's): [{ w: world position, color, intensity, range, host?, box? }]
   update(camWorld, camQuat, lighting, vessels, extra = []) {
+    this.nativeCameraWorld.copy(camWorld); this.nativeCameraQuat.copy(camQuat);
     // sun: shadow box centred on the camera, light placed far up-sun
     this.sun.color.copy(lighting.sunColor);
     this.sun.intensity = lighting.sunIntensity;

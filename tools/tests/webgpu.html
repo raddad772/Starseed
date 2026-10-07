@@ -92,10 +92,47 @@ try {
     const draw=renderer.forward.prepare(o,m,renderer.projection,camera,{});
     renderer.forward.render([draw],target);await renderer.device.queue.onSubmittedWorkDone();g.dispose();m.dispose();
   }
+  // Room walls ignore sunlight. More than 64 overlapping fixtures exercises the
+  // cluster overflow path; a room bound must still prevent leaking through it.
+  scene.clear();
+  const roomGeo=new THREE.PlaneGeometry(2,2),roomMat=new THREE.MeshStandardMaterial({color:0xffffff});roomMat.customProgramCacheKey=()=> 'interior|fix';
+  const wall=new THREE.Mesh(roomGeo,roomMat);wall.position.z=-2;scene.add(wall);
+  renderer.render(engine);const dark=(await renderer.capture()).pixels[(48*128+64)*4];
+  let inside=true;
+  engine.lightRig={nativeToRoom:new THREE.Matrix4(),forEachNativeFixture(fn){for(let i=0;i<70;i++)fn(new THREE.Vector3(0,0,0),[0.1,0.1,0.1],5,0.1,{min:new THREE.Vector3(inside?-10:10,-10,-10),max:new THREE.Vector3(20,10,10)});}};
+  renderer.render(engine);const lit=(await renderer.capture()).pixels[(48*128+64)*4];
+  check(lit>dark+60,'All overlapping clustered fixtures must illuminate the interior');
+  inside=false;renderer.render(engine);const sealed=(await renderer.capture()).pixels[(48*128+64)*4];
+  check(sealed<=dark+2,'Fixture room bounds must prevent light leaks');
+  const glassMat=new THREE.MeshBasicMaterial({color:0xff0000,transparent:true,opacity:0.5,depthWrite:false});
+  const glass=new THREE.Mesh(new THREE.PlaneGeometry(2,2),glassMat);glass.position.z=-1.5;scene.add(glass);
+  renderer.render(engine);const transparent=(await renderer.capture()).pixels[(48*128+64)*4];
+  check(transparent>100,'Transparent standard materials must blend over the lit image');
+  const screenTexture=new THREE.Texture(),offscreen={...view,width:64,height:48,out:{texture:screenTexture}};
+  engine.view=offscreen;renderer.render(engine);const offshot=await renderer.capture(offscreen);
+  check(offshot.width===64&&renderer.textures.renderTargets.has(screenTexture),'Offscreen views must expose native screen textures');
+  engine.view=view;glassMat.map=screenTexture;renderer.render(engine);await renderer.device.queue.onSubmittedWorkDone();
+  renderer.releaseView(offscreen);check(!renderer.targets.has(offscreen)&&!renderer.textures.renderTargets.has(screenTexture),'Offscreen view disposal must release its native targets');
+  scene.remove(glass);glass.geometry.dispose();glassMat.dispose();screenTexture.dispose();
+  scene.clear();engine.lightRig=null;
+  const instGeo=new THREE.PlaneGeometry(1,1),instMat=new THREE.MeshBasicMaterial({color:0x00ff00});
+  const instances=new THREE.InstancedMesh(instGeo,instMat,3);
+  for(let i=0;i<3;i++)instances.setMatrixAt(i,new THREE.Matrix4().makeTranslation(i*100,0,-2));scene.add(instances);
+  renderer.render(engine);const cullShot=await renderer.capture();
+  const culled=[...renderer.opaque.culler.entries.values()].find(e=>e.size>=3*19*4);
+  check(!!culled,'Instance visibility must use the compute culler');
+  const indirectRead=renderer.device.createBuffer({size:20,usage:GPUBufferUsage.COPY_DST|GPUBufferUsage.MAP_READ});
+  const readEncoder=renderer.device.createCommandEncoder();readEncoder.copyBufferToBuffer(culled.args,culled.offset,indirectRead,0,20);renderer.device.queue.submit([readEncoder.finish()]);await indirectRead.mapAsync(GPUMapMode.READ);
+  const visibleInstances=new Uint32Array(indirectRead.getMappedRange())[1];indirectRead.unmap();indirectRead.destroy();
+  check(visibleInstances===1,'GPU culling must compact three instances to the one in view');
+  renderer.opaque.culler.enabled=false;renderer.render(engine);const uncullShot=await renderer.capture();
+  check(cullShot.pixels.every((v,i)=>Math.abs(v-uncullShot.pixels[i])<=1),'Indirect instance rendering must preserve visible pixels');
+  renderer.opaque.culler.enabled=true;instances.dispose();instGeo.dispose();instMat.dispose();
+  roomGeo.dispose();roomMat.dispose();
   const validationError = await renderer.device.popErrorScope();
   check(!validationError, validationError?.message);
   check(!errors.length, errors.join('\n'));
-  window.testResult = { status: 'passed', redPixels: red, bluePixels: blue, timestampQuery: renderer.timestamp, opaquePipelines:8,forwardPipelines:7,stats: renderer.stats };
+  window.testResult = { status: 'passed', redPixels: red, bluePixels: blue, timestampQuery: renderer.timestamp, opaquePipelines:8,forwardPipelines:7,clusteredLights:{dark,lit,sealed,overlapping:70},transparent,offscreen:true,visibleInstances,stats: renderer.stats };
 } catch (error) {
   window.testResult = { status: 'failed', error: error.stack || String(error), validationErrors: errors };
 } finally {
