@@ -17,6 +17,7 @@
 // faded across its width, the shares added: what falls on the ground beneath (the snow between the blades)
 // a sum that moves smoothly as they do. A receiver takes the sun by exp(-k sum) (grassCover).
 import * as THREE from 'three';
+import { floraOf } from '../sim/floraField.js';
 
 export const SHADOW_LAYER = 3;
 export const SKY_LAYER = 4;
@@ -41,6 +42,43 @@ const COVER_ORG = [SKY_CASCADES.length * SKY_CASCADES[0].size, CASCADES[0].size]
 // (the least width a blade's drawn there: 2.5 of its texels, so its share of each texel it crosses
 // changes smoothly as it moves, never a texel's centre in or out)
 export const COVER_MIN_W = 2.5 * 2 * COVER.far / COVER.size;
+// (the trunks' hold on the sky at their feet: in the corner beside the grass's, 0..32 m at 12.5 cm)
+const TRUNKS = { far: 32, size: 512 };
+const TRUNKS_ORG = [COVER_ORG[0] + COVER.size, CASCADES[0].size];
+// the share of the sky (cosine-weighted) an upright trunk of radius r and height h hides from a point on
+// the ground d from its axis: the wedge of azimuth it spans, 2 asin(r / d), from the horizon to the
+// elevation of its top (sin^2 of it, cosine-weighted), half the sky against it. Drawn from overhead as
+// -ln(1 - share), added, so the trunks round a point hide its sky as exp(-sum) leaves it
+const TRUNK_VERT = /* glsl */`
+attribute vec2 corner;
+attribute vec4 aT;       // (its base (body-fixed, from the set's middle), its radius)
+attribute float aH;      // (its height to its crown)
+uniform float uExt;
+varying vec2 vC;
+varying float vR;
+varying float vH;
+varying float vE;
+void main() {
+  float e = uExt * aT.w;
+  vec4 mv = modelViewMatrix * vec4(aT.xyz, 1.0);
+  mv.xy += corner * e;
+  vC = corner; vR = aT.w; vH = aH; vE = e;
+  gl_Position = projectionMatrix * mv;
+}`;
+const TRUNK_FRAG = /* glsl */`
+varying vec2 vC;
+varying float vR;
+varying float vH;
+varying float vE;
+void main() {
+  float q = length(vC);
+  if (q > 1.0) discard;
+  float d = q * vE;
+  float o = d <= vR ? 0.5 : asin(vR / d) / 3.14159265 * vH * vH / (vH * vH + d * d);
+  gl_FragColor = vec4(-log(1.0 - o) * (1.0 - smoothstep(0.85, 1.0, q)), 0.0, 0.0, 1.0);
+}`;
+const TRUNK_EXT = 10;   // (a trunk's quad: this many of its radii out, where it hides ~3% of the sky)
+const TRUNK_MAX = 1024;
 
 // the sky maps softened (Dave: blended, not squares): each texel's share of a 5x5 round it under canopy, and
 // that share times the canopy top's depth below the map's camera less D, both linear so the hardware's
@@ -117,6 +155,9 @@ export const SUN_SHADOW_UNIFORMS = {
   // (the grass's cover: x on, y z its corner in the atlas, w its size; its view-projection)
   uGrassCover: { value: new THREE.Vector4(0, 0, 0, 1) },
   uGrassCoverVP: { value: new THREE.Matrix4() },
+  // (the trunks' hold on the sky: x on, y z its corner in the atlas, w its size; its view-projection)
+  uTrunkSky: { value: new THREE.Vector4(0, 0, 0, 1) },
+  uTrunkSkyVP: { value: new THREE.Matrix4() },
 };
 
 // the sky's maps (body-fixed): x on, y the near map's reach, z the far one's, w the light a canopy lets
@@ -192,6 +233,24 @@ export class SunShadows {
     this.coverCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
     this.coverCam.layers.set(COVER_LAYER);
     this.cover = null;   // (render: whether the GPU can add into the atlas)
+    // (the trunks round the camera, a quad each, drawn from overhead into their corner of the atlas, added:
+    // a set of them asked of the world's flora as the camera moves on, held body-fixed from its middle)
+    this.trunkCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    const tg = new THREE.InstancedBufferGeometry();
+    tg.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(12), 3));
+    tg.setAttribute('corner', new THREE.Float32BufferAttribute([-1, -1, 1, -1, 1, 1, -1, 1], 2));
+    tg.setIndex([0, 1, 2, 0, 2, 3]);
+    tg.setAttribute('aT', new THREE.InstancedBufferAttribute(new Float32Array(TRUNK_MAX * 4), 4));
+    tg.setAttribute('aH', new THREE.InstancedBufferAttribute(new Float32Array(TRUNK_MAX), 1));
+    tg.instanceCount = 0;
+    this.trunkMesh = new THREE.Mesh(tg, new THREE.ShaderMaterial({
+      uniforms: { uExt: { value: TRUNK_EXT } }, vertexShader: TRUNK_VERT, fragmentShader: TRUNK_FRAG, side: THREE.DoubleSide,
+      blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor, depthTest: false, depthWrite: false,
+    }));
+    this.trunkMesh.frustumCulled = false; this.trunkMesh.matrixAutoUpdate = false;
+    this.trunkScene = new THREE.Scene();
+    this.trunkScene.add(this.trunkMesh);
+    this.trunkMid = new THREE.Vector3(); this.trunkAt = null; this.trunkBody = null;
     this.held = new THREE.Vector3(0, 1, 0); this.heldBody = null;   // (the sun as the maps hold it: body-fixed)
     this.bodyUp = new THREE.Vector3(0, 1, 0); this.bodyX = new THREE.Vector3(1, 0, 0);
     SUN_SHADOW_UNIFORMS.tShadowAtlas.value = this.atlas.texture;
@@ -294,10 +353,48 @@ export class SunShadows {
     return texel;
   }
 
+  // the trunks round the camera (the world's flora, sim/floraField.js: what's walked round) into their map,
+  // asked again as the camera moves on a couple of metres; qB the body's turn (body-fixed to world)
+  _trunkMap(renderer, qB) {
+    const U = SUN_SHADOW_UNIFORMS, b = this.body, fl = b && floraOf(b), g = this.trunkMesh.geometry;
+    if (!fl) { U.uTrunkSky.value.x = 0; return; }
+    const camF = _tc.copy(this.anchor).negate().applyQuaternion(this.bodyQInv);
+    if (this.trunkBody !== b || !this.trunkAt || this.trunkAt.distanceToSquared(camF) > 4) {
+      this.trunkBody = b;
+      this.trunkAt = (this.trunkAt || new THREE.Vector3()).copy(camF);
+      this.trunkMid.copy(camF);
+      const list = fl.near(camF, TRUNKS.far + 6, this._tl || (this._tl = []));
+      const T = g.attributes.aT.array, H = g.attributes.aH.array;
+      let n = 0;
+      for (const it of list) {
+        if (it.kind !== 'tree' || n >= TRUNK_MAX) continue;
+        T[n * 4] = it.x - camF.x; T[n * 4 + 1] = it.y - camF.y; T[n * 4 + 2] = it.z - camF.z; T[n * 4 + 3] = it.r;
+        // (its bole: the crown over it the canopy's map's)
+        H[n] = 0.5 * it.h;
+        n++;
+      }
+      g.instanceCount = n;
+      g.attributes.aT.needsUpdate = true; g.attributes.aH.needsUpdate = true;
+    }
+    if (!g.instanceCount) { U.uTrunkSky.value.x = 0; return; }
+    // (the set in the world: from its middle, turned with the body, camera-relative)
+    const m = this.trunkMesh;
+    m.matrix.compose(_tp.copy(this.trunkMid).applyQuaternion(qB).add(this.anchor), qB, _one);
+    m.matrixWorld.copy(m.matrix);
+    const cam = this.trunkCam, up = _tu.copy(this.anchor).negate().normalize();
+    this._place(cam, up, TRUNKS.far, TRUNKS.size, 2000, 6000);
+    renderer.setClearColor(0x000000, 1);
+    this._region(renderer, TRUNKS_ORG, TRUNKS.size);
+    renderer.render(this.trunkScene, cam);
+    renderer.setClearColor(0xffffff, 1);
+    U.uTrunkSkyVP.value.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
+    U.uTrunkSky.value.set(1, TRUNKS_ORG[0], TRUNKS_ORG[1], TRUNKS.size);
+  }
+
   // the maps for this frame: the camera at the world's origin (positions are camera-relative)
   render(renderer, scene) {
     const U = SUN_SHADOW_UNIFORMS, K = SKY_SHADOW_UNIFORMS;
-    if (!this.on || !this.active) { U.uSunShadow.value.x = 0; U.uGrassCover.value.x = 0; K.uSkyShadow.value.x = 0; this.skyBody = null; return; }
+    if (!this.on || !this.active) { U.uSunShadow.value.x = 0; U.uGrassCover.value.x = 0; U.uTrunkSky.value.x = 0; K.uSkyShadow.value.x = 0; this.skyBody = null; return; }
     // (the maps held to the ground: their cameras turned with the body, the sun held in its frame and moved
     // on a tenth of a degree at a time. Snapped to the world's centre 100 km off as the world turned under a
     // fixed sun, the maps slid up to half a texel a frame, every leaf's and blade's shadow flickering; held
@@ -378,7 +475,9 @@ export class SunShadows {
       this._restore(swapped);
       U.uGrassCoverVP.value.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
       U.uGrassCover.value.set(1, COVER_ORG[0], COVER_ORG[1], COVER.size);
-    } else U.uGrassCover.value.x = 0;
+      // the trunks' hold on the sky round their feet, added likewise
+      this._trunkMap(renderer, qB);
+    } else { U.uGrassCover.value.x = 0; U.uTrunkSky.value.x = 0; }
     // the sky's: a map in its turn (both at once on a new world), straight down over the camera, held in the
     // body's frame
     K.uSkyCenter.value.copy(this.anchor);
@@ -418,6 +517,7 @@ const _v = new THREE.Vector3(), _r = new THREE.Vector3(), _u = new THREE.Vector3
 const _mA = new THREE.Matrix4(), _mB = new THREE.Matrix4(), _mC = new THREE.Matrix4(), _mD = new THREE.Matrix4();
 const _m = new THREE.Matrix4(), _m2 = new THREE.Matrix4(), _q = new THREE.Quaternion(), _c = new THREE.Color();
 const _q2 = new THREE.Quaternion(), _sf = new THREE.Vector3(), _sh = new THREE.Vector3();
+const _tc = new THREE.Vector3(), _tp = new THREE.Vector3(), _tu = new THREE.Vector3();
 const HOLD_COS = Math.cos(0.1 * Math.PI / 180);
 
 // a receiver's side: wp the point (camera-relative world), N its normal; 1 lit, 0 shadowed. Each
@@ -483,6 +583,27 @@ float grassCover(vec3 wp) {
   float f = texelFetch(tShadowAtlas, org + clamp(p0 + ivec2(1, 1), ivec2(0), hi), 0).r;
   float sum = mix(mix(a, b, fr.x), mix(d, f, fr.x), fr.y);
   return sum * (1.0 - smoothstep(0.75, 1.0, e));
+}
+// the sky a point sees past the trunks round it (1 all of it): their shares hidden, added as -ln(1 - share)
+// (the trunks' map); faded out at the map's edge. At a trunk's foot half the sky (the trunk a wall
+// there), a sixth two radii out, a twelfth at four: in any weather the ground darkened round its foot
+uniform vec4 uTrunkSky;
+uniform mat4 uTrunkSkyVP;
+float trunkSky(vec3 wp) {
+  if (uTrunkSky.x < 0.5) return 1.0;
+  vec4 c = uTrunkSkyVP * vec4(wp, 1.0);
+  vec2 uv = c.xy / c.w * 0.5 + 0.5;
+  float e = max(abs(uv.x * 2.0 - 1.0), abs(uv.y * 2.0 - 1.0));
+  if (e >= 1.0) return 1.0;
+  int n = int(uTrunkSky.w);
+  vec2 st = uv * uTrunkSky.w - 0.5, fr = fract(st);
+  ivec2 p0 = ivec2(floor(st)), org = ivec2(uTrunkSky.yz), hi = ivec2(n - 1);
+  float a = texelFetch(tShadowAtlas, org + clamp(p0, ivec2(0), hi), 0).r;
+  float b = texelFetch(tShadowAtlas, org + clamp(p0 + ivec2(1, 0), ivec2(0), hi), 0).r;
+  float d = texelFetch(tShadowAtlas, org + clamp(p0 + ivec2(0, 1), ivec2(0), hi), 0).r;
+  float f = texelFetch(tShadowAtlas, org + clamp(p0 + ivec2(1, 1), ivec2(0), hi), 0).r;
+  float sum = mix(mix(a, b, fr.x), mix(d, f, fr.x), fr.y);
+  return exp(-sum * (1.0 - smoothstep(0.75, 1.0, e)));
 }
 `;
 
@@ -583,7 +704,8 @@ export function receiveShadows(mat) {
     float shS = sunShadowMap(vShWorld, shN);
     reflectedLight.directDiffuse *= shS; reflectedLight.directSpecular *= shS;
     float shB = skyBlocked(vShWorld);
-    reflectedLight.indirectDiffuse *= 1.0 - shB; reflectedLight.indirectSpecular *= 1.0 - shB;
+    float shT = trunkSky(vShWorld);
+    reflectedLight.indirectDiffuse *= (1.0 - shB) * shT; reflectedLight.indirectSpecular *= (1.0 - shB) * shT;
     reflectedLight.indirectDiffuse += BRDF_Lambert(material.diffuseColor) * shB * 0.1 * (uCanopySun + uCanopySky) * uLeafTint;
   }`);
   };

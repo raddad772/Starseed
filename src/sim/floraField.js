@@ -22,7 +22,7 @@ import * as dm from '../core/dmath.js';
 
 const CELL = 16; // m: spatial hash cell (body-fixed)
 // trunk radius at the base, as a fraction of the tree's height (render/floraRender.js)
-const TRUNK = { conifer: 0.035, broadleaf: 0.045, bulb: 0.03, fern: 0.04, mushroom: 0.07, spire: 0.05 };
+export const TRUNK = { conifer: 0.035, broadleaf: 0.045, bulb: 0.03, fern: 0.04, mushroom: 0.07, spire: 0.05 };
 
 export class FloraField {
   constructor(body) {

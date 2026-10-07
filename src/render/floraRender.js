@@ -11,6 +11,7 @@ import { GLSL_SUN_SHADOW, GLSL_SKY_SHADOW, SHADOW_LAYER, SKY_LAYER, SHADOW_LIGHT
 import { growTree } from '../gen/life/tree.js';
 import { treeGeometry as grownMesh } from './treeMesh.js';
 import { ezTreeGeometry, barkTexture, leafTexture } from './ezTrees.js';
+import { TRUNK } from '../sim/floraField.js';
 
 // ---------------------------------------------------------------- geometry
 
@@ -465,14 +466,14 @@ function shadowMaterial(m) {
 // the near field was built over it, trees and boulders were left in the air or under the ground. A plant
 // on the floor itself; a rock as deep in it as it was scattered (a corestone's cap only showing), never
 // standing off it
-const _sp = new THREE.Vector3(), _sd = new THREE.Vector3();
+const _sp = new THREE.Vector3(), _sd = new THREE.Vector3(), _t1 = new THREE.Vector3(), _t2 = new THREE.Vector3();
 export function seatInstances(obj, b) {
   const R = b.R;
   obj.updateMatrix();
   const o = obj.position;
   obj.traverse((m) => {
     if (!m.isInstancedMesh || !m.count || m.userData.view) return;   // (a node's trees' views: their owner's seated)
-    const a = m.instanceMatrix.array, n = m.count, rock = m.userData.kind === 'stone';
+    const a = m.instanceMatrix.array, n = m.count, rock = m.userData.kind === 'stone', tr0 = m.userData.trunkR0 || 0;
     const mo = m === obj ? null : m.position;
     let lift = m.userData.lift;
     if (!lift) {
@@ -493,7 +494,23 @@ export function seatInstances(obj, b) {
       const r = _sp.length();
       _sd.copy(_sp).divideScalar(r);
       // (from 3 m above where it stands: ground risen a little under it found too)
-      const h = b.floorAt(_sp.copy(_sd).multiplyScalar(r + 3), 3);
+      let h = b.floorAt(_sp.copy(_sd).multiplyScalar(r + 3), 3);
+      // (a tree on a slope stands on the low side of its foot, the bank's side over its roots: across its
+      // trunk the ground three ways round, the lowest. Seated at its axis alone, on a creek's bank (3 m of
+      // fall across a 2 m trunk) it had hung over the bed, cut off flat in the air)
+      if (tr0) {
+        const rr = 0.85 * tr0 * Math.hypot(a[k], a[k + 1], a[k + 2]);
+        if (rr > 0.1) {
+          _t1.set(0, 1, 0).cross(_sd);
+          if (_t1.lengthSq() < 1e-6) _t1.set(1, 0, 0).cross(_sd);
+          _t1.normalize(); _t2.copy(_sd).cross(_t1);
+          for (let q = 0; q < 3; q++) {
+            const an = q * 2.0944;
+            _sp.copy(_sd).multiplyScalar(r + 3).addScaledVector(_t1, Math.cos(an) * rr).addScaledVector(_t2, Math.sin(an) * rr);
+            h = Math.min(h, b.floorAt(_sp, 3));
+          }
+        }
+      }
       _sp.copy(_sd).multiplyScalar(R + h + lift[i]).sub(o);
       if (mo) _sp.sub(mo);
       a[k + 12] = _sp.x; a[k + 13] = _sp.y; a[k + 14] = _sp.z;
@@ -619,6 +636,9 @@ export class FloraSet {
       // placed: each view, the shadow maps' too, draws only the nodes it can see)
       mesh.frustumCulled = true;
       mesh.userData.kind = kind;
+      // (a tree's trunk's radius at its base at scale 1, as the solid field has it: seatInstances stands it
+      // on the low side of its foot)
+      if (kind === 'tree') mesh.userData.trunkR0 = (TRUNK[this.species.tree] || 0.04) * this.species.treeHeight;
       mesh.userData.shadowMat = this.shadowMats[kind];
       if (kind === 'tree') mesh.userData.shadowFar = this.shadowFarTree;
       for (let i = 0; i < n; i++) {

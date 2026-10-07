@@ -759,8 +759,9 @@ void main() {
   } else {
     float wrap = 0.5 + 0.5 * dot(N, up);
     vec3 direct = uSunE * sunT * ndl;
-    // (under a wood's canopy, little of the sky: sunShadows.js; and by night the moon's: moonlight.js)
-    float skyBl = skyBlocked(vWorldPos), skyK = 1.0 - skyBl;
+    // (under a wood's canopy, little of the sky: sunShadows.js; and by night the moon's: moonlight.js; and
+    // round a trunk's foot, the trunk hiding it: trunkSky)
+    float skyBl = skyBlocked(vWorldPos), skyK = (1.0 - skyBl) * trunkSky(vWorldPos);
     vec3 ambient = uSunE * (skyE * wrap * skyK + canopyLit(skyBl, sunTop, muS, skyE)) + uAmbientFloor + moonLit(rel, r, up, N, keySh, 0.0, wrap, skyK);
     // (under the grass drawn near (grassRender.js, to ~44 m): its thatch and its soil, not another lawn; and
     // in the blades' shadows, the sun reaching it through them (the grass's cover map, sunShadows.js), the
