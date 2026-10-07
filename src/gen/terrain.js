@@ -2246,6 +2246,9 @@ export class TerrainGenerator {
     // (a wetland: the water table at the ground on the flat (soil.js: a fen, a marsh, a bog), or under a foot
     // of it: its soil dark and soaked, its plants lush, not straw, whatever the month)
     const wtd = soilD == null ? null : S.wtd(x, y, z);
+    // (a lake's or a river's bank just over its water: the ground its level rises over and falls from through
+    // the year, kept bare by it, mud: its colour soaked, no plants. Half a metre drawn, on the flat)
+    const wl = s[S_WLVL], mudK = soilD != null && wl > -1e8 && wd <= 0.05 ? dm.smoothstep(0.5, 0.08, h - wl) * (1 - dm.smoothstep(0.08, 0.3, slope)) : 0;
     const wetK = soilD == null || (h <= 0 && this.contThreshold > -1e8) ? 0 : Math.max(S.wetland(x, y, z), dm.smoothstep(1.2, 0.15, wtd)) * (1 - dm.smoothstep(0.04, 0.14, slope)) * (1 - thinSoil);
     const rockW = (1 - sandW) * dm.clamp(Math.max(dm.smoothstep(0.12, 0.38, slope) + 0.3 * s[S_MOUNT] * dm.smoothstep(0.06, 0.2, slope), 0.6 * thinSoil), 0, 1);
     let ground = P.soil || P.regolith;
@@ -2311,7 +2314,7 @@ export class TerrainGenerator {
       // world's own (heights at an eighth, distances at a sixty-fourth) had stood bare where its life map
       // has them wooded; the bare rock's colour by slope as before, a plantless world's unchanged)
       const rockV = rockW * dm.smoothstep(0.2, 0.48, slope);
-      let vegW = dm.clamp(cov * 1.2, 0, 1) * (1 - rockV) * (1 - 0.8 * sandW) * dm.smoothstep(-6, 2, Tc) * (1 - 0.7 * volc) * (1 - 0.7 * thinSoil);
+      let vegW = dm.clamp(cov * 1.2, 0, 1) * (1 - rockV) * (1 - 0.8 * sandW) * dm.smoothstep(-6, 2, Tc) * (1 - 0.7 * volc) * (1 - 0.7 * thinSoil) * (1 - 0.85 * mudK);
       if (vegW > 0) {
         // (the forest as its stands (life/stands.js): near, where its trees are drawn, the floor under a
         // stand its litter, the open country's grass between; far off, where they aren't, a stand's dark
@@ -2335,6 +2338,7 @@ export class TerrainGenerator {
     }
     // (a wetland's ground soaked: darker, glossy)
     if (wetK > 0) { r *= 1 - 0.3 * wetK; g *= 1 - 0.22 * wetK; b *= 1 - 0.15 * wetK; mat[6] = Math.max(mat[6], 0.6 * wetK); }
+    if (mudK > 0) { const k = 0.75 * mudK, ms = P.soil || ground; r += (ms[0] * 0.5 - r) * k; g += (ms[1] * 0.5 - g) * k; b += (ms[2] * 0.5 - b) * k; mat[6] = Math.max(mat[6], 0.8 * mudK); }
     // rivers: wet darker ground on the floodplain (the water itself is above)
     if (s[S_WET] > 0) { const k = 0.3 * s[S_WET]; r *= 1 - k; g *= 1 - k * 0.8; b *= 1 - k * 0.6; mat[6] = Math.max(mat[6], k); }
     // (the swash zone: sand the sea's waves wet, darker and glossy, up to two metres above the water)

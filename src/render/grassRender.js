@@ -403,7 +403,8 @@ void main() { gl_FragColor = vec4(vGA * 2.0 * max(0.0, 1.0 - abs(vGSide)), 0.0, 
     const bare = (dd, hd) => {
       gen.sample(dd[0], dd[1], dd[2], 2, s2);
       if (s2[S_SAND] > 0.3 || s2[S_ICE] > 0 || s2[S_WDEPTH] > 0.05 || s2[S_RIVR] > 0 || (gen.p.liquid && s2[S_H] < 0.25)) return true;
-      if (s2[S_WLVL] > -1e8 && s2[S_WLVL] > hd + 0.05) return true;
+      // (nor on the mud a bank's water level rises over through the year: a fifth of a metre over it, drawn)
+      if (s2[S_WLVL] > -1e8 && s2[S_WLVL] > hd - 0.2 && gen.p.liquid === 'water') return true;
       if (snap.rockAt) {
         const hs = s2[S_H] / (gen.hScale || 1);
         if (snap.rockAt(dd[0], dd[1], dd[2], hs) >= 11) return true;
