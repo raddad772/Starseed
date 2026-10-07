@@ -171,9 +171,18 @@ Dave's queue, in the order he raised it (keep this list current):
    cross-section, shared among the particles: each a soft clump as opaque as its drops over the area
    it's drawn on, no narrower than a pixel (engine softUniforms.uPixH). And the fall's foot (its spray,
    the pool's churn) had been ~11 m downstream, round the viewer: now the row where the water lands.
-   Scratchpad fall-spray-far/near. Open: the clumps read a little as soft balls at the foot (more,
-   smaller ones?); the sheet's thin sides show as a glassy film with an edge line; the face behind a
-   sheet thrown clear could be undercut in the near volume (a recess behind the fall).
+   Scratchpad fall-spray-far/near. Then (b964d04): three times the clumps, Gaussian; the sheet's sides
+   fade into the rock behind but for their white strands (the glassy film with its edge line gone); and
+   rocks (and plants) reseated when the near field is ready, not when it's made: seated before it was
+   drawn they'd all gone onto the heightfield, boulders in the air a metre or two off the gorge's walls
+   (21 within 70 m; after, 1165 rocks, worst 0.05 m). Scratchpad shots/rocks_far4, edge_near3.
+   Open: the face behind a sheet thrown clear could be undercut in the near volume (a recess behind
+   the fall); this world's falls are nearly all horsetails (the face's 4 m minimum run against a small
+   stream's ~1-2 m throw), so it matters only for big rivers.
+   Test tip: with the in-app pane hidden the page's canvas is 0x0 (resize_window to a custom size gives
+   it one) and its timers are throttled to ~1 s, so drain loops crawl: yield through a MessageChannel
+   instead of setTimeout, and grab frames by canvas.toDataURL right after game.frame, posted to the
+   scratchpad's shot_server.py (port 8799).
 14. The anti-sun twilight's diagonal edge (item 12's "seen, not looked at"): DONE (cb90627). It was the
    clouds' hand-over front: each place turns its clouds over to the next generation at its own time, the
    phase a near-linear function of place, so the band where two generations meet ran ruler-straight (~6.5
