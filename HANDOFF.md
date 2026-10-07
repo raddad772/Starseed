@@ -158,6 +158,23 @@ Dave's queue, in the order he raised it (keep this list current):
      moved by three long sine waves (40-80 km): no patches, still no ruler line, two texture reads fewer.
      Also a deck cell's top by its strength (weak edges low, cores high).
    - The ground's game-scale haze from 90 m now reads as the sky does (haze90): item 12's note closed.
+   - Clouds' shading (1dbb666): a far cumulus seen side-on was brown-black in the midday sun (a deck's
+     rest above counted twice: the slab estimate on top of the sunward march that measures it; now the
+     slab only beyond the march's reach). The march's heights at its 2nd and 3rd steps were wrong too.
+   - Clouds in cells (7338ee3; Dave liked the broken look the drips' patchwork had given): the deck
+     noise lies at 0.68 +- 0.05, so read raw any cover over ~0.45 closed into a smooth sheet. Spread
+     through its CDF, a deck's coverage is now the share that's cloud: broken stratocumulus, cumulus rows
+     on the horizon, popcorn fields from the air. Faded back to raw where a pixel spans its texels (no
+     mips: a gas giant from orbit speckled). Scratchpad cells_cmp, cells_air_cmp, gg_cmp, fade_cmp.
+   - Falls (56fc89d): the sheet's dot lattice was precision (its streak coordinates from the far fixed
+     origin times per-pixel directions: the noise read at its coarsest mip); now from the fall's foot.
+     Ropes ~0.6 m by 6 m, glassy at the lip, white once broken through, round-lit, frayed sides. Spray as
+     motion streaks of fine drops; mist wisps each lifted their own way (they'd stood in a row).
+   - Cliffs (f258557): the brink by its 8 neighbours (a diagonal cliff is a staircase of panels in the
+     grid; each step's inner corner kept its grass: an olive edge down each panel) and a face's foot as
+     scree. Near ground (fcee53b): no treads or standing beds in and beside a river's channel (the fall
+     had poured from under a ledge stood out across it). On foot the fall now pours over its lip.
+     Scratchpad fall_nf2, cliff_s5.
 
 ## NOW: fire through the recent centuries (session 39d69fa8, 2026-10-06), SIM 68
 
