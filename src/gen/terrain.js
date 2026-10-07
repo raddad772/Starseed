@@ -2287,10 +2287,17 @@ export class TerrainGenerator {
     // weak to lift it again (Tharsis, Arabia), and is swept off the low plains and out of the
     // hollows, where dark basalt sand gathers in dunes (Syrtis Major, Acidalia, crater floors);
     // the winds' broad pattern by place)
+    let plates = 0;
     if (dusty > 0) {
       const hs = S.hSmooth(x, y, z), high = dm.smoothstep(-3000, 3000, hs), hollow = dm.smoothstep(250, 1500, hs - h);
       const wind = this.nMisc.fbm(x * 1.4 + 3.1, y * 1.4 - 1.7, z * 1.4 + 0.4, 4);
       const dust = dm.clamp(0.35 + 0.5 * high + 1.1 * wind - 0.3 * hollow, 0, 1);
+      // (where the wind keeps the dust thin, the bedrock's plates show through on the flat: slabs some metres
+      // to tens across between the sand and grit (Gale's mudstone, Curiosity's panoramas); their mean share
+      // where a sample's coarser than they are)
+      const sw = this._sampleW || 0, R = this.R;
+      const pat = sw < 24 ? dm.smoothstep(0.5, 0.62, 0.5 + 0.5 * this.nMisc.fbm(x * R / 18 + 11.3, y * R / 18 - 4.1, z * R / 18 + 2.7, 3)) : 0.3;
+      plates = dusty * (1 - dust) * pat * (1 - sandW) * (1 - dm.smoothstep(0.08, 0.25, slope));
       const bc = this.rockLin[ROCK.basalt] || P.rock2, gd = this._gd || (this._gd = [0, 0, 0]);
       for (let k = 0; k < 3; k++) { const dark = (bc[k] * 0.6 + P.rock[k] * 0.4) * 0.75; gd[k] = ground[k] + (dark + (ground[k] - dark) * dust - ground[k]) * dusty; }
       ground = gd;
@@ -2298,6 +2305,7 @@ export class TerrainGenerator {
     // (and what rock shows wears the same weathered rind as the dust: Mars' basalt reddened)
     if (dusty > 0 && P.rock) for (let k = 0; k < 3; k++) rc[k] += (P.rock[k] - rc[k]) * 0.5 * dusty;
     let show = sandW + (1 - sandW) * ((0.35 - 0.27 * dusty) + (0.65 + 0.27 * dusty) * rockW);
+    show += (1 - show) * 0.85 * plates;
     show += (1 - show) * (1 - aged);
     let r = ground[0] + (rc[0] - ground[0]) * show;
     let g = ground[1] + (rc[1] - ground[1]) * show;
