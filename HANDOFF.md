@@ -165,11 +165,15 @@ Dave's queue, in the order he raised it (keep this list current):
    it then showed U-shaped bands, a curtain's folds: the streaks' axes came off each pixel's normal,
    which swings round the horseshoe. On the ribbon they're now by its own lines (rib.x across over the
    water's width, down by how far it has fallen): vertical ropes, glassy between (terrainMaterial.js).
-   Scratchpad fall-gorge-head, fall-sheet-before/after. Open: the spray reads as white flecks against
-   the rock from ~20 m (each particle a clump of drops at alpha 0.55; candidates: fainter and more of
-   them, or a pixel-footprint fade as the glints have), and one near particle drew as a crisp white
-   square ~1.5 m from the camera; the face behind a sheet thrown clear could be undercut in the near
-   volume (a recess behind the fall).
+   Scratchpad fall-gorge-head, fall-sheet-before/after. The spray (Dave: "let's fix it"): it stood as
+   white flecks from ~20 m, a crisp square near. Now (falls.js) the drops aloft are counted (3% of the
+   water going over, critical flow at the brink, aloft as long as their arcs last) as their
+   cross-section, shared among the particles: each a soft clump as opaque as its drops over the area
+   it's drawn on, no narrower than a pixel (engine softUniforms.uPixH). And the fall's foot (its spray,
+   the pool's churn) had been ~11 m downstream, round the viewer: now the row where the water lands.
+   Scratchpad fall-spray-far/near. Open: the clumps read a little as soft balls at the foot (more,
+   smaller ones?); the sheet's thin sides show as a glassy film with an edge line; the face behind a
+   sheet thrown clear could be undercut in the near volume (a recess behind the fall).
 14. The anti-sun twilight's diagonal edge (item 12's "seen, not looked at"): DONE (cb90627). It was the
    clouds' hand-over front: each place turns its clouds over to the next generation at its own time, the
    phase a near-linear function of place, so the band where two generations meet ran ruler-straight (~6.5
