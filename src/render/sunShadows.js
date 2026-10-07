@@ -423,6 +423,7 @@ export class SunShadows {
   // the maps for this frame: the camera at the world's origin (positions are camera-relative)
   render(renderer, scene) {
     const U = SUN_SHADOW_UNIFORMS, K = SKY_SHADOW_UNIFORMS;
+    U.tShadowAtlas.value = this.atlas.texture; K.tSkyRings.value = this.skyRings.texture;
     if (!this.on || !this.active) { U.uSunShadow.value.x = 0; U.uGrassCover.value.x = 0; U.uTrunkSky.value.x = 0; U.uRockSky.value.x = 0; K.uSkyShadow.value.x = 0; this.skyBody = null; return; }
     // (the maps held to the ground: their cameras turned with the body, the sun held in its frame and moved
     // on a tenth of a degree at a time. Snapped to the world's centre 100 km off as the world turned under a

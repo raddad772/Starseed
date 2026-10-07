@@ -59,3 +59,15 @@ test('translated uniform layouts preserve vec3/scalar packing, matrices and arra
   assert.deepEqual([...f.slice(16,24)],[14,15,16,0,17,18,19,0]);
   assert.equal(ints[24],7);
 });
+
+import { fields, pack } from '../../src/render/webgpu/geometry.js';
+test('tree LOD views retain interleaved matrix offsets and instance temperatures',()=>{
+ const data=new Float32Array(32);for(let i=0;i<32;i++)data[i]=i;
+ const matrices=new THREE.InstancedInterleavedBuffer(data,16,1);
+ const temperatures=new THREE.InstancedInterleavedBuffer(new Float32Array([10,20]),1,1);
+ const g=new THREE.BufferGeometry();g.setAttribute('fTa',new THREE.InterleavedBufferAttribute(temperatures,1,1));
+ const object={geometry:g,instanceMatrix:new THREE.InterleavedBufferAttribute(matrices,16,16)};
+ const f=fields({attributes:[{name:'instance3',type:'vec4',location:0},{name:'fTa',type:'float',location:1}]},object);
+ assert.ok(f.every(a=>a.inst));assert.deepEqual([...pack(object,f,true,1)],[28,29,30,31,20]);
+ assert.deepEqual([...data],Array.from({length:32},(_,i)=>i));
+});

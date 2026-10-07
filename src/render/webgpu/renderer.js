@@ -11,6 +11,7 @@ import { ProgramBindings } from './program.js';
 import { AirPass } from './air.js';
 import { PostPass } from './post.js';
 import { OpaquePass } from './opaque.js';
+import { ShadowPass } from './shadows.js';
 import { layout as lightLayout } from './generated/lighting.js';
 
 const OBJECT_FLOATS = 44;
@@ -40,12 +41,13 @@ export class DeferredRenderer {
     this.passes = new FullscreenPasses(this.device, this.textures, this.format); this.textures.passes = this.passes;
     this.air = new AirPass(this.device, this.passes, this.textures);
     this.post = new PostPass(this.device, this.passes, this.textures, this.air);
+    this.shadows = new ShadowPass(this.device,this.textures,this.passes);
     this.opaque = new OpaquePass(this.device, this.textures);
     this.lightBindings = new ProgramBindings(this.device, lightLayout, this.textures);
   }
   async init() {
     const d = this.device, S = GPUShaderStage;
-    await Promise.all([this.passes.init(), this.air.init(), this.opaque.init()]);
+    await Promise.all([this.passes.init(), this.air.init(), this.opaque.init(), this.shadows.init()]);
     this.frameLayout = d.createBindGroupLayout({ label: 'frame and world', entries: [
       { binding: 0, visibility: S.VERTEX | S.FRAGMENT, buffer: { type: 'uniform' } },
       { binding: 1, visibility: S.VERTEX | S.FRAGMENT, buffer: { type: 'read-only-storage' } },
@@ -147,6 +149,8 @@ export class DeferredRenderer {
     if (this.disposed) return;
     const start = performance.now(), view = engine.view, camera = view.camera;
     camera.updateMatrixWorld(); engine.scene.updateMatrixWorld();
+    if(animate&&engine.sunShadows)this.shadows.update(engine.sunShadows,engine.scene);
+    if(this.shadows.state)this.opaque.uniformOverrides=this.shadows.uniforms;
     this.projection.fromArray(reversedPerspective(camera.fov, camera.aspect, camera.near, camera.far));
     this.viewProjection.multiplyMatrices(this.projection, camera.matrixWorldInverse);
     this.inverse.copy(this.viewProjection).invert();
@@ -156,18 +160,20 @@ export class DeferredRenderer {
     engine.scene.traverseVisible((object) => {
       if (!object.isMesh || !object.layers.test(camera.layers)) return;
       if (object.frustumCulled && !this.frustum.intersectsObject(object)) return;
-      const material = object.material;
-      if (Array.isArray(material) || material.transparent || !material.visible) return;
-      const u = material.uniforms || material.userData.webgpu?.uniforms;
-      const terrain = object.geometry.attributes.nrm && u?.uMorph;
-      if (!terrain && !this.opaque.program(material)) return;
-      if (!u?.uCenter) { pendingStandard.push({object,material}); return; }
-      const key = u.uCenter;
-      if (!bodyIds.has(key)) { bodyIds.set(key, lights.length); lights.push(u); }
-      if (terrain) {
-        if (!surfaces.has(key)) surfaces.set(key, this.surfaces.get(u, material.defines?.MAT_MODE || 0));
-        draw.push({ object, u, body: bodyIds.get(key), surface: surfaces.get(key), geometry: this.geometry(object.geometry) });
-      } else opaqueObjects.push({object, material, body: bodyIds.get(key)});
+      const materials=Array.isArray(object.material)?object.geometry.groups.map(group=>({material:object.material[group.materialIndex],group})):[{material:object.material}];
+      for(const {material,group} of materials){
+        if(!material||material.transparent||!material.visible)continue;
+        const u=material.uniforms||material.userData.webgpu?.uniforms;
+        const terrain=object.geometry.attributes.nrm&&u?.uMorph;
+        if(!terrain&&!this.opaque.program(material))continue;
+        if(!u?.uCenter){pendingStandard.push({object,material,group});continue;}
+        const key=u.uCenter;
+        if(!bodyIds.has(key)){bodyIds.set(key,lights.length);lights.push(u);}
+        if(terrain){
+          if(!surfaces.has(key))surfaces.set(key,this.surfaces.get(u,material.defines?.MAT_MODE||0));
+          draw.push({object,u,body:bodyIds.get(key),surface:surfaces.get(key),geometry:this.geometry(object.geometry)});
+        }else opaqueObjects.push({object,material,group,body:bodyIds.get(key)});
+      }
     });
     // Lit meshes without a planetary material (vessels, fauna, items) use the
     // nearest visible body's atmosphere. Scene lighting supplies the space case.
@@ -182,7 +188,7 @@ export class DeferredRenderer {
       }
       opaqueObjects.push({...entry,body});
     }
-    const opaque = opaqueObjects.map(({object, material, body}) => this.opaque.prepare(object,material,body,this.projection,camera)).filter(Boolean);
+    const opaque = opaqueObjects.map(({object,material,body,group})=>{const draw=this.opaque.prepare(object,material,body,this.projection,camera);if(draw)draw.group=group;return draw;}).filter(Boolean);
     this.ensureCapacity(draw.length, lights.length);
     draw.forEach(({ object, u, body }, i) => {
       const k = i * OBJECT_FLOATS, data = this.objectData;
@@ -209,11 +215,8 @@ export class DeferredRenderer {
     d.queue.writeBuffer(this.frameBuffer, 0, data);
     if (draw.length) d.queue.writeBuffer(this.objectBuffer, 0, this.objectData, 0, draw.length * OBJECT_FLOATS);
     if (lights.length) d.queue.writeBuffer(this.bodyBuffer, 0, this.bodyData, 0, lights.length * 16);
-    // Shadow geometry is the next port. Do not sample uninitialized legacy render targets.
     const lightGroups = lights.map((u, i) => this.lightBindings.get(u.uCenter || u, {
-      ...u, uBodyIndex: { value: i }, uSunShadow: { value: null }, uSkyShadow: { value: null },
-      uGrassCover: { value: null }, uTrunkSky: { value: null }, uRockSky: { value: null },
-      tShadowAtlas: { value: null }, tSkyRings: { value: null },
+      ...u, ...(this.shadows.state ? this.shadows.uniforms : this.opaque.uniformOverrides), uBodyIndex: { value: i },
       ...(!u.tCloudShadow?.value?.userData?.webgpuRecipe ? { tCloudShadow: { value: null }, uCSOn: { value: 0 } } : {}),
     }).group);
     const t = this.target(view); let encoder = d.createCommandEncoder({ label: 'deferred frame' });
@@ -278,7 +281,7 @@ export class DeferredRenderer {
     if (this.disposed) return; this.disposed = true;
     for (const geometry of [...this.geometries]) geometry.dispose();
     for (const target of this.targets.values()) { this.air.release(target); this.post.release(target); for (const texture of target.textures) texture.destroy(); }
-    this.targets.clear(); this.timer.dispose(); this.surfaces.dispose(); this.opaque.dispose(); this.lightBindings.dispose(); this.passes.dispose(); this.textures.dispose();
+    this.targets.clear(); this.timer.dispose(); this.surfaces.dispose(); this.shadows.dispose(); this.opaque.dispose(); this.lightBindings.dispose(); this.passes.dispose(); this.textures.dispose();
     this.frameBuffer?.destroy(); this.objectBuffer?.destroy(); this.bodyBuffer?.destroy();
     this.releaseContext(); this.device.destroy();
   }

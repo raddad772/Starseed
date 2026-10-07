@@ -4,23 +4,11 @@ import { ProgramBindings } from './program.js';
 import { shaderKey } from './uniforms.js';
 import { opaquePrograms } from './generated/opaque.js';
 export const GBUFFER_FORMATS = ['rgba8unorm','rgba16float','rgba16float','rgba8unorm'];
-const identity=[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1];
-const sizeOf=t=>Number(t.match(/vec(\d)/)?.[1]||1);
-const version=a=>a?.isInterleavedBufferAttribute?a.data.version:a?.version||0;
-const component=(a,i,k)=>a?.getComponent ? a.getComponent(i,k) : a?.[['getX','getY','getZ','getW'][k]]?.(i) ?? 0;
-function attribute(object,name){if(name.startsWith('instance')&&/^instance[0-3]$/.test(name))return object.instanceMatrix;if(name==='instanceColor')return object.instanceColor;return object.geometry.attributes[name];}
-function fields(layout,object){let vertex=0,instance=0;return layout.attributes.map(a=>{const source=attribute(object,a.name),inst=!!(a.name.startsWith('instance')||source?.isInstancedBufferAttribute);const n=sizeOf(a.type),offset=inst?instance:vertex;if(inst)instance+=n*4;else vertex+=n*4;return {...a,inst,n,offset};});}
-function layouts(fields){return [false,true].map(inst=>{const a=fields.filter(f=>f.inst===inst);return {arrayStride:a.reduce((n,f)=>n+f.n*4,0),stepMode:inst?'instance':'vertex',attributes:a.map(f=>({shaderLocation:f.location,offset:f.offset,format:f.n===1?'float32':'float32x'+f.n}))};});}
-function pack(object,fields,inst,count){const list=fields.filter(f=>f.inst===inst),stride=list.reduce((n,f)=>n+f.n,0),out=new Float32Array(count*stride);for(let i=0;i<count;i++)for(const f of list){const a=attribute(object,f.name),col=/^instance([0-3])$/.exec(f.name);for(let k=0;k<f.n;k++){
- let v;if(col){const c=Number(col[1])*4+k;v=a?a.array[i*16+c]:identity[c];}
- else if(a)v=k<a.itemSize?component(a,Math.floor(i/(a.meshPerAttribute||1)),k):(f.name==='color'&&k===3?1:0);
- else v=f.name==='instanceColor'||f.name==='color'?1:f.name==='normal'&&k===1?1:0;
- out[i*stride+f.offset/4+k]=v;
- }}return out;}
+import { attribute, fields, layouts, pack, version } from './geometry.js';
 const disabledShadows={uSunShadow:{value:null},uSkyShadow:{value:null},uGrassCover:{value:null},uTrunkSky:{value:null},uRockSky:{value:null},tShadowAtlas:{value:null},tSkyRings:{value:null}};
 export class OpaquePass {
- constructor(device,textures){this.device=device;this.textures=textures;this.programs=new Map();this.materialKeys=new WeakMap();this.meshes=new Map();this.geometryCache=new Map();this.white=new THREE.DataTexture(new Uint8Array([255,255,255,255]),1,1);this.white.needsUpdate=true;}
- async init(){await Promise.all(opaquePrograms.map(async p=>{
+ constructor(device,textures,descriptors=opaquePrograms){this.descriptors=descriptors;this.uniformOverrides=disabledShadows;this.device=device;this.textures=textures;this.programs=new Map();this.materialKeys=new WeakMap();this.meshes=new Map();this.geometryCache=new Map();this.white=new THREE.DataTexture(new Uint8Array([255,255,255,255]),1,1);this.white.needsUpdate=true;}
+ async init(){await Promise.all(this.descriptors.map(async p=>{
   const vertexBindings=new ProgramBindings(this.device,p.vertex.layout,this.textures,GPUShaderStage.VERTEX),fragmentBindings=new ProgramBindings(this.device,p.fragment.layout,this.textures);
   const [vertex,fragment]=await Promise.all([shaderModule(this.device,p.name+' vertex',p.vertex.code),shaderModule(this.device,p.name+' material '+p.mode,p.fragment.code)]);
   const program={...p,vertexDescriptor:p.vertex,vertex,fragment,vertexBindings,fragmentBindings,pipelines:new Map()};this.programs.set(p.key+':'+p.mode,program);this.programs.set(p.name+':'+p.mode,program);
@@ -40,7 +28,7 @@ export class OpaquePass {
  pipeline(p,g,material){const key=JSON.stringify(g.layout)+':'+material.side;let pipeline=p.pipelines.get(key);if(!pipeline){pipeline=this.device.createRenderPipeline({label:p.name+' G-buffer',layout:this.device.createPipelineLayout({bindGroupLayouts:[p.vertexBindings.layout,p.fragmentBindings.layout]}),vertex:{module:p.vertex,entryPoint:'main',buffers:g.layout},fragment:{module:p.fragment,entryPoint:'main',targets:GBUFFER_FORMATS.map(format=>({format}))},primitive:{topology:'triangle-list',cullMode:material.side===THREE.DoubleSide?'none':material.side===THREE.BackSide?'front':'back',frontFace:'ccw'},depthStencil:{format:'depth32float',depthWriteEnabled:true,depthCompare:'greater'}});p.pipelines.set(key,pipeline);}return pipeline;}
  prepare(object,material,body,projection,camera){const p=this.program(material);if(!p)return null;const g=this.geometry(object,p),e=this.mesh(object,p,g,material);if(!e.count)return null;
   const family={rock:1,flora:2,grass:3,standard:4,floe:6,iceblock:6}[p.name]||0;
-  const u={...material.uniforms,...material.userData.webgpu?.uniforms,...disabledShadows,modelMatrix:{value:object.matrixWorld},viewMatrix:{value:camera.matrixWorldInverse},projectionMatrix:{value:projection},uBodyIndex:{value:body*16+family}};
+  const u={...material.uniforms,...material.userData.webgpu?.uniforms,...this.uniformOverrides,modelMatrix:{value:object.matrixWorld},viewMatrix:{value:camera.matrixWorldInverse},projectionMatrix:{value:projection},uBodyIndex:{value:body*16+family}};
   if(p.name==='standard')Object.assign(u,this.standardUniforms(object,material));
   const vg=p.vertexBindings.get(e,u).group,fg=p.fragmentBindings.get(e,u).group;
   return {p,g,e,pipeline:this.pipeline(p,g,material),vg,fg,object};
@@ -54,6 +42,6 @@ export class OpaquePass {
   uChannels:{value:maps.slice(0,4).map(k=>m[k]?.channel||0)},uChannels2:{value:maps.slice(4).map(k=>m[k]?.channel||0)},
  };for(const key of maps){const t=m[key]?.image?m[key]:this.white;if(t.matrixAutoUpdate)t.updateMatrix();u[key]={value:t};u[key+'Transform']={value:t.matrix};}return u;
  }
- draw(pass,draw){let triangles=0;for(const d of draw){pass.setPipeline(d.pipeline);pass.setBindGroup(0,d.vg);pass.setBindGroup(1,d.fg);if(d.g.vertices)pass.setVertexBuffer(0,d.g.vertices);if(d.e.instances)pass.setVertexBuffer(1,d.e.instances);const range=d.object.geometry.drawRange,start=range.start||0,count=Math.max(0,Math.min(d.g.count-start,range.count));if(d.g.indices){pass.setIndexBuffer(d.g.indices,d.g.indexFormat);pass.drawIndexed(count,d.e.count,start);}else pass.draw(count,d.e.count,start);triangles+=count*d.e.count/3;}return triangles;}
+ draw(pass,draw){let triangles=0;for(const d of draw){pass.setPipeline(d.pipeline);pass.setBindGroup(0,d.vg);pass.setBindGroup(1,d.fg);if(d.g.vertices)pass.setVertexBuffer(0,d.g.vertices);if(d.e.instances)pass.setVertexBuffer(1,d.e.instances);const range=d.object.geometry.drawRange,start=Math.max(range.start||0,d.group?.start||0),end=Math.min(d.g.count,(range.start||0)+range.count,(d.group?.start||0)+(d.group?.count??Infinity)),count=Math.max(0,end-start);if(d.g.indices){pass.setIndexBuffer(d.g.indices,d.g.indexFormat);pass.drawIndexed(count,d.e.count,start);}else pass.draw(count,d.e.count,start);triangles+=count*d.e.count/3;}return triangles;}
  dispose(){for(const entries of [...this.meshes.values()])entries.release();for(const variants of [...this.geometryCache.values()])variants.release();for(const p of new Set(this.programs.values())){p.vertexBindings.dispose();p.fragmentBindings.dispose();}this.programs.clear();this.white.dispose();}
 }

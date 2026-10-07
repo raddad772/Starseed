@@ -1,0 +1,11 @@
+import * as depthVertex from './depthVertex.js';
+import * as depthFragment from './depthFragment.js';
+import * as rockShadowVertex from './rockShadowVertex.js';
+import * as rockShadowFragment from './rockShadowFragment.js';
+import * as floraShadowVertex from './floraShadowVertex.js';
+import * as floraShadowFragment from './floraShadowFragment.js';
+import * as grassCoverVertex from './grassCoverVertex.js';
+import * as grassCoverFragment from './grassCoverFragment.js';
+import * as trunkSkyVertex from './trunkSkyVertex.js';
+import * as trunkSkyFragment from './trunkSkyFragment.js';
+export const shadowPrograms=[{name:'depth',key:'6c407241',mode:3,vertex:depthVertex,fragment:depthFragment},{name:'rockShadow',key:'d3bae55e',mode:3,vertex:rockShadowVertex,fragment:rockShadowFragment},{name:'floraShadow',key:'148234d4',mode:3,vertex:floraShadowVertex,fragment:floraShadowFragment},{name:'grassCover',key:'77f39ef4',mode:3,vertex:grassCoverVertex,fragment:grassCoverFragment},{name:'trunkSky',key:'36522e9f',mode:3,vertex:trunkSkyVertex,fragment:trunkSkyFragment}];

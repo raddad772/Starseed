@@ -13,7 +13,7 @@ const MIP_SHADER = FULLSCREEN + /* wgsl */`
 
 export class TextureCache {
   constructor(device) {
-    this.device = device; this.cache = new WeakMap(); this.live = new Set();
+    this.device = device; this.cache = new WeakMap(); this.renderTargets = new WeakMap(); this.live = new Set();
     this.mipPipelines = new Map(); this.samplers = new Map();
     this.mipModule = device.createShaderModule({ label: 'texture mipmaps', code: MIP_SHADER });
     this.nearest = device.createSampler();
@@ -32,6 +32,7 @@ export class TextureCache {
     return this.samplers.get(key);
   }
   get(texture) {
+    if (this.renderTargets.has(texture)) return this.renderTargets.get(texture);
     if (texture?.gpuEntry) return texture;
     if (texture?.userData?.webgpuRecipe) return this.passes.resolve(texture);
     if (texture?.isRenderTargetTexture) throw new Error('WebGPU render target has no producer');

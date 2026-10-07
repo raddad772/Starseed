@@ -20,18 +20,20 @@ The full migration is in progress. `?renderer=webgpu` is opt-in; WebGL remains t
   Existing deformation, snow, alpha cutout and material equations are retained; metalness and grass
   self-shadowing feed the common lighting pass. Six material families pass finite GPU validation,
   including shared geometry and disposal. The wood comparison now contains matching trees and grass;
-  native shadows are the next parity requirement. Multi-material vessels and bespoke patches remain.
+  native shadows now render through WebGPU. Multi-material groups and interleaved tree LOD attributes
+  are supported; bespoke vessel patches remain.
 - A temporary WebGL producer bridge still supplies scene/resource descriptions and reference captures.
   Its render-target recipes are reproduced on WebGPU, without WebGL pixel readbacks. Removing this
-  bridge follows opaque/forward/shadow parity. Native geometry shadows, vessel-specific shader patches, liquids,
+  bridge follows opaque/forward/shadow parity. Vessel-specific shader patches, liquids,
   space background, GPU culling, clustered lights, decals and GTAO are still pending.
 - `tools/tests/webgpu.html` passes on the GPU: overlap/reversed depth, capture, resize and disposal.
-  `node --test tools/tests/webgpu.test.mjs`: 4 passing tests, including std140 parameter packing.
+  `node --test tools/tests/webgpu.test.mjs`: 5 passing tests, including std140 packing and interleaved tree LOD views.
   Generated shaders compile offline and on the browser device without validation errors.
 - `tools/tests/webgpu-scenes.html` performs finite, same-camera comparisons with two workers. The wood
   comparison passes at 1280x960, with fixed incident-light exposure for both renderers. Terrain and
-  atmosphere are visually comparable; native geometry shadows are still absent on WebGPU at this checkpoint.
-  Measured drained totals were about 17–19 ms for this incomplete scene; this is **not a parity or
+  atmosphere and tree geometry are visually comparable. Native cascades, canopy, grass cover and trunk/rock
+  occlusion maps render without GPU validation errors; foreground grass remains darker than the reference.
+  Measured drained totals with native shadows were about 29–31 ms at 1280x960 for this incomplete scene; this is **not a parity or
   performance claim**. Timestamp scopes may overlap on this adapter, so the tool also reports drained
   totals and flags implausible sums. Wood-near-tree, gorge and elevated parity runs remain required.
 - Dave confirmed this is the only agent working on the computer and no coordination messages are needed.
