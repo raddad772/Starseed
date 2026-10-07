@@ -204,13 +204,28 @@ Dave's queue, in the order he raised it (keep this list current):
      Scratchpad fall_nf2, cliff_s5. Talus (1cc2944): scree at faces' feet in the near field, ~35 degrees,
      a third of the face's height, the face's rock broken (talus_cmp); brinks rounded (a quarter circle, brink_cmp).
    - Stalls (4d5d501): the clouds' light under the camera read back from the GPU every eighth frame at
-     once (the CPU waiting on everything queued: up to 300 ms in the test tab, CPU frame p90 310 ms), and
-     the sky's LUTs when the dust remade them: both now read through a polled fence (p90 21 ms).
-   - Frame cost measured (2026-10-07, quiet machine, whole frames with gl.finish: the GPU timer queries
-     here (EXT_disjoint_timer_query on this Mac) read ~150 ms a frame and every pass alike: bogus, don't
-     trust engine.gpuMs or profilePasses on it). At 2048x1536: 33N 78W from 90 m ~13-16 ms (the clouds
-     off: no change); on foot at the 18 m fall ~12.5 ms, the terrain's whole group (chunks, trees, rocks,
-     animals, grass) ~5.7 ms of it; no one grass tier measurable alone. Nothing urgent to optimise there.
+     once (the CPU waiting on everything queued), and the sky's LUTs when the dust remade them: both now
+     read through a polled fence. Paced as the game is (two frames in flight) such a read's
+     getBufferSubData takes 0.2-1.8 ms. In a test loop of back-to-back frames (not paced by vsync) the CPU
+     runs frames ahead of the GPU and any read waits out that backlog (140-190 ms): an artefact of the
+     loop, not the game. A sync readPixels always waits for all queued GPU work (~a GPU frame), whatever
+     texture it reads: copying the texel aside first doesn't help (tried, reverted).
+   - Measuring frame cost (2026-10-07, corrected): gl.finish in Chrome returns at once, so the earlier
+     "gl.finish" timings below measured the CPU only. The GPU timer queries here read ~150 ms for every
+     pass: bogus. Measure the GPU by a drain: after gm.frame, clear a 1x1 target and read it back
+     synchronously; the read's time is the GPU work still queued. The GPU's speed varies between loads
+     (the same wood 30 ms one load, 59 the next; the XBox session's emulator 75): compare A and B inside
+     one load, switching the thing off in place. The JS self-profiler works on the starseed-test server
+     (port 8766, Document-Policy js-profiling): new Profiler({ sampleInterval: 1 }), ~14 ms samples.
+   - Optimised (2026-10-07, in a wood at SOL 18.66N 59.63W, 2048x1536; CPU ~18 ms, GPU 30-60 ms):
+     trees each in their own distance's form (0326b73; GPU -9.5 ms: a node's trees had all taken its
+     nearest distance's form); the canopy's sky term from rings precomputed per sky-map texel (ce3d549;
+     9.3 -> 0.8 ms); the far sun map every other frame, reprojected (shadows' CPU 10.7 -> 8.4 ms); casters
+     culled by reach; rocks frustum-culled (151 -> 73 draws in the near map). Left, by switching off in one
+     load: grass ~7-8 ms (4.3M triangles loaded: 4200-triangle patches within 22 m, 600-650 to 180 m), the
+     terrain chunks in the main view 4-8 ms, drawing the shadow maps ~7 ms (near map ~370 chunks, far
+     ~1100), the sun maps' sampling ~2 ms. In the slow state half resolution saves 26 ms: fill-bound then.
+   - Earlier (gl.finish, so CPU only): 33N 78W from 90 m ~13-16 ms; on foot at the 18 m fall ~12.5 ms.
    - Grass none under the water's surface as drawn (3dd22fc). Tried and reverted: a noise nudge to the
      ground classes' boundary (no zigzag case found to show it on).
    - Seen, open: from 25 km up (33N 78W, sun 40, looking down 35 deg; scratchpad air25_cmp*) the land is
