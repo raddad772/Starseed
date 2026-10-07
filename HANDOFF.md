@@ -2,6 +2,10 @@
 
 Dave is play-testing and giving feedback in short bursts.
 
+**The renderer is moving to WebGPU deferred (Dave, 2026-10-07): the plan, the measurements behind it and
+the handoff to Astra are in `WEBGPU.md`.** Rendering work belongs there; the WebGL renderer stays the
+default until the new one reaches parity.
+
 ## NOW: forests, shade, moonlight; Dave's queue (session 39d69fa8, 2026-10-06)
 
 Done and committed: EZ-Tree trees, green Earth (7821ce2); stands, sky shadow, leaf-cut sun shadows,
