@@ -107,6 +107,8 @@ const BED_WALL = 3;
 // the soil's depth against the ground's curvature (_soilK: m, the exponent's scale; a hollow's 0.02 /m
 // doubles it. At 60 a quarter of a lava plateau's ground stood at either clamp)
 const SOIL_CURV = 35;
+// how far a fall's sheet stands out from its face at least, along its river (m: terrain.js fallGrid)
+const FALL_OFF = 0.3;
 // the loose covers among lithology.js's rocks (alluvium, regolith, the sands): a skin over the bedrock
 const LOOSE = ROCKS.map((r) => r.name === 'alluvium' || r.name === 'regolith' || /sand$/.test(r.name));
 
@@ -1247,7 +1249,7 @@ export class TerrainGenerator {
       for (let i = 0; i < 16; i++) bases.push(t0 + (t1 - t0) * i / 16);
       for (let i = 0; i <= nd; i++) bases.push(t1 + (tb - t1) * i / nd);
       if (TT[i1] < TT[i0]) bases.reverse();
-      const nr = bases.length - 1, nc = 16, NV = (nr + 1) * (nc + 1), stLip = this._riverWater(half, 0, ch.prof(t0), 0, W).stage, Ld = t0 + xl / len;
+      const nr = bases.length - 1, nc = 16, NV = (nr + 1) * (nc + 1), stLip = this._riverWater(half, 0, ch.prof(t0), 0, W).stage, Ld = Math.min(tb, Math.max(t0 + xl / len, t1 + FALL_OFF / len));
       const G = new Float64Array(NV * 3), U = [0, 0, 0];
       let top = -Infinity, bot = Infinity;
       // (row ri: rows the same at every column; e eased in from the zone's ends)
@@ -1256,8 +1258,12 @@ export class TerrainGenerator {
         const ease = base < t0 ? (base - ta) / Math.max(t0 - ta, 1e-9) : base > t1 ? 1 - (base - t1) / Math.max(tb - t1, 1e-9) : 1;
         // (where the water is along the channel: the lip and over the face as far out as it's carried
         // falling, then from where it lands on to the zone's end)
+        // (and no nearer the lip than the face itself, a hand's breadth out from it: where the water isn't
+        // thrown clear of the face (a stream over a rounded brink, its face a few metres across in the
+        // ground's metres) it runs down it, a horsetail. Thrown out only as far as it's carried, a small
+        // stream's sheet stood inside the rock, a gorge's head a bare face with spray at its foot)
         let tg = base;
-        if (base > t0 && base <= t1) tg = t0 + vb * Math.sqrt(2 * Math.max(0, stLip - this._riverWater(half, 0, ch.prof(base), 0, W).stage) * hs / gr) / len;
+        if (base > t0 && base <= t1) tg = Math.max(t0 + vb * Math.sqrt(2 * Math.max(0, stLip - this._riverWater(half, 0, ch.prof(base), 0, W).stage) * hs / gr) / len, base + FALL_OFF / len);
         else if (base > t1) tg = Ld + (base - t1) * (tb - Ld) / Math.max(tb - t1, 1e-9);
         for (let ci = 0; ci <= nc; ci++) {
           const sx = -1 + 2 * ci / nc, back = dmax * dm.pow(Math.max(0, 1 - sx * sx), 5 / 3) / len, t = tg - back * ease;

@@ -147,7 +147,21 @@ Dave's queue, in the order he raised it (keep this list current):
    by the ground's shape (terrain.js _soilK, S_SOILK: exp(35 x the finest cells' Laplacian), thin past
    ~35 degrees), read by the ground's shading, the beds' faces and the grass. NB the free camera has no
    near volume: views of faces, scree and talus need the player placed there (placeOnSurface).
-   Open: the scree's gravel shades much darker than the face it fell from (a stain).
+   Then (3186e18): the gorge's walls had been dressed in the river's gravels (the tiles' surface rock,
+   alluvium in the valley, a lava's regolith top: their cells wider than a gorge), the "pebble patches"
+   up the faces. A loose cover (alluvium, regolith, the sands) holds no steeper than ~32 degrees: past
+   that the shading shows the world sim's own rock under it (rockAtWarped, as _beds reads it) where
+   that's bedrock; an alluvial plain's stays alluvium. Scree now the face's own rock's grain over half,
+   grit and a little gravel the rest, faded in over 1.1 m of its depth; none on a bench partway up a
+   face (the ground 12 m on down must run on gently too). NB the "spur" seen from the gorge floor is
+   ~9 m tall; its scree ~3 m deep at its foot, so close up it reads as halfway up. Scratchpad
+   scree-before/after.
+   The fall's sheet (2026-10-07): from the gorge floor the 3.06N fall showed no water, a bare face with
+   spray at its foot. The ribbon's sheet was thrown out from the lip only as far as the water's carried
+   (vb sqrt(2 z / g): ~1.2 m for this shallow stream) but the profile's face runs 4 m at least
+   (channels.js fw, 2 m either side of the step, so the lip isn't a crease the near lattice draws as
+   teeth): the sheet stood inside the rock. Now it's never nearer the lip than the face itself plus 0.3 m
+   (FALL_OFF): where the water isn't thrown clear it runs down the face, a horsetail.
 14. The anti-sun twilight's diagonal edge (item 12's "seen, not looked at"): DONE (cb90627). It was the
    clouds' hand-over front: each place turns its clouds over to the next generation at its own time, the
    phase a near-linear function of place, so the band where two generations meet ran ruler-straight (~6.5
