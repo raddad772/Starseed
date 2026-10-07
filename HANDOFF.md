@@ -40,7 +40,11 @@ Dave's queue, in the order he raised it (keep this list current):
    their foot (seatInstances). Dave on it: "still looks like 2 polygons meeting with no shading": the
    trunk a six-sided tube on the ground in a crease. Now (0c36302) each EZ-Tree has a root flare
    (ezTrees.js rootFlare, buttresses, roots on below ground) and its bark darker over its lowest ~0.3 m
-   (floraRender.js finalize foot). Scratchpad tree-foot-before-after, tree-foot-wood;
+   (floraRender.js finalize foot). Scratchpad tree-foot-before-after, tree-foot-wood. Then Dave: "soil-ish,
+   not plastic-ish" (7ca0b97: bare soil round a trunk, grass thinned there, bark soiled, roots rounded) and
+   "still that straight polygonal seam... maybe if the colors matched properly" (e479992): the bark's lowest
+   ~0.2 m now shaded exactly as the ground beside it (the terrain's scanned soil read at the same place,
+   its bumps, occlusion and trunk sky), measured no step across the line. Scratchpad tree-seam-flat/bank;
    check the leaves' sparkle against the sky after the mip-scaled alpha; probe GI (option 2: a probe
    grid filled from the maps; option 3 later, WebGPU compute beside WebGL). Test tip: the in-app pane
    must be shown (a hidden pane throttles the page to a standstill); ?tilegpu=0 for a hidden tab.
