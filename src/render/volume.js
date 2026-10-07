@@ -259,18 +259,22 @@ void main() {
         if (seg != 1) continue;
         float fr;
         float d = deckDenG(k, pf, dirF, h, cv, gA, gB, true, fr);
-        tauAbove += dk.z * cov * (dk.y - h) * 0.25 * uSigma;
-        tauBelow += dk.z * cov * (h - dk.x) * 0.25 * uSigma;
+        // (the deck's own rest beyond the short march's reach along the sun (350 + 1120 + 3584 m): inside it
+        // the march measures it; counted again here a cloud's sunlit side went dark as if under the whole
+        // deck: a far cumulus seen from the side brown-black in the midday sun)
+        tauAbove += dk.z * cov * max(0.0, dk.y - h - max(muS, 0.0) * 5054.0) * 0.25 * uSigma;
+        tauBelow += dk.z * cov * max(0.0, h - dk.x - max(-muS, 0.0) * 5054.0) * 0.25 * uSigma;
         if (d > cd) {
           cd = d; frac = fr; cc = uDeckCol[k];
           if (uMode < 0.5 && k == 0) cc = mix(cc, palette(0.5 + 0.35 * sin(lat * uBands * 2.0 + uJetPhase * 6.2832)), 0.55);
           // short light march toward the sun through this deck: directional self-shadowing
           float tl = 0.0;
-          float ds = 350.0;
+          float ds = 350.0, sl = 0.0;
           vec3 ps = pf;
           for (int j = 0; j < 3; j++) {
             ps += sunDirF * ds;
-            float hs = h + muS * ds * float(j + 1);
+            sl += ds;
+            float hs = h + muS * sl;
             float frs;
             tl += deckDenG(k, ps, dirF, hs, cv, gA, gB, false, frs) * ds;
             ds *= 3.2;
