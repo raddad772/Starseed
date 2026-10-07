@@ -113,6 +113,9 @@ Dave's queue, in the order he raised it (keep this list current):
    rounded rim, talus at its foot, ledges, a gorge cut back below the fall, ragged plan); the fall's sheet
    (a flat ribbon with a moire, grass to the plunge pool, the river below hidden); marshes, mud and ponds
    with grass growing up through them; frozen falls with icicles in winter.
+   Since: rim rounded and talus (2362846, 1cc2944), the sheet's moire gone (56fc89d), mud and grass at the
+   pool (67adaf0); marsh pools with reeds round them (31ded1f: shading, not lakes; scratchpad
+   pools_cmp4). Still: a gorge cut back below the fall, the wall's ragged plan.
 14. The anti-sun twilight's diagonal edge (item 12's "seen, not looked at"): DONE (cb90627). It was the
    clouds' hand-over front: each place turns its clouds over to the next generation at its own time, the
    phase a near-linear function of place, so the band where two generations meet ran ruler-straight (~6.5
