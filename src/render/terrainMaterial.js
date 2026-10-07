@@ -622,7 +622,14 @@ void main() {
       // fixed origin (kilometres) their least wobble moved the streaks metres a pixel: read at the noise's
       // coarsest level, the sheet one even white with a lattice of dark dots)
       vec3 pS = vFixedPos - uOriginMod - (uFallTop > 0.0 ? uFallFoot : vec3(0.0));
+#ifdef RIBBON
+      // (on the river's own surface, by the sheet's own lines: across it (its columns, over its water's
+      // width) and how far it has fallen. Read off the pixel's normal, round a horseshoe's curve the lines
+      // of one height had bent with it: the streaks banded in U's, a curtain's folds)
+      vec2 q = vec2(vRib.x * 0.51 * max(uFallW, 1.0) / 4.8, zf / (48.0 * L));
+#else
       vec2 q = vec2(dot(pS, acr) / 4.8, dot(pS, down) / (48.0 * L));
+#endif
       float dv = v * 2.5 / (48.0 * L);
       vec2 qA = q - vec2(0.0, dv * t1), qB = q + vec2(0.37, 0.0) - vec2(0.0, dv * t2);
       float bA = texture(tDetail, qA).r, bB = texture(tDetail, qB).r;
@@ -722,7 +729,11 @@ void main() {
         vec3 dnI = upF - fn * dot(upF, fn);
         vec3 downI = -dnI / max(length(dnI), 1e-4), acrI = normalize(cross(fn, downI));
         vec3 pI = vFixedPos - uOriginMod - (uFallTop > 0.0 ? uFallFoot : vec3(0.0));   // (from the foot: the sheet's)
+#ifdef RIBBON
+        vec2 qi = vec2(vRib.x * 0.51 * max(uFallW, 1.0), uFallTop > 0.0 ? max(uFallTop - r, 0.0) : dot(pI, downI));
+#else
         vec2 qi = vec2(dot(pI, acrI), dot(pI, downI));
+#endif
         // (columns a few tenths of a metre across, drawn out down the face; rounded by their own slope across,
         // the gaps between them deep blue)
         // (the detail tile's own grain ~a fifteenth of it: read at a fifth of a tile a metre across, its
