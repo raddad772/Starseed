@@ -324,7 +324,7 @@ export class PlanetTerrain {
     node.floraFrame = this.frame;
     node.floraDist = dist;
     if (!node.flora) this._floraWant++;
-    if (node.flora) this.floraSet.updateNode(node.flora, dist);
+    if (node.flora) this.floraSet.updateNode(node.flora, dist, this.camLocal);
     if (node.flora || node.floraJob) return;
     this.ensureFloraSet();
     const gen = this.generation;
@@ -343,7 +343,7 @@ export class PlanetTerrain {
       // (on the ground as drawn now: seatInstances, in the frames' budget)
       node.flora.position.set(data.origin[0], data.origin[1], data.origin[2]);
       this.reseatQ.add(node.flora);
-      this.floraSet.updateNode(node.flora, node.floraDist || 0);
+      this.floraSet.updateNode(node.flora, node.floraDist || 0, this.camLocal);
       this.floraCount += node.flora.userData.count;
       this.group.add(node.flora);
     }, () => { node.floraJob = null; });

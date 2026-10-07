@@ -58,6 +58,8 @@ function noisy(geo, rng, amount) {
 // history gives (a seed tree's, a flowering tree's, a tree fern's), its trunk as wide as the solid field
 // takes it (sim/floraField.js TRUNK); the flora shader's parts: bark 0, foliage 1
 const GROWN = { conifer: 0.035, broadleaf: 0.045, fern: 0.04 };
+// (a tree's forms by its distance (m): FloraSet.treeNode)
+const TREE_FULL = 90, TREE_MID = 300, TREE_ONE = 450, TREE_SORT_STEP = 8;
 function grownTreeGeometry(sp) {
   const H = sp.treeHeight, form = sp.tree;
   const ts = { form, H, trunkR: GROWN[form] * H, key: `flora|${sp.seed}|${form}`, levels: form === 'fern' ? 1 : form === 'conifer' ? 2 : 3,
@@ -469,7 +471,7 @@ export function seatInstances(obj, b) {
   obj.updateMatrix();
   const o = obj.position;
   obj.traverse((m) => {
-    if (!m.isInstancedMesh || !m.count) return;
+    if (!m.isInstancedMesh || !m.count || m.userData.view) return;   // (a node's trees' views: their owner's seated)
     const a = m.instanceMatrix.array, n = m.count, rock = m.userData.kind === 'stone';
     const mo = m === obj ? null : m.position;
     let lift = m.userData.lift;
@@ -654,6 +656,7 @@ export class FloraSet {
       mesh.instanceMatrix.needsUpdate = true;
       if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
       group.add(mesh);
+      if (kind === 'tree') this.treeViews(mesh, group);
       total += n;
     }
     group.userData.count = total;
@@ -679,20 +682,106 @@ export class FloraSet {
     return g;
   }
 
-  // per-frame: hide kinds beyond their draw distance, swap distant trees to the impostor
-  updateNode(group, dist) {
+  // per-frame: hide kinds beyond their draw distance, each tree in its form for its distance (dist: the
+  // node's nearest; cam: the camera, body-fixed)
+  updateNode(group, dist, cam) {
     for (const m of group.children) {
       const kind = m.userData.kind;
-      if (!(kind in this.kindDist)) continue;   // (another's: the ground's rocks fade themselves)
+      if (!(kind in this.kindDist) || m.userData.view) continue;   // (another's: the ground's rocks fade themselves)
+      if (m.userData.views) { this.treeNode(m, group, dist, cam); continue; }
       m.visible = dist < this.kindDist[kind];
-      // (EZ-Tree's near to ~90 m, its lighter one to ~300, the impostor beyond; else near to 450)
-      if (kind === 'tree') {
-        const near = dist < (this.treeMid ? 300 : 450);
-        m.geometry = this.wrap(m, near ? (this.treeMid && dist >= 90 ? this.treeMid : this.geos.tree) : this.treeFar);
-        m.material = near ? this.materials.tree : this.materials.treeFar;
-        m.userData.shadowMat = near ? this.shadowMats.tree : this.shadowMats.treeFar;
+    }
+  }
+
+  // (a node's trees each in the form for its own distance: EZ-Tree's full one to TREE_FULL, its lighter
+  // one to TREE_MID, the impostor beyond (no lighter one: full to TREE_ONE). The node's own mesh holds
+  // them, hidden (seated, cleared: its buffers), its instances kept in order of distance as the camera
+  // moves, and three views of its buffers draw them, the nearest full, the next lighter, the rest the
+  // impostor. Chosen by the node's distance alone, a node ~200 m across drew every tree in it full once
+  // its edge was inside 90 m: four in five of the full trees drawn were past 90 m, out to 300, and the
+  // lighter ones out to 450; the trees' vertices were a fifth of the GPU's frame in a wood)
+  treeViews(owner, group) {
+    const n = owner.count, ud = owner.userData;
+    if (!owner.instanceColor) owner.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(n * 3).fill(1), 3);
+    ud.iib = [new THREE.InstancedInterleavedBuffer(owner.instanceMatrix.array, 16, 1), new THREE.InstancedInterleavedBuffer(owner.instanceColor.array, 3, 1), new THREE.InstancedInterleavedBuffer(ud.fTa.array, 1, 1)];
+    ud.views = [0, 1, 2].map(() => {
+      const v = new THREE.InstancedMesh(this.geos.tree, this.materials.tree, 0);
+      v.userData.view = true; v.userData.kind = 'tree';
+      v.userData.shadowFar = this.shadowFarTree;
+      v.layers.mask = owner.layers.mask;
+      v.frustumCulled = true;
+      v.visible = false;
+      v.addEventListener('dispose', () => unwrap(v));
+      group.add(v);
+      return v;
+    });
+    ud.cuts = [0, 0];   // (where the forms change in its order: none placed yet, all the impostor)
+    ud.sortAt = null;   // (the camera, the mesh's own frame, at its last sort)
+    owner.visible = false;
+  }
+
+  treeNode(owner, group, dist, cam) {
+    const ud = owner.userData, show = dist < this.kindDist.tree;
+    if (owner.instanceMatrix.version !== ud.mv) { ud.mv = owner.instanceMatrix.version; ud.iib[0].needsUpdate = true; }   // (seated anew)
+    if (!owner.boundingSphere) owner.computeBoundingSphere();
+    let place = !ud.placed;
+    if (show && dist >= (this.treeMid ? TREE_MID : TREE_ONE)) {
+      if (ud.cuts[0] || ud.cuts[1]) { ud.cuts = [0, 0]; place = true; }
+      ud.sortAt = null;
+    } else if (show && cam) {
+      const p = owner.position, o = group.position;
+      const cx = cam.x - o.x - p.x, cy = cam.y - o.y - p.y, cz = cam.z - o.z - p.z, a = ud.sortAt;
+      if (!a || (cx - a[0]) ** 2 + (cy - a[1]) ** 2 + (cz - a[2]) ** 2 > TREE_SORT_STEP ** 2) {
+        this.sortTrees(owner, cx, cy, cz);
+        ud.sortAt = [cx, cy, cz];
+        place = true;
       }
     }
+    if (place) { this.placeViews(owner); ud.placed = true; }
+    for (const v of ud.views) { v.visible = show && v.count > 0; v.boundingSphere = owner.boundingSphere; }
+  }
+
+  // (its instances in order of distance from (cx, cy, cz), and where the forms change)
+  sortTrees(owner, cx, cy, cz) {
+    const n = owner.count, ud = owner.userData;
+    const M = owner.instanceMatrix.array, C = owner.instanceColor.array, T = ud.fTa.array, L = ud.lift;
+    const d = ud.sortD || (ud.sortD = new Float32Array(n)), ord = ud.sortO || (ud.sortO = new Uint32Array(n));
+    for (let i = 0; i < n; i++) { const k = i * 16, x = M[k + 12] - cx, y = M[k + 13] - cy, z = M[k + 14] - cz; d[i] = x * x + y * y + z * z; ord[i] = i; }
+    ord.sort((a, b) => d[a] - d[b]);
+    const M0 = M.slice(0, n * 16), C0 = C.slice(0, n * 3), T0 = T.slice(0, n), L0 = L ? L.slice(0, n) : null;
+    const f2 = (this.treeMid ? TREE_FULL : TREE_ONE) ** 2, m2 = (this.treeMid ? TREE_MID : TREE_ONE) ** 2;
+    let full = 0, mid = 0;
+    for (let j = 0; j < n; j++) {
+      const i = ord[j];
+      for (let q = 0; q < 16; q++) M[j * 16 + q] = M0[i * 16 + q];
+      C[j * 3] = C0[i * 3]; C[j * 3 + 1] = C0[i * 3 + 1]; C[j * 3 + 2] = C0[i * 3 + 2];
+      T[j] = T0[i];
+      if (L) L[j] = L0[i];
+      if (d[i] < f2) full = j + 1;
+      if (d[i] < m2) mid = j + 1;
+    }
+    ud.cuts = [full, mid];
+    for (const b of ud.iib) b.needsUpdate = true;
+  }
+
+  // (the views on its buffers, each from its cut: a new attribute for each, as three's binding of them
+  // takes no note of an offset changed)
+  placeViews(owner) {
+    const ud = owner.userData, n = owner.count, [mI, cI, tI] = ud.iib;
+    const from = [0, ud.cuts[0], ud.cuts[1]], to = [ud.cuts[0], ud.cuts[1], n];
+    const bases = [this.geos.tree, this.treeMid || this.geos.tree, this.treeFar];
+    ud.views.forEach((v, j) => {
+      const s = from[j];
+      v.count = to[j] - s;
+      v.instanceMatrix = new THREE.InterleavedBufferAttribute(mI, 16, s * 16);
+      v.instanceColor = new THREE.InterleavedBufferAttribute(cI, 3, s * 3);
+      v.userData.fTa = new THREE.InterleavedBufferAttribute(tI, 1, s);
+      const g = this.wrap(v, bases[j]);
+      g.setAttribute('fTa', v.userData.fTa);
+      v.geometry = g;
+      v.material = j === 2 ? this.materials.treeFar : this.materials.tree;
+      v.userData.shadowMat = j === 2 ? this.shadowMats.treeFar : this.shadowMats.tree;
+    });
   }
 
   dispose() {
