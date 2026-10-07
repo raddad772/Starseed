@@ -107,7 +107,7 @@ export class FloraField {
         if (cleared(x, y, z)) continue;
         const l = dm.hypot(x, y, z);
         // drawn sunk by a quarter of its size, a squashed sphere: its middle a little under the ground
-        put({ kind: 'rock', x: x - x / l * 0.25 * s, y: y - y / l * 0.25 * s, z: z - z / l * 0.25 * s, ux: x / l, uy: y / l, uz: z / l, r, h: 0 });
+        put({ kind: 'rock', x: x - x / l * 0.25 * s, y: y - y / l * 0.25 * s, z: z - z / l * 0.25 * s, ux: x / l, uy: y / l, uz: z / l, r, h: 0, hc: -0.25 * s });
       }
     }
     // the ground's own rocks (gen/rocks.js): a sphere through each, as tall as it stands out of the
@@ -120,7 +120,7 @@ export class FloraField {
       if (cleared(x, y, z)) continue;
       const l = dm.hypot(x, y, z), sh = rockShapeOf(geo[i + 6], geo[i + 9]);
       const up = rad * sh.sy * (1 - 2 * sh.sink);   // (its middle above the ground)
-      put({ kind: 'rock', x: x + x / l * up, y: y + y / l * up, z: z + z / l * up, ux: x / l, uy: y / l, uz: z / l, r: rad * (0.55 + 0.35 * sh.sy), h: 0 });
+      put({ kind: 'rock', x: x + x / l * up, y: y + y / l * up, z: z + z / l * up, ux: x / l, uy: y / l, uz: z / l, r: rad * (0.55 + 0.35 * sh.sy), h: 0, hc: up });
     }
   }
 

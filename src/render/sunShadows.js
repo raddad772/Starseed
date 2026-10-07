@@ -45,6 +45,9 @@ export const COVER_MIN_W = 2.5 * 2 * COVER.far / COVER.size;
 // (the trunks' hold on the sky at their feet: in the corner beside the grass's, 0..32 m at 12.5 cm)
 const TRUNKS = { far: 32, size: 512 };
 const TRUNKS_ORG = [COVER_ORG[0] + COVER.size, CASCADES[0].size];
+// (and the rocks' beside them, the same reach and texels: kept apart, so the ground round a boulder takes
+// its darkness but not a trunk's bare soil, and a rock's own top isn't darkened by itself)
+const ROCKS_ORG = [TRUNKS_ORG[0] + TRUNKS.size, TRUNKS_ORG[1]];
 // the share of the sky (cosine-weighted) an upright trunk of radius r and height h hides from a point on
 // the ground d from its axis: the wedge of azimuth it spans, 2 asin(r / d), from the horizon to the
 // elevation of its top (sin^2 of it, cosine-weighted), half the sky against it. Drawn from overhead as
@@ -157,6 +160,7 @@ export const SUN_SHADOW_UNIFORMS = {
   uGrassCoverVP: { value: new THREE.Matrix4() },
   // (the trunks' hold on the sky: x on, y z its corner in the atlas, w its size; its view-projection)
   uTrunkSky: { value: new THREE.Vector4(0, 0, 0, 1) },
+  uRockSky: { value: new THREE.Vector4(0, 0, 0, 1) },   // (the rocks': x on, y z their corner)
   uTrunkSkyVP: { value: new THREE.Matrix4() },
 };
 
@@ -250,6 +254,17 @@ export class SunShadows {
     this.trunkMesh.frustumCulled = false; this.trunkMesh.matrixAutoUpdate = false;
     this.trunkScene = new THREE.Scene();
     this.trunkScene.add(this.trunkMesh);
+    // (the rocks round it likewise, a set of their own drawn into their own corner)
+    const rg = new THREE.InstancedBufferGeometry();
+    for (const k of ['position', 'corner']) rg.setAttribute(k, tg.attributes[k]);
+    rg.setIndex(tg.index);
+    rg.setAttribute('aT', new THREE.InstancedBufferAttribute(new Float32Array(TRUNK_MAX * 4), 4));
+    rg.setAttribute('aH', new THREE.InstancedBufferAttribute(new Float32Array(TRUNK_MAX), 1));
+    rg.instanceCount = 0;
+    this.rockMesh = new THREE.Mesh(rg, this.trunkMesh.material);
+    this.rockMesh.frustumCulled = false; this.rockMesh.matrixAutoUpdate = false;
+    this.rockScene = new THREE.Scene();
+    this.rockScene.add(this.rockMesh);
     this.trunkMid = new THREE.Vector3(); this.trunkAt = null; this.trunkBody = null;
     this.held = new THREE.Vector3(0, 1, 0); this.heldBody = null;   // (the sun as the maps hold it: body-fixed)
     this.bodyUp = new THREE.Vector3(0, 1, 0); this.bodyX = new THREE.Vector3(1, 0, 0);
@@ -356,45 +371,59 @@ export class SunShadows {
   // the trunks round the camera (the world's flora, sim/floraField.js: what's walked round) into their map,
   // asked again as the camera moves on a couple of metres; qB the body's turn (body-fixed to world)
   _trunkMap(renderer, qB) {
-    const U = SUN_SHADOW_UNIFORMS, b = this.body, fl = b && floraOf(b), g = this.trunkMesh.geometry;
-    if (!fl) { U.uTrunkSky.value.x = 0; return; }
+    const U = SUN_SHADOW_UNIFORMS, b = this.body, fl = b && floraOf(b), g = this.trunkMesh.geometry, gr = this.rockMesh.geometry;
+    if (!fl) { U.uTrunkSky.value.x = 0; U.uRockSky.value.x = 0; return; }
     const camF = _tc.copy(this.anchor).negate().applyQuaternion(this.bodyQInv);
     if (this.trunkBody !== b || !this.trunkAt || this.trunkAt.distanceToSquared(camF) > 4) {
       this.trunkBody = b;
       this.trunkAt = (this.trunkAt || new THREE.Vector3()).copy(camF);
       this.trunkMid.copy(camF);
       const list = fl.near(camF, TRUNKS.far + 6, this._tl || (this._tl = []));
-      const T = g.attributes.aT.array, H = g.attributes.aH.array;
-      let n = 0;
+      const T = g.attributes.aT.array, H = g.attributes.aH.array, TR = gr.attributes.aT.array, HR = gr.attributes.aH.array;
+      let n = 0, nr = 0;
       for (const it of list) {
-        if (it.kind !== 'tree' || n >= TRUNK_MAX) continue;
-        T[n * 4] = it.x - camF.x; T[n * 4 + 1] = it.y - camF.y; T[n * 4 + 2] = it.z - camF.z; T[n * 4 + 3] = it.r;
-        // (its bole: the crown over it the canopy's map's)
-        H[n] = 0.5 * it.h;
-        n++;
+        if (it.kind === 'tree' && n < TRUNK_MAX) {
+          T[n * 4] = it.x - camF.x; T[n * 4 + 1] = it.y - camF.y; T[n * 4 + 2] = it.z - camF.z; T[n * 4 + 3] = it.r;
+          // (its bole: the crown over it the canopy's map's)
+          H[n] = 0.5 * it.h;
+          n++;
+        } else if (it.kind === 'rock' && it.hc !== undefined && nr < TRUNK_MAX) {
+          // (a rock as a short wide trunk: as wide as it meets the ground (its bulge over that where its
+          // middle stands above it), as high as a dome of its height hides the sky, ~0.65 of it)
+          const top = it.hc + it.r, foot = it.hc > 0 ? 0.9 * it.r : Math.sqrt(Math.max(0, it.r * it.r - it.hc * it.hc));
+          if (top < 0.1 || foot < 0.1) continue;
+          TR[nr * 4] = it.x - camF.x; TR[nr * 4 + 1] = it.y - camF.y; TR[nr * 4 + 2] = it.z - camF.z; TR[nr * 4 + 3] = foot;
+          HR[nr] = 0.65 * top;
+          nr++;
+        }
       }
-      g.instanceCount = n;
+      g.instanceCount = n; gr.instanceCount = nr;
       g.attributes.aT.needsUpdate = true; g.attributes.aH.needsUpdate = true;
+      gr.attributes.aT.needsUpdate = true; gr.attributes.aH.needsUpdate = true;
     }
-    if (!g.instanceCount) { U.uTrunkSky.value.x = 0; return; }
-    // (the set in the world: from its middle, turned with the body, camera-relative)
-    const m = this.trunkMesh;
-    m.matrix.compose(_tp.copy(this.trunkMid).applyQuaternion(qB).add(this.anchor), qB, _one);
-    m.matrixWorld.copy(m.matrix);
+    if (!g.instanceCount && !gr.instanceCount) { U.uTrunkSky.value.x = 0; U.uRockSky.value.x = 0; return; }
+    // (the sets in the world: from their middle, turned with the body, camera-relative)
+    for (const m of [this.trunkMesh, this.rockMesh]) {
+      m.matrix.compose(_tp.copy(this.trunkMid).applyQuaternion(qB).add(this.anchor), qB, _one);
+      m.matrixWorld.copy(m.matrix);
+    }
     const cam = this.trunkCam, up = _tu.copy(this.anchor).negate().normalize();
     this._place(cam, up, TRUNKS.far, TRUNKS.size, 2000, 6000);
     renderer.setClearColor(0x000000, 1);
     this._region(renderer, TRUNKS_ORG, TRUNKS.size);
-    renderer.render(this.trunkScene, cam);
+    if (g.instanceCount) renderer.render(this.trunkScene, cam);
+    this._region(renderer, ROCKS_ORG, TRUNKS.size);
+    if (gr.instanceCount) renderer.render(this.rockScene, cam);
     renderer.setClearColor(0xffffff, 1);
     U.uTrunkSkyVP.value.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
     U.uTrunkSky.value.set(1, TRUNKS_ORG[0], TRUNKS_ORG[1], TRUNKS.size);
+    U.uRockSky.value.set(1, ROCKS_ORG[0], ROCKS_ORG[1], TRUNKS.size);
   }
 
   // the maps for this frame: the camera at the world's origin (positions are camera-relative)
   render(renderer, scene) {
     const U = SUN_SHADOW_UNIFORMS, K = SKY_SHADOW_UNIFORMS;
-    if (!this.on || !this.active) { U.uSunShadow.value.x = 0; U.uGrassCover.value.x = 0; U.uTrunkSky.value.x = 0; K.uSkyShadow.value.x = 0; this.skyBody = null; return; }
+    if (!this.on || !this.active) { U.uSunShadow.value.x = 0; U.uGrassCover.value.x = 0; U.uTrunkSky.value.x = 0; U.uRockSky.value.x = 0; K.uSkyShadow.value.x = 0; this.skyBody = null; return; }
     // (the maps held to the ground: their cameras turned with the body, the sun held in its frame and moved
     // on a tenth of a degree at a time. Snapped to the world's centre 100 km off as the world turned under a
     // fixed sun, the maps slid up to half a texel a frame, every leaf's and blade's shadow flickering; held
@@ -477,7 +506,7 @@ export class SunShadows {
       U.uGrassCover.value.set(1, COVER_ORG[0], COVER_ORG[1], COVER.size);
       // the trunks' hold on the sky round their feet, added likewise
       this._trunkMap(renderer, qB);
-    } else { U.uGrassCover.value.x = 0; U.uTrunkSky.value.x = 0; }
+    } else { U.uGrassCover.value.x = 0; U.uTrunkSky.value.x = 0; U.uRockSky.value.x = 0; }
     // the sky's: a map in its turn (both at once on a new world), straight down over the camera, held in the
     // body's frame
     K.uSkyCenter.value.copy(this.anchor);
@@ -588,17 +617,17 @@ float grassCover(vec3 wp) {
 // (the trunks' map); faded out at the map's edge. At a trunk's foot half the sky (the trunk a wall
 // there), a sixth two radii out, a twelfth at four: in any weather the ground darkened round its foot
 uniform vec4 uTrunkSky;
+uniform vec4 uRockSky;
 uniform mat4 uTrunkSkyVP;
-// (the trunks' sum round wp: 0.69 at a trunk, 0.18 two radii out, 0.08 at four; 0 off the map)
-float trunkSum(vec3 wp) {
-  if (uTrunkSky.x < 0.5) return 0.0;
+// (a map's sum round wp, its corner of the atlas at o: 0 off the map)
+float atlasSum(vec2 o, vec3 wp) {
   vec4 c = uTrunkSkyVP * vec4(wp, 1.0);
   vec2 uv = c.xy / c.w * 0.5 + 0.5;
   float e = max(abs(uv.x * 2.0 - 1.0), abs(uv.y * 2.0 - 1.0));
   if (e >= 1.0) return 0.0;
   int n = int(uTrunkSky.w);
   vec2 st = uv * uTrunkSky.w - 0.5, fr = fract(st);
-  ivec2 p0 = ivec2(floor(st)), org = ivec2(uTrunkSky.yz), hi = ivec2(n - 1);
+  ivec2 p0 = ivec2(floor(st)), org = ivec2(o), hi = ivec2(n - 1);
   float a = texelFetch(tShadowAtlas, org + clamp(p0, ivec2(0), hi), 0).r;
   float b = texelFetch(tShadowAtlas, org + clamp(p0 + ivec2(1, 0), ivec2(0), hi), 0).r;
   float d = texelFetch(tShadowAtlas, org + clamp(p0 + ivec2(0, 1), ivec2(0), hi), 0).r;
@@ -606,7 +635,11 @@ float trunkSum(vec3 wp) {
   float sum = mix(mix(a, b, fr.x), mix(d, f, fr.x), fr.y);
   return sum * (1.0 - smoothstep(0.75, 1.0, e));
 }
-float trunkSky(vec3 wp) { return exp(-trunkSum(wp)); }
+// (the trunks' sum round wp: 0.69 at a trunk, 0.18 two radii out, 0.08 at four)
+float trunkSum(vec3 wp) { return uTrunkSky.x < 0.5 ? 0.0 : atlasSum(uTrunkSky.yz, wp); }
+// (the rocks': a boulder hides the sky round its foot as a short wide trunk)
+float rockSum(vec3 wp) { return uRockSky.x < 0.5 ? 0.0 : atlasSum(uRockSky.yz, wp); }
+float trunkSky(vec3 wp) { return exp(-trunkSum(wp) - rockSum(wp)); }
 `;
 
 // the sky a receiver sees past the canopy (1 all of it; after GLSL_SUN_SHADOW, whose atlas it reads): wp
