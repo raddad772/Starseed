@@ -6,6 +6,27 @@ stays open through WebGPU itself (Dawn and wgpu run the same API and WGSL on Vul
 Written by session 39d69fa8 as the handoff to Astra. Read HANDOFF.md and CLAUDE.md first: their rules
 (testing, coordination, commits, determinism) hold here too.
 
+## Implementation status (Codex, 2026-10-07)
+
+The full migration is in progress. The first opt-in checkpoint is implemented, **GPU-fixture verified**:
+
+- `?renderer=webgpu` presents a raw WebGPU terrain G-buffer, separate lighting and post pass; WebGL stays
+  the default. The temporary WebGL backend still creates legacy resources and supplies the comparison
+  frame. This is not the finished renderer and must not be used as the default yet.
+- Heightfield and near-volume geometry use the existing worker data, morphing, camera-relative transforms,
+  and near-field cutouts. Depth is `depth32float`, reversed 0..1, cleared to zero.
+- Current terrain shading is the step-0 base-albedo/sun approximation. Detailed materials, shadows,
+  other opaque objects, water, sky, atmosphere, adaptive exposure, culling and new capabilities remain.
+- `tools/webgpu-compare.js` captures both backends from one scene/camera and measures full/flat/full GPU
+  passes. `tools/gpu-measure.js` dispatches to it on WebGPU. Readback copies a persistent output texture;
+  optional timestamp queries are collected asynchronously. Performance parity has not been measured.
+- `node --test tools/tests/webgpu.test.mjs`: 3 passing tests (depth across astronomical ranges, frustum /
+  reconstruction, normalized and interleaved worker attributes). The three WGSL modules pass offline
+  Naga validation. `tools/tests/webgpu.html` is the finite GPU fixture for overlap/depth, capture,
+  resize and disposal; passed in the in-app browser (4,232 foreground and 14,776 background pixels; timestamp queries available).
+- Dave confirmed this is the only agent working on the computer and no coordination messages are needed.
+  The finite GPU fixture runs on the test server at port 8766. Full-scene comparisons are next.
+
 ## Why
 
 1. **Other players' hardware.** The game is meant to be shared and explored by others. Desktop GPUs

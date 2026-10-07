@@ -1,0 +1,73 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Starseed WebGPU validation</title>
+<script type="importmap">{"imports":{"three":"../../vendor/three.module.js"}}</script>
+<style>body{margin:24px;background:#15191d;color:#e6eef2;font:16px system-ui}canvas{width:512px;height:384px}pre{white-space:pre-wrap}</style>
+<h1>WebGPU renderer validation</h1>
+<canvas id="view" width="256" height="192"></canvas>
+<pre id="result">Compiling…</pre>
+<script type="module">
+import * as THREE from 'three';
+import { DeferredRenderer } from '../../src/render/webgpu/renderer.js';
+const canvas = document.getElementById('view'), result = document.getElementById('result');
+const errors = [];
+window.testResult = { status: 'running' };
+const check = (ok, label) => { if (!ok) throw new Error(label); };
+let renderer;
+try {
+  renderer = await DeferredRenderer.create(canvas, (error) => errors.push(error.message));
+  const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(72, 4 / 3, 0.05, 1e13);
+  const view = { camera, width: 256, height: 192, rect: { x: 0, y: 0, w: 256, h: 192 }, meterRef: 0.18, maxExposure: 260, exposureBias: 1 };
+  const engine = { scene, view, minExposure: 0.04, pixelRatio: 1 };
+  const mesh = (distance, size, color) => {
+    const g = new THREE.BufferGeometry();
+    const p = new THREE.Float32BufferAttribute([-size, -size, 0, size, -size, 0, 0, size, 0], 3);
+    g.setAttribute('position', p); g.setAttribute('morph', p);
+    const n = new THREE.Int16BufferAttribute([0, 0, 32767, 0, 0, 0, 32767, 0, 0, 0, 32767, 0], 4, true);
+    g.setAttribute('nrm', n); g.setAttribute('mnrm', n);
+    const c = new THREE.Uint8BufferAttribute([...color, 0, ...color, 0, ...color, 0], 4, true);
+    g.setAttribute('col', c); g.setAttribute('mcol', c);
+    g.setAttribute('ext', new THREE.Uint8BufferAttribute([0, 0, 200, 0, 0, 0, 200, 0, 0, 0, 200, 0], 4, true));
+    g.setIndex([0, 1, 2]); g.computeBoundingSphere();
+    const uniforms = Object.fromEntries(Object.entries({
+      uMorph: new THREE.Vector2(1e30, 2e30), uCamLocal: new THREE.Vector3(), uNearOff: new THREE.Vector3(),
+      uNearUp: new THREE.Vector3(0, 1, 0), uNear: new THREE.Vector2(), uNearBand: new THREE.Vector2(), uNearMode: 0,
+      uSunDir: new THREE.Vector3(0, 0, 1), uSunE: new THREE.Vector3(Math.PI, Math.PI, Math.PI),
+      uCenter: new THREE.Vector3(0, -1e5, 0), uAmbientFloor: new THREE.Vector3(),
+    }).map(([key, value]) => [key, { value }]));
+    const object = new THREE.Mesh(g, new THREE.ShaderMaterial({ uniforms }));
+    object.position.z = -distance; scene.add(object); return object;
+  };
+  // Submit near first: the farther triangle must fail the reversed depth test.
+  const front = mesh(2, 0.7, [255, 0, 0]); mesh(4, 3, [0, 0, 255]);
+  renderer.device.pushErrorScope('validation');
+  renderer.render(engine);
+  const shot = await renderer.capture();
+  const center = (96 * 256 + 128) * 4;
+  check(shot.pixels[center] > 100 && shot.pixels[center + 2] < 5, 'Near triangle must cover the farther one');
+  let red = 0, blue = 0;
+  for (let i = 0; i < shot.pixels.length; i += 4) {
+    if (shot.pixels[i] > 100 && shot.pixels[i + 2] < 5) red++;
+    if (shot.pixels[i + 2] > 100 && shot.pixels[i] < 5) blue++;
+  }
+  check(red > 100 && blue > 100, 'Both surfaces must render with decoded vertex colors');
+  check(renderer.stats.calls === 2, 'Both visible meshes must be submitted');
+  scene.remove(front); front.geometry.dispose(); front.material.dispose();
+  renderer.render(engine);
+  check(renderer.stats.geometries === 1, 'Disposed chunk buffers must be released');
+  view.width = canvas.width = 128; view.height = canvas.height = 96;
+  renderer.render(engine);
+  const resized = await renderer.capture();
+  check(resized.width === 128 && resized.height === 96 && resized.pixels.length === 128 * 96 * 4, 'Resize must rebuild targets and readback row padding');
+  const validationError = await renderer.device.popErrorScope();
+  check(!validationError, validationError?.message);
+  check(!errors.length, errors.join('\n'));
+  window.testResult = { status: 'passed', redPixels: red, bluePixels: blue, timestampQuery: renderer.timestamp, stats: renderer.stats };
+} catch (error) {
+  window.testResult = { status: 'failed', error: error.stack || String(error), validationErrors: errors };
+} finally {
+  result.textContent = JSON.stringify(window.testResult, null, 2);
+  // One finite test round, no animation loop left sharing the GPU.
+  renderer?.dispose();
+}
+</script>

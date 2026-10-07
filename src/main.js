@@ -185,7 +185,7 @@ function showBriefing(s) {
 let previewed = null;
 
 function boot(s) {
-  if (game) { game.dispose(); game = null; }
+  if (game) { game.engine.dispose(); game.dispose(); game = null; }
   try {
     game = new Game(canvas, input, s, {
       workers: params.get('workers') ? +params.get('workers') : undefined,

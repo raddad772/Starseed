@@ -8,6 +8,7 @@
 // (world - cameraWorld) in double precision before Three builds matrices.
 
 import * as THREE from 'three';
+import { DeferredRenderer } from './webgpu/renderer.js';
 import { FULLSCREEN_VERT, GLSL_DEPTH } from './glsl.js';
 import { renderFullscreen } from './atmosphere.js';
 import { VOLUME_COMPOSITE_FRAG } from './volume.js';
@@ -338,6 +339,11 @@ export class EngineView {
 
 export class Engine {
   constructor(canvas, opts = {}) {
+    this.canvas = canvas;
+    this.backend = new URLSearchParams(location.search).get('renderer') === 'webgpu' ? 'webgpu' : 'webgl';
+    // The WebGL canvas remains available for same-scene comparisons during the port.
+    // It is never attached to the document or used for input.
+    if (this.backend === 'webgpu') canvas = document.createElement('canvas');
     const tryReversed = opts.reversedDepth !== false;
     let renderer = new THREE.WebGLRenderer({
       canvas, antialias: false, alpha: false, stencil: false, depth: true,
@@ -405,6 +411,27 @@ export class Engine {
     this.view = this.views[0];
     this._buildMaterials();
     this.resize();
+    if (this.backend === 'webgpu') {
+      const report = (error) => {
+        this.webgpuError = error;
+        window.dispatchEvent(new ErrorEvent('error', { message: error.message || String(error) }));
+      };
+      this.webgpuAbort = new AbortController();
+      this.webgpuReady = DeferredRenderer.create(this.canvas, report, this.webgpuAbort.signal).then((gpu) => {
+        if (this.disposed) { gpu.dispose(); return null; }
+        this.webgpu = gpu;
+        return gpu;
+      });
+      this.webgpuReady.catch((error) => { if (!this.disposed) report(error); });
+    }
+  }
+
+  dispose() {
+    this.disposed = true;
+    this.webgpuAbort?.abort();
+    this.webgpu?.dispose();
+    for (const view of this.views) view.dispose();
+    this.renderer.dispose();
   }
 
   get depthMode() { return this.reversed ? 0 : 1; }
@@ -500,11 +527,15 @@ export class Engine {
   }
 
   resize() {
-    const c = this.renderer.domElement;
+    const c = this.canvas;
     const w = c.clientWidth || window.innerWidth, h = c.clientHeight || window.innerHeight;
     const pr = Math.min(window.devicePixelRatio || 1, 2) * this.renderScale;
     this.renderer.setPixelRatio(pr);
     this.renderer.setSize(w, h, false);
+    if (this.backend === 'webgpu') {
+      this.canvas.width = Math.max(2, Math.floor(w * pr));
+      this.canvas.height = Math.max(2, Math.floor(h * pr));
+    }
     this.cssW = w; this.cssH = h; this.pixelRatio = pr;
     this.views.forEach((v, i) => {
       v.rect = this.viewRect(i, this.views.length, w, h);
@@ -600,6 +631,12 @@ export class Engine {
   // (eye adaptation); animate: false for a second view in the same frame
   // (time-driven effects advance once per frame)
   render(dt, sky, atmos, animate = true) {
+    this.frameInputs = { sky, atmos };
+    if (this.backend === 'webgpu') {
+      if (animate) this.time += dt;
+      if (this.webgpu && !this.webgpuError) this.webgpu.render(this, animate);
+      return;
+    }
     this.gpuBegin();
     this._render(dt, sky, atmos, animate);
     this.gpuEnd();

@@ -12,6 +12,18 @@
 // (2026-10-07, WEBGPU.md); the same measurements are what the WebGPU renderer should be held to.
 (() => {
   const gm = window.game, E = gm.engine, r = E.renderer, THREE = window.THREE;
+  if (E.backend === 'webgpu') {
+    const measurement = import('/tools/webgpu-compare.js');
+    window._M = {
+      async drain() { const gpu = await E.webgpuReady; await gpu.device.queue.onSubmittedWorkDone(); },
+      async lighting(label) { const { measure } = await measurement; return { label, renderer: 'webgpu', ...(await measure(gm)) }; },
+      async passes(frames = 9) {
+        const { measure } = await measurement, report = await measure(gm, frames), first = report.samples[0];
+        return { ...first.passes, TOTAL_drained: first.drainedMs, timestampQuery: report.timestampQuery };
+      },
+    };
+    return 'gpu-measure ready (WebGPU)';
+  }
   const yieldNow = window._yield || (() => new Promise((res) => setTimeout(res, 0)));
   const tiny = new THREE.WebGLRenderTarget(1, 1), buf = new Uint8Array(4);
   const drain = () => { r.setRenderTarget(tiny); r.clear(); r.readRenderTargetPixels(tiny, 0, 0, 1, 1, buf); };
