@@ -216,7 +216,12 @@ Dave's queue, in the order he raised it (keep this list current):
      Rasora: most of the view fully morphed to its parent level). The teeth are the mesh's spacing: from
      25 km up its triangles ~1 km, ~20 px; the shore (vShore's zero, interpolated) a straight line in each.
      Fix candidates: a finer split at altitude (SPLIT_K, cost), or the shore and colour per pixel from the
-     height cube far off.
+     height cube far off. Tried the latter (a per-pixel sea edge from the cube past 25 of its texels): no
+     change. The streaks stay with the volume pass off (coast_novol) and even drawing the cube's height alone
+     per pixel (coast_hc): they're the geometry. Most likely the far chunks' sea vertices sit on the bed
+     (hundreds of metres drawn down) beside land ones, so each coastal triangle is a steep wall, seen from
+     above as teeth and as streaks converging on the nadir; and far mountains drawn 8x steep. Next: far
+     chunks' sea vertices at the sea's surface (or a shallow bed) away from the near field.
 
 ## NOW: fire through the recent centuries (session 39d69fa8, 2026-10-06), SIM 68
 
