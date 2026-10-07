@@ -98,19 +98,30 @@ Dave's queue, in the order he raised it (keep this list current):
    shapes. The climate's cloud map is read through a cubic B-spline, once per point. Scratchpad
    diag_front_cmp.
 15. Mars and Titan skies (Dave: "let's check a mars and titan sunrise and set"; then "we want this to
-   arise from proper simulation. don't just do band-aids"): the aerosols are simulated
-   (worldsim/aerosols.js; WORLDSIM.md item 19's notes have the physics). The sky shader's aerosol phase is
-   per channel; sim/wind.js uses beltWind; Sol's Mars is `known.minerals: 'ferric'`. The
-   multiple-scattering LUT is a two-stream adding solve on the true-size column (MS_FRAG), and the sky
-   irradiance LUT marches the true-size world. Seen: Mars noon is butterscotch; its sunset has a
-   blue-white glow at the sun. Its twilight (-2 deg) goes blue over most of the frame: real physics
-   (extinction is flat to slightly red, so a grazing path's light comes out bluish) plus blue absorption
-   lower than Mars' (ssa 0.77 at 440 vs ~0.65). Titan before the two-stream solve: the stars were gone
-   at noon, but the sky was a grey-blue dome over a maroon horizon. Hillaire's estimate lost the deep
-   haze's colour; a JS mirror of the two-stream solve (scratchpad ts.mjs) gives Titan's diffuse light at
-   1 : 0.6 : 0.22 (orange), Mars' at 1 : 0.86 : 0.68 and Earth's at 1 : 1.12 : 1.38. Earth's base
-   aerosol is now 0.17 at 550 (was 0.003): check its sky and sunsets. Recipes: Mars 15N 30E, Titan 10N
-   40E (S.findTime / freecam.placeAt; scratchpad v3_*, v4_*).
+   arise from proper simulation. don't just do band-aids"): DONE (aa0bbff). The aerosols are simulated
+   (worldsim/aerosols.js; WORLDSIM.md item 19's notes have the physics). Also:
+   - the sky shader's aerosol phase is per channel;
+   - sim/wind.js uses beltWind;
+   - Sol's Mars is `known.minerals: 'ferric'`;
+   - the multiple-scattering LUT is a two-stream adding solve on the true-size column (MS_FRAG), and
+     the sky-irradiance LUT marches the true-size world;
+   - night vision goes by the physical light (world.js nightShift takes the moon's NIGHT_GAIN back
+     out). Titan's ~100 lux noon had been getting the film-blue night, which made it slate blue.
+   Results:
+   - Mars: noon butterscotch; at a 4 deg sun a blue-white glow at the sun; at -2 deg the blue hugs the
+     horizon at the sun's place under a brown-grey sky; the sky opposite the low sun is tan.
+   - Titan: noon orange, Saturn faint through the haze; at a 20 deg sun only a red glow where the sun
+     is.
+   - Earth: twilight clouds opposite the sun are now grey-blue in the earth's shadow (the old
+     drawn-world estimate lit them pink); the moonlit night is unchanged.
+   Open:
+   - Titan at a 4 deg sun is black: the exposure tops out (the moon alone gets NIGHT_GAIN, so dim
+     sunlight can't be seen). The general fix is a pre-exposure gain by the light level, in place of
+     NIGHT_GAIN.
+   - Mars' dust takes less blue than the real thing (ssa 0.77 at 440 against ~0.65).
+   - The weather's dust and spray (sim/dust.js) add to the world's mean.
+   Scratchpad: v6_*, mt_v6, night_v6_open, earth_v4. Recipes: Mars 15N 30E, Titan 10N 40E
+   (S.findTime / freecam.placeAt).
 
 ## NOW: fire through the recent centuries (session 39d69fa8, 2026-10-06), SIM 68
 
