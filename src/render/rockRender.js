@@ -239,6 +239,8 @@ export class RockSet {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', this.proto.attributes.position.clone());
     g.setIndex(this.proto.index.clone());
+    // (rockShape's reach: flattened and lifted, a vertex up to 1.8 radii out; the instances' bounds are made from this)
+    g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1.8);
     const A = new Float32Array(n * 4), B = new Float32Array(n * 4), C = new Float32Array(n);
     const mesh = new THREE.InstancedMesh(g, this.material, n);
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), qr = new THREE.Quaternion(), up = new THREE.Vector3(), pos = new THREE.Vector3(), sc = new THREE.Vector3(), wp = new THREE.Vector3();
@@ -264,7 +266,10 @@ export class RockSet {
     g.setAttribute('rB', new THREE.InstancedBufferAttribute(B, 4));
     g.setAttribute('rC', new THREE.InstancedBufferAttribute(C, 1));
     mesh.instanceMatrix.needsUpdate = true;
-    mesh.frustumCulled = false;
+    // (culled by its instances' bounds, three.js's own, made on first use and again when they're seated anew
+    // (floraRender.js seatInstances): unculled, every node's rocks were drawn in every view and shadow map,
+    // ~190 draws each, whatever was in sight)
+    mesh.frustumCulled = true;
     mesh.layers.enable(SHADOW_LAYER);
     mesh.userData.kind = 'stone';
     mesh.userData.shadowMat = this.shadowMat;

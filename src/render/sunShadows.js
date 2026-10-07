@@ -34,6 +34,7 @@ const SUN_ORG = CASCADES.map((c, i) => [i * CASCADES[0].size, 0]);
 const SKY_ORG = SKY_CASCADES.map((c, i) => [i * SKY_CASCADES[0].size, CASCADES[0].size]);
 const ATLAS_W = CASCADES.length * CASCADES[0].size, ATLAS_H = CASCADES[0].size + SKY_CASCADES[0].size;
 const SKY_D = SKY_CASCADES.map((c) => 2000 + c.far);   // (each sky map's camera's height over the camera)
+const SKY_RN = SKY_CASCADES[0].size / 2;   // (the rings' texture: each block's side, half the map's)
 // (the grass's cover: in the atlas's corner the sky maps leave, beside them)
 const COVER = { far: 24, size: 1024 };
 const COVER_ORG = [SKY_CASCADES.length * SKY_CASCADES[0].size, CASCADES[0].size];
@@ -65,6 +66,46 @@ void main() {
   gl_FragColor = vec4(c / ws, ch / ws, 0.0, 1.0);
 }`;
 
+// the canopy round each point of a sky map, once a map's drawn, for its receivers (skyShadowMap): the
+// softened map's share and share-times-top (both linear) averaged over the point itself and four rings
+// round it (the rings skyShadowMap weighs, 2 to 33 m out), 16 taps a ring from the softened map's mip
+// chain; and its mean over 180 m (skyShadowMap's early out). Three RGBA blocks a map, side by side, half
+// its texels: A the point's and ring 1's, B rings 2 and 3, C ring 4's and the mean. Read so, a receiving
+// point takes 3 reads, not the 26 it took walking the rings itself: in a wood 9 ms of a 59 ms GPU frame,
+// 0.8 ms so (against the walk, where a point's 10 to 20 m under the tops: means within 0.015, r 0.94; just
+// under them a little darker, the tops averaged before the falloff)
+const RINGS_FRAG = /* glsl */`
+uniform highp sampler2D tSoft;
+uniform float uU0;     // the map (0 near, 1 far)
+uniform float uBlock;  // which block: 0 A, 1 B, 2 C
+uniform float uExt;    // the map's half-side (m)
+uniform float uNTex;   // the map's texels across
+uniform vec2 uOutOrg;
+uniform float uOutN;
+vec2 soft(vec2 uv, float lod) {
+  uv = clamp(uv, vec2(0.5 / uNTex), vec2(1.0 - 0.5 / uNTex));
+  return textureLod(tSoft, vec2((uU0 + uv.x) * ${(1 / SKY_CASCADES.length).toFixed(6)}, uv.y), lod).rg;
+}
+vec2 ring(vec2 uv, float j) {
+  float a = j == 1.0 ? 1.0 : j == 2.0 ? 3.5 : j == 3.0 ? 9.0 : 20.0;
+  float b = j == 1.0 ? 3.5 : j == 2.0 ? 9.0 : j == 3.0 ? 20.0 : 45.0;
+  float r = (a + b) * 0.5 / (2.0 * uExt);
+  // (each tap the mean of the texels round it, near as wide as the taps' spacing)
+  float lod = max(0.0, log2(6.2831853 * r * uNTex / 16.0) - 0.5);
+  vec2 acc = vec2(0.0);
+  for (int k = 0; k < 16; k++) {
+    float ang = (float(k) + 0.5 * j) * 0.39269908;
+    acc += soft(uv + vec2(cos(ang), sin(ang)) * r, lod);
+  }
+  return acc / 16.0;
+}
+void main() {
+  vec2 uv = (gl_FragCoord.xy - uOutOrg) / uOutN;
+  if (uBlock < 0.5) gl_FragColor = vec4(soft(uv, 1.0), ring(uv, 1.0));
+  else if (uBlock < 1.5) gl_FragColor = vec4(ring(uv, 2.0), ring(uv, 3.0));
+  else gl_FragColor = vec4(ring(uv, 4.0), soft(uv, log2(180.0 * uNTex / (2.0 * uExt))).r, 0.0);
+}`;
+
 // shared by every receiving material (terrain, plants): x on, y the first cascade's reach, z the
 // second's; per cascade the light's view-projection, its position and its texel (m)
 export const SUN_SHADOW_UNIFORMS = {
@@ -88,7 +129,7 @@ export const SKY_SHADOW_UNIFORMS = {
   uSkyShadowUp0: { value: new THREE.Vector3(0, 1, 0) }, uSkyShadowUp1: { value: new THREE.Vector3(0, 1, 0) },
   uSkyCenter: { value: new THREE.Vector3() },
   uSkyToFixed: { value: new THREE.Matrix3() },
-  tSkySoft: { value: null },
+  tSkyRings: { value: null },
   uSkyD: { value: new THREE.Vector2(SKY_D[0], SKY_D[1]) },
   // (the light the canopy passes down (canopyLit): the leaves' colour, its brightness one (world.js, the
   // world near the camera); and for the three.js lit materials, the sun's and the sky's light on a level
@@ -158,12 +199,18 @@ export class SunShadows {
     const n = SKY_CASCADES[0].size;
     // (mipmapped: its coarse levels the canopy's mean over a wide reach, for skyShadowMap's early out)
     this.skySoft = new THREE.WebGLRenderTarget(n * SKY_CASCADES.length, n, { type: THREE.HalfFloatType, format: THREE.RGFormat, minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false, generateMipmaps: true });
-    SKY_SHADOW_UNIFORMS.tSkySoft.value = this.skySoft.texture;
+    // (the rings round each point of it, for the receivers: RINGS_FRAG)
+    this.skyRings = new THREE.WebGLRenderTarget(3 * SKY_CASCADES.length * SKY_RN, SKY_RN, { type: THREE.HalfFloatType, format: THREE.RGBAFormat, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false, generateMipmaps: false });
+    SKY_SHADOW_UNIFORMS.tSkyRings.value = this.skyRings.texture;
+    this.ringMat = new THREE.ShaderMaterial({
+      uniforms: { tSoft: { value: this.skySoft.texture }, uU0: { value: 0 }, uBlock: { value: 0 }, uExt: { value: 1 }, uNTex: { value: n }, uOutOrg: { value: new THREE.Vector2() }, uOutN: { value: SKY_RN } },
+      vertexShader: BLUR_VERT, fragmentShader: RINGS_FRAG, depthTest: false, depthWrite: false,
+    });
     this.blurMat = new THREE.ShaderMaterial({
       uniforms: { tAtlas: { value: this.atlas.texture }, uOrg: { value: new THREE.Vector2() }, uN: { value: n }, uD: { value: 0 }, uOutOrg: { value: new THREE.Vector2() } },
       vertexShader: BLUR_VERT, fragmentShader: BLUR_FRAG, depthTest: false, depthWrite: false,
     });
-    const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.blurMat);
+    const quad = this.blurQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.blurMat);
     quad.frustumCulled = false;
     this.blurScene = new THREE.Scene(); this.blurScene.add(quad);
     this.blurCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
@@ -176,6 +223,21 @@ export class SunShadows {
     t.viewport.set(i * n, 0, n, n); t.scissor.set(i * n, 0, n, n); t.scissorTest = true;
     renderer.setRenderTarget(t);
     renderer.render(this.blurScene, this.blurCam);
+  }
+
+  // sky map i's rings (RINGS_FRAG) into its three blocks of skyRings
+  _rings(renderer, i) {
+    const t = this.skyRings, u = this.ringMat.uniforms, m = SKY_RN;
+    u.uU0.value = i; u.uExt.value = SKY_CASCADES[i].far; u.uNTex.value = SKY_CASCADES[i].size;
+    this.blurQuad.material = this.ringMat;
+    for (let k = 0; k < 3; k++) {
+      const x = (i * 3 + k) * m;
+      u.uBlock.value = k; u.uOutOrg.value.set(x, 0);
+      t.viewport.set(x, 0, m, m); t.scissor.set(x, 0, m, m); t.scissorTest = true;
+      renderer.setRenderTarget(t);
+      renderer.render(this.blurScene, this.blurCam);
+    }
+    this.blurQuad.material = this.blurMat;
   }
 
   // draw into one map's square of the atlas, cleared
@@ -250,16 +312,56 @@ export class SunShadows {
     // the sun's
     let swapped = this._swap(scene, SHADOW_LAYER);
     for (let i = 0; i < swapped.length; i += 3) if (swapped[i].userData.shadowNearOnly) swapped[i].userData._shVis = swapped[i].visible;
+    // (each caster's distance from the camera, its bounding sphere's near side: a map's frustum runs ~2.7 km
+    // up the sun's way, and drew every chunk and wood along it; past a few times a map's reach none of them
+    // shadows it (a 20 m crown at a 5 degree sun reaches 230 m), the coarse heights' march (terrainShadow.js)
+    // has the hills)
+    const dist = this._dist || (this._dist = []);
+    dist.length = 0;
+    for (let i = 0; i < swapped.length; i += 3) {
+      const o = swapped[i], g = o.geometry;
+      if (!o.visible) { dist.push(null); continue; }   // (hidden: left so; a sphere round the camera's distance is below 0)
+      // (an instanced set's own sphere, round all its instances; the geometry's is one instance's)
+      if (o.isInstancedMesh) { if (!o.boundingSphere) o.computeBoundingSphere(); } else if (!g.boundingSphere) g.computeBoundingSphere();
+      const bs = o.isInstancedMesh ? o.boundingSphere : g.boundingSphere, sc = o.matrixWorld.getMaxScaleOnAxis();
+      dist.push(_v.copy(bs.center).applyMatrix4(o.matrixWorld).length() - bs.radius * sc);
+    }
+    // (the far map drawn every other frame: between, its last drawing read through the ground's move since,
+    // the camera-relative frame then (the world's centre, its turn) against now's; drawn afresh when the sun's
+    // stepped or the camera's gone 30 m. Its ~1400 draws: the shadows' CPU 10.7 ms a frame so 8.4 in a wood,
+    // the GPU's ~0.5 ms. Drawn on the frames the sky's maps aren't, below)
+    const Mnow = _mA.compose(this.anchor, qB, _one), F1 = this._f1;
+    const camB = _cb.set(0, 0, 0).applyMatrix4(_mB.copy(Mnow).invert());
+    const reuse = F1 && (this.frame & 1) === 0 && F1.held.equals(this.held) && F1.body === this.body && F1.camB.distanceTo(camB) < 30;
     CASCADES.forEach((c, i) => {
       const D = c.far * 6 + 2000, cam = this.cams[i];
       if (i > 0) { this._nearOnly(swapped, false); this._far(swapped); }
+      if (i === 1 && reuse) {
+        // (now's point -> then's: M0 M^-1; the light's place then -> now's: M M0^-1)
+        _mC.copy(F1.M).multiply(_mB);
+        U.uSunShadowVP1.value.multiplyMatrices(F1.vp, _mC);
+        _mC.copy(Mnow).multiply(_mD.copy(F1.M).invert());
+        const L = _v.copy(F1.L).applyMatrix4(_mC);
+        U.uSunShadowL1.value.set(L.x, L.y, L.z, F1.texel);
+        return;
+      }
+      const reach = c.far * 4 + 300;
+      for (let k = 0, j = 0; k < swapped.length; k += 3, j++) {
+        if (dist[j] === null) continue;
+        const o = swapped[k];
+        o.visible = dist[j] < reach && (i === 0 || !o.userData.shadowNearOnly);
+      }
       const texel = this._place(cam, s, c.far, c.size, D, D + c.far * 1.5);
       this._region(renderer, SUN_ORG[i], c.size);
       renderer.render(scene, cam);
       U['uSunShadowVP' + i].value.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
       U['uSunShadowL' + i].value.set(cam.position.x, cam.position.y, cam.position.z, texel);
+      if (i === 1) {
+        const f = this._f1 || (this._f1 = { vp: new THREE.Matrix4(), M: new THREE.Matrix4(), L: new THREE.Vector3(), texel: 0, held: new THREE.Vector3(), camB: new THREE.Vector3(), body: null });
+        f.vp.copy(U.uSunShadowVP1.value); f.M.copy(Mnow); f.L.copy(cam.position); f.texel = texel; f.held.copy(this.held); f.camB.copy(camB); f.body = this.body;
+      }
     });
-    this._nearOnly(swapped, true);
+    for (let k = 0, j = 0; k < swapped.length; k += 3, j++) if (dist[j] !== null) swapped[k].visible = true;
     this._restore(swapped);
     U.uSunShadowDir.value.copy(s);
     U.uSunShadow.value.set(1, CASCADES[0].far, CASCADES[1].far, 0);
@@ -298,6 +400,7 @@ export class SunShadows {
         this._region(renderer, SKY_ORG[i], c.size);
         renderer.render(scene, cam);
         this._soften(renderer, i);
+        this._rings(renderer, i);
         K['uSkyShadowVP' + i].value.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse).multiply(toWorld);
         const L = _v.copy(cam.position).sub(this.anchor).applyQuaternion(this.bodyQInv);
         K['uSkyShadowL' + i].value.set(L.x, L.y, L.z, texel);
@@ -311,7 +414,8 @@ export class SunShadows {
   }
 }
 const _one = new THREE.Vector3(1, 1, 1);
-const _v = new THREE.Vector3(), _r = new THREE.Vector3(), _u = new THREE.Vector3(), _w = new THREE.Vector3();
+const _v = new THREE.Vector3(), _r = new THREE.Vector3(), _u = new THREE.Vector3(), _w = new THREE.Vector3(), _cb = new THREE.Vector3();
+const _mA = new THREE.Matrix4(), _mB = new THREE.Matrix4(), _mC = new THREE.Matrix4(), _mD = new THREE.Matrix4();
 const _m = new THREE.Matrix4(), _m2 = new THREE.Matrix4(), _q = new THREE.Quaternion(), _c = new THREE.Color();
 const _q2 = new THREE.Quaternion(), _sf = new THREE.Vector3(), _sh = new THREE.Vector3();
 const HOLD_COS = Math.cos(0.1 * Math.PI / 180);
@@ -397,40 +501,34 @@ uniform vec3 uSkyShadowUp0;
 uniform vec3 uSkyShadowUp1;
 uniform vec3 uSkyCenter;
 uniform mat3 uSkyToFixed;
-uniform highp sampler2D tSkySoft;
+uniform highp sampler2D tSkyRings;
 uniform vec2 uSkyD;
-float skyShadowMap(float u0, float nTex, float D, mat4 VP, vec4 L, vec3 upF, float ext, vec3 pF) {
+// (one ring's part of the sky hidden: sc its canopy's mean share and share-times-top (RINGS_FRAG), the ring
+// a to b m out, d the point's depth below the map's camera less its bias; the canopy above it hides the
+// sky between the elevations its edges subtend, cosine-weighted)
+float skyRing(vec2 sc, float d, float D, float a, float b) {
+  if (sc.r <= 0.003) return 0.0;
+  float dh = d - (D + sc.g / sc.r);
+  if (dh <= 0.0) return 0.0;
+  float h2 = dh * dh;
+  return sc.r * (b * b / (b * b + h2) - a * a / (a * a + h2 + 1e-6));
+}
+float skyShadowMap(float u0, float D, mat4 VP, vec4 L, vec3 upF, float ext, vec3 pF) {
   vec4 c = VP * vec4(pF, 1.0);
   vec2 uv = c.xy / c.w * 0.5 + 0.5;
   float edge = 45.0 / (2.0 * ext);
   if (any(lessThan(uv, vec2(edge))) || any(greaterThan(uv, vec2(1.0 - edge)))) return -1.0;
-  // (no canopy anywhere near: its mean over twice the rings' reach, the map's coarse level, nothing. Most
-  // of an open view's ground; the 25 reads a point below otherwise cost ~10 ms a frame)
-  float lodE = log2(180.0 * nTex / (2.0 * ext));
-  if (textureLod(tSkySoft, vec2((u0 + uv.x) * ${(1 / SKY_CASCADES.length).toFixed(6)}, uv.y), lodE).r < 0.002) return 0.0;
+  uv = clamp(uv, vec2(0.5 / ${SKY_RN.toFixed(1)}), vec2(1.0 - 0.5 / ${SKY_RN.toFixed(1)}));
+  const float NB = ${(3 * SKY_CASCADES.length).toFixed(1)};
+  float x0 = u0 * 3.0;
+  // (no canopy anywhere near: its mean over 180 m, nothing. Most of an open view's ground)
+  vec4 C = textureLod(tSkyRings, vec2((x0 + 2.0 + uv.x) / NB, uv.y), 0.0);
+  if (C.b < 0.002) return 0.0;
+  vec4 A = textureLod(tSkyRings, vec2((x0 + uv.x) / NB, uv.y), 0.0);
+  vec4 B = textureLod(tSkyRings, vec2((x0 + 1.0 + uv.x) / NB, uv.y), 0.0);
   // (a bias: the point's own leaves, a texel and a little more, aren't over it)
   float d = dot(L.xyz - pF, upF) - (0.3 + 1.5 * L.w);
-  float blocked = 0.0;
-  for (int j = 0; j < 5; j++) {
-    float a = j == 0 ? 0.0 : j == 1 ? 1.0 : j == 2 ? 3.5 : j == 3 ? 9.0 : 20.0;
-    float b = j == 0 ? 1.0 : j == 1 ? 3.5 : j == 2 ? 9.0 : j == 3 ? 20.0 : 45.0;
-    float r = j == 0 ? 0.0 : (a + b) * 0.5;
-    int n = j == 0 ? 1 : 6;
-    float acc = 0.0;
-    for (int k = 0; k < 6; k++) {
-      if (k >= n) break;
-      float ang = (float(k) + 0.5 * float(j)) * 1.0471976;
-      vec2 tuv = clamp(uv + vec2(cos(ang), sin(ang)) * (r / (2.0 * ext)), vec2(0.5 / nTex), vec2(1.0 - 0.5 / nTex));
-      // (the softened map, blended between texels: the canopy's share there and its top)
-      vec2 sc = textureLod(tSkySoft, vec2((u0 + tuv.x) * ${(1 / SKY_CASCADES.length).toFixed(6)}, tuv.y), 0.0).rg;
-      if (sc.r > 0.003) {
-        float dh = d - (D + sc.g / sc.r);
-        if (dh > 0.0) { float h2 = dh * dh; acc += sc.r * (b * b / (b * b + h2) - a * a / (a * a + h2 + 1e-6)); }
-      }
-    }
-    blocked += acc / float(n);
-  }
-  return clamp(blocked, 0.0, 1.0);
+  return clamp(skyRing(A.xy, d, D, 0.0, 1.0) + skyRing(A.zw, d, D, 1.0, 3.5) + skyRing(B.xy, d, D, 3.5, 9.0) + skyRing(B.zw, d, D, 9.0, 20.0) + skyRing(C.xy, d, D, 20.0, 45.0), 0.0, 1.0);
 }
 // how much of the sky (cosine-weighted) the canopy hides from wp, 0..1
 float skyBlocked(vec3 wp) {
@@ -439,8 +537,8 @@ float skyBlocked(vec3 wp) {
   if (dist > uSkyShadow.z) return 0.0;
   vec3 pF = uSkyToFixed * (wp - uSkyCenter);
   float bl = -1.0;
-  if (dist < uSkyShadow.y) bl = skyShadowMap(0.0, ${SKY_CASCADES[0].size.toFixed(1)}, uSkyD.x, uSkyShadowVP0, uSkyShadowL0, uSkyShadowUp0, uSkyShadow.y, pF);
-  if (bl < 0.0) bl = skyShadowMap(1.0, ${SKY_CASCADES[1].size.toFixed(1)}, uSkyD.y, uSkyShadowVP1, uSkyShadowL1, uSkyShadowUp1, uSkyShadow.z, pF);
+  if (dist < uSkyShadow.y) bl = skyShadowMap(0.0, uSkyD.x, uSkyShadowVP0, uSkyShadowL0, uSkyShadowUp0, uSkyShadow.y, pF);
+  if (bl < 0.0) bl = skyShadowMap(1.0, uSkyD.y, uSkyShadowVP1, uSkyShadowL1, uSkyShadowUp1, uSkyShadow.z, pF);
   if (bl < 0.0) return 0.0;
   return bl * (1.0 - smoothstep(0.8 * uSkyShadow.z, uSkyShadow.z, dist));
 }
