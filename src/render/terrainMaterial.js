@@ -491,6 +491,11 @@ void main() {
     // the cloud takes)
     float skyG = mix(0.7 + 1.1 * pow(1.0 - el, 3.0), 0.4286 * (1.0 + 2.0 * el), clamp(1.0 - cloudT, 0.0, 1.0));
     vec3 skyRefl = uSunE * skyE / PI * skyG + uSunE * sunT * 0.05 * pow(max(dot(R, uSunDir), 0.0), 12.0);
+    // (and by night the moonlit sky's, as the sun's: the sea a faint mirror of it, not black)
+    if (uMoonE.g > 0.0) {
+      float muMr = dot(up, uMoonDir);
+      skyRefl += uMoonE * atmoSkyIrradiance(r, muMr) / PI * skyG + uMoonE * atmoSunTransmittance(r, max(muMr, 0.0)) * 0.05 * pow(max(dot(R, uMoonDir), 0.0), 12.0);
+    }
 #ifdef RIBBON
     vec3 body;
     {
@@ -582,6 +587,19 @@ void main() {
     float Gg = NdV / (NdV * (1.0 - kg) + kg) * ndlW / (ndlW * (1.0 - kg) + kg);
     float Fs = F0 + (1.0 - F0) * pow(1.0 - VdH, 5.0);
     color = body * (1.0 - F) + skyRefl * F + uSunE * sunT * Dg * Gg * Fs / (4.0 * NdV) * step(0.0, muS);
+    // (and the moon's: its path of glitter across the water by night, as the sun's by day, the moon's light
+    // through the air and the clouds' gaps)
+    if (uMoonE.g > 0.0) {
+      float muMn = dot(up, uMoonDir);
+      if (muMn > -0.02) {
+        vec3 Hm = normalize(V + uMoonDir);
+        float NdHm = max(dot(Nw, Hm), 0.0), VdHm = max(dot(V, Hm), 0.0), ndlM = max(dot(Nw, uMoonDir), 0.0);
+        float Dm = a2s / (PI * pow(NdHm * NdHm * (a2s - 1.0) + 1.0, 2.0));
+        float Gm = NdV / (NdV * (1.0 - kg) + kg) * ndlM / (ndlM * (1.0 - kg) + kg);
+        float Fm = F0 + (1.0 - F0) * pow(1.0 - VdHm, 5.0);
+        color += uMoonE * atmoSunTransmittance(r, max(muMn, 0.0)) * cloudDirZ * Dm * Gm * Fm / (4.0 * NdV);
+      }
+    }
     // foam: white, matte
     vec3 lit = uSunE * sunT * max(dot(up, uSunDir), 0.0) + uSunE * skyE;
     // a fall (falls.js): where a river runs steep, a sheet down the face, as fast as it has fallen
