@@ -148,8 +148,10 @@ export class PlanetTerrain {
       this.grassSet.update(camFixed);
     }
     // (plants and rocks seated again where the ground under them changed: a finer tile in, or the near
-    // field built anew round the camera (those within its reach); ~2 ms a frame)
-    const nf = this.body.near && this.body.near.field;
+    // field built anew round the camera (those within its reach); ~2 ms a frame. When it's ready, drawn:
+    // seated as it was made, it wasn't yet (floorAt reads it only once it is), they all went on the
+    // heightfield and stayed there, boulders standing in the air off a gorge's walls, a metre or two out)
+    const ng = this.body.near, nf = ng && ng.ready ? ng.field : null;
     if (nf !== this._nfSeat) {
       this._nfSeat = nf;
       const reach = 600;

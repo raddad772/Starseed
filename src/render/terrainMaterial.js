@@ -660,6 +660,12 @@ void main() {
       // (white water as bright as it's thick: the ropes' cores scatter most, their thin skirts less)
       float albS = mix(0.5, 0.92, smoothstep(0.15, 0.85, st));
       color = mix(color, mix(color * 0.8, vec3(albS) / PI * litS, white), fallK);
+#ifdef RIBBON
+      // (its sides: its water thinning to nothing over the rock (as depthW has it), the rock seen as it is
+      // but for its torn white strands. Drawn to the grid's edge, a glassy film mirroring the sky had
+      // stood out over the face, its edge a line)
+      color = mix(color, texture(tOpaque, sc.xy).rgb, fallK * smoothstep(0.6, 1.0, abs(vRib.x)) * (1.0 - white));
+#endif
       foam *= 1.0 - fallK;
     }
     if (uFallTop > 0.0) {

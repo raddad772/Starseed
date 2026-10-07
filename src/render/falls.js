@@ -171,7 +171,7 @@ void main() {
   else {
     // (the streak: from where it was a thirtieth of a second ago to here, as wide as its clump, no
     // narrower than a pixel; as opaque as its drops' cross-section over the area it's drawn on (a soft
-    // rod: L s + 0.94 s^2 for its falloff), so the same light however it's spread. Each drawn a pixel or
+    // rod: 0.835 L s + 0.69 s^2 for its Gaussian falloff), so the same light however it's spread. Each drawn a pixel or
     // two across at a fixed half opacity, the spray had stood as a scatter of white flecks on the rock,
     // and one near the eye a white square)
     vec3 ds = (viewMatrix * (modelMatrix * vec4(vel * 0.033, 0.0))).xyz;
@@ -181,7 +181,7 @@ void main() {
     vec2 ax = L > 1e-4 ? ds.xy / L : vec2(0.0, 1.0);
     mv.xy += -ds.xy * 0.5 + ax * corner.x * (0.5 * L + size) + vec2(-ax.y, ax.x) * corner.y * size;
     vK = 0.5 * L / (0.5 * L + size);
-    vA *= min(0.9, aFall.w / (L * size + 0.94 * size * size));
+    vA *= min(0.9, aFall.w / (0.835 * L * size + 0.69 * size * size));
   }
   vZ = -mv.z;
   gl_Position = projectionMatrix * mv;
@@ -209,7 +209,9 @@ void main() {
   float zs = isSkyDepth(dRaw) ? 1e30 : viewZFromDepth(dRaw);
   if (vZ > zs) discard;
   float soft = clamp((zs - vZ) / (vMist > 0.5 ? 1.5 : 0.4), 0.0, 1.0);
-  float a = vA * soft * (1.0 - smoothstep(vMist > 0.5 ? 0.2 : 0.0, 1.0, r));
+  // (a spray clump's drops thinning out from its middle, a Gaussian's: with an edge it stood as a soft
+  // ball, those thrown furthest a scatter of them)
+  float a = vA * soft * (vMist > 0.5 ? 1.0 - smoothstep(0.2, 1.0, r) : exp(-4.5 * r * r));
   // (a puff of mist, or of spray, uneven within)
   if (vMist > 0.5) a *= 0.4 + 1.2 * texture(tDetail, vUv * 0.25 + vS).a;
   gl_FragColor = vec4(vCol, a);
@@ -240,8 +242,9 @@ export class FallFx {
       const ax = falls[f + 7], ay = falls[f + 8], az = falls[f + 9], dir = Math.hypot(ax, ay, az) > 0.5;
       const vImp = Math.min(Math.sqrt(2 * g * drop), vSheet);
       const ux = origin[0] + x, uy = origin[1] + y, uz = origin[2] + z, ul = Math.hypot(ux, uy, uz);
-      // (its share of particles: by its width and how hard it lands)
-      const nSpray = Math.round(Math.min(3000, Math.max(120, width * vImp * 10)) * (1 - frozen));
+      // (its share of particles: by its width and how hard it lands; enough that each clump is small (a
+      // third as many, ~0.4 m each, they'd read as soft balls at its foot))
+      const nSpray = Math.round(Math.min(8000, Math.max(300, width * vImp * 30)) * (1 - frozen));
       const nMist = Math.round(Math.min(1200, Math.max(0, width * Math.sqrt(drop) * 6)) * mistK * (1 - frozen));
       // (the spray's drops aloft at once: a share of the water going over (critical flow at the brink,
       // q = sqrt(g) h^1.5 for its depth h) thrown up as drops where it lands, aloft as long as their arcs
