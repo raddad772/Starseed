@@ -4,16 +4,19 @@
 // at the world E = p E*(at it) (R / d)^2 Phi (sizes and distances as drawn: the moon as bright as it
 // looks big). The full Moon on Earth: ~1.6e-6 of the Sun's light, ~0.2 lux.
 //
-// Drawn NIGHT_GAIN brighter: the eye's dark adaptation goes some thirteen stops past what the exposure here
-// follows (and the scene's half-float buffers can't hold a moonlit field's ~1e-7: their floor), so a
-// moonlit night reads as one, its shadows sharp, and a night without a moon is dark.
+// Its light here as it is; the scene's drawn with a gain where the light's dim (world.js lightGain: up to
+// NIGHT_GAIN, a full moon's), since the eye's dark adaptation goes some thirteen stops past what the
+// exposure here follows (and the scene's half-float buffers can't hold a moonlit field's ~1e-7: their floor),
+// so a moonlit night reads as one, its shadows sharp, and a night without a moon is dark.
 import * as THREE from 'three';
 
 export const NIGHT_GAIN = 8192;
+// (the light the gain brings a dim scene up to, relative to Earth's sunlight: a full moon's ~1e-6 x NIGHT_GAIN)
+export const GAIN_REF = 8e-3;
 
 const _v = new THREE.Vector3(), _s = new THREE.Vector3();
 
-// the brightest of b's night lights: { E (relative to Earth's sunlight, gained), dir (unit, world, from b's
+// the brightest of b's night lights: { E (relative to Earth's sunlight), dir (unit, world, from b's
 // centre), body }; E 0 if none
 export function moonLight(u, b, out = { E: 0, dir: new THREE.Vector3(0, 1, 0), body: null }) {
   out.E = 0; out.body = null;
@@ -26,7 +29,7 @@ export function moonLight(u, b, out = { E: 0, dir: new THREE.Vector3(0, 1, 0), b
     const cosA = Math.max(-1, Math.min(1, -_s.copy(m.pos).normalize().dot(toM))), a = Math.acos(cosA);
     const phi = (Math.sin(a) + (Math.PI - a) * cosA) / Math.PI;
     const p = (2 / 3) * (m.data.albedo ?? 0.3);
-    const E = p * u.sunIlluminance(m.pos) * (m.R / d) * (m.R / d) * phi * NIGHT_GAIN;
+    const E = p * u.sunIlluminance(m.pos) * (m.R / d) * (m.R / d) * phi;
     if (E > out.E) { out.E = E; out.body = m; out.dir.copy(toM); }
   };
   for (const c of b.children) consider(c);

@@ -14,8 +14,8 @@ import { CloudShadow, noCloudShadow } from './cloudShadow.js';
 import { loadMaterials, windRipple } from './materials.js';
 import { HeightCube } from './terrainShadow.js';
 import { SUN_SHADOW_UNIFORMS, SKY_SHADOW_UNIFORMS } from './sunShadows.js';
-import { moonLight, NIGHT_GAIN } from './moonlight.js';
-const _nsA = [0, 0, 0], _nsB = [0, 0, 0];
+import { moonLight, NIGHT_GAIN, GAIN_REF } from './moonlight.js';
+const _nsA = [0, 0, 0], _nsB = [0, 0, 0], _lg = new THREE.Vector3(), _lg2 = new THREE.Vector3();
 import { Liquid } from './liquid.js';
 import { fallPhysics, FallFx } from './falls.js';
 import { RIBBON_PASS } from './terrainMaterial.js';
@@ -240,6 +240,27 @@ export class WorldRenderer {
     return it;
   }
 
+  // the pre-exposure gain at camWorld (update): low over a world (60 km), the light on a level surface there
+  // as it is (the sun's and the brightest moon's, through the air), brought up to GAIN_REF, by at most
+  // NIGHT_GAIN; 0 from higher up. Titan's noon (~1e-3 of Earth's sunlight on the ground) ~6, its twilight a
+  // few hundred, a full moon's night NIGHT_GAIN, a moonless one no further
+  lightGain(camWorld) {
+    const b = this.u.dominantBody(camWorld);
+    if (!b || b.isStar) return 0;
+    const rel = _lg.copy(camWorld).sub(b.pos), r = rel.length();
+    if (!(r > 0) || r - b.R > 60000) return 0;
+    rel.divideScalar(r);
+    const it = this.items.find((i) => i.body === b);
+    const lum = (c) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+    const sinH = b.R / Math.max(r, b.R), cosH = -Math.sqrt(Math.max(0, 1 - sinH * sinH));
+    const at = (mu) => it && it.atmo ? lum(it.atmo.skyIrradiance(r, mu, _nsA)) + lum(it.atmo.transmittance(r, mu, _nsB)) * Math.max(mu, 0) : (mu > cosH ? Math.max(mu, 0) : 0);
+    const muS = rel.dot(_lg2.copy(this.u.star.pos).sub(camWorld).normalize());
+    const ml = moonLight(this.u, b, this._glMoon || (this._glMoon = { E: 0, dir: new THREE.Vector3(0, 1, 0), body: null }));
+    const muM = ml.E > 0 ? rel.dot(ml.dir) : 0;
+    const E = this.u.sunIlluminance(camWorld) * at(muS) + (muM > 0 ? ml.E * at(muM) : 0);
+    return Math.min(NIGHT_GAIN, Math.max(1, GAIN_REF / Math.max(E, 1e-12)));
+  }
+
   update(camWorld, dt) {
     this.timeSec += dt;
     this.flash = 0;
@@ -250,6 +271,14 @@ export class WorldRenderer {
     const ss = this.engine.sunShadows;
     let ssBest = Infinity;
     if (ss) ss.active = false;
+    // (the pre-exposure: the scene's natural light drawn with a gain where it's dim, so a moonlit night (~0.2
+    // lux) or Titan's twilight (~3 lux) sits where the exposure and the half-float buffers hold it; the image
+    // the same wherever they could (the meter goes by the gained light). Low over a world: by the light at
+    // the camera as it is; from higher up the moon's alone, by NIGHT_GAIN (a night side moonlit from orbit).
+    // The night vision by the light as it is (engine.js uNightShift))
+    const G = this.lightGain(camWorld);
+    this.sunGain = G > 0 ? G : 1; this.moonGain = G > 0 ? G : NIGHT_GAIN;
+    this.engine.nightShift = Math.log2(this.sunGain);
     for (const it of this.items) {
       const b = it.body;
       _v.copy(b.pos).sub(camWorld);
@@ -269,7 +298,7 @@ export class WorldRenderer {
       const sh = it.shared;
       sh.uSunDir.value.copy(b.pos).negate().normalize();
       const E = this.u.sunIlluminance(b.pos);
-      sh.uSunE.value.copy(this.starColor).multiplyScalar(E);
+      sh.uSunE.value.copy(this.starColor).multiplyScalar(E * this.sunGain);
       sh.uCenter.value.copy(_v);
       // its night's light: its brightest moon's (or, from a moon, its planet's); none by day where the
       // camera is (the sun's thousands of times brighter: not worth the ground's shaders' while)
@@ -289,17 +318,7 @@ export class WorldRenderer {
       } else if (this._lens && this._lens.item === it) { this._lens = null; SKY_LENS.uLensUp.value.w = 0; }
       sh.uMoonDir.value.copy(ml.dir);
       if (this._lens && this._lens.item === it) lensDrawn(sh.uMoonDir.value, this._lens);
-      sh.uMoonE.value.copy(this.starColor).multiplyScalar(near && sunUp > 0.1 ? 0 : ml.E);
-      // (the share of the light here that's the moon's, drawn NIGHT_GAIN brighter: the eye's night vision
-      // goes by the light as it is (engine.js uNightShift). A moonlit night's ~0.2 lux is the rods'; Titan's
-      // noon, a thousandth of Earth's daylight under its haze (~100 lux), the cones', not the film-blue night
-      // it had been)
-      if (near) {
-        const lum = (c) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
-        const at = (mu) => it.atmo ? lum(it.atmo.skyIrradiance(dist, mu, _nsA)) + lum(it.atmo.transmittance(dist, mu, _nsB)) * Math.max(mu, 0) : Math.max(mu, 0);
-        const muM = camUp.dot(ml.dir), sunL = E * at(sunUp), moonL = ml.E > 0 && muM > 0 ? ml.E * at(muM) : 0;
-        this.engine.nightShift = Math.log2(NIGHT_GAIN) * moonL / Math.max(sunL + moonL, 1e-30);
-      }
+      sh.uMoonE.value.copy(this.starColor).multiplyScalar(near && sunUp > 0.1 ? 0 : ml.E * this.moonGain);
       if (ss && b.solid && it.terrain && near && dist - b.R < ssBest) {
         // (the shadows the key light's: the sun's, or by night the moon's when it's up)
         const moonKey = ml.E > 0 && sunUp < -0.05 && camUp.dot(ml.dir) > 0.02;
@@ -333,7 +352,8 @@ export class WorldRenderer {
         // it's a region's, the world seen whole its own air's)
         if (it.atmo) {
           const dk = it.group.visible && it.terrain.dust ? 1 - THREE.MathUtils.smoothstep(_v2.length() - b.R, 20000, 80000) : 0;
-          it.atmo.setDust(this.engine.renderer, dk > 0 ? it.terrain.dust.tau * dk : 0, dk > 0 ? it.terrain.dust.salt * dk : 0);
+          const em = b.data.atmosphere.render && b.data.atmosphere.render.aerEmit, mD = em ? em.dustTau : 0, mS = em ? em.saltTau : 0;
+          it.atmo.setDust(this.engine.renderer, dk > 0 ? it.terrain.dust.tau * dk + mD * (1 - dk) : mD, dk > 0 ? it.terrain.dust.salt * dk + mS * (1 - dk) : mS);
         }
         if (it.heightCube && it.heightCube.state === 0 && angular > 40) it.heightCube.build();
       }

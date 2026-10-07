@@ -115,13 +115,15 @@ void main() {
 const BRIGHT_FRAG = /* glsl */`
 uniform sampler2D tColor;
 uniform sampler2D tAdapt;
+uniform float uNightShift;
 uniform float uKey;
 uniform float uMinExp;
 uniform float uMaxExp;
 uniform vec2 uTexel;
 varying vec2 vUv;
 void main() {
-  float exposure = clamp(uKey / exp2(texture(tAdapt, vec2(0.5)).r), uMinExp, uMaxExp);
+  float aT = texture(tAdapt, vec2(0.5)).r;
+  float exposure = clamp(uKey / exp2(aT) * exp2(-0.1 * max(0.0, -8.0 - (aT - uNightShift))), uMinExp, uMaxExp);
   // (the four taps weighted 1 / (1 + their brightness): Karis's average, so a single pixel far brighter
   // than its neighbours (a glint, a speck of sky through leaves, one that overflowed the buffer) blooms as
   // little as a pixel should, not into an orb flickering as it comes and goes; a bright area's taps are all
@@ -212,7 +214,11 @@ vec3 toSRGB(vec3 c) {
   return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
 }
 void main() {
-  float exposure = clamp(uKey / exp2(texture(tAdapt, vec2(0.5)).r), uMinExp, uMaxExp) * uExposureBias;
+  // (the dim's own look: the eye adapts but not all the way; below an overcast day's light (2^-8 here) it
+  // gives back a tenth of a stop a stop, by the light as it is (uNightShift): Titan's 3-lux sunset a stop
+  // darker than its noon's adapting would make it, a full moon's night where the exposure's cap had it)
+  float aT = texture(tAdapt, vec2(0.5)).r;
+  float exposure = clamp(uKey / exp2(aT) * exp2(-0.1 * max(0.0, -8.0 - (aT - uNightShift))), uMinExp, uMaxExp) * uExposureBias;
   vec3 c = texture(tColor, vUv).rgb;
   if (uRadial > 0.001) {
     // FTL: radial streaks + blue shift ahead
@@ -469,7 +475,7 @@ export class Engine {
     this.bgMat = mk(BG_FRAG, { ...SKY_LENS, tColor: { value: null }, tDepth: { value: null }, tSky: { value: null }, uCamRot: { value: new THREE.Matrix3() }, uTanHalf: { value: new THREE.Vector2() }, uSkyGain: { value: 1 }, ...depthU() });
     this.lumMat = mk(LUM_FRAG, { tColor: { value: null }, tDepth: { value: null }, uRef: { value: 0.03 }, uNearCut: { value: 0 }, ...depthU() });
     this.adaptMat = mk(ADAPT_FRAG, { tLum: { value: null }, tPrev: { value: null }, uDt: { value: 0.016 }, uLevel: { value: 7 }, uReset: { value: 1 }, uRef: { value: 0.03 }, uUp: { value: 5 }, uDown: { value: 0.5 }, uStrength: { value: 0.75 } });
-    this.brightMat = mk(BRIGHT_FRAG, { tColor: { value: null }, tAdapt: { value: null }, uKey: { value: 0.18 }, uMinExp: { value: 0.04 }, uMaxExp: { value: 260 }, uTexel: { value: new THREE.Vector2() } });
+    this.brightMat = mk(BRIGHT_FRAG, { tColor: { value: null }, tAdapt: { value: null }, uNightShift: { value: 0 }, uKey: { value: 0.18 }, uMinExp: { value: 0.04 }, uMaxExp: { value: 260 }, uTexel: { value: new THREE.Vector2() } });
     this.downMat = mk(DOWN_FRAG, { tSrc: { value: null }, uTexel: { value: new THREE.Vector2() } });
     this.upMat = mk(UP_FRAG, { tSrc: { value: null }, tBase: { value: null }, uTexel: { value: new THREE.Vector2() }, uRadius: { value: 1 } });
     this.volCompMat = mk(VOLUME_COMPOSITE_FRAG, { tColor: { value: null }, tDepth: { value: null }, tL: { value: null }, tT: { value: null }, uLowSize: { value: new THREE.Vector2() }, ...depthU() });
@@ -750,7 +756,7 @@ export class Engine {
       const b = this.brightMat.uniforms;
       b.tColor.value = src.texture; b.tAdapt.value = adapt;
       b.uTexel.value.set(1 / V.width, 1 / V.height);
-      b.uMinExp.value = this.minExposure; b.uMaxExp.value = V.maxExposure;
+      b.uMinExp.value = this.minExposure; b.uMaxExp.value = V.maxExposure; b.uNightShift.value = V.nightShift || 0;
       renderFullscreen(r, this.brightMat, V.bloomLevels[0]);
       for (let i = 1; i < V.bloomLevels.length; i++) {
         const s = V.bloomLevels[i - 1];

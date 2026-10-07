@@ -1043,8 +1043,9 @@ export class Atmosphere {
     // (the air's own aerosols, before any dust the wind raises: setDust adds it to them)
     this.base = { mie: a.mie.slice(), mieAbs: a.mieAbs.slice(), mieH: a.mieH, haze: (a.haze || [0, 1000, 0, 0]).slice(),
       ph: [0, 1, 2].map((c) => [this.params.uMieG.value.getComponent(c), this.params.uMieF.value.getComponent(c), this.params.uMieGL.value.getComponent(c)]),
-      dustUnit: a.dustUnit || null, saltUnit: a.saltUnit || null };
-    this.dust = 0;
+      dustUnit: a.dustUnit || null, saltUnit: a.saltUnit || null, dustPart: a.dustPart || null, saltPart: a.saltPart || null };
+    // (the weather's dust and spray start as the world's mean, already in the base)
+    this.dust = a.aerEmit ? a.aerEmit.dustTau || 0 : 0; this.salt = a.aerEmit ? a.aerEmit.saltTau || 0 : 0;
     const dc = d.terrain && d.terrain.palette && (d.terrain.palette.regolith || d.terrain.palette.soil);
     this.dustCol = dc ? dc.slice(0, 3) : [0.5, 0.4, 0.3];
     this.trans = lutTarget(256, 64);
@@ -1085,19 +1086,25 @@ export class Atmosphere {
       const e = k * DU.ext[i]; sca[i] = e * DU.ssa[i]; abs[i] = e * (1 - DU.ssa[i]);
       const es = ks * SU.ext[i]; ss[i] = es * SU.ssa[i]; sa[i] = es * (1 - SU.ssa[i]);
     }
-    const eB = B.mie[1] + B.mieAbs[1], eD = sca[1] + abs[1], eS = ss[1] + sa[1], eT = Math.max(eB + eD + eS, 1e-12);
-    p.uMie.value.set(B.mie[0] + sca[0] + ss[0], B.mie[1] + sca[1] + ss[1], B.mie[2] + sca[2] + ss[2]);
-    p.uMieAbs.value.set(B.mieAbs[0] + abs[0] + sa[0], B.mieAbs[1] + abs[1] + sa[1], B.mieAbs[2] + abs[2] + sa[2]);
-    p.uMieH.value = (eB * B.mieH + eD * Hd + eS * Hs) / eT;
+    // (in place of the world's mean dust and spray in the base: aerosols.js dustPart, saltPart)
+    const DP = B.dustPart, SP = B.saltPart;
+    const bm = [0, 1, 2].map((i) => Math.max(0, B.mie[i] - (DP ? DP.sca[i] : 0) - (SP ? SP.sca[i] : 0)));
+    const ba = [0, 1, 2].map((i) => Math.max(0, B.mieAbs[i] - (DP ? DP.abs[i] : 0) - (SP ? SP.abs[i] : 0)));
+    const eB = bm[1] + ba[1], eD = sca[1] + abs[1], eS = ss[1] + sa[1], eT = Math.max(eB + eD + eS, 1e-12);
+    p.uMie.value.set(bm[0] + sca[0] + ss[0], bm[1] + sca[1] + ss[1], bm[2] + sca[2] + ss[2]);
+    p.uMieAbs.value.set(ba[0] + abs[0] + sa[0], ba[1] + abs[1] + sa[1], ba[2] + abs[2] + sa[2]);
+    p.uMieH.value = eT > 1e-11 ? (eB * B.mieH + eD * Hd + eS * Hs) / eT : B.mieH;
     // (the phase: each channel's lobes, weighted by what each scatters in it)
     for (let i = 0; i < 3; i++) {
-      const wB = B.mie[i], wD = sca[i], wS = ss[i], wT = Math.max(wB + wD + wS, 1e-12);
+      const wB = bm[i], wD = sca[i], wS = ss[i], wT = Math.max(wB + wD + wS, 1e-12);
       const mixp = (j) => (wB * B.ph[i][j] + wD * DU.fit[i][j] + wS * SU.fit[i][j]) / wT;
       p.uMieG.value.setComponent(i, mixp(0)); p.uMieF.value.setComponent(i, mixp(1)); p.uMieGL.value.setComponent(i, mixp(2));
     }
     // (and the near ground's haze, at the game's scale: thicker, toward the dust's colour)
-    const h = B.haze, w = tau / (tau + 0.3), hc = hazeColour(h);
-    p.uHaze.value.set(h[0] * (1 + 3 * tau + 2 * salt), h[1], h[2] + (0.12 - h[2]) * w, h[3]);
+    // (by what the weather adds over the world's mean, which the ground haze already has)
+    const xD = Math.max(0, tau - (DP ? DP.tau : 0)), xS = Math.max(0, salt - (SP ? SP.tau : 0));
+    const h = B.haze, w = xD / (xD + 0.3), hc = hazeColour(h);
+    p.uHaze.value.set(h[0] * (1 + 3 * xD + 2 * xS), h[1], h[2] + (0.12 - h[2]) * w, h[3]);
     p.uHazeCol.value.set(hc.x + ((sca[0] + abs[0]) / Math.max(eD, 1e-12) * 0.97 - hc.x) * w, 1, hc.z + ((sca[2] + abs[2]) / Math.max(eD, 1e-12) - hc.z) * w);
     this.generate(renderer);
     this.readBack(renderer);

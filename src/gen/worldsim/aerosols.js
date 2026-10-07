@@ -96,15 +96,18 @@ export const INDEX = {
   organic:  [[1.45, 0.001], [1.45, 0.002], [1.45, 0.005]],  // secondary organic (a little brown carbon)
 };
 // a dust's index from the ground it comes off: its reflectance (linear RGB) inverted through Hapke's
-// equivalent-slab model of a powder of grains ~5 um across (its single-scattering albedo, then the
-// absorption inside a grain): a reddish ground's dust takes the blue (Mars' ~0.011 at 440 nm, 0.001 at
-// 680: Wolff et al. 2009), a grey one's takes little of anything
+// equivalent-slab model of a powder (its single-scattering albedo, then the light's way through a grain:
+// absorbed, and scattered inside it by its own flaws, s, which lengthens a weakly absorbed colour's way):
+// grains ~3.5 um, s 6e4 /m, fitted to Mars' dust (its bright regions' reflectance against its measured
+// index, Wolff et al. 2009: k 0.0098, 0.0038, 0.0012 at 440, 550, 670 nm; this gives 0.0088, 0.0041,
+// 0.0012). A reddish ground's dust takes the blue, a grey one's little of anything
 export function dustIndex(rgb, n = 1.55) {
-  const Se = ((n - 1) * (n - 1)) / ((n + 1) * (n + 1)) + 0.05, Si = 1.014 - 4 / (n * (n + 1) * (n + 1)), D = 5e-6;
+  const Se = ((n - 1) * (n - 1)) / ((n + 1) * (n + 1)) + 0.05, Si = 1.014 - 4 / (n * (n + 1) * (n + 1)), D = 3.5e-6, sIn = 6e4;
   return [0, 1, 2].map((c) => {
     const r = dm.clamp(rgb[c], 0.005, 0.9), gam = (1 - r) / (1 + r), w = 1 - gam * gam;
     const th = dm.clamp((w - Se) / ((1 - Se) * (1 - Si) + Si * (w - Se)), 1e-4, 0.9999);
-    const alpha = -dm.log(th) / D;
+    // (sqrt(alpha (alpha + s)) D = -ln theta)
+    const X = -dm.log(th) / D, alpha = (-sIn + dm.sqrt(sIn * sIn + 4 * X * X)) / 2;
     return [n, Math.max(1e-5, alpha * LAMBDA[c] / (4 * dm.PI))];
   });
 }
@@ -321,6 +324,8 @@ function mineralDust(air, src, Um, Fsurf, day, fines, idx, tauWet, out) {
   const Fsalt = alpha * Q;
   const F = (Fsalt + Fdd) * src * ERODIBLE;   // kg/m^2/s over the globe
   out.dust = { saltation: Fsalt * src * ERODIBLE, devils: Fdd * src * ERODIBLE, ut, Um, Fs, pbl };
+  // (the weather's: what a place lifts in a wind U per unit of loose ground, against the world's mean)
+  out.dustEmit = { ut, rho: air.rho, g: air.g, alpha, Fdd, Fmean: Fsalt + Fdd };
   if (!(F > 1e-22)) return null;
   // (in sizes: each up for as long as it settles out of its mixed layer or is rained out)
   const bins = 28, lo = dm.log(0.1e-6), hi = dm.log(40e-6), dl = (hi - lo) / bins;
@@ -343,6 +348,15 @@ function mineralDust(air, src, Um, Fsurf, day, fines, idx, tauWet, out) {
   }
   out.dust.column = col;
   return { name: 'dust', o, H: ext0 > 0 ? o.ext[1] / ext0 : air.H };
+}
+
+// what a place's loose ground lifts a second per m^2 in a 10 m wind U (sim/dust.js, by aerosols.js's
+// dustEmit: the world's threshold, air and dust devils), as mineralDust
+export function dustEmission(e, U) {
+  const us = US_K * U * LAND_WIND;
+  let Q = 0;
+  if (us > e.ut) { const r = e.ut / us; Q = 2.61 * e.rho / e.g * us * us * us * (1 - r) * (1 + r) * (1 + r); }
+  return e.alpha * Q + e.Fdd;
 }
 
 // dust a time age (s) after it was lifted: each size's share of the lifted still up (its lifetime's
@@ -381,7 +395,7 @@ function seaSalt(air, seaFrac, Um, tauWet, out) {
     addSpheres(o, rm, nCol, INDEX.seasalt);
     ext0 += (o.ext[1] - e0) / H;
   }
-  out.salt = { column: col };
+  out.salt = { column: col, u341 };
   return { name: 'seasalt', o, H: ext0 > 0 ? o.ext[1] / ext0 : air.H };
 }
 
@@ -538,11 +552,16 @@ export function aerosolsOf(w) {
   // falling with wavelength: a windy day's low sun pinker))
   const unit = (o) => ({ ext: o.ext.map((e) => e / o.ext[1]), ssa: o.ext.map((e, c) => e > 0 ? o.sca[c] / e : 1), fit: o.ph.map((a) => fitPhase(a)) });
   const dust = unit(agedDust(air, dIdx, tauWet, 86400));
+  // (the world's mean dust and spray in the sum, which the weather's own take the place of where the
+  // camera is (render/atmosphere.js setDust))
+  const part = (p) => p ? { sca: p.o.sca.map((x) => x / p.H), abs: p.o.ext.map((x, c) => (x - p.o.sca[c]) / p.H), tau: p.o.ext[1], H: p.H } : null;
+  const dustPart = part(du), saltPart = part(pops.find((p) => p.name === 'seasalt'));
+  const emit = { dust: diag.dustEmit || null, dustTau: du ? du.o.ext[1] : 0, saltTau: saltPart ? saltPart.tau : 0, u341: diag.salt ? diag.salt.u341 : 0, seaFrac: w.seaFrac || 0 };
   const saltPop = pops.find((p) => p.name === 'seasalt');
   const salt = unit(saltPop ? saltPop.o : lognormal(1e-4, 0.3e-6, 2.0, 1200, INDEX.seasalt));
   return {
     pops: out, diag, wind: Um, tSurf,
     render: { mie, mieAbs, mieH: H, mieG: fits.map((f) => f[0]), mieF: fits.map((f) => f[1]), mieGL: fits.map((f) => f[2]) },
-    dust, salt, angstrom: col > 0 ? dm.log(Math.max(1e-12, pops.reduce((s, p) => s + p.o.ext[2], 0)) / Math.max(1e-12, pops.reduce((s, p) => s + p.o.ext[0], 0))) / dm.log(680 / 440) : 1,
+    dust, salt, dustPart, saltPart, emit, angstrom: col > 0 ? dm.log(Math.max(1e-12, pops.reduce((s, p) => s + p.o.ext[2], 0)) / Math.max(1e-12, pops.reduce((s, p) => s + p.o.ext[0], 0))) / dm.log(680 / 440) : 1,
   };
 }

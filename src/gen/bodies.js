@@ -304,6 +304,9 @@ function atmosphereRender(rng, b, atm, Tsurf, dustColor, ctx = {}) {
     // setDust; the share of sunlight reaching the ground (an acid deck, a haze), the winds' power)
     aer: aer.pops.map((q) => ({ name: q.name, tau: q.tau.map((x) => +x.toPrecision(3)), ssa: q.ssa.map((x) => +x.toFixed(3)), H: Math.round(q.H) })),
     dustUnit: aer.dust, saltUnit: aer.salt, sunSurf: aer.tSurf, wind: aer.wind, aerDiag: aer.diag,
+    dustPart: aer.dustPart && { ...aer.dustPart, sca: aer.dustPart.sca.map((x) => x * keepCol), abs: aer.dustPart.abs.map((x) => x * keepCol) },
+    saltPart: aer.saltPart && { ...aer.saltPart, sca: aer.saltPart.sca.map((x) => x * keepCol), abs: aer.saltPart.abs.map((x) => x * keepCol) },
+    aerEmit: aer.emit,
   };
 }
 
