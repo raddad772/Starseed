@@ -124,15 +124,19 @@ vec3 grassBlade(mat4 im) {
   float rr = fract(aBlade.z + ps * 0.618);
   vec4 pc = modelMatrix * im * vec4(bx.x, 0.0, bx.y, 1.0);
   float dc = length(pc.xyz);
+  float u0 = bx.x * 0.5 + 0.5, v0 = bx.y * 0.5 + 0.5;
+  float gb = mix(mix(iBare.x, iBare.y, u0), mix(iBare.z, iBare.w, u0), v0);
+  float fade = (1.0 - smoothstep(uFadeR * 0.7, uFadeR, dc)) * smoothstep(uFadeIn - 8.0, uFadeIn + 2.0, dc);
+  // (a blade over the most its density can be, the noise at its highest, out before the noise: most of a
+  // thin patch's, and of those at the edge of the reach)
+  if (rr >= iGrass.x * 1.5 * smoothstep(0.25, 0.75, gb + 0.25) * fade) return vec3(0.0);
   vec3 off = mat3(im) * vec3(bx.x, 0.0, bx.y);
   vec3 wp = iWave + off;
   // (its thickness and height by the lie of the ground a few metres across, smooth over the patches' edges:
   // clumps and thin places, not squares; and the season's snow drifted and hollowed)
   vec3 nz = grassNoise3(wp / 3.2, 640.0);
   float n1 = nz.x, n2 = nz.y;
-  float u0 = bx.x * 0.5 + 0.5, v0 = bx.y * 0.5 + 0.5;
-  float gb = mix(mix(iBare.x, iBare.y, u0), mix(iBare.z, iBare.w, u0), v0);
-  float dens = iGrass.x * (0.5 + n1) * smoothstep(0.25, 0.75, gb + 0.5 * (n2 - 0.5)) * (1.0 - smoothstep(uFadeR * 0.7, uFadeR, dc)) * smoothstep(uFadeIn - 8.0, uFadeIn + 2.0, dc);
+  float dens = iGrass.x * (0.5 + n1) * smoothstep(0.25, 0.75, gb + 0.5 * (n2 - 0.5)) * fade;
   vGT = aV.x; vGK = fract(rr * 13.71);
   // (the sun reaching down into the sward through the blades above: Beer's law over their leaf area, ~3 in
   // a thick meadow (half of it facing the light, Monsi and Saeki 1953), the tips in the sun, the feet in

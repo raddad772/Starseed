@@ -230,10 +230,15 @@ void main() {
     float a = seg == 0 ? t0 : (seg == 1 ? tIn : tOut);
     float b = seg == 0 ? tIn : (seg == 1 ? tOut : t1);
     if (b <= a + 1.0) continue;
-    int N = seg == 1 ? int(uSteps) : 18;
+    // (the air's stretches by their length, about a step a 250 m: a ray to the ground 30 m off took the 18 a
+    // long one does, and on foot nearly every pixel's ray ends within 50 m (the sky's take the far sky's
+    // table): 9 ms of a 51 ms GPU frame in a wood. The seen picture so changed 0.6% a pixel, 0.04% over 8x8
+    // pixels, within the old march's own jitter)
+    int N = seg == 1 ? int(uSteps) : int(clamp(ceil((b - a) / 250.0) + 1.0, 2.0, 18.0));
     float dt = (b - a) / float(N);
-    // (the stretch from the camera: its steps squared, closer near it, where the ground haze is)
-    bool sq = seg == 0 && a < 1.0;
+    // (the long stretch from the camera: its steps squared, closer near it, where the ground haze is. Not a
+    // short one's: its few jittered squared steps summed to anything from two thirds to four thirds of it)
+    bool sq = seg == 0 && a < 1.0 && b - a > 4000.0;
     for (int i = 0; i < 96; i++) {
       if (i >= N) break;
       float t = a + (float(i) + jitter) * dt;
