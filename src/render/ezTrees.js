@@ -72,7 +72,7 @@ export function ezTreeGeometry(sp, g = 9.81, lod = 0) {
   bark.computeBoundingBox(); leaves.computeBoundingBox();
   const top = Math.max(bark.boundingBox.max.y, leaves.boundingBox.max.y), k = sp.treeHeight / Math.max(top, 1e-3);
   bark.scale(k, k, k); leaves.scale(k, k, k);
-  const flare = rootFlare(bark, form, rng, lod > 0 ? 12 : 16);
+  const flare = rootFlare(bark, form, rng, lod > 0 ? 16 : 28);
   return { bark, leaves, flare: flare.geo, footR: flare.R0, barkType: o.bark.type, leafType: o.leaves.type };
 }
 
@@ -93,16 +93,24 @@ function rootFlare(bark, form, rng, sides) {
   for (let i = 0; i < p.length; i += 3) if (p[i + 1] < 0.02) R0 = Math.max(R0, Math.hypot(p[i] - cx, p[i + 2] - cz));
   if (!(L1 < Infinity)) L1 = 4 * R0;
   const broad = form === 'broadleaf', A = broad ? 0.3 : 0.2, B = broad ? rng.range(0.4, 0.65) : rng.range(0.2, 0.35);
-  const nL = rng.int(3, broad ? 6 : 5), ph = rng.range(0, 2 * Math.PI), fall = 0.45 * R0, yTop = 2.2 * R0, yBot = -0.8 * R0, rings = 9;
+  // (its roots: each its own, of its own size and spread, rounded, round the trunk at about even spacing;
+  // even lobes of one size had met the ground in a star, its points sharp)
+  const nL = rng.int(3, broad ? 6 : 5), ph = rng.range(0, 2 * Math.PI), roots = [];
+  for (let q = 0; q < nL; q++) roots.push({ th: ph + 2 * Math.PI * (q + rng.range(-0.18, 0.18)) / nL, a: rng.range(0.55, 1), p: rng.range(4, 9) });
+  const fall = 0.45 * R0, yTop = 2.2 * R0;
+  // (its rings close where it meets the ground, so that line's a curve, not straight runs between a few)
+  const RINGS = [-0.8, -0.4, -0.15, -0.04, 0.04, 0.12, 0.22, 0.36, 0.55, 0.8, 1.15, 1.6, 2.2], rings = RINGS.length - 1;
   const pos = [], uv = [], idx = [];
   for (let j = 0; j <= rings; j++) {
-    const y = yBot + (yTop - yBot) * Math.pow(j / rings, 1.5);
+    const y = RINGS[j] * R0;
     // (its flare: off over ~half R0 up, the roots' spread on under the ground; its core in to 0.75 R0 at its
     // top, inside the trunk's six sides there)
     const F = y >= 0 ? Math.exp(-y / fall) : 1 - 0.6 * y / R0;
     const s = Math.min(1, Math.max(0, (y - 0.3 * yTop) / (0.7 * yTop))), core = 1 - 0.25 * s * s * (3 - 2 * s);
     for (let i = 0; i <= sides; i++) {
-      const th = 2 * Math.PI * i / sides, lobe = Math.pow(Math.max(0, Math.cos(nL * (th - ph) / 2) ** 2), 2);
+      const th = 2 * Math.PI * i / sides;
+      let lobe = 0;
+      for (const rt of roots) lobe = Math.max(lobe, rt.a * Math.pow(Math.max(0, Math.cos(th - rt.th)), rt.p));
       const r = R0 * (core + F * (A + B * lobe));
       pos.push(cx + r * Math.cos(th), y, cz + r * Math.sin(th));
       uv.push(i / sides, y / L1);

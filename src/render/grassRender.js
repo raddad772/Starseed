@@ -17,7 +17,7 @@ import { dirFromFaceUV, faceUVFromDir } from '../gen/cubesphere.js';
 import { S_LEN, S_H, S_TEMP, S_SAND, S_ICE, S_WDEPTH, S_RIVR, S_WLVL, S_POOL, S_SOILK } from '../gen/terrain.js';
 import { fmix32 } from '../core/rng.js';
 import { FireField } from '../sim/fireField.js';
-import { receiveShadows, COVER_LAYER, COVER_MIN_W, SHADOW_LIGHT_UNIFORMS } from './sunShadows.js';
+import { receiveShadows, COVER_LAYER, COVER_MIN_W, SHADOW_LIGHT_UNIFORMS, GLSL_TRUNK_VS } from './sunShadows.js';
 import { standAt } from '../gen/life/stands.js';
 import { floraSpecies, meadowAt } from '../gen/flora.js';
 import { snowWaterNow, SNOW_DEPTH_PER_MM } from './season.js';
@@ -137,6 +137,11 @@ vec3 grassBlade(mat4 im) {
   vec3 nz = grassNoise3(wp / 3.2, 640.0);
   float n1 = nz.x, n2 = nz.y;
   float dens = iGrass.x * (0.5 + n1) * smoothstep(0.25, 0.75, gb + 0.5 * (n2 - 0.5)) * fade;
+#ifdef GRASS_TRUNKS
+  // (thinned to none at a trunk's foot, its roots' and its shade's ground, its soil and litter: the trunks'
+  // map, sunShadows.js. Not in the cover map's pass, which draws into the atlas that map is in)
+  dens *= 1.0 - smoothstep(0.08, 0.3, trunkSumV(pc.xyz));
+#endif
   vGT = aV.x; vGK = fract(rr * 13.71);
   // (the sun reaching down into the sward through the blades above: Beer's law over their leaf area, ~3 in
   // a thick meadow (half of it facing the light, Monsi and Saeki 1953), the tips in the sun, the feet in
@@ -228,7 +233,7 @@ export class GrassSet {
       const m = new THREE.MeshStandardMaterial({ roughness: 0.85, metalness: 0, side: THREE.DoubleSide });
       m.onBeforeCompile = (sh) => {
         Object.assign(sh.uniforms, U);
-        sh.vertexShader = sh.vertexShader.replace('#include <common>', `#include <common>\n${GLSL_BLADE}\nuniform vec3 uSunShadowDir;`)
+        sh.vertexShader = sh.vertexShader.replace('#include <common>', `#include <common>\n#define GRASS_TRUNKS\n${GLSL_TRUNK_VS}\n${GLSL_BLADE}\nuniform vec3 uSunShadowDir;`)
           .replace('#include <beginnormal_vertex>', 'vec3 objectNormal = vec3(0.0, 1.0, 0.0);\n#ifdef USE_TANGENT\nvec3 objectTangent = vec3(1.0, 0.0, 0.0);\n#endif')
           .replace('#include <begin_vertex>', 'vec3 transformed = grassBlade(instanceMatrix);\n  vGS /= max(dot(normalize(mat3(modelMatrix) * instanceMatrix[1].xyz), uSunShadowDir), 0.08);');
         // (both faces lit as the ground is; dark at the foot, light at the tip, a little each its own; the

@@ -196,6 +196,8 @@ export class WorldRenderer {
       tSeasonIce: { value: blankSeasonMap() },
       uSeason: { value: new THREE.Vector4(0, 0, 0, 0) },
       uSnowCol: { value: new THREE.Vector3(...(b.data.terrain && b.data.terrain.palette && b.data.terrain.palette.snow || [0.85, 0.87, 0.9])) },
+      // (its soil's colour: a trunk's foot, the ground round it and the bark's soiled band, alike)
+      uSoilCol: { value: new THREE.Vector3(...(b.data.terrain && b.data.terrain.palette && b.data.terrain.palette.soil || [0.12, 0.09, 0.06])) },
       // (a thin air's seasonal frost, Mars' CO2: frostTexture; where the sun stands in its year, set each
       // frame: season.js seasonFrost)
       tFrost: { value: _blankFrost },

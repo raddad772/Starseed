@@ -336,6 +336,7 @@ varying vec3 vSnow;
 varying vec3 vLocal;
 varying float vTop;
 uniform vec3 uSnowCol;
+uniform vec3 uSoilCol;
 #include <common>
 #include <logdepthbuf_pars_fragment>
 ${GLSL_SURFACE_ATMO}
@@ -382,6 +383,18 @@ void main() {
       if (lt.a * (1.0 + 0.3 * mip) < 0.5) discard;
       albedo = vTint * (0.35 + 1.5 * dot(lt.rgb, vec3(0.3, 0.59, 0.11)));
     }
+  }
+  // (a trunk's foot soiled: the ground's soil up its bark from the ground in a ragged band (rain's splash,
+  // the earth and litter banked against it), the bark's own colour and grain under it toward the ground,
+  // the soil the ground round it shows (terrainMaterial.js, the trunks' map). Its bark run to the ground
+  // clean had met the soil there in a line, plastic)
+  // (the soil over its grain, not instead of it: the bark's light and dark through it, the soil speckled)
+  if (vPart < 0.5) {
+    float sn1 = texture(tNoise, vLocal * 1.3).r, sn2 = texture(tNoise, vLocal * 5.0 + 3.1).r, sn3 = texture(tNoise, vLocal * 17.0 + 7.7).r;
+    float soilK = 1.0 - smoothstep(0.02, 0.32, vSnow.z - 0.3 * (sn1 - 0.5) - 0.16 * (sn2 - 0.5) - 0.06 * (sn3 - 0.5));
+    float grain = dot(albedo, vec3(0.3, 0.59, 0.11)) / max(dot(uTrunk * 1.2, vec3(0.3, 0.59, 0.11)), 1e-4);
+    vec3 soil = uSoilCol * clamp(0.55 + 0.5 * grain, 0.4, 1.4) * (0.7 + 0.6 * sn3);
+    albedo = mix(albedo, soil, soilK * 0.8);
   }
   // (the snow on it: what lies open to the sky holds what fell on it, in clumps; and banked round its foot)
   float snowK = 0.0;

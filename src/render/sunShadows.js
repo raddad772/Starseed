@@ -589,12 +589,13 @@ float grassCover(vec3 wp) {
 // there), a sixth two radii out, a twelfth at four: in any weather the ground darkened round its foot
 uniform vec4 uTrunkSky;
 uniform mat4 uTrunkSkyVP;
-float trunkSky(vec3 wp) {
-  if (uTrunkSky.x < 0.5) return 1.0;
+// (the trunks' sum round wp: 0.69 at a trunk, 0.18 two radii out, 0.08 at four; 0 off the map)
+float trunkSum(vec3 wp) {
+  if (uTrunkSky.x < 0.5) return 0.0;
   vec4 c = uTrunkSkyVP * vec4(wp, 1.0);
   vec2 uv = c.xy / c.w * 0.5 + 0.5;
   float e = max(abs(uv.x * 2.0 - 1.0), abs(uv.y * 2.0 - 1.0));
-  if (e >= 1.0) return 1.0;
+  if (e >= 1.0) return 0.0;
   int n = int(uTrunkSky.w);
   vec2 st = uv * uTrunkSky.w - 0.5, fr = fract(st);
   ivec2 p0 = ivec2(floor(st)), org = ivec2(uTrunkSky.yz), hi = ivec2(n - 1);
@@ -603,8 +604,9 @@ float trunkSky(vec3 wp) {
   float d = texelFetch(tShadowAtlas, org + clamp(p0 + ivec2(0, 1), ivec2(0), hi), 0).r;
   float f = texelFetch(tShadowAtlas, org + clamp(p0 + ivec2(1, 1), ivec2(0), hi), 0).r;
   float sum = mix(mix(a, b, fr.x), mix(d, f, fr.x), fr.y);
-  return exp(-sum * (1.0 - smoothstep(0.75, 1.0, e)));
+  return sum * (1.0 - smoothstep(0.75, 1.0, e));
 }
+float trunkSky(vec3 wp) { return exp(-trunkSum(wp)); }
 `;
 
 // the sky a receiver sees past the canopy (1 all of it; after GLSL_SUN_SHADOW, whose atlas it reads): wp
@@ -612,6 +614,21 @@ float trunkSky(vec3 wp) {
 // map overhead round it, rings of taps out to 45 m (under a closed canopy 12 m up, nine tenths of the sky): where the canopy's top stands dh over the point at a
 // tap in a ring between radii a and b, it hides the sky between zenith angles atan(a/dh) and atan(b/dh),
 // b^2/(b^2+dh^2) - a^2/(a^2+dh^2) of the sky's light (cosine-weighted); the leaves let a little through
+// the trunks' sum for a vertex shader (one read, nearest: a grass blade's root), with its own uniforms
+export const GLSL_TRUNK_VS = /* glsl */`
+uniform vec4 uTrunkSky;
+uniform mat4 uTrunkSkyVP;
+uniform highp sampler2D tShadowAtlas;
+float trunkSumV(vec3 wp) {
+  if (uTrunkSky.x < 0.5) return 0.0;
+  vec4 c = uTrunkSkyVP * vec4(wp, 1.0);
+  vec2 uv = c.xy / c.w * 0.5 + 0.5;
+  if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) return 0.0;
+  int n = int(uTrunkSky.w);
+  return texelFetch(tShadowAtlas, ivec2(uTrunkSky.yz) + clamp(ivec2(uv * uTrunkSky.w), ivec2(0), ivec2(n - 1)), 0).r;
+}
+`;
+
 export const GLSL_SKY_SHADOW = /* glsl */`
 uniform vec4 uSkyShadow;
 uniform mat4 uSkyShadowVP0;

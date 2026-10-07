@@ -210,6 +210,7 @@ ${GLSL_CLOUD_SHADOW}
 ${GLSL_THERMAL}
 ${GLSL_TERRAIN_SHADOW}
 ${GLSL_SUN_SHADOW}
+uniform vec3 uSoilCol;
 ${GLSL_SKY_SHADOW}
 ${GLSL_MOON}
 ${GLSL_LIQUID}
@@ -341,6 +342,16 @@ void main() {
         c0 *= k; c1 *= k; c2 = vec4(c2.xy * k, c2.z + (sn - snow0), c2.w * k);
         snow = max(snow, sn);
       }
+    }
+    // (round a trunk's foot: no sward (its roots' and its shade's ground), the soil bare and littered, as
+    // the bark's soiled foot (floraRender.js) meets it: the trunks' map, sunShadows.js trunkSum. A lawn run
+    // up to the bark had met it in a clean line, plastic)
+    float tK = smoothstep(0.08, 0.3, trunkSum(vWorldPos)) * (1.0 - snow) * (1.0 - smoothstep(0.0, 0.02, waterEnc));
+    if (tK > 0.0) {
+      float mv = c2.y * tK;
+      c2.y -= mv; c2.x += mv;
+      albedo = mix(albedo, uSoilCol * (0.8 + 0.4 * d2.g), tK * 0.85);
+      veg *= 1.0 - tK;
     }
 #if MAT_MODE > 0
     // the scanned surfaces (materials.js), over the large patches and brightness the 4 km and 512 m
