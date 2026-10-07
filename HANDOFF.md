@@ -45,6 +45,8 @@ Dave's queue, in the order he raised it (keep this list current):
    faces' feet from it; open water in a wetland (ponds, the item 13 marshes) needs the water drawn.
 4. Open ground's variety (Dave: "muddy patches where there's no trees"): game trails between water and
    grazing (the herds are world state), wallows and mud by water, bare patches on thin soil, mounds.
+   Partly done: mud along banks (the water's yearly rise and fall, 67adaf0), bare and stony ground on thin
+   soil (3143ec8). Still: trails, wallows and trampled mud where herds drink (sim/fauna.js), mounds.
 5. A flashlight (hand light) for the dark nights now.
 6. An alien world with life to compare: DONE (2026-10-06, sent): Rasora, seed 64E2-YVC7 body 6 (F4V,
    2.46 bar, 312 K, g 11.2; its foliage (0.04, 0.008, 0.027) magenta: maroon forests over rust grass, a
