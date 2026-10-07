@@ -162,6 +162,7 @@ export class Sky {
       },
       vertexShader: BAKE_VERT, fragmentShader: BAKE_FRAG, side: THREE.BackSide, depthWrite: false, depthTest: false,
     });
+    this.cubeRT.texture.userData.webgpuSky = { uniforms: mat.uniforms };
     bakeScene.add(new THREE.Mesh(new THREE.SphereGeometry(10, 32, 16), mat));
     const cc = new THREE.CubeCamera(1, 100, this.cubeRT);
     const prevAuto = renderer.autoClear;

@@ -5,6 +5,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 export function prepare(source, group = 2, options = {}) {
   source = source.replace(/\/\*[\s\S]*?\*\//g,'').replace(/\/\/[^\n]*/g,'').replace(/precision\s+\w+\s+\w+;/g,'');
+  source=source.replace(/uniform\s+(\w+)\s+([\w\s,]+);/g,(decl,type,names)=>names.split(',').map(name=>'uniform '+type+' '+name.trim()+';').join('\n'));
   const uniforms=[],textures=[],seen=new Map();
   source=source.replace(/uniform\s+(?:(?:highp|mediump|lowp)\s+)?(\w+)\s+(\w+)\s*(\[\s*\d+\s*\])?\s*;/g,(all,type,name,array)=>{
     if(seen.has(name)){if(seen.get(name)!==type+(array||''))throw Error('Uniform type conflict: '+name);return '';}

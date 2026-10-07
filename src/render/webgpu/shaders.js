@@ -87,6 +87,7 @@ struct GBuffer { @location(0) albedoAO: vec4f, @location(1) normalMaterial: vec4
     if (o.nearBand.y < 0.5) { if (dn < 0.97 * o.nearBand.x && v.occShore.y <= 0.0) { discard; } }
     else if (dn < o.nearBand.z || dn > o.nearBand.w) { discard; }
   }
+  if (v.occShore.y > 0.0) { discard; }
   let b = bodies[u32(o.surface.x)];
   let rel = v.worldPos - b.center.xyz;
   let up = normalize(rel);
@@ -138,7 +139,8 @@ export const LIGHTING = FRAME + FULLSCREEN + PHYSICAL_LIGHTING + /* wgsl */`
   let ny = frame.inverseViewProjection * (ndc + vec4f(0.0, 2.0 / frame.sizeExposure.y, 0.0, 0.0));
   let foot = length(abs(nx.xyz / nx.w - p) + abs(ny.xyz / ny.w - p));
   let kind = u32(m.w) % 16u;
-  let lit = deferredLight(p, n, a.rgb, m.z, a.a, s.y, s.w, select(e.a, 1.0, e.a < 0.0), s.x, foot, s.z, f32(kind), select(1.0, -e.a, e.a < 0.0)) + e.rgb;
+  let selfShaded = kind == 3u || kind == 7u;
+  let lit = deferredLight(p, n, a.rgb, m.z, a.a, s.y, s.w, select(e.a, 1.0, selfShaded), s.x, foot, s.z, f32(kind), select(1.0, max(0.0, -e.a), selfShaded)) + e.rgb;
   return vec4f(lit, 1.0);
 }
 `;

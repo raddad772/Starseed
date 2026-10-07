@@ -33,6 +33,7 @@ export class TextureCache {
   }
   get(texture) {
     if (this.renderTargets.has(texture)) return this.renderTargets.get(texture);
+    if (texture?.userData?.webgpuSky) return this.background.cube(texture);
     if (texture?.gpuEntry) return texture;
     if (texture?.userData?.webgpuRecipe) return this.passes.resolve(texture);
     if (texture?.isRenderTargetTexture) throw new Error('WebGPU render target has no producer');

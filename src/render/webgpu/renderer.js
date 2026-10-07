@@ -12,6 +12,8 @@ import { AirPass } from './air.js';
 import { PostPass } from './post.js';
 import { OpaquePass } from './opaque.js';
 import { ShadowPass } from './shadows.js';
+import { ForwardPass } from './forward.js';
+import { Background } from './background.js';
 import { layout as lightLayout } from './generated/lighting.js';
 
 const OBJECT_FLOATS = 44;
@@ -39,15 +41,17 @@ export class DeferredRenderer {
     this.textures = new TextureCache(this.device);
     this.surfaces = new SurfaceCache(this.device, this.textures);
     this.passes = new FullscreenPasses(this.device, this.textures, this.format); this.textures.passes = this.passes;
+    this.background = new Background(this.device,this.textures,this.passes);
     this.air = new AirPass(this.device, this.passes, this.textures);
     this.post = new PostPass(this.device, this.passes, this.textures, this.air);
     this.shadows = new ShadowPass(this.device,this.textures,this.passes);
+    this.forward = new ForwardPass(this.device,this.textures);
     this.opaque = new OpaquePass(this.device, this.textures);
     this.lightBindings = new ProgramBindings(this.device, lightLayout, this.textures);
   }
   async init() {
     const d = this.device, S = GPUShaderStage;
-    await Promise.all([this.passes.init(), this.air.init(), this.opaque.init(), this.shadows.init()]);
+    await Promise.all([this.passes.init(), this.air.init(), this.opaque.init(), this.shadows.init(), this.forward.init()]);
     this.frameLayout = d.createBindGroupLayout({ label: 'frame and world', entries: [
       { binding: 0, visibility: S.VERTEX | S.FRAGMENT, buffer: { type: 'uniform' } },
       { binding: 1, visibility: S.VERTEX | S.FRAGMENT, buffer: { type: 'read-only-storage' } },
@@ -137,7 +141,7 @@ export class DeferredRenderer {
     const make = (label, format, extra = 0) => d.createTexture({ label, size: [width, height], format, usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | extra });
     const gbuffer = GB_FORMATS.map((format, i) => make(`G-buffer ${i}`, format));
     const depth = make('reversed depth', 'depth32float');
-    const hdr = make('lit HDR', 'rgba16float');
+    const hdr = make('lit HDR', 'rgba16float', GPUTextureUsage.COPY_SRC);
     const output = make('presented frame', this.format, GPUTextureUsage.COPY_SRC);
     t = { width, height, gbuffer, depth, hdr, output, textures: [...gbuffer, depth, hdr, output] };
     t.lightGroup = d.createBindGroup({ layout: this.gbufferLayout, entries: [gbuffer[0], gbuffer[1], gbuffer[2], depth, gbuffer[3]].map((tex, binding) => ({ binding, resource: tex.createView() })) });
@@ -240,7 +244,11 @@ export class DeferredRenderer {
     ]) {
       if (label === 'post') {
         d.queue.submit([encoder.finish()]);
+        this.forward.uniformOverrides=this.opaque.uniformOverrides;
+        triangles+=this.forward.liquids(engine,t,this.projection,this.frustum,this.air);
+        this.forward.stars(engine,t,this.projection);
         const hdr = this.air.render(engine, t);
+        triangles+=this.forward.effects(engine,t,hdr,this.projection,this.frustum);
         encoder = d.createCommandEncoder({ label: 'post and present' });
         if (engine.toneMat) { this.post.render(engine, t, hdr); continue; }
         t.postGroup = d.createBindGroup({ layout: this.postLayout, entries: [{ binding: 0, resource: hdr.createView() }] });
@@ -281,7 +289,7 @@ export class DeferredRenderer {
     if (this.disposed) return; this.disposed = true;
     for (const geometry of [...this.geometries]) geometry.dispose();
     for (const target of this.targets.values()) { this.air.release(target); this.post.release(target); for (const texture of target.textures) texture.destroy(); }
-    this.targets.clear(); this.timer.dispose(); this.surfaces.dispose(); this.shadows.dispose(); this.opaque.dispose(); this.lightBindings.dispose(); this.passes.dispose(); this.textures.dispose();
+    this.targets.clear(); this.timer.dispose(); this.surfaces.dispose(); this.background.dispose(); this.shadows.dispose(); this.opaque.dispose(); this.forward.dispose(); this.lightBindings.dispose(); this.passes.dispose(); this.textures.dispose();
     this.frameBuffer?.destroy(); this.objectBuffer?.destroy(); this.bodyBuffer?.destroy();
     this.releaseContext(); this.device.destroy();
   }

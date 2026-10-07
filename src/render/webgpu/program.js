@@ -9,8 +9,8 @@ export class ProgramBindings {
     this.layout = device.createBindGroupLayout({ entries: [
       ...(descriptor.uniforms.length ? [{ binding: 0, visibility, buffer: { type: 'uniform' } }] : []),
       ...descriptor.textures.flatMap(t => [
-        { binding: t.binding, visibility, texture: { viewDimension: dimension(t.type), sampleType: ['tShadowAtlas', 'tDepth', 'tAtlas'].includes(t.name) ? 'unfilterable-float' : 'float' } },
-        { binding: t.samplerBinding, visibility, sampler: { type: ['tShadowAtlas', 'tDepth', 'tAtlas'].includes(t.name) ? 'non-filtering' : 'filtering' } },
+        { binding: t.binding, visibility, texture: { viewDimension: dimension(t.type), sampleType: ['tShadowAtlas', 'tDepth', 'tAtlas', 'tWaterDepth', 'tSceneDepth'].includes(t.name) ? 'unfilterable-float' : 'float' } },
+        { binding: t.samplerBinding, visibility, sampler: { type: ['tShadowAtlas', 'tDepth', 'tAtlas', 'tWaterDepth', 'tSceneDepth'].includes(t.name) ? 'non-filtering' : 'filtering' } },
       ]),
     ] });
   }
@@ -36,7 +36,7 @@ export class ProgramBindings {
     }
     this.device.queue.writeBuffer(e.buffer, 0, packUniforms(this.descriptor, uniforms, e.data));
     const images = this.descriptor.textures.map(t => this.image(t, t.name === 'tSkyView' && !(uniforms.uSkyView?.value?.x > 0) ? null : uniforms[t.name]?.value));
-    const samplers = images.map((image, i) => ['tShadowAtlas', 'tDepth', 'tAtlas'].includes(this.descriptor.textures[i].name) ? this.textures.nearest : image.sampler);
+    const samplers = images.map((image, i) => ['tShadowAtlas', 'tDepth', 'tAtlas', 'tWaterDepth', 'tSceneDepth'].includes(this.descriptor.textures[i].name) ? this.textures.nearest : image.sampler);
     if (!e.group || images.some((t, i) => t !== e.images[i] || samplers[i] !== e.samplers[i])) {
       e.images = images; e.samplers = samplers;
       e.group = this.device.createBindGroup({ layout: this.layout, entries: [

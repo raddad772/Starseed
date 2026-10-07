@@ -8,15 +8,7 @@ const R=await import(root+'/src/render/rockRender.js'),F=await import(root+'/src
 const clean=s=>s.replace(/\/\*[\s\S]*?\*\//g,'').replace(/\/\/[^\n]*/g,'').replace(/#include[^\n]*/g,'');
 // Remove functions unreachable from main before extracting uniforms. This keeps
 // lighting's textures out of the material stage and stays within baseline limits.
-export function prune(s) {
-  const functions=[];const re=/\b(?:void|float|int|uint|bool|[biu]?vec[234]|mat[234]|MatS)\s+(\w+)\s*\([^;{}]*\)\s*\{/g;
-  let m;while((m=re.exec(s))){let i=re.lastIndex,n=1;for(;n&&i<s.length;i++){if(s[i]==='{')n++;else if(s[i]==='}')n--;}
-    functions.push({name:m[1],start:m.index,end:i,text:s.slice(m.index,i)});re.lastIndex=i;}
-  const used=new Set(['main']);let more=true;while(more){more=false;for(const f of functions)if(used.has(f.name))for(const g of functions)if(!used.has(g.name)&&new RegExp('\\b'+g.name+'\\s*\\(').test(f.text)){used.add(g.name);more=true;}}
-  for(const f of functions.reverse())if(!used.has(f.name))s=s.slice(0,f.start)+s.slice(f.end);
-  s=s.replace(/uniform\s+(?:(?:highp|mediump|lowp)\s+)?(\w+)\s+(\w+)\s*(\[\s*\d+\s*\])?\s*;/g,(decl,type,name)=>{const uses=s.match(new RegExp('\\b'+name+'\\b','g'));return uses.length>1?decl:'';});
-  return s;
-}
+import { prune } from './prune.mjs';
 const outputGLSL=`
 uniform float uBodyIndex;
 layout(location=0) out vec4 gAlbedo;
@@ -50,8 +42,13 @@ void main(){vec3 p=grassBlade(instanceMatrix);vec4 wp=modelMatrix*instanceMatrix
 const grassFragment=`varying float vGA;varying float vGSide;varying float vGT;varying float vGK;varying float vGS;varying vec3 vNormal;varying vec3 vTint;
 void main(){vec3 albedo=vTint*mix(0.3,1.0,pow(vGT,0.8))*(0.82+0.36*vGK);materialOutput(albedo,normalize(vNormal),0.85,1.0,0.0,0.0,0.04);gEmission.a=-exp(-vGS);}`;
 const standardVertex=await fs.readFile(new URL('./standard.vert.glsl',import.meta.url),'utf8'),standardFragment=await fs.readFile(new URL('./standard.frag.glsl',import.meta.url),'utf8');
+const Sky=await import(root+'/src/render/sky.js'),Giant=await import(root+'/src/render/giant.js');
+const sunFragment=clean(Sky.SUN_FRAG).replace('gl_FragColor = vec4(c, 1.0);','materialOutput(vec3(0.0),normalize(vN),0.8,1.0,0.0,0.0,0.04);gEmission.rgb=c;');
+let giantFragment=clean(Giant.GIANT_FRAG.replace('float ringDensity(float r);',Giant.GLSL_RING_DENSITY));
+giantFragment=giantFragment.replace('vec3 sunT = atmoSunTransmittance(length(rel), muS);','float sunT=1.0;');
+giantFragment=giantFragment.slice(0,giantFragment.indexOf('vec3 skyE = atmoSkyIrradiance'))+'materialOutput(col,N,0.9,1.0,0.0,0.0,0.0);gEmission.a=-sunT;\n}';
 const imports=[],entries=[];
-for(const [name,vert,frag,modes] of [['rock',R.VERT,rock,[0,2,3]],['flora',F.VERT,flora,[0,2,3]],['floe',I.VERT,ice,[3]],['iceblock',I.BLOCK_VERT,ice,[3]],['grass',grassVertex,grassFragment,[3]],['standard',standardVertex,standardFragment,[3]]]) {
+for(const [name,vert,frag,modes] of [['rock',R.VERT,rock,[0,2,3]],['flora',F.VERT,flora,[0,2,3]],['floe',I.VERT,ice,[3]],['iceblock',I.BLOCK_VERT,ice,[3]],['grass',grassVertex,grassFragment,[3]],['standard',standardVertex,standardFragment,[3]],['sun',Sky.SUN_VERT,sunFragment,[3]],['giant',Giant.GIANT_VERT,giantFragment,[3]]]) {
   const varyings=[...clean(frag).matchAll(/varying\s+\w+\s+(\w+)\s*;/g)].map(m=>m[1]);
   await translate(name+'Vertex',prune(prefix+vertexPrelude+clean(vert)),output,compiler,{stage:'vert',group:0,varyings});imports.push(`import * as ${name}Vertex from './${name}Vertex.js';`);
   for(const mode of modes){const fName=name+'Material'+mode;await translate(fName,prune('#define MAT_MODE '+mode+'\n'+prefix+outputGLSL+frag),output,compiler,{group:1,varyings});imports.push(`import * as ${fName} from './${fName}.js';`);entries.push(`{name:'${name}',key:'${name==='grass'||name==='standard'?name:shaderKey(vert)}',mode:${mode},vertex:${name}Vertex,fragment:${fName}}`);}

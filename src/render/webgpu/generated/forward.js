@@ -1,0 +1,15 @@
+import * as waterVertex from './waterVertex.js';
+import * as waterFragment from './waterFragment.js';
+import * as ribbonVertex from './ribbonVertex.js';
+import * as ribbonFragment from './ribbonFragment.js';
+import * as plumeVertex from './plumeVertex.js';
+import * as plumeFragment from './plumeFragment.js';
+import * as plasmaVertex from './plasmaVertex.js';
+import * as plasmaFragment from './plasmaFragment.js';
+import * as fieldVertex from './fieldVertex.js';
+import * as fieldFragment from './fieldFragment.js';
+import * as sprayVertex from './sprayVertex.js';
+import * as sprayFragment from './sprayFragment.js';
+import * as ringVertex from './ringVertex.js';
+import * as ringFragment from './ringFragment.js';
+export const forwardPrograms=[{name:'water',key:'d5be0edb:136bcab7',mode:3,vertex:waterVertex,fragment:waterFragment},{name:'ribbon',key:'a798dbc1:136bcab7',mode:3,vertex:ribbonVertex,fragment:ribbonFragment},{name:'plume',key:'b3ba5755:e85d8d45',mode:3,vertex:plumeVertex,fragment:plumeFragment},{name:'plasma',key:'b3ba5755:af9ad236',mode:3,vertex:plasmaVertex,fragment:plasmaFragment},{name:'field',key:'bfa453c:e95f88a0',mode:3,vertex:fieldVertex,fragment:fieldFragment},{name:'spray',key:'50abfca9:b9aa14b1',mode:3,vertex:sprayVertex,fragment:sprayFragment},{name:'ring',key:'dbb16a1f:e60c1d1b',mode:3,vertex:ringVertex,fragment:ringFragment}];

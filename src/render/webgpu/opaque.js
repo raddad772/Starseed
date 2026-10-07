@@ -27,7 +27,7 @@ export class OpaquePass {
  }
  pipeline(p,g,material){const key=JSON.stringify(g.layout)+':'+material.side;let pipeline=p.pipelines.get(key);if(!pipeline){pipeline=this.device.createRenderPipeline({label:p.name+' G-buffer',layout:this.device.createPipelineLayout({bindGroupLayouts:[p.vertexBindings.layout,p.fragmentBindings.layout]}),vertex:{module:p.vertex,entryPoint:'main',buffers:g.layout},fragment:{module:p.fragment,entryPoint:'main',targets:GBUFFER_FORMATS.map(format=>({format}))},primitive:{topology:'triangle-list',cullMode:material.side===THREE.DoubleSide?'none':material.side===THREE.BackSide?'front':'back',frontFace:'ccw'},depthStencil:{format:'depth32float',depthWriteEnabled:true,depthCompare:'greater'}});p.pipelines.set(key,pipeline);}return pipeline;}
  prepare(object,material,body,projection,camera){const p=this.program(material);if(!p)return null;const g=this.geometry(object,p),e=this.mesh(object,p,g,material);if(!e.count)return null;
-  const family={rock:1,flora:2,grass:3,standard:4,floe:6,iceblock:6}[p.name]||0;
+  const family={rock:1,flora:2,grass:3,standard:4,floe:6,iceblock:6,giant:7}[p.name]||0;
   const u={...material.uniforms,...material.userData.webgpu?.uniforms,...this.uniformOverrides,modelMatrix:{value:object.matrixWorld},viewMatrix:{value:camera.matrixWorldInverse},projectionMatrix:{value:projection},uBodyIndex:{value:body*16+family}};
   if(p.name==='standard')Object.assign(u,this.standardUniforms(object,material));
   const vg=p.vertexBindings.get(e,u).group,fg=p.fragmentBindings.get(e,u).group;

@@ -62,7 +62,7 @@ try {
   // Exercise every actual material pipeline, including optional vertex attributes,
   // instance layouts and two meshes sharing one geometry in the same submission.
   const pipelineFixtures=[];
-  for(const name of ['rock','flora','floe','iceblock','grass','standard']) {
+  for(const name of ['rock','flora','floe','iceblock','grass','standard','sun','giant']) {
     const program=renderer.opaque.programs.get(name+':3'), g=new THREE.BufferGeometry();
     g.setAttribute('position',new THREE.Float32BufferAttribute([-0.1,-0.1,0,0.1,-0.1,0,0,0.1,0],3));
     for(const field of program.vertexDescriptor.layout.attributes){
@@ -81,10 +81,21 @@ try {
   for(const g of new Set(pipelineFixtures.map(o=>o.geometry)))g.dispose();
   for(const m of new Set(pipelineFixtures.map(o=>o.material)))m.dispose();
   check(renderer.opaque.meshes.size===0,'Opaque instance buffers must be released on disposal');
+  // Compile/rasterize every forward family with its real attribute layout.
+  const target=renderer.targets.get(view);
+  for(const name of ['water','ribbon','plume','plasma','field','spray','ring']){
+    const p=renderer.forward.programs.get(name+':3'),g=new THREE.BufferGeometry();
+    for(const a of p.vertexDescriptor.layout.attributes){const n=Number(a.type.match(/vec(\d)/)?.[1]||1);g.setAttribute(a.name,new THREE.Float32BufferAttribute(new Float32Array(3*n),n));}
+    g.setIndex([0,1,2]);const m=new THREE.ShaderMaterial({uniforms:{...front.material.uniforms,tWaterDepth:{value:target.sampledDepth},tSceneDepth:{value:target.sampledDepth},uMorph:{value:[1e9,2e9]}}});
+    renderer.forward.materialKeys.set(m,p.key);
+    const o=new THREE.Mesh(g,m);o.updateMatrixWorld();
+    const draw=renderer.forward.prepare(o,m,renderer.projection,camera,{});
+    renderer.forward.render([draw],target);await renderer.device.queue.onSubmittedWorkDone();g.dispose();m.dispose();
+  }
   const validationError = await renderer.device.popErrorScope();
   check(!validationError, validationError?.message);
   check(!errors.length, errors.join('\n'));
-  window.testResult = { status: 'passed', redPixels: red, bluePixels: blue, timestampQuery: renderer.timestamp, opaquePipelines:6,stats: renderer.stats };
+  window.testResult = { status: 'passed', redPixels: red, bluePixels: blue, timestampQuery: renderer.timestamp, opaquePipelines:8,forwardPipelines:7,stats: renderer.stats };
 } catch (error) {
   window.testResult = { status: 'failed', error: error.stack || String(error), validationErrors: errors };
 } finally {

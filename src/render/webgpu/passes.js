@@ -2,6 +2,8 @@ import { FULLSCREEN } from './shaders.js';
 import { shaderModule } from './device.js';
 import { ProgramBindings } from './program.js';
 import { passes } from './generated/passes.js';
+import * as galaxy from './generated/galaxy.js';
+import * as background from './generated/background.js';
 import * as skyblur from './generated/skyblur.js';
 import * as skyrings from './generated/skyrings.js';
 
@@ -9,7 +11,7 @@ export class FullscreenPasses {
   constructor(device, textures, format) { this.format = format; this.device = device; this.textures = textures; this.programs = new Map(); this.names = new Map(); this.targets = new Map(); }
   async init() {
     const d = this.device;
-    await Promise.all([...passes,{name:'skyblur',...skyblur},{name:'skyrings',...skyrings}].map(async spec => {
+    await Promise.all([...passes,{name:'galaxy',...galaxy},{name:'background',...background},{name:'skyblur',...skyblur},{name:'skyrings',...skyrings}].map(async spec => {
       const bindings = new ProgramBindings(d, spec.layout, this.textures);
       const module = await shaderModule(d, spec.name, FULLSCREEN + spec.code);
       const pipeline = await d.createRenderPipelineAsync({ label: spec.name, layout: d.createPipelineLayout({ bindGroupLayouts: [bindings.layout] }),
@@ -23,7 +25,7 @@ export class FullscreenPasses {
     if (!program) throw new Error('Unported WebGPU fullscreen shader');
     const binding = program.bindings.get(owner, uniforms);
     const encoder = this.device.createCommandEncoder({ label: program.name });
-    const pass = encoder.beginRenderPass({ label: program.name, colorAttachments: outputs.map(output => ({ view: output.texture.createView({ baseMipLevel: 0, mipLevelCount: 1 }), loadOp: region ? 'load' : 'clear', storeOp: 'store' })) });
+    const pass = encoder.beginRenderPass({ label: program.name, colorAttachments: outputs.map(output => ({ view: output.renderView || output.texture.createView({ baseMipLevel: 0, mipLevelCount: 1 }), loadOp: region ? 'load' : 'clear', storeOp: 'store' })) });
     if(region){pass.setViewport(region.x,region.y,region.z,region.w,0,1);pass.setScissorRect(region.x,region.y,region.z,region.w);}
     pass.setPipeline(program.pipeline); pass.setBindGroup(0, binding.group); pass.draw(3); pass.end(); this.device.queue.submit([encoder.finish()]);
   }

@@ -28,18 +28,25 @@ export class AirPass {
     t.hdrEntry = this.entry(t.hdr);
     t.airOwners = new Map(); t.compositeOwners = new Map();
   }
-  render(engine, t) {
-    const atmos = engine.frameInputs?.atmos;
+  copyDepth(t) {
     this.targets(t);
     const encoder = this.device.createCommandEncoder({ label: 'depth for atmosphere' });
     const pass = encoder.beginRenderPass({ colorAttachments: [{ view: t.sampledDepth.view, loadOp: 'clear', storeOp: 'store' }] });
     pass.setPipeline(this.depthPipeline); pass.setBindGroup(0, t.depthGroup); pass.draw(3); pass.end(); this.device.queue.submit([encoder.finish()]);
+  }
+  render(engine, t) {
+    const atmos = engine.frameInputs?.atmos;
+    this.copyDepth(t);
     const camera = engine.view.camera, camRot = new THREE.Matrix3().setFromMatrix4(camera.matrixWorld);
     const common = {
       tDepth: { value: t.sampledDepth }, uCamRot: { value: camRot }, uTanHalf: { value: engine.tanHalf },
       uDepthMode: { value: 0 }, uNear: { value: camera.near }, uFar: { value: camera.far }, uLogDepthFC: { value: Math.log2(camera.far + 1) },
     };
     let src = t.hdrEntry, index = 0;
+    if(engine.bgMat&&engine.frameInputs?.sky){
+      this.passes.draw('background',t,{...engine.bgMat.uniforms,...common,tColor:{value:src},tSky:{value:engine.frameInputs.sky.cubeRT.texture}},[t.air[0]]);
+      src=t.air[0];index=1;
+    }
     for (const a of atmos || []) {
       const u = a.material.uniforms;
       if (!t.airOwners.has(a.material)) { t.airOwners.set(a.material, {}); t.compositeOwners.set(a.material, {}); }
@@ -54,6 +61,7 @@ export class AirPass {
     return src.texture;
   }
   release(t) {
+    this.passes.names.get('background')?.bindings.release(t);
     for (const owner of t.airOwners?.values() || []) for (const name of ['volume', 'atmosphere']) this.passes.names.get(name).bindings.release(owner);
     for (const owner of t.compositeOwners?.values() || []) this.passes.names.get('composite').bindings.release(owner);
   }

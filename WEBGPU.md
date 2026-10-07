@@ -22,10 +22,14 @@ The full migration is in progress. `?renderer=webgpu` is opt-in; WebGL remains t
   including shared geometry and disposal. The wood comparison now contains matching trees and grass;
   native shadows now render through WebGPU. Multi-material groups and interleaved tree LOD attributes
   are supported; bespoke vessel patches remain.
+- Native forward passes now draw open liquids, river ribbons, falls sheets, spray, plumes, force fields
+  and rings with their original optics and blending. The galaxy cube and 6,000 bright stars are native;
+  stars use instanced quads. Sun and giant materials write the G-buffer. Gorge water and the space
+  background have same-camera captures; giant polar color parity remains open. Eight opaque and seven
+  forward pipeline families pass the finite GPU fixture.
 - A temporary WebGL producer bridge still supplies scene/resource descriptions and reference captures.
   Its render-target recipes are reproduced on WebGPU, without WebGL pixel readbacks. Removing this
-  bridge follows opaque/forward/shadow parity. Vessel-specific shader patches, liquids,
-  space background, GPU culling, clustered lights, decals and GTAO are still pending.
+  bridge follows opaque/forward/shadow parity. Vessel-specific shader patches and glass, GPU culling, clustered lights, decals and GTAO are still pending.
 - `tools/tests/webgpu.html` passes on the GPU: overlap/reversed depth, capture, resize and disposal.
   `node --test tools/tests/webgpu.test.mjs`: 5 passing tests, including std140 packing and interleaved tree LOD views.
   Generated shaders compile offline and on the browser device without validation errors.

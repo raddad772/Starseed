@@ -8,10 +8,11 @@ vec3 deferredLight(vec3 p, vec3 N, vec3 albedo, float roughness, float ao, float
   sunT*=terrainShadow(pF,normalize(pF),uToFixed*uSunDir,uRadius);
   vec3 sunTop=sunT;float keySh=sunShadowMap(p,N);sunT*=keySh;
   float nd=dot(N,uSunDir),ndl=max(nd,0.0),wrap=kind==2.0?0.55+0.45*dot(N,up):0.5+0.5*dot(N,up);
+  if(kind==7.0)return albedo/PI*uSunE*(sunT*ndl*pow(max(dot(N,normalize(-p)),0.0),0.15)*selfShadow+skyE*0.6);
   vec3 direct=uSunE*sunT*(ndl+trans*max(-nd,0.0));
   float skyBl=skyBlocked(p),skyK=(1.0-skyBl)*(kind==1.0?exp(-trunkSum(p)):trunkSky(p));
   vec3 ambient=uSunE*(skyE*wrap*skyK+canopyLit(skyBl,sunTop,muS,skyE))+uAmbientFloor+moonLit(rel,r,up,N,keySh,trans,wrap,skyK);
-  float gSum=grassCover(p),gCov=exp(-2.2*gSum);direct*=gCov*selfShadow;ambient*=1.0-0.35*(1.0-exp(-0.8*gSum));
+  float gSum=kind==3.0?0.0:grassCover(p),gCov=exp(-2.2*gSum);direct*=gCov*selfShadow;ambient*=1.0-0.35*(1.0-exp(-0.8*gSum));
   vec3 diffuse=albedo*(1.0-metal);
   vec3 color=diffuse/PI*(direct*mix(1.0,ao,0.35)+ambient*ao)*cave+diffuse/PI*handLit(p,N);
   vec3 V=normalize(-p),H=normalize(V+uSunDir);float rg=clamp(mix(roughness,0.12,wet*0.8),0.05,1.0),a2=rg*rg*rg*rg;
