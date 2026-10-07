@@ -27,7 +27,9 @@
 import * as dm from '../../core/dmath.js';
 
 export const MATERIALS = {
-  // ---- rocks (lithology.js's layers)
+  // ---- rocks (lithology.js's layers). color: the visible albedo, sRGB-encoded (terrain.js decodes it
+  // to linear and shades with it as is): measured reflectances, not a photograph's tones (the sands had
+  // been: coral sand drawn as bright as fresh snow, a white blotch across a far forest)
   granite:   { kind: 'rock', rho: 2700, cp: 790, n: 1.55, color: '#8f8580', k: 0.45, stand: 70, grain: 2e-3, fines: 10 },
   basalt:    { kind: 'rock', rho: 2950, cp: 840, n: 1.6, color: '#3e3c3a', k: 0.6, stand: 75, grain: 1e-2, fines: 45 },
   andesite:  { kind: 'rock', rho: 2750, cp: 820, n: 1.57, color: '#6b6560', k: 0.65, stand: 70, grain: 8e-3, fines: 35 },
@@ -39,9 +41,9 @@ export const MATERIALS = {
   salt:      { kind: 'rock', rho: 2170, cp: 880, n: 1.54, color: '#e8dfd8', k: 4.0, stand: 35, grain: 3e-5, fines: 70, tags: ['salt'] },
   regolith:  { kind: 'sediment', rho: 1800, cp: 750, n: 1.6, color: '#77746e', k: 2.2, stand: 30, grain: 1e-3, fines: 15 },
   ice:       { kind: 'ice', rho: 917, cp: 2100, n: 1.31, color: '#e4eef5', k: 1.2, stand: 40, grain: 5e-3, fines: 10 },
-  'quartz sand': { kind: 'sediment', rho: 1600, cp: 800, n: 1.54, color: '#d9c08a', k: 3.0, stand: 20, grain: 2.5e-4, fines: 2 },
-  'coral sand':  { kind: 'sediment', rho: 1500, cp: 840, n: 1.6, color: '#f2ece0', k: 3.0, stand: 20, grain: 5e-4, fines: 2, tags: ['carbonate'] },
-  'black sand':  { kind: 'sediment', rho: 1700, cp: 840, n: 1.6, color: '#2b2a2a', k: 3.0, stand: 20, grain: 3e-4, fines: 3 },
+  'quartz sand': { kind: 'sediment', rho: 1600, cp: 800, n: 1.54, color: '#bfab87', k: 3.0, stand: 20, grain: 2.5e-4, fines: 2 },   // (dune and beach quartz ~0.4)
+  'coral sand':  { kind: 'sediment', rho: 1500, cp: 840, n: 1.6, color: '#cfcabf', k: 3.0, stand: 20, grain: 5e-4, fines: 2, tags: ['carbonate'] },   // (~0.55)
+  'black sand':  { kind: 'sediment', rho: 1700, cp: 840, n: 1.6, color: '#4b4949', k: 3.0, stand: 20, grain: 3e-4, fines: 3 },   // (~0.07)
   // ---- liquids (liquids.js: what pools on the surface)
   water:     { kind: 'liquid', Tt: 273.16, Pt: 0.006, Tc: 647, Tb: 373.15, L: 40.7, rho: 1000, cp: 4186, mu: 1.0e-3, Tref: 293, B: 1800, n: 1.333, deep: '#0b2a4a', shallow: '#1f7f8f' },
   // (water with ~10% ammonia: liquid down to ~240 K; the eutectic, 33%, to 176 K)
