@@ -412,7 +412,14 @@ void main() { gl_FragColor = vec4(vGA * 2.0 * max(0.0, 1.0 - abs(vGSide)), 0.0, 
       return false;
     };
     // (the country's plants: their cover and how open they stand, its rain)
-    const c = snap.Gc ? snap.Gc.sample(snap.s.cover, dc) : 0.5, open = snap.s.open ? snap.Gc.sample(snap.s.open, dc) : 0.5, forest = snap.s.forest ? snap.Gc.sample(snap.s.forest, dc) : 0;
+    // (its forest share where the soil lets trees root: the snapshot's, as the trees and the ground have it)
+    const c = snap.Gc ? snap.Gc.sample(snap.s.cover, dc) : 0.5, open = snap.s.open ? snap.Gc.sample(snap.s.open, dc) : 0.5, forest = snap.forest(dc[0], dc[1], dc[2]);
+    // (its soil (soil.js): grass roots in a few centimetres, none on bare rock; a wetland's water table at
+    // the ground: its reeds and sedges tall and green the year round)
+    const soilD = snap.soil && gen.p.liquid === 'water' ? snap.soil(dc[0], dc[1], dc[2]) : null;
+    const thinS = soilD == null ? 0 : 1 - Math.min(1, Math.max(0, (soilD - 0.01) / 0.07));
+    const wtdH = soilD == null ? 99 : snap.wtd(dc[0], dc[1], dc[2]);
+    const marsh = soilD == null ? 0 : Math.max(snap.wetland(dc[0], dc[1], dc[2]), Math.min(1, Math.max(0, (1.2 - wtdH) / 1.05))) * (1 - thinS);
     const P = snap.s.P ? snap.Gc.sample(snap.s.P, dc) : 800;
     // (its fires: none the year one's burned, then a flush of green for a few years (a crown fire's opening
     // in a forest: the stands, below))
@@ -426,7 +433,7 @@ void main() { gl_FragColor = vec4(vGA * 2.0 * max(0.0, 1.0 - abs(vGSide)), 0.0, 
     // by the stand where it lies: a closed canopy's shade keeps a few; its crown fires' openings and the open
     // country between grassed over)
     const fo = Math.min(1, forest), share = Math.min(1, c * 1.2) * fo;
-    const thick = Math.min(1, Math.max(0, c) * 1.5) * ash;
+    const thick = Math.min(1, Math.max(0, c) * 1.5 + 0.5 * marsh) * ash * (1 - 0.9 * thinS);
     if (thick < 0.02) return T;
     // (its ground: the heights at the patches' corners, 5 x 5, as the drawn ground has them: the near
     // field's volume where it's built (sim/nearGround.js), the heightfield's finest mesh beyond)
@@ -464,11 +471,11 @@ void main() { gl_FragColor = vec4(vGA * 2.0 * max(0.0, 1.0 - abs(vGSide)), 0.0, 
     // high, a wet warm country's a metre and more, the cold's low; a burn's regrowth short its first years;
     // taller under a light pull. Grazing to come: the herds' densities, sim/fauna.js)
     const wetG = Math.min(1, Math.max(0, (P - 250) / 1500));
-    const H = (this.fern ? 0.4 + 0.5 * wet : 0.1 + 1.3 * Math.pow(wetG, 1.5)) * (0.4 + 0.6 * warm) * (1 - 0.6 * green) * this.gK;
+    const H = (this.fern ? 0.4 + 0.5 * wet : 0.1 + 1.3 * Math.pow(Math.max(wetG, marsh), 1.5)) * (0.4 + 0.6 * warm) * (1 - 0.6 * green) * this.gK;
     const dryK = 1 - wet;
     // (its colour: the foliage's where it's wet, straw where it's dry (the world's dry colour, as the ground
     // shades its open country), a fresh burn's green flush; some patches drier)
-    const k0 = Math.min(1, 0.55 * dryK + 0.8 * monthDry + 0.7 * cold) * (1 - green);
+    const k0 = Math.min(1, 0.55 * dryK + 0.8 * monthDry + 0.7 * cold) * (1 - green) * (1 - 0.8 * marsh);
     const base = this.veg.map((x, q) => (x + (this.dry[q] - x) * k0) * (1.35 + 0.3 * green));
     const dryTip = this.dry.map((x) => x * 1.45);
     // (the patches: their frames, their corners, their density, height and colour)

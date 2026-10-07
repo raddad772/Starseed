@@ -24,7 +24,10 @@ import { dunePatches } from '../dunes.js';
 import { ROCK_UP } from './lithology.js';
 import { seasonsFor, cloudOf } from './season.js';
 
-export const SIM_VERSION = 68;   // (61: the climate's orbit eccentric, its perihelion where it falls in the year; 62: a moon's seasons its tilt to its planet's orbit; 63: a Titan's low latitudes raised as cos^2 of the latitude, not a step, drawn at the world's scale; 64: generation's last Math.sin/cos/hypot... through dmath: the folds' arcs moved an ulp, so every client holds the same bits; 65: the monsoon rain belt, the subtropics' sinking air, summer convection, the air's capacity over its own ground; life's leaps by the room each stage has; 66: life's realms and their family tree in the snapshot; 67: its places, every landmass sized, described and tagged (places.js); 68: a world without a sea, its named features its places)
+export const SIM_VERSION = 69;   // (69: the soil, the water table and the wetlands in the snapshot; 61: the climate's orbit eccentric, its perihelion where it falls in the year; 62: a moon's seasons its tilt to its planet's orbit; 63: a Titan's low latitudes raised as cos^2 of the latitude, not a step, drawn at the world's scale; 64: generation's last Math.sin/cos/hypot... through dmath: the folds' arcs moved an ulp, so every client holds the same bits; 65: the monsoon rain belt, the subtropics' sinking air, summer convection, the air's capacity over its own ground; life's leaps by the room each stage has; 66: life's realms and their family tree in the snapshot; 67: its places, every landmass sized, described and tagged (places.js); 68: a world without a sea, its named features its places)
+
+// the soil's and the water table's depths as bytes (packSnapshot, SnapshotSampler.soil, .wtd)
+const SOIL_D0 = 0.02, SOIL_LOG = dm.log(1 + 40 / SOIL_D0), WTD_D0 = 0.1, WTD_LOG = dm.log(1 + 500 / WTD_D0);
 
 // a world's grid size: maxN for an Earth-sized one, finer cells don't help a small one
 // (N ~ sqrt(radius): Mars ~210, the Moon ~150, a moonlet 64)
@@ -111,6 +114,14 @@ export function packSnapshot(W, body) {
   if (W.dunes && W.dunes.some((v) => v)) { out.dunes = Uint8Array.from(W.dunes); out.dunePatch = dunePatches(); }
   // canyon country (world.js): how far a great river lies below the dry plateau round it (m)
   if (W.gorge && W.gorge.some((v) => v)) out.gorge = Uint16Array.from(W.gorge);
+  // the soil and the ground water (soil.js): its depth (m), the water table's (m), wetlands (0/255); each
+  // depth by log, fine near nothing (a soil's first centimetres decide grass from bare rock)
+  if (W.soil && W.soil.depth) {
+    const sd = W.soil.depth, wt = W.soil.wtd, wl = W.soil.wet;
+    out.soil = Uint8Array.from(sd, (v) => Math.max(0, Math.min(255, Math.round(255 * dm.log(1 + Math.max(0, v) / SOIL_D0) / SOIL_LOG))));
+    out.wtd = Uint8Array.from(wt, (v) => Math.max(0, Math.min(255, Math.round(255 * dm.log(1 + Math.max(0, v) / WTD_D0) / WTD_LOG))));
+    out.wetland = Uint8Array.from(wl, (v) => (v ? 255 : 0));
+  }
   // the ground inside each cell (ground.js): local relief (m), youth, grain, glaciation,
   // valley spacing (m real)
   if (W.ground && W.ground.youth) {
@@ -189,7 +200,7 @@ function realmsOf(L, Gc) {
 
 // the arrays a snapshot carries (for transfer lists and caching)
 export function snapshotBuffers(s) {
-  return ['h', 'water', 'rock', 'ice', 'river', 'melt', 'relief', 'rcv', 'Tsea', 'P', 'cover', 'forest', 'open', 'cloud', 'cloudPx', 'cloudYearPx', 'riverYear', 'realm', 'season', 'seasonPx', 'seasonIce', 'seasonIcePx', 'crat', 'dunes', 'gorge', 'ocean', 'mareLv'].filter((k) => s[k]).map((k) => s[k].buffer);
+  return ['h', 'water', 'rock', 'ice', 'river', 'melt', 'relief', 'rcv', 'soil', 'wtd', 'wetland', 'Tsea', 'P', 'cover', 'forest', 'open', 'cloud', 'cloudPx', 'cloudYearPx', 'riverYear', 'realm', 'season', 'seasonPx', 'seasonIce', 'seasonIcePx', 'crat', 'dunes', 'gorge', 'ocean', 'mareLv'].filter((k) => s[k]).map((k) => s[k].buffer);
 }
 
 // reads a snapshot at any direction
@@ -325,6 +336,11 @@ export class SnapshotSampler {
     return o;
   }
   relief(x, y, z) { return this.G.sample(this.s.relief, this._d(x, y, z), this.uv); }
+  // the soil's depth here (m; soil.js), the water table's (m) and the wetlands' share (0..1); null
+  // where the world keeps none (a snapshot before them, an airless world)
+  soil(x, y, z) { const a = this.s.soil; return a ? SOIL_D0 * (dm.exp(this.G.sample(a, this._d(x, y, z), this.uv) / 255 * SOIL_LOG) - 1) : null; }
+  wtd(x, y, z) { const a = this.s.wtd; return a ? WTD_D0 * (dm.exp(this.G.sample(a, this._d(x, y, z), this.uv) / 255 * WTD_LOG) - 1) : null; }
+  wetland(x, y, z) { const a = this.s.wetland; return a ? this.G.sample(a, this._d(x, y, z), this.uv) / 255 : 0; }
   ice(x, y, z) { return this.G.sample(this.s.ice, this._d(x, y, z), this.uv); }
   river(x, y, z) { return this.G.sample(this.s.river, this._d(x, y, z), this.uv) / 255; }
   melt(x, y, z) { return this.G.sample(this.s.melt, this._d(x, y, z), this.uv) / 255; }
@@ -513,7 +529,13 @@ export class SnapshotSampler {
   // them, not their outline)
   crat(x, y, z) { const q = this.s.crat ? this.G.sample(this.s.crat, this._d(x, y, z), this.uv) : 0; return q > 0.5 ? dm.pow(10, q / 20 - 12) : 0; }
   cover(x, y, z) { return this.Gc && this.s.cover ? this._gcRead(this.s.cover, x, y, z) : 0; }
-  forest(x, y, z) { return this.Gc && this.s.forest ? this._gcRead(this.s.forest, x, y, z) : 0; }
+  // (the forest's share where its soil lets trees root: the life map's per climate cell, thinned where the
+  // fine grid's soil is under ~half a metre: a wood's knolls and rocky ribs bare, its deep hollows full)
+  forest(x, y, z) {
+    if (!(this.Gc && this.s.forest)) return 0;
+    const f = this._gcRead(this.s.forest, x, y, z), d = this.s.soil ? this.soil(x, y, z) : 1;
+    return d >= 0.6 ? f : f * dm.smoothstep(0.12, 0.6, d);
+  }
   open(x, y, z) { return this.Gc && this.s.open ? this._gcRead(this.s.open, x, y, z) : 0; }
 }
 

@@ -2237,8 +2237,17 @@ export class TerrainGenerator {
         if (k > sandW) { const sc = this.rockLin[rb]; if (sc) for (let i = 0; i < 3; i++) rc[i] += (sc[i] - rc[i]) * (k - sandW) / (1 - sandW); sandW = k; sandOver = Math.max(sandOver, k); }
       }
     }
-    // bare rock on steep ground; soil (or regolith) on gentle
-    const rockW = (1 - sandW) * dm.clamp(dm.smoothstep(0.12, 0.38, slope) + 0.3 * s[S_MOUNT] * dm.smoothstep(0.06, 0.2, slope), 0, 1);
+    // bare rock on steep ground; soil (or regolith) on gentle; and where the soil's only a few centimetres
+    // even on gentle ground (soil.js: a limestone pavement, a shield's ice-scraped rock, a ridge's crest)
+    // (a water world's soil, weathered by its rain; a dry world's ground its regolith and dust, as before. Thin
+    // where the ground wears faster than it's made, soil.js's floor of 5 cm: mostly deserts (their rock
+    // plateaus and stony ground showing), the steep and the high)
+    const soilD = S.soil && p.liquid === 'water' ? S.soil(x, y, z) : null, thinSoil = soilD == null ? 0 : 1 - dm.smoothstep(0.03, 0.25, soilD);
+    // (a wetland: the water table at the ground on the flat (soil.js: a fen, a marsh, a bog), or under a foot
+    // of it: its soil dark and soaked, its plants lush, not straw, whatever the month)
+    const wtd = soilD == null ? null : S.wtd(x, y, z);
+    const wetK = soilD == null || (h <= 0 && this.contThreshold > -1e8) ? 0 : Math.max(S.wetland(x, y, z), dm.smoothstep(1.2, 0.15, wtd)) * (1 - dm.smoothstep(0.04, 0.14, slope)) * (1 - thinSoil);
+    const rockW = (1 - sandW) * dm.clamp(Math.max(dm.smoothstep(0.12, 0.38, slope) + 0.3 * s[S_MOUNT] * dm.smoothstep(0.06, 0.2, slope), 0.6 * thinSoil), 0, 1);
     let ground = P.soil || P.regolith;
     // (old ice warm enough to sublime grows a dark lag: the ice goes, the dust and rock it held
     // stay, and impacts garden in more (Callisto's, ~0.2 albedo; a young surface (Europa's) or a
@@ -2302,7 +2311,7 @@ export class TerrainGenerator {
       // world's own (heights at an eighth, distances at a sixty-fourth) had stood bare where its life map
       // has them wooded; the bare rock's colour by slope as before, a plantless world's unchanged)
       const rockV = rockW * dm.smoothstep(0.2, 0.48, slope);
-      let vegW = dm.clamp(cov * 1.2, 0, 1) * (1 - rockV) * (1 - 0.8 * sandW) * dm.smoothstep(-6, 2, Tc) * (1 - 0.7 * volc);
+      let vegW = dm.clamp(cov * 1.2, 0, 1) * (1 - rockV) * (1 - 0.8 * sandW) * dm.smoothstep(-6, 2, Tc) * (1 - 0.7 * volc) * (1 - 0.7 * thinSoil);
       if (vegW > 0) {
         // (the forest as its stands (life/stands.js): near, where its trees are drawn, the floor under a
         // stand its litter, the open country's grass between; far off, where they aren't, a stand's dark
@@ -2311,7 +2320,7 @@ export class TerrainGenerator {
         const mix = dm.smoothstep(60, 400, sw);
         const _d = this._sd || (this._sd = [0, 0, 0]); _d[0] = x; _d[1] = y; _d[2] = z;
         const k = share > 0 ? (mix < 1 ? standAt(this, _d, s, share, sw <= 40).k : 0) * (1 - mix) + share * mix : 0;
-        const dry = P.vegDry || P.veg, of = 0.5 * fo / Math.max(1e-3, fo + op);
+        const dry = P.vegDry || P.veg, of = Math.max(0.5 * fo / Math.max(1e-3, fo + op), 0.9 * wetK);
         const fl = P.soil || P.veg;
         let vr = dry[0] + (P.veg[0] - dry[0]) * of, vg = dry[1] + (P.veg[1] - dry[1]) * of, vb = dry[2] + (P.veg[2] - dry[2]) * of;
         const sr = (fl[0] + (P.veg[0] - fl[0]) * 0.3) * 0.75 * (1 - far) + P.veg[0] * 0.8 * far;
@@ -2324,6 +2333,8 @@ export class TerrainGenerator {
         mat[2] = rockW * (1 - vegW);   // (the rock showing through them)
       }
     }
+    // (a wetland's ground soaked: darker, glossy)
+    if (wetK > 0) { r *= 1 - 0.3 * wetK; g *= 1 - 0.22 * wetK; b *= 1 - 0.15 * wetK; mat[6] = Math.max(mat[6], 0.6 * wetK); }
     // rivers: wet darker ground on the floodplain (the water itself is above)
     if (s[S_WET] > 0) { const k = 0.3 * s[S_WET]; r *= 1 - k; g *= 1 - k * 0.8; b *= 1 - k * 0.6; mat[6] = Math.max(mat[6], k); }
     // (the swash zone: sand the sea's waves wet, darker and glossy, up to two metres above the water)
