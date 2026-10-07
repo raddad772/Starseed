@@ -30,7 +30,14 @@ Dave's queue, in the order he raised it (keep this list current):
    crowns, the canopy's sky maps softened, no squares); grass as GPU blades (33dd1a3: 2 m patches,
    long and wild by climate, meadows open, thatch under it, gusts across). Since: a far tier to ~160 m
    (203ba19); drying by season, cured to straw in the dry months, browned in the cold (4e712cf). Left, in
-   order: wind waves across meadows seen from the air; darkness at the trunks' feet in any weather (screen-space AO, HBAO/GTAO);
+   order: wind waves across meadows seen from the air; darkness at the trunks' feet in any weather: DONE
+   (6559bed) analytically, not screen-space: each trunk within 32 m (sim/floraField.js) drawn from
+   overhead into the shadow atlas's free corner as -ln(1 - the sky it hides), the ground, rocks, grass
+   and animals taking the sky by exp(-sum) (sunShadows.js trunkSky; scratchpad shots/fz_crop_offon,
+   fz_diff). Seen there: a tree at the very lip of a 3 m creek bank (18.66N 59.63W, its base flat on the
+   lip, the bed below it behind): trees want keeping back from a cut bank's lip, or roots shown over it
+   (the scatter's ground is too coarse to see a creek's banks); trees also now seated on the low side of
+   their foot (seatInstances);
    check the leaves' sparkle against the sky after the mip-scaled alpha; probe GI (option 2: a probe
    grid filled from the maps; option 3 later, WebGPU compute beside WebGL). Test tip: the in-app pane
    must be shown (a hidden pane throttles the page to a standstill); ?tilegpu=0 for a hidden tab.
