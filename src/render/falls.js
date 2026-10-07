@@ -22,7 +22,7 @@ import { GLSL_DEPTH } from './glsl.js';
 
 // the world's falls' physics: uFall1 (g, the sheet's top speed, its drops' terminal speed, their drag
 // time), uFall2 (the mist's settling speed, how much of a fall the air turns to mist, the rainbow's
-// angle (rad), the wind)
+// angle (rad), the wind), uFall3 (its drops' radius, m)
 export function fallPhysics(b, wind) {
   const d = b.data || {}, name = (d.hydrosphere && d.hydrosphere.liquid) || 'water';
   const M = MATERIALS[name] || MATERIALS.water;
@@ -50,21 +50,26 @@ export function fallPhysics(b, wind) {
     uniforms: {
       uFall1: { value: new THREE.Vector4(g, vSheet, vDrop, tau) },
       uFall2: { value: new THREE.Vector4(vMist, mist, bow, wind || 0) },
+      uFall3: { value: new THREE.Vector4(rD, 0, 0, 0) },
     },
-    info: { name, g, rhoA, vDrop, vSheet, vMist, mist, bowDeg: bow * 180 / Math.PI },
+    info: { name, g, rhoA, rD, vDrop, vSheet, vMist, mist, bowDeg: bow * 180 / Math.PI },
   };
 }
 function smooth(a, b, x) { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); }
+// the share of a fall's water thrown up as spray where it lands (the rest plunges, or churns as foam)
+const SPRAY_SHARE = 0.03;
 
 const VERT = /* glsl */`
 attribute vec3 aFoot;     // (chunk-local, the planet's frame)
 attribute vec3 aUp;
-attribute vec4 aFall;     // its impact speed, its width, its drop, 1 for mist
+attribute vec4 aFall;     // its impact speed; a spray clump's spread (m), mist its fall's width; its drop;
+                          // a spray clump's drops' cross-section (m^2), mist -1
 attribute vec4 aSeed;
 attribute vec2 corner;
 uniform vec4 uFall1;
 uniform vec4 uFall2;
 uniform float uTime;
+uniform float uPixH;      // (the view's height in pixels)
 uniform vec3 uSunDir;
 uniform vec3 uSunE;
 uniform vec3 uMoonDir;
@@ -76,10 +81,11 @@ varying vec2 vUv;
 varying float vMist;
 varying vec2 vS;
 varying float vZ;
+varying float vK;
 #include <common>
 ${GLSL_SURFACE_ATMO}
 void main() {
-  bool mist = aFall.w > 0.5;
+  bool mist = aFall.w < 0.0;
   float g = uFall1.x, vImp = aFall.x;
   vec3 e1 = normalize(cross(aUp, vec3(0.0, 1.0, 0.0)) + vec3(1e-5, 0.0, 0.0)), e2 = cross(aUp, e1);
   // (the wind: the prevailing one of its latitude, as the waves', liquid.js)
@@ -116,10 +122,11 @@ void main() {
     float t = fract(uTime / life + aSeed.x) * life;
     p = aFoot + vT * t + (v0v - vT) * tau * (1.0 - exp(-t / tau));
     vel = vT + (v0v - vT) * exp(-t / tau);
-    // (each one a few drops thrown together, millimetres each, seen as the eye sees them: drawn out along
-    // their way over a thirtieth of a second, a streak, not a lit bead)
-    size = mix(0.012, 0.04, aSeed.y);
-    a = 0.55 * smoothstep(0.0, 0.05, t / life) * (1.0 - smoothstep(0.75, 1.0, t / life));
+    // (each one a clump of the spray's drops, spread over its share of the spray's room, drawn out along
+    // its way over a thirtieth of a second as the eye sees it; as opaque as its drops' cross-section
+    // over that, below)
+    size = 0.5 * aFall.y * mix(0.6, 1.4, aSeed.y);
+    a = smoothstep(0.0, 0.05, t / life) * (1.0 - smoothstep(0.75, 1.0, t / life));
   }
   vec4 wp = modelMatrix * vec4(p, 1.0);
   // lit as the air there is: the sun through the air (a forward-scattering phase: bright against the
@@ -159,15 +166,22 @@ void main() {
   vMist = mist ? 1.0 : 0.0;
   vS = aSeed.zw;
   vec4 mv = viewMatrix * wp;
+  vK = 0.0;
   if (mist) mv.xy += corner * size;
   else {
-    // (the streak: from where it was a thirtieth of a second ago to here, as wide as its drops; as faint
-    // as it's long, the same light spread along it)
+    // (the streak: from where it was a thirtieth of a second ago to here, as wide as its clump, no
+    // narrower than a pixel; as opaque as its drops' cross-section over the area it's drawn on (a soft
+    // rod: L s + 0.94 s^2 for its falloff), so the same light however it's spread. Each drawn a pixel or
+    // two across at a fixed half opacity, the spray had stood as a scatter of white flecks on the rock,
+    // and one near the eye a white square)
     vec3 ds = (viewMatrix * (modelMatrix * vec4(vel * 0.033, 0.0))).xyz;
     float L = length(ds.xy);
+    float pix = 2.0 * max(-mv.z, 0.05) / (projectionMatrix[1][1] * max(uPixH, 1.0));
+    size = max(size, 0.75 * pix);
     vec2 ax = L > 1e-4 ? ds.xy / L : vec2(0.0, 1.0);
     mv.xy += -ds.xy * 0.5 + ax * corner.x * (0.5 * L + size) + vec2(-ax.y, ax.x) * corner.y * size;
-    vA *= size / (size + 0.5 * L);
+    vK = 0.5 * L / (0.5 * L + size);
+    vA *= min(0.9, aFall.w / (L * size + 0.94 * size * size));
   }
   vZ = -mv.z;
   gl_Position = projectionMatrix * mv;
@@ -182,19 +196,20 @@ varying vec2 vUv;
 varying float vMist;
 varying vec2 vS;
 varying float vZ;
+varying float vK;
 uniform sampler2D tSceneDepth;
 ${GLSL_DEPTH}
 #include <common>
 void main() {
-  // (a mist's puff round; a spray's streak a rod, soft along its sides and ends)
-  float r = vMist > 0.5 ? length(vUv) : max(abs(vUv.y), smoothstep(0.5, 1.0, abs(vUv.x)));
+  // (a mist's puff round; a spray's streak a rod with rounded ends, soft from its line out)
+  float r = vMist > 0.5 ? length(vUv) : length(vec2(max(abs(vUv.x) - vK, 0.0) / max(1.0 - vK, 1e-3), vUv.y));
   if (r > 1.0) discard;
-  // (behind the scene's surface: hidden; near it: faded over a metre or so (a drop's spray less))
+  // (behind the scene's surface: hidden; near it: faded over a metre or so (a clump of spray less))
   float dRaw = texelFetch(tSceneDepth, ivec2(gl_FragCoord.xy), 0).r;
   float zs = isSkyDepth(dRaw) ? 1e30 : viewZFromDepth(dRaw);
   if (vZ > zs) discard;
-  float soft = clamp((zs - vZ) / (vMist > 0.5 ? 1.5 : 0.2), 0.0, 1.0);
-  float a = vA * soft * (1.0 - smoothstep(0.2, 1.0, r));
+  float soft = clamp((zs - vZ) / (vMist > 0.5 ? 1.5 : 0.4), 0.0, 1.0);
+  float a = vA * soft * (1.0 - smoothstep(vMist > 0.5 ? 0.2 : 0.0, 1.0, r));
   // (a puff of mist, or of spray, uneven within)
   if (vMist > 0.5) a *= 0.4 + 1.2 * texture(tDetail, vUv * 0.25 + vS).a;
   gl_FragColor = vec4(vCol, a);
@@ -215,7 +230,8 @@ export class FallFx {
   // falls: chunkbuilder.js's (FALL_STRIDE floats each); origin: the chunk's (the planet's frame)
   // (frozen 0..1: a hard freeze's share, its spray and mist the less)
   make(falls, origin, frozen = 0) {
-    const g = this.material.uniforms.uFall1.value.x, vSheet = this.material.uniforms.uFall1.value.y, mistK = this.material.uniforms.uFall2.value.y;
+    const U = this.material.uniforms, g = U.uFall1.value.x, vSheet = U.uFall1.value.y, vDrop = U.uFall1.value.z, mistK = U.uFall2.value.y;
+    const rD = U.uFall3 ? U.uFall3.value.x : 0.0014;
     const foot = [], upv = [], fall = [], seed = [];
     let rs = (falls[0] * 7919 + falls[1] * 104729 + falls[2] * 1299709) | 0;
     const rnd = () => { rs = (rs * 1664525 + 1013904223) >>> 0; return rs / 4294967296; };
@@ -227,6 +243,16 @@ export class FallFx {
       // (its share of particles: by its width and how hard it lands)
       const nSpray = Math.round(Math.min(3000, Math.max(120, width * vImp * 10)) * (1 - frozen));
       const nMist = Math.round(Math.min(1200, Math.max(0, width * Math.sqrt(drop) * 6)) * mistK * (1 - frozen));
+      // (the spray's drops aloft at once: a share of the water going over (critical flow at the brink,
+      // q = sqrt(g) h^1.5 for its depth h) thrown up as drops where it lands, aloft as long as their arcs
+      // last (the shader's: up at ~0.29 of the impact speed, drag cutting it short); as their
+      // cross-section (3 / 4r a cubic metre of drops of radius r), shared among the particles, each a
+      // clump of them spread over its share of the room the spray fills (as wide as the fall, out and up
+      // about as far as its drops are thrown))
+      const wd = Math.max(0.03, falls[f + 6] || 0), Q = width * Math.sqrt(g) * Math.pow(wd, 1.5);
+      const up0 = 0.29 * vImp, tAir = Math.max(0.15, 2 * up0 / g / (1 + up0 / Math.max(vDrop, 0.01)));
+      const Ap = SPRAY_SHARE * Q * tAir * 0.75 / rD * (1 - frozen) / Math.max(nSpray, 1);
+      const reach = Math.max(0.5, Math.min(up0 * tAir, 40)), spread = Math.min(4, Math.max(0.08, Math.cbrt(width * 2 * reach * reach / Math.max(nSpray, 1))));
       for (let k = 0; k < nSpray + nMist; k++) {
         // (along the line it lands on, its lip's width; a ring of it where that way isn't known)
         const s = (rnd() - 0.5) * width;
@@ -237,7 +263,7 @@ export class FallFx {
           foot.push(x + rr * (Math.cos(a) * e1x + Math.sin(a) * e2x), y + rr * Math.sin(a) * e2y, z + rr * (Math.cos(a) * e1z + Math.sin(a) * e2z));
         }
         upv.push(ux / ul, uy / ul, uz / ul);
-        fall.push(vImp, width, drop, k >= nSpray ? 1 : 0);
+        if (k >= nSpray) fall.push(vImp, width, drop, -1); else fall.push(vImp, spread, drop, Ap);
         seed.push(rnd(), rnd(), rnd(), rnd());
       }
     }

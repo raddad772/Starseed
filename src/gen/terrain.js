@@ -1297,15 +1297,21 @@ export class TerrainGenerator {
         out.flow.push(sgn * d[0] / dl, sgn * d[1] / dl, sgn * d[2] / dl, (V[i0] + f * (V[i1] - V[i0])) / 9);
         out.liq.push(65535, Math.round(0.7 * 65535), Math.round(Math.min(1, Math.max(0, (Tc - frz + 60) / 120)) * 65535), Math.round(dm.smoothstep(0.01, 0.2, 1 - up) * 65535));
         out.rib.push(-1 + 2 * ci / nc, DM[i0] + f * (DM[i1] - DM[i0]), 0, 0);   // (a fall's sheet: shaped by its flow, not moved with the stage)
-        // (its foot: where its middle column lands)
-        if (ci === nc >> 1 && foot < 0 && gl < bot + 0.1 * (top - bot) && top - bot > 0.5) foot = o;
       }
+      // (its foot: where its middle column lands, the row at the face's foot (t1: from there on the water's
+      // where it landed). Found as the first row within a tenth of the drop of the lowest, the zone's
+      // water running on down past the pool had put it ~11 m downstream: its spray and its churn there)
+      const rLand = TT[i1] < TT[i0] ? nr - (nu + 16) : nu + 16;
+      if (rLand >= 0 && rLand <= nr) { foot = (rLand * (nc + 1) + (nc >> 1)) * 3; bot = Math.sqrt(G[foot] ** 2 + G[foot + 1] ** 2 + G[foot + 2] ** 2); }
       for (let ri = 0; ri < nr; ri++) for (let ci = 0; ci < nc; ci++) {
         const v0 = b + ri * (nc + 1) + ci, v1 = v0 + 1, v2 = v0 + nc + 1, v3 = v2 + 1;
         // (wound as the strips are: facing up)
         out.index.push(v0, v2, v1, v1, v2, v3);
       }
-      if (foot >= 0 && top - bot >= 2) out.falls.push(G[foot] - ox, G[foot + 1] - oy, G[foot + 2] - oz, top, bot, 2 * xw, DM[i0], a0[0], a0[1], a0[2]);
+      // (its depth: the critical depth its water goes over the lip at, from the brink's speed (channels.js:
+      // vb = q / (0.715 hc), hc = (q^2 / g)^1/3, so hc = 0.511 vb^2 / g): the fall's own, the same in every
+      // chunk that draws it; a run's first point's mean depth had differed threefold between them)
+      if (foot >= 0 && top - bot >= 2) out.falls.push(G[foot] - ox, G[foot + 1] - oy, G[foot + 2] - oz, top, bot, 2 * xw, 0.511 * vb * vb / gr, a0[0], a0[1], a0[2]);
     };
     const drawn = (own) => 0.75 * minW <= 4 * own;   // (sampleSnap's rvFade 0)
     // (a lake's water at point i of a run: its own cells', or standing as high as the river)

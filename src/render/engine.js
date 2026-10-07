@@ -377,7 +377,7 @@ export class Engine {
     // (no hard line where a puff meets the ground or the water)
     this.softScene = new THREE.Scene();
     this.softScene.matrixWorldAutoUpdate = false;
-    this.softUniforms = { tSceneDepth: { value: null }, uDepthMode: { value: 0 }, uNear: { value: this.near }, uFar: { value: this.far }, uLogDepthFC: { value: 1 } };
+    this.softUniforms = { tSceneDepth: { value: null }, uDepthMode: { value: 0 }, uNear: { value: this.near }, uFar: { value: this.far }, uLogDepthFC: { value: 1 }, uPixH: { value: 1 } };
     // the rivers' water (terrainMaterial.js's RIBBON): drawn over the opaque scene, depth-tested and
     // writing its depth, each its chunk's place (userData.owner), reading copies of the image and its
     // depth under it (its bed through it, the banks in it)
@@ -702,7 +702,7 @@ export class Engine {
     if (this.softScene.children.length && this.syncOwned(this.softScene)) {
       this.passBegin('soft');
       const su = this.softUniforms;
-      su.tSceneDepth.value = V.depthTex; su.uDepthMode.value = this.depthMode; su.uNear.value = this.near; su.uFar.value = this.far; su.uLogDepthFC.value = Math.log2(this.far + 1);
+      su.tSceneDepth.value = V.depthTex; su.uDepthMode.value = this.depthMode; su.uNear.value = this.near; su.uFar.value = this.far; su.uLogDepthFC.value = Math.log2(this.far + 1); su.uPixH.value = V.height;
       r.setRenderTarget(src);
       r.render(this.softScene, cam);
       this.passEnd();
