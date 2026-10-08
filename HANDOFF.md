@@ -9,6 +9,17 @@ maps and viewscreens are native. WebGL exists only in explicit test tooling (`?w
 no production fallback. Other browser/GPU combinations still need certification; no speedup or exact
 pixel-parity claim is made. Dave confirmed sole-agent work and no coordination messages this session.
 
+## Campaign plan and story treatment (Codex, 2026-10-08)
+`CAMPAIGN.md` is the implementation plan for the persistent galaxy, central spinning black hole
+and jets, separate mirrored star system, first-run difficulty/fleet setup, playable/skippable
+introduction, Story Log, quests and overhead galactic navigation. `STORY.md` contains the summary,
+intro treatment and skipped-intro log. `notes/SAVE_FORMAT.md` proposes versioned JSON campaign
+saves, IndexedDB autosaves and export/import; `notes/campaign-save.example.json` is illustrative,
+not a currently loadable game save. No campaign runtime features were added by this documentation
+checkpoint. The initial ~200 charted systems and 60-billion-solar-mass visual preset are tuning
+proposals, not a galaxy boundary or final physical model. Start with campaign state/save adapters;
+preserve existing fleet work and coordinate understructure integration with its owner.
+
 ## Orbital navigation and shared time (Codex, 2026-10-08)
 The nav computer now offers Automatic / Conventional / Prefer FTL in the quick menu;
 the Fleet app also toggles conventional routing. N still starts/releases an order.

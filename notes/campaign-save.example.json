@@ -1,0 +1,227 @@
+{
+  "format": "starseed-campaign",
+  "schemaVersion": 1,
+  "exampleOnly": true,
+  "campaignId": "example-expedition-001",
+  "label": "Mirror expedition example",
+  "revision": 12,
+  "createdAt": "2026-10-08T12:00:00Z",
+  "savedAt": "2026-10-08T12:30:00Z",
+  "generation": {
+    "galaxySeed": "MIRROR-EXAMPLE",
+    "versions": {
+      "galaxy": 1,
+      "system": 1,
+      "world": 69,
+      "siteLayout": 1,
+      "storyContent": 1,
+      "fleetContent": 1
+    },
+    "localLengthScale": 0.015625,
+    "galacticFrame": {
+      "epoch": "2026-10-05T00:00:00Z",
+      "sectorSizeParsecs": 16,
+      "orientation": "galaxy-model-v1"
+    },
+    "storyAnchors": {
+      "anchor/central-hole": {
+        "kind": "blackHole",
+        "sector": [0, 0, 0],
+        "offsetParsecs": [0, 0, 0],
+        "massSolar": 60000000000,
+        "dimensionlessSpin": 0.9,
+        "emissionPreset": "central-prototype-v1"
+      },
+      "story/mirror": {
+        "kind": "enclosedSystem",
+        "systemSeed": "ENCLOSED-EXAMPLE",
+        "sector": [0, 0, 0],
+        "offsetParsecs": [3, 0.15, 0],
+        "enclosurePreset": "mirror-prototype-v1"
+      },
+      "story/receiver": {
+        "kind": "starSystem",
+        "systemSeed": "RECEIVER-EXAMPLE",
+        "sector": [0, 0, 0],
+        "offsetParsecs": [5, 1, 2]
+      }
+    }
+  },
+  "clock": {
+    "epoch": "2026-10-05T00:00:00Z",
+    "simulationSeconds": 307800,
+    "advanceWhileClosed": false
+  },
+  "rules": {
+    "flightPreset": "easy",
+    "startingFleetEra": "horizon",
+    "explorationDefault": "guided",
+    "puzzles": "assisted",
+    "megastructurePresence": {
+      "version": 1,
+      "eligiblePlanetChance": 1,
+      "maxPerPlanet": 1
+    },
+    "recoveryPolicyVersion": 1,
+    "travelPolicyVersion": 1
+  },
+  "players": [
+    {
+      "id": "player/one",
+      "label": "Pilot one",
+      "characterId": "crew/parent-one",
+      "location": {
+        "frame": {"kind": "vessel-local", "entityId": "vessel/carrier"},
+        "position": [0, 1.7, 0],
+        "orientation": [0, 0, 0, 1]
+      },
+      "inventoryId": "inventory/player-one",
+      "suit": {"oxygenFraction": 1, "jetpackEnabled": true},
+      "preferences": {
+        "flightAssist": "full",
+        "explorationOverlay": "guided",
+        "trackedQuestId": "quest/first-receiver"
+      }
+    },
+    {
+      "id": "player/two",
+      "label": "Pilot two",
+      "characterId": "crew/parent-two",
+      "location": {
+        "frame": {"kind": "vessel-local", "entityId": "vessel/carrier"},
+        "position": [2, 1.7, 0],
+        "orientation": [0, 0, 0, 1]
+      },
+      "inventoryId": "inventory/player-two",
+      "suit": {"oxygenFraction": 1, "jetpackEnabled": true},
+      "preferences": {
+        "flightAssist": "rate",
+        "explorationOverlay": "survey",
+        "trackedQuestId": "quest/first-receiver"
+      }
+    }
+  ],
+  "fleet": {
+    "manifestId": "example-two-vessel-manifest",
+    "provisioned": true,
+    "units": {
+      "position": "gameMetres",
+      "velocity": "gameMetresPerSecond",
+      "angularVelocity": "radiansPerGameSecond",
+      "orientation": "quaternionXYZW"
+    },
+    "vessels": [
+      {
+        "id": "vessel/carrier",
+        "typeId": "horizon_cradle",
+        "name": "Research carrier",
+        "inventoryId": "inventory/carrier",
+        "motion": {
+          "mode": "free",
+          "frame": {"kind": "system-inertial", "systemId": "story/mirror"},
+          "position": [40000000000, 0, 0],
+          "velocity": [0, 0, 300],
+          "orientation": [0, 0, 0, 1],
+          "angularVelocity": [0, 0, 0]
+        },
+        "hullFraction": 1,
+        "thermalState": {"surfaceKelvin": 290, "interiorKelvin": 295},
+        "gearFraction": 0,
+        "equipment": {},
+        "ftl": {"state": "idle", "timerSeconds": 0},
+        "navigationIntent": null
+      },
+      {
+        "id": "vessel/launch",
+        "typeId": "horizon_drift",
+        "name": "Survey launch",
+        "inventoryId": "inventory/launch",
+        "motion": {
+          "mode": "attached",
+          "frame": {"kind": "vessel-local", "entityId": "vessel/carrier"},
+          "attachmentId": "example-carrier-berth",
+          "position": [0, 0, 0],
+          "velocity": [0, 0, 0],
+          "orientation": [0, 0, 0, 1],
+          "angularVelocity": [0, 0, 0]
+        },
+        "hullFraction": 1,
+        "thermalState": {"surfaceKelvin": 290, "interiorKelvin": 295},
+        "gearFraction": 1,
+        "equipment": {},
+        "ftl": {"state": "idle", "timerSeconds": 0},
+        "navigationIntent": null
+      }
+    ]
+  },
+  "inventories": {
+    "inventory/player-one": {"items": []},
+    "inventory/player-two": {"items": []},
+    "inventory/carrier": {"items": []},
+    "inventory/launch": {"items": []}
+  },
+  "travel": {"activeLegs": []},
+  "discoveries": {
+    "initialChart": {"version": 1, "seed": "CHART-EXAMPLE", "targetCount": 200},
+    "overrides": {
+      "story/mirror": {
+        "knowledge": "charted",
+        "interiorSurveyed": false,
+        "observations": ["evidence/closed-mirror", "evidence/outgoing-pulse"]
+      },
+      "story/receiver": {"knowledge": "charted", "visited": false}
+    },
+    "returnAnchors": [
+      {
+        "id": "return/mirror-staging",
+        "systemId": "story/mirror",
+        "frame": {"kind": "system-inertial", "systemId": "story/mirror"},
+        "positionGameMetres": [40000000000, 0, 0],
+        "recordedAtSimulationSeconds": 307800
+      }
+    ],
+    "routeHistory": []
+  },
+  "story": {
+    "contentVersion": 1,
+    "nextEventSequence": 4,
+    "intro": {
+      "status": "complete",
+      "presentation": "skipped",
+      "checkpoint": "departure-ready",
+      "lessonsPractised": []
+    },
+    "facts": {
+      "surveyTenderMissing": true,
+      "outgoingPulseRecorded": true,
+      "destinationIdentified": true
+    },
+    "missingPassengers": [
+      {"id": "crew/daughter", "relatedPlayerId": "player/one", "relationship": "daughter"},
+      {"id": "crew/family-two", "relatedPlayerId": "player/two", "relationship": "child"}
+    ],
+    "quests": {
+      "quest/first-receiver": {
+        "state": "active",
+        "step": "travel-to-receiver",
+        "targetSystemId": "story/receiver",
+        "completedObjectives": ["identify-bearing"]
+      }
+    },
+    "appliedOneTimeEffects": ["fleet.initial-grant", "intro.canonical-incident"],
+    "journal": [
+      {"id": "event/1", "textId": "log.expedition-purpose", "simulationSeconds": 307800},
+      {"id": "event/2", "textId": "log.missing-tender", "simulationSeconds": 307800},
+      {
+        "id": "event/3",
+        "textId": "log.outgoing-transmission",
+        "simulationSeconds": 307800,
+        "subjects": {"destination": "story/receiver"}
+      }
+    ]
+  },
+  "sites": {},
+  "recovery": {"policyVersion": 1, "highestRawBySite": {}},
+  "worldChanges": {"looseObjects": [], "otherOverrides": {}},
+  "legacyImports": []
+}
