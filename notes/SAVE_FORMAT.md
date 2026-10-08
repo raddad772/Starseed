@@ -2,6 +2,14 @@
 
 Proposed format version 1, 8 October 2026. JSON is the authoritative portable campaign format. The accompanying [example](campaign-save.example.json) illustrates the contract; it is not yet a file that the current game can load. This specification supports the implementation milestones in [CAMPAIGN.md](../CAMPAIGN.md).
 
+## Implemented record subset
+
+The first implementation in `src/campaign/{state,save,storage}.js` supports `saveKind: "campaign-record"` with `world: null`, an unprovisioned fleet and no live players. It records rules, story events, discoveries and recovery; it cannot resume a flight. The full snapshot example remains deliberately rejected with an explanatory error. Schema version 1 alone does not identify a restorable game: loaders must also check the save kind.
+
+Record validation includes bounded JSON size/depth, finite numbers, ordinary data objects, supported schema/story/recovery versions, quest references, journal sequencing and consistent recovery milestones. Generator versions are metadata at this stage; no generator compatibility or live-world reconstruction is claimed. A future snapshot adapter must enforce those before loading the world.
+
+Browser storage uses `starseed-campaigns`, storing current and previous JSON in a single transaction. Revision comparisons reject stale writes from another tab. Loading previous content is explicit; the next save compares against the current slot revision. Import creates an independent identity. Transaction completion determines success. Nine CPU tests and thirteen isolated browser checks cover this subset; full-game restoration and the acceptance scenarios below remain outstanding.
+
 ## Storage model
 
 Use one JSON document per campaign snapshot. Browser autosaves store that JSON and small slot metadata in a dedicated IndexedDB database. Manual Export downloads the same document as `campaign-name.starseed.json`; Import validates and stages it before offering the imported slot. JSON describes the data format, while IndexedDB supplies browser persistence and transactions. Ordinary browser code cannot silently overwrite an arbitrary file on the user's disk.

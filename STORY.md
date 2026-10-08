@@ -4,6 +4,8 @@ Draft treatment, 8 October 2026. The central black hole and the enclosed star sy
 
 This is a hopeful game. The daughter will be fine; the rescue leads toward reunion, discovery and understanding. The crew can be frightened by losing contact without the story threatening to punish the player with her death. Exploration does not run down a hidden survival timer.
 
+The emotional centre is a home you bring along. The fleet offers familiar rooms, useful routines and people who look after one another. Outside is space worth stopping to look at. “Cozy exploration” describes that comfort and pace, while the scale of the setting and optional difficulty of piloting leave room for awe and challenge. Give the player reasons to feel hopeful early, and let curiosity support the search rather than compete with a manufactured emergency.
+
 Names, ages, exact family relationships, dialogue and the length of the introduction remain adjustable. The shared survey craft carrying other expedition family members is the proposed multiplayer version; their safe recovery follows the same hopeful direction. The interior of the sphere and the means of reunion remain to be written.
 
 ## Story summary

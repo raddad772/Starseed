@@ -1,6 +1,6 @@
 # Starseed campaign implementation plan
 
-Status: implementation plan, 8 October 2026. The campaign features below are planned; the existing renderer, flight guidance and megastructure prototype remain the foundation. Story treatment: [STORY.md](STORY.md). Save contract: [notes/SAVE_FORMAT.md](notes/SAVE_FORMAT.md).
+Status: implementation started, 8 October 2026. Campaign records, event handling, JSON storage and reusable setup/Story Log views are implemented and tested in isolation. The live game is not yet connected to them. The existing renderer, flight guidance and megastructure prototype remain the foundation. Story treatment: [STORY.md](STORY.md). Save contract: [notes/SAVE_FORMAT.md](notes/SAVE_FORMAT.md).
 
 The campaign follows an expedition studying an enormous spinning black hole. A nearby star system is enclosed by a perfect mirror that blocks entry. After years of investigation, a survey craft carrying the player characters' family members enters a temporary opening and disappears. An outgoing transmission provides the first lead. Players explore the surrounding systems to understand the opening and recover the missing people.
 
@@ -21,6 +21,18 @@ Build a complete, saveable route from New Expedition through the introduction, f
 | Saves | JSON for now | Versioned campaign JSON, transactional browser autosaves, manual export/import and a disposable generated-data cache. |
 
 The daughter chooses to investigate and enter. This is a hopeful game and she will be fine: build toward reunion without a hidden rescue timer or penalties for side exploration. The shared passengers follow the same hopeful direction. The mirror's purpose, its relationship to the black hole and the means of reunion remain unwritten. The opening's communication purpose is initially the crew's interpretation of evidence.
+
+The intended feel is hopeful space exploration, with a home you bring along. “Cozy exploration” is a useful design reference rather than a settled genre label. Familiar ships, a supportive crew, unhurried discoveries and forgiving assistance can provide comfort alongside enormous landscapes and demanding optional piloting. Give players time to linger, return home and prepare; do not use the family story to make those choices feel irresponsible.
+
+## First implementation checkpoint
+
+`src/campaign/state.js` creates independent campaign identities and handles the introductory incident, transmission destination, arrivals, site discovery and highest-per-site recovery. Repeated events cannot award the same progress twice. Played and skipped intro events reach the same canonical state; neither event pretends to have run a playable scene. Existing surveyed knowledge survives later discoveries. All twelve difficulty combinations select a starting fleet policy without spawning vessels.
+
+`src/campaign/save.js` validates and round-trips portable **campaign records**, including schema/content versions, quest references, journal sequences, finite values and recovery milestones. Imports create a new campaign identity. `src/campaign/storage.js` stores current and previous JSON revisions transactionally in IndexedDB, rejects stale writers and supports explicit previous-revision restoration. This is persistence for the campaign record only: `saveKind: "campaign-record"`, `world: null`, no provisioned fleet or players. Full flight save/load, automatic save scheduling and legacy progress migration remain unimplemented.
+
+The reusable `src/ui/expeditionSetup.js` and `src/ui/storyLog.js` views can be exercised at `tools/tests/campaign.html`. That development preview provides settings, journal/current leads/basics, JSON export and isolated browser storage checks. It starts no renderer or world workers and does not change existing game saves. These views are not yet wired into the game bootstrap or pause menu.
+
+Validation: nine CPU tests pass, covering all settings, played/skipped state convergence, duplicate and invalid events, recovery after reload, time preservation and invalid imports. Thirteen real-browser checks pass for transaction aborts, concurrent writers, previous revisions, independent imported slots, safe text rendering and form choices. Milestones 1 and 2 remain in progress; the next step is the live vessel/player/item/site snapshot and restoration adapter, followed by bootstrap integration.
 
 ## Existing foundation and necessary changes
 

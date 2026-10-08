@@ -1,0 +1,53 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Starseed campaign foundation</title>
+<style>
+ :root{color-scheme:dark;font:16px/1.6 system-ui;background:#101b22;color:#e0e8e7}body{max-width:1120px;margin:32px auto;padding:0 24px}h1,h2,h3,h4{line-height:1.2}h1{font-size:2rem}h3{color:#9ccdc3;margin-top:30px}h4{margin-bottom:8px}p{margin:10px 0 18px;color:#bdcecf}.layout{display:grid;grid-template-columns:minmax(260px,1fr) minmax(320px,1.5fr);gap:32px}.panel{background:#16272f;border:1px solid #30474c;padding:24px;border-radius:12px}label{display:block;margin:20px 0}label span{display:block}select,button{font:inherit;padding:10px 14px;border-radius:6px;border:1px solid #53726f;background:#1e373c;color:#f1f6f4}select{width:100%}button{cursor:pointer;margin:6px 6px 6px 0}button:focus-visible,select:focus-visible{outline:3px solid #bdddc9}button:disabled{opacity:.5;cursor:wait}details{margin:12px 0}summary{cursor:pointer}article{border-bottom:1px solid #30474c;padding-bottom:12px}#status{white-space:pre-wrap;font-size:13px}.note{border-left:3px solid #b9af83;padding-left:14px}a{color:#c4dbbb}@media(max-width:760px){.layout{grid-template-columns:1fr}}
+</style>
+<h1>Expedition campaign foundation</h1>
+<p class="note">Development preview: campaign records, first-run choices and Story Log. Full flight saves, the playable introduction and galactic travel are not connected yet. This fixture never opens the game renderer or starts world workers.</p>
+<div class="layout"><div><section class="panel" id="setup"></section><section class="panel" style="margin-top:24px"><h2>Storage validation</h2><button id="run">Run browser checks</button><button id="export">Export preview JSON</button><pre id="status">Ready. Checks use an isolated temporary database.</pre></section></div><section class="panel" id="log"></section></div>
+<script type="module">
+import { createCampaign,applyCampaignEvent } from '/src/campaign/state.js';
+import { encodeCampaign,decodeCampaign,importCampaignCopy } from '/src/campaign/save.js';
+import { CampaignStorage } from '/src/campaign/storage.js';
+import { renderStoryLog } from '/src/ui/storyLog.js';
+import { renderExpeditionSetup } from '/src/ui/expeditionSetup.js';
+const status=document.querySelector('#status'),button=document.querySelector('#run'),log=document.querySelector('#log');
+let preview;
+function makePreview(rules){let c=createCampaign({seed:'CAMPAIGN-PREVIEW',label:'Our expedition',rules});c=applyCampaignEvent(c,{id:'intro',type:'intro.completed',presentation:'skipped'});return applyCampaignEvent(c,{id:'bearing',type:'signal.bearingResolved',systemId:'First receiver'});}
+function update(rules){preview=makePreview(rules);renderStoryLog(log,preview);}
+renderExpeditionSetup(document.querySelector('#setup'),{onCreate:update,submitLabel:'Preview these settings'});update();
+document.querySelector('#export').onclick=()=>{const url=URL.createObjectURL(new Blob([encodeCampaign(preview)],{type:'application/json'})),a=document.createElement('a');a.href=url;a.download='starseed-campaign-record.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
+button.onclick=async()=>{
+ button.disabled=true;const lines=[];const name='starseed-campaign-test-'+crypto.randomUUID(),a=new CampaignStorage({name}),b=new CampaignStorage({name});
+ const check=(ok,label)=>{if(!ok)throw Error(label);lines.push('PASS '+label);status.textContent=lines.join('\n');};
+ let failure;
+ try{
+  let c=makePreview();const originalTime=c.clock.simulationSeconds;
+  c=await a.save(c);check(c.revision===1,'Save commits its first revision');
+  await a.close();let loaded=await a.load(c.campaignId);check(loaded.campaign.clock.simulationSeconds===originalTime&&loaded.campaign.story.journal.length===4,'Reopen restores recorded time and story');
+  c=applyCampaignEvent(c,{id:'arrival',type:'system.arrived',systemId:'First receiver'});c=await a.save(c);
+  const prior=await a.load(c.campaignId,{previous:true});check(prior.campaign.story.quests['quest/first-receiver'].step==='travel-to-receiver'&&prior.restoredPrevious,'Previous revision retains its earlier quest state');
+  const restored=await a.save(prior.campaign);check(restored.revision===3,'Explicit backup restoration can be saved as a new revision');c=restored;
+  const left=structuredClone(c),right=structuredClone(c);left.label='Left writer';right.label='Right writer';
+  const writes=await Promise.allSettled([a.save(left),b.save(right)]);check(writes.filter(x=>x.status==='fulfilled').length===1&&writes.filter(x=>x.status==='rejected').length===1,'Concurrent stale writes cannot overwrite one another');
+  c=(await a.load(c.campaignId)).campaign;check(c.revision===4,'Concurrent writers commit exactly one revision');
+  const db=await a.open();await new Promise((resolve,reject)=>{const tx=db.transaction('slots','readwrite');tx.onabort=()=>resolve();tx.oncomplete=()=>reject(Error('Expected abort'));tx.objectStore('slots').put({id:c.campaignId,revision:999,current:'broken',previous:'broken'});tx.abort();});
+  check((await a.load(c.campaignId)).campaign.revision===4,'Aborted transaction preserves the last valid save');
+  const copied=importCampaignCopy(encodeCampaign(c));await a.save(copied);check((await a.list()).length===2&&copied.campaignId!==c.campaignId,'Import copy creates an independent campaign slot');
+  const bad=structuredClone(c);bad.clock.simulationSeconds=Infinity;let rejected=false;try{await a.save(bad);}catch{rejected=true;}check(rejected&&(await a.load(c.campaignId)).campaign.revision===4,'Invalid state cannot replace a valid slot');
+  const display=structuredClone(c);display.label='<img src=x onerror=alert(1)>';renderStoryLog(log,display);check(!log.querySelector('img')&&log.textContent.includes('<img'),'Imported labels render as text');
+  renderStoryLog(log,c);check(log.querySelectorAll('[data-event-id]').length===c.story.journal.length,'Story Log renders each recorded event once');
+  const form=document.querySelector('#setup form');form.elements.flight.value='hard';form.elements.exploration.value='survey';form.elements.puzzles.value='standard';form.requestSubmit();check(preview.rules.startingFleetEra==='pioneer'&&preview.rules.puzzles==='standard','First-run choices produce the requested fleet policy');
+  check(decodeCampaign(encodeCampaign(preview)).saveKind==='campaign-record','Export explicitly identifies a campaign record, not a flight snapshot');
+ }catch(error){failure=error;lines.push('FAIL '+error.message);}
+ finally{
+  await Promise.allSettled([a.close(),b.close()]);
+  await new Promise((resolve,reject)=>{const request=indexedDB.deleteDatabase(name);request.onsuccess=resolve;request.onerror=()=>reject(request.error);request.onblocked=()=>reject(Error('Test cleanup blocked'));}).catch(error=>{failure=error;lines.push('FAIL '+error.message);});
+  button.disabled=false;status.textContent=lines.join('\n')+'\n'+(failure?'FAILED':'PASSED')+' · '+lines.filter(x=>x.startsWith('PASS')).length+' checks';
+  window.campaignTestReport={passed:!failure,checks:lines};
+ }
+};
+</script>

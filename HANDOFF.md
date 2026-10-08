@@ -9,16 +9,34 @@ maps and viewscreens are native. WebGL exists only in explicit test tooling (`?w
 no production fallback. Other browser/GPU combinations still need certification; no speedup or exact
 pixel-parity claim is made. Dave confirmed sole-agent work and no coordination messages this session.
 
-## Campaign plan and story treatment (Codex, 2026-10-08)
+## Campaign foundation, plan and story treatment (Codex, 2026-10-08)
 `CAMPAIGN.md` is the implementation plan for the persistent galaxy, central spinning black hole
 and jets, separate mirrored star system, first-run difficulty/fleet setup, playable/skippable
 introduction, Story Log, quests and overhead galactic navigation. `STORY.md` contains the summary,
 intro treatment and skipped-intro log. `notes/SAVE_FORMAT.md` proposes versioned JSON campaign
 saves, IndexedDB autosaves and export/import; `notes/campaign-save.example.json` is illustrative,
-not a currently loadable game save. No campaign runtime features were added by this documentation
-checkpoint. The initial ~200 charted systems and 60-billion-solar-mass visual preset are tuning
+not a currently loadable game save. Dave clarified that this is hopeful: his daughter will be fine;
+there is no hidden rescue countdown. “Cozy exploration” is a tonal reference: a familiar fleet as
+home, unhurried exploration and optional demanding flight, not a settled genre label.
+
+The first implementation adds `src/campaign/{state,save,storage,content}.js` and reusable
+`src/ui/{expeditionSetup,storyLog}.js`. Pure events track the introductory incident, first receiver,
+arrivals, site discoveries and highest-per-site Golden Path credit without duplicate rewards.
+Validated JSON campaign records use transactional IndexedDB current/previous revisions, stale-write
+rejection, explicit backup restore and import-as-copy. They are **not full game saves**: saveKind is
+`campaign-record`, world is null, and no live fleet/player snapshot is permitted. No main/game or
+understructure interfaces changed. `tools/tests/campaign.html` previews the views and runs 13 browser
+checks without renderer/workers. Nine `campaign.test.mjs` CPU tests pass. Both suites were run.
+Next: live vessel/player/item/site capture and restore, then bootstrap/first-run/pause integration;
+autosave scheduling and legacy progress migration are still outstanding. Milestones 1/2 remain open.
+
+The initial ~200 charted systems and 60-billion-solar-mass visual preset are tuning
 proposals, not a galaxy boundary or final physical model. Start with campaign state/save adapters;
 preserve existing fleet work and coordinate understructure integration with its owner.
+
+Integrated the frozen generator-hall/lookout checkpoint b3d7ef7 as 092a6eb and groundwater animation
+85e2257 as 59c0ca6. The owner verified native fixtures; affected CPU suites pass locally. Subsequent
+polygon-room/bridge and maintenance-drone work remains separate in the Megastructures worktree.
 
 ## Orbital navigation and shared time (Codex, 2026-10-08)
 The nav computer now offers Automatic / Conventional / Prefer FTL in the quick menu;
