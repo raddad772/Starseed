@@ -212,8 +212,9 @@ export class WorldSims {
   // the next job for a worker: the tile workers take the pyramid's tiles, then refinements; a
   // sim worker the pyramid's tiles too before another world's sim (the ground under the camera
   // first), then refinements
-  // While someone is on a world, only it and the worlds seen as discs from there are worked
-  // on (their sims and refinements); the others' jobs wait in the queue until they leave.
+  // While someone is on a world, it and the worlds seen as discs from there come first (their
+  // sims and refinements); the others go on at low priority: only when nothing of theirs is
+  // waiting, one job at a time, and never on the workers kept for the ground's tiles.
   setFocus(ids) {
     const key = ids ? [...ids].sort((a, b) => a - b).join(',') : '';
     if (key === this._focusKey) return;
@@ -223,8 +224,15 @@ export class WorldSims {
 
   _pick(w) {
     const order = w.role === 'tile' ? ['pyr', 'refine'] : ['pyr', 'sim', 'refine'];
+    const mine = (j) => j.kind === 'pyr' || !this.focus || this.focus.has(j.id);
     for (const kind of order) {
-      const i = this.queue.findIndex((j) => j.kind === kind && (kind === 'pyr' || !this.focus || this.focus.has(j.id)));
+      const i = this.queue.findIndex((j) => j.kind === kind && mine(j));
+      if (i >= 0) return this.queue.splice(i, 1)[0];
+    }
+    // the other worlds, in the background: a sim worker, one job at a time
+    if (!this.focus || w.role === 'tile' || this.workers.some((o) => o.job && !mine(o.job))) return null;
+    for (const kind of ['sim', 'refine']) {
+      const i = this.queue.findIndex((j) => j.kind === kind);
       if (i >= 0) return this.queue.splice(i, 1)[0];
     }
     return null;
