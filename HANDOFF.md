@@ -34,9 +34,14 @@ The initial ~200 charted systems and 60-billion-solar-mass visual preset are tun
 proposals, not a galaxy boundary or final physical model. Start with campaign state/save adapters;
 preserve existing fleet work and coordinate understructure integration with its owner.
 
-Integrated the frozen generator-hall/lookout checkpoint b3d7ef7 as 092a6eb and groundwater animation
-85e2257 as 59c0ca6. The owner verified native fixtures; affected CPU suites pass locally. Subsequent
-polygon-room/bridge and maintenance-drone work remains separate in the Megastructures worktree.
+Integrated the frozen generator-hall/lookout checkpoint b3d7ef7 as 092a6eb, groundwater animation
+85e2257 as 59c0ca6, and polygon rooms/bridges/maintenance crawlers 260aba0 as 10276e8. The latest
+adds a triangular/pentagonal/hexagonal service loop with matching collision and map footprints,
+crossed bridges, saved sectorsSeen (empty on older saves), and small non-humanoid crawlers for
+one-unit data finds. Reward IDs and values remain unchanged. All 56 combined campaign,
+understructure and renderer CPU tests pass after integration, including all 21 theme routes.
+The owner reports 14 passing finite native checks and inspected renders; these were not repeated
+by this integration pass. Existing dirty fleet files remain byte-for-byte unchanged.
 
 ## Orbital navigation and shared time (Codex, 2026-10-08)
 The nav computer now offers Automatic / Conventional / Prefer FTL in the quick menu;
