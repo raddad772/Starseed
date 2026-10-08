@@ -11,6 +11,9 @@ import { SiteGuide } from './siteGuide.js';
 import { SiteCompass } from './siteCompass.js';
 import { SiteMechanisms } from './siteMechanisms.js';
 import { THEME_NAMES } from '../plan/themes.js';
+import { SiteSound } from './siteSound.js';
+import { SiteMap } from './siteMap.js';
+import { buildAirDust } from '../dustVisual.js';
 
 const $ = (id) => document.getElementById(id), params = new URLSearchParams(location.search);
 const seed = params.get('seed') || 'SUMP-07';
@@ -25,10 +28,16 @@ let saved = {}; try { saved = JSON.parse(localStorage.getItem(saveKey) || '{}');
 if (params.has('reset')) saved = {};
 const state = { flashlight: true, collected: new Set(saved.collected || []), returned: false };
 const mech = new SiteMechanisms(site, visual.collision, visual.root, visual.mat, saved.mech || {});
+const sound = new SiteSound(plan, site);
+const map = new SiteMap(plan, site, saved.map || {});
+const dust = buildAirDust(plan, visual.root, { underground: () => true });
+const miniCanvas = document.createElement('canvas'); miniCanvas.className = 'minimap'; document.body.append(miniCanvas);
+const mapCanvas = $('map');
+const syncButtons = () => { $('sound').textContent = sound.enabled ? 'Sound on' : 'Sound off'; $('voice').textContent = sound.voice.enabled ? 'Voice on' : 'Voice off'; };
 const finds = new Map(plan.finds.map((f) => [f.id, f]));
 const raw = () => [...state.collected].reduce((s, id) => s + (finds.get(id)?.units || 0), 0);
 const credit = (r) => Math.min(170, Math.min(r, 100) + 3 * Math.max(0, r - 100));
-const save = () => { try { localStorage.setItem(saveKey, JSON.stringify({ collected: [...state.collected], mech: mech.save() })); } catch { /* ignore */ } };
+const save = () => { try { localStorage.setItem(saveKey, JSON.stringify({ collected: [...state.collected], mech: mech.save(), map: map.save() })); } catch { /* ignore */ } };
 
 const canvas = $('view'), camera = new THREE.PerspectiveCamera(73, 1, 0.08, 3200); camera.rotation.order = 'YXZ';
 const view = { camera, width: 1, height: 1, rect: { x: 0, y: 0, w: 1, h: 1 }, meterRef: 0.18, maxExposure: 3, exposureBias: 1.3 };
@@ -40,14 +49,34 @@ $('kinds').textContent = `${plan.themes.map((t) => THEME_NAMES[t]).join(' + ')} 
 
 function fail(e) { errors.push(String(e?.stack || e)); $('fatal').hidden = false; $('fatal').textContent = 'The survey could not start: ' + (e?.message || e); running = false; }
 addEventListener('error', (e) => fail(e.error || e.message)); addEventListener('unhandledrejection', (e) => fail(e.reason));
-function toast(m) { if (!m) return; notice = m; noticeUntil = performance.now() + Math.max(3500, m.length * 70); }
+function toast(m, speak = true) { if (!m) return; notice = m; noticeUntil = performance.now() + Math.max(3500, m.length * 70); if (speak) sound.say(m, m, false); }
 function resize() {
   const ratio = Math.min(devicePixelRatio || 1, 1.5), w = Math.max(1, Math.floor(innerWidth * ratio)), h = Math.max(1, Math.floor(innerHeight * ratio));
   canvas.width = w; canvas.height = h; Object.assign(view, { width: w, height: h, rect: { x: 0, y: 0, w, h } }); camera.aspect = w / h; camera.updateProjectionMatrix();
 }
-function start() { running = true; $('intro').hidden = true; $('start').textContent = 'Resume'; canvas.focus(); canvas.requestPointerLock?.()?.catch?.(() => {}); last = performance.now(); }
+function toggleMap() {
+  const open = $('mapPanel').hidden;
+  $('mapPanel').hidden = !open;
+  if (open) { document.exitPointerLock?.(); keys.clear(); } else { canvas.focus(); canvas.requestPointerLock?.()?.catch?.(() => {}); }
+}
+let mapDrag = null;
+mapCanvas.addEventListener('pointerdown', (e) => { mapDrag = { x: e.clientX, y: e.clientY, pan: e.button === 2 || e.shiftKey }; mapCanvas.setPointerCapture(e.pointerId); });
+mapCanvas.addEventListener('pointerup', () => { mapDrag = null; });
+mapCanvas.addEventListener('contextmenu', (e) => e.preventDefault());
+mapCanvas.addEventListener('pointermove', (e) => {
+  if (!mapDrag) return;
+  const dx = e.clientX - mapDrag.x, dy = e.clientY - mapDrag.y; mapDrag.x = e.clientX; mapDrag.y = e.clientY;
+  if (mapDrag.pan) { const c = Math.cos(map.view.yaw), s2 = Math.sin(map.view.yaw), k = 1 / (4.4 * map.view.zoom); map.view.pan[0] -= (dx * c + dy * s2) * k; map.view.pan[1] -= (-dx * s2 + dy * c) * k; }
+  else { map.view.yaw += dx * 0.008; map.view.pitch = Math.max(0.15, Math.min(1.5, map.view.pitch + dy * 0.008)); }
+});
+mapCanvas.addEventListener('wheel', (e) => { e.preventDefault(); map.view.zoom = Math.max(0.3, Math.min(6, map.view.zoom * Math.exp(-e.deltaY * 0.0015))); }, { passive: false });
+$('mapClose').onclick = toggleMap;
+function start() { running = true; sound.unlock(); $('intro').hidden = true; $('start').textContent = 'Resume'; canvas.focus(); canvas.requestPointerLock?.()?.catch?.(() => {}); last = performance.now(); }
 function pause() { running = false; keys.clear(); document.exitPointerLock?.(); $('intro').hidden = false; save(); }
 $('start').onclick = start;
+$('sound').onclick = () => { sound.setEnabled(!sound.enabled); syncButtons(); };
+$('voice').onclick = () => { sound.voice.setEnabled(!sound.voice.enabled); sound.voice.unlock(); syncButtons(); };
+syncButtons();
 const load = (seedValue) => { const u = new URL(location.href); u.searchParams.set('seed', seedValue); location.href = u.href; };
 $('generate').onclick = () => load($('seed').value);
 $('seed').addEventListener('keydown', (e) => { if (e.key === 'Enter') load($('seed').value); });
@@ -57,9 +86,10 @@ addEventListener('keydown', (e) => {
   if (e.target instanceof HTMLInputElement || e.metaKey || e.ctrlKey) return;
   if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'KeyC', 'KeyR', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
   keys.add(e.code); if (e.repeat) return;
-  if (e.code === 'Escape') pause();
-  if (!running) return;
-  if (e.code === 'KeyF') { state.flashlight = !state.flashlight; toast(state.flashlight ? 'Hand light on' : 'Hand light off'); }
+  if (e.code === 'Escape') { if (!$('mapPanel').hidden) { toggleMap(); return; } pause(); }
+  if (e.code === 'KeyM' && running) { toggleMap(); return; }
+  if (!running || !$('mapPanel').hidden) return;
+  if (e.code === 'KeyF') { state.flashlight = !state.flashlight; toast(state.flashlight ? 'Hand light on' : 'Hand light off', false); }
   if (e.code === 'KeyE') interact();
 });
 addEventListener('keyup', (e) => keys.delete(e.code));
@@ -89,17 +119,16 @@ function offer() {
 function interact() {
   const o = offer();
   if (!o) return;
-  if (o.type === 'mech') { toast(o.act()); save(); return; }
+  if (o.type === 'mech') { const msg = o.act(); toast(msg, /open|lit|aligned|restored|unsealed/i.test(msg)); save(); return; }
   if (o.type === 'find') {
     const before = raw();
     state.collected.add(o.find.id);
     const r = raw(), c = credit(r), gained = c - credit(before);
-    toast(o.find.kind === 'record'
-      ? `Site record +${o.find.units} · founders' lift unlocked`
-      : `Data +${gained} · site ${r}% · credit ${c}/170${r > 100 ? ' (×3 past 100%)' : ''}`);
+    if (o.find.kind === 'record') toast(`Site record +${o.find.units} · founders' lift unlocked`);
+    else toast(`Data +${gained} · site ${r}% · credit ${c}/170${r > 100 ? ' (×3 past 100%)' : ''}`, false);
     save();
-  } else if (o.type === 'exit') { state.returned = true; toast('The lift rises toward daylight. Survey complete: you can come back to explore further.'); pause(); }
-  else toast(o.text);
+  } else if (o.type === 'exit') { state.returned = true; toast('Returned to the surface'); pause(); }
+  else toast(o.text, false);
 }
 
 function zoneName() {
@@ -124,12 +153,18 @@ function hud() {
   const flat = Math.hypot(rel.x, rel.z), rise = tgt.pos[1] - walker.pos[1];
   rel.applyQuaternion(camera.quaternion.clone().invert());
   compass.draw([rel.x, rel.y, rel.z], `${Math.round(flat)} m`, Math.abs(rise) > 1.5 ? `${rise > 0 ? '▲' : '▼'} ${Math.abs(Math.round(rise))} m · ${tgt.label}` : tgt.label);
+  // maps: the corner one always, the full one when open
+  map.visit(walker.pos);
+  const mapInfo = { player: walker.pos, yaw: walker.yaw, target: tgt.pos, finds: plan.finds.filter((f) => state.collected.has(f.id)), gates: site.gates.filter((g) => !mech.solved.has(g.id)).map((g) => ({ pos: g.control?.pos || (g.floor ? [g.floor.poly[0][0], g.floor.y, g.floor.poly[0][1]] : g.frames[0].pos) })) };
+  miniCanvas.hidden = !running || !$('mapPanel').hidden;
+  if (!miniCanvas.hidden) map.draw(miniCanvas, { ...mapInfo, mini: true });
+  if (!$('mapPanel').hidden) map.draw(mapCanvas, mapInfo);
   $('objective').textContent = state.collected.has(plan.finds.find((f) => f.kind === 'record').id) ? "Founders' lift" : 'Site record';
 }
 function render() {
   camera.position.set(walker.pos[0], walker.pos[1] + 1.68, walker.pos[2]); camera.rotation.set(walker.pitch, walker.yaw, 0); camera.updateMatrixWorld();
   hud();
-  visual.update(camera, time, state); engine.time = time; renderer.render(engine); frame++;
+  visual.update(camera, time, state); dust.update(camera, time); engine.time = time; renderer.render(engine); frame++;
 }
 function input() {
   return {
@@ -150,8 +185,9 @@ function loop(now) {
   if (document.hidden) return;
   const dt = Math.min((now - last) / 1000, 0.1); if (now - last < 1000 / 60) return; last = now;
   if (running) { walker.step(dt, input()); time += dt; mech.update(dt, walker.pos); if (time > 1.5) scanOnArrival(); }
+  sound.update({ pos: walker.pos, yaw: walker.yaw, grounded: walker.grounded, zeroG: walker.gravity === 0, time }, running);
   render();
 }
-if (params.has('test')) window.siteTest = { plan, site, walker, state, guide, mech, visual, errors, render, start, pause, interact, offer, raw, credit, get renderer() { return renderer; }, get frame() { return frame; }, engine };
+if (params.has('test')) window.siteTest = { plan, site, walker, state, guide, mech, sound, map, toggleMap, visual, errors, render, start, pause, interact, offer, raw, credit, get renderer() { return renderer; }, get frame() { return frame; }, engine };
 try { resize(); renderer = await DeferredRenderer.create(canvas, fail); engine.webgpu = renderer; $('start').disabled = false; $('start').textContent = 'Start'; render(); last = performance.now(); requestAnimationFrame(loop); }
 catch (e) { fail(e); }

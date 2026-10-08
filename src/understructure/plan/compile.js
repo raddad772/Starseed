@@ -323,6 +323,7 @@ export function compileSite(plan) {
   const look = first ? [first.path[1][0], first.path[1][2]] : G.add(s0.center, [0, -1]);
   return {
     solids, lamps, zones, markers, water, stats, doors: doorsOf, seeps: intr.seeps, gates,
+    machinesLive: plan.machines.filter((m) => live.has(m.id)).map((m) => [m.center[0], (m.y0 + m.y1) / 2, m.center[1]]),
     spawn: { pos: [s0.center[0], s0.y0, s0.center[1]], yaw: Math.atan2(-(look[0] - s0.center[0]), -(look[1] - s0.center[1])) },
     spaces: [...plan.nodes.filter((n) => n.kind !== 'crossing' && n.kind !== 'access').map((n) => ({ id: n.id, name: n.name, poly: n.poly, y0: n.y0, y1: n.y1 })),
       ...[...plan.landmarks, plan.access].map((L) => ({ id: L.id, name: L.name, poly: L.poly, y0: L.y0, y1: L.y1 }))],
