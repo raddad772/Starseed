@@ -149,6 +149,7 @@ export class NavComputer {
     if (s.type.atmosphericThrust && (dest.kind === 'park' || dest.kind === 'orbit' || (dest.body && dest.body !== s.body))) { this.say('air-breathing engines cannot execute an orbital transfer', 'caution'); return false; }
     if (!dest.name) dest.name = dest.body ? dest.body.data.name : (dest.v ? dest.v.name : (dest.point ? dest.point.name : ''));
     this.dest = dest;
+    this.savedOrder = null;
     this.flight = null;
     this.nextEventAt = Infinity;
     this.active = true;

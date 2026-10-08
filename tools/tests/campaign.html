@@ -8,6 +8,7 @@
 <h1>Expedition campaign foundation</h1>
 <p class="note">Development preview: campaign records, first-run choices and Story Log. Full flight saves, the playable introduction and galactic travel are not connected yet. This fixture never opens the game renderer or starts world workers.</p>
 <div class="layout"><div><section class="panel" id="setup"></section><section class="panel" style="margin-top:24px"><h2>Storage validation</h2><button id="run">Run browser checks</button><button id="export">Export preview JSON</button><pre id="status">Ready. Checks use an isolated temporary database.</pre></section></div><section class="panel" id="log"></section></div>
+<script type="importmap">{"imports":{"three":"/vendor/three.module.js","three/addons/":"/vendor/addons/"}}</script>
 <script type="module">
 import { createCampaign,applyCampaignEvent } from '/src/campaign/state.js';
 import { encodeCampaign,decodeCampaign,importCampaignCopy } from '/src/campaign/save.js';

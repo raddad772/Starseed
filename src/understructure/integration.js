@@ -50,7 +50,7 @@ function marker() {
 export class SurfaceSurveys {
   constructor(game) {
     this.game=game; this.sites=[];
-    this.planetSites=new PlanetSurveySites(game.seed);
+    this.planetSites=new PlanetSurveySites(game.seed,{storage:game.campaignStorage});
     this.saveAll=()=>{for(const p of game.players)p.understructure?.save();};
     window.addEventListener('pagehide',this.saveAll);
   }
@@ -110,7 +110,8 @@ export class SurveySession {
   constructor(game,player,site) {
     this.game=game;this.player=player;this.site=site;this.lastSave=0;this.wasUnderground=false;
     this.anchor={position:player.fPos.clone(),heading:player.heading.clone(),pitch:player.pitch};
-    let saved={};try{saved=JSON.parse(localStorage.getItem(site.saveKey)||'{}');}catch{}
+    this.storage=game.campaignStorage||localStorage;
+    let saved={};try{saved=JSON.parse(this.storage.getItem(site.saveKey)||'{}');}catch{}
     this.plan=generateUnderstructure(site.seed,restoredProfile(site.seed,site.profile,saved),surveyEnvironment(site.body.data));
     this.sim=new UnderstructureSimulation(this.plan,saved);this.visual=buildScene(this.plan);
     for(const p of this.sim.beacons)this.visual.addBeacon(p);
@@ -123,8 +124,8 @@ export class SurveySession {
     if(game.map.open&&game.map.owner===player)game.map.toggle(player);
     game.setWarp(0);player.jetOn=false;player.prompt=null;player.ui.root.style.visibility='hidden';
   }
-  syncData(){const result=bankRecovery(localStorage,this.ledgerKey,this.site.saveKey,this.sim.rawData);this.sim.campaignTotal=result.total;if(result.newLead)this.hud.toast('GOLDEN PATH · New lead reconstructed · open field notes');this.lastBankedData=this.sim.rawData;}
-  save() {this.syncData();try{localStorage.setItem(this.site.saveKey,JSON.stringify(this.sim.save()));}catch{}}
+  syncData(){const result=bankRecovery(this.storage,this.ledgerKey,this.site.saveKey,this.sim.rawData);this.sim.campaignTotal=result.total;if(result.newLead)this.hud.toast('GOLDEN PATH · New lead reconstructed · open field notes');this.lastBankedData=this.sim.rawData;}
+  save() {this.syncData();try{this.storage.setItem(this.site.saveKey,JSON.stringify(this.sim.save()));}catch{}}
   update(dt,input,mouse) {
     const sim=this.sim,pad=input.usingPad;
     if(input.hit('KeyM'))this.hud.toggle('map');

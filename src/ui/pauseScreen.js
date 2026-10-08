@@ -17,7 +17,7 @@ import { faunaOf, realmOf } from '../sim/fauna.js';
 import { searchPlaces } from '../gen/worldsim/places.js';
 import { fireRegimeAt } from '../gen/life/fire.js';
 
-const TABS = [['map', 'Map'], ['planets', 'Planets'], ['settings', 'Settings'], ['controls', 'Controls']];
+const TABS = [['map', 'Map'], ['planets', 'Planets'], ['expedition', 'Expedition'], ['settings', 'Settings'], ['controls', 'Controls']];
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
 const GAS = { N2: 'N₂', O2: 'O₂', CO2: 'CO₂', CH4: 'CH₄', H2: 'H₂', He: 'He', Ar: 'Ar', H2O: 'H₂O', SO2: 'SO₂', NH3: 'NH₃', Ne: 'Ne', CO: 'CO', H2S: 'H₂S' };
 const agoText = (gyr) => gyr >= 1 ? `${gyr.toFixed(1)} Gyr ago` : gyr >= 0.001 ? `${Math.round(gyr * 1000)} Myr ago` : gyr >= 1e-6 ? `${Math.round(gyr * 1e6)} kyr ago` : `${Math.max(1, Math.round(gyr * 1e9))} yr ago`;
@@ -107,10 +107,12 @@ export class PauseScreen {
     else if (this.tab === 'settings') this.wireSettings();
     else if (this.tab === 'tests') this.wireTests();
     else if (this.tab === 'controls') this.wireControls();
+    else if (this.tab === 'expedition') this.o.expedition?.(this.el.querySelector('.page'));
   }
 
   page() {
     switch (this.tab) {
+      case 'expedition': return '';
       case 'map': return this.mapPage();
       case 'planets': return this.planetsPage();
       case 'tests': return this.testsPage();

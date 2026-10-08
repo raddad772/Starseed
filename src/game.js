@@ -89,6 +89,7 @@ export class Game {
     // simulated worlds (WORLDSIM.md step 7; ?worldsim=0 for the noise worlds, to compare)
     if (opts.worldsim) { this.worldSims = new WorldSims(this, { N: opts.simN, workers: opts.simWorkers, gpu: opts.tileGPU !== false }); this.tiles = new TerrainTiles(this); }
     this.lights = new LightRig(this.engine);
+    this.campaignStorage = opts.campaignStorage;
     this.surfaceSurveys = new SurfaceSurveys(this);
     // the world's clock: everyone's (sim/worldClock.js); this client's universe time from it
     this.clock = new WorldClock();
@@ -141,8 +142,9 @@ export class Game {
     const sc = this.system.star.color;
     const adapt = 0.55;
     this.engine.whiteBalance.set(1 / (1 + (sc[0] - 1) * adapt), 1 / (1 + (sc[1] - 1) * adapt), 1 / (1 + (sc[2] - 1) * adapt));
-    window.addEventListener('resize', () => this.layout());
-    this.begin();
+    this._onResize = () => this.layout();
+    window.addEventListener('resize', this._onResize);
+    if (!opts.deferStart) this.begin();
   }
 
   // ------------------------------------------------------------------ players
@@ -227,7 +229,14 @@ export class Game {
   joinPlayer(input) {
     if (this.players.length >= 2) return null;
     if (!this.placed) { this.joinPending = input; return null; } // (after the start is placed)
+    const savedPlayer = this.awayPlayers?.[this.players.length];
     const p = this.addPlayer(input);
+    if (savedPlayer && this.resumeSavedPlayer) {
+      this.resumeSavedPlayer(p, savedPlayer);
+      this.setCur(null);
+      this.message(`${p.label} rejoined at their saved location`, 'nav');
+      return p;
+    }
     if (!this.ship2) this.ship2 = this.addVessel('shuttle', 'Kittiwake', 'SV-28');
     p.ownShip = this.ship2;
     this.regroup(p);
@@ -417,7 +426,7 @@ export class Game {
     this.lights.adopt(v.visual.model.root, v.big ? null : (o) => o.name === 'interior');
     if (v.type.viewscreen) this.addScreen(v);
     this.vessels.push(v);
-    initDeckFrames(this,v);
+    if (!this.restoringFleet) initDeckFrames(this,v);
     return v;
   }
 
@@ -2481,6 +2490,7 @@ export class Game {
   }
 
   dispose() {
+    window.removeEventListener('resize', this._onResize);
     this.surfaceSurveys.dispose();
     // (other players' HUD and suit copies, and their controllers)
     for (const p of this.players.slice(1)) { p.ui.root.remove(); p.ui.suitEl.remove(); if (p.input.dispose) p.input.dispose(); }

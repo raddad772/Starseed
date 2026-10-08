@@ -1,5 +1,6 @@
 import { CAMPAIGN_FORMAT, SCHEMA_VERSION, CONTENT_VERSION, campaignRules, recoveryTotal } from './state.js';
 import { mysteryProgress } from '../understructure/recovery.js';
+import { validateFlight } from './flight.js';
 
 export const MAX_SAVE_BYTES = 10 * 1024 * 1024;
 const forbidden = new Set(['__proto__', 'prototype', 'constructor']);
@@ -39,7 +40,7 @@ export function validateCampaign(c) {
   if (!object(c) || c.format !== CAMPAIGN_FORMAT) fail('This is not a Starseed campaign file.');
   if (c.exampleOnly) fail('This file is a documentation example, not a saved campaign.');
   if (c.schemaVersion !== SCHEMA_VERSION) fail(`Unsupported campaign schema ${c.schemaVersion}; this build reads version ${SCHEMA_VERSION}.`);
-  if (c.saveKind !== 'campaign-record' || c.world !== null) fail('This build reads campaign records; live-flight restoration is not available yet.');
+  if (!['campaign-record', 'single-system-flight'].includes(c.saveKind) || (c.saveKind === 'campaign-record' && c.world !== null)) fail('Unsupported campaign save kind.');
   if (!string(c.campaignId, 128) || !string(c.label, 120) || !integer(c.revision)) fail('Invalid campaign identity or revision.');
   if (!date(c.createdAt) || !date(c.savedAt)) fail('Invalid save timestamp.');
   if (!object(c.generation) || !string(c.generation.galaxySeed, 128) || !object(c.generation.versions) || !object(c.generation.storyAnchors)) fail('Invalid generation information.');
@@ -51,7 +52,8 @@ export function validateCampaign(c) {
   if (!['pioneer', 'expedition', 'horizon'].includes(c.rules.startingFleetEra) || c.rules.recoveryPolicyVersion !== 1) fail('Unsupported fleet or recovery rules.');
   const presence = c.rules.megastructurePresence;
   if (!object(presence) || presence.version !== 1 || presence.maxPerPlanet !== 1 || typeof presence.eligiblePlanetChance !== 'number' || !(presence.eligiblePlanetChance >= 0 && presence.eligiblePlanetChance <= 1)) fail('Invalid site presence policy.');
-  if (!object(c.fleet) || c.fleet.provisioned !== false || !Array.isArray(c.fleet.vesselIds) || c.fleet.vesselIds.length || !Array.isArray(c.players) || c.players.length) fail('Campaign records cannot contain a partially saved live fleet.');
+  if (c.saveKind === 'campaign-record' && (!object(c.fleet) || c.fleet.provisioned !== false || !Array.isArray(c.fleet.vesselIds) || c.fleet.vesselIds.length || !Array.isArray(c.players) || c.players.length)) fail('Campaign records cannot contain a partially saved live fleet.');
+  if (c.saveKind === 'single-system-flight') validateFlight(c);
   const d = c.discoveries;
   if (!object(d) || !object(d.systems) || !object(d.sites) || !Array.isArray(d.returnAnchors)) fail('Invalid discovery catalogue.');
   for (const [id, system] of Object.entries(d.systems)) if (!string(id) || !object(system) || !['detected', 'charted', 'surveyed'].includes(system.knowledge) || (system.visited !== undefined && typeof system.visited !== 'boolean')) fail('Invalid system discovery.');

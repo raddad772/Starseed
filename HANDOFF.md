@@ -2,6 +2,8 @@
 
 Dave is play-testing and giving feedback in short bursts.
 
+**Latest instruction (2026-10-08): do not launch Claude or message inactive agents to announce work. Continue locally without coordination notices. This supersedes older messaging instructions below and in CLAUDE.md.**
+
 **The full renderer migration is implemented (2026-10-07): normal startup now uses raw WebGPU deferred.**
 `WEBGPU.md` records the architecture, validation and limits. Terrain/objects, native shadows, atmosphere,
 liquids/effects, vessels, local lights, decals/contact blending, GTAO, GPU instance/tree/chunk culling,
@@ -19,20 +21,32 @@ not a currently loadable game save. Dave clarified that this is hopeful: his dau
 there is no hidden rescue countdown. “Cozy exploration” is a tonal reference: a familiar fleet as
 home, unhurried exploration and optional demanding flight, not a settled genre label.
 
-The first implementation adds `src/campaign/{state,save,storage,content}.js` and reusable
-`src/ui/{expeditionSetup,storyLog}.js`. Pure events track the introductory incident, first receiver,
-arrivals, site discoveries and highest-per-site Golden Path credit without duplicate rewards.
-Validated JSON campaign records use transactional IndexedDB current/previous revisions, stale-write
-rejection, explicit backup restore and import-as-copy. They are **not full game saves**: saveKind is
-`campaign-record`, world is null, and no live fleet/player snapshot is permitted. No main/game or
-understructure interfaces changed. `tools/tests/campaign.html` previews the views and runs 13 browser
-checks without renderer/workers. Nine `campaign.test.mjs` CPU tests pass. Both suites were run.
-Next: live vessel/player/item/site capture and restore, then bootstrap/first-run/pause integration;
-autosave scheduling and legacy progress migration are still outstanding. Milestones 1/2 remain open.
+The campaign foundation is now connected to live single-system flight saves. Pause → Expedition
+saves/exports the current fleet, imports independent JSON copies, lists slots, explicitly restores
+previous revisions and shows the Story Log. The briefing has Saved flights. First activation adopts
+legacy progress for this system without deleting it; active expeditions autosave every 30 seconds.
+`src/campaign/{flight,session,siteStorage}.js` restores vessels, players/away players, inventory,
+attachments, hull/heat, doors, lifts, turnover decks, FTL state and exact time. Navigation intent waits
+for explicit replanning; warp consent resets. Site storage is independent per slot. Underground
+saves return to the surface entrance with progress intact. Failures retain the prior DB revision
+and expose JSON export; blocked localStorage cannot prevent export. Loading attempts an in-memory
+rollback if reconstruction fails.
+
+44 focused CPU checks pass. The owned finite `tools/tests/campaign-flight.html` fixture passes 19
+full-game native checks with 34 vessels, two players and 145,039-byte JSON. Renderer reinitialization,
+natural loading completion, next-revision save and split-screen validation pass. It uses two workers
+and worldsim=0; full terrain reconstruction and active underground restore need native coverage.
+The older campaign preview still provides its 13 isolated browser checks and first-run form.
+
+Limits: one system, current generator versions and exact vessel signatures; no layout migrations.
+Finish moving-person rendezvous and recover crew before saving. Drop out of FTL before resuming a
+saved nav order. New Expedition/fleet provisioning, playable/skippable intro, galaxy catalogue/map,
+interstellar continuity and event-triggered autosaves remain pending. Change System still starts a
+fresh sandbox fleet. The current snapshot deliberately does not mark the story intro completed.
 
 The initial ~200 charted systems and 60-billion-solar-mass visual preset are tuning
 proposals, not a galaxy boundary or final physical model. Start with campaign state/save adapters;
-preserve existing fleet work and coordinate understructure integration with its owner.
+preserve existing fleet work. The latest no-coordination instruction above takes precedence.
 
 Integrated the frozen generator-hall/lookout checkpoint b3d7ef7 as 092a6eb, groundwater animation
 85e2257 as 59c0ca6, and polygon rooms/bridges/maintenance crawlers 260aba0 as 10276e8. The latest

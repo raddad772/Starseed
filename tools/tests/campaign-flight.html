@@ -1,0 +1,8 @@
+<!doctype html><meta charset="utf-8"><title>Flight save and restore validation</title>
+<style>body{margin:0;background:#101b22;color:#dae5f4;font:15px system-ui}header{padding:12px}button{margin-left:16px;padding:8px}iframe{border:0;width:1280px;height:850px}pre{white-space:pre-wrap}#status{max-height:240px;overflow:auto}</style>
+<header><b>Expedition save / restore</b><button id="run">Run flight save checks</button><pre id="status">Ready · isolated save database, two workers, no world simulation</pre></header><iframe title="Flight save test game"></iframe>
+<script type="module">
+const frame=document.querySelector('iframe'),status=document.querySelector('#status'),run=document.querySelector('#run');
+run.onclick=()=>{run.disabled=true;status.textContent='Starting native game…';frame.onload=()=>{const script=frame.contentDocument.createElement('script');script.type='module';script.src='/tools/campaign-flight-driver.js';frame.contentDocument.body.append(script);};frame.src='/?seed=SOL&workers=2&worldsim=0&surveyTest=1';};
+window.addEventListener('message',e=>{if(e.source!==frame.contentWindow||e.origin!==location.origin||e.data.type!=='campaign-flight-test')return;status.textContent=JSON.stringify(e.data.report,null,2);});
+</script>
