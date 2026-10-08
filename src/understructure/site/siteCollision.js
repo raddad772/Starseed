@@ -4,7 +4,7 @@
 // plus the gravity zones. Positions are in the site's own frame.
 import * as THREE from 'three';
 import { GeometryCollision } from '../geometryCollision.js';
-import { inside } from '../plan/geom2.js';
+import { inside, sdPoly, dot, sub, perp } from '../plan/geom2.js';
 
 const _n = new THREE.Vector3(), _d = new THREE.Vector3();
 
@@ -13,12 +13,55 @@ export class SiteCollision extends GeometryCollision {
     super(meshes);
     this.zones = zones;
     this.unbounded = true;
+    // parts that come and go (gates): blockers, floors, and fold portals
+    this.blockers = []; this.floors = []; this.portals = [];
+  }
+  addBlocker(b) { this.blockers.push(b); }
+  addFloor(f) { this.floors.push(f); }
+  addPortal(p) { this.portals.push(p); }
+
+  // A capsule against the active blockers (extruded polygons); sets lastHit like a wall.
+  _blocked(x, y, z, radius) {
+    for (const b of this.blockers) {
+      if (!b.active() || y + 1.9 <= b.y0 || y >= b.y1) continue;
+      const d = sdPoly([x, z], b.poly);
+      if (d < radius - 0.02) {
+        // the normal of the nearest edge, pointing out of the blocker
+        let best = Infinity, nx = 0, nz = 0;
+        for (let i = 0; i < b.poly.length; i++) {
+          const a = b.poly[i], c = b.poly[(i + 1) % b.poly.length], e = sub(c, a), L = Math.hypot(...e), n = [e[1] / L, -e[0] / L];
+          const out = dot(sub([x, z], a), n);
+          if (Math.abs(out - d) < best) { best = Math.abs(out - d); nx = n[0]; nz = n[1]; }
+        }
+        this.lastHit = { normal: { x: nx, y: 0, z: nz }, depth: radius - d };
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // Did a step from p to q pass through an active fold frame? Then where to, and the turn.
+  portal(p, q) {
+    for (const f of this.portals) {
+      if (!f.active()) continue;
+      for (const [A, B, sgn] of [[f.a, f.b, 1], [f.b, f.a, -1]]) {
+        const sp = dot(sub([p[0], p[2]], [A.pos[0], A.pos[2]]), A.dir) * sgn, sq = dot(sub([q[0], q[2]], [A.pos[0], A.pos[2]]), A.dir) * sgn;
+        if (!(sp < 0 && sq >= 0)) continue;
+        const lat = dot(sub([q[0], q[2]], [A.pos[0], A.pos[2]]), perp(A.dir));
+        if (Math.abs(lat) > A.half || q[1] < A.pos[1] - 0.6 || q[1] > A.pos[1] + 2.6) continue;
+        const turn = Math.atan2(B.dir[1], B.dir[0]) - Math.atan2(A.dir[1], A.dir[0]);
+        const c = Math.cos(turn), s = Math.sin(turn), rx = q[0] - A.pos[0], rz = q[2] - A.pos[2];
+        return { pos: [B.pos[0] + rx * c - rz * s, q[1] - A.pos[1] + B.pos[1], B.pos[2] + rx * s + rz * c], turn };
+      }
+    }
+    return null;
   }
 
   // GeometryCollision.clear, but anything wholly below the step height is
   // stepped over whatever way it faces (a slab's edge whose normal rounds to
   // -0.004 up is not a wall), and a level face counts as upward.
   clear(x, y, z, radius = 0.4, step = 0) {
+    if (this.blockers.length && this._blocked(x, y, z, radius)) return false;
     const c = this.capsule; c.radius = radius; c.start.set(x, y + radius, z); c.end.set(x, y + 1.9 - radius, z);
     this.query.min.set(x - radius, y, z - radius); this.query.max.set(x + radius, y + 1.9, z + radius);
     const stack = [this.root];
@@ -58,6 +101,10 @@ export class SiteCollision extends GeometryCollision {
         if (y === null || y > yTop + 1e-4 || y < yTop - drop) continue;
         if (best === null || y > best) best = y;
       }
+    }
+    for (const f of this.floors) {
+      if (!f.active() || f.y > yTop + 1e-4 || f.y < yTop - drop) continue;
+      if (inside([x, z], f.poly, 0) && (best === null || f.y > best)) best = f.y;
     }
     return best;
   }

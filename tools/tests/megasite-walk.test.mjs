@@ -18,3 +18,16 @@ test('the main route walks end to end', () => {
   }
   assert.deepEqual(fails, []);
 });
+
+test('a distance gate folds the walker past the collapse', () => {
+  let tried = 0;
+  for (let i = 0; i < 60 && tried < 3; i++) {
+    const plan = planSite(`MS-${i}`);
+    if (!plan.gates.some((g) => g.theme === 'space')) continue;
+    const r = walkRoute(plan, compileSite(plan));
+    if (!r.ok) continue; // (the low-gravity pilot misses some seeds)
+    tried++;
+    assert.ok(r.walker.folded > 0, `MS-${i}: walked the route without folding`);
+  }
+  assert.ok(tried > 0, 'no seed with a distance gate walked');
+});

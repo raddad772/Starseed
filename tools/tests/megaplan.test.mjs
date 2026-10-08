@@ -140,3 +140,21 @@ test('every doorway compiles: no door failures, no degenerate room outlines', as
   }
   assert.deepEqual(bad, []);
 });
+
+test("themes: three per site; every gate's keys come before it on the route", () => {
+  const bad = [];
+  let placed = 0, wanted = 0;
+  for (const s of SEEDS) {
+    const plan = planSite(s);
+    if (plan.themes.length !== 3) bad.push(`${s}: ${plan.themes.length} themes`);
+    wanted += 3; placed += plan.gates.length;
+    const idx = new Map(plan.route.map((id, i) => [id, i]));
+    for (const g of plan.gates) for (const k of g.keys) {
+      let at = idx.get(k.node);
+      if (at === undefined) { const l = plan.links.find((q) => q.b === k.node); at = l ? idx.get(l.a) : undefined; } // a dead end: where it leaves the route
+      if (at === undefined || at > g.at) bad.push(`${s}: ${g.theme} key ${k.kind} at ${at} after gate at ${g.at}`);
+    }
+  }
+  assert.deepEqual(bad, []);
+  assert.ok(placed / wanted > 0.95, `only ${placed} of ${wanted} gates placed`);
+});

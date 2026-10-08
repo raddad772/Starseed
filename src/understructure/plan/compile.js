@@ -209,6 +209,7 @@ export function compileSite(plan) {
       const yy = end === 'a' ? y : l.path.at(-1)[1];
       const d = doorway(inner, sh.T, exIn.at, exIn.dir, w, yy, yy + h);
       if (!d) { stats.doorFails++; continue; }
+      d.link = l.id;
       addDoor(sh.id, d);
       const trimmed = [ex.at, ...start.slice(ex.i)];
       if (end === 'a') { pts = trimmed; capA = d.ends; } else { pts = trimmed.reverse(); capB = d.ends; }
@@ -266,18 +267,34 @@ export function compileSite(plan) {
     if (L.kind !== 'access') dressHall(solids, lamps, L, top, doorsOf.get(L.id) || [], plan.nodes.filter((q) => q.walk && q.landmark === L.id), rng.fork(L.id));
   }
   // crossings: catwalks with rails, hung from the volume
+  const spanOf = new Map((plan.gates || []).filter((g) => g.kind === 'span').map((g) => [g.node, g]));
   for (const n of plan.nodes.filter((q) => q.kind === 'crossing' || q.kind === 'access')) {
     const [a, b] = n.walk, y = n.y0, d = G.norm(G.sub(b, a)), side = G.perp(d), len = G.dist(a, b);
     const halfW = 1.3;
-    solids.push(vprism(G.ccw([G.add(a, G.mul(side, halfW)), G.add(b, G.mul(side, halfW)), G.add(b, G.mul(side, -halfW)), G.add(a, G.mul(side, -halfW))]), y - 0.3, y, 'metal', { floor: true }));
-    for (const sg of [-1, 1]) {
-      const o = G.mul(side, sg * (halfW - 0.08));
-      const p0 = G.add(G.add(a, o), G.mul(d, 1.2)), p1 = G.add(G.add(b, o), G.mul(d, n.kind === 'access' ? 0 : -1.2));
-      solids.push(beam([p0[0], y + 1.1, p0[1]], [p1[0], y + 1.1, p1[1]], 0.05, 0.05, 'rust', 6));
-      solids.push(beam([p0[0], y + 0.55, p0[1]], [p1[0], y + 0.55, p1[1]], 0.035, 0.035, 'metal', 6));
-      for (let s = 1.2; s < len - 1.1; s += 2.6) {
-        const p = G.add(G.add(a, o), G.mul(d, s));
-        solids.push(beam([p[0], y, p[1]], [p[0], y + 1.1, p[1]], 0.04, 0.04, 'metal', 6));
+    // the deck in pieces: whole, or broken round a gate's span (ragged ends)
+    const gate = spanOf.get(n.id);
+    const pieces = gate ? [[0, gate.span.from], [gate.span.to, len]] : [[0, len]];
+    const at = (s) => G.add(a, G.mul(d, s));
+    for (const [s0, s1] of pieces) {
+      solids.push(vprism(G.ccw([G.add(at(s0), G.mul(side, halfW)), G.add(at(s1), G.mul(side, halfW)), G.add(at(s1), G.mul(side, -halfW)), G.add(at(s0), G.mul(side, -halfW))]), y - 0.3, y, 'metal', { floor: true }));
+      for (const sg of [-1, 1]) {
+        const o = G.mul(side, sg * (halfW - 0.08));
+        const r0 = s0 === 0 ? 1.2 : s0 + 0.3, r1 = s1 === len ? (n.kind === 'access' ? len : len - 1.2) : s1 - 0.3;
+        if (r1 - r0 < 0.5) continue;
+        const p0 = G.add(at(r0), o), p1 = G.add(at(r1), o);
+        solids.push(beam([p0[0], y + 1.1, p0[1]], [p1[0], y + 1.1, p1[1]], 0.05, 0.05, 'rust', 6));
+        solids.push(beam([p0[0], y + 0.55, p0[1]], [p1[0], y + 0.55, p1[1]], 0.035, 0.035, 'metal', 6));
+        for (let s = r0; s < r1 + 0.01; s += 2.6) {
+          const p = G.add(at(s), o);
+          solids.push(beam([p[0], y, p[1]], [p[0], y + 1.1, p[1]], 0.04, 0.04, 'metal', 6));
+        }
+      }
+    }
+    if (gate) {
+      // torn deck plates hanging off the broken ends
+      for (const [s, sgn] of [[gate.span.from, 1], [gate.span.to, -1]]) {
+        const p = at(s), q = G.add(p, G.mul(d, sgn * 1.4));
+        solids.push(beam([p[0] + side[0] * rng.range(-0.8, 0.8), y - 0.15, p[1] + side[1] * rng.range(-0.8, 0.8)], [q[0], y - rng.range(1.2, 2.4), q[1]], 0.45, 0.06, 'rust', 4));
       }
     }
     const L = vols.get(n.landmark ?? 'ACCESS');
@@ -300,15 +317,63 @@ export function compileSite(plan) {
   const intr = intrusions(solids, lamps, plan, doorsOf, rng.fork('intrusions'));
   for (const L of plan.landmarks) if (L.kind === 'cistern') water.push({ poly: L.poly, y: L.y0 + (Math.min(...plan.nodes.filter((n) => n.landmark === L.id).map((n) => n.y0)) - L.y0) * 0.45 });
 
+  const gates = compileGates(solids, lamps, plan, byId, vols, doorsOf, rng.fork('gates'));
   for (const f of plan.finds) markers.push({ ...f });
   const s0 = byId.get('staging'), first = plan.links.find((l) => l.a === 'staging');
   const look = first ? [first.path[1][0], first.path[1][2]] : G.add(s0.center, [0, -1]);
   return {
-    solids, lamps, zones, markers, water, stats, doors: doorsOf, seeps: intr.seeps,
+    solids, lamps, zones, markers, water, stats, doors: doorsOf, seeps: intr.seeps, gates,
     spawn: { pos: [s0.center[0], s0.y0, s0.center[1]], yaw: Math.atan2(-(look[0] - s0.center[0]), -(look[1] - s0.center[1])) },
     spaces: [...plan.nodes.filter((n) => n.kind !== 'crossing' && n.kind !== 'access').map((n) => ({ id: n.id, name: n.name, poly: n.poly, y0: n.y0, y1: n.y1 })),
       ...[...plan.landmarks, plan.access].map((L) => ({ id: L.id, name: L.name, poly: L.poly, y0: L.y0, y1: L.y1 }))],
   };
+}
+
+// Gates for the runtime: what blocks (a door slab filling a doorway, a gap in
+// a catwalk, rubble in a passage) and what opens it. The blocking parts that
+// come and go are not solids: the runtime adds them to collision itself.
+function compileGates(out, lamps, plan, byId, vols, doorsOf, rng) {
+  const res = [];
+  for (const g of plan.gates || []) {
+    const r = { ...g };
+    if (g.kind === 'door') {
+      const n = byId.get(g.node), shellId = n.kind === 'crossing' ? n.landmark : n.id, poly = n.kind === 'crossing' ? vols.get(n.landmark).poly : n.poly;
+      const T = n.kind === 'crossing' ? VOL_WALL : WALL;
+      const d = (doorsOf.get(shellId) || []).find((q) => q.link === g.link);
+      if (!d) continue;
+      const a = poly[d.edge], b = poly[(d.edge + 1) % poly.length], A = offsetVertex(poly, d.edge, T), B = offsetVertex(poly, (d.edge + 1) % poly.length, T);
+      const P = (t) => G.lerp(a, b, t), Q = (t) => G.lerp(A, B, t);
+      r.barrier = { poly: G.ccw([P(d.inner[0]), P(d.inner[1]), Q(d.outer[1]), Q(d.outer[0])]), y0: d.y0, y1: d.y1 };
+      const mid = G.lerp(P(d.inner[0]), P(d.inner[1]), 0.5), inward = G.norm(G.perp(G.sub(b, a)));
+      // the control beside the door, on the side you arrive from (outside the room)
+      const outPt = G.add(G.lerp(Q(d.outer[0]), Q(d.outer[1]), 0.5), G.mul(inward, -0.6)), along = G.norm(G.sub(b, a));
+      r.control = { pos: [...G.add(outPt, G.mul(along, (G.dist(P(d.inner[0]), P(d.inner[1])) / 2 + 0.7))), d.y0], face: Math.atan2(-inward[0], -inward[1]) };
+      r.control.pos = [r.control.pos[0], d.y0, r.control.pos[1]];
+      r.door = { mid, inward, along, width: G.dist(P(d.inner[0]), P(d.inner[1])), y0: d.y0, y1: d.y1 };
+    } else if (g.kind === 'span') {
+      const n = byId.get(g.node), [a, b] = n.walk, dd = G.norm(G.sub(b, a)), side = G.perp(dd);
+      const p0 = G.add(a, G.mul(dd, g.span.from - 0.05)), p1 = G.add(a, G.mul(dd, g.span.to + 0.05));
+      r.floor = { poly: G.ccw([G.add(p0, G.mul(side, 1.3)), G.add(p1, G.mul(side, 1.3)), G.add(p1, G.mul(side, -1.3)), G.add(p0, G.mul(side, -1.3))]), y: g.span.y };
+    } else if (g.kind === 'fold') {
+      const l = plan.links.find((q) => q.id === g.link), y = l.path[0][1], w = l.width;
+      const c = g.collapse, dir = c.dir, side = G.perp(dir), cp = [c.p[0], c.p[2]];
+      // rubble filling the passage: a slab you cannot pass and broken rock over it
+      out.push(vprism(G.orientedRect(cp, dir, 0.8, w + 0.4), y, y + 3.1, 'rock'));
+      for (let k = 0; k < 6; k++) {
+        const q = G.add(cp, G.mul(side, rng.range(-w, w)));
+        out.push(shard(rng, [q[0], y + rng.range(0, 1.5), q[1]], [dir[0] * rng.sign() * 0.6 + rng.range(-0.3, 0.3), rng.range(0.2, 1), dir[1] * rng.sign() * 0.6 + rng.range(-0.3, 0.3)], rng.range(1.2, 2.4), rng.range(0.5, 1.1), 'rock'));
+      }
+      r.frames = g.frames.map((f) => {
+        const p = [f.p[0], f.p[2]], s2 = G.perp(f.dir);
+        for (const sg of [-1, 1]) { const q = G.add(p, G.mul(s2, sg * (w - 0.12))); out.push(vprism(G.orientedRect(q, f.dir, 0.18, 0.12), y, y + 2.9, 'metal')); }
+        const q0 = G.add(p, G.mul(s2, -(w - 0.12))), q1 = G.add(p, G.mul(s2, w - 0.12));
+        out.push(beam([q0[0], y + 2.75, q0[1]], [q1[0], y + 2.75, q1[1]], 0.18, 0.15, 'metal', 4));
+        return { pos: [p[0], y, p[1]], dir: f.dir, half: w - 0.3 };
+      });
+    }
+    res.push(r);
+  }
+  return res;
 }
 
 // The doorway at the top of a climb room, as a point just inside it.

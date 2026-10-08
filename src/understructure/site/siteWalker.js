@@ -56,6 +56,7 @@ export class SiteWalker {
     // horizontal move with sliding
     const yNow = p[1];
     const tryMove = (x, z) => c.clear(x, yNow, z, R, this.grounded ? STEP_CLEAR : 0.05);
+    const before = p.slice();
     const nx = p[0] + v[0] * dt, nz = p[2] + v[2] * dt;
     if (tryMove(nx, nz)) { p[0] = nx; p[2] = nz; }
     else {
@@ -75,6 +76,14 @@ export class SiteWalker {
       }
     }
 
+    // through a fold frame: out of the other one, turned with it
+    const jump = c.portals?.length ? c.portal(before, p) : null;
+    if (jump) {
+      p[0] = jump.pos[0]; p[1] = jump.pos[1]; p[2] = jump.pos[2]; this.yaw -= jump.turn;
+      const cs = Math.cos(jump.turn), sn = Math.sin(jump.turn), vx = v[0], vz = v[2];
+      v[0] = vx * cs - vz * sn; v[2] = vx * sn + vz * cs;
+      this.folded = (this.folded || 0) + 1;
+    }
     // vertical: gravity, ground, ceiling
     if (this.grounded) {
       const fl = c.supportAt(p[0], p[2], p[1] + STEP, R, STEP + 0.5);

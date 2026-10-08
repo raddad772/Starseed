@@ -7,9 +7,16 @@ import { SiteCollision } from '../../src/understructure/site/siteCollision.js';
 import { SiteWalker } from '../../src/understructure/site/siteWalker.js';
 import { inside, centroid } from '../../src/understructure/plan/geom2.js';
 
+// Collision for a site, with every gate already solved: spans present,
+// folds open, door slabs gone (keys and locks are checked separately).
 export function siteCollision(site) {
   const meshes = [...solidGeometries(site.solids).values()].map((g) => new THREE.Mesh(g));
-  return new SiteCollision(meshes, site.zones);
+  const col = new SiteCollision(meshes, site.zones);
+  for (const g of site.gates || []) {
+    if (g.kind === 'span') col.addFloor({ poly: g.floor.poly, y: g.floor.y, active: () => true });
+    if (g.kind === 'fold') col.addPortal({ a: g.frames[0], b: g.frames[1], active: () => true });
+  }
+  return col;
 }
 
 const DT = 1 / 30;

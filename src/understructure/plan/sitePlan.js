@@ -18,6 +18,7 @@
 
 import { Rng, normalizeSeed } from '../../core/rng.js';
 import * as G from './geom2.js';
+import { pickThemes, placeGates } from './themes.js';
 
 export const PLAN_VERSION = 1;
 export const SURFACE_Y = 240; // the break-in level is this far below the surface
@@ -176,10 +177,14 @@ function tryPlan(seed, rng, themes, environment) {
   for (const L of landmarks) machines.push(...fillMachinery(mr.fork(L.id), L, crossings.filter((c) => c.landmark === L.id)));
 
   // --- 6. Finds ---------------------------------------------------------------
+  // --- 7. Themes: three of six, each with a gate on the route and its keys -------
+  const siteThemes = pickThemes(Rng.fromString(`megaplan-themes:${seed}`), themes);
+  const gates = placeGates(rng.fork('gates'), { nodes, links, route, spurs }, siteThemes);
+
   const finds = placeFinds(rng.fork('finds'), nodes, spurs, crossings, links);
 
   const plan = {
-    ok: true, version: PLAN_VERSION, seed, themes, environment, surfaceY: SURFACE_Y,
+    ok: true, version: PLAN_VERSION, seed, themes: siteThemes, gates, environment, surfaceY: SURFACE_Y,
     landmarks, access, nodes, links, route, machines, finds,
     entry: { node: 'staging', tunnel: G.lerp(staging.center, G.add(staging.center, G.norm(G.sub(staging.center, cl))), 4) },
     exit: { node: 'access' },

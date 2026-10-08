@@ -95,5 +95,5 @@ export function buildSiteScene(plan, site) {
       if (g.children[0]?.geometry?.type === 'OctahedronGeometry') g.children[0].rotation.y = time * 0.8;
     }
   }
-  return { scene, update, collision, lights, flashlight };
+  return { scene, root, mat, update, collision, lights, flashlight };
 }
