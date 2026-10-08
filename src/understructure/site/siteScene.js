@@ -28,6 +28,9 @@ export function buildSiteScene(plan, site) {
     deep: new THREE.MeshStandardMaterial({ color: '#ff9a6a', emissive: '#ff6a30', emissiveIntensity: 1.5 }),
     seep: new THREE.MeshStandardMaterial({ color: '#7fb4c0', emissive: '#16343a', emissiveIntensity: 0.6, metalness: 0.4, roughness: 0.15, transparent: true, opacity: 0.45, depthWrite: false, side: THREE.DoubleSide }),
     water: new THREE.MeshStandardMaterial({ color: '#1b3e3a', metalness: 0.55, roughness: 0.23 }),
+    wet: new THREE.MeshStandardMaterial({ color: '#10140f', metalness: 0.25, roughness: 0.2, transparent: true, opacity: 0.42, depthWrite: false, side: THREE.DoubleSide }),
+    trickle: new THREE.MeshStandardMaterial({ color: '#8fa7a4', metalness: 0.6, roughness: 0.06, transparent: true, opacity: 0.38, depthWrite: false, side: THREE.DoubleSide }),
+    puddle: new THREE.MeshStandardMaterial({ color: '#141c1a', metalness: 0.7, roughness: 0.04, transparent: true, opacity: 0.62, depthWrite: false }),
   };
   for (const name of ['concrete', 'floor', 'metal', 'rust', 'rock']) mat[name].userData.webgpu = { kind: 'survey' };
 
@@ -39,29 +42,62 @@ export function buildSiteScene(plan, site) {
   }
   const collision = new SiteCollision(collisionMeshes, site.zones);
 
-  // fixtures: a housing and a light
+  // fixtures: a housing on what holds it (plan/compile.js lamp mounts), and a light aimed off it
   const fixture = [];
   const lights = [];
+  const box = (w, h, d, x, y, z, yaw, m) => { const g = new THREE.BoxGeometry(w, h, d); if (yaw) g.rotateY(yaw); g.translate(x, y, z); fixture.push([g, m]); };
+  const rod = (r, x, y0, y1, z, m) => { const g = new THREE.CylinderGeometry(r, r, y1 - y0, 6); g.translate(x, (y0 + y1) / 2, z); fixture.push([g, m]); };
   for (const f of site.lamps) {
-    const color = LAMP[f.color] ?? LAMP.amber;
-    const g = new THREE.BoxGeometry(0.9, 0.12, 0.36); g.translate(f.pos[0], f.pos[1] + 0.1, f.pos[2]);
-    fixture.push([g, f.color]);
+    const color = LAMP[f.color] ?? LAMP.amber, [x, y, z] = f.pos, n = f.n || [0, 0], yaw = Math.atan2(n[0], n[1]);
+    const aim = [x, y - 1, z];
+    switch (f.mount) {
+      case 'none': break;   // (a glowing band or plate is the light)
+      case 'wall': {       // a bracket off the wall, the housing at its end
+        const d = 0.45; box(0.09, 0.09, d, x - n[0] * d / 2, y + 0.05, z - n[1] * d / 2, yaw, 'metal'); box(0.5, 0.2, 0.2, x, y, z, yaw, f.color);
+        aim[0] = x + n[0] * 0.9; aim[2] = z + n[1] * 0.9; break;
+      }
+      case 'post':         // on a post at the catwalk's rail
+        rod(0.05, x, f.base, y - 0.05, z, 'metal'); box(0.5, 0.12, 0.3, x, y + 0.02, z, 0, f.color); break;
+      case 'floor':        // a floodlight standing on the ledge, washing the wall above it
+        box(0.55, 0.32, 0.4, x, f.base + 0.16, z, yaw, 'metal'); box(0.48, 0.26, 0.05, x - n[0] * 0.2, f.base + 0.2, z - n[1] * 0.2, yaw, f.color);
+        aim[0] = x - n[0] * 0.6; aim[1] = y + 1.4; aim[2] = z - n[1] * 0.6; break;
+      case 'cable':        // hung on a cable from above (the visitors' work lights)
+        rod(0.02, x, y + 0.15, f.top, z, 'metal'); box(0.32, 0.3, 0.32, x, y, z, 0, f.color); break;
+      default: {           // flush on the ceiling
+        const top = f.top ?? y + 0.2; box(0.9, 0.1, 0.36, x, top - 0.05, z, 0, f.color);
+      }
+    }
     const l = new THREE.SpotLight(color, f.power ?? 80, f.range ?? 34, f.wall ? 1.45 : 1.15, 0.45, 2);
-    l.position.set(f.pos[0], f.pos[1], f.pos[2]);
-    l.target.position.set(f.pos[0], f.pos[1] - 1, f.pos[2]);
+    l.position.set(x, y, z);
+    l.target.position.set(aim[0], aim[1], aim[2]);
     l.castShadow = true; l.userData.rectAspect = 2.4; l.userData.cells = []; l.userData.power = f.power ?? 80;
     scene.add(l, l.target); lights.push(l);
   }
   for (const [g, c] of fixture) root.add(new THREE.Mesh(g, mat[c] || mat.amber));
   // water seeping from rock wounds down into the pit
+  // (and trickles down walls, flat on them, the wall darkened round them)
   for (const sp of site.seeps || []) {
+    if (sp.n) {
+      // a trickle: a thread of water wandering down the wall, spreading as it goes, on a darker wet streak
+      const H = sp.y1 - sp.y0, yaw = Math.atan2(sp.n[0], sp.n[1]);
+      for (const [w, off, m] of [[sp.w * 3.2, -0.012, mat.wet], [sp.w, 0, mat.trickle]]) {
+        const g = new THREE.PlaneGeometry(1, H, 1, 16), P = g.attributes.position;
+        for (let i = 0; i < P.count; i++) {
+          const t = 0.5 - P.getY(i) / H, wid = w * (0.45 + 0.9 * t), wan = Math.sin(t * 5.1 + sp.phase) * 0.09 + Math.sin(t * 13 + sp.phase * 2) * 0.03;
+          P.setX(i, P.getX(i) * wid + wan);
+        }
+        g.rotateY(yaw); g.translate(sp.x + sp.n[0] * off, (sp.y0 + sp.y1) / 2, sp.z + sp.n[1] * off);
+        root.add(new THREE.Mesh(g, m));
+      }
+      continue;
+    }
     const g = new THREE.PlaneGeometry(sp.w, sp.y1 - sp.y0, 1, 8); g.rotateY(-sp.yaw); g.translate(sp.x, (sp.y0 + sp.y1) / 2, sp.z);
     root.add(new THREE.Mesh(g, mat.seep));
   }
   for (const w of site.water) {
     const shape = new THREE.Shape(w.poly.map(([x, z]) => new THREE.Vector2(x, -z)));
     const g = new THREE.ShapeGeometry(shape); g.rotateX(-Math.PI / 2); g.translate(0, w.y, 0);
-    root.add(new THREE.Mesh(g, mat.water));
+    root.add(new THREE.Mesh(g, w.puddle ? mat.puddle : mat.water));
   }
 
   // finds: low four-wheeled crawlers in dead ends, data shards elsewhere, the record at the core

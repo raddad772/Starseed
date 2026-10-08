@@ -80,6 +80,7 @@ test('every link joins existing spaces and every space is reachable from the bre
     const ids = new Set(plan.nodes.map((n) => n.id));
     const adj = new Map([...ids].map((id) => [id, []]));
     for (const l of plan.links) {
+      if (l.kind === 'collapse') { assert.ok(ids.has(l.a) && l.b === null, `${s}: fall ${l.id} off ${l.a}`); continue; }   // (a way that ends in rock)
       assert.ok(ids.has(l.a) && ids.has(l.b), `${s}: link ${l.id} ${l.a}->${l.b}`);
       adj.get(l.a).push(l.b); adj.get(l.b).push(l.a);
     }
@@ -99,7 +100,7 @@ test('not a maze: the route is a line, side branches are single dead ends', () =
     const onRoute = new Set(plan.route);
     for (const n of plan.nodes.filter((q) => !onRoute.has(q.id))) {
       assert.equal(n.kind, 'deadend', `${s}: ${n.id} off-route but not a dead end`);
-      assert.equal(plan.links.filter((l) => l.a === n.id || l.b === n.id).length, 1, `${s}: ${n.id} has several ways in`);
+      assert.equal(plan.links.filter((l) => l.kind !== 'collapse' && (l.a === n.id || l.b === n.id)).length, 1, `${s}: ${n.id} has several ways in`);
     }
   }
 });

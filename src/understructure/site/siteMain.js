@@ -17,6 +17,7 @@ import { buildAirDust } from '../dustVisual.js';
 import { buildManifestations } from '../manifestationVisual.js';
 import { buildZeroGWonder } from '../zeroGVisual.js';
 import { Rng } from '../../core/rng.js';
+import { Input } from '../../input.js';
 
 const $ = (id) => document.getElementById(id), params = new URLSearchParams(location.search);
 const seed = params.get('seed') || 'SUMP-07';
@@ -59,6 +60,11 @@ const view = { camera, width: 1, height: 1, rect: { x: 0, y: 0, w: 1, h: 1 }, me
 const engine = { scene: visual.scene, view, minExposure: 0.05, pixelRatio: 1 };
 let renderer, running = false, last = 0, time = 0, frame = 0, notice = '', noticeUntil = 0;
 const keys = new Set(), errors = [];
+// a controller, laid out as on foot in the game (padLayout.js; spacewalk's in zero-g): X use, LT
+// light, A jump / up, B down, RT run, View the map, Menu pause
+const pad = new Input(canvas, { kbm: false });
+let usingPad = false;
+pad.onPadPause = () => (running ? pause() : start());
 $('site').textContent = plan.seed; $('seed').value = plan.seed;
 $('kinds').textContent = `${plan.themes.map((t) => THEME_NAMES[t]).join(' + ')} · ${plan.landmarks.map((l) => l.name.toLowerCase()).join(' · ')} · ${plan.nodes.filter((n) => n.kind === 'crossing').length} crossings · ${plan.nodes.filter((n) => n.kind === 'climb').length} climbs`;
 
@@ -104,9 +110,27 @@ addEventListener('keydown', (e) => {
   if (e.code === 'Escape') { if (!$('mapPanel').hidden) { toggleMap(); return; } pause(); }
   if (e.code === 'KeyM' && running) { toggleMap(); return; }
   if (!running || !$('mapPanel').hidden) return;
-  if (e.code === 'KeyF') { state.flashlight = !state.flashlight; toast(state.flashlight ? 'Hand light on' : 'Hand light off', false); }
-  if (e.code === 'KeyE') interact();
+  if (e.code === 'KeyL') toggleLight();
+  if (e.code === 'KeyF' || e.code === 'KeyE') interact();
 });
+addEventListener('keydown', () => { usingPad = false; }, true);
+function toggleLight() { state.flashlight = !state.flashlight; toast(state.flashlight ? 'Hand light on' : 'Hand light off', false); }
+// the controller, once a frame
+function padControls(dt) {
+  pad.pollPad(walker.gravity === 0 ? 'eva' : 'foot', dt);
+  if (!pad.pad) return;
+  const ps = pad.padState;
+  if (ps.hits.size || Math.hypot(ps.lx, ps.ly) > 0.3 || Math.hypot(ps.rx, ps.ry) > 0.3) usingPad = true;
+  if (!running) { if (pad.hit('Space')) start(); }
+  else if (pad.hit('KeyM')) toggleMap();
+  else if ($('mapPanel').hidden) {
+    if (pad.hit('KeyF')) interact();
+    if (pad.hit('KeyL')) toggleLight();
+    const m = pad.mouse();
+    walker.yaw -= m.dx; walker.pitch = Math.max(-1.45, Math.min(1.45, walker.pitch - m.dy));
+  }
+  pad.endFrame();
+}
 addEventListener('keyup', (e) => keys.delete(e.code));
 canvas.addEventListener('pointerdown', () => { if (running && document.pointerLockElement !== canvas) canvas.requestPointerLock?.()?.catch?.(() => {}); });
 addEventListener('mousemove', (e) => { if (running && document.pointerLockElement === canvas) { walker.yaw -= e.movementX * 0.002; walker.pitch = Math.max(-1.45, Math.min(1.45, walker.pitch - e.movementY * 0.002)); } });
@@ -157,7 +181,7 @@ function hud() {
   const g = walker.gravity; $('gravity').textContent = `LOCAL FIELD ${g.toFixed(2)} G`;
   document.body.classList.toggle('zero-g', g === 0); $('floatHelp').hidden = g !== 0;
   const r = raw(); $('count').textContent = `${String(r).padStart(3, '0')}%`; $('credit').textContent = `CREDIT ${credit(r)} / 170`;
-  const o = running ? offer() : null; $('prompt').hidden = !o; if (o) $('prompt').innerHTML = `<b>E</b>${o.text}`;
+  const o = running ? offer() : null; $('prompt').hidden = !o; if (o) $('prompt').innerHTML = `<b>${usingPad ? 'X' : 'F'}</b>${o.text}`;
   const a = walker.takeAlert(); if (a) toast(a);
   $('toast').textContent = performance.now() < noticeUntil ? notice : ''; $('toast').hidden = !$('toast').textContent;
   // the compass: where the route goes next, in camera space
@@ -183,10 +207,11 @@ function render() {
   for (const w of wonders) w.update(time, { pos: walker.pos, pitch: walker.pitch, yaw: walker.yaw, zeroG: walker.gravity === 0, velocity: walker.vel });
   engine.time = time; renderer.render(engine); frame++;
 }
+const clamp1 = (v) => Math.max(-1, Math.min(1, v));
 function input() {
   return {
-    forward: Number(keys.has('KeyW')) - Number(keys.has('KeyS')), strafe: Number(keys.has('KeyD')) - Number(keys.has('KeyA')),
-    jump: keys.has('Space'), down: keys.has('KeyC'), brake: keys.has('KeyR'), fast: keys.has('ShiftLeft') || keys.has('ShiftRight'),
+    forward: clamp1(Number(keys.has('KeyW')) - Number(keys.has('KeyS')) + pad.axis('KeyS', 'KeyW')), strafe: clamp1(Number(keys.has('KeyD')) - Number(keys.has('KeyA')) + pad.axis('KeyA', 'KeyD')),
+    jump: keys.has('Space') || pad.down('Space'), down: keys.has('KeyC') || pad.down('KeyC'), brake: keys.has('KeyR') || pad.down('KeyX'), fast: keys.has('ShiftLeft') || keys.has('ShiftRight') || pad.down('ShiftLeft'),
     turn: Number(keys.has('ArrowLeft')) - Number(keys.has('ArrowRight')), look: Number(keys.has('ArrowUp')) - Number(keys.has('ArrowDown')),
   };
 }
@@ -201,6 +226,7 @@ function loop(now) {
   requestAnimationFrame(loop);
   if (document.hidden) return;
   const dt = Math.min((now - last) / 1000, 0.1); if (now - last < 1000 / 60) return; last = now;
+  padControls(dt);
   if (running) { walker.step(dt, input()); time += dt; mech.update(dt, walker.pos); if (time > 1.5) scanOnArrival(); }
   sound.update({ pos: walker.pos, yaw: walker.yaw, grounded: walker.grounded, zeroG: walker.gravity === 0, time }, running);
   render();

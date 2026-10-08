@@ -20,7 +20,7 @@ import { Rng, normalizeSeed } from '../../core/rng.js';
 import * as G from './geom2.js';
 import { pickThemes, placeGates } from './themes.js';
 
-export const PLAN_VERSION = 1;
+export const PLAN_VERSION = 2;
 export const SURFACE_Y = 240; // the break-in level is this far below the surface
 
 const KINDS = {
@@ -30,7 +30,10 @@ const KINDS = {
   cistern: { name: 'CISTERN', r: [28, 44], pit: [24, 40], head: [10, 20], sides: [5, 7], wet: true },
   exchange: { name: 'HEAT EXCHANGE', r: [26, 40], pit: [14, 26], head: [12, 24], sides: [5, 6] },
 };
-const CORRIDOR_W = 1.6;       // corridor half-width
+const CORRIDOR_W = 2.2;       // corridor half-width (room to walk two abreast, not a crawl)
+const CORRIDOR_H = 4.2;       // its height
+const SPUR_W = 0.8;           // a spur's width, of a corridor's
+const SPUR_H = 3.6;
 const ROUTE_CLEAR = 4.5;      // paths keep this far from other volumes' footprints
 const WALL_GAP = 1.0;         // minimum solid between two spaces
 const STUB = ROUTE_CLEAR + 0.6;
@@ -99,7 +102,7 @@ function tryPlan(seed, rng, themes, environment) {
 
   // --- 2. The break-in: a rough staging room outside the first volume --------
   const firstL = landmarks[order[0]];
-  const staging = { id: 'staging', kind: 'staging', name: 'BREACH STAGING', y0: heights[0], y1: heights[0] + 4.4, gravity: 1 };
+  const staging = { id: 'staging', kind: 'staging', name: 'BREACH STAGING', y0: heights[0], y1: heights[0] + 5.6, gravity: 1 };
   {
     let ok = false;
     for (let t = 0; t < 60 && !ok; t++) {
@@ -107,7 +110,7 @@ function tryPlan(seed, rng, themes, environment) {
       const a = Math.atan2(away[1], away[0]) + lr.range(-1.2, 1.2);
       const d = firstL.r + lr.range(16, 26);
       const c = G.add(firstL.center, [Math.cos(a) * d, Math.sin(a) * d]);
-      staging.poly = G.regularPoly(c[0], c[1], lr.range(6, 8), lr.range(4.5, 6), 6, lr.range(0, Math.PI));
+      staging.poly = G.regularPoly(c[0], c[1], lr.range(7, 9), lr.range(5.5, 7), 6, lr.range(0, Math.PI));
       ok = [...vols, core].every((v) => !G.polysOverlap(staging.poly, v.poly, 6));
     }
     if (!ok) return fail('staging placement');
@@ -116,7 +119,7 @@ function tryPlan(seed, rng, themes, environment) {
 
   // --- 3. Route: crossings joined by chains of rooms through the gaps -------
   const S = new Space();
-  for (const v of vols) S.addSolid(v.poly, v.y0, v.y1, v.id);
+  for (const v of vols) S.addSolid(v.poly, v.y0, v.y1, v.id, true);
   S.addSolid(staging.poly, staging.y0, staging.y1, staging.id);
   S.addSolid(core.poly, core.y0, core.y1, core.id);
   const nodes = [staging], links = [], route = [staging.id];
@@ -135,7 +138,7 @@ function tryPlan(seed, rng, themes, environment) {
     for (const n of chain.nodes) { nodes.push(n); route.push(n.id); }
     links.push(...chain.links);
     if (final) break;
-    const cross = { id: `X${i}`, kind: 'crossing', landmark: L.id, visit: i, name: L.name, y0: y, y1: y + 3.2, gravity: 1, entry, exit, walk: [entry.at, exit.at] };
+    const cross = { id: `X${i}`, kind: 'crossing', landmark: L.id, visit: i, name: L.name, y0: y, y1: y + CORRIDOR_H + 0.4, gravity: 1, entry, exit, walk: [entry.at, exit.at] };
     for (const c of crossings) if (c.landmark === L.id && Math.abs(c.y0 - y) < 6) return fail('stacked crossings');
     cross.poly = G.segRect(cross.walk[0], cross.walk[1], 1.4, 0.4);
     nodes.push(cross); route.push(cross.id); crossings.push(cross);
@@ -145,17 +148,18 @@ function tryPlan(seed, rng, themes, environment) {
   // a short passage from the core into the founders' shaft, onto its lift deck
   {
     const ae = portalOn(pr, access, core.center, hTop, null);
-    const lk = { id: 'kcore', a: core.id, b: 'access', kind: 'corridor', main: true, path: [core.center, ae.out, ae.at].map(([x, z]) => [r2(x), hTop, r2(z)]), width: CORRIDOR_W, height: 3 };
+    const lk = { id: 'kcore', a: core.id, b: 'access', kind: 'corridor', main: true, path: [core.center, ae.out, ae.at].map(([x, z]) => [r2(x), hTop, r2(z)]), width: CORRIDOR_W, height: CORRIDOR_H };
     const blocked = S.inBand(hTop - 1, hTop + 4, [core.id, access.id]).some((o) => segs(lk).some((sg) => G.polysOverlap(sg.poly, o.poly, 0.3)));
     if (blocked) return fail('core to access');
     links.push(lk); for (const sg of segs(lk)) S.addSolid(sg.poly, sg.y0, sg.y1, lk.id);
-    const acc = { id: 'access', kind: 'access', landmark: access.id, name: 'FOUNDERS ACCESS', y0: hTop, y1: hTop + 3.2, gravity: 1, entry: ae, walk: [ae.at, G.lerp(ae.at, access.center, 0.85)] };
+    const acc = { id: 'access', kind: 'access', landmark: access.id, name: 'FOUNDERS ACCESS', y0: hTop, y1: hTop + CORRIDOR_H + 0.4, gravity: 1, entry: ae, walk: [ae.at, G.lerp(ae.at, access.center, 0.85)] };
     acc.poly = G.segRect(acc.walk[0], acc.walk[1], 1.4, 0.4);
     nodes.push(acc); route.push(acc.id); crossings.push(acc);
   }
 
   // --- 4. Spurs: short dead ends off the route -------------------------------
   const spurs = addSpurs(rng.fork('spurs'), S, nodes, links);
+  addCollapses(rng.fork('collapses'), S, nodes, links);
 
   // every doorway needs a facet of its own: drop spurs that would not leave room
   // for one, and re-plan if a doorway on the route cannot have one
@@ -164,8 +168,10 @@ function tryPlan(seed, rng, themes, environment) {
     if (!bad.length) break;
     const spur = bad.find((l) => !l.main);
     if (!spur) return fail('door facets');
-    const dead = spur.a.startsWith('D') ? spur.a : spur.b;
     links.splice(links.indexOf(spur), 1);
+    if (spur.kind === 'collapse') continue;   // (a fall of rock: just not there)
+    const dead = spur.a.startsWith('D') ? spur.a : spur.b;
+    for (let i = links.length - 1; i >= 0; i--) if (links[i].a === dead) links.splice(i, 1);   // (and its own falls)
     nodes.splice(nodes.findIndex((n) => n.id === dead), 1);
     spurs.splice(spurs.findIndex((n) => n.id === dead), 1);
   }
@@ -181,7 +187,7 @@ function tryPlan(seed, rng, themes, environment) {
   const siteThemes = pickThemes(Rng.fromString(`megaplan-themes:${seed}`), themes);
   const gates = placeGates(rng.fork('gates'), { nodes, links, route, spurs }, siteThemes);
 
-  const finds = placeFinds(rng.fork('finds'), nodes, spurs, crossings, links);
+  const finds = placeFinds(rng.fork('finds'), nodes, spurs, crossings, links, gates);
 
   const plan = {
     ok: true, version: PLAN_VERSION, seed, themes: siteThemes, gates, environment, surfaceY: SURFACE_Y,
@@ -264,7 +270,7 @@ function portalOn(rng, L, toward, y, avoid) {
 // Occupied space: plan footprints with a height band.
 class Space {
   constructor() { this.items = []; }
-  addSolid(poly, y0, y1, id) { this.items.push({ poly, y0, y1, id }); }
+  addSolid(poly, y0, y1, id, volume = false) { this.items.push({ poly, y0, y1, id, volume }); }
   inBand(y0, y1, skip = []) { return this.items.filter((s) => s.y1 + SLAB > y0 && s.y0 - SLAB < y1 && !skip.includes(s.id)); }
 }
 
@@ -378,7 +384,7 @@ function buildChainAt(rng, S, prev, entry, L, idx, targetId, clearance) {
   // ordinary rooms: one per ~26 m of route, at least one
   const want = Math.max(1, Math.min(3, Math.round(G.polylineLength(pts()) / 26)));
   for (let k = 0; k < want; k++) {
-    const r = rng.range(4, 6.4), room = roomMaker(`R${idx}.${k}`, 'room', r);
+    const r = rng.range(5.5, 8.5), room = roomMaker(`R${idx}.${k}`, 'room', r);
     const f = (k + 1) / (want + 1) + rng.range(-0.08, 0.08);
     for (const df of [0, 0.12, -0.12, 0.24, -0.24]) if (tryRoom(G.polylineLength(pts()) * Math.max(0.05, Math.min(0.95, f + df)), r, room)) break;
   }
@@ -408,9 +414,9 @@ function buildChainAt(rng, S, prev, entry, L, idx, targetId, clearance) {
     if (!v.room) continue;
     const n = v.room;
     if (n.kind === 'climb') {
-      n.y0 = r2(Math.min(ya, yb)); n.top = r2(yb); n.y1 = r2(Math.max(ya, yb) + 4.5); n.climb = { from: r2(ya), to: r2(yb) };
+      n.y0 = r2(Math.min(ya, yb)); n.top = r2(yb); n.y1 = r2(Math.max(ya, yb) + 5.2); n.climb = { from: r2(ya), to: r2(yb) };
       n.gravity = n.mode === 'zero-g' ? 0 : 0.25; y = yb;
-    } else { n.y0 = r2(y); n.y1 = r2(y + rng.range(3.4, 6.5)); }
+    } else { n.y0 = r2(y); n.y1 = r2(y + rng.range(5.5, 8.5)); }
   }
   if (!climb) y = yb;
   // links: previous space -> rooms -> next volume, each corridor at its level
@@ -428,6 +434,13 @@ function buildChainAt(rng, S, prev, entry, L, idx, targetId, clearance) {
   links.push(corridor(`k${idx}.${links.length}`, from, targetId, run.map(([x, z, yy]) => [x, z, yy ?? level])));
   // the last corridor must arrive at the portal's height
   for (const q of links.at(-1).path) q[1] = r2(yb);
+  // nor may a passage brush a hall it doesn't open into (one let in close to an end, so the end
+  // isn't inside it, is kept clear on the rest of the way)
+  const halls = obsAll.filter((o) => o.volume);
+  for (let k = 0; k < links.length; k++) {
+    const l = links[k], opens = new Set([l.a, l.b, k === 0 ? prev.node.landmark : null, k === links.length - 1 ? L?.id : null]);
+    for (const sg of segs(l)) for (const o of halls) if (!opens.has(o.id) && sg.y1 + SLAB > o.y0 && sg.y0 - SLAB < o.y1 && G.polysOverlap(sg.poly, o.poly, 0.3)) return null;
+  }
   for (const n of nodes) { S.addSolid(n.poly, n.y0, n.y1, n.id); delete n.place; delete n.fat; }
   for (const l of links) for (const seg of segs(l)) S.addSolid(seg.poly, seg.y0, seg.y1, l.id);
   return { nodes, links, lastId: nodes.at(-1)?.id ?? prev.node.id };
@@ -478,17 +491,17 @@ function mkRoom(rng, id, kind, c, dir, r, ya, yb, mode) {
   const room = { id, kind, poly, center: c, gravity: 1, name: kind === 'climb' ? (mode === 'zero-g' ? 'NULL WELL' : 'BROKEN DECKS') : 'SERVICE SPACE' };
   if (kind === 'climb') {
     room.mode = mode; room.gravity = mode === 'zero-g' ? 0 : 0.25;
-    room.y0 = r2(Math.min(ya, yb)); room.top = r2(yb); room.y1 = r2(Math.max(ya, yb) + 4.5);
+    room.y0 = r2(Math.min(ya, yb)); room.top = r2(yb); room.y1 = r2(Math.max(ya, yb) + 5.2);
     room.climb = { from: r2(ya), to: r2(yb) };
   } else {
-    room.y0 = r2(ya); room.y1 = r2(ya + rng.range(3.4, 6.5));
+    room.y0 = r2(ya); room.y1 = r2(ya + rng.range(5.5, 8.5));
   }
   return room;
 }
 
 function corridor(id, a, b, pts) {
   const path = pts.map(([x, z, y]) => [r2(x), r2(y), r2(z)]);
-  return { id, a, b, kind: 'corridor', main: true, path, width: CORRIDOR_W, height: 3 };
+  return { id, a, b, kind: 'corridor', main: true, path, width: CORRIDOR_W, height: CORRIDOR_H };
 }
 
 // Plan footprints of a link's segments, for the occupancy record.
@@ -503,6 +516,36 @@ export function segs(l) {
 }
 
 // Dead-end spurs off ordinary rooms and catwalk balconies off crossings.
+// Ways that are ways no more: short passages off rooms and dead ends that end a few metres in at
+// a fall of rock (the structure goes on past them, out of reach). Kept clear like any passage
+function addCollapses(rng, S, nodes, links) {
+  const hosts = nodes.filter((n) => n.kind === 'room' || n.kind === 'deadend' || n.kind === 'staging');
+  rng.shuffle(hosts);
+  const target = rng.int(3, 6), w = CORRIDOR_W * 0.9;
+  let made = 0;
+  for (const h of hosts) {
+    if (made >= target) break;
+    const c = G.centroid(h.poly), y = h.y0;
+    const attached = links.filter((l) => l.a === h.id || l.b === h.id), linked = attached.map((l) => l.id);
+    const outDirs = attached.map((l) => { const q = l.a === h.id ? l.path[1] : l.path.at(-2); return G.norm(G.sub([q[0], q[2]], c)); });
+    for (let t = 0; t < 8; t++) {
+      const a = rng.range(0, Math.PI * 2), d = [Math.cos(a), Math.sin(a)];
+      if (outDirs.some((o) => G.dot(o, d) > Math.cos(60 * Math.PI / 180))) continue;
+      if (!facetsOk(h.poly, c, [...outDirs, d], w + 0.6)) continue;
+      let lo = 0, hi = 40;
+      for (let k = 0; k < 24; k++) { const m = (lo + hi) / 2; if (G.sdPoly(G.add(c, G.mul(d, m)), h.poly) < 0) lo = m; else hi = m; }
+      const edge = G.add(c, G.mul(d, lo)), end = G.add(edge, G.mul(d, rng.range(5, 9)));
+      const out = G.segRect(G.add(edge, G.mul(d, 0.6)), end, w + 0.3 + 0.5);
+      const obs = S.inBand(y - 1, y + CORRIDOR_H + 2, [h.id]);
+      if (obs.some((o) => !linked.includes(o.id) && G.polysOverlap(out, o.poly, WALL_GAP))) continue;
+      S.addSolid(G.segRect(c, end, w + 0.3), y, y + CORRIDOR_H, `c${made}`);
+      links.push({ id: `c${made}`, a: h.id, b: null, kind: 'collapse', main: false, path: [[r2(c[0]), y, r2(c[1])], [r2(end[0]), y, r2(end[1])]], width: w, height: CORRIDOR_H });
+      outDirs.push(d); linked.push(`c${made}`); made++;
+      break;
+    }
+  }
+}
+
 function addSpurs(rng, S, nodes, links) {
   const spurs = [];
   const hosts = nodes.filter((n) => n.kind === 'room' || n.kind === 'staging');
@@ -512,11 +555,11 @@ function addSpurs(rng, S, nodes, links) {
     if (spurs.length >= target) break;
     const c = G.centroid(h.poly), y = h.y0;
     for (let t = 0; t < 10; t++) {
-      const a = rng.range(0, Math.PI * 2), L = rng.range(10, 22), r = rng.range(2.8, 4.6);
+      const a = rng.range(0, Math.PI * 2), L = rng.range(10, 22), r = rng.range(4, 6);
       const d = [Math.cos(a), Math.sin(a)], end = G.add(c, G.mul(d, L));
-      const room = { id: `D${spurs.length}`, kind: 'deadend', name: 'DEAD END', poly: G.regularPoly(end[0], end[1], r, r * rng.range(0.7, 1), rng.pick([5, 6, 8]), a), center: end, y0: y, y1: r2(y + rng.range(3, 4.5)), gravity: 1, spur: true };
-      const corr = { poly: G.segRect(c, end, CORRIDOR_W + 0.3), y0: y, y1: y + 3 };
-      const obs = S.inBand(y - 1, y + 5, [h.id]);
+      const room = { id: `D${spurs.length}`, kind: 'deadend', name: 'DEAD END', poly: G.regularPoly(end[0], end[1], r, r * rng.range(0.7, 1), rng.pick([5, 6, 8]), a), center: end, y0: y, y1: r2(y + rng.range(4.5, 6)), gravity: 1, spur: true };
+      const corr = { poly: G.segRect(c, end, CORRIDOR_W * SPUR_W + 0.3), y0: y, y1: y + SPUR_H };
+      const obs = S.inBand(y - 1, y + SPUR_H + 2, [h.id]);
       if (G.polysOverlap(room.poly, h.poly, WALL_GAP + 2)) continue;
       const attached = links.filter((l) => l.a === h.id || l.b === h.id), linked = attached.map((l) => l.id);
       const outDirs = attached.map((l) => { const q = l.a === h.id ? l.path[1] : l.path.at(-2); return G.norm(G.sub([q[0], q[2]], c)); });
@@ -525,9 +568,9 @@ function addSpurs(rng, S, nodes, links) {
       if (obs.some((o) => G.polysOverlap(room.poly, o.poly, WALL_GAP))) continue;
       if (obs.some((o) => !linked.includes(o.id) && G.polysOverlap(corr.poly, o.poly, 0.4) && !G.polysOverlap(o.poly, h.poly, 0))) continue;
       S.addSolid(room.poly, room.y0, room.y1, room.id);
-      S.addSolid(corr.poly, y, y + 3, `s${spurs.length}`);
+      S.addSolid(corr.poly, y, y + SPUR_H, `s${spurs.length}`);
       nodes.push(room);
-      links.push({ id: `s${spurs.length}`, a: h.id, b: room.id, kind: 'corridor', main: false, path: [[r2(c[0]), y, r2(c[1])], [r2(end[0]), y, r2(end[1])]], width: CORRIDOR_W * 0.8, height: 2.6 });
+      links.push({ id: `s${spurs.length}`, a: h.id, b: room.id, kind: 'corridor', main: false, path: [[r2(c[0]), y, r2(c[1])], [r2(end[0]), y, r2(end[1])]], width: CORRIDOR_W * SPUR_W, height: SPUR_H });
       spurs.push(room);
       break;
     }
@@ -606,8 +649,21 @@ function fillMachinery(rng, L, crossings) {
 
 // 1 unit at the break-in (the entry scan), 90 at the data core, and 33 more
 // single units: enough to pass 100 and reach the 170 credit cap.
-function placeFinds(rng, nodes, spurs, crossings, links) {
+function placeFinds(rng, nodes, spurs, crossings, links, gates) {
   const finds = [];
+  // (a climb's find on the ledge inside its top doorway, not in the air over the well: where the
+  // passage out at the top leaves the room, 0.7 m in)
+  const topLedge = (n) => {
+    const l = links.find((k) => (k.a === n.id && Math.abs(k.path[0][1] - n.top) < 0.3) || (k.b === n.id && Math.abs(k.path.at(-1)[1] - n.top) < 0.3));
+    if (!l) return null;
+    const path = l.a === n.id ? l.path : [...l.path].reverse(), c = [path[0][0], path[0][2]], q = [path[1][0], path[1][2]], d = G.norm(G.sub(q, c));
+    let lo = 0, hi = G.dist(c, q);
+    for (let k = 0; k < 30; k++) { const m = (lo + hi) / 2; if (G.sdPoly(G.add(c, G.mul(d, m)), n.poly) < 0) lo = m; else hi = m; }
+    const p = G.add(c, G.mul(d, Math.max(0, lo - 0.7)));
+    return [p[0], n.top, p[1]];
+  };
+  // (and off a catwalk's span that comes and goes)
+  const spanOf = new Map(gates.filter((g) => g.kind === 'span').map((g) => [g.node, g.span]));
   const put = (node, pos, units, kind) => finds.push({ id: `f${finds.length}`, node: node.id, pos: pos.map(r2), units, kind });
   const staging = nodes.find((n) => n.id === 'staging'), core = nodes.find((n) => n.kind === 'core');
   put(staging, [staging.center[0], staging.y0, staging.center[1]], 1, 'entry-scan');
@@ -625,8 +681,14 @@ function placeFinds(rng, nodes, spurs, crossings, links) {
       if (need <= 0) break;
       const n = s.node;
       let pos;
-      if (s.walk) { const p = G.lerp(s.walk[0], s.walk[1], rng.range(0.2, 0.8)); pos = [p[0], n.y0, p[1]]; }
-      else { const c = n.center || G.centroid(n.poly), j = [rng.range(-1.5, 1.5), rng.range(-1.5, 1.5)]; pos = [c[0] + j[0], s.top ? n.top : n.y0, c[1] + j[1]]; }
+      if (s.walk) {
+        const L = G.dist(s.walk[0], s.walk[1]), sp = spanOf.get(n.id);
+        let t = rng.range(0.2, 0.8);
+        for (let k = 0; sp && k < 12 && t * L > sp.from - 1.5 && t * L < sp.to + 1.5; k++) t = rng.range(0.2, 0.8);
+        if (sp && t * L > sp.from - 1.5 && t * L < sp.to + 1.5) t = (sp.from - 1.5) / L > 0.15 ? (sp.from - 1.5) / L : (sp.to + 1.5) / L;
+        const p = G.lerp(s.walk[0], s.walk[1], t); pos = [p[0], n.y0, p[1]];
+      } else if (s.top) { pos = topLedge(n); if (!pos) continue; }
+      else { const c = n.center || G.centroid(n.poly), j = [rng.range(-1.5, 1.5), rng.range(-1.5, 1.5)]; pos = [c[0] + j[0], n.y0, c[1] + j[1]]; }
       put(n, pos, 1, s.walk ? 'catwalk-cache' : n.kind === 'deadend' ? 'crawler' : 'shard');
       need--;
     }

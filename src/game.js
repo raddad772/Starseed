@@ -1693,7 +1693,7 @@ export class Game {
       this.setCur(p);
       // (a passenger's controller works as on foot: the right stick looks around)
       const pm = p.mode;
-      p.input.pollPad(pm === 'seat' ? (p.flying ? 'flight' : 'foot') : (pm === 'eva' ? 'eva' : 'foot'), dtReal);
+      p.input.pollPad(p.understructure?.padMode || (pm === 'seat' ? (p.flying ? 'flight' : 'foot') : (pm === 'eva' ? 'eva' : 'foot')), dtReal);
       if (!p.understructure) {
         p.ui.suit.update(dtReal);
         if (!p.ui.suit.open) p.ui.quick.update(dtReal);

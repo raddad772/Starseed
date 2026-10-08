@@ -15,7 +15,7 @@ import { SURFACE_Y } from './sitePlan.js';
 const WALL = 0.5;      // room and passage walls
 const VOL_WALL = 2.2;  // the big volumes' shells
 const SLAB = 0.4;
-const DOOR_H = 3.0;
+const DOOR_H = 4.4;
 
 const X = [1, 0, 0], Y = [0, 1, 0], Z = [0, 0, 1];
 // A vertical prism: polygon in plan (x, z), from y0 to y1.
@@ -175,7 +175,17 @@ function exitPoint(pts, poly) {
 
 export function compileSite(plan) {
   const rng = Rng.fromString(`megasite:${plan.seed}`);
-  const solids = [], lamps = [], zones = [], markers = [], water = [], stats = { doorFails: 0 };
+  const solids = [], lamps = [], zones = [], markers = [], water = [], seeps = [], stats = { doorFails: 0 };
+  // (water gets in on a wet world: more of it deep down, by the cistern, and through the visitors' rock)
+  const wet = plan.environment?.water !== false;
+  const ys = plan.nodes.map((q) => q.y0), yLo = Math.min(...ys), yHi = Math.max(...ys), cistern = plan.landmarks.find((L) => L.kind === 'cistern');
+  const wetness = (n) => {
+    const c = n.center || G.centroid(n.poly);
+    let p = 0.12 + 0.4 * (1 - (n.y0 - yLo) / Math.max(1, yHi - yLo));
+    if (cistern && G.dist(c, cistern.center) < cistern.r + 30 && n.y0 < cistern.y1) p += 0.3;
+    if (n.kind === 'staging') p += 0.4;
+    return Math.min(0.9, p);
+  };
   const byId = new Map(plan.nodes.map((n) => [n.id, n]));
   const vols = new Map([...plan.landmarks, plan.access].map((L) => [L.id, L]));
   const doorsOf = new Map(); // node or volume id -> doorways
@@ -217,11 +227,13 @@ export function compileSite(plan) {
     if (pts.length < 2) continue;
     const tunnel = l.a === 'staging' || l.b === 'staging';
     passage(solids, pts, y, w, h, capA, capB, tunnel ? { floor: 'rock', ceiling: 'rock', wall: 'rock' } : { floor: 'floor', ceiling: 'concrete', wall: 'concrete' });
+    if (l.kind === 'collapse') { collapseEnd(solids, pts, y, w, h, rng); if (wet && rng.chance(0.6)) trickle(seeps, water, G.add(pts.at(-1), G.mul(G.norm(G.sub(pts.at(-2), pts.at(-1))), 0.25)), G.norm(G.sub(pts.at(-2), pts.at(-1))), y, y + h - 0.3, rng); continue; }   // (dark: nobody lit a way that ends)
+    sideDoors(solids, seeps, water, pts, y, w, h, tunnel, wet, rng);
     // lamps along the way
     const len = G.polylineLength(pts);
     for (let s = 6; s < len - 3; s += rng.range(9, 14)) {
       const at = G.along(pts, s);
-      lamps.push({ pos: [at.p[0], y + h - 0.25, at.p[1]], color: tunnel ? 'work' : 'amber', power: tunnel ? 60 : 70 });
+      lamps.push({ pos: [at.p[0], y + h - 0.2, at.p[1]], color: tunnel ? 'work' : 'amber', power: tunnel ? 60 : 70, mount: 'ceiling', top: y + h });
     }
   }
 
@@ -239,8 +251,12 @@ export function compileSite(plan) {
       zones.push({ id: n.id, name: n.name, poly: n.poly, y0: n.y0, y1: n.y1, gravity: n.gravity });
       if (n.mode === 'low-g') lowGDecks(solids, n, rng, doorsOf.get(n.id) || []);
       else exitLedge(solids, n, doorsOf.get(n.id) || []);
-      for (let y = n.y0 + 4; y < n.y1 - 1; y += 7) lamps.push({ pos: [c[0], y, c[1]], color: 'cyan', power: 55, wall: true });
-    } else lamps.push({ pos: [c[0], n.y1 - 0.25, c[1]], color: n.kind === 'core' ? 'cyan' : 'amber', power: n.kind === 'core' ? 110 : 80 });
+      wellLamps(lamps, n, doorsOf.get(n.id) || []);
+    } else lamps.push({ pos: [c[0], n.y1 - 0.2, c[1]], color: n.kind === 'core' ? 'cyan' : 'amber', power: n.kind === 'core' ? 110 : 80, mount: 'ceiling', top: n.y1 });
+    // doorways that no longer open, on walls with none of their own (the place goes on past
+    // them); water in, here and there
+    const used = falseDoors(solids, n, doorsOf.get(n.id) || [], rng);
+    if (wet) roomWater(seeps, water, n, doorsOf.get(n.id) || [], used, rng, wetness(n));
 
   }
 
@@ -309,7 +325,7 @@ export function compileSite(plan) {
         solids.push(beam([q[0], y, q[1]], [q[0], L.y1, q[1]], 0.06, 0.06, 'metal', 6));
       }
     }
-    for (let s = 5; s < len - 2; s += 12) { const p = G.add(a, G.mul(d, s)); lamps.push({ pos: [p[0], y + 2.6, p[1]], color: 'amber', power: 75 }); }
+    for (let s = 5, k = 0; s < len - 2; s += 12, k++) { const p = G.add(a, G.mul(d, s)), q = G.add(p, G.mul(side, (k % 2 ? 1 : -1) * (halfW - 0.15))); lamps.push({ pos: [q[0], y + 2.6, q[1]], color: 'amber', power: 75, mount: 'post', base: y }); }
   }
   const live = new Map(); // one surviving generator per generator hall
   for (const L of plan.landmarks) { const ms = plan.machines.filter((m) => m.landmark === L.id && m.kind === 'reactor'); if (ms.length) live.set(rng.pick(ms).id, true); }
@@ -322,14 +338,14 @@ export function compileSite(plan) {
   {
     const st = byId.get('staging'), hole = breakInShaft(st);
     roomWalls(solids, hole, 0.8, st.y1, plan.surfaceY, [], 'rock');
-    for (let y = st.y1 + 6; y < plan.surfaceY - 2; y += rng.range(9, 15)) lamps.push({ pos: [st.center[0] + 1.2, y, st.center[1]], color: 'work', power: 40, wall: true, range: 16 });
+    for (let y = st.y1 + 6; y < plan.surfaceY - 2; y += rng.range(9, 15)) lamps.push({ pos: [st.center[0] + 1.2, y, st.center[1]], color: 'work', power: 40, wall: true, range: 16, mount: 'cable', top: plan.surfaceY });
   }
   const gates = compileGates(solids, lamps, plan, byId, vols, doorsOf, rng.fork('gates'));
   for (const f of plan.finds) markers.push({ ...f });
   const s0 = byId.get('staging'), first = plan.links.find((l) => l.a === 'staging');
   const look = first ? [first.path[1][0], first.path[1][2]] : G.add(s0.center, [0, -1]);
   return {
-    solids, lamps, zones, markers, water, stats, doors: doorsOf, seeps: intr.seeps, gates,
+    solids, lamps, zones, markers, water, stats, doors: doorsOf, seeps: [...seeps, ...intr.seeps], gates,
     machinesLive: plan.machines.filter((m) => live.has(m.id)).map((m) => [m.center[0], (m.y0 + m.y1) / 2, m.center[1]]),
     spawn: { pos: [s0.center[0], s0.y0, s0.center[1]], yaw: Math.atan2(-(look[0] - s0.center[0]), -(look[1] - s0.center[1])) },
     spaces: [...plan.nodes.filter((n) => n.kind !== 'crossing' && n.kind !== 'access').map((n) => ({ id: n.id, name: n.name, poly: n.poly, y0: n.y0, y1: n.y1 })),
@@ -415,6 +431,104 @@ function topDoor(n, doors) {
   const mid = G.lerp(a, b, (d.inner[0] + d.inner[1]) / 2), inward = G.norm(G.perp(G.sub(b, a))); // CCW: left of an edge is inside
   return { at: mid, inward, along: G.norm(G.sub(b, a)) };
 }
+// A doorway that no longer opens: a frame proud of the wall and a corroded panel in it, rusted
+// or welded shut, or jammed a hand's width open on darkness. c on the wall's face, n into the space
+function sealedDoor(out, c, n, y, dh, rng) {
+  const along = G.perp(n), dw = rng.range(0.9, 1.3);
+  const at = (s, o) => G.add(G.add(c, G.mul(along, s)), G.mul(n, o));
+  for (const s of [-dw - 0.15, dw + 0.15]) out.push(vprism(G.orientedRect(at(s, 0.13), along, 0.15, 0.13), y, y + dh + 0.3, 'metal'));
+  out.push(vprism(G.orientedRect(at(0, 0.13), along, dw + 0.3, 0.13), y + dh, y + dh + 0.3, 'metal'));
+  const kind = rng.pick(['rusted', 'welded', 'jammed']);
+  if (kind === 'jammed') {
+    const gap = rng.range(0.15, 0.35);
+    out.push(vprism(G.orientedRect(at(gap / 2, 0.07), along, dw - gap / 2, 0.06), y, y + dh, 'rust', { sealed: kind }));
+    out.push(vprism(G.orientedRect(at(-dw + gap / 2, 0.012), along, gap / 2, 0.01), y, y + dh, 'dark'));
+  } else {
+    out.push(vprism(G.orientedRect(at(0, 0.07), along, dw, 0.06), y, y + dh, 'rust', { sealed: kind }));
+    if (kind === 'welded') out.push(vprism(G.orientedRect(at(0, 0.14), along, 0.035, 0.02), y + 0.1, y + dh - 0.1, 'metal'));   // (the bead down its seam)
+  }
+}
+// A room's false doors (up a zero-g well, at any level clear of its real ones): the edges used
+function falseDoors(out, n, doors, rng) {
+  const used = new Set();
+  if (n.kind === 'core' || n.kind === 'staging' || n.mode === 'low-g') return used;
+  const P = n.poly, m = P.length, max = n.kind === 'deadend' ? 1 : 2, order = [...Array(m).keys()];
+  rng.shuffle(order);
+  for (const i of order) {
+    if (used.size >= max) break;
+    const a = P[i], b = P[(i + 1) % m];
+    if (G.dist(a, b) < 3.6 || !rng.chance(0.32)) continue;
+    const y = n.kind === 'climb' ? rng.range(n.y0 + 1, n.y1 - 4) : n.y0, dh = Math.min(n.y1 - y - 0.4, rng.range(2.6, 3.4));
+    if (doors.some((d) => d.edge === i && y < d.y1 + 0.5 && y + dh > d.y0 - 0.5)) continue;
+    sealedDoor(out, G.lerp(a, b, rng.range(0.42, 0.58)), G.norm(G.perp(G.sub(b, a))), y, dh, rng);
+    used.add(i);
+  }
+  return used;
+}
+// Water finding its way in: a trickle down a wall from a crack under the ceiling, a puddle where it
+// lands. c on the wall's face, n into the space
+function trickle(seeps, water, c, n, y0, y1, rng) {
+  seeps.push({ x: c[0] + n[0] * 0.03, z: c[1] + n[1] * 0.03, y0, y1, w: rng.range(0.12, 0.3), n: [n[0], n[1]], phase: rng.range(0, 6.3) });
+  // (spread from the foot of the wall, ragged)
+  const p = G.add(c, G.mul(n, rng.range(0.35, 0.6))), R = rng.range(0.45, 0.95), k = rng.int(9, 13), a0 = rng.range(0, Math.PI * 2), poly = [];
+  for (let i = 0; i < k; i++) { const a = a0 + (i / k) * Math.PI * 2, r = R * rng.range(0.55, 1); poly.push([p[0] + Math.cos(a) * r, p[1] + Math.sin(a) * r * 0.8]); }
+  water.push({ poly, y: y0 + 0.012, puddle: true, seed: rng.int(0, 1e6) });
+}
+function roomWater(seeps, water, n, doors, used, rng, p) {
+  if (!rng.chance(p) || n.mode === 'low-g') return;
+  const P = n.poly, m = P.length;
+  for (let k = rng.int(1, n.kind === 'staging' ? 3 : 2); k > 0; k--) {
+    const i = rng.int(0, m - 1), a = P[i], b = P[(i + 1) % m];
+    if (used.has(i) || doors.some((d) => d.edge === i)) continue;
+    used.add(i);
+    trickle(seeps, water, G.lerp(a, b, rng.range(0.15, 0.85)), G.norm(G.perp(G.sub(b, a))), n.y0, n.y1 - 0.2, rng);
+  }
+}
+// Along a longer passage: a doorway or two that no longer open, and now and then water down a wall
+function sideDoors(out, seeps, water, pts, y, w, h, tunnel, wet, rng) {
+  const len = G.polylineLength(pts);
+  if (!tunnel && len > 12) for (let s = rng.range(4, 8); s < len - 4; s += rng.range(9, 18)) {
+    if (!rng.chance(0.55)) continue;
+    const a = G.along(pts, s - 1.9), b = G.along(pts, s + 1.9), at = G.along(pts, s);
+    if (a.seg !== b.seg) continue;   // (not round a bend)
+    const k = rng.chance(0.5) ? 1 : -1, nrm = G.perp(at.dir);
+    sealedDoor(out, G.add(at.p, G.mul(nrm, k * w)), G.mul(nrm, -k), y, Math.min(h - 0.4, rng.range(2.6, 3.4)), rng);
+  }
+  if (wet && len > 6 && rng.chance(tunnel ? 0.8 : 0.18)) {
+    const at = G.along(pts, rng.range(2, len - 2)), k = rng.chance(0.5) ? 1 : -1, nrm = G.perp(at.dir);
+    trickle(seeps, water, G.add(at.p, G.mul(nrm, k * w)), G.mul(nrm, -k), y, y + h - 0.2, rng);
+  }
+}
+// Where a passage fell in: rock across it, and rubble heaped back from it, highest at the fall
+function collapseEnd(out, pts, y, w, h, rng) {
+  const e = pts.at(-1), d = G.norm(G.sub(e, pts.at(-2))), side = G.perp(d);
+  out.push(vprism(G.orientedRect(G.add(e, G.mul(d, 0.6)), d, 0.8, w + WALL), y - SLAB, y + h + SLAB * 0.75, 'rock'));
+  for (let k = 0; k < 18; k++) {
+    const back = rng.range(0, 3.4), rise = (1 - back / 3.6) * h * 0.9, p = G.add(G.add(e, G.mul(d, -back)), G.mul(side, rng.range(-w * 0.9, w * 0.9)));
+    if (k % 3 === 2) { out.push(shard(rng, [p[0], y - 0.25 + rng.range(0, rise * 0.4), p[1]], [rng.range(-0.7, 0.7), 1, rng.range(-0.7, 0.7)], rng.range(0.5, 0.6 + rise * 0.7), rng.range(0.35, 0.8), 'rock')); continue; }
+    // (broken blocks of the passage itself, tumbled)
+    const a = rng.range(0, Math.PI), y0 = y - 0.2 + rng.range(0, rise * 0.55), sz = rng.range(0.35, 0.95);
+    out.push({ o: [p[0], 0, p[1]], u: X, v: Z, w: Y, poly: G.orientedRect([0, 0], [Math.cos(a), Math.sin(a)], sz, sz * rng.range(0.5, 0.9)), w0: y0, w1: y0 + sz * rng.range(0.6, 1.3), mat: rng.chance(0.6) ? 'concrete' : 'rock', taper: rng.range(0.55, 0.9) });
+  }
+  // and a slab of the ceiling down across it
+  const s0 = G.add(G.add(e, G.mul(d, -1.2)), G.mul(side, -w * 0.95)), s1 = G.add(G.add(e, G.mul(d, -0.4)), G.mul(side, w * 0.95));
+  out.push(beam([s0[0], y + h * 0.35, s0[1]], [s1[0], y + h * 0.75, s1[1]], 0.5, 0.18, 'concrete'));
+}
+// A well's lights: on brackets on its walls every ~7 m of rise, going round it, never in a doorway
+function wellLamps(lamps, n, doors) {
+  const P = n.poly, m = P.length;
+  let k = 0;
+  for (let y = n.y0 + 4; y < n.y1 - 1; y += 7) {
+    for (let t = 0; t < m; t++) {
+      const i = (k * 3 + t) % m, a = P[i], b = P[(i + 1) % m];
+      if (doors.some((d) => d.edge === i && y > d.y0 - 1 && y < d.y1 + 1)) continue;
+      const nIn = G.norm(G.perp(G.sub(b, a))), q = G.add(G.lerp(a, b, 0.5), G.mul(nIn, 0.3));
+      lamps.push({ pos: [q[0], y, q[1]], color: 'cyan', power: 55, wall: true, mount: 'wall', n: nIn });
+      break;
+    }
+    k++;
+  }
+}
 // A ledge inside the top doorway of a zero-g well, to step out onto.
 function exitLedge(out, n, doors) {
   const t = topDoor(n, doors);
@@ -475,7 +589,7 @@ function machine(out, lamps, m, L, rng, alive) {
     for (let y = y0 + 6; y < y1 - r; y += rng.range(7, 11)) out.push(drum(x, z, r + 0.6, y, y + 0.9, 'rust', 20, 1, rot));
     if (alive) {
       out.push(drum(x, z, r + 0.15, y0 + (y1 - y0) * 0.45, y0 + (y1 - y0) * 0.45 + 1.4, 'record', 20, 1, rot, 1));
-      lamps.push({ pos: [x + r + 2, y0 + (y1 - y0) * 0.45, z], color: 'core', power: 260, wall: true, range: 60 });
+      lamps.push({ pos: [x + r + 2, y0 + (y1 - y0) * 0.45, z], color: 'core', power: 260, wall: true, range: 60, mount: 'none' });
     } else if (rng.chance(0.5)) strip(r, y0 + 4, y1 - r, 'amber');
   } else if (m.kind === 'column') {
     out.push(drum(x, z, r * 1.4, y0, y0 + 6, 'concrete', 24, 0.72, rot));
@@ -525,7 +639,7 @@ function dressHall(out, lamps, L, top, doors, walks, rng) {
     // a couple of real lights per storey, washing the walls
     for (let k = 0; k < 2; k++) {
       const i = rng.int(0, n - 1), a = P[i], b = P[(i + 1) % n], q = G.add(G.lerp(a, b, rng.range(0.3, 0.7)), G.mul(G.norm(G.perp(G.sub(b, a))), 1.2));
-      lamps.push({ pos: [q[0], y + 0.3, q[1]], color: 'amber', power: 140, wall: true, range: 45 });
+      lamps.push({ pos: [q[0], y + 0.3, q[1]], color: 'amber', power: 140, wall: true, range: 45, mount: 'floor', base: y, n: G.norm(G.perp(G.sub(b, a))) });
     }
   }
   // roof beams from each corner to a hanging hub
@@ -535,10 +649,10 @@ function dressHall(out, lamps, L, top, doors, walks, rng) {
   // far down: a dim glow in the pit, and the hub's own light
   for (let k = 0; k < 3; k++) {
     const t = rng.range(0, Math.PI * 2), rr = L.r * rng.range(0.2, 0.6), p = [c[0] + Math.cos(t) * rr, c[1] + Math.sin(t) * rr * L.aspect];
-    lamps.push({ pos: [p[0], L.y0 + 1.5, p[1]], color: 'deep', power: 120, wall: true, range: 40 });
+    lamps.push({ pos: [p[0], L.y0 + 1.5, p[1]], color: 'deep', power: 120, wall: true, range: 40, mount: 'none' });
     out.push(vprism(G.regularPoly(p[0], p[1], 0.6, 0.6, 6, t), L.y0, L.y0 + 0.2, 'deep', { glow: true }));
   }
-  lamps.push({ pos: [c[0], top - 9.5, c[1]], color: 'cyan', power: 200, range: 70 });
+  lamps.push({ pos: [c[0], top - 9.2, c[1]], color: 'cyan', power: 200, range: 70, mount: 'ceiling', top: top - 9 });
   void hub;
 }
 
@@ -600,7 +714,7 @@ function intrusions(out, lamps, plan, doorsOf, rng) {
       if (big) for (let j = 0; j < 4; j++) out.push(shard(rng, [tip[0] + rng.range(-4, 4), L.y0 - 0.3, tip[1] + rng.range(-4, 4)], [rng.range(-0.5, 0.5), 1, rng.range(-0.5, 0.5)], rng.range(0.8, 2.6), rng.range(0.5, 1.8), 'rock'));
       if (wet && placed <= 2) seeps.push({ x: tip[0], z: tip[1], y0: L.y0, y1: y, w: rng.range(0.6, 1.4), yaw: Math.atan2(nIn[1], nIn[0]) });
     }
-    if (placed) lamps.push({ pos: [G.lerp(f.a, f.b, 0.5)[0] + nIn[0] * 6, yc + 4, G.lerp(f.a, f.b, 0.5)[1] + nIn[1] * 6], color: 'work', power: 90, range: 30 });
+    if (placed) { const m = G.lerp(f.a, f.b, 0.5); lamps.push({ pos: [m[0] + nIn[0] * 0.45, yc + 4, m[1] + nIn[1] * 0.45], color: 'work', power: 90, range: 30, mount: 'wall', n: nIn }); }
   }
   return { seeps };
 }

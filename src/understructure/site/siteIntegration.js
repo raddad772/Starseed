@@ -211,11 +211,15 @@ export class SiteSession {
     this.toast(o.text, false);
   }
 
+  // (the controller's layout inside: spacewalk's in zero-g, A up and B down)
+  get padMode() { return this.walker && this.walker.gravity === 0 ? 'eva' : 'foot'; }
+
   update(dt, input, mouse) {
     const w = this.walker;
     w.yaw -= mouse.dx; w.pitch = THREE.MathUtils.clamp(w.pitch - mouse.dy, -1.45, 1.45);
-    if (input.hit('KeyF')) { this.flashlight = !this.flashlight; this.toast(this.flashlight ? 'Hand light on' : 'Hand light off', false); }
-    if (input.hit('KeyE')) this.interact();
+    // (the game's keys on foot: F (a controller's X) uses, L (LT) the hand light; E uses too)
+    if (input.hit('KeyL')) { this.flashlight = !this.flashlight; this.toast(this.flashlight ? 'Hand light on' : 'Hand light off', false); }
+    if (input.hit('KeyF') || input.hit('KeyE')) this.interact();
     if (this.ride) {
       const r = this.ride, dur = r.kind === 'down' ? LIFT_DOWN : LIFT_UP;
       r.t = Math.min(1, r.t + dt / dur);
@@ -230,7 +234,7 @@ export class SiteSession {
         else { this.leave(true, r.kind === 'founders' ? this.site.gate : this.site.hatch); return; }
       }
     } else {
-      w.step(dt, { forward: input.axis('KeyS', 'KeyW'), strafe: input.axis('KeyA', 'KeyD'), jump: input.down('Space'), up: input.down('Space'), down: input.down('KeyC'), brake: input.down('KeyR'), fast: input.down('ShiftLeft') || input.down('ShiftRight') });
+      w.step(dt, { forward: input.axis('KeyS', 'KeyW'), strafe: input.axis('KeyA', 'KeyD'), jump: input.down('Space'), up: input.down('Space'), down: input.down('KeyC'), brake: input.down('KeyR') || input.down('KeyX'), fast: input.down('ShiftLeft') || input.down('ShiftRight') });
     }
     this.time += dt;
     // the world's part ticks once a frame, whoever is down here
@@ -287,7 +291,7 @@ class SiteHUD {
     Object.assign(this.root.style, { left: `${r.x}px`, top: `${r.y}px`, width: `${r.w}px`, height: `${r.h}px` });
     const w = s.walker, plan = s.site.plan, rec = plan.finds.find((f) => f.kind === 'record'), raw = s.raw();
     this.k.tele.innerHTML = `${(plan.surfaceY - w.pos[1]).toFixed(0)} m down<br>field ${w.gravity.toFixed(2)} g`;
-    const o = s.offer(); this.k.prompt.style.display = o ? '' : 'none'; if (o) this.k.prompt.innerHTML = `<b style="color:#e8b777;padding-right:12px">E</b>${o.text}`;
+    const o = s.offer(); this.k.prompt.style.display = o ? '' : 'none'; if (o) this.k.prompt.innerHTML = `<b style="color:#e8b777;padding-right:12px">${this.player.input.device === 'pad' ? 'X' : 'F'}</b>${o.text}`;
     const showToast = performance.now() < s.noticeUntil; this.k.toast.style.display = showToast ? '' : 'none'; if (showToast) this.k.toast.textContent = s.notice;
     this.k.foot.innerHTML = `${s.w.collected.has(rec.id) ? "Founders' lift" : 'Site record'}<br><span style="color:#e8b777">${raw}% · credit ${credit(raw)}/170</span>`;
     let tgt = s.guide.target(w.pos, { recordTaken: s.w.collected.has(rec.id), recordPos: rec.pos });
