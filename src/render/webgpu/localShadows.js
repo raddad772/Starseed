@@ -31,7 +31,7 @@ export class LocalShadows {
   const camera=engine.view.camera,lights=[],meshes=[];
   engine.scene.traverseVisible(o=>{
    if(o.isSpotLight&&o.castShadow&&o.intensity>0&&o.position.distanceTo(camera.position)<(o.distance||100))lights.push(o);
-   if(o.isMesh&&!o.isInstancedMesh&&!Array.isArray(o.material)&&o.material.visible&&!o.material.transparent&&!o.material.isMeshBasicMaterial&&o.layers.test(camera.layers))meshes.push(o);
+   if(o.isMesh&&!o.userData.noLocalShadow&&!o.isInstancedMesh&&!Array.isArray(o.material)&&o.material.visible&&!o.material.transparent&&!o.material.isMeshBasicMaterial&&o.layers.test(camera.layers))meshes.push(o);
   });
   lights.sort((a,b)=>(b.userData.shadowPriority||0)-(a.userData.shadowPriority||0)||a.position.distanceToSquared(camera.position)-b.position.distanceToSquared(camera.position));lights.length=Math.min(COUNT,lights.length);if(!lights.length)return;
   const d=this.device,needed=lights.length*meshes.length*256;

@@ -5,7 +5,7 @@ import { buildGroundwater } from './groundwater.js';
 
 export function buildGeneratorHall(plan,{root,scene,mat,box,cylinder,label,addGeometry}) {
   const h=plan.generator,deck=plan.deck,rng=Rng.fromString(plan.seed).fork('generator-dressing-v1');
-  mat.rock=new THREE.MeshStandardMaterial({color:h.wound==='igneous'?'#525552':'#887967',map:mat.concrete?.map||null,roughness:1});
+  mat.rock=new THREE.MeshStandardMaterial({color:h.wound==='igneous'?'#525552':'#887967',map:mat.concrete?.map||null,roughness:1,flatShading:true});mat.rock.userData.webgpu={kind:'survey'};
   mat.mineral=new THREE.MeshStandardMaterial({color:'#89988a',roughness:.88});
   mat.colony=new THREE.MeshStandardMaterial({color:'#738d54',roughness:.95});
   const veg=h.environment.vegetation;if(Array.isArray(veg)&&veg.length===3&&veg.every(Number.isFinite))mat.colony.color.setRGB(...veg);
@@ -75,7 +75,7 @@ export function buildGeneratorHall(plan,{root,scene,mat,box,cylinder,label,addGe
   for(const side of [-1,1])box(side*40,deck+22,-321,30,128,72,'rock');
   box(0,deck+82,-321,120,30,72,'rock');box(0,deck-46,-321,120,12,72,'rock');
   for(const side of [-1,1]){
-    for(let i=0;i<8;i++)rock(side*rng.range(29,43),deck-17+i*10,-287+rng.range(-8,2),rng.range(5,10),rng.range(7,13),rng.range(5,10));
+    for(let i=0;i<8;i++)rock(side*rng.range(29,43),deck-17+i*10,-299+rng.range(-8,2),rng.range(5,10),rng.range(7,13),rng.range(5,10));
     for(let i=0;i<6;i++)rock(side*rng.range(26,43),deck+rng.range(-30,70),-302-i*12,9,rng.range(12,24),13);
     for(let i=0;i<8;i++){const y=deck-4+i*7;cylinder([side*24,y,-286],[side*rng.range(19,23),y+rng.range(-2,2),-289],.08,'rust');}
     // Old decks are offset by the fault. The later bracing threads between them.

@@ -1,0 +1,7 @@
+<!doctype html><meta charset="utf-8"><title>Suit voice check</title><button id="play">Test suit voice</button><pre id="result">Ready</pre>
+<script type="module">
+import {SuitVoice} from '../../src/understructure/suitVoice.js';
+const v=new SuitVoice({storage:null}),out=document.getElementById('result');
+document.getElementById('play').onclick=()=>{v.setEnabled(true);v.active=true;v.unlock();v.speak('Warning. Reduced gravity detected.','test');const started=performance.now();const timer=setInterval(()=>{out.textContent=JSON.stringify({stats:v.stats,speaking:!!v.current,available:speechSynthesis.getVoices().map(v=>v.name)});if(!v.current||performance.now()-started>12000){clearInterval(timer);v.stop();}},200);};
+window.addEventListener('pagehide',()=>v.dispose());
+</script>

@@ -4,12 +4,14 @@ import { buildDataDrone } from './dataDrones.js';
 
 // Readable, small controls stay beside the phenomenon they affect. These are
 // game mechanisms, not general physics or recursive portal rendering.
-export function buildMechanisms(plan,{root,mat,box,cylinder,label}) {
+export function buildMechanisms(plan,{root,scene,mat,box,cylinder,label}) {
   let cell,sweep,phaseGlow;const fragments=[],drones=[];const gateVeils=[],indicators=[],pressureBars=[],echoPlates=[];
   function mesh(w,h,d,material,pos){const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),material);m.position.set(...pos);root.add(m);return m;}
-  function status(id,pos){const m=mesh(.2,.16,.12,mat.amber,pos);indicators.push({id,mesh:m});}
+  function glow(pos,power=9){const l=new THREE.PointLight(0x99dace,power,6,1.7);l.position.set(pos[0],pos[1]+.35,pos[2]+.35);scene.add(l);}
+  function status(id,pos){glow(pos);const m=mesh(.2,.16,.12,mat.amber,pos);indicators.push({id,mesh:m});}
   for(const p of plan.puzzles){
     if(p.kind==='relay'){
+      glow([p.source[0],p.source[1]+1,p.source[2]],15);
       cell=mesh(.36,.65,.36,mat.cyan,[p.source[0],p.source[1]+1,p.source[2]]);
       const [x,y,z]=p.socket;box(x,y+.65,z+1,.65,1.3,.45,'metal');box(x,y+1.3,z+1,.43,.2,.48,'rust');
       label('AUXILIARY SUPPLY',x,y+.85,z+1.231,{size:.14});status(p.id,[x,y+1.5,z+1]);
@@ -22,8 +24,8 @@ export function buildMechanisms(plan,{root,mat,box,cylinder,label}) {
       phaseGlow=label('SYNC CONTACT',x,y+.8,z-1.269,{size:.3});status(p.id,[x+1.5,y+1.3,z-1.4]);
     }
     if(p.kind==='bridge')for(const [i,pos] of p.controls.entries()){const [x,y,z]=pos;box(x,y+.65,z-1.8,.55,1.3,.4,'metal');cylinder([x,y+.5,z-1.8],[x,y+.5,z-3],.16,'rust');box(x,y+.4,z-3,2,.8,2,'concrete');label(i===2?'SERVICE RETURN':`EMERGENCY DECK ${i+1}`,x,y+.9,z-1.591,{size:.12});status(i===2?'light':'bridge:'+i,[x,y+1.5,z-1.8]);}
-    if(p.kind==='pressure'){const [x,y,z]=p.pos;box(x,y+.8,z+1.4,2,1.6,.35,'metal');label(`PRESSURE / SET ${p.target}`,x,y+1.1,z+1.581,{size:.38});for(let i=1;i<=3;i++){const m=mesh(.35,.2,.08,mat.rust,[x+(i-2)*.5,y+1.6,z+1.15]);pressureBars.push({mesh:m,value:i});}}
-    if(p.kind==='echo'){for(const [i,pos] of p.plates.entries()){const [x,y,z]=pos;box(x,y+.5,z,.8,1,.45,'metal');const m=mesh(.5,.12,.55,mat.amber,[x,y+1.1,z]);echoPlates.push({mesh:m,index:i});label(`PUMP ${i+1}`,x,y+.6,z+.231,{size:.16});cylinder([x,y-.1,z-.9],[x,plan.chambers.find(c=>c.id==='resonance').ceiling+.1,z-.9],.35,'rust');box(x,y+.12,z-.4,1.5,.24,1.8,'concrete');}}
+    if(p.kind==='pressure'){const [x,y,z]=p.pos;glow([x,y+1.7,z+1.4]);box(x,y+.8,z+1.4,2,1.6,.35,'metal');label(`PRESSURE / SET ${p.target}`,x,y+1.1,z+1.581,{size:.38});for(let i=1;i<=3;i++){const m=mesh(.35,.2,.08,mat.rust,[x+(i-2)*.5,y+1.6,z+1.15]);pressureBars.push({mesh:m,value:i});}}
+    if(p.kind==='echo'){for(const [i,pos] of p.plates.entries()){const [x,y,pz]=pos,z=pz+1.5;glow([x,y+1.4,z]);box(x,y+.5,z,.8,1,.45,'metal');const m=mesh(.5,.12,.55,mat.amber,[x,y+1.1,z]);echoPlates.push({mesh:m,index:i});label(`PUMP ${i+1}`,x,y+.6,z+.231,{size:.16});cylinder([x,y-.1,z+.9],[x,plan.chambers.find(c=>c.id==='resonance').ceiling+.1,z+.9],.35,'rust');box(x,y+.12,z,1.5,.24,1.2,'concrete');}}
     if(p.kind==='fold')for(const g of p.gates){
       const group=new THREE.Group();group.position.set(...g.pos);group.rotation.y=Math.atan2(g.normal[0],g.normal[1]);root.add(group);
       for(const x of [-1.35,1.35]){const frame=new THREE.Mesh(new THREE.BoxGeometry(.22,3.4,.45),mat.metal);frame.position.set(x,1.7,0);group.add(frame);}
@@ -36,10 +38,11 @@ export function buildMechanisms(plan,{root,mat,box,cylinder,label}) {
   }
   for(const [i,f] of plan.fragments.entries()){
     if(f.value===1){drones.push(buildDataDrone(f,i,{root,mat}));continue;}
-    const [x,y,z]=f.pos;box(x,y+.65,z+1.4,.7,1.3,.4,'metal');box(x+.33,y+.9,z+1.65,.08,.55,.04,'rust');const m=mesh(.2,.12,.045,mat.cyan,[x,y+1,z+1.63]);fragments.push({id:f.id,mesh:m});
+    const [fx,y,z]=f.pos,x=fx+1.35;glow([x,y+1,z+1.4],4);box(x,y+.65,z+1.4,.7,1.3,.4,'metal');box(x+.33,y+.9,z+1.65,.08,.55,.04,'rust');const m=mesh(.2,.12,.045,mat.cyan,[x,y+1,z+1.63]);fragments.push({id:f.id,mesh:m});
   }
   const a=plan.finalCache.pos,y=a[1];
   box(a[0],y+.8,a[2]-1,1.4,1.6,.5,'metal');box(a[0],y+1.5,a[2]-.73,1.12,.6,.05,'dark');
+  glow([a[0],y+1.8,a[2]-.5],16);
   const record=mesh(.6,.22,.12,mat.amber,[a[0],y+1.5,a[2]-.68]);
   label('BACKUP / CENTRAL RECORD',a[0],y+.8,a[2]-.741,{size:.3});
   return {update(state){

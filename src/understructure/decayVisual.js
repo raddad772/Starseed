@@ -25,7 +25,7 @@ export function buildDecayDetails(plan,{addGeometry}){
       // Use the wall's exact world UVs and normal response. The white edges
       // match the underlying concrete; tinted vertices feather stains into it.
       const tint=new THREE.Color({damp:'#839184',dust:'#ccc7b5',runoff:'#b69d80',mineral:'#e4ddc9'}[material]);
-      const point=(s,h)=>[a[0]+tangent[0]*s+normal[0]*side*.007,y+h,a[1]+tangent[1]*s+normal[1]*side*.007];
+      const point=(s,h)=>[a[0]+tangent[0]*s+normal[0]*side*({damp:.008,dust:.008,runoff:.014,mineral:.02}[material]),y+h,a[1]+tangent[1]*s+normal[1]*side*({damp:.008,dust:.008,runoff:.014,mineral:.02}[material])];
       const rows=dripping?3:2;
       const column=i=>{
         const u=i/steps,high=dripping?top:Math.max(bottom+.05,top*rng.range(.65,1));
@@ -59,7 +59,7 @@ export function buildDecayDetails(plan,{addGeometry}){
       }
     }
   }
-  for(const w of plan.service.walls)wall(w.a,w.b,w.height-.2);
+  for(const w of plan.service.walls)wall(w.a,w.b,Math.min(w.height,4)-.2);
   for(const w of plan.oblique.walls)wall(w.a,w.b,Math.min(w.height,4)-.2);
   return stats;
 }

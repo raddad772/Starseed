@@ -65,7 +65,7 @@ export function descend(sim){enterBunker(sim);walkLine(sim,0,0);sim.interact();a
 export function solvePuzzles(sim){
   for(const p of sim.plan.puzzles){
     if(p.kind==='relay'){
-      walkRoute(sim,76,-52);walkLine(sim,82,-52);flyTo(sim,p.source);sim.interact();
+      walkRoute(sim,76,-52);walkLine(sim,82,-52);flyTo(sim,[96,DECK+.05,-52]);flyTo(sim,p.source);sim.interact();
       flyTo(sim,[96,DECK+.05,-52]);flyTo(sim,[77,DECK+.05,-52]);walkLine(sim,76,-52);
       walkRoute(sim,76,-100);walkLine(sim,84,-100);for(const x of [96,109,122,136])jumpTo(sim,x,-100);sim.interact();
       for(const x of [122,109,96,84])jumpTo(sim,x,-100);walkLine(sim,76,-100);

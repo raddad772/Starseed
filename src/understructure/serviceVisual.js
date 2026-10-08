@@ -1,3 +1,4 @@
+import { buildStaging } from './stagingVisual.js';
 import * as THREE from 'three';
 import { outsideSegments } from './oblique.js';
 
@@ -10,6 +11,7 @@ export function buildService(plan,{addGeometry,box,cylinder,pipe,lamp,label}){
  for(const room of sector.rooms){
   const [x,z]=room.center,h=room.height;
   for(let i=0;i<room.polygon.length;i++)wall(room.polygon[i],room.polygon[(i+1)%room.polygon.length],y+4,y+h);
+  if(room.excavated){buildStaging(plan,{box,cylinder,pipe,lamp,addGeometry});continue;}
   // Large trunks turn upward into the structure, with continuous curved elbows.
   const count=room.id.includes('manifold')?2:1,radius=count===2?.72:.46;
   for(let n=0;n<count;n++){

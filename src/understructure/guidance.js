@@ -12,7 +12,7 @@ export function surveyObjective(sim){
   if(sim.archiveReady)return 'Archive bus restored · follow the rising service galleries to the upper backup rack';
   const next=sim.plan.puzzles.find(p=>!sim.solved.has(p.id));
   const room=sim.plan.chambers.find(c=>c.id===(next?.id==='gravity'&&sim.carryingCell?'low':next?.room));
-  if(room){const dx=room.door[0]-sim.pos[0],dz=room.door[1]-sim.pos[2],angle=Math.atan2(-dx,-dz)-sim.yaw,turn=Math.atan2(Math.sin(angle),Math.cos(angle)),bearing=Math.abs(turn)<.5?'ahead':Math.abs(turn)>2.6?'behind':turn>0?'to your left':'to your right';return `Damaged return-line signal · ${Math.round(Math.hypot(dx,dz))} m ${bearing} · ${room.name.toLowerCase()}`;}
+  if(room)return `Damaged return-line signal · ${room.name.toLowerCase()}`;
   return 'Trace the damaged return lines · recover Golden Path data';
 }
 export function recoveryStatus(sim){return `DATA ${sim.rawData}% · ${sim.dataCredit}/170 site credit${sim.rawData>100?' · EXCESS ×3':''} / GOLDEN PATH ${sim.campaignTotal}${mysteryProgress(sim.campaignTotal).next?' / '+mysteryProgress(sim.campaignTotal).next:''}`;}
@@ -20,3 +20,16 @@ export function mysteryStatus(sim){const p=mysteryProgress(sim.campaignTotal);re
 export function fieldStatus(sim){return `${sim.jetpackEnabled?'SURFACE LINK':'JETPACK DISABLED'} · ${sim.gravity.toFixed(2)} G${sim.tetherActive?' · CHAMBER TETHER ACTIVE':' · SPACE JUMPS'}`;}
 
 export function suitAlert(sim){if(sim.time-sim.packDisabledAt<4)return 'Jetpack disabled.';if(sim.time-sim.gravityAlertAt<4)return sim.gravityAlert;return '';}
+
+export function navigationTarget(s){
+ const p=s.plan;if(s.moving)return null;
+ if(s.pos[1]>-.6)return {pos:[0,0,p.access.hatchZ],label:'Access hatch'};
+ if(s.inBunker)return {pos:s.exitReady?[0,p.access.top,p.access.hatchZ]:[0,p.access.top,0],label:s.exitReady?'Surface ladder':'Descent lift'};
+ if(s.dataRecovered)return {pos:[0,p.deck,0],label:'Surface return'};
+ if(s.archiveReady)return {pos:p.finalCache.pos,label:'Central record'};
+ const next=p.puzzles.find(p=>!s.solved.has(p.id)&&(p.room===s.chamber?.id||(p.id==='gravity'&&s.chamber?.id==='low')))||p.puzzles.find(p=>!s.solved.has(p.id));
+ const room=p.chambers.find(c=>c.id===(next?.id==='gravity'&&s.carryingCell?'low':next?.room));
+ let pos=room?[room.door[0],p.deck,room.door[1]]:null;
+ if(room===s.chamber){pos=next.kind==='relay'?(s.carryingCell?next.socket:next.source):next.kind==='bridge'?next.controls[Math.min(2,s.bridgeStage)]:next.kind==='echo'?next.plates[next.order[s.echoStep]]:next.pos||next.gates?.[s.foldCrossed?1:0]?.pos;}
+ return pos?{pos,label:room?.name||'Return signal'}:null;
+}

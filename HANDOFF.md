@@ -11,6 +11,24 @@ maps and viewscreens are native. WebGL exists only in explicit test tooling (`?w
 no production fallback. Other browser/GPU combinations still need certification; no speedup or exact
 pixel-parity claim is made. Dave confirmed sole-agent work and no coordination messages this session.
 
+## Megastructure atmosphere and collision follow-up (Codex, 2026-10-08)
+On `codex/landing-guide`, local server 8779. `notes/UNDERSTRUCTURE.md` records the current
+implementation and verification. Added abandoned excavation/breach, repaired junction
+walls and overlapping surfaces, 120 m hand light, fixed fixture illumination with
+current-frame portal selection, objective glow, faded route paint, ceiling colonies,
+stochastic architectural textures, geometry-derived capsule collision, circular compass,
+persistent readable messages and optional female system-voice alerts. Ordinary dust
+catches real lighting; zero-g motes/mist react to the player. Seeded gentle manifestations
+(sheens, spectral seeps, source-less tones) also occur in ordinary rooms. No occlusion
+queries, GPU readbacks for visibility, scary events or changes to recovery rewards.
+
+Standalone and main-game native round trips pass, including save/reload, both returns,
+split-screen and zero-error body-fixed return. Surface checks and offline audio pass;
+65 CPU checks passed together plus two new atmosphere checks in the focused suite.
+No dynamic rigid-body or cloth solver yet. Dave explicitly deferred traversed rooms
+with changing/reversed gravity direction to a future pass; preserve that request.
+No user Chrome operation or inactive-agent coordination was performed.
+
 ## Megastructure playtest corrections (Codex, 2026-10-08)
 On `codex/landing-guide`, served locally on 8779. The access hatch now leads by ladder to a
 6 × 12 m bunker at −3.2 m; the separate 4.2 s lift stops at −240 m. Shaft windows face a large

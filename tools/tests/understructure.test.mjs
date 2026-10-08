@@ -10,7 +10,7 @@ const make=(seed='SUMP-07',theme='auto')=>new UnderstructureSimulation(generateU
 test('100 deterministic sites: polygon chambers, accessible signals and one/two themes',()=>{
  assert.deepEqual(generateUnderstructure('A'),generateUnderstructure('A'));
  assert.notDeepEqual(generateUnderstructure('A').service.rooms,generateUnderstructure('B').service.rooms);
- for(let i=0;i<100;i++){const p=generateUnderstructure(`SITE-${i}`);assert.ok(p.service.rooms.every(r=>r.polygon.length>=5));assert.ok(p.themes.length>=1&&p.themes.length<=2);assert.equal(p.puzzles.length,p.themes.length);const c=makeCollision(p);for(const s of p.samples)assert.ok(s.id==='null'&&p.themes.includes('gravity')?c.canFloat(...s.pos):c.canStand(s.pos[0],s.pos[2],{y:s.pos[1],liftY:DECK,hatchOpen:true},.42),s.id);assert.equal(c.canFloat(999,DECK,999),false);}
+ for(let i=0;i<100;i++){const p=generateUnderstructure(`SITE-${i}`);assert.ok(p.service.rooms.filter(r=>!r.excavated).every(r=>r.polygon.length>=5));assert.ok(p.themes.length>=1&&p.themes.length<=2);assert.equal(p.puzzles.length,p.themes.length);const c=makeCollision(p);for(const s of p.samples)assert.ok(s.id==='null'&&p.themes.includes('gravity')?c.canFloat(...s.pos):c.canStand(s.pos[0],s.pos[2],{y:s.pos[1],liftY:DECK,hatchOpen:true},.42),s.id);assert.equal(c.canFloat(999,DECK,999),false);}
 });
 test('person-sized hatch and continuous express lift descend eight levels in 4.2 seconds',()=>{
  const s=make();assert.equal(s.plan.access.halfWidth*2,1.3);assert.equal(s.plan.access.halfDepth*2,1.7);
@@ -20,7 +20,7 @@ test('person-sized hatch and continuous express lift descend eight levels in 4.2
 });
 test('open hatch has no floor with lift away; walls and catwalk edges contain long frames',()=>{
  const s=make();s.hatchOpen=true;s.hatchAmount=1;s.liftY=s.liftTarget=DECK;s.pos=[0,0,ACCESS.hatchZ+3];advance(s,5,{forward:1});assert.ok(s.pos[2]>ACCESS.hatchZ+1.25);
- s.pos=[0,DECK,-8];for(let i=0;i<200;i++)s.step(.25,{strafe:1,fast:true});assert.ok(s.pos[0]<1.6);
+ s.pos=[0,DECK,-13];for(let i=0;i<200;i++)s.step(.25,{strafe:1,fast:true});assert.ok(s.pos[0]<1.6);
  s.pos=[0,DECK,-150];advance(s,5,{strafe:1});assert.ok(s.pos[0]<1.6);assert.equal(s.pos[1],DECK);
  for(const {x,z,width,depth} of s.plan.pillars)for(const [x0,x1,z0,z1] of s.plan.walkways)assert.ok(x+width/2<=x0||x-width/2>=x1||z+depth/2<=z0||z-depth/2>=z1);
 });

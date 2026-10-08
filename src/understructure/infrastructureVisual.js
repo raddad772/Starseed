@@ -36,7 +36,7 @@ export function collectionSideWall(plan,side,{box}){
 }
 
 export function buildCollectionRoutes(plan,{root,mat,box,cylinder,pipe,label,lamp}){
-  function panel(points,material){const g=new THREE.BufferGeometry(),v=[];for(const i of [0,2,1,0,3,2,0,1,2,0,2,3])v.push(...points[i]);g.setAttribute('position',new THREE.Float32BufferAttribute(v,3));g.computeVertexNormals();const uv=[];for(let i=0;i<v.length;i+=3)uv.push((v[i]+v[i+2])/3,v[i+1]/3);g.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));root.add(new THREE.Mesh(g,mat[material]));}
+  function panel(points,material){const g=new THREE.BufferGeometry(),v=[];for(const i of [0,2,1,0,3,2])v.push(...points[i]);g.setAttribute('position',new THREE.Float32BufferAttribute(v,3));g.computeVertexNormals();const uv=[];for(let i=0;i<v.length;i+=3)uv.push((v[i]+v[i+2])/3,v[i+1]/3);g.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));const m=mat[material].clone();m.side=THREE.DoubleSide;root.add(new THREE.Mesh(g,m));}
   function strip(a,b,width,offset,material){
     const dx=b[0]-a[0],dz=b[2]-a[2],length=Math.hypot(dx,dz),nx=-dz/length*width/2,nz=dx/length*width/2;
     panel([[a[0]+nx,a[1]+offset,a[2]+nz],[b[0]+nx,b[1]+offset,b[2]+nz],[b[0]-nx,b[1]+offset,b[2]-nz],[a[0]-nx,a[1]+offset,a[2]-nz]],material);
@@ -46,13 +46,14 @@ export function buildCollectionRoutes(plan,{root,mat,box,cylinder,pipe,label,lam
   for(const group of groups){const pts=[group[0].a,...group.map(r=>r.b)],norms=group.map(r=>{const dx=r.b[0]-r.a[0],dz=r.b[2]-r.a[2],len=Math.hypot(dx,dz);return [-dz/len,dx/len];});
     const runs=pts.map((p,i)=>{const a=norms[Math.max(0,i-1)],b=norms[Math.min(i,norms.length-1)],k=1.5/(1+a[0]*b[0]+a[1]*b[1]);return [p[0]+(a[0]+b[0])*k,p[1]+2.8,p[2]+(a[1]+b[1])*k];});pipe([[runs[0][0],runs[0][1]+1,runs[0][2]],...runs,[runs.at(-1)[0],runs.at(-1)[1]+1,runs.at(-1)[2]]],.18,'rust');
     for(const side of [-1,1]){const edge=pts.map((p,i)=>{const a=norms[Math.max(0,i-1)],b=norms[Math.min(i,norms.length-1)],k=2.2*side/(1+a[0]*b[0]+a[1]*b[1]);return [p[0]+(a[0]+b[0])*k,p[1],p[2]+(a[1]+b[1])*k];});for(let i=1;i<edge.length;i++){const a=edge[i-1],b=edge[i];panel([a,b,[b[0],b[1]+3.5,b[2]],[a[0],a[1]+3.5,a[2]]],'concrete');}}
-    for(const p of [pts[0],pts.at(-1),...pts.filter((p,i)=>i>0&&i<pts.length-1&&Math.abs(norms[i][0]-norms[i-1][0])+Math.abs(norms[i][1]-norms[i-1][1])>.1)])box(p[0],p[1]+3.55,p[2],4.5,.1,4.5,'concrete');
+    const edges=[-1,1].map(side=>pts.map((p,i)=>{const a=norms[Math.max(0,i-1)],b=norms[Math.min(i,norms.length-1)],k=2.2*side/(1+a[0]*b[0]+a[1]*b[1]);return [p[0]+(a[0]+b[0])*k,p[1]+3.5,p[2]+(a[1]+b[1])*k];}));
+    for(let i=1;i<pts.length;i++)panel([edges[0][i-1],edges[0][i],edges[1][i],edges[1][i-1]],'concrete');
   }
   for(const p of plan.routeLandings)box(p[0],p[1]-.17,p[2],4,.3,4,'floor');
   for(const r of plan.routes){
     const {a,b,width,covered}=r,dx=b[0]-a[0],dz=b[2]-a[2],length=Math.hypot(dx,dz),nx=-dz/length,nz=dx/length;
     strip(a,b,width,-.04,covered?'floor':'metal');strip(a,b,width,-.3,'metal');
-    if(covered)strip(a,b,width+1,3.5,'concrete');
+
     for(const side of [-1,1]){
       if(!covered){
         // Rail ends stop short of junctions so the walking route is visibly open.

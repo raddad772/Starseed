@@ -1,0 +1,24 @@
+<!doctype html><meta charset="utf-8"><title>Survey surface regression</title>
+<style>body{background:#101819;color:#dde8df;font:14px monospace}iframe{width:1100px;height:800px;border:0}img{width:550px}pre{white-space:pre-wrap}</style>
+<pre id="result">Starting finite surface check…</pre><div id="shots"></div><iframe id="game"></iframe>
+<script type="module">
+import {walkLine,advance,descend,walkRoute,flyTo} from './understructure-walk.js';
+const frame=document.getElementById('game'),out=document.getElementById('result'),shots=document.getElementById('shots');
+frame.src='/understructure.html?seed=SUMP-07&theme=gravity-light&test=surface-check&reset=1';
+let t;try{
+ for(let i=0;i<300;i++){t=frame.contentWindow?.understructureTest;if(t?.renderer&&t.frame)break;const fatal=frame.contentDocument?.getElementById('fatal');if(fatal?.textContent)throw Error(fatal.textContent);await new Promise(r=>setTimeout(r,100));}
+ if(!t?.renderer)throw Error('Renderer did not start');t.pause();t.renderer.device.pushErrorScope('validation');
+ const capture=async name=>{t.render();await t.renderer.device.queue.onSubmittedWorkDone();const image=new Image();image.alt=name;image.src=await t.renderer.captureURL();shots.append(image);};
+ walkLine(t.sim,0,9.6);t.sim.interact();advance(t.sim,1.5);walkLine(t.sim,0,9.3);t.sim.pitch=-1.1;t.sim.yaw=0;
+ await capture('hatch-shadow');t.visual.scene.userData.localShadows=false;await capture('hatch-no-shadow');
+ t.sim.yaw=.08;await capture('hatch-shifted-no-shadow');
+ t.visual.scene.userData.localShadows=true;t.sim.yaw=0;t.sim.pitch=-1.35;await capture('hatch-down');
+ t.sim.pitch=0;descend(t.sim);walkLine(t.sim,0,-4);await capture('excavation-staging');walkLine(t.sim,0,-12);await capture('rough-breach');walkLine(t.sim,0,-26);t.sim.pitch=.22;await capture('ceiling-waymarks');
+ const m=t.plan.manifestations[0];t.sim.time=m.period-m.phase+m.duration/2;t.sim.yaw=-.36;t.sim.pitch=.22;await capture('ordinary-room-manifestation');
+ const withDust=await t.renderer.capture();t.visual.dust.mesh.material.opacity=0;await capture('dust-comparison');const withoutDust=await t.renderer.capture();let dustPixels=0;for(let i=0;i<withDust.pixels.length;i+=4)if(Math.abs(withDust.pixels[i]-withoutDust.pixels[i])+Math.abs(withDust.pixels[i+1]-withoutDust.pixels[i+1])+Math.abs(withDust.pixels[i+2]-withoutDust.pixels[i+2])>3)dustPixels++;t.visual.dust.mesh.material.opacity=.22;
+ walkRoute(t.sim,76,-52);t.sim.yaw=-Math.PI/3;t.sim.pitch=.1;await capture('repaired-junction');walkLine(t.sim,82,-52);flyTo(t.sim,[96,t.plan.deck+.05,-52]);flyTo(t.sim,[96,t.plan.deck+10,-52]);t.sim.yaw=-.5;t.sim.pitch=.3;await capture('zero-g-wonder');t.sim.flashlight=false;await capture('zero-g-without-handlight');
+ const error=await t.renderer.device.popErrorScope();if(error)throw Error(error.message);if(t.errors.length)throw Error(t.errors.join('\n'));
+ if(!dustPixels)throw Error('Lit dust did not contribute to the native image');
+ out.textContent=JSON.stringify({status:'passed',errors:[],captures:shots.children.length,dustPixels});
+}catch(e){out.textContent=JSON.stringify({status:'failed',error:e.stack});t?.pause();}
+</script>

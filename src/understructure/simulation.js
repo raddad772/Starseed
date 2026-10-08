@@ -11,6 +11,7 @@ export class UnderstructureSimulation {
   constructor(plan, saved = {}) {
     if(!saved||typeof saved!=='object')saved={};
     const list=name=>Array.isArray(saved[name])?saved[name]:[];
+    this.noticeLog=list('noticeLog').filter(x=>typeof x==='string').slice(-40);
     this.plan=plan;this.collision=makeCollision(plan);this.pos=[...plan.spawn];this.yaw=0;this.pitch=-.3;
     this.hatchAmount=0;this.hatchOpen=false;this.liftY=ACCESS.top;this.liftTarget=ACCESS.top;this.riding=false;
     this.liftStartY=ACCESS.top;this.liftElapsed=0;this.climbing=null;this.packDisabledAt=-100;this.previousGravity=1;this.gravityAlert='';this.gravityAlertAt=-100;
@@ -79,7 +80,9 @@ export class UnderstructureSimulation {
     }
     return null;
   }
-  interact(){
+  remember(text){if(text&&this.noticeLog.at(-1)!==text){this.noticeLog.push(text);if(this.noticeLog.length>40)this.noticeLog.shift();}}
+  interact(){const message=this._interact();this.remember(message);return message;}
+  _interact(){
     const offer=this.offer();if(!offer)return null;
     if(offer.type==='hatch'){this.hatchOpen=true;return 'The access circuit still has power.';}
     if(offer.type==='ladder'){this.climbing={from:[...this.pos],down:this.pos[1]>-.6,elapsed:0};return this.climbing.down?'Descending access ladder':'Climbing to the surface';}
@@ -88,7 +91,7 @@ export class UnderstructureSimulation {
     if(offer.type==='offline')return 'The express lift used reserve power. Recover the site record to authorise surface return; the local circuits open its repository.';
     if(offer.type==='fragment'){const f=this.plan.fragments.find(f=>f.id===offer.id),before=this.dataCredit;this.fragments.add(f.id);this.fragmentsSeen.add(f.id);return `Fragment recovered · +${f.value}% · ${this.rawData}% recovered · +${this.dataCredit-before} credited data${this.rawData>100?' (excess ×3)':''}`;}
     if(offer.type==='archive_data'){this.recorded.add('reservoir');if(!this.archiveReady)return 'The archive bus has lost its return path. Repair the local equipment circuits to read this cache.';this.dataRecovered=true;return 'Central record recovered · +90%. Surface return is online. More fragments are optional; recovery above 100% earns triple credit.';}
-    if(offer.type==='cell'){this.carryingCell=true;this.recorded.add('null');return 'Return cell acquired. The fractured return gallery has an empty supply socket beyond its broken maintenance deck. Space jumps across the surviving slabs.';}
+    if(offer.type==='cell'){this.carryingCell=true;this.recorded.add('null');return 'Cell acquired. Bring it to the fractured gallery socket. Space jumps between slabs. Saved in J / notes.';}
     if(offer.type==='socket'){if(!this.carryingCell)return 'This is an empty power socket. Retrieve the charged cell from the separate zero-gravity pump well, then bring it back here.';this.solved.add('gravity');this.carryingCell=false;return this._circuitMessage();}
     if(offer.type==='phase'){if(!this.phase.ready)return 'Not aligned yet. The bright band marks the safe interval; try again whenever the sweep overlaps it.';this.solved.add('time');this.recorded.add('resonance');this.resonanceAt=this.time;return this._circuitMessage();}
     if(offer.type==='fold'){if(this.foldCrossed&&!this.solved.has('space')){this.solved.add('space');return this._circuitMessage();}this.foldActive=true;return 'Matched thresholds linked. Walk through the dark frame, then reconnect the terminal on the other side.';}
@@ -205,5 +208,5 @@ export class UnderstructureSimulation {
     if(this.beacons.some(p=>Math.hypot(p[0]-this.pos[0],p[1]-this.pos[1],p[2]-this.pos[2])<2))return false;
     this.beacons.push([...this.pos]);return true;
   }
-  save(){return {version:5,bunkerSeen:this.bunkerSeen,serviceSeen:[...this.serviceSeen],sectorsSeen:[...this.sectorsSeen],lookoutSeen:this.lookoutSeen,fragments:[...this.fragments],fragmentsSeen:[...this.fragmentsSeen],themes:[...this.plan.themes],bridgeStage:this.bridgeStage,pressure:this.pressure,echoStep:this.echoStep,discovered:[...this.discovered],recorded:[...this.recorded],beacons:this.beacons,reservoirSeen:this.reservoirSeen,returned:this.returned,chambersSeen:[...this.chambersSeen],solved:[...this.solved],carryingCell:this.carryingCell,dataRecovered:this.dataRecovered};}
+  save(){return {version:5,noticeLog:[...this.noticeLog],bunkerSeen:this.bunkerSeen,serviceSeen:[...this.serviceSeen],sectorsSeen:[...this.sectorsSeen],lookoutSeen:this.lookoutSeen,fragments:[...this.fragments],fragmentsSeen:[...this.fragmentsSeen],themes:[...this.plan.themes],bridgeStage:this.bridgeStage,pressure:this.pressure,echoStep:this.echoStep,discovered:[...this.discovered],recorded:[...this.recorded],beacons:this.beacons,reservoirSeen:this.reservoirSeen,returned:this.returned,chambersSeen:[...this.chambersSeen],solved:[...this.solved],carryingCell:this.carryingCell,dataRecovered:this.dataRecovered};}
 }

@@ -1,9 +1,10 @@
+import { walkwaySlabs } from './surfaces.js';
 import * as THREE from 'three';
 import { DECK } from './layout.js';
 
 // Distinct infrastructure rooms attach to the seeded service graph. Their
 // structural footprint and gravity volume come from the collision plan.
-export function buildChambers(plan,{root,scene,mat,box,cylinder,label,lamp}) {
+export function buildChambers(plan,{root,scene,mat,box,cylinder,label,lamp,addGeometry}) {
   const drifting=[],droplets=[],resonators=[],bridges=[],gravity=plan.themes.includes('gravity');
   const accents={null:0x96ddec,upfall:0x97d9c4,resonance:0xffbf78,low:0x9dbeff,light:0x82eadf};
   function light(x,y,z,color,power,range){const l=new THREE.PointLight(color,power,range,2);l.position.set(x,y,z);scene.add(l);return l;}
@@ -28,7 +29,7 @@ export function buildChambers(plan,{root,scene,mat,box,cylinder,label,lamp}) {
     box(doorX+c.doorSide*.22,DECK+h/2,(z0+doorZ-2)/2,.44,h,doorZ-2-z0);
     box(doorX+c.doorSide*.22,DECK+h/2,(z1+doorZ+2)/2,.44,h,z1-doorZ-2);
     box(doorX+c.doorSide*.22,DECK+(h+4)/2,doorZ,.44,h-4,4);
-    for(const r of c.walkways){const [a,b,e,f]=r;box((a+b)/2,DECK-.25,(e+f)/2,b-a,.5,f-e,'floor');}
+    walkwaySlabs(c.walkways,DECK,.5,'floor',{addGeometry});
     for(const z of [doorZ-1.9,doorZ+1.9])box(doorX,DECK+2,z,.18,4,.14,'amber');
     box(doorX,DECK+.025,doorZ,.24,.05,3.8,'amber');box(doorX,DECK+3.95,doorZ,.18,.12,4,'amber');
     const face=c.doorSide*Math.PI/2;
@@ -71,7 +72,7 @@ export function buildChambers(plan,{root,scene,mat,box,cylinder,label,lamp}) {
       for(let y=DECK+.6;y<c.ceiling-1;y+=1.5)box(x0+.25,y,doorZ,.07,.38,.16,'amber');
       for(const [i,o] of c.obstacles.entries()) {
         const mesh=new THREE.Mesh(new THREE.BoxGeometry(o.radius*1.05,o.radius*.7,o.radius*.95),mat.concrete);
-        mesh.position.set(...o.center);root.add(mesh);drifting.push({mesh,phase:i*1.9,center:o.center});
+        mesh.userData.dynamicCollision=true;mesh.position.set(...o.center);root.add(mesh);drifting.push({mesh,phase:i*1.9,center:o.center});
         const band=new THREE.Mesh(new THREE.BoxGeometry(o.radius*1.06,.08,o.radius*.98),mat.rust);mesh.add(band);
       }
       for(let i=0;i<38;i++) {

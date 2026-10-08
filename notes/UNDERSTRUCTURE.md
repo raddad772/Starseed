@@ -1,3 +1,48 @@
+## Next exploration pass (requested 2026-10-08)
+
+Rooms or passages that change gravity direction as the player traverses them: walls
+become floors, including complete reversals. Deferred deliberately to a future pass.
+Use clear suit alerts and architectural cues; support grounded walking, camera/up-vector
+transitions, jump momentum, capsule orientation, maps and safe transitions together.
+Keep the tone curious and non-threatening. Also pending: pushable zero-g rigid debris
+and physically deforming, traversable light-fabric bridges. The current visual particles
+and static mesh collision are not a GPU rigid-body or cloth implementation.
+
+## Excavation, visibility and quiet manifestations (2026-10-08)
+
+The lift exits into an abandoned staging room with cases, a coring assembly, supports,
+a cable and a faceted breach tunnel. It reads as an earlier expedition's break-in.
+Doorway cuts use actual adjoining footprints; shared exposed edges remain solid.
+Walkway surfaces subtract overlaps, roof elbows share mitered vertices, stains use
+distinct layers, and the hatch collar meets the bunker reveal without overlapping it.
+Static architectural mesh triangles feed a capsule BVH, including pipes and zero-g
+ceiling apparatus. Existing support/ramp logic and dynamic block envelopes remain.
+
+Survey architecture uses opt-in stochastic texture sampling on the native deferred
+renderer. Fixed fixture lights follow conservative, current-camera portal traversal;
+visible fixture emission stays present at distance. Four local shadow maps remain
+bounded. The hand light reaches 120 m; objective equipment emits local light. Chipped
+paint bands distinguish routes, with sparse ceiling colonies on life-bearing sites.
+
+Ordinary underground dust uses a bounded, world-anchored lit particle field. Zero-g
+rooms have reactive spectral glints and faint mist. Three seeded ordinary-room sites
+have slow rainbow sheens/iridescent seeps and soft, source-less tones. These scenic
+manifestations neither block progression nor alter rewards or gravity. No flashes,
+jump scares or damage. Envelopes vary by seed and fade over seconds.
+
+A circular compass gives bearing, distance and vertical displacement. Interaction
+messages persist in J / notes and display long enough to read. Browser speech synthesis
+prefers an installed female English voice; local Samantha playback was verified.
+Voice and sound have separate toggles, and pause/mute/exit stop speech. No network TTS.
+
+Verified on the native renderer: full standalone recovery/reload route (15 checks),
+main-game entry, retrieval, both returns, saved re-entry, split-screen and body-fixed
+return (zero position error). Surface fixture: 12 captures, including a lit-dust pixel
+comparison, with no GPU validation errors. Offline audio verifies gentle onset, bounded
+level, room-dependent echoes and decay. 65 CPU checks passed together; the two additional
+manifestation/dust checks passed in the focused nine-check geometry suite. Evidence is
+in `br/outputs/megastructure-revision/`. Served from `starseed-landing-guide` on 8779.
+
 ## Flowing groundwater follow-up (2026-10-08)
 
 Wet intrusions now have continuous downward streaks, ballistic impact droplets and

@@ -114,7 +114,7 @@ export class SurveySession {
     this.storage=game.campaignStorage||localStorage;
     let saved={};try{saved=JSON.parse(this.storage.getItem(site.saveKey)||'{}');}catch{}
     this.plan=generateUnderstructure(site.seed,restoredProfile(site.seed,site.profile,saved),surveyEnvironment(site.body.data));
-    this.sim=new UnderstructureSimulation(this.plan,saved);this.visual=buildScene(this.plan);
+    this.sim=new UnderstructureSimulation(this.plan,saved);this.visual=buildScene(this.plan);this.sim.collision.setGeometry(this.visual.collider);
     this.sound=new SurveySound(this.plan,{context:()=>game.audio?.ctx,destination:()=>game.audio?.master});
     for(const p of this.sim.beacons)this.visual.addBeacon(p);
     const camera=new THREE.PerspectiveCamera(73,1,.08,3200);camera.rotation.order='YXZ';

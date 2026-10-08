@@ -1,3 +1,4 @@
+import { surveyProgram } from './surveyMaterial.js';
 import { InstanceCuller } from './culling.js';
 import * as THREE from 'three';
 import { bufferWithData, shaderModule } from './device.js';
@@ -9,7 +10,7 @@ export const GBUFFER_FORMATS = ['rgba8unorm','rgba16float','rgba16float','rgba8u
 import { attribute, fields, cachedFields, layouts, pack, version } from './geometry.js';
 const disabledShadows={uSunShadow:{value:null},uSkyShadow:{value:null},uGrassCover:{value:null},uTrunkSky:{value:null},uRockSky:{value:null},tShadowAtlas:{value:null},tSkyRings:{value:null}};
 export class OpaquePass {
- constructor(device,textures,descriptors=opaquePrograms){this.culler=new InstanceCuller(device);this.descriptors=descriptors;this.uniformOverrides=disabledShadows;this.device=device;this.textures=textures;this.programs=new Map();this.materialKeys=new WeakMap();this.meshes=new Map();this.geometryCache=new Map();this.white=new THREE.DataTexture(new Uint8Array([255,255,255,255]),1,1);this.white.needsUpdate=true;}
+ constructor(device,textures,descriptors=[...opaquePrograms,surveyProgram]){this.culler=new InstanceCuller(device);this.descriptors=descriptors;this.uniformOverrides=disabledShadows;this.device=device;this.textures=textures;this.programs=new Map();this.materialKeys=new WeakMap();this.meshes=new Map();this.geometryCache=new Map();this.white=new THREE.DataTexture(new Uint8Array([255,255,255,255]),1,1);this.white.needsUpdate=true;}
  async init(){await this.culler.init();await Promise.all(this.descriptors.map(async p=>{
   const vertexBindings=new ProgramBindings(this.device,p.vertex.layout,this.textures,GPUShaderStage.VERTEX),fragmentBindings=new ProgramBindings(this.device,p.fragment.layout,this.textures);
   const [vertex,fragment]=await Promise.all([shaderModule(this.device,p.name+' vertex',p.vertex.code),shaderModule(this.device,p.name+' material '+p.mode,p.fragment.code)]);
@@ -29,9 +30,9 @@ export class OpaquePass {
  }
  pipeline(p,g,material){const key=(tuning(this.device).enabled?g.layoutKey:JSON.stringify(g.layout))+':'+material.side;let pipeline=p.pipelines.get(key);if(!pipeline){pipeline=this.device.createRenderPipeline({label:p.name+' G-buffer',layout:this.device.createPipelineLayout({bindGroupLayouts:[p.vertexBindings.layout,p.fragmentBindings.layout]}),vertex:{module:p.vertex,entryPoint:'main',buffers:g.layout},fragment:{module:p.fragment,entryPoint:'main',targets:GBUFFER_FORMATS.map(format=>({format}))},primitive:{topology:'triangle-list',cullMode:material.side===THREE.DoubleSide?'none':material.side===THREE.BackSide?'front':'back',frontFace:'ccw'},depthStencil:{format:'depth32float',depthWriteEnabled:true,depthCompare:'greater'}});p.pipelines.set(key,pipeline);}return pipeline;}
  prepare(object,material,body,projection,camera){const p=this.program(material);if(!p)return null;const g=this.geometry(object,p),e=this.mesh(object,p,g,material);if(!e.count)return null;
-  const family={rock:1,flora:2,grass:3,standard:material.customProgramCacheKey?.().startsWith('interior')?5:4,floe:6,iceblock:6,giant:7}[p.name]||0;
+  const family={rock:1,flora:2,grass:3,survey:4,standard:material.customProgramCacheKey?.().startsWith('interior')?5:4,floe:6,iceblock:6,giant:7}[p.name]||0;
   const u={...material.uniforms,...material.userData.webgpu?.uniforms,...this.uniformOverrides,modelMatrix:{value:object.matrixWorld},viewMatrix:{value:camera.matrixWorldInverse},projectionMatrix:{value:projection},uBodyIndex:{value:body*16+family}};
-  if(p.name==='standard')Object.assign(u,this.standardUniforms(object,material));
+  if(p.name==='standard'||p.name==='survey')Object.assign(u,this.standardUniforms(object,material));
   const vg=p.vertexBindings.get(e,u).group,fg=p.fragmentBindings.get(e,u).group;
   return {p,g,e,pipeline:this.pipeline(p,g,material),vg,fg,object};
  }

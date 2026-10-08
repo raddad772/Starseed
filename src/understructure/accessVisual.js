@@ -7,7 +7,7 @@ export function buildAccess(plan,{root,mat,box,cylinder,lamp,label}){
     for(const [a,b,c,d] of [[x0,cx-hx,z0,z1],[cx+hx,x1,z0,z1],[cx-hx,cx+hx,z0,cz-hz],[cx-hx,cx+hx,cz+hz,z1]])
       if(b>a&&d>c)box((a+b)/2,y,(c+d)/2,b-a,h,d-c,material);
   }
-  slab(-2,2,Z-2,Z+2,-.16,.32,0,Z,'ground');
+  slab(-2,2,Z-2,Z+2,-.04,.08,0,Z,'ground');
   slab(-3,3,-2,10,Y-.16,.32,0,0,'floor');
   slab(-3,3,-2,10,-.23,.3,0,Z,'concrete');
   slab(-2,2,-2,2,deck-.16,.32,0,0,'floor');

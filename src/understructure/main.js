@@ -1,3 +1,5 @@
+import { SurveyCompass } from './compass.js';
+import { noticeDuration,appendNoticeLog } from './suitVoice.js';
 import { surveyEnvironment } from './generatorHall.js';
 import * as THREE from 'three';
 import { DeferredRenderer } from '../render/webgpu/renderer.js';
@@ -15,15 +17,18 @@ const plan=generateUnderstructure(params.get('seed')||'SUMP-07',params.get('them
 let saved={};try{saved=JSON.parse(localStorage.getItem(saveKey)||'{}');}catch{}
 if(params.has('test')&&params.has('reset'))saved={};
 const sim=new UnderstructureSimulation(plan,saved),visual=buildScene(plan),canvas=$('view');
+sim.collision.setGeometry(visual.collider);
 const sound=new SurveySound(plan);
 const updateSoundButton=()=>{$('sound').textContent=sound.enabled?'Sound on':'Sound off';$('sound').setAttribute('aria-pressed',String(sound.enabled));};
 $('sound').onclick=()=>{sound.setEnabled(!sound.enabled);updateSoundButton();};updateSoundButton();
+const compass=new SurveyCompass(document.body);compass.canvas.style.left='36px';compass.canvas.style.right='auto';compass.canvas.style.top='105px';
+const voiceButton=$('voice');const syncVoice=()=>{voiceButton.textContent=sound.voice.enabled?'Voice on':'Voice off';voiceButton.setAttribute('aria-pressed',String(sound.voice.enabled));};voiceButton.onclick=()=>{sound.voice.setEnabled(!sound.voice.enabled);sound.voice.unlock();syncVoice();};syncVoice();
 const mapView=new SurveyMap($('map'));
 for(const profile of THEME_PROFILES){const value=profile.join('-');if(!Array.from($('theme').options).some(o=>o.value===value))$('theme').add(new Option(profile.map(t=>THEME_NAMES[t]).join(' + '),value));}
 const camera=new THREE.PerspectiveCamera(73,1,.08,3200);camera.rotation.order='YXZ';
 const view={camera,width:1,height:1,rect:{x:0,y:0,w:1,h:1},meterRef:.18,maxExposure:3,exposureBias:1.3};
 const engine={scene:visual.scene,view,minExposure:.05,pixelRatio:1};
-let renderer,running=false,last=0,frame=0,lastSave=0,toastTimer,dirty=true;
+let renderer,running=false,last=0,frame=0,lastSave=0,notice='',noticeUntil=0,dirty=true;
 const keys=new Set(),errors=[];
 $('themes').textContent=plan.themes.map(t=>THEME_NAMES[t]).join(' + ');$('theme').value=params.get('theme')||'auto';
 $('site').textContent=plan.seed;$('seed').value=plan.seed;$('start').disabled=true;$('start').textContent='Preparing survey…';
@@ -34,7 +39,7 @@ const ledgerKey=`starseed.golden-path.${params.has('test')?'test':'demo'}.v1`;
 function syncData(){const result=bankRecovery(localStorage,ledgerKey,plan.seed,sim.rawData);sim.campaignTotal=result.total;if(result.newLead)toast('GOLDEN PATH · New lead reconstructed · open J / field notes');}
 syncData();
 function save(){syncData();try{localStorage.setItem(saveKey,JSON.stringify(sim.save()));}catch{} }
-function toast(message){if(!message)return;$('toast').textContent=message;$('toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').hidden=true,4500);}
+function toast(message){if(!message)return;sim.remember(message);notice=message;noticeUntil=performance.now()+noticeDuration(message);dirty=true;}
 function resize(){const ratio=Math.min(devicePixelRatio||1,1.5);const w=Math.max(1,Math.floor(innerWidth*ratio)),h=Math.max(1,Math.floor(innerHeight*ratio));canvas.width=w;canvas.height=h;Object.assign(view,{width:w,height:h,rect:{x:0,y:0,w,h}});camera.aspect=w/h;camera.updateProjectionMatrix();dirty=true;}
 function panel(id){const el=$(id);el.hidden=!el.hidden;if(!el.hidden){document.exitPointerLock?.();keys.clear();if(id==='mapPanel'){drawMap();$('map').focus();}else drawNotes();}dirty=true;}
 function pause(){running=false;sound.setActive(false);keys.clear();document.exitPointerLock?.();$('intro').hidden=false;$('start').innerHTML='Resume survey <span>↗</span>';save();dirty=true;}
@@ -64,7 +69,7 @@ let drag=false;
 canvas.addEventListener('pointerdown',()=>{drag=true;if(running&&document.pointerLockElement!==canvas)canvas.requestPointerLock?.()?.catch?.(()=>{});});
 window.addEventListener('pointerup',()=>drag=false);
 window.addEventListener('mousemove',e=>{if(running&&(document.pointerLockElement===canvas||drag)){sim.yaw-=e.movementX*.002;sim.pitch=Math.max(-1.4,Math.min(1.4,sim.pitch-e.movementY*.002));dirty=true;}});
-function drawNotes(){const parent=$('notes');parent.replaceChildren();for(const entry of mysteryEntries(sim.campaignTotal)){const h=document.createElement('h3'),p=document.createElement('p');h.textContent=entry.title;p.textContent=entry.text;parent.append(h,p);}const summary=document.createElement('p');summary.textContent=recoveryStatus(sim)+' · '+mysteryStatus(sim);parent.append(summary);if(!sim.recorded.size){const p=document.createElement('p');p.textContent='No records yet. Find the lit survey contacts and press E nearby.';parent.append(p);}for(const sample of plan.samples.filter(s=>sim.recorded.has(s.id))){const a=document.createElement('article'),h=document.createElement('h3'),p=document.createElement('p');h.textContent=sample.title;p.textContent=sample.text;a.append(h,p);parent.append(a);}}
+function drawNotes(){const parent=$('notes');parent.replaceChildren();appendNoticeLog(parent,sim);for(const entry of mysteryEntries(sim.campaignTotal)){const h=document.createElement('h3'),p=document.createElement('p');h.textContent=entry.title;p.textContent=entry.text;parent.append(h,p);}const summary=document.createElement('p');summary.textContent=recoveryStatus(sim)+' · '+mysteryStatus(sim);parent.append(summary);if(!sim.recorded.size){const p=document.createElement('p');p.textContent='No records yet. Find the lit survey contacts and press E nearby.';parent.append(p);}for(const sample of plan.samples.filter(s=>sim.recorded.has(s.id))){const a=document.createElement('article'),h=document.createElement('h3'),p=document.createElement('p');h.textContent=sample.title;p.textContent=sample.text;a.append(h,p);parent.append(a);}}
 function drawMap(){mapView.draw(sim);$('mapStats').textContent=`${sim.serviceSeen.size+sim.sectorsSeen.size+sim.chambersSeen.size} surveyed rooms & connections · ${sim.beacons.length} return beacons`;}
 function updateHUD(){
   $('zone').textContent=sim.zone;$('depth').innerHTML=`${sim.pos[1]>=0?'+':'−'}${Math.abs(sim.pos[1]).toFixed(1).padStart(5,'0')} <small>M</small>`;
@@ -72,7 +77,7 @@ function updateHUD(){
   $('signal').textContent=sim.pos[1]>-2?'SUBSURFACE RETURN · UNCLASSIFIED':`LIVE CIRCUIT · ${Math.floor(sim.time/11)%2?'RETURN':'INTAKE'} CYCLE`;
   $('objective').textContent=sim.returned?'Data returned · further exploration is optional':surveyObjective(sim);
   $('circuits').textContent=`RETURN CIRCUITS ${sim.solved.size}/${plan.puzzles.length} · ${recoveryStatus(sim)}`;
-  const scan=suitAlert(sim)||scanMessage(sim);if(scan){$('toast').textContent=scan;$('toast').hidden=false;$('toast').dataset.scan='yes';}else if($('toast').dataset.scan){$('toast').hidden=true;delete $('toast').dataset.scan;}
+  const scan=suitAlert(sim)||scanMessage(sim);if(scan&&notice)noticeUntil=Math.max(noticeUntil,performance.now()+noticeDuration(notice));$('toast').textContent=scan||(performance.now()<noticeUntil?notice:'');$('toast').hidden=!$('toast').textContent;compass.update(sim);
   $('clock').hidden=!plan.themes.includes('time')||sim.pos[1]>-2;
   $('clock').textContent=`MACHINERY CLOCK / ${sim.machinery.state}`;
   const showPhase=sim.offer()?.type==='phase';$('phasePanel').hidden=!showPhase;

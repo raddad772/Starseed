@@ -1,14 +1,17 @@
+import { manifestationReading } from './phenomena.js';
+import { SuitVoice } from './suitVoice.js';
 import { Rng } from '../core/rng.js';
 import { roomAcoustics,soundField,noiseSamples,FootstepTracker } from './acoustics.js';
 
 export class SurveySound {
   constructor(plan,{context=null,destination=null,storage=globalThis.localStorage}={}){
-    this.plan=plan;this.contextProvider=context;this.destinationProvider=destination;this.storage=storage;this.ownsContext=!context;
+    this.voice=new SuitVoice({storage});this.plan=plan;this.contextProvider=context;this.destinationProvider=destination;this.storage=storage;this.ownsContext=!context;
     this.enabled=true;try{this.enabled=storage?.getItem('starseed.survey.sound')!=='off';}catch{}
     this.active=false;this.disposed=false;this.ctx=null;this.sources=[];this.nodes=[];this.events=new Set();this.impulses=new Map();this.footsteps=new FootstepTracker();this.rng=Rng.fromString(plan.seed).fork('ambient-events');this.nextEvent=3;this.stats={steps:0,events:0,voices:0};
-    this.lastAlert=-100;this.visibility=()=>this.gate();globalThis.document?.addEventListener('visibilitychange',this.visibility);
+    this.manifestCycles=new Map();this.lastAlert=-100;this.visibility=()=>this.gate();globalThis.document?.addEventListener('visibilitychange',this.visibility);
   }
   unlock(){
+    this.voice.unlock();
     if(this.disposed||!this.enabled)return;
     if(!this.ctx){try{const c=this.contextProvider?.()||(!this.contextProvider?new (globalThis.AudioContext||globalThis.webkitAudioContext)():null);if(c)this.connect(c,this.destinationProvider?.()||c.destination);}catch{return;}}
     if(this.ownsContext&&this.ctx?.state==='suspended')this.ctx.resume().catch(()=>{});
@@ -33,9 +36,9 @@ export class SurveySound {
     this.reverbs=[0,1].map(()=>{const conv=this.node('createConvolver'),gain=this.node('createGain');gain.gain.value=0;this.effects.connect(conv).connect(gain).connect(this.master);return {conv,gain};});
     this.reverbIndex=0;this.stats.voices=this.sources.length;this.gate();
   }
-  setEnabled(on){this.enabled=!!on;try{this.storage?.setItem('starseed.survey.sound',on?'on':'off');}catch{}if(on)this.unlock();this.gate();}
-  setActive(on){this.active=!!on;this.gate();}
-  gate(){if(!this.ctx)return;const audible=this.active&&this.enabled&&!globalThis.document?.hidden&&!this.disposed;this.master.gain.cancelScheduledValues(this.ctx.currentTime);if(!audible)this.master.gain.setValueAtTime(0,this.ctx.currentTime);else this.master.gain.setTargetAtTime(.6,this.ctx.currentTime,.1);}
+  setEnabled(on){this.enabled=!!on;if(!on)this.voice.stop();try{this.storage?.setItem('starseed.survey.sound',on?'on':'off');}catch{}if(on)this.unlock();this.gate();}
+  setActive(on){this.active=!!on;if(!on)this.voice.stop();this.gate();}
+  gate(){const audible=this.active&&this.enabled&&!globalThis.document?.hidden&&!this.disposed;if(!audible)this.voice.stop();if(!this.ctx)return;this.master.gain.cancelScheduledValues(this.ctx.currentTime);if(!audible)this.master.gain.setValueAtTime(0,this.ctx.currentTime);else this.master.gain.setTargetAtTime(.6,this.ctx.currentTime,.1);}
   room(profile){
     const c=this.ctx,t=c.currentTime,decay=[.4,.8,1.4,2.4,4.8].reduce((a,b)=>Math.abs(b-profile.decay)<Math.abs(a-profile.decay)?b:a);
     this.early.delayTime.setTargetAtTime(profile.delay,t,.15);this.earlyGain.gain.setTargetAtTime(profile.wet*.4,t,.1);
@@ -50,17 +53,18 @@ export class SurveySound {
   }
   event(kind,profile,pan=0){
     if(!this.ctx||this.events.size>=8)return;
-    const c=this.ctx,t=c.currentTime,metal=profile.material==='metal',duration=kind==='strain'?1.4:kind==='drip'?.25:.18;
-    const tonal=kind==='drip'||kind==='strain'||kind==='alert',src=tonal?c.createOscillator():c.createBufferSource(),filter=c.createBiquadFilter(),gain=c.createGain(),stereo=c.createStereoPanner();
-    if(tonal){src.type='sine';src.frequency.setValueAtTime(kind==='alert'?660:kind==='drip'?1300:92,t);src.frequency.exponentialRampToValueAtTime(kind==='alert'?880:kind==='drip'?440:68,t+duration);}else{src.buffer=kind==='step'?this.footNoise:this.noise;src.playbackRate.value=.9+this.rng.next()*.2;}
-    filter.type='bandpass';filter.frequency.value=kind==='step'?(metal?1450:profile.material==='soil'?360:750):kind==='strain'?170:1700;filter.Q.value=metal?2.2:.7;
-    const volume=kind==='step'?.27:kind==='drip'?.045:.075;
-    gain.gain.setValueAtTime(.00001,t);gain.gain.linearRampToValueAtTime(volume,t+.009);gain.gain.exponentialRampToValueAtTime(.00001,t+duration);stereo.pan.value=pan;
+    const c=this.ctx,t=c.currentTime,metal=profile.material==='metal',duration=kind==='wonder'?1.8:kind==='strain'?1.4:kind==='drip'?.25:.18;
+    const tonal=kind==='drip'||kind==='strain'||kind==='alert'||kind==='wonder',src=tonal?c.createOscillator():c.createBufferSource(),filter=c.createBiquadFilter(),gain=c.createGain(),stereo=c.createStereoPanner();
+    if(tonal){src.type='sine';src.frequency.setValueAtTime(kind==='wonder'?392:kind==='alert'?660:kind==='drip'?1300:92,t);src.frequency.exponentialRampToValueAtTime(kind==='wonder'?523:kind==='alert'?880:kind==='drip'?440:68,t+duration);}else{src.buffer=kind==='step'?this.footNoise:this.noise;src.playbackRate.value=.9+this.rng.next()*.2;}
+    filter.type='bandpass';filter.frequency.value=kind==='step'?(metal?1450:profile.material==='soil'?360:750):kind==='wonder'?900:kind==='strain'?170:1700;filter.Q.value=metal?2.2:.7;
+    const volume=kind==='wonder'?.022:kind==='step'?.27:kind==='drip'?.045:.075;
+    gain.gain.setValueAtTime(.00001,t);gain.gain.linearRampToValueAtTime(volume,t+(kind==='wonder'?.45:.009));gain.gain.exponentialRampToValueAtTime(.00001,t+duration);stereo.pan.value=pan;
     src.connect(filter).connect(gain).connect(stereo).connect(this.effects);
     const record={src,nodes:[src,filter,gain,stereo]};this.events.add(record);
     src.onended=()=>{for(const n of record.nodes)n.disconnect();this.events.delete(record);};src.start(t);src.stop(t+duration+.04);this.stats.events++;if(kind==='step')this.stats.steps++;
   }
   update(state,active=true){
+    this.voice.update(state,active&&this.enabled);
     this.setActive(active);if(!this.ctx&&this.contextProvider)this.unlock();
     const step=this.footsteps.update(state,active&&this.enabled),profile=roomAcoustics(this.plan,state);this.profile=profile;
     if(!this.ctx||!active||!this.enabled||globalThis.document?.hidden)return;
@@ -68,11 +72,12 @@ export class SurveySound {
     for(const [name,voice] of Object.entries(this.layers))voice.gain.gain.setTargetAtTime(field[name],t,.22);
     this.layers.generator.pan.pan.setTargetAtTime(field.pan,t,.2);
     const alert=Math.max(state.packDisabledAt??-100,state.gravityAlertAt??-100);if(alert>this.lastAlert){this.lastAlert=alert;if(state.time-alert<1)this.event('alert',{material:'suit'},0);}
+    for(const m of this.plan.manifestations||[]){const r=manifestationReading(m,state.time);if(r.envelope>.18&&Math.hypot(state.pos[0]-m.pos[0],state.pos[2]-m.pos[2])<18&&Math.abs(state.pos[1]-m.floor)<8&&this.manifestCycles.get(m.id)!==r.cycle){this.manifestCycles.set(m.id,r.cycle);this.event('wonder',profile,.25*Math.sin(m.hue*6.28));}}
     if(step)this.event('step',profile,(this.stats.steps%2?1:-1)*.07);
     if(state.time>this.nextEvent){this.nextEvent=state.time+this.rng.range(6,14);if(field.below>.5)this.event(this.plan.generator.environment.wet&&this.rng.chance(.6)?'drip':'strain',profile,this.rng.range(-.85,.85));}
   }
   dispose(){
-    if(this.disposed)return;this.disposed=true;this.gate();globalThis.document?.removeEventListener('visibilitychange',this.visibility);
+    if(this.disposed)return;this.voice.dispose();this.disposed=true;this.gate();globalThis.document?.removeEventListener('visibilitychange',this.visibility);
     for(const src of this.sources){try{src.stop();}catch{}}for(const e of this.events){try{e.src.stop();}catch{}for(const n of e.nodes)n.disconnect();}this.events.clear();
     for(const n of this.nodes)n.disconnect();this.impulses.clear();if(this.ownsContext)this.ctx?.close().catch(()=>{});
   }

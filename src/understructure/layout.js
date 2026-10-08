@@ -1,3 +1,4 @@
+import { manifestationPlan } from './phenomena.js';
 import { serviceSector,serviceAt } from './service.js';
 import { ACCESS,accessFloor } from './access.js';
 export { ACCESS } from './access.js';
@@ -46,12 +47,12 @@ export function generateUnderstructure(seed = 'SUMP-07',profile='auto',environme
     {center:[104,DECK+4,-61],radius:2.1}, {center:[87,DECK+15,-44],radius:2},
   ];
   const service=serviceSector(seed,DECK,chambers),rooms=service.rooms,edges=service.links.map(l=>[l.a,l.b]);
-  const utility={equipment:[]},walls=[],tiles=[];
+  const utility={equipment:[{kind:'expedition-case',bounds:[-6,-4,-5,-3,DECK,DECK+.85]},{kind:'drill-base',bounds:[4,5.4,-8.2,-4.8,DECK,DECK+.9]}]},walls=[],tiles=[];
   // Coarse samples are navigation diagnostics only, never visible architecture.
   for(let x=-19;x<=19;x++)for(let z=-31;z<=14;z++)if(serviceAt(service,x*TILE,z*TILE))tiles.push({x,z,region:'service'});
   tiles.push({x:0,z:0,region:'access'});
   const samples=[
-    {id:'intake',pos:[0,DECK,-20],title:'An occupied frequency',text:'The access circuit draws power in eleven-second intervals. The pulse continues far below the surveyed level.'},
+    {id:'intake',pos:[0,DECK,-20],title:'An occupied frequency',text:'The lift ends in a much later excavation. Someone brought equipment down here and cut through the outer skin. The abandoned drill, cable and support frames do not match the architecture beyond. This was a break-in, not an entrance.'},
     {id:'archive',pos:[24,DECK,-52],title:'Maintenance without occupants',text:'Replacement filters are stacked beside a live return line. None of the fittings match the dimensions of the doors.'},
     {id:'reservoir',pos:[0,DECK,-264],title:'A reservoir with no catchment',text:'No intake, watershed or active weather system accounts for this volume. The maintenance catwalks continue beyond the reach of the hand light.'},
     {id:'null',pos:[96,DECK+(themes.includes('gravity')?12:0),-52],title:themes.includes('gravity')?'Weight ends at the sill':'A pocket in the machinery',text:themes.includes('gravity')?'The planet is still above you. Inside this well, loose concrete hangs without support. Gravity returns exactly at the amber threshold, with no measurable change outside it.':'This little room faces a structural void over a kilometre across. The handrails and service doors continue in rows until they become too small to resolve.'},
@@ -64,7 +65,7 @@ export function generateUnderstructure(seed = 'SUMP-07',profile='auto',environme
   const pillars=[];
   for(let z=-140;z>-280;z-=24)for(const x of [-51,51])pillars.push({x,z,width:3,depth:4});
   const routes=reservoirRoutes(DECK),routeLandings=[routes[0].a,routes.at(-1).b,...routes.slice(1).filter((r,i)=>{const q=routes[i];return Math.abs((r.b[0]-r.a[0])*(q.b[2]-q.a[2])-(r.b[2]-r.a[2])*(q.b[0]-q.a[0]))>.001;}).map(r=>r.a)],fragments=dataFragments(DECK);
-  return {version:5,service,oblique:obliqueSector(seed,DECK),generator,utility,routes,routeLandings,fragments,finalCache:{pos:[56,DECK+42,-268],value:90},seed,themes,puzzles,tiles,walls,rooms,edges,samples,
+  return {version:5,manifestations:manifestationPlan(seed,service,DECK),service,oblique:obliqueSector(seed,DECK,service.rooms.find(r=>r.id==='blind-stub').polygon),generator,utility,routes,routeLandings,fragments,finalCache:{pos:[56,DECK+42,-268],value:90},seed,themes,puzzles,tiles,walls,rooms,edges,samples,
     deck:DECK,shaft:{min:[-2,-2],max:[2,2]},reservoir:{x:64,near:-122,far:-286,bottom:DECK-40,water:DECK-25,ceiling:DECK+60},
     walkways:[[-2,2,-286,-120],[-64,64,-126,-122],[-64,64,-286,-282],[-64,-60,-286,-122],[60,64,-286,-122],[-64,64,-206,-202]],
     access:{...ACCESS},megavault:{near:110,far:1710,zMin:-652,zMax:548,ceiling:-4,bottom:-904},
@@ -81,6 +82,7 @@ export function terrainHeight(x,z) {
 }
 
 export function makeCollision(plan) {
+  let geometry=null;const clear=(x,y,z,step=0)=>!geometry||y>-30||geometry.clear(x,y,z,.4,step);
   function floorAt(x,z,{y=0,liftY=ACCESS.top,hatchOpen=false,bridgeStage=0}={}) {
     const entry=accessFloor(x,z,{y,liftY,hatchOpen});if(entry!==undefined)return entry;
     if(y>-2)return Math.hypot(x,z)<240?terrainHeight(x,z):null;
@@ -99,6 +101,7 @@ export function makeCollision(plan) {
     return null;
   }
   function canStand(x,z,state,radius=.3) {
+    if(!clear(x,state.y,z,.25))return false;
     if(state.y<-2)for(const f of plan.fragments)if(f.value===1&&state.y<f.pos[1]+.8&&state.y+1.9>f.pos[1]){
       const dx=x-f.pos[0]-1.25,dz=z-f.pos[2]-1.35;if(Math.abs(dx)<.6+radius&&Math.abs(dz)<.6+radius)return false;
     }
@@ -124,14 +127,14 @@ export function makeCollision(plan) {
     }
     // Suspended blocks use spherical clearance envelopes, including their slow rotation.
     for(const o of room.obstacles){const cy=Math.max(y+.42,Math.min(y+1.48,o.center[1]));if(Math.hypot(x-o.center[0],cy-o.center[1],z-o.center[2])<o.radius+radius)return false;}
-    return true;
+    return clear(x,y,z);
   }
   function canTraverse(x,y,z,room,radius=.42){
     if(y+1.9>room.ceiling)return false;
     const [a,b,c,d]=room.bounds;
     // Capsule stays in the chamber except through its low entrance.
     for(let i=0;i<12;i++){const angle=i*Math.PI/6,px=x+Math.cos(angle)*radius,pz=z+Math.sin(angle)*radius;if(px>=a&&px<=b&&pz>=c&&pz<=d)continue;if(px<a&&px>=a-2&&Math.abs(pz-room.door[1])<=1.85&&Math.abs(y-DECK)<.2)continue;return false;}
-    return true;
+    return clear(x,y,z);
   }
   function floorBelow(x,z,y,state){
     if(y>-.6)return floorAt(x,z,{...state,y:0});
@@ -152,8 +155,8 @@ export function makeCollision(plan) {
     const c=chamberAt(plan,x,z);
     if(c?.kind==='platforms')return canTraverse(x,y,z,c);
     const floor=floorBelow(x,z,y,state);if(floor===null)return false;
-    return canStand(x,z,{...state,y:floor},.42)&&y+1.9<=ceilingAt(x,y,z)+.001;
+    return clear(x,y,z)&&canStand(x,z,{...state,y:floor},.42)&&y+1.9<=ceilingAt(x,y,z)+.001;
   }
-  return {floorAt,floorBelow,ceilingAt,canJumpMove,canStand,canFloat,canTraverse};
+  return {setGeometry(value){geometry=value;},floorAt,floorBelow,ceilingAt,canJumpMove,canStand,canFloat,canTraverse};
 
 }
