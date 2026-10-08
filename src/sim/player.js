@@ -67,6 +67,7 @@ export class Player {
     this.view = null;
     this.camMode = 'first';
     this.chaseQuat = new THREE.Quaternion();
+    this.orbitCam = null;   // the free view's: { yaw, pitch, dist } round the craft (game.js updateCamera)
     this.target = null;
     this.route = null;
     this.deathShown = false;

@@ -66,7 +66,7 @@ export { WARP_LEVELS } from './sim/warpConsent.js';
 // same places on worlds drawn at any size)
 const FLEET_K = U.LEN_SCALE / 0.1;
 const PHYS_DT = 1 / 120;
-const _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3();
+const _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3(), _v4 = new THREE.Vector3(), _v5 = new THREE.Vector3();
 const _q1 = new THREE.Quaternion();
 const _qd = new THREE.Vector3();
 // a direction (x, y, z) turned by q (a shared vector: use at once)
@@ -1807,8 +1807,9 @@ export class Game {
       if (input.hit('KeyL') && v.visual.landing) this.message(v.visual.landing.toggle() ? 'Landing lights on' : 'Landing lights off'); // (render/landingLights.js: automatic until flipped)
       if (input.hit('KeyJ')) v.ftl.toggle();
       if (input.hit('KeyV')) {
-        this.camMode = { first: 'chase', chase: 'landing', landing: 'first' }[this.camMode] || 'first';
-        this.message({ first: 'Cockpit view', chase: 'Chase view', landing: 'Landing view: level, above and behind' }[this.camMode], 'nav');
+        this.camMode = { first: 'chase', chase: 'landing', landing: 'free', free: 'first' }[this.camMode] || 'first';
+        if (this.camMode === 'free') this.player.orbitCam = null;   // (taken up from where the camera is)
+        this.message({ first: 'Cockpit view', chase: 'Chase view', landing: 'Landing view: level, above and behind', free: 'Free view: the mouse or right stick looks round, the wheel zooms' }[this.camMode], 'nav');
       }
     } else if (input.hit('KeyL')) {
       // (a hand light, out of a ship: render/world.js handLight)
@@ -2006,14 +2007,14 @@ export class Game {
     c.boost = input.down('ShiftLeft');
     c.brake = input.down('KeyX');
     // virtual stick: mouse motion deflects it, it springs back to centre
-    const freeLook = input.buttons & 2 || input.down('AltLeft');
+    const freeLook = input.buttons & 2 || input.down('AltLeft') || this.camMode === 'free';
     if (!freeLook) {
       s.stick.x += mouse.dx * 7; s.stick.y += mouse.dy * 7;
     }
     s.stick.multiplyScalar(Math.exp(-dt / 0.22));
     // a gamepad's right stick is the stick itself
     const pl = input.padLook;
-    if (pl.x || pl.y) s.stick.set(pl.x, pl.y);
+    if ((pl.x || pl.y) && this.camMode !== 'free') s.stick.set(pl.x, pl.y);   // (in the free view it turns the camera)
     if (s.stick.length() > 1) s.stick.normalize();
     const dz = (v) => Math.abs(v) < 0.015 ? 0 : v;
     c.pitch = -dz(s.stick.y);
@@ -2282,6 +2283,34 @@ export class Game {
       const aim = wp.clone().addScaledVector(fh, 0.35 * R).addScaledVector(up, -0.3 * R);
       const m = new THREE.Matrix4().lookAt(this.camPos, aim, up);
       this.camQuat.setFromRotationMatrix(m);
+      this.chaseQuat.copy(s.quat);
+      return;
+    }
+    if (this.camMode === 'free' && pv) {
+      // the free view: round the craft at a chosen distance, turned with the mouse or right stick,
+      // in a frame that keeps still while the craft turns (level with the local horizon, near a
+      // world; the host's deck, berthed)
+      const s = cameraVessel, R = s.type.radius, wp = s.getWorldPos(_v1);
+      const up = s.parent ? _v2.set(0, 1, 0).applyQuaternion(s.parent.quat) : _v2.copy(s.pos).normalize();
+      const north = _v3.set(0, 1, 0).addScaledVector(up, -up.y);
+      if (north.lengthSq() < 1e-6) north.set(1, 0, 0).addScaledVector(up, -up.x);
+      north.normalize();
+      const east = _v4.copy(north).cross(up).normalize();
+      let o = p.orbitCam;
+      if (!o) {
+        // (from where the camera is now)
+        const d = this.camPos.clone().sub(wp), l = d.length() || R * 3;
+        d.divideScalar(l);
+        o = p.orbitCam = { yaw: Math.atan2(d.dot(east), d.dot(north)), pitch: Math.asin(Math.max(-1, Math.min(1, d.dot(up)))), dist: Math.max(R * 1.4, Math.min(l, R * 12)) };
+      }
+      const m = p._mouse || { dx: 0, dy: 0 }, pl = p.input.padLook || { x: 0, y: 0 };
+      o.yaw -= m.dx * 1.4 + pl.x * dt * 2.2;
+      o.pitch = Math.max(-1.45, Math.min(1.45, o.pitch + m.dy * 1.4 + pl.y * dt * 2.2));
+      if (p.input.wheel) o.dist = Math.max(R * 1.2, Math.min(R * 60, o.dist * Math.pow(1.12, p.input.wheel > 0 ? 1 : -1)));
+      const dir = _v5.copy(north).multiplyScalar(Math.cos(o.yaw) * Math.cos(o.pitch)).addScaledVector(east, Math.sin(o.yaw) * Math.cos(o.pitch)).addScaledVector(up, Math.sin(o.pitch));
+      this.camPos.copy(wp).addScaledVector(dir, o.dist);
+      const mx = new THREE.Matrix4().lookAt(this.camPos, wp, up);
+      this.camQuat.setFromRotationMatrix(mx);
       this.chaseQuat.copy(s.quat);
       return;
     }

@@ -410,6 +410,7 @@ export class Hud {
       if (s.landed) chip('LANDED', 'on');
       if (g.camMode === 'chase') chip('CHASE CAM');
       if (g.camMode === 'landing') chip('LANDING CAM', 'on');
+      if (g.camMode === 'free') chip('FREE VIEW', 'on');
     } else {
       chip(p.mode === 'eva' ? 'EVA' : (p.mode === 'ship' ? `ABOARD ${s.name.toUpperCase()}` : (p.swimming ? 'SWIMMING' : 'ON FOOT')), 'on');
       chip(`JET ${Math.round(p.jetFuel * 100)}%`, p.jetFuel < 0.2 ? 'caution' : '');
