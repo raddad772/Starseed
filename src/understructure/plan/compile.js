@@ -231,7 +231,8 @@ export function compileSite(plan) {
     const T = WALL, outer = n.poly.map((_, i) => offsetVertex(n.poly, i, T));
     const rock = n.kind === 'staging';
     solids.push(vprism(outer, n.y0 - SLAB, n.y0, rock ? 'rock' : 'floor', { floor: true }));
-    solids.push(vprism(outer, n.y1, n.y1 + SLAB, rock ? 'rock' : 'concrete'));
+    if (rock) ceilingWithHole(solids, outer, breakInShaft(n), n.y1, n.y1 + SLAB, 'rock');
+    else solids.push(vprism(outer, n.y1, n.y1 + SLAB, rock ? 'rock' : 'concrete'));
     roomWalls(solids, n.poly, T, n.y0, n.y1, doorsOf.get(n.id) || [], rock ? 'rock' : 'concrete');
     const c = n.center || G.centroid(n.poly);
     if (n.kind === 'climb') {
@@ -317,6 +318,12 @@ export function compileSite(plan) {
   const intr = intrusions(solids, lamps, plan, doorsOf, rng.fork('intrusions'));
   for (const L of plan.landmarks) if (L.kind === 'cistern') water.push({ poly: L.poly, y: L.y0 + (Math.min(...plan.nodes.filter((n) => n.landmark === L.id).map((n) => n.y0)) - L.y0) * 0.45 });
 
+  // the later visitors' way in: a rough shaft from the breach room up to the surface
+  {
+    const st = byId.get('staging'), hole = breakInShaft(st);
+    roomWalls(solids, hole, 0.8, st.y1, plan.surfaceY, [], 'rock');
+    for (let y = st.y1 + 6; y < plan.surfaceY - 2; y += rng.range(9, 15)) lamps.push({ pos: [st.center[0] + 1.2, y, st.center[1]], color: 'work', power: 40, wall: true, range: 16 });
+  }
   const gates = compileGates(solids, lamps, plan, byId, vols, doorsOf, rng.fork('gates'));
   for (const f of plan.finds) markers.push({ ...f });
   const s0 = byId.get('staging'), first = plan.links.find((l) => l.a === 'staging');
@@ -375,6 +382,29 @@ function compileGates(out, lamps, plan, byId, vols, doorsOf, rng) {
     res.push(r);
   }
   return res;
+}
+
+// The break-in shaft's outline (centred over the breach room).
+export function breakInShaft(st) { return G.regularPoly(st.center[0], st.center[1], 1.9, 1.9, 7, 0.3); }
+
+// A slab over the outer outline with a convex hole in it: one convex piece per
+// hole edge (the outline cut to the wedge from the centre through that edge,
+// beyond the edge).
+function ceilingWithHole(out, outer, hole, y0, y1, mat) {
+  const c = G.centroid(hole), n = hole.length;
+  for (let i = 0; i < n; i++) {
+    const a = hole[i], b = hole[(i + 1) % n];
+    let piece = outer;
+    // the wedge between the rays c->a and c->b (keep the side of each ray facing the other)
+    const ra = G.sub(a, c), rb = G.sub(b, c);
+    const na = G.norm([ra[1], -ra[0]]), nb = G.norm([-rb[1], rb[0]]); // left of c->a, right of c->b
+    piece = G.clipHalf(piece, na, G.dot(c, na));
+    piece = G.clipHalf(piece, nb, G.dot(c, nb));
+    // beyond the hole's edge a-b
+    const e = G.sub(b, a), inward = G.norm(G.perp(e)); // CCW: left is inside the hole
+    piece = G.clipHalf(piece, inward, G.dot(a, inward));
+    if (piece.length >= 3 && Math.abs(G.area(piece)) > 0.01) out.push(vprism(G.ccw(piece), y0, y1, mat));
+  }
 }
 
 // The doorway at the top of a climb room, as a point just inside it.

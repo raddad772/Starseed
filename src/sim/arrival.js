@@ -30,3 +30,23 @@ export function orbitalReadiness(g) {
   }
   return { pending, unmeasured, history, failed };
 }
+
+// Which worlds to simulate now: while any player is on a world (walking, inside it,
+// landed, or flying within 20 km of its ground), that world and every world seen as a
+// disc from their camera (its moons, a near planet); else null (all, nearest first).
+export function simFocus(g) {
+  const pxPerRad = g.engine.height / (g.engine.camera.fov * Math.PI / 180);
+  let focus = null;
+  for (const p of g.players) {
+    const b = p.currentBody(), v = p.vessel;
+    const on = b && b.solid && (p.mode === 'surface' || p.understructure || (v && (v.landed || (v.agl ?? Infinity) < 20000)));
+    if (!on) continue;
+    focus ||= new Set();
+    focus.add(b.id);
+    for (const it of g.world.items) {
+      const o = it.body;
+      if (o !== b && o.solid && (o.R + (o.atmHeight || 0)) / Math.max(1, p.camPos.distanceTo(o.pos)) * pxPerRad > 0.6) focus.add(o.id);
+    }
+  }
+  return focus;
+}

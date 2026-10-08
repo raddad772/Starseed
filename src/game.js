@@ -17,7 +17,7 @@ import { NearGround } from './sim/nearGround.js';
 import { findCliffCountry, gentleNear } from './gen/volume.js';
 import * as THREE from 'three';
 import { updateMirrorView,keepOutsideMirror } from './campaign/mirrorScene.js';
-import { orbitalReadiness } from './sim/arrival.js';
+import { orbitalReadiness, simFocus } from './sim/arrival.js';
 import { getSystem } from './gen/systemCache.js';
 import { S_LEN, S_H, S_WDEPTH } from './gen/terrain.js';
 import { Universe } from './sim/universe.js';
@@ -39,7 +39,7 @@ import { ShipVisual } from './render/shipVisual.js';
 import { ReentryVisual } from './render/reentryVisual.js';
 import { OrbitalStationVisual } from './render/orbitalStation.js';
 import { hullEnvelope } from './sim/reentry.js';
-import { SurfaceSurveys } from './understructure/integration.js';
+import { SurfaceSites } from './understructure/site/siteIntegration.js';
 import { BigShipVisual } from './render/bigShipVisual.js';
 import { FleetVisual } from './render/fleetVisual.js';
 import { requestAirlock, outerAirlockOpen } from './sim/airlocks.js';
@@ -93,7 +93,7 @@ export class Game {
     if (opts.worldsim) { this.worldSims = new WorldSims(this, { N: opts.simN, workers: opts.simWorkers, gpu: opts.tileGPU !== false }); this.tiles = new TerrainTiles(this); }
     this.lights = new LightRig(this.engine);
     this.campaignStorage = opts.campaignStorage;
-    this.surfaceSurveys = new SurfaceSurveys(this);
+    this.surfaceSurveys = new SurfaceSites(this);
     // the world's clock: everyone's (sim/worldClock.js); this client's universe time from it
     this.clock = new WorldClock();
     this.t = this.clock.now();
@@ -1814,6 +1814,9 @@ export class Game {
     const p = this.players[0], v = p.vessel, b = v ? v.body : p.body;
     if (!b || !b.solid || !b.terrain || (v && v.parent)) return;
     const pos = this._nearPos || (this._nearPos = new THREE.Vector3());
+    // (inside a megastructure the ground round you is its own: the near field holds at the
+    // surface you went down from, ready for when you come up)
+    if (p.understructure) return;
     if (p.mode === 'surface') pos.copy(p.fPos);
     else if (v) pos.copy(v.pos).applyQuaternion(b.qInv);
     else pos.copy(p.ePos).applyQuaternion(b.qInv);
@@ -1913,6 +1916,8 @@ export class Game {
     }
     this.setCur(null);
     this.updateNearField();
+    // (on a world, only it and the worlds seen from it are simulated: checked twice a second)
+    if (this.worldSims && (this._focusT = (this._focusT || 0) + dtReal) > 0.5) { this._focusT = 0; this.worldSims.setFocus(simFocus(this)); }
     for (const v of this.vessels) v.nav.update(dtReal);
     this.updateWarp(dtReal);
     warp = this.warp; dt = dtReal * warp;

@@ -212,10 +212,19 @@ export class WorldSims {
   // the next job for a worker: the tile workers take the pyramid's tiles, then refinements; a
   // sim worker the pyramid's tiles too before another world's sim (the ground under the camera
   // first), then refinements
+  // While someone is on a world, only it and the worlds seen as discs from there are worked
+  // on (their sims and refinements); the others' jobs wait in the queue until they leave.
+  setFocus(ids) {
+    const key = ids ? [...ids].sort((a, b) => a - b).join(',') : '';
+    if (key === this._focusKey) return;
+    this._focusKey = key; this.focus = ids;
+    this._next();
+  }
+
   _pick(w) {
     const order = w.role === 'tile' ? ['pyr', 'refine'] : ['pyr', 'sim', 'refine'];
     for (const kind of order) {
-      const i = this.queue.findIndex((j) => j.kind === kind);
+      const i = this.queue.findIndex((j) => j.kind === kind && (kind === 'pyr' || !this.focus || this.focus.has(j.id)));
       if (i >= 0) return this.queue.splice(i, 1)[0];
     }
     return null;

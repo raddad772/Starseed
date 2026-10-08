@@ -55,7 +55,8 @@ export class NearGround {
 
   // whether body-fixed point p is well inside the near field
   within(p) {
-    if (!this.active || !this.ready) return false;
+    // (ready, but its field not swapped in yet: a jump of hundreds of metres re-anchors it)
+    if (!this.active || !this.ready || !this.field) return false;
     // (horizontally: the volume is meshed in a vertical cylinder round the centre)
     const c = this.centre, dx = p.x - c[0], dy = p.y - c[1], dz = p.z - c[2], cl = Math.hypot(c[0], c[1], c[2]);
     const up = (dx * c[0] + dy * c[1] + dz * c[2]) / cl;
