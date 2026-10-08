@@ -7,6 +7,17 @@ import { surveyMapData } from '../../src/understructure/surveyMap.js';
 import { descend,climbCollection,descendCollection,walkLine } from './understructure-walk.js';
 import * as THREE from 'three';
 import { buildGeneratorHall } from '../../src/understructure/generatorVisual.js';
+import { buildGroundwater } from '../../src/understructure/groundwater.js';
+
+test('groundwater falls, stays bounded at roof/pool, and is absent on dry worlds',()=>{
+  const plan=generateUnderstructure('HALL-6'),root=new THREE.Group(),mat={},flow=buildGroundwater(plan,{root,mat,cylinder:()=>{}});
+  const before=Array.from(flow.streaks.instanceMatrix.array);flow.update(.01);
+  for(let i=0;i<flow.streaks.count;i++){const y=flow.streaks.instanceMatrix.array[i*16+13];if(before[i*16+13]-flow.streams[0].bottom>1)assert.ok(y<before[i*16+13]);}
+  const count=root.children.length;
+  for(let t=0;t<300;t+=1.33){flow.update(t);assert.equal(root.children.length,count);for(let i=0;i<flow.streaks.count;i++){const y=flow.streaks.instanceMatrix.array[i*16+13];assert.ok(y>=flow.streams[0].bottom-.001&&y<=flow.streams[0].top+.001);}}
+  const dryRoot=new THREE.Group(),dry=buildGroundwater(generateUnderstructure('DRY','auto',surveyEnvironment({})),{root:dryRoot,mat:{},cylinder:()=>assert.fail('Dry world emitted water')});dry.update(30);assert.equal(dry.streams.length,0);assert.equal(dryRoot.children.length,0);
+  root.traverse(o=>o.geometry?.dispose());for(const m of Object.values(mat))m.dispose();
+});
 
 test('seeded survivor covers all six positions, all wounds and preserves existing circuits and data',()=>{
   const living=new Set(),wounds=new Set();

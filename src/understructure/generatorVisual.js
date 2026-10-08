@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Rng } from '../core/rng.js';
 import { generatorCycle } from './generatorHall.js';
+import { buildGroundwater } from './groundwater.js';
 
 export function buildGeneratorHall(plan,{root,scene,mat,box,cylinder,label,addGeometry}) {
   const h=plan.generator,deck=plan.deck,rng=Rng.fromString(plan.seed).fork('generator-dressing-v1');
@@ -89,7 +90,6 @@ export function buildGeneratorHall(plan,{root,scene,mat,box,cylinder,label,addGe
   }
   if(h.environment.wet){
     for(const side of [-1,1]){
-      cylinder([side*19,deck+55,-302],[side*19,deck-27,-302],h.wound==='aquifer'?.48:.09,'water',8);
       for(let i=0;i<8;i++)rock(side*22,deck-17+i*9,-290,2,3,.5,'mineral');
     }
   }
@@ -138,8 +138,10 @@ export function buildGeneratorHall(plan,{root,scene,mat,box,cylinder,label,addGe
   for(let x=-190;x<=190;x+=14){box(x,deck+77,-394.9,3,4,.18,'dark');box(x,deck+79.3,-394.7,3,.16,.1,'amber');}
   const faultLight=new THREE.PointLight(0xb7c5ad,450,75,2);faultLight.position.set(0,deck+47,-305);scene.add(faultLight);
   const farGlow=new THREE.PointLight(0x69988e,10000,420,2);farGlow.position.set(0,deck-40,-520);scene.add(farGlow);
+  const groundwater=buildGroundwater(plan,{root,mat,cylinder});
   let reading=generatorCycle(h,0);
-  return {get reading(){return reading;},live,update(time){
+  return {get reading(){return reading;},live,groundwater,update(time){
+    groundwater.update(time);
     reading=generatorCycle(h,time);mat.core.emissiveIntensity=.65+reading.power*3.2;
     glow.intensity=1800+reading.power*9500;underglow.intensity=800+reading.power*2800;
     mat.runway.emissiveIntensity=1.8*reading.sag;farGlow.intensity=8000+reading.power*5000;

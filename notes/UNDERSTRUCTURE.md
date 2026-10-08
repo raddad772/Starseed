@@ -1,3 +1,14 @@
+## Flowing groundwater follow-up (2026-10-08)
+
+Wet intrusions now have continuous downward streaks, ballistic impact droplets and
+expanding pool ripples, with stronger cascades for aquifer breaches. Water starts at
+the rock ceiling and reaches pools on the cavern floor. Fixed instance counts and
+conservative current-frame bounds keep the effect bounded; this is visual flow,
+not a fluid solver. Dry environments create no streams or effects.
+Five focused CPU checks pass (flow direction/bounds, seed variation, lookout route,
+and rendered clearance). The aquifer HALL-6 native fixture passes 13 checks including
+animated matrices, native rendering, complete recovery and reload, with no errors.
+
 ## Wounded generator hall (2026-10-08)
 
 The 128 × 164 × 100 m collection volume now contains six 67 m generator towers.
