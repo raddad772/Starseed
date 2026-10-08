@@ -11,6 +11,32 @@ maps and viewscreens are native. WebGL exists only in explicit test tooling (`?w
 no production fallback. Other browser/GPU combinations still need certification; no speedup or exact
 pixel-parity claim is made. Dave confirmed sole-agent work and no coordination messages this session.
 
+## Galaxy chart and fleet passage (Codex, 2026-10-08)
+`campaign/galaxy.js` and `ui/galaxyMap.js` add Pause → Galaxy: 200 deterministic initial stars,
+cell-address lookup, neighbouring charts, a central-object landmark and the first receiver route.
+Receiver story IDs stay stable while seeds pin a verified life-bearing planet. The cell catalogue
+is a static scaffold, not the physical galactic population/sky/black-hole model yet.
+
+`campaign/travel.js` and `FlightSaves.travel` gather the whole fleet into separated circular orbits
+in a new system, preserving attachments, player craft, hull/heat and onboard items. Everyone must
+be aboard. Active P2 A agrees / B cancels; crew, route or runtime changes revoke votes. Site storage,
+entrances, dropped surface/orbit items and per-vessel landing sites persist in optional version-1
+`galaxy.systems` deltas. The active system remains in `world`. Global item IDs cannot collide.
+Departure saves before reconstruction; arrival saves afterwards; failures retain a recoverable
+departure. Existing single-system files still load. The first-receiver quest advances once.
+
+Passage is currently immediate, with no time or fuel charge. There is one resident system and all
+ships travel together. Physical interstellar flight, timed transit, independent-system multiplayer,
+calibrated stellar dynamics and black-hole/mirror sky visuals remain pending. Campaign catalogue
+seed travel redirects to Galaxy to avoid silently creating a replacement sandbox fleet.
+
+50 focused CPU tests pass, including all three fleet families' cargo/orbit safety and failure recovery.
+The finite `tools/tests/campaign-galaxy.html` native fixture passes 22 checks (medium fleet, two players,
+outward trip/reload/return, ~48 KB JSON, clean split-screen WebGPU). It uses workers=2/worldsim=0;
+full terrain regeneration at arrival is not yet browser-certified. Renderer disposal now treats a
+cancelled pending timing readback as expected; failures on live devices still surface. No Claude
+launches, subagents or coordination notices. Preserve the pre-existing dirty fleet work.
+
 ## New-game flow and tutorial (Codex, 2026-10-08)
 Normal first-run opens New Expedition before creating a sandbox fleet. The reusable setup chooses
 name/seed, flight/exploration/traversal difficulty and Play/Skip. Explicit seed/test/era sandbox links
@@ -26,7 +52,7 @@ The optional nav button performs a real rendezvous. Practice accidents recover s
 The current introduction is live flight practice plus interactive telemetry/dialogue, **not** the
 full physical mirror/black-hole scene. Three probe observations or a unanimous skip record the same
 incident and destination once. P2 A agrees, B cancels; changing crew/reloading clears votes. Mid-scan
-progress resumes. The first receiver address is provisional; interstellar travel remains unavailable.
+progress resumes. The galaxy checkpoint above now pins the first receiver and enables fleet passage.
 Basic control/reference-frame explanations are retained in Story Log.
 
 Guided entrances show markers; Survey reveals them within 12 m on foot, persisted per campaign.

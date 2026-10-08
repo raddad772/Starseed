@@ -1,5 +1,6 @@
 // Saved tutorial state contains evidence and checkpoints, never input bindings or timers from wall time.
 import { applyCampaignEvent } from './state.js';
+import { pinReceiver } from './galaxy.js';
 
 export const INTRO_STEPS = ['welcome','target','translate','brake','scan','anomaly','crossing','closed','analysis','ready'];
 export const INTRO_COPY = {
@@ -40,8 +41,7 @@ export function advanceTutorial(t, measurements, dt) {
 export function finishIntroduction(campaign,presentation) {
   if(campaign.story.intro.status==='complete'&&campaign.story.facts.destinationIdentified)return campaign;
   let c=applyCampaignEvent(campaign,{id:'intro/incident',type:'intro.completed',presentation});
-  const seed=c.generation.galaxySeed;
-  const receiver=c.generation.storyAnchors.receiver || {systemId:`system/${seed}-RECEIVER`,seed:`${seed}-RECEIVER`,label:'Transmission receiver'};
+  const receiver=pinReceiver(c);
   c.generation.storyAnchors.receiver=receiver;
   c=applyCampaignEvent(c,{id:'intro/bearing',type:'signal.bearingResolved',systemId:receiver.systemId});
   if(c.story.intro.tutorial)c.story.intro.tutorial={...c.story.intro.tutorial,step:'ready',scanning:false};

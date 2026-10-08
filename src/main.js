@@ -18,6 +18,8 @@ import { renderExpeditionSetup } from './ui/expeditionSetup.js';
 import { provisionExpedition } from './campaign/newGame.js';
 import { FlightIntro } from './campaign/intro.js';
 import { createCampaign } from './campaign/state.js';
+import { JourneyConsent } from './campaign/travel.js';
+import { renderGalaxyMap } from './ui/galaxyMap.js';
 
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -47,6 +49,8 @@ window.addEventListener('unhandledrejection', (e) => reportError(e.reason && (e.
 
 let game = null;
 let restoreInProgress = false;
+let journeyInProgress = false;
+const journeyConsent = new JourneyConsent(), galaxyView = {};
 const flightSaves = new FlightSaves({ game: () => game, load: loadSavedFlight, onStatus: saveStatus });
 function saveStatus(message) {
   for (const status of document.querySelectorAll('[data-campaign-status]')) status.textContent = message;
@@ -260,7 +264,7 @@ function boot(s, saved = null, expedition = null) {
 }
 
 function openNewExpedition(){
-  if(restoreInProgress)return;
+  if(restoreInProgress||journeyInProgress)return;
   if(pause.open)pause.hide();game?.setPaused(true);input.releaseLock();
   $('briefing').hidden=true;$('hud').hidden=true;$('overlay').hidden=false;
   const card=document.createElement('section');card.className='newExpeditionCard';$('overlay').replaceChildren(card);
@@ -328,8 +332,10 @@ async function loadSavedFlight(saved) {
     throw error;
   } finally {
     restoreInProgress = false;
-    if (game?.placed) showPause('expedition');
-    else { $('overlay').hidden = true; $('briefing').hidden = false; }
+    if (!journeyInProgress) {
+      if (game?.placed) showPause('expedition');
+      else { $('overlay').hidden = true; $('briefing').hidden = false; }
+    }
   }
 }
 
@@ -384,8 +390,10 @@ const pause = new PauseScreen({
   el: $('overlay'), game: () => game, settings, saveSettings, applySettings, input, tests: TEST_SCENES,
   resume: () => resume(), toBriefing: () => toBriefing(),
   expedition: root => renderExpeditionPanel(root, flightSaves,{onNew:openNewExpedition}),
+  galaxy: root => renderGalaxyMap(root,{saves:flightSaves,state:galaxyView,consent:journeyConsent,onVote:voteJourney,onCancel:cancelJourney,onLocal:()=>pause.setTab('map')}),
+  onTab: tab => { if(tab!=='galaxy')journeyConsent.cancel(); },
   // another system's seed from the catalog: its briefing, to pick where to begin
-  travel: (s) => { toBriefing(false); seed = s; showBriefing(seed); boot(seed); },
+  travel: (s) => { if(game?.campaign){showPause('galaxy');game.message('Use the expedition chart to keep your fleet when travelling between stars.','nav');return;}toBriefing(false); seed = s; showBriefing(seed); boot(seed); },
   players: {
     info: () => ({ count: game ? game.players.length : 1, pad: p2Pad, waiting: joinWait }),
     join: () => {
@@ -398,14 +406,15 @@ const pause = new PauseScreen({
 });
 
 function showPause(tab) {
-  if (restoreInProgress) return;
+  if (restoreInProgress || journeyInProgress) return;
   if (!game) return;
   if (game.map.open && !game.map.full) game.map.toggle(game.map.owner); // (a player's own map closes)
   pause.show(tab || (pause.tab === 'map' ? 'settings' : pause.tab));
 }
 
 function resume() {
-  if (restoreInProgress) return;
+  if (restoreInProgress || journeyInProgress) return;
+  journeyConsent.cancel();
   joinWait = false;
   if (pause.open) pause.hide();
   const ov = $('overlay');
@@ -444,6 +453,12 @@ function padRouterFor(i) {
     if (!game) { const menu=openMenu();return menu?padRouterMenu(menu,ps,dt):false; }
     const p = game.players[i];
     if (!p) return false;
+    if(journeyInProgress||restoreInProgress)return true;
+    journeyConsent.sync(game);
+    if(journeyConsent.destination){
+      if(ps.hits.has('B')){cancelJourney();return true;}
+      if(ps.hits.has('A')){voteJourney(journeyConsent.destination,i);return true;}
+    }
     if(game.intro?.consent.pending){
       if(ps.hits.has('B')){game.intro.act('cancel');return true;}
       if(ps.hits.has('A')){game.intro.vote(i);if(pause.open&&pause.tab==='expedition')pause.render();return true;}
@@ -458,6 +473,17 @@ function padRouterFor(i) {
   };
 }
 input.padRouter = padRouterFor(0);
+function cancelJourney(refresh=true){journeyConsent.cancel();if(refresh&&pause.open&&pause.tab==='galaxy')pause.render();}
+async function voteJourney(destination,index){
+  if(journeyInProgress||restoreInProgress)return;
+  if(!journeyConsent.vote(game,destination,index)){if(pause.open)pause.render();return;}
+  journeyConsent.cancel();journeyInProgress=true;
+  game.setPaused(true);input.releaseLock();
+  $('overlay').innerHTML='<div class="card"><h2>Preparing fleet passage…</h2><p>Saving the departure before rebuilding your destination.</p></div>';
+  try{await flightSaves.travel(destination);galaxyView.selected=game.campaign.galaxy.currentSystemId;}
+  catch(error){game?.message(error.message,'nav');}
+  finally{journeyInProgress=false;showPause('galaxy');}
+}
 function padRouterMenu(menu, ps, dt) {
   const hud = game?.players[0].ui.hud;
   if (pause.open) {
@@ -495,7 +521,7 @@ $('launch').textContent='Launch sandbox';
 let manual = false;
 function loop(now) {
   if(!game){input.pollPad('foot',.016);input.endFrame();}
-  if (game && !manual && !window.debugHold) { watchJoin(); game.frame(now); pause.tick(); flightSaves.tick(now); if (loadScreen && launched) loadScreen.update(); } // debugHold: tests step frames themselves
+  if (game && !manual && !window.debugHold) { if(!journeyInProgress&&!restoreInProgress)watchJoin();journeyConsent.sync(game); game.frame(now); pause.tick(); flightSaves.tick(now); if (loadScreen && launched) loadScreen.update(); } // debugHold: tests step frames themselves
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);

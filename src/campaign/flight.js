@@ -30,6 +30,10 @@ const unique = list => new Set(list).size===list.length;
 
 // A changed hull layout/physics definition must not silently move saved passengers.
 const signatures=new WeakMap(),bodyCatalogues=new Map();
+export function bodyCatalogue(seed) {
+  if(!bodyCatalogues.has(seed)){if(bodyCatalogues.size>=512)bodyCatalogues.delete(bodyCatalogues.keys().next().value);bodyCatalogues.set(seed,new Set(generateSystem(seed).bodies.map(b=>b.id)));}
+  return bodyCatalogues.get(seed);
+}
 export function vesselSignature(type) {
   if(signatures.has(type))return signatures.get(type);
   const text=JSON.stringify(type); let h=2166136261;
@@ -75,6 +79,7 @@ export function captureFlight(game, campaign) {
       ftl:{...pick(v.ftl,['state','timer','speed','throttle','effect'],0),nav:v.ftl.nav?{aim:targetRef(v.ftl.nav.aim,ids),legLimit:v.ftl.nav.legLimit??null}:null},nav:{travelMode:v.nav.travelMode,order:navIntent(v.nav,ids),sites:[...v.nav.sites].map(([id,s])=>[id,s==='orbit'?s:{dirF:s.dirF.toArray(),label:s.label}])}})),
     items:game.items.list.map(it=>({id:it.id,kind:it.kind,holder:it.holder?playerIds.get(it.holder):null,frame:it.frame,vessel:ref(it.vessel),body:it.body?.id??null,pos:it.pos.toArray(),quat:it.quat.toArray(),r0:it.r0&&[...it.r0],v0:it.v0&&[...it.v0],t0:it.t0})),
     siteStorage:game.campaignStorage?.snapshot()??{},sites:game.surfaceSurveys.sites.map(s=>({body:s.body.id,position:s.frame.position.toArray(),heading:new THREE.Vector3(0,0,-1).applyQuaternion(s.frame.rotation).toArray()}))};
+  if(c.galaxy)c.galaxy.nextItemId=Math.max(c.galaxy.nextItemId,game.items.nextId);
   validateFlight(c);return c;
 }
 
@@ -85,8 +90,7 @@ export function validateFlight(c) {
   if(c.generation.versions.system!==w.systemVersion||c.generation.versions.world!==w.worldVersion||c.generation.localLengthScale!==w.lengthScale)fail('Conflicting generation metadata.');
   if(c.clock.epoch!=='2026-10-05T00:00:00Z'||!Number.isFinite(c.clock.simulationSeconds)||Math.abs(c.clock.simulationSeconds)>1e12)fail('Unsupported flight epoch or time.');
   if(typeof w.worldsim!=='boolean'||(w.simN!==null&&(!Number.isInteger(w.simN)||w.simN<8||w.simN>1024)))fail('Invalid terrain settings.');
-  if(!bodyCatalogues.has(w.seed)){if(bodyCatalogues.size>=8)bodyCatalogues.delete(bodyCatalogues.keys().next().value);bodyCatalogues.set(w.seed,new Set(generateSystem(w.seed).bodies.map(b=>b.id)));}
-  const bodies=bodyCatalogues.get(w.seed);
+  const bodies=bodyCatalogue(w.seed);
   if(!Array.isArray(w.vessels)||!w.vessels.length||w.vessels.length>512||!w.vessels.every(v=>obj(v)&&str(v.id))||!unique(w.vessels.map(v=>v.id)))fail('Invalid or duplicate vessels.');
   const ships=new Map(w.vessels.map(v=>[v.id,v])), reference=id=>id===null||ships.has(id), body=id=>bodies.has(id);
   const target=t=>t===null||(obj(t)&&((Object.keys(t).length===1&&ships.has(t.vessel))||(Object.keys(t).length===1&&body(t.body))));
@@ -130,6 +134,13 @@ export function validateFlight(c) {
     if(p.mode==='seat'){const key=p.vessel+'/'+p.seat;if(!Number.isInteger(p.seat)||!VESSEL_TYPES[ships.get(p.vessel).type].seats?.[p.seat]||(p.active&&seats.has(key)))fail('Invalid or duplicate seat occupant.');if(p.active)seats.add(key);}
     if(p.lastSeat&&(!ships.has(p.lastSeat.vessel)||!VESSEL_TYPES[ships.get(p.lastSeat.vessel).type].seats?.[p.lastSeat.seat]))fail('Invalid remembered seat.');
   }
+  validateLocalState(w,ships,people);
+  return c;
+}
+
+// Also checks unloaded systems, where every retained item must have a local frame.
+export function validateLocalState(w,ships=new Map(),people=new Set()) {
+  const body=id=>bodyCatalogue(w.seed).has(id);
   if(!Array.isArray(w.items)||w.items.length>10000||!unique(w.items.map(i=>i.id)))fail('Invalid item registry.');
   for(const i of w.items){
     if(!Number.isSafeInteger(i.id)||i.id<1||!Object.hasOwn(ITEM_TYPES,i.kind)||!vec(i.pos)||!quat(i.quat)||!Number.isFinite(i.t0))fail('Invalid inventory item.');
@@ -140,7 +151,6 @@ export function validateFlight(c) {
   }
   if(!obj(w.siteStorage)||!Object.entries(w.siteStorage).every(([k,v])=>(k.startsWith('starseed.survey.')||k.startsWith('starseed.golden-path.'))&&typeof v==='string'))fail('Invalid campaign site storage.');
   if(!Array.isArray(w.sites)||w.sites.some(s=>!body(s.body)||!vec(s.position)||!vec(s.heading)))fail('Invalid site entrance.');
-  return c;
 }
 function validateLift(lift,spec){
   if(!spec){if(lift!==null)fail('Unexpected turbolift.');return;}
@@ -188,7 +198,7 @@ export function restoreFlight(game,c,{inputForPlayer}={}) {
   }
   game.items.list=[];
   for(const saved of w.items){const it=game.items.create(saved.kind,saved.holder?players.get(saved.holder):null);Object.assign(it,pick(saved,['id','frame','t0','r0','v0']));it.vessel=ref(saved.vessel);it.body=saved.body===null?null:game.universe.bodies[saved.body];it.pos.fromArray(saved.pos);it.quat.fromArray(saved.quat);}
-  game.items.nextId=Math.max(0,...w.items.map(i=>i.id))+1;
+  game.items.nextId=Math.max(c.galaxy?.nextItemId||1,Math.max(0,...w.items.map(i=>i.id))+1);
   game.resumeSavedPlayer=(p,away)=>{
     Object.assign(p,pick(away,['label','mode',...PNUMS,...PFLAGS,'body','vessel','ownShip','lastSeat','target']));for(const k of PVECS)p[k].copy(away[k]);p.evaQuat.copy(away.evaQuat);
     if(p.vessel?.dead||(p.mode==='seat'&&p.seatHolder(p.vessel,p.seat))){game.regroup(p);return;}

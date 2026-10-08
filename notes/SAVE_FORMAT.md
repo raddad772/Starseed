@@ -14,6 +14,16 @@ Browser storage uses `starseed-campaigns`, storing current and previous JSON in 
 
 Validation: 44 focused CPU checks pass, including ten flight tests for nested frames, moving lifts, landed/orbital items, FTL, absent controllers, invalid imports, isolated site storage, concurrent requests and storage failures. Thirteen isolated browser checks previously verified campaign storage/UI. Nineteen new full-game WebGPU checks pass with two players, 34 vessels, 145,039-byte JSON, actual renderer reconstruction and the natural loading gate. That fixture disables world simulation to bound GPU work; full terrain-cache reconstruction and active underground restore still need dedicated native coverage. Multi-system travel and the fully staged mirror scene remain pending. New Expedition provisions a selected fleet once and connects its tutorial to this loader.
 
+## Implemented galaxy extension (8 October 2026)
+
+`single-system-flight` continues to mean one resident flight snapshot. It may now include optional `galaxy` version 1 with `currentSystemId`, `nextItemId` and `systems`. Old files without this extension still load; navigation initializes it on first use. The catalogue generator version is pinned separately. No stars are stored merely because they appear on the map.
+
+`galaxy.systems` holds **unloaded** system deltas, keyed by canonical system address: `{seed, items, sites, siteStorage, navSites}`. Only surface/orbital items may be stored there; held and cabin items remain in `world.items`. The active system never has a duplicate cached record. Global item uniqueness, destination/seed identity, valid body references and the next-item high-water mark are validated on import/export. There is a bounded 512-unloaded-system limit in addition to the existing 10 MB / JSON-node limits. Encountering a limit fails the departure checkpoint rather than dropping old progress.
+
+A fleet passage writes departure first, reconstructs a copied arrival snapshot, then commits arrival. The party regroups in destination orbit, with local orders cleared and the shared clock unchanged. No in-transit state is claimed or serialized yet. A renderer failure retains the departure; an arrival-write failure leaves the arrival available in memory for retry/export. The previous revision is the departure checkpoint after a successful journey.
+
+The receiver anchor now pins a generated seed and eligible life-bearing body ID while retaining its original story address. Existing unvisited provisional receivers acquire the same pin on first navigation; already visited systems never reroll. Initial chart positions and cell summaries remain derived data, with no hundreds-of-megabytes star dump.
+
 ## Tutorial checkpoint
 
 New expeditions add optional `story.intro.tutorial` version 1: lesson phase, stable reference-vessel ID, measured starting offset, scan progress, simulation-time incident duration and correlated probe IDs. Existing saves without this field still load. Validation checks the phase, bounded/finite values, reference craft, assigned player craft and agreement with canonical story completion. Played and skipped outcomes use the same incident/bearing events; repeated application cannot duplicate the journal or fleet.

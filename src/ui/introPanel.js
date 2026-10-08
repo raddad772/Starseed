@@ -21,5 +21,5 @@ export function renderIntroPanel(root,intro,onChange=()=>{}){
     button('Retry flight practice safely',()=>intro.act('retry'));
     button(intro.consent.pending?'Player 1 agrees to skip':'Skip introduction',()=>intro.act('skip'));
     if(intro.consent.pending){add('p','Waiting for both players. Player 2: A agrees, B cancels.');button('Keep playing the introduction',()=>intro.act('cancel'));}
-  }else add('p','The flight basics below remain available. Interstellar travel and the full mirror scene are still being built; this prototype continues with local exploration.');
+  }else add('p','Open Galaxy to follow the transmission or chart your own route. The flight basics below remain available. The full physical mirror scene is still being built.');
 }

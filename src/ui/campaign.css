@@ -14,4 +14,13 @@
 .mirrorTrace {height:108px;width:108px;border-radius:50%;margin:15px auto 0;background:linear-gradient(145deg,#080d13 18%,#466475 24%,#e3edf0 26%,#354a55 27%,#020507 32%,#0c1a21 65%,#719da6 69%,#070d12 72%);box-shadow:0 0 0 1px #456574,0 0 30px #152d3a}
 [data-phase=crossing] .mirrorTrace::after {content:'';display:block;width:12px;height:20px;background:#030405;border:1px solid #9eddf0;border-radius:50%;position:relative;top:43px;left:65px}
 .surveyTelemetry p {font:11px var(--font-num);color:#a7c9d5}
+.galaxyPage {max-width:1500px;margin:auto}.galaxyHead{display:flex;align-items:center;gap:18px;flex-wrap:wrap}.galaxyHead h2{margin:0}.galaxyHead p{color:var(--ink-dim);flex:1}
+#overlay .pause .page.galaxyPage{display:block;justify-items:stretch;margin:0;width:100%;max-width:none;box-sizing:border-box}
+.galaxyActions{display:flex;gap:6px;flex-wrap:wrap}.galaxyLayout{display:grid;grid-template-columns:minmax(400px,1fr) 310px;gap:24px;margin:18px 0}
+.galaxyChart{background:radial-gradient(ellipse at 60% 40%,#112c3b,#050d17);border:1px solid #284651;padding:10px;border-radius:6px}.galaxyChart svg{display:block;width:100%;max-height:58vh;overflow:hidden}.galaxyChart small{display:block;color:#90a7b5;margin-top:10px;font-size:11px}
+.galaxyGrid{stroke:#24404e;stroke-width:.6}.galaxyAxis{fill:#678996;font:10px monospace}.galaxyLabel{fill:#d5eaf1;font:12px system-ui;paint-order:stroke;stroke:#07121c;stroke-width:4px}
+.galaxyRoute{stroke:#d3b983;stroke-width:1.2;stroke-dasharray:5 5}.galaxySelection{fill:none;stroke:#d3b983;stroke-width:1}.galaxyFleetRing{fill:none;stroke:#75ddc7;stroke-width:1.5}
+.galaxyCore{fill:#02070d;stroke:#d7bb8a;stroke-width:2}.galaxyCoreRing{fill:none;stroke:#af9262;stroke-width:2}.galaxyJet{stroke:#a3d8e6;stroke-width:2;opacity:.25}.galaxyDetails h3{margin-top:0}.galaxyDetails .note{font-size:12px;line-height:1.5;color:var(--ink-dim)}.galaxyDistance{color:#e1c994;font-size:17px}.galaxyDetails>button{margin:4px 0}
+.galaxyBrowse{display:flex;gap:12px;align-items:end;flex-wrap:wrap}.galaxyBrowse label{display:grid;gap:5px;font-size:12px}.galaxyBrowse input,.galaxyBrowse select{background:#0a1721;color:#d6e7ed;border:1px solid #355361;border-radius:3px;padding:9px;font:inherit}.galaxyBrowse select{max-width:370px}
+@media(max-width:950px){.galaxyLayout{grid-template-columns:1fr}.galaxyChart svg{max-height:50vh}.galaxyDetails{max-width:600px}.galaxyBrowse select{max-width:100%}}
 @media(max-width:700px){.introHud{width:calc(100vw - 48px);font-size:11px}.introHud p{max-height:90px;overflow:hidden}.newExpeditionCard{padding:18px}}

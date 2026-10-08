@@ -3,6 +3,8 @@ import { captureFlight } from './flight.js';
 import { encodeCampaign,importCampaignCopy } from './save.js';
 import { CampaignStorage } from './storage.js';
 import { CampaignSiteStorage,bindSiteStorage } from './siteStorage.js';
+import { prepareJourney } from './travel.js';
+import { ensureGalaxy } from './galaxy.js';
 
 function siteId(key){let hash=2166136261;for(const ch of key)hash=Math.imul(hash^ch.charCodeAt(0),16777619);let h2=0;for(const ch of key)h2=Math.imul(h2^ch.charCodeAt(0),65599);return `site/${(hash>>>0).toString(16)}-${(h2>>>0).toString(16)}`;}
 export class FlightSaves {
@@ -19,7 +21,7 @@ export class FlightSaves {
     const g=this.game();if(!g)throw Error('Start a flight first.');
     this.activate(g);
     let c=captureFlight(g,g.campaign);
-    const systemId=`system/${g.seed}`;
+    const systemId=c.galaxy?.currentSystemId||`system/${g.seed}`;
     // The site ledger is authoritative; bridge its high-water values into story events once.
     for(const [key,json] of Object.entries(c.world.siteStorage))if(key.startsWith('starseed.golden-path.')){
       const ledger=JSON.parse(json);
@@ -42,6 +44,26 @@ export class FlightSaves {
     return this.pending;
   }
   exportJSON(){return encodeCampaign(this.snapshot());}
+  travel(destinationId){
+    if(this.loading)return Promise.reject(Error('Wait for the current journey or restore to finish.'));
+    this.loading=(async()=>{
+      if(this.pending)await this.pending;
+      const game=this.game(),departure=ensureGalaxy(this.snapshot());
+      // Check the entire operation before touching storage or the current runtime.
+      const arrival=prepareJourney(departure,destinationId);
+      this.status='Saving departure…';
+      const saved=await this.storage.save(departure);game.campaign=saved;
+      arrival.revision=saved.revision;arrival.savedAt=saved.savedAt;
+      this.status='Rebuilding destination…';await this.loadGame(arrival,{travel:true});
+      this.status='Saving arrival…';
+      try {
+        const landed=await this.storage.save(arrival);this.game().campaign=landed;
+        this.status='Fleet arrived · expedition saved';this.checkpointQueued=false;
+      }catch(error){this.status=`Save failed: Fleet arrived, but arrival was not saved. The departure is safe. ${error.message}`;throw error;}
+      this.nextAuto=performance.now()+30000;
+    })().catch(error=>{if(!this.status.startsWith('Save failed:'))this.status=`Journey stopped: ${error.message}`;throw error;}).finally(()=>{this.loading=null;});
+    return this.loading;
+  }
   load(id,previous=false){
     if(this.loading)return this.loading;
     this.loading=(async()=>{

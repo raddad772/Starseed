@@ -2,6 +2,7 @@ import { CAMPAIGN_FORMAT, SCHEMA_VERSION, CONTENT_VERSION, campaignRules, recove
 import { mysteryProgress } from '../understructure/recovery.js';
 import { validateFlight } from './flight.js';
 import { validateTutorial } from './tutorial.js';
+import { validateGalaxy } from './travel.js';
 
 export const MAX_SAVE_BYTES = 10 * 1024 * 1024;
 const forbidden = new Set(['__proto__', 'prototype', 'constructor']);
@@ -55,6 +56,7 @@ export function validateCampaign(c) {
   if (!object(presence) || presence.version !== 1 || presence.maxPerPlanet !== 1 || typeof presence.eligiblePlanetChance !== 'number' || !(presence.eligiblePlanetChance >= 0 && presence.eligiblePlanetChance <= 1)) fail('Invalid site presence policy.');
   if (c.saveKind === 'campaign-record' && (!object(c.fleet) || c.fleet.provisioned !== false || !Array.isArray(c.fleet.vesselIds) || c.fleet.vesselIds.length || !Array.isArray(c.players) || c.players.length)) fail('Campaign records cannot contain a partially saved live fleet.');
   if (c.saveKind === 'single-system-flight') validateFlight(c);
+  validateGalaxy(c);
   const d = c.discoveries;
   if (!object(d) || !object(d.systems) || !object(d.sites) || !Array.isArray(d.returnAnchors)) fail('Invalid discovery catalogue.');
   for (const [id, system] of Object.entries(d.systems)) if (!string(id) || !object(system) || !['detected', 'charted', 'surveyed'].includes(system.knowledge) || (system.visited !== undefined && typeof system.visited !== 'boolean')) fail('Invalid system discovery.');

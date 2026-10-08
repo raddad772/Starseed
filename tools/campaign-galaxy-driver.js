@@ -1,0 +1,47 @@
+import * as THREE from 'three';
+import { CampaignStorage } from '../src/campaign/storage.js';
+import { decodeCampaign } from '../src/campaign/save.js';
+const checks=[],check=(ok,label)=>{if(!ok)throw Error(label);checks.push(label);report({stage:'Running'});};
+const report=data=>parent.postMessage({type:'campaign-galaxy-test',report:{...data,checks}},location.origin);
+const wait=async(fn)=>{const end=performance.now()+60000;while(!fn()){if(performance.now()>end)throw Error('Journey timed out');await new Promise(r=>setTimeout(r,50));}};
+const press=label=>{const b=[...document.querySelectorAll('button')].find(b=>b.textContent===label);if(!b||b.disabled)throw Error('Button unavailable: '+label);b.click();};
+const pad=key=>window.game.players[1].input.padRouter({hits:new Set([key]),held:new Set(),lx:0,ly:0,lt:0,rt:0},.016);
+const settle=()=>window.debugRun(15000,16,(n,g)=>g.state!=='playing'||n<3);
+let storage;
+try{
+ await wait(()=>window.flightSaves&&document.querySelector('.expeditionSetup'));window.debugHold=true;
+ storage=new CampaignStorage({name:'starseed-galaxy-test-'+crypto.randomUUID()});const saves=window.flightSaves;saves.storage=storage;
+ const form=document.querySelector('.expeditionSetup');form.elements.seed.value='SOL';form.elements.flight.value='medium';form.elements.intro.value='skip';form.requestSubmit();
+ await wait(()=>window.game?.launched);await settle();let g=window.game;window.joinP2(99);
+ check(g.players.length===2&&g.campaign.story.intro.status==='complete','Two-person expedition starts at the completed introduction');
+ const id=g.campaign.campaignId,n=g.vessels.length,t=g.t;g.ship.hull=.71;g.ship.hullTemp=530;
+ const local=g.items.create('lamp');g.items.place(local,'surface',g.startBody,new THREE.Vector3(g.startBody.R,0,0),new THREE.Quaternion());
+ const aboard=g.items.create('mug');g.items.place(aboard,'vessel',g.ship,new THREE.Vector3(1,0,1),new THREE.Quaternion());
+ g.campaignStorage.setItem('starseed.survey.reveal.fixture','1');
+ const before=await saves.save(),fleetIds=before.fleet.vesselIds.join(),p2ship=before.players[1].vessel;
+ window.pauseScreen.show('galaxy');check(document.querySelector('.galaxyChart svg')&&document.querySelectorAll('[aria-label="Chart destinations"] option').length===200,'Overhead chart shows 200 addressable stars');
+ check(document.querySelector('.galaxyDetails').textContent.includes('Transmission receiver'),'First lead is selected on the chart');
+ press('Gather fleet & travel');check(!saves.loading&&window.game===g,'Player one alone cannot depart with two people');
+ pad('B');check(document.querySelector('.galaxyDetails').textContent.includes('Gather fleet & travel'),'Player two cancels the departure');
+ press('Gather fleet & travel');pad('A');await wait(()=>!saves.loading&&window.game!==g);g=window.game;await settle();
+ check(g.seed!==before.world.seed&&g.campaign.campaignId===id,'Both players arrive in a different system within the same campaign');
+ check(g.t===t&&g.warpIndex===0,'Fleet passage leaves the shared simulation clock unchanged');
+ check(g.vessels.length===n&&g.campaign.fleet.vesselIds.join()===fleetIds,'Fleet identities and count survive passage');
+ check(g.ship.hull===.71&&g.ship.hullTemp===530,'Damage and temperature survive passage');
+ check(g.players.length===2&&g.players[1].vessel.campaignId===p2ship,'The second player retains their own craft');
+ check(g.items.list.some(i=>i.id===aboard.id&&i.vessel===g.ship)&&!g.items.list.some(i=>i.id===local.id),'Cabin supplies travel and surface items remain behind');
+ check(g.campaign.story.quests['quest/first-receiver'].step==='survey-receiver','Arrival advances the first investigation once');
+ check(g.campaign.revision===3,'Departure and arrival are committed as separate recoverable revisions');
+ const saved=await storage.load(id);check(saved.campaign.world.seed===g.seed,'Reloadable slot contains the arrived fleet');
+ await saves.load(id);g=window.game;await settle();check(g.players.length===2&&g.campaign.galaxy.systems['system/SOL'].items.some(i=>i.id===local.id),'Reload keeps unloaded-system progress and both players');
+ const extra=g.items.create('supplies',g.players[0]);check(extra.id>local.id&&extra.id>aboard.id,'New inventory IDs cannot duplicate items in another system');
+ window.pauseScreen.show('galaxy');const address=document.querySelector('[aria-label="Cell address"]');address.value='0:0:0';press('Chart address');press('Gather fleet & travel');pad('A');await wait(()=>!saves.loading&&window.game!==g);g=window.game;await settle();
+ check(g.seed==='SOL'&&g.items.list.some(i=>i.id===local.id&&i.frame==='surface'),'Returning restores the surface lamp in its original world frame');
+ check(g.campaignStorage.getItem('starseed.survey.reveal.fixture')==='1'&&g.items.list.some(i=>i.id===extra.id),'Return preserves local discoveries and newly acquired supplies');
+ check(g.campaign.story.journal.length===5,'Return travel does not duplicate the story reward');
+ const json=saves.exportJSON();check(decodeCampaign(json).galaxy.currentSystemId==='system/SOL','Multi-system progress survives portable JSON');
+ const gpu=g.engine.webgpu;gpu.device.pushErrorScope('validation');for(let i=0;i<3;i++){g.frame(performance.now());await gpu.device.queue.onSubmittedWorkDone();}const error=await gpu.device.popErrorScope();check(!error,error?.message||'Returned split-screen WebGPU render validates');
+ window.pauseScreen.show('galaxy');press('Transmission');check(!document.querySelector('#errorLine:not([hidden])')&&!document.querySelector('#fatal'),'No runtime or renderer failure surfaced');
+ report({stage:'Passed',vessels:n,bytes:new TextEncoder().encode(json).length});
+}catch(error){report({stage:'Failed',error:error.stack||String(error),saveStatus:window.flightSaves?.status,state:window.game?.state});}
+finally{window.debugHold=true;if(storage){await storage.close();indexedDB.deleteDatabase(storage.name);}}
