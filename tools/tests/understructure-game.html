@@ -7,7 +7,7 @@ const frame=document.querySelector('iframe'),status=document.querySelector('#sta
 button.onclick=()=>{
  button.disabled=true;status.textContent='Starting native game…';
  frame.onload=()=>{const script=frame.contentDocument.createElement('script');script.type='module';script.src='/tools/understructure-game-driver.js';frame.contentDocument.body.append(script);};
- frame.src='/?seed=SOL&workers=2&surveyTest=1&date=2026-10-06T23:08';
+ frame.src='/?seed=SOL&workers=2&worldsim=0&surveyTest=1&date=2026-10-06T23:08';
 };
 window.addEventListener('message',event=>{
  if(event.source!==frame.contentWindow||event.origin!==location.origin||event.data.type!=='survey-test')return;

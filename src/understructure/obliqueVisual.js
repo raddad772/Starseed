@@ -1,14 +1,14 @@
 import * as THREE from 'three';
 import { outsideSegments,subtractMany,lerp2 } from './oblique.js';
 
-export function buildObliqueSector(plan,{addGeometry,box,cylinder,label,lamp}){
+export function buildObliqueSector(plan,{addGeometry,box,cylinder,pipe,label,lamp}){
   const sector=plan.oblique,y=plan.deck;
   function panel(polygon,height,material,down=false){
     const vertices=[];for(let i=1;i<polygon.length-1;i++)for(const j of down?[0,i,i+1]:[0,i+1,i])vertices.push(polygon[j][0],height,polygon[j][1]);
     const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));g.computeVertexNormals();addGeometry(g,material);
   }
   function beam(a,b,lo,hi,width=.24,material='concrete'){
-    const dx=b[0]-a[0],dz=b[1]-a[1],g=new THREE.BoxGeometry(Math.hypot(dx,dz),hi-lo,width);g.rotateY(-Math.atan2(dz,dx));g.translate((a[0]+b[0])/2,(lo+hi)/2,(a[1]+b[1])/2);addGeometry(g,material);
+    const vertices=[a[0],lo,a[1],b[0],lo,b[1],a[0],hi,a[1],b[0],lo,b[1],b[0],hi,b[1],a[0],hi,a[1]],g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));g.computeVertexNormals();addGeometry(g,material);
   }
   for(const f of sector.floors){panel(f.polygon,y-.04,f.bridge?'metal':'floor');panel(f.polygon,y-.3,'metal',true);}
   for(const wall of sector.walls)beam(wall.a,wall.b,y-.3,y+Math.min(4,wall.height));
@@ -34,9 +34,9 @@ export function buildObliqueSector(plan,{addGeometry,box,cylinder,label,lamp}){
         }
       }
       // Service trunks turn with the six-sided structure, above the bridge headroom.
-      for(let i=0;i<room.inner.length;i++){const a=room.inner[i],b=room.inner[(i+1)%room.inner.length];cylinder([a[0],y+9,a[1]],[b[0],y+9,b[1]],.7,'rust',12);}
+      pipe(room.inner.map(p=>[p[0],y+9,p[1]]),.7,'rust',true);
     }else{
-      for(let i=0;i<room.polygon.length;i++){const a=lerp2(room.center,room.polygon[i],.72),b=lerp2(room.center,room.polygon[(i+1)%room.polygon.length],.72);cylinder([a[0],y+room.height-1,a[1]],[b[0],y+room.height-1,b[1]],room.sides===3?.4:.2,'rust',12);}
+      const ring=room.polygon.map(p=>lerp2(room.center,p,.72));pipe(ring.map(p=>[p[0],y+room.height-1,p[1]]),room.sides===3?.4:.2,'rust',true);
       lamp(x,y+room.height-.3,z,'amber');
     }
     const a=room.polygon[1],b=room.polygon[2],p=lerp2(a,b,.5),toward=lerp2(p,room.center,.025);

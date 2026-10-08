@@ -11,6 +11,46 @@ maps and viewscreens are native. WebGL exists only in explicit test tooling (`?w
 no production fallback. Other browser/GPU combinations still need certification; no speedup or exact
 pixel-parity claim is made. Dave confirmed sole-agent work and no coordination messages this session.
 
+## Megastructure playtest corrections (Codex, 2026-10-08)
+On `codex/landing-guide`, served locally on 8779. The access hatch now leads by ladder to a
+6 × 12 m bunker at −3.2 m; the separate 4.2 s lift stops at −240 m. Shaft windows face a large
+structural void. Entering the bunker reports “Jetpack disabled.” The surface return via the lift
+now includes climbing the ladder; integrated return waits for that animation to finish.
+
+The original service grid maze is replaced by polygon distributor/exchange chambers, angled
+connections and short optional blind branches. Rendering, collision and room-map footprints use
+one polygon plan. Entering a region reveals its whole outline, with no tile cubes. The required
+record remains at the end of the three rising generator-hall crossings (+12, +26, +42 m).
+A suit signal bearing guides the next damaged circuit; optional rooms and discoveries remain.
+Reward IDs/amounts, recovered data and solved circuits survive reload. Old tile discoveries do
+not substitute for discovery of the revised room outlines.
+
+Ordinary rooms now allow ballistic jumps. Releasing movement preserves airborne momentum;
+steering/braking changes it gradually. Ceiling/wall checks and forgiving platform recovery remain.
+Gravity transitions have text alerts and a brief suit tone. The power-cell socket explicitly points
+to the separate zero-g well, avoiding the misleading “above”/local flight instructions.
+
+Functional pipes have continuous elbows and terminate inside ceilings/walls. Supports stop below
+platform surfaces. Polygon walls use shared boundary faces; floors subtract overlaps. Physical
+markings use procedural unknown glyphs, controls carry markings on their housings, and stray
+floating labels are removed. Footstep acoustics now use the polygon chamber dimensions.
+
+Visible fixture housings, low ambient fill, platform-edge lamps and bounded current-frame local
+spotlight shadow maps replace the washed-out lighting. `localShadows.js`/`clustered.js` opt into
+shadows only for scenes with `scene.userData.localShadows`; four 512² maps cover the hand light
+and three nearby fixtures. No readback, visibility queries or prior-frame results. Opaque ordinary
+meshes cast; instanced/transparent detail does not. Distant point-lit generators retain their prior
+lighting. Shadow geometry buffers release on geometry disposal; outdoor views reset local slots.
+
+Verified: all 51 understructure CPU checks plus 7 renderer checks pass; all 21 theme routes on two
+seeds solve/retrieve/return using normal movement. The finite native fixture passes 15 checks,
+including a shadow-on/off pixel comparison (8,314 darkened pixels), polygon exploration, light and
+weight circuits, optional finds, map controls and real reload. The integrated native fixture passes
+entry, both circuits, record retrieval, shortcut and bunker/lift return, saved re-entry, split-screen,
+bounded lighting bindings and rotating-world return (zero position error). No WebGPU validation
+errors. Render evidence: `br/outputs/megastructure-revision/`. User Chrome was not operated; owned
+finite IAB test tabs were closed. No Claude/agent coordination notices were sent.
+
 ## Campaign foundation, plan and story treatment (Codex, 2026-10-08)
 `CAMPAIGN.md` is the implementation plan for the persistent galaxy, central spinning black hole
 and jets, separate mirrored star system, first-run difficulty/fleet setup, playable/skippable

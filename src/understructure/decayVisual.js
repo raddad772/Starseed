@@ -25,7 +25,7 @@ export function buildDecayDetails(plan,{addGeometry}){
       // Use the wall's exact world UVs and normal response. The white edges
       // match the underlying concrete; tinted vertices feather stains into it.
       const tint=new THREE.Color({damp:'#839184',dust:'#ccc7b5',runoff:'#b69d80',mineral:'#e4ddc9'}[material]);
-      const point=(s,h)=>[a[0]+tangent[0]*s+normal[0]*side*.126,y+h,a[1]+tangent[1]*s+normal[1]*side*.126];
+      const point=(s,h)=>[a[0]+tangent[0]*s+normal[0]*side*.007,y+h,a[1]+tangent[1]*s+normal[1]*side*.007];
       const rows=dripping?3:2;
       const column=i=>{
         const u=i/steps,high=dripping?top:Math.max(bottom+.05,top*rng.range(.65,1));
@@ -45,7 +45,7 @@ export function buildDecayDetails(plan,{addGeometry}){
       }
       const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(verts,3));g.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));g.computeVertexNormals();addGeometry(g,'weathered');
     }
-    for(const side of [-1,1]){
+    for(const side of [1]){
       if(rng.chance(.82)){band(side,.08,len-.16,wet?rng.range(.25,1.15):rng.range(.1,.32),-.012,wet?'damp':'dust');stats.bands++;}
       if(wet&&rng.chance(.58)){
         const width=Math.min(len*.65,rng.range(.3,1.2)),start=rng.range(.05,Math.max(.05,len-width-.05));
@@ -59,11 +59,7 @@ export function buildDecayDetails(plan,{addGeometry}){
       }
     }
   }
-  for(const w of plan.walls){
-    if(w.region==='access'&&w.z>=-2)continue;
-    const a=[w.x-(w.axis==='x'?2:0),w.z-(w.axis==='z'?2:0)],b=[w.x+(w.axis==='x'?2:0),w.z+(w.axis==='z'?2:0)];
-    for(const [u,v] of outsideSegments(a,b,plan.oblique.links.map(l=>l.polygon)))wall(u,v,3.7);
-  }
+  for(const w of plan.service.walls)wall(w.a,w.b,w.height-.2);
   for(const w of plan.oblique.walls)wall(w.a,w.b,Math.min(w.height,4)-.2);
   return stats;
 }

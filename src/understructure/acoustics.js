@@ -6,21 +6,22 @@ import { routeFloor } from './infrastructure.js';
 const clamp=(v,a=0,b=1)=>Math.max(a,Math.min(b,v));
 export function roomAcoustics(plan,state){
   const [x,y,z]=state.pos,deck=plan.deck;
-  let width=4,length=12,height=4,material='concrete',outside=y>-2;
+  let width=4,length=12,height=4,material='concrete',outside=y>-.6;
   if(outside)return {material:'soil',decay:.12,delay:.01,wet:0,volume:0};
-  if(state.moving){width=4;length=4;height=240;material='metal';}
+  if(y> -4){width=6;length=12;height=2.82;}
+  else if(state.moving){width=4;length=4;height=240;material='metal';}
   else if(z<-122){width=z<-286?560:128;length=z<-286?900:164;height=100;
     const route=plan.routes.find(r=>{const floor=routeFloor(r,x,z);return floor!==null&&Math.abs(floor-y)<.4;});
     if(route){material=route.covered?'concrete':'metal';if(route.covered){width=4;length=Math.hypot(route.b[0]-route.a[0],route.b[2]-route.a[2]);height=3.5;}}
     else if(z<-286&&z>-321)material='metal';
   }
   else{
-    const polygon=plan.oblique.rooms.find(r=>insidePolygon(r.polygon,x,z));
+    const polygon=[...plan.service.rooms,...plan.oblique.rooms].find(r=>insidePolygon(r.polygon,x,z));
     const chamber=plan.chambers.find(r=>x>=r.bounds[0]&&x<=r.bounds[1]&&z>=r.bounds[2]&&z<=r.bounds[3]);
-    const room=plan.rooms.find(r=>Math.abs(x-r.x*4)<r.rx*4+2&&Math.abs(z-r.z*4)<r.rz*4+2);
+
     if(polygon){const xs=polygon.polygon.map(p=>p[0]),zs=polygon.polygon.map(p=>p[1]);width=Math.max(...xs)-Math.min(...xs);length=Math.max(...zs)-Math.min(...zs);height=polygon.height+(polygon.inner?18:0);material=polygon.inner&&plan.oblique.bridges.some(b=>insidePolygon(b.polygon,x,z))?'metal':'concrete';}
     else if(chamber){width=chamber.bounds[1]-chamber.bounds[0];length=chamber.bounds[3]-chamber.bounds[2];height=chamber.ceiling-deck;}
-    else if(room){width=room.rx*8+4;length=room.rz*8+4;}
+
   }
   const volume=width*length*height,surface=2*(width*length+width*height+length*height);
   // A bounded Sabine approximation for hard, irregular rooms. No acoustic raycast

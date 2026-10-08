@@ -1,25 +1,25 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { generateUnderstructure,makeCollision,key,DECK,LIFT_SECONDS } from '../../src/understructure/layout.js';
+import { generateUnderstructure,makeCollision,key,DECK,LIFT_SECONDS,ACCESS } from '../../src/understructure/layout.js';
 import { UnderstructureSimulation } from '../../src/understructure/simulation.js';
 import { THEME_PROFILES,machineryClock } from '../../src/understructure/anomalies.js';
-import { walkLine,walkRoute,flyTo,advance,descend,solvePuzzles,retrieveSiteRecord,climbCollection,descendCollection } from './understructure-walk.js';
+import { walkLine,walkRoute,flyTo,advance,descend,enterBunker,ascendSurface,solvePuzzles,retrieveSiteRecord,climbCollection,descendCollection } from './understructure-walk.js';
 function connected(plan){const cells=new Set(plan.tiles.map(t=>key(t.x,t.z))),seen=new Set(['0,0']),queue=[[0,0]];for(let i=0;i<queue.length;i++){const [x,z]=queue[i];for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){const k=key(x+dx,z+dz);if(cells.has(k)&&!seen.has(k)){seen.add(k);queue.push([x+dx,z+dz]);}}}return seen;}
 const make=(seed='SUMP-07',theme='auto')=>new UnderstructureSimulation(generateUnderstructure(seed,theme));
 
-test('100 deterministic sites: connected rooms, accessible signals and one/two themes',()=>{
+test('100 deterministic sites: polygon chambers, accessible signals and one/two themes',()=>{
  assert.deepEqual(generateUnderstructure('A'),generateUnderstructure('A'));
- assert.notDeepEqual(generateUnderstructure('A').edges,generateUnderstructure('B').edges);
- for(let i=0;i<100;i++){const p=generateUnderstructure(`SITE-${i}`),seen=connected(p);assert.equal(seen.size,p.tiles.length);assert.ok(p.themes.length>=1&&p.themes.length<=2);assert.equal(p.puzzles.length,p.themes.length);for(const r of p.rooms)assert.ok(seen.has(key(r.x,r.z)));assert.ok(seen.has('0,-30'));const c=makeCollision(p);for(const s of p.samples)assert.ok(s.id==='null'&&p.themes.includes('gravity')?c.canFloat(...s.pos):c.canStand(s.pos[0],s.pos[2],{y:s.pos[1],liftY:DECK,hatchOpen:true},.42),s.id);assert.equal(c.canFloat(999,DECK,999),false);}
+ assert.notDeepEqual(generateUnderstructure('A').service.rooms,generateUnderstructure('B').service.rooms);
+ for(let i=0;i<100;i++){const p=generateUnderstructure(`SITE-${i}`);assert.ok(p.service.rooms.every(r=>r.polygon.length>=5));assert.ok(p.themes.length>=1&&p.themes.length<=2);assert.equal(p.puzzles.length,p.themes.length);const c=makeCollision(p);for(const s of p.samples)assert.ok(s.id==='null'&&p.themes.includes('gravity')?c.canFloat(...s.pos):c.canStand(s.pos[0],s.pos[2],{y:s.pos[1],liftY:DECK,hatchOpen:true},.42),s.id);assert.equal(c.canFloat(999,DECK,999),false);}
 });
 test('person-sized hatch and continuous express lift descend eight levels in 4.2 seconds',()=>{
  const s=make();assert.equal(s.plan.access.halfWidth*2,1.3);assert.equal(s.plan.access.halfDepth*2,1.7);
- walkLine(s,0,4);assert.equal(s.offer().type,'hatch');s.interact();advance(s,1.5);walkLine(s,0,0);assert.ok(s.onPlatform);s.interact();let prev=0;
+ enterBunker(s);assert.equal(s.pos[1],ACCESS.top);assert.ok(s.inBunker);assert.equal(s.jetpackEnabled,false);walkLine(s,0,0);assert.ok(s.onPlatform);s.interact();let prev=ACCESS.top;
  for(let i=0;i<252;i++){s.step(1/60,{forward:1});assert.ok(s.pos[1]<=prev+.001);assert.ok(Math.abs(s.pos[1]-prev)<1.5);assert.ok(Math.abs(s.pos[2])<.001);prev=s.pos[1];}
  advance(s,.1);assert.equal(s.pos[1],DECK);assert.equal(DECK,-240);assert.equal(s.offer().type,'offline');walkLine(s,0,-4);assert.equal(s.pos[1],DECK);
 });
 test('open hatch has no floor with lift away; walls and catwalk edges contain long frames',()=>{
- const s=make();s.hatchOpen=true;s.hatchAmount=1;s.liftY=s.liftTarget=DECK;s.pos=[0,0,3];advance(s,5,{forward:1});assert.ok(s.pos[2]>1.25);
+ const s=make();s.hatchOpen=true;s.hatchAmount=1;s.liftY=s.liftTarget=DECK;s.pos=[0,0,ACCESS.hatchZ+3];advance(s,5,{forward:1});assert.ok(s.pos[2]>ACCESS.hatchZ+1.25);
  s.pos=[0,DECK,-8];for(let i=0;i<200;i++)s.step(.25,{strafe:1,fast:true});assert.ok(s.pos[0]<1.6);
  s.pos=[0,DECK,-150];advance(s,5,{strafe:1});assert.ok(s.pos[0]<1.6);assert.equal(s.pos[1],DECK);
  for(const {x,z,width,depth} of s.plan.pillars)for(const [x0,x1,z0,z1] of s.plan.walkways)assert.ok(x+width/2<=x0||x-width/2>=x1||z+depth/2<=z0||z-depth/2>=z1);
@@ -29,12 +29,12 @@ test('all 21 theme profiles: walk, solve generated circuits, retrieve data, retu
   const s=make(seed,profile.join('-'));descend(s);assert.equal(s.teleport(),false);
   climbCollection(s);walkLine(s,56,-268);assert.equal(s.offer().type,'archive_data');s.interact();assert.equal(s.dataRecovered,false);descendCollection(s);
   solvePuzzles(s);assert.ok(s.archiveReady);assert.equal(s.exitReady,false);retrieveSiteRecord(s);assert.ok(s.exitReady);
-  walkRoute(s,0,0);assert.equal(s.offer().type,'lift');s.interact();advance(s,LIFT_SECONDS+.1);walkLine(s,0,6);assert.ok(s.returned);
+  walkRoute(s,0,0);assert.equal(s.offer().type,'lift');s.interact();advance(s,LIFT_SECONDS+.1);ascendSurface(s);assert.ok(s.returned);
   const restored=new UnderstructureSimulation(s.plan,JSON.parse(JSON.stringify(s.save())));assert.deepEqual(restored.save(),s.save());assert.ok(restored.dataRecovered);
  }
 });
 test('retrieval enables optional instant surface return and continued exploration',()=>{
- const s=make('SHORTCUT','space');descend(s);solvePuzzles(s);assert.equal(s.teleport(),false);retrieveSiteRecord(s);assert.ok(s.teleport());assert.deepEqual(s.pos,s.plan.spawn);assert.ok(s.returned);assert.deepEqual(s.velocity,[0,0,0]);walkLine(s,0,0);s.interact();advance(s,4.3);walkLine(s,0,-4);assert.equal(s.pos[1],DECK);assert.ok(s.dataRecovered);
+ const s=make('SHORTCUT','space');descend(s);solvePuzzles(s);assert.equal(s.teleport(),false);retrieveSiteRecord(s);assert.ok(s.teleport());assert.deepEqual(s.pos,s.plan.spawn);assert.ok(s.returned);assert.deepEqual(s.velocity,[0,0,0]);descend(s);assert.equal(s.pos[1],DECK);assert.ok(s.dataRecovered);
 });
 test('zero-g inertia, braking, shell and floating obstacles; safe floor-level exit',()=>{
  const s=make('FLIGHT','gravity');s.pos=[76,DECK,-52];s.hatchOpen=true;s.hatchAmount=1;s.liftY=s.liftTarget=DECK;
@@ -43,7 +43,7 @@ test('zero-g inertia, braking, shell and floating obstacles; safe floor-level ex
  flyTo(s,[79,DECK+12,-52]);s.yaw=Math.PI/2;advance(s,8,{forward:1});assert.ok(s.pos[0]>=78.4);assert.ok(s.zeroG);
  flyTo(s,[96,DECK+12,-52]);for(let i=0;i<80;i++)s.step(.25,{vertical:1,fast:true});assert.ok(s.pos[1]+1.9<=s.plan.chambers[0].ceiling+.001);
  const o=s.plan.chambers[0].obstacles[0];assert.equal(s.collision.canFloat(o.center[0],o.center[1]-1,o.center[2]),false);
- flyTo(s,[96,DECK+.05,-52]);flyTo(s,[82,DECK+.05,-52]);s.interact();assert.ok(s.carryingCell);flyTo(s,[77,DECK+.05,-52]);assert.equal(s.zeroG,false);assert.equal(s.pos[1],DECK);assert.deepEqual(s.velocity,[0,0,0]);
+ flyTo(s,[96,DECK+.05,-52]);flyTo(s,[82,DECK+.05,-52]);s.interact();assert.ok(s.carryingCell);flyTo(s,[77,DECK+.05,-52]);assert.equal(s.zeroG,false);assert.equal(s.pos[1],DECK);advance(s,.1);assert.deepEqual(s.velocity,[0,0,0]);
 });
 test('machinery time holds and reverses while player time and progress remain forward',()=>{
  assert.equal(machineryClock(6).state,'HELD');assert.equal(machineryClock(8).state,'REWIND');assert.equal(machineryClock(12).time,0);

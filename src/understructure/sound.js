@@ -6,7 +6,7 @@ export class SurveySound {
     this.plan=plan;this.contextProvider=context;this.destinationProvider=destination;this.storage=storage;this.ownsContext=!context;
     this.enabled=true;try{this.enabled=storage?.getItem('starseed.survey.sound')!=='off';}catch{}
     this.active=false;this.disposed=false;this.ctx=null;this.sources=[];this.nodes=[];this.events=new Set();this.impulses=new Map();this.footsteps=new FootstepTracker();this.rng=Rng.fromString(plan.seed).fork('ambient-events');this.nextEvent=3;this.stats={steps:0,events:0,voices:0};
-    this.visibility=()=>this.gate();globalThis.document?.addEventListener('visibilitychange',this.visibility);
+    this.lastAlert=-100;this.visibility=()=>this.gate();globalThis.document?.addEventListener('visibilitychange',this.visibility);
   }
   unlock(){
     if(this.disposed||!this.enabled)return;
@@ -51,8 +51,8 @@ export class SurveySound {
   event(kind,profile,pan=0){
     if(!this.ctx||this.events.size>=8)return;
     const c=this.ctx,t=c.currentTime,metal=profile.material==='metal',duration=kind==='strain'?1.4:kind==='drip'?.25:.18;
-    const tonal=kind==='drip'||kind==='strain',src=tonal?c.createOscillator():c.createBufferSource(),filter=c.createBiquadFilter(),gain=c.createGain(),stereo=c.createStereoPanner();
-    if(tonal){src.type='sine';src.frequency.setValueAtTime(kind==='drip'?1300:92,t);src.frequency.exponentialRampToValueAtTime(kind==='drip'?440:68,t+duration);}else{src.buffer=kind==='step'?this.footNoise:this.noise;src.playbackRate.value=.9+this.rng.next()*.2;}
+    const tonal=kind==='drip'||kind==='strain'||kind==='alert',src=tonal?c.createOscillator():c.createBufferSource(),filter=c.createBiquadFilter(),gain=c.createGain(),stereo=c.createStereoPanner();
+    if(tonal){src.type='sine';src.frequency.setValueAtTime(kind==='alert'?660:kind==='drip'?1300:92,t);src.frequency.exponentialRampToValueAtTime(kind==='alert'?880:kind==='drip'?440:68,t+duration);}else{src.buffer=kind==='step'?this.footNoise:this.noise;src.playbackRate.value=.9+this.rng.next()*.2;}
     filter.type='bandpass';filter.frequency.value=kind==='step'?(metal?1450:profile.material==='soil'?360:750):kind==='strain'?170:1700;filter.Q.value=metal?2.2:.7;
     const volume=kind==='step'?.27:kind==='drip'?.045:.075;
     gain.gain.setValueAtTime(.00001,t);gain.gain.linearRampToValueAtTime(volume,t+.009);gain.gain.exponentialRampToValueAtTime(.00001,t+duration);stereo.pan.value=pan;
@@ -67,6 +67,7 @@ export class SurveySound {
     const field=soundField(this.plan,state),t=this.ctx.currentTime;this.room(profile);
     for(const [name,voice] of Object.entries(this.layers))voice.gain.gain.setTargetAtTime(field[name],t,.22);
     this.layers.generator.pan.pan.setTargetAtTime(field.pan,t,.2);
+    const alert=Math.max(state.packDisabledAt??-100,state.gravityAlertAt??-100);if(alert>this.lastAlert){this.lastAlert=alert;if(state.time-alert<1)this.event('alert',{material:'suit'},0);}
     if(step)this.event('step',profile,(this.stats.steps%2?1:-1)*.07);
     if(state.time>this.nextEvent){this.nextEvent=state.time+this.rng.range(6,14);if(field.below>.5)this.event(this.plan.generator.environment.wet&&this.rng.chance(.6)?'drip':'strain',profile,this.rng.range(-.85,.85));}
   }

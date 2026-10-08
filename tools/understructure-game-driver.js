@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import * as tk from './testkit.js';
 import { Input } from '../src/input.js';
-import { descend,solvePuzzles,retrieveSiteRecord,walkRoute,advance } from './tests/understructure-walk.js';
+import { descend,solvePuzzles,retrieveSiteRecord,walkRoute,advance,ascendSurface } from './tests/understructure-walk.js';
 const report=(data,image,name)=>parent.postMessage({type:'survey-test',report:data,image,name},location.origin);
 const check=(ok,message)=>{if(!ok)throw Error(message);};
 const yieldNow=()=>new Promise(r=>setTimeout(r,0));
@@ -29,7 +29,7 @@ try {
  await shot('survey-world-hatch',{body:site.body.data.name});
  const anchor=p.fPos.clone(),heading=p.heading.clone(),t0=gm.t,originalQ=site.body.q.clone();
  tick('KeyF');check(p.understructure,'F must enter through the normal surface interaction');const first=p.understructure;
- check(!p.jetOn&&!first.sim.jetpackEnabled,'Sector must disable jetpack');check(first.sim.pos[1]===0&&!first.sim.hatchOpen,'World F must not leak into local F');
+ check(!p.jetOn,'Sector must stop the outside jetpack');check(first.sim.pos[1]===0&&!first.sim.hatchOpen,'World F must not leak into local F');
  check(gm.engine.webgpu===gpu&&gm.ship===ship&&gm.orbitalStation===station,'Sector must preserve renderer and fleet');
  gm.setWarp(3);check(gm.warp===1,'Survey must hold universe at normal speed');
  tick('KeyM');check(first.hud.panel==='map'&&!gm.map.open,'Local map must own M');tick('KeyM');
@@ -58,7 +58,7 @@ try {
  tick('KeyF');check(p.understructure?.sim.dataRecovered,'Re-entry must restore the saved record');
  const second=p.understructure;tick();check(p.understructure===second,'Saved returned flag must not immediately eject the player');
  descend(second.sim);tick();walkRoute(second.sim,0,0);check(second.sim.offer()?.type==='lift','Restored site must support lift return');
- second.sim.interact();advance(second.sim,4.3);tick();check(!p.understructure,'Fresh lift ascent must return to world');
+ second.sim.interact();advance(second.sim,4.3);tick();check(p.understructure===second,'Lift must stop in the access bunker');ascendSurface(second.sim);tick();check(!p.understructure,'Climbing out of bunker must return to world');
  check(!gpu.targets.has(second.view),'Repeated entry must release sector targets');
  const error=await gpu.device.popErrorScope();check(!error,error?.message);check(!gm.engine.webgpuError,gm.engine.webgpuError?.message);
  report({stage:'Passed',native:true,physicalHatch:true,sharedRenderer:true,themes:first.plan.themes,circuits:first.sim.solved.size,record:true,shortcutReturn:true,liftReturn:true,savedProgress:true,splitScreen:true,boundedLightingBindings:true,worldTimeAdvanced:gm.t-t0,positionError:p.fPos.distanceTo(anchor)});

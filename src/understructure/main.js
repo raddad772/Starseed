@@ -5,7 +5,7 @@ import { generateUnderstructure } from './layout.js';
 import { buildScene } from './scene.js';
 import { UnderstructureSimulation } from './simulation.js';
 import { SurveyMap } from './surveyMap.js';
-import { surveyObjective,fieldStatus,recoveryStatus,mysteryStatus,scanMessage } from './guidance.js';
+import { surveyObjective,fieldStatus,recoveryStatus,mysteryStatus,scanMessage,suitAlert } from './guidance.js';
 import { bankRecovery,mysteryEntries } from './recovery.js';
 import { THEME_NAMES,THEME_PROFILES } from './anomalies.js';
 import { SurveySound } from './sound.js';
@@ -65,14 +65,14 @@ canvas.addEventListener('pointerdown',()=>{drag=true;if(running&&document.pointe
 window.addEventListener('pointerup',()=>drag=false);
 window.addEventListener('mousemove',e=>{if(running&&(document.pointerLockElement===canvas||drag)){sim.yaw-=e.movementX*.002;sim.pitch=Math.max(-1.4,Math.min(1.4,sim.pitch-e.movementY*.002));dirty=true;}});
 function drawNotes(){const parent=$('notes');parent.replaceChildren();for(const entry of mysteryEntries(sim.campaignTotal)){const h=document.createElement('h3'),p=document.createElement('p');h.textContent=entry.title;p.textContent=entry.text;parent.append(h,p);}const summary=document.createElement('p');summary.textContent=recoveryStatus(sim)+' · '+mysteryStatus(sim);parent.append(summary);if(!sim.recorded.size){const p=document.createElement('p');p.textContent='No records yet. Find the lit survey contacts and press E nearby.';parent.append(p);}for(const sample of plan.samples.filter(s=>sim.recorded.has(s.id))){const a=document.createElement('article'),h=document.createElement('h3'),p=document.createElement('p');h.textContent=sample.title;p.textContent=sample.text;a.append(h,p);parent.append(a);}}
-function drawMap(){mapView.draw(sim);$('mapStats').textContent=`${sim.discovered.size} surveyed sections · ${sim.beacons.length} return beacons`;}
+function drawMap(){mapView.draw(sim);$('mapStats').textContent=`${sim.serviceSeen.size+sim.sectorsSeen.size+sim.chambersSeen.size} surveyed rooms & connections · ${sim.beacons.length} return beacons`;}
 function updateHUD(){
   $('zone').textContent=sim.zone;$('depth').innerHTML=`${sim.pos[1]>=0?'+':'−'}${Math.abs(sim.pos[1]).toFixed(1).padStart(5,'0')} <small>M</small>`;
   $('count').textContent=`${String(sim.recorded.size).padStart(2,'0')} / ${String(plan.samples.length).padStart(2,'0')}`;
   $('signal').textContent=sim.pos[1]>-2?'SUBSURFACE RETURN · UNCLASSIFIED':`LIVE CIRCUIT · ${Math.floor(sim.time/11)%2?'RETURN':'INTAKE'} CYCLE`;
   $('objective').textContent=sim.returned?'Data returned · further exploration is optional':surveyObjective(sim);
   $('circuits').textContent=`RETURN CIRCUITS ${sim.solved.size}/${plan.puzzles.length} · ${recoveryStatus(sim)}`;
-  const scan=scanMessage(sim);if(scan){$('toast').textContent=scan;$('toast').hidden=false;$('toast').dataset.scan='yes';}else if($('toast').dataset.scan){$('toast').hidden=true;delete $('toast').dataset.scan;}
+  const scan=suitAlert(sim)||scanMessage(sim);if(scan){$('toast').textContent=scan;$('toast').hidden=false;$('toast').dataset.scan='yes';}else if($('toast').dataset.scan){$('toast').hidden=true;delete $('toast').dataset.scan;}
   $('clock').hidden=!plan.themes.includes('time')||sim.pos[1]>-2;
   $('clock').textContent=`MACHINERY CLOCK / ${sim.machinery.state}`;
   const showPhase=sim.offer()?.type==='phase';$('phasePanel').hidden=!showPhase;

@@ -35,7 +35,7 @@ export function collectionSideWall(plan,side,{box}){
   }
 }
 
-export function buildCollectionRoutes(plan,{root,mat,box,cylinder,label,lamp}){
+export function buildCollectionRoutes(plan,{root,mat,box,cylinder,pipe,label,lamp}){
   function panel(points,material){const g=new THREE.BufferGeometry(),v=[];for(const i of [0,2,1,0,3,2,0,1,2,0,2,3])v.push(...points[i]);g.setAttribute('position',new THREE.Float32BufferAttribute(v,3));g.computeVertexNormals();const uv=[];for(let i=0;i<v.length;i+=3)uv.push((v[i]+v[i+2])/3,v[i+1]/3);g.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));root.add(new THREE.Mesh(g,mat[material]));}
   function strip(a,b,width,offset,material){
     const dx=b[0]-a[0],dz=b[2]-a[2],length=Math.hypot(dx,dz),nx=-dz/length*width/2,nz=dx/length*width/2;
@@ -44,6 +44,7 @@ export function buildCollectionRoutes(plan,{root,mat,box,cylinder,label,lamp}){
   // Mitered corridor boundaries seal bends without a wall across the walking line.
   const groups=[];for(const r of plan.routes){if(!r.covered)continue;const last=groups.at(-1);if(last&&last.at(-1).b===r.a)last.push(r);else groups.push([r]);}
   for(const group of groups){const pts=[group[0].a,...group.map(r=>r.b)],norms=group.map(r=>{const dx=r.b[0]-r.a[0],dz=r.b[2]-r.a[2],len=Math.hypot(dx,dz);return [-dz/len,dx/len];});
+    const runs=pts.map((p,i)=>{const a=norms[Math.max(0,i-1)],b=norms[Math.min(i,norms.length-1)],k=1.5/(1+a[0]*b[0]+a[1]*b[1]);return [p[0]+(a[0]+b[0])*k,p[1]+2.8,p[2]+(a[1]+b[1])*k];});pipe([[runs[0][0],runs[0][1]+1,runs[0][2]],...runs,[runs.at(-1)[0],runs.at(-1)[1]+1,runs.at(-1)[2]]],.18,'rust');
     for(const side of [-1,1]){const edge=pts.map((p,i)=>{const a=norms[Math.max(0,i-1)],b=norms[Math.min(i,norms.length-1)],k=2.2*side/(1+a[0]*b[0]+a[1]*b[1]);return [p[0]+(a[0]+b[0])*k,p[1],p[2]+(a[1]+b[1])*k];});for(let i=1;i<edge.length;i++){const a=edge[i-1],b=edge[i];panel([a,b,[b[0],b[1]+3.5,b[2]],[a[0],a[1]+3.5,a[2]]],'concrete');}}
     for(const p of [pts[0],pts.at(-1),...pts.filter((p,i)=>i>0&&i<pts.length-1&&Math.abs(norms[i][0]-norms[i-1][0])+Math.abs(norms[i][1]-norms[i-1][1])>.1)])box(p[0],p[1]+3.55,p[2],4.5,.1,4.5,'concrete');
   }
@@ -66,7 +67,7 @@ export function buildCollectionRoutes(plan,{root,mat,box,cylinder,label,lamp}){
       const n=Math.ceil(length/5);for(let i=1;i<n;i++){const t=i/n,x=a[0]+dx*t+nx*side*1.9,z=a[2]+dz*t+nz*side*1.9,y=a[1]+(b[1]-a[1])*t;if(!covered&&!(a[2]===-268&&side===-1&&Math.abs(x)<2.5))cylinder([x,y,z],[x,y+1.1,z],.04,'metal');}
     }
     const n=Math.ceil(length/7);for(let i=1;i<n;i++){const t=i/n,x=a[0]+dx*t,z=a[2]+dz*t,y=a[1]+(b[1]-a[1])*t;
-      if(covered){lamp(x,y+3.35,z,'amber');cylinder([x+nx*1.55,y+2.8,z+nz*1.55],[x+dx/n+nx*1.55,y+(b[1]-a[1])/n+2.8,z+dz/n+nz*1.55],.18,'rust');}
+      if(covered){lamp(x,y+3.35,z,'amber');}
       else {for(const side of [-1,1])if(!(a[2]===-268&&Math.abs(x)<2.5))cylinder([x+nx*side*2.2,y-.2,z+nz*side*2.2],[x+nx*side*2.2,plan.reservoir.ceiling,z+nz*side*2.2],.055,'metal');lamp(x+nx*2.2,y+2.8,z+nz*2.2,'cyan');}
     }
     if(covered&&a[1]!==b[1]){
@@ -74,5 +75,4 @@ export function buildCollectionRoutes(plan,{root,mat,box,cylinder,label,lamp}){
       const steps=Math.ceil(Math.abs(b[1]-a[1])/.2);for(let i=1;i<steps;i++){const t=i/steps,p=[a[0]+dx*t,a[1]+(b[1]-a[1])*t+.015,a[2]+dz*t];cylinder([p[0]+nx*1.9,p[1],p[2]+nz*1.9],[p[0]-nx*1.9,p[1],p[2]-nz*1.9],.018,'metal');}
     }
   }
-  for(const [i,r] of plan.routes.filter(r=>!r.covered).entries())label(`COLLECTION / SERVICE ${i+2}`,r.b[0]-3,r.b[1]+2.2,r.b[2]+1.8,{size:.45,face:Math.PI,color:'#a0a994'});
 }

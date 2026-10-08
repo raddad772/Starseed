@@ -4,6 +4,7 @@ import { generateUnderstructure,DECK,makeCollision } from '../../src/understruct
 import { UnderstructureSimulation } from '../../src/understructure/simulation.js';
 import { creditedData,recordRecovery,mysteryProgress,mysteryEntries } from '../../src/understructure/recovery.js';
 import { routeFloor } from '../../src/understructure/infrastructure.js';
+import { insidePolygon } from '../../src/understructure/oblique.js';
 import { scanMessage } from '../../src/understructure/guidance.js';
 import { descend,walkRoute,walkLine,advance,climbCollection,descendCollection,solvePuzzles } from './understructure-walk.js';
 const make=(seed='DECAY')=>new UnderstructureSimulation(generateUnderstructure(seed,'gravity-light'));
@@ -21,7 +22,7 @@ test('entry scan automatically awards one unit once and plays its readable seque
 test('utility loop, blind rooms and solid machinery remain traversable without mandatory rewards',()=>{
  for(const seed of ['DECAY','SUMP-07','SITE-93']){const s=make(seed);descend(s);const before=s.solved.size;
   for(const [x,z] of [[-40,20],[-16,20],[16,20],[40,20],[40,44],[-56,40]])walkRoute(s,x,z);
-  assert.equal(s.solved.size,before);assert.ok(s.plan.utility.annex.some(id=>{const room=s.plan.rooms[id];return !s.plan.fragments.some(f=>Math.abs(f.pos[0]-room.x*4)<room.rx*4+2&&Math.abs(f.pos[2]-room.z*4)<room.rz*4+2);}));
+  assert.equal(s.solved.size,before);assert.ok(s.plan.service.rooms.some(room=>!s.plan.fragments.some(f=>insidePolygon(room.polygon,f.pos[0],f.pos[2]))));
   for(const o of s.plan.utility.equipment){const [a,b,c,d,y]=o.bounds;assert.equal(s.collision.canStand((a+b)/2,(c+d)/2,{...s.state,y},.42),false);}
  }
 });

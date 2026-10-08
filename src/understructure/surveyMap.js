@@ -6,11 +6,15 @@ export function surveyMapData(plan,sim,layer='all') {
   const boxes=[],links=[],markers=[];
   const add=(id,name,bounds,color,kind='room')=>boxes.push({id,name,bounds,color,kind});
   if(layer==='all'||layer==='surface'){
-    add('surface','Surface hatch',[-2,2,-2,2,-.4,0],'#bad7cf','surface');
-    if(sim.discovered.size||sim.pos[1]<-2){add('shaft','Express lift · 240 m',[-1,1,-1,1,DECK,0],'#e8b777','shaft');links.push({a:[0,0,0],b:[0,DECK,0],kind:'lift'});}
+    add('surface','Surface hatch',[-.65,.65,7.15,8.85,-.4,0],'#bad7cf','surface');
+    if(sim.bunkerSeen)add('bunker','Access bunker',[-3,3,-2,10,-3.3,-3.2],'#96bfb3','room');
+    if(sim.serviceSeen.size||sim.pos[1]<-30){add('shaft','Express lift · 240 m',[-1,1,-1,1,DECK,-3.2],'#e8b777','shaft');links.push({a:[0,-3.2,0],b:[0,DECK,0],kind:'lift'});}
   }
   if(layer!=='surface'){
-    if(layer!=='raised')for(const t of plan.tiles)if(sim.discovered.has(key(t.x,t.z)))add('tile:'+key(t.x,t.z),t.region.startsWith('room:')?plan.rooms[Number(t.region.split(':')[1])].kind:'Service conduit',[t.x*TILE-1.9,t.x*TILE+1.9,t.z*TILE-1.9,t.z*TILE+1.9,DECK-.4,DECK+3.8],'#678fa1','tile');
+    if(layer!=='raised')for(const r of plan.service.regions)if(sim.serviceSeen.has(r.id)){
+      const xs=r.polygon.map(p=>p[0]),zs=r.polygon.map(p=>p[1]);
+      boxes.push({id:r.id,name:r.name,polygon:r.polygon,bounds:[Math.min(...xs),Math.max(...xs),Math.min(...zs),Math.max(...zs),DECK-.3,DECK],color:r.id===sim.plan.service.regions.find(r=>r.name===sim.zone)?.id?'#ffd391':'#75a3ac',kind:'room'});
+    }
     if(sim.reservoirSeen&&layer!=='raised'){
       add('reservoir',plan.generator.name+' · record repository',[-64,64,-286,-122,plan.reservoir.bottom,plan.reservoir.ceiling],'#3a8395','shell');
       for(const p of plan.walkways)add('catwalk','Collection catwalk',[...p,DECK-.5,DECK],'#75a3ac','path');

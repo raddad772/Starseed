@@ -1,3 +1,4 @@
+import { LocalShadows } from './localShadows.js';
 import { CLUSTER_PARAMETERS as COMMON, CLUSTER_LIGHTING } from './cluster-shader.js';
 import * as THREE from 'three';
 import { shaderModule, timestampWrites } from './device.js';
@@ -36,11 +37,12 @@ fn oct(e:vec2f)->vec3f{var n=vec3f(e,1.0-abs(e.x)-abs(e.y));let t=max(-n.z,0.0);
 }
 `;
 export class ClusteredLights {
- constructor(device){this.device=device;this.capacity=0;this.frame=new Float32Array(60);this.param=device.createBuffer({label:'cluster parameters',size:240,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST});}
+ constructor(device){this.shadows=new LocalShadows(device);this.device=device;this.capacity=0;this.frame=new Float32Array(60);this.param=device.createBuffer({label:'cluster parameters',size:240,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST});}
  async init(){
+  await this.shadows.init();
   const d=this.device,S=GPUShaderStage;
   const entries=type=>[{binding:0,visibility:S.COMPUTE|S.FRAGMENT,buffer:{type:'uniform'}},{binding:1,visibility:S.COMPUTE|S.FRAGMENT,buffer:{type:'read-only-storage'}},{binding:2,visibility:S.COMPUTE|S.FRAGMENT,buffer:{type}}];
-  this.computeLayout=d.createBindGroupLayout({entries:entries('storage')});this.shadeLayout=d.createBindGroupLayout({entries:entries('read-only-storage')});
+  this.computeLayout=d.createBindGroupLayout({entries:entries('storage')});this.shadeLayout=d.createBindGroupLayout({entries:[...entries('read-only-storage'),{binding:3,visibility:S.FRAGMENT,buffer:{type:'read-only-storage'}},{binding:4,visibility:S.FRAGMENT,texture:{sampleType:'depth',viewDimension:'2d-array'}},{binding:5,visibility:S.FRAGMENT,sampler:{type:'comparison'}}]});
   this.texturesLayout=d.createBindGroupLayout({entries:[0,1,2,3,4].map(binding=>({binding,visibility:S.FRAGMENT,texture:{sampleType:binding===3?'depth':'unfilterable-float'}}))});
   const [cull,shade]=await Promise.all([shaderModule(d,'cluster light assignment',CULL),shaderModule(d,'cluster local lighting',SHADE)]);
   this.compute=await d.createComputePipelineAsync({layout:d.createPipelineLayout({bindGroupLayouts:[this.computeLayout]}),compute:{module:cull,entryPoint:'cull'}});
@@ -48,18 +50,19 @@ export class ClusteredLights {
  }
  collect(engine){
   const camera=engine.view.camera,view=camera.matrixWorldInverse,out=[];
-  const push=(position,range,color,bounce=0,direction=new THREE.Vector3(),outer=-1,kind=0,inner=1,box=null)=>out.push([...position.toArray(),range,...color, bounce,...direction.toArray(),outer,kind,inner,box?1:0,0,...(box?.min.toArray()||[-1e20,-1e20,-1e20]),0,...(box?.max.toArray()||[1e20,1e20,1e20]),0]);
+  const push=(position,range,color,bounce=0,direction=new THREE.Vector3(),outer=-1,kind=0,inner=1,box=null,shadow=0)=>out.push([...position.toArray(),range,...color, bounce,...direction.toArray(),outer,kind,inner,box?1:0,shadow,...(box?.min.toArray()||[-1e20,-1e20,-1e20]),0,...(box?.max.toArray()||[1e20,1e20,1e20]),0]);
   engine.scene.traverseVisible(o=>{
    if((!o.isPointLight&&!o.isSpotLight)||o.intensity<=0||o.userData.webgpuHandLight)return;
    const p=o.getWorldPosition(new THREE.Vector3()).applyMatrix4(view),c=o.color.clone().multiplyScalar(o.intensity);
    const dir=o.isSpotLight?o.target.getWorldPosition(new THREE.Vector3()).sub(o.getWorldPosition(new THREE.Vector3())).transformDirection(view):new THREE.Vector3();
-   push(p,o.distance||20000,[c.r,c.g,c.b],0,dir,o.isSpotLight?Math.cos(o.angle):-1,o.isSpotLight?1:0,o.isSpotLight?Math.cos(o.angle*(1-o.penumbra)):1);
+   push(p,o.distance||20000,[c.r,c.g,c.b],0,dir,o.isSpotLight?Math.cos(o.angle):-1,o.isSpotLight?1:0,o.isSpotLight?Math.cos(o.angle*(1-o.penumbra)):1,null,this.shadows.slots.get(o)||0);
   });
   const H=HAND_LIGHT;if(H.uHandE.value.lengthSq()>0)push(H.uHandPos.value.clone().applyMatrix4(view),20000,H.uHandE.value.toArray(),0,H.uHandDir.value.clone().transformDirection(view),H.uHandCone.value.y,2,H.uHandCone.value.x);
   engine.lightRig?.forEachNativeFixture((p,color,range,bounce,box)=>push(p,range,color,bounce,undefined,undefined,0,1,box));
   return out;
  }
  render(engine,t,inverse,shade=true){
+  this.shadows.update(engine);
   const lights=this.collect(engine);
   const d=this.device,n=lights.length;
   if(!this.lightBuffer||n>this.capacity){this.lightBuffer?.destroy();this.capacity=2**Math.ceil(Math.log2(Math.max(32,n)));this.lightBuffer=d.createBuffer({label:'local lights',size:this.capacity*96,usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST});}
@@ -69,12 +72,12 @@ export class ClusteredLights {
   if(t.clusterGbuffer!==(t.activeGbuffer||t.shadedGbuffer)){t.clusterGbuffer=t.activeGbuffer||t.shadedGbuffer;t.clusterTextures=d.createBindGroup({layout:this.texturesLayout,entries:[(t.activeGbuffer||t.shadedGbuffer)[0],(t.activeGbuffer||t.shadedGbuffer)[1],(t.activeGbuffer||t.shadedGbuffer)[3],t.depth,t.ao].map((texture,binding)=>({binding,resource:texture.createView()}))});}
   const cam=engine.view.camera,data=this.frame;data.set(inverse.elements);data.set(cam.matrixWorldInverse.elements,16);data.set((engine.lightRig?.nativeToRoom||new THREE.Matrix4()).elements,32);
   const tan=Math.tan(cam.fov*Math.PI/360);data.set([t.width,t.height,tan*cam.aspect,tan,gx,gy,n,0,cam.near,20000,0,0],48);d.queue.writeBuffer(this.param,0,data);
-  const group=layout=>d.createBindGroup({layout,entries:[this.param,this.lightBuffer,t.clusters].map((buffer,binding)=>({binding,resource:{buffer}}))});
+  const group=layout=>d.createBindGroup({layout,entries:[...[this.param,this.lightBuffer,t.clusters].map((buffer,binding)=>({binding,resource:{buffer}})),...(layout===this.shadeLayout?[{binding:3,resource:{buffer:this.shadows.matrices}},{binding:4,resource:this.shadows.view},{binding:5,resource:this.shadows.sampler}]:[])]});
   t.clusterGroup=group(this.shadeLayout);
   if(!n)return;
   const encoder=d.createCommandEncoder({label:'clustered local lights'});let pass=encoder.beginComputePass({timestampWrites:timestampWrites(d,'light clustering')});pass.setPipeline(this.compute);pass.setBindGroup(0,group(this.computeLayout));pass.dispatchWorkgroups(Math.ceil(count/64));pass.end();
   if(shade){pass=encoder.beginRenderPass({timestampWrites:timestampWrites(d,'local lights'),colorAttachments:[{view:t.hdr.createView(),loadOp:'load',storeOp:'store'}]});pass.setPipeline(this.shade);pass.setBindGroup(0,group(this.shadeLayout));pass.setBindGroup(1,t.clusterTextures);pass.draw(3);pass.end();}d.queue.submit([encoder.finish()]);
  }
  release(t){t.clusters?.destroy();}
- dispose(){this.param.destroy();this.lightBuffer?.destroy();}
+ dispose(){this.shadows.dispose();this.param.destroy();this.lightBuffer?.destroy();}
 }

@@ -1,6 +1,6 @@
 import { mysteryEntries } from './recovery.js';
 import { SurveyMap } from './surveyMap.js';
-import { surveyObjective,fieldStatus,recoveryStatus,mysteryStatus,scanMessage } from './guidance.js';
+import { surveyObjective,fieldStatus,recoveryStatus,mysteryStatus,scanMessage,suitAlert } from './guidance.js';
 import { THEME_NAMES } from './anomalies.js';
 
 // Per-player DOM, no global event handlers or additional animation loop.
@@ -29,7 +29,7 @@ export class SurveyHUD {
     const controls=pad?'Sticks move/look · X use · LT light · B beacon · View map · D-pad right notes · RB return': 'WASD move · E use · F light · B beacon · M map · J notes · T return';
     const float=sim.zeroG?(pad?'\nChamber tether · A rise · Y descend · R3 brake':'\nChamber tether · Space rise · C descend · R brake'):'';
     const phase=offer?.type==='phase'?` · sweep ${Math.round(sim.phase.value*100)}% · ${sim.phase.ready?'ALIGNED':'wait for alignment'}`:'';
-    this.actions.textContent=(this.panel?`${this.panel.toUpperCase()} · press ${this.panel==='map'?(pad?'View':'M'):(pad?'D-pad right':'J')} to close`:offer?`${use} · ${offer.text}${phase}`:objective)+'\n'+(scanMessage(sim)?scanMessage(sim)+'\n':performance.now()<this.noticeUntil?this.notice+'\n':'')+controls+float;
+    this.actions.textContent=(this.panel?`${this.panel.toUpperCase()} · press ${this.panel==='map'?(pad?'View':'M'):(pad?'D-pad right':'J')} to close`:offer?`${use} · ${offer.text}${phase}`:objective)+'\n'+((suitAlert(sim)||scanMessage(sim))?(suitAlert(sim)||scanMessage(sim))+'\n':performance.now()<this.noticeUntil?this.notice+'\n':'')+controls+float;
     if(this.panel==='map')this.drawMap();
   }
   dispose(){this.mapView?.dispose();this.el.remove();}

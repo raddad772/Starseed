@@ -32,12 +32,11 @@ export function buildChambers(plan,{root,scene,mat,box,cylinder,label,lamp}) {
     for(const z of [doorZ-1.9,doorZ+1.9])box(doorX,DECK+2,z,.18,4,.14,'amber');
     box(doorX,DECK+.025,doorZ,.24,.05,3.8,'amber');box(doorX,DECK+3.95,doorZ,.18,.12,4,'amber');
     const face=c.doorSide*Math.PI/2;
-    label(c.name,doorX+c.doorSide*.08,DECK+3.15,doorZ,{size:.36,face});
-    label('RETURN / 1.00 G',doorX-c.doorSide*.09,DECK+3.15,doorZ,{size:.34,face:-face,color:'#e8b777'});
+    label(c.name,doorX+c.doorSide*.101,DECK+3.95,doorZ,{size:.09,face});
+    label('RETURN / 1.00 G',doorX-c.doorSide*.101,DECK+3.95,doorZ,{size:.09,face:-face,color:'#e8b777'});
     // The long low approach contrasts with the unexpectedly tall volume.
     for(const s of [-1,1])for(let z=z0+3;z<z1;z+=7){box(s===-1?x0+.2:x1-.2,DECK+h/2,z,.25,h,.3,'metal');}
-    light(cx,DECK+h*.65,cz,accents[c.id],620,48);
-    light(cx,DECK+3,cz,accents[c.id],100,30);
+    for(const x of [cx-6,cx+6]){lamp(x,c.ceiling-.24,cz,'cyan');cylinder([x,c.ceiling-.15,cz],[x,c.ceiling,cz],.08,'metal');}
     if(c.kind==='platforms'){
       box(cx,DECK-12,cz,w,1,d,'dark');
       for(const z of [z0-.22,z1+.22])box(cx,DECK-6,z,w,12,.44,'concrete');
@@ -50,13 +49,13 @@ export function buildChambers(plan,{root,scene,mat,box,cylinder,label,lamp}) {
       for(let x=x0+2;x<x1;x+=9){cylinder([x,DECK+2.8,pipeZ],[x+.25,DECK+2.8,pipeZ],2.3,'metal',16);box(x,DECK-3,pipeZ,2,12,4,'concrete');}
       for(const [i,p] of c.platforms.entries()){const [a,b,e,f,y]=p,mid=(a+b)/2;
         box(mid,y-.55,(e+f)/2,b-a,1.1,f-e,'floor');
-        for(const z of [e+1,f-1]){box(mid,(y+DECK-11)/2,z,2,y-DECK+11,1.5,'concrete');box(mid,y-.7,z,b-a,.25,.22,'metal');}
+        cylinder([mid,y-.4,f-.3],[mid,y-.4,f+.4],.055,'metal');cylinder([mid,y-.4,f+.4],[mid,y+2.9,f+.4],.055,'metal');lamp(mid,y+2.8,f+.4,'cyan',145);
+        for(const z of [e+1,f-1]){box(mid,(y-1.12+DECK-11)/2,z,2,y-1.12-DECK+11,1.5,'concrete');box(mid,y-.7,z,b-a,.25,.22,'metal');}
         // Broken edge bars and a fallen span below explain the missing deck.
         if(i<c.platforms.length-1){const next=c.platforms[i+1];for(const z of [e+1,e+2.5,f-1])cylinder([b-.3,y-.15,z],[b+.65,y-.4,z+.2],.035,'rust');box((b+next[0])/2,DECK-10.8,(e+f)/2,next[0]-b,.35,f-e,'concrete');}
         for(const z of [e,f]){cylinder([a+.6,y+1,z],[Math.min(b-.6,a+2.5),y+.65,z],.045,'rust');cylinder([a+.6,y,z],[a+.6,y+1,z],.04,'metal');}
         box(mid,y+.015,f-.6,b-a-.8,.025,.07,'rust');
       }
-      if(c.id==='low'){label('LOCAL FIELD / 0.22 G',x0+.1,DECK+3,doorZ,{size:.4,face:Math.PI/2,color:'#a7b3b0'});label('SUPPLY RETURN',136,DECK+7,-105.8,{size:.5,color:'#a7b3b0'});}
       for(const [i,p] of (c.bridges||[]).entries()){const [a,b,e,f,y]=p;const material=new THREE.MeshStandardMaterial({color:'#75e6dc',emissive:'#3a9f99',emissiveIntensity:.6,transparent:true,opacity:.72,roughness:.25,side:THREE.DoubleSide});const mesh=new THREE.Mesh(new THREE.BoxGeometry(b-a,.13,f-e),material);mesh.position.set((a+b)/2,y-.07,(e+f)/2);root.add(mesh);bridges.push({mesh,index:i});for(const z of [e,f]){box((a+b)/2,y-.15,z,b-a,.04,.035,'metal');for(const x of [a,b]){box(x,y-.1,z,.5,.5,.6,'metal');box(x,y+.17,z,.18,.05,.3,'cyan');}}}
     } else if(c.kind==='zero-g') {
       label('PUMP WELL / FIELD FAULT',cx,DECK+16,z0+.3,{size:1.3,color:'#9adfea'});

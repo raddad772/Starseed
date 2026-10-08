@@ -30,7 +30,7 @@ test('visible polygon walls and bridge rails leave headroom on the actual walkin
   const s=new UnderstructureSimulation(generateUnderstructure('SUMP-07')),surfaces=[],material=new THREE.MeshBasicMaterial({side:THREE.DoubleSide});
   const addGeometry=g=>{g.computeBoundingBox();const mesh=new THREE.Mesh(g,material);mesh.updateMatrixWorld();surfaces.push(mesh);};
   const cylinder=(a,b,r,m,n=8)=>{const delta=new THREE.Vector3(...b).sub(new THREE.Vector3(...a)),g=new THREE.CylinderGeometry(r,r,delta.length(),n);g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),delta.normalize()));g.translate(...a.map((v,i)=>(v+b[i])/2));addGeometry(g);};
-  buildObliqueSector(s.plan,{addGeometry,cylinder,box:()=>{},lamp:()=>{},label:()=>{}});
+  buildObliqueSector(s.plan,{addGeometry,cylinder,pipe:(p,r)=>p.slice(1).forEach((b,i)=>cylinder(p[i],b,r)),box:()=>{},lamp:()=>{},label:()=>{}});
   descend(s);walkRoute(s,-56,40);const path=[];for(const r of s.plan.oblique.rooms)path.push(...walkOblique(s,...r.center));path.push(...walkOblique(s,-56,40));
   const ray=new THREE.Raycaster(new THREE.Vector3(),new THREE.Vector3(0,1,0),0,1.7);
   for(const [x,z] of path){ray.ray.origin.set(x,DECK+.2,z);const candidates=surfaces.filter(m=>{const b=m.geometry.boundingBox;return x>=b.min.x&&x<=b.max.x&&z>=b.min.z&&z<=b.max.z&&b.max.y>DECK+.2&&b.min.y<DECK+1.9;});assert.equal(ray.intersectObjects(candidates,false).length,0,`Rendered obstruction at ${x},${z}`);}

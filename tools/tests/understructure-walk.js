@@ -1,4 +1,4 @@
-import { DECK, LIFT_SECONDS } from '../../src/understructure/layout.js';
+import { DECK, LIFT_SECONDS, ACCESS } from '../../src/understructure/layout.js';
 // Shared by the CPU suite and finite WebGPU fixture. Only normal movement and
 // look inputs drive the character; routes never assign a new player position.
 export function walkLine(sim, x, z) {
@@ -30,14 +30,15 @@ export function flyTo(sim,target) {
 }
 
 export function walkRoute(sim,x,z) {
-  const k=(x,z)=>`${x},${z}`,start=[Math.round(sim.pos[0]/4)*4,Math.round(sim.pos[2]/4)*4];
+  const k=(x,z)=>`${x},${z}`,start=[Math.round(sim.pos[0]/2)*2,Math.round(sim.pos[2]/2)*2];
   const queue=[start],parents=new Map([[k(...start),null]]),target=k(x,z);
+  const cache=sim.walkTestCache??=new Map(),support=(x,z)=>{const id=[x,z,sim.pos[1],sim.bridgeStage].join(',');if(!cache.has(id))cache.set(id,sim.collision.canStand(x,z,sim.state,.5));return cache.get(id);};
   for(let i=0;i<queue.length&&!parents.has(target);i++) {
     const [a,b]=queue[i];
-    for(const [dx,dz] of [[4,0],[-4,0],[0,4],[0,-4]]) {
+    for(const [dx,dz] of [[2,0],[-2,0],[0,2],[0,-2]]) {
       const nx=a+dx,nz=b+dz,id=k(nx,nz);
       if(Math.abs(nx)>80||nz>60||nz< -288||parents.has(id))continue;
-      if(!sim.collision.canStand(nx,nz,sim.state,.42))continue;
+      if(Array.from({length:10},(_,i)=>(i+1)/10).some(t=>!support(a+dx*t,b+dz*t)))continue;
       parents.set(id,k(a,b));queue.push([nx,nz]);
     }
   }
@@ -58,7 +59,9 @@ export function walkOblique(sim,x,z){
   const route=[];for(let id=target;id!==null;id=parents.get(id))route.push(id.split(',').map(Number));
   route.reverse();for(const p of route)walkLine(sim,...p);return route;
 }
-export function descend(sim){walkLine(sim,0,4);sim.interact();advance(sim,1.5);walkLine(sim,0,0);sim.interact();advance(sim,LIFT_SECONDS+.1);walkLine(sim,0,-4);}
+export function enterBunker(sim){walkLine(sim,0,ACCESS.hatchZ+1.6);if(!sim.hatchOpen){sim.interact();advance(sim,1.5);}sim.interact();advance(sim,ACCESS.climbSeconds+.1);}
+export function ascendSurface(sim){walkLine(sim,0,ACCESS.hatchZ);sim.interact();advance(sim,ACCESS.climbSeconds+.1);}
+export function descend(sim){enterBunker(sim);walkLine(sim,0,0);sim.interact();advance(sim,LIFT_SECONDS+.1);walkLine(sim,0,-4);}
 export function solvePuzzles(sim){
   for(const p of sim.plan.puzzles){
     if(p.kind==='relay'){
@@ -92,8 +95,9 @@ export function retrieveSiteRecord(sim){climbCollection(sim);walkLine(sim,...[si
 
 // Jump with ordinary input, steer to the ledge in flight, then wait for landing.
 export function jumpTo(sim,x,z){
- const recovery=sim.recoveries;sim.step(1/60);sim.step(1/60,{vertical:1});
- for(let i=0;i<500;i++){const dx=x-sim.pos[0],dz=z-sim.pos[2],distance=Math.hypot(dx,dz);sim.yaw=Math.atan2(-dx,-dz);sim.step(1/60,{forward:distance>.025?Math.min(1,distance/(5.5/60)):0,fast:true});
+ const recovery=sim.recoveries;sim.step(1/60);sim.yaw=Math.atan2(-(x-sim.pos[0]),-(z-sim.pos[2]));sim.step(1/60,{vertical:1,forward:1,fast:true});
+ for(let i=0;i<500;i++){const dx=x-sim.pos[0],dz=z-sim.pos[2],distance=Math.hypot(dx,dz),desired=[dx,dz].map(v=>Math.max(-5.5,Math.min(5.5,v*1.8))),command=desired.map((v,n)=>Math.max(-1,Math.min(1,v/5.5)));
+ sim.yaw=0;sim.step(1/60,{strafe:command[0],forward:-command[1],fast:true,brake:distance<.03});
  if(sim.recoveries!==recovery)throw Error('Jump fell short of '+x+','+z);
  if(distance<.05&&sim.grounded&&Math.abs(sim.velocity[1])<.001){sim.step(.02);return;}}
  throw Error('Jump did not land '+[x,z]+' at '+sim.pos);

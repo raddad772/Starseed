@@ -320,3 +320,18 @@ saved progress and split-screen without WebGPU errors. No rendering-quality sett
 The non-planet scene-light block is now cached per view and released with that view. Previously
 its fresh per-frame key retained a new GPU lighting buffer each frame. The finite integration
 fixture asserts unchanged binding counts across 30 additional local frames and cleanup on exit.
+
+### Local survey fixture shadows (2026-10-08)
+
+`ClusteredLights` now owns an opt-in `LocalShadows` depth pass. Survey scenes request it through
+`scene.userData.localShadows`; normal outdoor scenes clear the slot mapping and retain existing
+lighting. Four 512² depth-array layers render visible opaque ordinary meshes from spotlight
+projections in the same frame. The cluster light record uses its reserved component for a slot;
+deferred and standard forward lighting share the comparison code. Depth maps use forward depth
+locally, with explicit clip conversion, independently of the main reversed-Z G-buffer. No readback
+or previous-frame visibility gate is used. Transparent and instanced details are not casters yet.
+Geometry-owned cached buffers release on dispose; all pass resources release with the renderer.
+
+Validation: 7 existing renderer CPU checks, finite survey native shadow on/off image comparison,
+and integrated local/outdoor split-screen plus return/resource-lifecycle tests pass. This is bounded
+interior lighting support, not full point-light cubemap shadows or a measured performance claim.

@@ -135,7 +135,7 @@ export class SurveySession {
     this.player.jetOn=false; // Sector locomotion never forwards suit-thrust commands.
     if(this.hud.panel){this.hud.mapView?.input(dt,input,mouse);return;}
     if(input.hit('KeyT')) {
-      if(sim.pos[1]>-2&&!sim.moving){this.leave();return;}
+      if(sim.pos[1]>-2&&!sim.moving&&!sim.climbing){this.leave();return;}
       if(sim.teleport()){this.leave();return;}
       this.hud.toast('Surface return unlocks when the site record is recovered.');
     }
@@ -146,7 +146,7 @@ export class SurveySession {
     sim.step(dt,{forward:input.axis('KeyS','KeyW'),strafe:input.axis('KeyA','KeyD'),vertical:input.axis('KeyC','Space')-(pad&&input.down('KeyP')?1:0),brake:input.down('KeyR')||input.down('KeyX')||(pad&&input.down('KeyH')),turn:input.axis('ArrowRight','ArrowLeft'),look:input.axis('ArrowDown','ArrowUp'),fast:input.down('ShiftLeft')});
     if(sim.rawData!==this.lastBankedData)this.save();
     if(sim.pos[1]<-2)this.wasUnderground=true;
-    if(this.wasUnderground&&sim.pos[1]>=-.01&&!sim.moving){this.leave();return;}
+    if(this.wasUnderground&&sim.pos[1]>=-.01&&!sim.moving&&!sim.climbing){this.leave();return;}
     this.lastSave+=dt;if(this.lastSave>10){this.lastSave=0;this.save();}
   }
   render(first,dt) {

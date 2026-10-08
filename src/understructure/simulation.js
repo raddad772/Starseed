@@ -1,3 +1,5 @@
+import { serviceAt } from './service.js';
+import { ACCESS,inBunker } from './access.js';
 import { insidePolygon } from './oblique.js';
 import { DECK, TILE, LIFT_SECONDS, key, makeCollision, chamberAt } from './layout.js';
 import { creditedData } from './recovery.js';
@@ -10,8 +12,8 @@ export class UnderstructureSimulation {
     if(!saved||typeof saved!=='object')saved={};
     const list=name=>Array.isArray(saved[name])?saved[name]:[];
     this.plan=plan;this.collision=makeCollision(plan);this.pos=[...plan.spawn];this.yaw=0;this.pitch=-.3;
-    this.hatchAmount=0;this.hatchOpen=false;this.liftY=0;this.liftTarget=0;this.riding=false;
-    this.liftStartY=0;this.liftElapsed=0;
+    this.hatchAmount=0;this.hatchOpen=false;this.liftY=ACCESS.top;this.liftTarget=ACCESS.top;this.riding=false;
+    this.liftStartY=ACCESS.top;this.liftElapsed=0;this.climbing=null;this.packDisabledAt=-100;this.previousGravity=1;this.gravityAlert='';this.gravityAlertAt=-100;
     this.flashlight=true;this.time=0;this.discovered=new Set(list('discovered').filter(x=>typeof x==='string'));
     this.recorded=new Set(list('recorded').filter(x=>plan.samples.some(s=>s.id===x)));
     this.beacons=list('beacons').filter(p=>Array.isArray(p)&&p.length===3&&p.every(Number.isFinite)).slice(-40);
@@ -20,7 +22,7 @@ export class UnderstructureSimulation {
     this.fragments=new Set(list('fragments').filter(id=>plan.fragments.some(f=>f.id===id)));
     this.fragmentsSeen=new Set(list('fragmentsSeen').filter(id=>plan.fragments.some(f=>f.id===id)));
     this.campaignTotal=0;this.scanAt=-100;
-    this.sectorsSeen=new Set(list('sectorsSeen'));this.lookoutSeen=!!saved.lookoutSeen;this.reservoirSeen=!!saved.reservoirSeen;this.returned=!!saved.returned&&this.exitReady;
+    this.sectorsSeen=new Set(list('sectorsSeen'));this.serviceSeen=new Set(list('serviceSeen'));this.bunkerSeen=!!saved.bunkerSeen;this.lookoutSeen=!!saved.lookoutSeen;this.reservoirSeen=!!saved.reservoirSeen;this.returned=!!saved.returned&&this.exitReady;
     this.chambersSeen=new Set(list('chambersSeen').filter(id=>plan.chambers.some(c=>c.id===id)));
     this.velocity=[0,0,0];this.flowPaused=false;this.flowTime=0;this.resonanceAt=-100;
     this.carryingCell=!!saved.carryingCell;this.foldActive=false;this.foldCrossed=false;this.foldCooldown=0;this.foldCount=0;
@@ -32,7 +34,8 @@ export class UnderstructureSimulation {
   get onPlatform(){return Math.abs(this.pos[0])<this.plan.access.halfWidth-.44&&Math.abs(this.pos[2])<this.plan.access.halfDepth-.44&&Math.abs(this.pos[1]-this.liftY)<.5;}
   get chamber(){return this.pos[1]<-2?chamberAt(this.plan,this.pos[0],this.pos[2]):null;}
   get zeroG(){return this.chamber?.kind==='zero-g';}
-  get jetpackEnabled(){return false;}
+  get jetpackEnabled(){return this.pos[1]>-.6;}
+  get inBunker(){return inBunker(this.pos)&&!this.moving;}
   get gravity(){return this.zeroG?0:this.chamber?.gravity??1;}
   get tetherActive(){return this.zeroG;}
   get rawData(){return (this.dataRecovered?this.plan.finalCache.value:0)+this.plan.fragments.filter(f=>this.fragments.has(f.id)).reduce((n,f)=>n+f.value,0);}
@@ -42,12 +45,14 @@ export class UnderstructureSimulation {
   get exitReady(){return this.dataRecovered;}
   get machinery(){return this.plan.themes.includes('time')?machineryClock(this.time):{time:this.time,state:'STEADY'};}
   get phase(){const p=this.plan.puzzles.find(p=>p.id==='time');return p?phaseReading(this.time,p):null;}
-  get zone(){return this.pos[1]>-2?'SURFACE ACCESS':this.moving?'ACCESS SHAFT':this.chamber?.name||this.plan.oblique.rooms.find(r=>insidePolygon(r.polygon,this.pos[0],this.pos[2]))?.name|| (this.pos[2]<-286?'FAULT LOOKOUT / EXTENT UNKNOWN':this.pos[2]<-122?this.plan.generator.name:`SERVICE STRATUM / −${Math.abs(DECK)}`);}
+  get zone(){return this.moving?'ACCESS SHAFT':this.inBunker?'ACCESS BUNKER':this.pos[1]>-.6?'SURFACE ACCESS':this.chamber?.name||serviceAt(this.plan.service,this.pos[0],this.pos[2])?.name||this.plan.oblique.rooms.find(r=>insidePolygon(r.polygon,this.pos[0],this.pos[2]))?.name|| (this.pos[2]<-286?'FAULT LOOKOUT / EXTENT UNKNOWN':this.pos[2]<-122?this.plan.generator.name:`SERVICE STRATUM / −${Math.abs(DECK)}`);}
   offer(){
     const [x,y,z]=this.pos;
-    if(y>-2&&Math.hypot(x,z)<4.6&&!this.hatchOpen)return {type:'hatch',text:'Open access hatch'};
-    if(this.onPlatform&&!this.moving&&this.hatchAmount>.98)return this.liftY<-2&&!this.exitReady?{type:'offline',text:'Transit offline · retrieve the site record'}:{type:'lift',text:this.liftY>-2?'Descend to service level':'Return to the surface'};
-    if(!this.moving&&Math.abs(y-DECK)<.4&&Math.hypot(x,z+3.6)<2.6&&this.liftY>-2)return {type:'call',text:'Call access lift'};
+    if(this.climbing)return null;
+    if(y>-.6&&Math.hypot(x,z-ACCESS.hatchZ)<4.6&&!this.hatchOpen)return {type:'hatch',text:'Open access hatch'};
+    if(this.hatchAmount>.98&&Math.hypot(x,z-ACCESS.hatchZ)<2.3&&(y>-.6||this.inBunker))return {type:'ladder',text:y>-.6?'Climb down into access bunker':'Climb to the surface'};
+    if(this.onPlatform&&!this.moving)return this.liftY<ACCESS.top-1&&!this.exitReady?{type:'offline',text:'Transit offline · retrieve the site record'}:{type:'lift',text:this.inBunker?'Descend to service level':'Return to access bunker'};
+    if(!this.moving&&Math.abs(y-DECK)<.4&&Math.hypot(x,z+3.6)<2.6&&this.liftY>ACCESS.top-1)return {type:'call',text:'Call access lift'};
     if(this.moving)return null;
     const near=p=>Math.hypot(x-p[0],y-p[1],z-p[2])<2.5;
     for(const f of this.plan.fragments)if(!f.automatic&&!this.fragments.has(f.id)&&near(f.pos))return {type:'fragment',id:f.id,text:`Recover ${f.value===1?'crawler log':'memory fragment'} · +${f.value}%`};
@@ -56,7 +61,7 @@ export class UnderstructureSimulation {
     for(const p of this.plan.puzzles) {
       if(p.kind==='relay'&&!this.solved.has(p.id)){
         if(!this.carryingCell&&near(p.source))return {type:'cell',text:'Take charged return cell'};
-        if(near(p.socket))return {type:'socket',text:this.carryingCell?'Connect return cell':'Return socket · retrieve the cell from the Null Well'};
+        if(near(p.socket))return {type:'socket',text:this.carryingCell?'Connect return cell':'Empty power socket · needs the cell from the zero-gravity well'};
       }
       if(p.kind==='phase'&&!this.solved.has(p.id)&&near(p.pos))return {type:'phase',text:this.phase.ready?'Lock aligned transit bands':'Press when the sweep enters the lit band'};
       if(p.kind==='fold')for(let i=0;i<p.gates.length;i++)if(near(p.gates[i].pos))return {type:'fold',gate:i,text:this.foldCrossed&&!this.solved.has('space')?'Reconnect the far return terminal':this.foldActive?'Cross the marked threshold':'Link the folded return line'};
@@ -77,13 +82,14 @@ export class UnderstructureSimulation {
   interact(){
     const offer=this.offer();if(!offer)return null;
     if(offer.type==='hatch'){this.hatchOpen=true;return 'The access circuit still has power.';}
-    if(offer.type==='lift'){this.riding=true;this._startLift(this.liftY>-2?DECK:0);return this.liftTarget===0?'Ascending · surface access':'Express descent · eight levels below';}
+    if(offer.type==='ladder'){this.climbing={from:[...this.pos],down:this.pos[1]>-.6,elapsed:0};return this.climbing.down?'Descending access ladder':'Climbing to the surface';}
+    if(offer.type==='lift'){this.riding=true;this._startLift(this.inBunker?DECK:ACCESS.top);return this.liftTarget===ACCESS.top?'Ascending · access bunker':'Express descent · deep service level';}
     if(offer.type==='call'){this._startLift(DECK);return 'Access lift called.';}
     if(offer.type==='offline')return 'The express lift used reserve power. Recover the site record to authorise surface return; the local circuits open its repository.';
     if(offer.type==='fragment'){const f=this.plan.fragments.find(f=>f.id===offer.id),before=this.dataCredit;this.fragments.add(f.id);this.fragmentsSeen.add(f.id);return `Fragment recovered · +${f.value}% · ${this.rawData}% recovered · +${this.dataCredit-before} credited data${this.rawData>100?' (excess ×3)':''}`;}
     if(offer.type==='archive_data'){this.recorded.add('reservoir');if(!this.archiveReady)return 'The archive bus has lost its return path. Repair the local equipment circuits to read this cache.';this.dataRecovered=true;return 'Central record recovered · +90%. Surface return is online. More fragments are optional; recovery above 100% earns triple credit.';}
     if(offer.type==='cell'){this.carryingCell=true;this.recorded.add('null');return 'Return cell acquired. The fractured return gallery has an empty supply socket beyond its broken maintenance deck. Space jumps across the surviving slabs.';}
-    if(offer.type==='socket'){if(!this.carryingCell)return 'A live supply cell is stranded in the pump well above. The chamber tether uses Space to rise, C to descend and R to brake.';this.solved.add('gravity');this.carryingCell=false;return this._circuitMessage();}
+    if(offer.type==='socket'){if(!this.carryingCell)return 'This is an empty power socket. Retrieve the charged cell from the separate zero-gravity pump well, then bring it back here.';this.solved.add('gravity');this.carryingCell=false;return this._circuitMessage();}
     if(offer.type==='phase'){if(!this.phase.ready)return 'Not aligned yet. The bright band marks the safe interval; try again whenever the sweep overlaps it.';this.solved.add('time');this.recorded.add('resonance');this.resonanceAt=this.time;return this._circuitMessage();}
     if(offer.type==='fold'){if(this.foldCrossed&&!this.solved.has('space')){this.solved.add('space');return this._circuitMessage();}this.foldActive=true;return 'Matched thresholds linked. Walk through the dark frame, then reconnect the terminal on the other side.';}
     if(offer.type==='bridge'){if(offer.index===2){if(this.bridgeStage<2)return 'Activate both bridge relays first.';this.solved.add('light');return this._circuitMessage();}if(this.bridgeStage>=offer.index){this.bridgeStage=Math.max(this.bridgeStage,offer.index+1);return 'Light bridge latched. It will stay solid; cross to the next relay.';}return 'Activate the previous relay first.';}
@@ -95,15 +101,20 @@ export class UnderstructureSimulation {
   }
   _circuitMessage(){return this.archiveReady?'Archive bus restored. Follow the collection-hall service galleries to the upper backup rack.':`Repository circuit restored · ${this.solved.size} / ${this.plan.puzzles.length}`;}
   _startLift(y){this.liftStartY=this.liftY;this.liftElapsed=0;this.liftTarget=y;}
-  teleport(){if(!this.exitReady||this.pos[1]>-2)return false;this.pos=[...this.plan.spawn];this.velocity=[0,0,0];this.liftY=this.liftTarget=0;this.riding=false;this.returned=true;return true;}
+  teleport(){if(!this.exitReady||this.pos[1]>-2)return false;this.pos=[...this.plan.spawn];this.velocity=[0,0,0];this.liftY=this.liftTarget=ACCESS.top;this.riding=false;this.returned=true;return true;}
   step(dt,input={}) {
     // Substeps keep the capsule from crossing walls even after a slow rendered frame.
     dt=Math.min(Math.max(dt,0),.25);
+    const pack=this.jetpackEnabled;
     for(let t=0;t<dt;t+=1/120)this._step(Math.min(1/120,dt-t),input);
+    if(pack&&!this.jetpackEnabled)this.packDisabledAt=this.time;
+    if(this.gravity!==this.previousGravity){this.gravityAlert=this.gravity===1?'Regular planetary body gravity restored.':this.gravity===0?'Warning: zero gravity detected.':this.gravity<1?'Warning: reduced gravity detected.':'Warning: increased gravity detected.';this.gravityAlertAt=this.time;this.previousGravity=this.gravity;}
     for(const f of this.plan.fragments){const distance=Math.hypot(...f.pos.map((v,i)=>v-this.pos[i]));if(distance<9)this.fragmentsSeen.add(f.id);if(f.automatic&&distance<3&&!this.fragments.has(f.id)){this.fragments.add(f.id);this.scanAt=this.time;}}
+    if(this.inBunker)this.bunkerSeen=true;
     if(this.chamber)this.chambersSeen.add(this.chamber.id);
     const last=this.route.at(-1);if(this.pos[1]<-2&&(!last||Math.hypot(...this.pos.map((v,i)=>v-last[i]))>3)){this.route.push([...this.pos]);if(this.route.length>350)this.route.shift();}
-    if(this.pos[1]<-2){
+    if(this.pos[1]<-30&&!this.moving){
+      for(const r of this.plan.service.regions)if(insidePolygon(r.polygon,this.pos[0],this.pos[2]))this.serviceSeen.add(r.id);
       for(const t of this.plan.tiles)if(Math.hypot(this.pos[0]-t.x*TILE,this.pos[2]-t.z*TILE)<11)this.discovered.add(key(t.x,t.z));
       if(this.pos[2]<-126)this.reservoirSeen=true;
       if(this.pos[2]<-286)this.lookoutSeen=true;
@@ -113,15 +124,21 @@ export class UnderstructureSimulation {
   }
   _step(dt,input) {
     this.time+=dt;this.foldCooldown=Math.max(0,this.foldCooldown-dt);if(!this.flowPaused)this.flowTime=this.machinery.time;this.hatchAmount=Math.min(1,this.hatchAmount+(this.hatchOpen?dt*.7:0));
+    if(this.climbing){
+      const c=this.climbing;c.elapsed+=dt;const t=Math.min(1,c.elapsed/ACCESS.climbSeconds),rise=Math.max(0,Math.min(1,(t-.2)/.6)),smooth=rise*rise*(3-2*rise);
+      this.pos=[c.from[0]*(1-Math.min(1,t/.2)),c.down?ACCESS.top*smooth:ACCESS.top*(1-smooth),t<.2?c.from[2]+(ACCESS.hatchZ-c.from[2])*t/.2:ACCESS.hatchZ+(!c.down?Math.max(0,(t-.8)/.2)*1.6:0)];
+      if(t===1)this.climbing=null;return;
+    }
     if(this.moving){this.liftElapsed+=dt;const p=Math.min(1,this.liftElapsed/LIFT_SECONDS),ease=p*p*(3-2*p);this.liftY=this.liftStartY+(this.liftTarget-this.liftStartY)*ease;if(p===1||Math.abs(this.liftY-this.liftTarget)<.001)this.liftY=this.liftTarget;if(this.riding)this.pos[1]=this.liftY;}
     else this.riding=false;
     this.yaw+=(input.turn||0)*dt*1.5;this.pitch=Math.max(-1.4,Math.min(1.4,this.pitch+(input.look||0)*dt));
     const jump=(input.vertical||0)>0&&!this.jumpHeld;this.jumpHeld=(input.vertical||0)>0;
     if(this.riding)return;
     if(this.zeroG){this._float(dt,input);return;}
-    if(this.chamber?.kind==='platforms'){this._traverse(dt,input,jump);return;}
-    let f=input.forward||0,s=input.strafe||0;const len=Math.hypot(f,s);if(!len)return;f/=Math.max(1,len);s/=Math.max(1,len);
+    if(this.chamber?.kind==='platforms'||jump||!this.grounded){this._traverse(dt,input,jump);return;}
+    let f=input.forward||0,s=input.strafe||0;const len=Math.hypot(f,s);if(!len){this.velocity[0]=this.velocity[2]=0;return;}f/=Math.max(1,len);s/=Math.max(1,len);
     const speed=(input.fast?5.5:3.1)/Math.sqrt(Math.max(1,this.gravity)),dx=(-Math.sin(this.yaw)*f+Math.cos(this.yaw)*s)*speed*dt,dz=(-Math.cos(this.yaw)*f-Math.sin(this.yaw)*s)*speed*dt;
+    this.velocity[0]=dx/dt;this.velocity[2]=dz/dt;
     const before=[...this.pos];
     for(const [axis,delta] of [[0,dx],[2,dz]]){
       const x=this.pos[0]+(axis===0?delta:0),z=this.pos[2]+(axis===2?delta:0);
@@ -132,17 +149,30 @@ export class UnderstructureSimulation {
   }
   recover(){const room=this.chamber;if(room?.kind!=='platforms')return false;const safe=this.safeLedge?.room===room.id?this.safeLedge.pos:[room.door[0]+4,DECK,room.door[1]];this.pos=[...safe];this.velocity=[0,0,0];this.grounded=true;this.recoveries++;this.recoveryAt=this.time;return true;}
   _traverse(dt,input,jump){
-    const room=this.chamber;const support=this.collision.floorAt(this.pos[0],this.pos[2],this.state);
+    const room=this.chamber,platforms=room?.kind==='platforms';
+    const support=this.collision.floorBelow(this.pos[0],this.pos[2],this.pos[1],this.state);
     this.grounded=support!==null&&Math.abs(this.pos[1]-support)<.04&&this.velocity[1]<=0;
-    if(this.grounded){this.pos[1]=support;this.velocity[1]=0;if(this.collision.canStand(this.pos[0],this.pos[2],this.state,.7))this.safeLedge={room:room.id,pos:[...this.pos]};if(jump)this.velocity[1]=4.6;}
-    let f=input.forward||0,s=input.strafe||0,n=Math.max(1,Math.hypot(f,s));f/=n;s/=n;const speed=input.fast?5.5:3.1;
-    for(const [axis,delta] of [[0,(-Math.sin(this.yaw)*f+Math.cos(this.yaw)*s)*speed*dt],[2,(-Math.cos(this.yaw)*f-Math.sin(this.yaw)*s)*speed*dt]]){const p=[...this.pos];p[axis]+=delta;if(this.collision.canTraverse(...p,room)){const floor=this.collision.floorAt(p[0],p[2],{...this.state,y:room.ceiling});if(floor!==null&&floor>this.pos[1]+.35)continue;this.pos[axis]=p[axis];}}
-    const oldY=this.pos[1];this.velocity[1]-=9.81*room.gravity*dt;const nextY=oldY+this.velocity[1]*dt;
-    const floor=this.collision.floorAt(this.pos[0],this.pos[2],{...this.state,y:oldY});
+    if(this.grounded){this.pos[1]=support;this.velocity[1]=0;if(platforms&&this.collision.canStand(this.pos[0],this.pos[2],this.state,.7))this.safeLedge={room:room.id,pos:[...this.pos]};}
+    let f=input.forward||0,s=input.strafe||0,n=Math.max(1,Math.hypot(f,s));f/=n;s/=n;const speed=(input.fast?5.5:3.1)/Math.sqrt(Math.max(1,this.gravity));
+    const desired=[(-Math.sin(this.yaw)*f+Math.cos(this.yaw)*s)*speed,(-Math.cos(this.yaw)*f-Math.sin(this.yaw)*s)*speed];
+    for(const [i,axis] of [0,2].entries()){
+      if(this.grounded)this.velocity[axis]=desired[i];
+      else if(f||s||input.brake){const target=input.brake?0:desired[i];this.velocity[axis]+=Math.max(-5.5*dt,Math.min(5.5*dt,target-this.velocity[axis]));}
+      else this.velocity[axis]*=Math.exp(-.06*dt);
+    }
+    if(this.grounded&&jump){this.velocity[1]=4.6;this.grounded=false;}
+    const before=[...this.pos];
+    for(const axis of [0,2]){const p=[...this.pos];p[axis]+=this.velocity[axis]*dt;
+      const allowed=platforms?this.collision.canTraverse(...p,room):this.collision.canJumpMove(...p,this.state);
+      const floor=platforms?this.collision.floorAt(p[0],p[2],{...this.state,y:room.ceiling}):null;
+      if(allowed&&(floor===null||floor<=this.pos[1]+.35))this.pos[axis]=p[axis];else this.velocity[axis]=0;
+    }
+    const oldY=this.pos[1];this.velocity[1]-=9.81*this.gravity*dt;const nextY=oldY+this.velocity[1]*dt;
+    const floor=this.collision.floorBelow(this.pos[0],this.pos[2],oldY,this.state);
     if(this.velocity[1]<=0&&floor!==null&&oldY>=floor-.04&&nextY<=floor){this.pos[1]=floor;this.velocity[1]=0;this.grounded=true;}else{this.pos[1]=nextY;this.grounded=false;}
-    if(this.pos[1]+1.9>room.ceiling){this.pos[1]=room.ceiling-1.9;this.velocity[1]=Math.min(0,this.velocity[1]);}
-    if(this.pos[1]<DECK-9)this.recover();
-    if(!this.chamber||this.chamber.id!==room.id){this.pos[1]=DECK;this.velocity=[0,0,0];this.grounded=true;}
+    const ceiling=this.collision.ceilingAt(...this.pos);if(this.pos[1]+1.9>ceiling){this.pos[1]=ceiling-1.9;this.velocity[1]=Math.min(0,this.velocity[1]);}
+    if(platforms&&this.pos[1]<DECK-9)this.recover();
+    this._crossFold(before);
   }
   _crossFold(before) {
     const p=this.plan.puzzles.find(p=>p.id==='space');if(!p||!this.foldActive||this.foldCooldown>0)return;
@@ -175,5 +205,5 @@ export class UnderstructureSimulation {
     if(this.beacons.some(p=>Math.hypot(p[0]-this.pos[0],p[1]-this.pos[1],p[2]-this.pos[2])<2))return false;
     this.beacons.push([...this.pos]);return true;
   }
-  save(){return {version:4,sectorsSeen:[...this.sectorsSeen],lookoutSeen:this.lookoutSeen,fragments:[...this.fragments],fragmentsSeen:[...this.fragmentsSeen],themes:[...this.plan.themes],bridgeStage:this.bridgeStage,pressure:this.pressure,echoStep:this.echoStep,discovered:[...this.discovered],recorded:[...this.recorded],beacons:this.beacons,reservoirSeen:this.reservoirSeen,returned:this.returned,chambersSeen:[...this.chambersSeen],solved:[...this.solved],carryingCell:this.carryingCell,dataRecovered:this.dataRecovered};}
+  save(){return {version:5,bunkerSeen:this.bunkerSeen,serviceSeen:[...this.serviceSeen],sectorsSeen:[...this.sectorsSeen],lookoutSeen:this.lookoutSeen,fragments:[...this.fragments],fragmentsSeen:[...this.fragmentsSeen],themes:[...this.plan.themes],bridgeStage:this.bridgeStage,pressure:this.pressure,echoStep:this.echoStep,discovered:[...this.discovered],recorded:[...this.recorded],beacons:this.beacons,reservoirSeen:this.reservoirSeen,returned:this.returned,chambersSeen:[...this.chambersSeen],solved:[...this.solved],carryingCell:this.carryingCell,dataRecovered:this.dataRecovered};}
 }
