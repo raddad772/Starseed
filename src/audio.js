@@ -60,6 +60,12 @@ export class AudioEngine {
     if (!this.ready) return;
     const g = this.game, s = g.focus, p = g.player;
     if (this.ctx.state === 'suspended' && !g.paused) this.ctx.resume();
+    if(p.understructure){
+      // The local survey shares this master/context, including pause handling.
+      // Exterior flight and surface wind must not leak into the sealed interior.
+      for(const voice of [this.main,this.belly,this.wind,this.jet,this.rcs])this.set(voice.g,0);
+      this.set(this.mainHumG,0);this.set(this.ftlG,0);this.lastFoot=p.footstep;return;
+    }
     const inShip = p.aboard;
     const nearShip = inShip || (g.camPos.distanceTo(s.getWorldPos(this._v || (this._v = s.pos.clone()))) < 400);
     const air = Math.min(1, (inShip ? s.env.pressure : p.env.pressure) * 1.2);

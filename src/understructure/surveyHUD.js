@@ -13,6 +13,9 @@ export class SurveyHUD {
     this.actions=document.createElement('div');this.actions.style.cssText='position:absolute;bottom:24px;left:24px;right:24px;white-space:pre-line;background:#091b20b8;padding:12px 18px';
     this.sheet=document.createElement('div');this.sheet.style.cssText='position:absolute;inset:155px 24px 135px;overflow:auto;background:#0b2026f0;padding:20px;pointer-events:auto';this.sheet.hidden=true;
     this.el.append(this.status,this.sheet,this.actions);document.getElementById('hud').append(this.el);
+    this.soundButton=document.createElement('button');this.soundButton.style.cssText='position:absolute;right:24px;top:24px;pointer-events:auto';
+    const updateSound=()=>{this.soundButton.textContent=session.sound.enabled?'Sound on':'Sound off';this.soundButton.setAttribute('aria-pressed',String(session.sound.enabled));};
+    this.soundButton.onclick=()=>{session.sound.setEnabled(!session.sound.enabled);updateSound();};updateSound();this.el.append(this.soundButton);
   }
   toast(text){if(text){this.notice=text;this.noticeUntil=performance.now()+5000;}}
   toggle(panel){this.mapView?.dispose();this.mapView=null;this.panel=this.panel===panel?null:panel;if(this.panel)document.exitPointerLock?.();this.sheet.hidden=!this.panel;this.sheet.replaceChildren();if(this.panel==='map'){this.map=document.createElement('canvas');this.map.width=640;this.map.height=600;this.map.style.cssText='max-width:100%;max-height:100%;object-fit:contain';this.sheet.append(this.map);this.mapView=new SurveyMap(this.map);this.map.focus();}if(this.panel==='notes')this.notes();}

@@ -8,12 +8,16 @@ import { SurveyMap } from './surveyMap.js';
 import { surveyObjective,fieldStatus,recoveryStatus,mysteryStatus,scanMessage } from './guidance.js';
 import { bankRecovery,mysteryEntries } from './recovery.js';
 import { THEME_NAMES,THEME_PROFILES } from './anomalies.js';
+import { SurveySound } from './sound.js';
 
 const $=id=>document.getElementById(id),params=new URLSearchParams(location.search);
 const plan=generateUnderstructure(params.get('seed')||'SUMP-07',params.get('theme')||'auto',params.get('environment')==='barren'?surveyEnvironment({}):undefined),saveKey=`starseed.understructure.${params.has('test')?'test.':''}v2.${plan.seed}.${plan.themes.join('-')}`;
 let saved={};try{saved=JSON.parse(localStorage.getItem(saveKey)||'{}');}catch{}
 if(params.has('test')&&params.has('reset'))saved={};
 const sim=new UnderstructureSimulation(plan,saved),visual=buildScene(plan),canvas=$('view');
+const sound=new SurveySound(plan);
+const updateSoundButton=()=>{$('sound').textContent=sound.enabled?'Sound on':'Sound off';$('sound').setAttribute('aria-pressed',String(sound.enabled));};
+$('sound').onclick=()=>{sound.setEnabled(!sound.enabled);updateSoundButton();};updateSoundButton();
 const mapView=new SurveyMap($('map'));
 for(const profile of THEME_PROFILES){const value=profile.join('-');if(!Array.from($('theme').options).some(o=>o.value===value))$('theme').add(new Option(profile.map(t=>THEME_NAMES[t]).join(' + '),value));}
 const camera=new THREE.PerspectiveCamera(73,1,.08,3200);camera.rotation.order='YXZ';
@@ -33,8 +37,8 @@ function save(){syncData();try{localStorage.setItem(saveKey,JSON.stringify(sim.s
 function toast(message){if(!message)return;$('toast').textContent=message;$('toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').hidden=true,4500);}
 function resize(){const ratio=Math.min(devicePixelRatio||1,1.5);const w=Math.max(1,Math.floor(innerWidth*ratio)),h=Math.max(1,Math.floor(innerHeight*ratio));canvas.width=w;canvas.height=h;Object.assign(view,{width:w,height:h,rect:{x:0,y:0,w,h}});camera.aspect=w/h;camera.updateProjectionMatrix();dirty=true;}
 function panel(id){const el=$(id);el.hidden=!el.hidden;if(!el.hidden){document.exitPointerLock?.();keys.clear();if(id==='mapPanel'){drawMap();$('map').focus();}else drawNotes();}dirty=true;}
-function pause(){running=false;keys.clear();document.exitPointerLock?.();$('intro').hidden=false;$('start').innerHTML='Resume survey <span>↗</span>';save();dirty=true;}
-function start(){running=true;$('intro').hidden=true;$('mapPanel').hidden=true;$('notesPanel').hidden=true;canvas.focus();canvas.requestPointerLock?.()?.catch?.(()=>toast('Mouse capture unavailable. Drag to look, or use arrow keys.'));last=performance.now();dirty=true;}
+function pause(){running=false;sound.setActive(false);keys.clear();document.exitPointerLock?.();$('intro').hidden=false;$('start').innerHTML='Resume survey <span>↗</span>';save();dirty=true;}
+function start(){running=true;sound.unlock();sound.setActive(true);$('intro').hidden=true;$('mapPanel').hidden=true;$('notesPanel').hidden=true;canvas.focus();canvas.requestPointerLock?.()?.catch?.(()=>toast('Mouse capture unavailable. Drag to look, or use arrow keys.'));last=performance.now();dirty=true;}
 $('start').onclick=start;$('pause').onclick=pause;
 $('generate').onclick=()=>{const u=new URL(location.href);u.searchParams.set('seed',$('seed').value);u.searchParams.set('theme',$('theme').value);location.href=u.href;};
 $('seed').addEventListener('keydown',e=>{if(e.key==='Enter')$('generate').click();});
@@ -42,7 +46,7 @@ $('mapButton').onclick=()=>panel('mapPanel');$('notesButton').onclick=()=>panel(
 for(const el of document.querySelectorAll('[data-close]'))el.onclick=()=>{$(el.dataset.close).hidden=true;dirty=true;};
 window.addEventListener('resize',resize);window.addEventListener('blur',()=>{keys.clear();});
 document.addEventListener('visibilitychange',()=>{keys.clear();last=performance.now();if(document.hidden)save();else dirty=true;});
-window.addEventListener('pagehide',()=>{save();renderer?.dispose();});
+window.addEventListener('pagehide',()=>{save();sound.dispose();renderer?.dispose();});
 window.addEventListener('keydown',e=>{
   if((e.target instanceof HTMLInputElement||e.target instanceof HTMLSelectElement)||e.metaKey||e.ctrlKey||e.altKey)return;
   if(['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space','KeyC','KeyR'].includes(e.code))e.preventDefault();
@@ -80,10 +84,10 @@ function updateHUD(){
   if(offer)$('prompt').innerHTML=`<b>E</b>${offer.text}`;
   if(!$('mapPanel').hidden)drawMap();
 }
-function render(){updateHUD();camera.position.set(sim.pos[0],sim.pos[1]+1.68,sim.pos[2]);camera.rotation.set(sim.pitch,sim.yaw,0);camera.updateMatrixWorld();visual.update(camera,0,sim.time,sim);engine.time=sim.time;renderer.render(engine);frame++;dirty=false;}
+function render(){updateHUD();sound.update(sim,running);camera.position.set(sim.pos[0],sim.pos[1]+1.68,sim.pos[2]);camera.rotation.set(sim.pitch,sim.yaw,0);camera.updateMatrixWorld();visual.update(camera,0,sim.time,sim);engine.time=sim.time;renderer.render(engine);frame++;dirty=false;}
 function loop(now){requestAnimationFrame(loop);if(document.hidden)return;const dt=Math.min((now-last)/1000,.1);if(now-last<1000/30)return;last=now;
   if(running&&$('mapPanel').hidden&&$('notesPanel').hidden){sim.step(dt,{forward:Number(keys.has('KeyW'))-Number(keys.has('KeyS')),strafe:Number(keys.has('KeyD'))-Number(keys.has('KeyA')),vertical:Number(keys.has('Space'))-Number(keys.has('KeyC')),brake:keys.has('KeyR'),turn:Number(keys.has('ArrowLeft'))-Number(keys.has('ArrowRight')),look:Number(keys.has('ArrowUp'))-Number(keys.has('ArrowDown')),fast:keys.has('ShiftLeft')||keys.has('ShiftRight')});dirty=true;}
   if(dirty)render();if((sim.rawData!==sim.lastBankedData)||(running&&now-lastSave>10000)){save();sim.lastBankedData=sim.rawData;lastSave=now;}}
 // Explicitly opt-in diagnostics. No script runs in Dave's live sandbox tab.
-if(params.has('test'))window.understructureTest={plan,sim,errors,saveKey,get renderer(){return renderer;},get frame(){return frame;},render,save,pause,start,engine,visual};
+if(params.has('test'))window.understructureTest={plan,sim,sound,errors,saveKey,get renderer(){return renderer;},get frame(){return frame;},render,save,pause,start,engine,visual};
 try{resize();renderer=await DeferredRenderer.create(canvas,fail);engine.webgpu=renderer;$('start').disabled=false;$('start').innerHTML='Begin survey <span>↗</span>';updateHUD();render();last=performance.now();requestAnimationFrame(loop);}catch(e){fail(e);}

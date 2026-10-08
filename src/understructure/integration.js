@@ -6,6 +6,7 @@ import { UnderstructureSimulation } from './simulation.js';
 import { buildScene } from './scene.js';
 import { SurveyHUD } from './surveyHUD.js';
 import { PlanetSurveySites } from './planetSites.js';
+import { SurveySound } from './sound.js';
 
 // A sector has a local metre-scale frame. Its world entrance remains body-fixed;
 // player/ship objects and the universe clock never belong to the sector.
@@ -114,6 +115,7 @@ export class SurveySession {
     let saved={};try{saved=JSON.parse(this.storage.getItem(site.saveKey)||'{}');}catch{}
     this.plan=generateUnderstructure(site.seed,restoredProfile(site.seed,site.profile,saved),surveyEnvironment(site.body.data));
     this.sim=new UnderstructureSimulation(this.plan,saved);this.visual=buildScene(this.plan);
+    this.sound=new SurveySound(this.plan,{context:()=>game.audio?.ctx,destination:()=>game.audio?.master});
     for(const p of this.sim.beacons)this.visual.addBeacon(p);
     const camera=new THREE.PerspectiveCamera(73,1,.08,3200);camera.rotation.order='YXZ';
     this.view={camera,width:1,height:1,rect:{x:0,y:0,w:1,h:1},meterRef:.18,maxExposure:3,exposureBias:1.3};
@@ -153,12 +155,13 @@ export class SurveySession {
     const c=view.camera;c.aspect=player.view.camera.aspect;c.fov=player.view.camera.fov;c.updateProjectionMatrix();
     c.position.set(sim.pos[0],sim.pos[1]+1.68,sim.pos[2]);c.rotation.set(sim.pitch,sim.yaw,0);c.updateMatrixWorld();
     this.visual.update(c,dt,sim.time,sim);this.engine.time=sim.time;this.engine.pixelRatio=this.game.engine.pixelRatio;
+    this.sound.update(sim,!this.game.paused&&this.game.players[0]===player);
     this.game.engine.webgpu.render(this.engine,first);this.hud.update();
   }
   leave(restore=true) {
     this.save();const p=this.player;
     if(restore){p.placeOnSurface(this.site.body,this.anchor.position.clone().normalize(),this.anchor.heading);p.pitch=this.anchor.pitch;p.fade=1;}
-    p.understructure=null;p.ui.root.style.visibility='';this.hud.dispose();
+    p.understructure=null;p.ui.root.style.visibility='';this.hud.dispose();this.sound.dispose();
     this.game.engine.webgpu?.releaseView(this.view);disposeScene(this.visual.scene);
     this.game.engine.adaptReset=true;
     if(restore)p.ui.hud.message(this.sim.dataRecovered?'Site record secured · back at surface access':'Back at surface access','nav');

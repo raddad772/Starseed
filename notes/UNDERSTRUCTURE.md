@@ -238,6 +238,44 @@ saved re-entry, split-screen with the other player outside, bounded lighting res
 and normal world time. Return anchor error was zero. Finite tests used two workers;
 no sustained GPU benchmark was run.
 
+## Ambient sound and material decay — 2026-10-08
+
+SurveySound synthesizes low ventilation, structural rumble, the surviving generator's
+restart cycle, local water flow, the express lift, and sparse drips/metal strain. Water
+ambience and runoff dressing require a wet planet; the cistern valve stops its local
+flow sound. No downloaded sound assets, music, combat cues or jump scares are used.
+
+Footsteps follow supported walking distance. Concrete, soil and exposed metal have
+different filtering; airborne/zero-g motion, standing still, folds and teleports do not
+create steps. The visible room dimensions set a bounded Sabine-style reverberation
+estimate and early reflection delay. Small passages have short tails; the large well
+and collection hall ring longer. Exposed bridges now use the matching worn metal
+surface. This is a room acoustics approximation, not a wave or ray simulation.
+
+Audio starts on a user gesture. The standalone owns its context; the integrated survey
+borrows the game's context/master and follows player one's audio perspective in split
+screen. Flight/wind loops fade away while that player is inside. The Sound on/off button
+persists the local preference. Pause/hidden pages silence the graph, and leaving releases
+its voices without closing the game's context. Five continuous voices, at most eight
+one-shots, and five cached reverberation buffers bound resource use.
+
+Separate seed streams generate albedo, normal and roughness maps for cracked concrete,
+scuffed floors, chipped paint and pitted rust. Wall-foot grime, wet tide marks, rusty
+runoff, mineral residue and small spalled chips follow actual wall segments, including
+oblique door openings. Wet runoff is absent on dry planets. Wear doesn't move walls,
+change puzzles or create new walking obstructions. Existing geology and native growth
+remain separate additions. No renderer changes or previous-frame visibility queries.
+
+Validation: 52 CPU checks pass, including deterministic materials, bounded geometry,
+wet/dry dressing, floor-dependent acoustics, sound attenuation and footstep gating.
+`tools/tests/understructure-audio.html` renders finite offline audio and compares short
+and long tails, sample bounds and exact mute silence; its live button checks gesture
+unlock, shared-context ownership, bounded voices, pause and teardown without playing
+through the speakers. The two audition buttons play the rendered comparison footsteps. The native gravity/light
+fixture passes all 14 route, map, recovery and reload checks with no JavaScript/WebGPU
+errors. Captures verified faded wall-foot stains, fine fractures and oxidized fittings;
+wall stains feather into matching world-space concrete instead of opaque decal edges.
+
 ## Integration boundaries
 
 Owned files: src/understructure/*, understructure.html, understructure tests and notes.

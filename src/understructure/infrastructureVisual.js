@@ -50,7 +50,7 @@ export function buildCollectionRoutes(plan,{root,mat,box,cylinder,label,lamp}){
   for(const p of plan.routeLandings)box(p[0],p[1]-.17,p[2],4,.3,4,'floor');
   for(const r of plan.routes){
     const {a,b,width,covered}=r,dx=b[0]-a[0],dz=b[2]-a[2],length=Math.hypot(dx,dz),nx=-dz/length,nz=dx/length;
-    strip(a,b,width,-.04,'floor');strip(a,b,width,-.3,'metal');
+    strip(a,b,width,-.04,covered?'floor':'metal');strip(a,b,width,-.3,'metal');
     if(covered)strip(a,b,width+1,3.5,'concrete');
     for(const side of [-1,1]){
       if(!covered){

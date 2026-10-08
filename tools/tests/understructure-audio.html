@@ -1,0 +1,35 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>Understructure acoustic validation</title>
+<style>body{background:#102126;color:#dce9dc;font:15px monospace;margin:32px}button{padding:12px;margin:8px}pre{white-space:pre-wrap}</style>
+<h1>Room acoustics</h1><p>Finite offline audio rendering; no graphics scene or live sound starts automatically.</p>
+<button id="passage" disabled>Hear concrete passage footsteps</button><button id="hall" disabled>Hear metal bridge footsteps</button><button id="stop">Stop audio</button><pre id="result">Rendering checks…</pre>
+<button id="lifecycle">Check live audio lifecycle (silent)</button><pre id="liveResult"></pre>
+<script type="module">
+import { generateUnderstructure,DECK } from '../../src/understructure/layout.js';
+import { roomAcoustics } from '../../src/understructure/acoustics.js';
+import { SurveySound } from '../../src/understructure/sound.js';
+const out=document.getElementById('result'),plan=generateUnderstructure('SUMP-07'),buffers={};let live;
+const storage={getItem:()=>null,setItem(){}};
+const check=(ok,label)=>{if(!ok)throw Error(label);};
+function energy(buffer,a,b){const d=buffer.getChannelData(0);let n=0,total=0,peak=0;for(let i=Math.floor(a*buffer.sampleRate);i<Math.floor(b*buffer.sampleRate);i++){const v=d[i];check(Number.isFinite(v),'Nonfinite sample');total+=v*v;peak=Math.max(peak,Math.abs(v));n++;}return {rms:Math.sqrt(total/n),peak};}
+try{
+ const profiles={passage:roomAcoustics(plan,{pos:[0,DECK,-12]}),hall:roomAcoustics(plan,{pos:[-157,DECK,42]})},report={};
+ for(const [name,profile] of Object.entries(profiles)){
+  const c=new OfflineAudioContext(2,22050*6,22050),s=new SurveySound(plan,{context:()=>c,storage});s.connect(c,c.destination);s.setActive(true);s.room(profile);s.master.gain.setValueAtTime(.6,0);s.event('step',profile);
+  const b=await c.startRendering();buffers[name]=b;report[name]={profile,early:energy(b,0,.4),tail:energy(b,1.5,3.5),late:energy(b,5.2,5.9)};check(report[name].early.peak>.001&&report[name].early.peak<.9,'Audible bounded step');check(report[name].late.rms<.00001,'Tail decays');s.dispose();check(s.events.size===0,'One-shots released');
+ }
+ check(report.hall.tail.rms>report.passage.tail.rms*10+.000001,'Large room retains a longer audible tail');
+ const c=new OfflineAudioContext(2,22050*2,22050),s=new SurveySound(plan,{context:()=>c,storage});s.connect(c,c.destination);s.setActive(true);s.event('step',profiles.hall);s.setEnabled(false);const muted=await c.startRendering();check(energy(muted,0,2).peak===0,'Mute is silent');s.dispose();check(c.state==='closed','Borrowed offline context was completed');
+ window.testResult={status:'passed',checks:['Concrete and metal footsteps render finite nonzero samples','Room dimensions alter early reflection and reverberation tail','No clipping; tails decay','Mute produces exact silence; voices are released'],...report};out.textContent=JSON.stringify(window.testResult,null,2);
+ for(const name of Object.keys(buffers)){const button=document.getElementById(name);button.disabled=false;button.onclick=async()=>{await live?.close();live=new AudioContext();const src=live.createBufferSource();src.buffer=buffers[name];src.connect(live.destination);src.start();src.onended=()=>live?.close().catch(()=>{});};}
+}catch(e){window.testResult={status:'failed',error:e.stack};out.textContent=JSON.stringify(window.testResult,null,2);}
+document.getElementById('stop').onclick=()=>live?.close().catch(()=>{});window.addEventListener('pagehide',()=>live?.close().catch(()=>{}));
+document.getElementById('lifecycle').onclick=async()=>{
+ let c,s;try{
+  c=new AudioContext();await c.resume();const sink=c.createGain();sink.gain.value=0;sink.connect(c.destination);
+  s=new SurveySound(plan,{context:()=>c,destination:()=>sink,storage});s.unlock();check(s.ctx===c&&c.state==='running','Borrowed running context');
+  for(let i=0;i<60;i++)s.update({pos:[0,DECK,-12-i*.1],yaw:0,time:i/30,grounded:true});
+  check(s.stats.steps>0&&s.sources.length===5&&s.events.size<=8,'Bounded graph and moving footsteps');s.setActive(false);check(s.master.gain.value===0,'Pause silences graph');
+  s.dispose();check(c.state==='running'&&s.events.size===0,'Leaving releases nodes without closing game context');await c.close();document.getElementById('liveResult').textContent='PASSED: gesture unlock, shared context, bounded voices, footsteps, pause, teardown';
+ }catch(e){s?.dispose();await c?.close().catch(()=>{});document.getElementById('liveResult').textContent='FAILED: '+e.stack;}
+};
+</script></html>

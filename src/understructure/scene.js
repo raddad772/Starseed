@@ -9,6 +9,7 @@ import { buildGeneratorHall } from './generatorVisual.js';
 import { buildMegavault } from './megavault.js';
 import { dressUtilities,collectionSideWall,buildCollectionRoutes } from './infrastructureVisual.js';
 import { buildMechanisms } from './mechanisms.js';
+import { decayMaps,buildDecayDetails } from './decayVisual.js';
 
 export function buildScene(plan) {
   const rng=Rng.fromString(plan.seed).fork('surfaces'), scene=new THREE.Scene();
@@ -23,7 +24,7 @@ export function buildScene(plan) {
     for(let i=0;i<35;i++){ctx.fillStyle='#303e3012';ctx.fillRect(rng.int(0,255),0,rng.int(2,5),rng.int(25,255));}
     const t=new THREE.CanvasTexture(c);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.repeat.set(1,1);t.colorSpace=THREE.SRGBColorSpace;return t;
   }
-  const tex=texture();
+  const tex=texture(),concreteMaps=decayMaps(plan.seed,'concrete'),floorMaps=decayMaps(plan.seed,'floor'),metalMaps=decayMaps(plan.seed,'metal'),rustMaps=decayMaps(plan.seed,'rust');
   // The raw renderer consumes meshes, not Three's background/fog convenience fields.
   const skyGeo=new THREE.SphereGeometry(410,32,16),skyColors=[];
   for(let i=0;i<skyGeo.attributes.position.count;i++){
@@ -33,10 +34,12 @@ export function buildScene(plan) {
   const sky=new THREE.Mesh(skyGeo,new THREE.MeshBasicMaterial({vertexColors:true,side:THREE.BackSide}));scene.add(sky);
   const sunDisc=new THREE.Mesh(new THREE.SphereGeometry(6,16,12),new THREE.MeshBasicMaterial({color:'#ffe3b1'}));sunDisc.position.set(-180,160,-290);scene.add(sunDisc);
   const mat={
-    concrete:new THREE.MeshStandardMaterial({color:'#747e72',map:tex,roughness:.96}),
-    floor:new THREE.MeshStandardMaterial({color:'#525e55',map:tex,roughness:.87}),
-    metal:new THREE.MeshStandardMaterial({color:'#394b46',roughness:.6,metalness:.55}),
-    rust:new THREE.MeshStandardMaterial({color:'#8c6342',roughness:.9,metalness:.25}),
+    concrete:new THREE.MeshStandardMaterial({color:'#ffffff',...concreteMaps,roughness:1,normalScale:new THREE.Vector2(.65,.65)}),
+    floor:new THREE.MeshStandardMaterial({color:'#ffffff',...floorMaps,roughness:1,normalScale:new THREE.Vector2(.4,.4)}),
+    metal:new THREE.MeshStandardMaterial({color:'#ffffff',...metalMaps,roughness:1,metalness:.4,normalScale:new THREE.Vector2(.5,.5)}),
+    rust:new THREE.MeshStandardMaterial({color:'#ffffff',...rustMaps,roughness:1,metalness:.1}),
+    weathered:new THREE.MeshStandardMaterial({color:'#ffffff',...concreteMaps,roughness:1,normalScale:new THREE.Vector2(.65,.65),vertexColors:true}),
+    dust:new THREE.MeshStandardMaterial({color:'#bbb298',...floorMaps,roughness:1}),
     stain:new THREE.MeshStandardMaterial({color:'#263d33',roughness:1}),
     dark:new THREE.MeshStandardMaterial({color:'#152626',roughness:.78}),
     amber:new THREE.MeshStandardMaterial({color:'#d2ae6e',emissive:'#ffc075',emissiveIntensity:1.3}),
@@ -176,6 +179,7 @@ export function buildScene(plan) {
   const chamberVisuals=buildChambers(plan,{root,scene,mat,box,cylinder,label,lamp});
   buildMegavault(plan,{box,cylinder,label});
   const generatorVisuals=buildGeneratorHall(plan,{root,scene,mat,box,cylinder,label,addGeometry});
+  const decay=buildDecayDetails(plan,{addGeometry});
   for(const [m,geoms] of batches) {const merged=mergeGeometries(geoms);const mesh=new THREE.Mesh(merged,mat[m]);root.add(mesh);for(const g of geoms)g.dispose();}
   const ambient=new THREE.HemisphereLight(0xc4d8d2,0x303b2e,1.8);scene.add(ambient);
   const sun=new THREE.DirectionalLight(0xffdfaf,2.4);sun.position.set(-60,70,-100);scene.add(sun);
@@ -202,5 +206,5 @@ export function buildScene(plan) {
     for(const l of hallLights)l.intensity=620*generatorVisuals.reading.sag;
   }
   function addBeacon(p){const m=new THREE.Mesh(new THREE.ConeGeometry(.14,.25,6),mat.amber);m.position.set(p[0],p[1]+.13,p[2]);beaconGroup.add(m);}
-  return {scene,update,addBeacon,materials:mat,generator:generatorVisuals};
+  return {scene,update,addBeacon,materials:mat,generator:generatorVisuals,decay};
 }

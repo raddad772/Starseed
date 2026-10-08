@@ -10,7 +10,7 @@ export function buildObliqueSector(plan,{addGeometry,box,cylinder,label,lamp}){
   function beam(a,b,lo,hi,width=.24,material='concrete'){
     const dx=b[0]-a[0],dz=b[1]-a[1],g=new THREE.BoxGeometry(Math.hypot(dx,dz),hi-lo,width);g.rotateY(-Math.atan2(dz,dx));g.translate((a[0]+b[0])/2,(lo+hi)/2,(a[1]+b[1])/2);addGeometry(g,material);
   }
-  for(const f of sector.floors){panel(f.polygon,y-.04,'floor');panel(f.polygon,y-.3,'metal',true);}
+  for(const f of sector.floors){panel(f.polygon,y-.04,f.bridge?'metal':'floor');panel(f.polygon,y-.3,'metal',true);}
   for(const wall of sector.walls)beam(wall.a,wall.b,y-.3,y+Math.min(4,wall.height));
   for(const room of sector.rooms){
     panel(room.polygon,y+room.height,'concrete',true);
