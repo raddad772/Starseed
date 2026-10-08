@@ -9,6 +9,43 @@ maps and viewscreens are native. WebGL exists only in explicit test tooling (`?w
 no production fallback. Other browser/GPU combinations still need certification; no speedup or exact
 pixel-parity claim is made. Dave confirmed sole-agent work and no coordination messages this session.
 
+## Orbital navigation and shared time (Codex, 2026-10-08)
+The nav computer now offers Automatic / Conventional / Prefer FTL in the quick menu;
+the Fleet app also toggles conventional routing. N still starts/releases an order.
+Conventional travel uses sampled Lambert launch windows, finite engine burns, analytic
+coasts, course corrections and arrival braking. Planetary routes include escape from
+local gravity wells, parent-frame transfers, SOI transitions and orbital capture;
+moon encounters can be inclined. Parking-altitude changes use transfer arcs. FTL keeps
+its existing drive model and detours, with guided departure and orbital/surface arrival.
+
+Ascent banks/pitches into an orbital track, respects wings in dense air, and circularizes.
+Deorbit planning accounts for the site's future rotation. Powered entry follows a shallow
+corridor with thermal, terrain, loaded-thrust and turn-time limits; final contact landing
+uses the existing leg controller. Belly-driven Pioneer/Expedition hulls use their lift
+engines in space; commands still pass through physical axis limits and pod actuators.
+Docking/meeting now budgets weak reverse/side thrust and matches the target's acceleration.
+The contact broad-phase's extra 200 m is no longer reported as phantom ground to the
+landing guard. Completed orbital orders release into RATE assist so FULL velocity hold
+does not inadvertently cancel gravity and destroy the achieved orbit.
+
+There is one shared clock: each player requests a maximum rate with comma/period or
+Quick menu > Time. Both must opt in; the lower request wins, and either can cancel
+immediately. A joining player starts at normal time. Movement/braking also cancels that
+player's request. Automatic maneuver/encounter/atmosphere limits retain the requests,
+then allow agreed warp again on safe coasts. Private per-vessel travel compression is
+removed: moving targets and all players use the same ephemeris. Subsurface exploration
+continues to hold normal time. HUDs show both requests, launch wait, estimated delta-v
+and burn duration. This is patched-conic guidance with a finite search, not a global
+trajectory optimizer or a fuel-budget model; infeasible searches are reported explicitly.
+
+Validation: 38 focused tests pass (orbital-navigation, transfers, warp-consent,
+orbital-station, flight-handling, reentry). They exercise all three generations on
+atmospheric ascent and rotating-site landing, weak-hull rendezvous/docking, parking
+transfers, interplanetary escape/capture and an inclined moon encounter. The finite
+native `tools/tests/navigation.html` fixture passes 14 checks for two-player requests,
+either-player cancellation, maneuver event clipping, route/HUD controls and WebGPU
+validation. Only owned tabs with two workers were used; the GPU window is released.
+
 ## WebGPU optimization checkpoint (Codex, 2026-10-08)
 Cached shader layouts and unchanged uniform bytes, persistent bounded instance-culling inputs,
 and conditional ground-copy/material processing are implemented. No quality settings or shader

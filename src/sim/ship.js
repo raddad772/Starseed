@@ -577,6 +577,20 @@ export class Ship {
     const qinv = _q1.copy(this.quat).invert();
     const approach = (x, target, rate) => x + THREE.MathUtils.clamp(target - x, -rate * dt, rate * dt);
     if (A && A.coast) { outForce.set(0, 0, 0); return; } // the nav computer lets it coast
+    if (A?.thrust) {
+      // Orbital guidance requests propulsive acceleration in the inertial
+      // frame. Gravity remains in step(); unlike velocity hold it must not be
+      // cancelled during a finite maneuver. The usual engine/pod limits still
+      // apply, with the full carried mass and no instantaneous delta-v.
+      const fl = _v1.copy(A.thrust).multiplyScalar(m).applyQuaternion(qinv);
+      outForce.set(
+        THREE.MathUtils.clamp(fl.x, -L.lateral, L.lateral),
+        THREE.MathUtils.clamp(fl.y, -L.down, L.belly),
+        THREE.MathUtils.clamp(fl.z, -L.main, L.retro));
+      this.targetFrame = 'inertial';
+      this._guardActive = false;
+      return;
+    }
     if (A) {
       // the nav computer: its velocity, carried into this frame
       if (frame === 'surface') this.targetVel.copy(A.vel).sub(this.frameVel(_v3));
@@ -696,7 +710,11 @@ export class Ship {
     // cancel gravity and (in the rotating frame) centrifugal + Coriolis
     const rn = this.pos.length();
     req.addScaledVector(this.pos, b.GM / (rn * rn * rn));
-    if (frame === 'surface') {
+    if (A?.referenceAccel) {
+      // A rendezvous target is itself falling (or thrusting). Match its
+      // inertial acceleration rather than spending thrust to hover beside it.
+      req.add(A.referenceAccel);
+    } else if (frame === 'surface') {
       // rotating frame: a_inertial = a_rel + 2 w x v_rel + w x (w x r)
       const w = b.omega;
       req.add(_v4.copy(w).cross(vRel).multiplyScalar(2));
@@ -918,7 +936,12 @@ export class Ship {
       const r = pf.length();
       // cheap reject: far above any terrain
       const relief = b.relief * 1.6 + 200;
-      if (r - b.R > relief) { minAgl = Math.min(minAgl, r - b.R - relief); return 0; }
+      if (r - b.R > relief) {
+        // The extra 200 m belongs to the contact broad phase, not the terrain.
+        // Counting it as ground made the landing guard hover at that boundary.
+        minAgl = Math.min(minAgl, r - b.R - b.relief * 1.6);
+        return 0;
+      }
       const gh = b.floorAt(pf, 1.5);   // (the volume's ground in the near field)
       const depth = b.R + gh - r;
       minAgl = Math.min(minAgl, -depth);

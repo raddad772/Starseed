@@ -101,6 +101,7 @@ export class FleetApp {
     if (!v.dead && !v.parent && !v.landed) rows.push(['Near', `${v.body.data.name} · ${U.fmtDist(v.altitude)} up`, THEME.ink]);
     if (nav.active) {
       const s = nav.status();
+      if (s.wait > 0) rows.push(['Window in', fmtEta(s.wait), THEME.nav]);
       rows.push(['Order', nav.orderText(), THEME.nav], ['Doing', `${s.phase} · ${fmtEta(s.eta)}`, THEME.nav]);
     }
     let yy = y + 100;
@@ -122,6 +123,7 @@ export class FleetApp {
       { id: 'o-park', label: 'Park in orbit', sub: `around ${v.body.data.name}`, go: () => v.nav.order({ kind: 'park' }), disabled: v.body.isStar },
       { id: 'o-hold', label: 'Hold position', sub: v.big ? 'coast where it is' : 'keep station right here', go: () => v.nav.order({ kind: 'hold' }), disabled: !inSpace && !v.parent },
     ];
+    buttons.push({id:'o-route',label:`Travel: ${nav.travelMode}`,sub:'switch automatic / conventional orbital transfers',go:()=>nav.setTravelMode(nav.travelMode==='conventional'?'auto':'conventional')});
     if (nav.active) buttons.push({ id: 'o-stop', label: 'Cancel the order', sub: 'stop and coast', go: () => nav.cancel('order cancelled'), tone: 'caution' });
     buttons.forEach((b, i) => {
       const bx = x + (i % 2) * (bw + 12), by = yy + Math.floor(i / 2) * (bh + 10);

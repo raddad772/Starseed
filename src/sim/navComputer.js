@@ -10,58 +10,38 @@
 //   meet    come alongside a ship (or you, on a spacewalk) and keep station
 //   park    climb into / circularise a parking orbit around the world it's at
 //   hold    keep station where it is (hover, or beside a nearby big ship)
-// A trip is a chain of phases. Each frame the active phase steers the ship
-// through `ship.auto` (a velocity, an attitude, lift-off / touchdown flags);
-// the ship's own flight controller tracks it, with its ground guard and
-// touchdown logic still in charge of safety.
-//   depart    off the pad, out of the hangar door, up off the ground, or
-//             back off clear of a big ship's FTL lock
-//   climb     straight up out of the world's FTL mass lock (heat-limited in air)
-//   align / spool / cruise
-//             FTL legs: waypoints around any mass lock in the way, then the
-//             destination (a ship: drop 6 km off, matched to it; a world:
-//             drop at its lock boundary, above the landing site)
-//   descend   powered descent to the site; `hop` is the same, low and level,
-//             to a site on the world it is already on
-//   land      hover over the site and settle on the legs
-//   approach  waypoints around a big ship to its pad or hangar door
-//   dock      settle on the pad / hangar deck in the host's own frame
-//   meet      close to a stand-off point beside the other ship
-//   park      to a circular orbit
-//   station   keep station (the end of meet and hold)
-// Any flight input from the pilot hands control back.
+// Conventional orders use world-time launch windows, finite engine burns,
+// analytic coast arcs, corrections and capture (OrbitalFlight). FTL retains
+// its mass-lock detours; the legs before and after it use orbital guidance.
+// Final surface and bay approaches retain the contact controller. Navigation
+// can be released with N; shared time warp always remains cancellable.
 
 import * as THREE from 'three';
 import { floraOf } from './floraField.js';
 import { meadowsNear } from '../gen/flora.js';
 import { lockRadius } from './ftl.js';
-import { heatSafeSpeed, gasProperties, hullEnvelope } from './reentry.js';
+import { hullEnvelope } from './reentry.js';
+import { OrbitalFlight, maneuverAuthority } from './orbitalFlight.js';
 
 const G0 = 9.81;
 const A_CMD = 2.5 * G0;      // commanded acceleration, small craft (crew comfort; the engines can do far more)
-const V_SPACE = 2500;        // m/s: top speed near a world outside FTL
 const H_HOVER = 40;          // m over the site where the final settle begins
-const GLIDE = 0.3;           // descent path: height per metre still to go
+const GLIDE = 0.12;           // descent path: height per metre still to go
 const HOP_MAX = 1.2e6;       // m: farther than this along the ground, go by space instead
 const NEAR = 50000;          // m: closer than this to a ship, fly over without FTL
 
 const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3(), _d = new THREE.Vector3();
 
-// stagnation-heating speed limit at an air density (as the FULL assist's limiter)
-function heatSpeed(ship, rho, temperature = ship.env.temperature) {
-  return heatSafeSpeed(rho, ship.entry.radius, gasProperties(ship.body?.atm), ship.entryProfile, temperature);
-}
-
 export const PHASE_NAMES = {
   depart: 'Departing', climb: 'Climbing out of the mass lock', align: 'Aligning for FTL', spool: 'FTL spooling',
   cruise: 'FTL cruise', descend: 'Descent', hop: 'Low flight', land: 'Landing', approach: 'Approach', dock: 'Docking',
-  meet: 'Closing in', park: 'Into orbit', station: 'Keeping station',
+  meet: 'Closing in', park: 'Into orbit', station: 'Keeping station', orbital: 'Orbital flight',
 };
 
 // phase -> method
 const PHASE_FN = {
   depart: 'depart', climb: 'climb', align: 'align', spool: 'spool', cruise: 'cruise', descend: 'descend', hop: 'hop',
-  land: 'land', approach: 'approach', dock: 'dock', meet: 'meetPhase', park: 'parkPhase', station: 'station',
+  land: 'land', approach: 'approach', dock: 'dock', meet: 'meetPhase', park: 'parkPhase', station: 'station', orbital: 'orbitalPhase',
 };
 
 // a rough time to go: "~40 s", "~3 min", "~1 h 20 min"
@@ -69,6 +49,7 @@ export function fmtEta(sec) {
   if (!isFinite(sec)) return '—';
   if (sec < 60) return `~${Math.max(5, Math.round(sec / 5) * 5)} s`;
   if (sec < 3600) return `~${Math.round(sec / 60)} min`;
+  if (sec >= 86400) return `~${Math.floor(sec / 86400)} d ${Math.floor((sec % 86400) / 3600)} h`;
   return `~${Math.floor(sec / 3600)} h ${Math.round((sec % 3600) / 60)} min`;
 }
 
@@ -80,6 +61,9 @@ export class NavComputer {
     this.phase = null;
     this.dest = null;
     this.legs = [];
+    this.travelMode = 'auto';
+    this.flight = null;
+    this.nextEventAt = Infinity;
     this.sites = new Map();   // body id -> chosen landing site { dirF, label } (or 'orbit')
     // what this hull can do: big ships turn and accelerate slowly, and their
     // velocity loop is slower (see Ship.computeControl)
@@ -136,6 +120,7 @@ export class NavComputer {
     if (this.active && this.dest && this.dest.body === body) {
       const d = this.destinationFor(body);
       if (d) this.dest = d;
+      if (this.flight) this.order(this.dest);
       if (this.phase === 'cruise' || this.phase === 'align') this.legs = this.plan();
     }
   }
@@ -156,12 +141,16 @@ export class NavComputer {
   order(dest) {
     const s = this.ship;
     if (s.dead) return false;
+    if ((s.landed || s.agl < 100) && dest.kind !== 'hold' && maneuverAuthority(s).acceleration < s.body.GM / s.pos.lengthSq() * 1.04) { this.say('insufficient loaded thrust to lift off from this world', 'caution'); return false; }
     if ((dest.kind === 'site' || dest.kind === 'dock') && !this.canLand) { this.say(`a ${s.type.className} can't ${dest.kind === 'site' ? 'land' : 'dock'}`, 'caution'); return false; }
     if (dest.kind === 'dock' && !dest.v.type.zones?.some(z=>this.fitsBay(z))) { this.say(`no landing bay at ${dest.v.name} can fit ${s.name}`, 'caution'); return false; }
     if (dest.kind === 'dock' && s.parent === dest.v && s.attached) { this.say(`already aboard ${dest.v.name}`, 'caution'); return false; }
-    if (s.type.ftl === false && dest.body && dest.body !== s.body) { this.say(`no FTL drive: ${s.name} can't reach ${dest.body.data.name} on its own · carry it aboard a ship that can`, 'caution'); return false; }
+    if (this.travelMode === 'ftl' && s.type.ftl === false) { this.say('this hull has no FTL drive; choose conventional flight', 'caution'); return false; }
+    if (s.type.atmosphericThrust && (dest.kind === 'park' || dest.kind === 'orbit' || (dest.body && dest.body !== s.body))) { this.say('air-breathing engines cannot execute an orbital transfer', 'caution'); return false; }
     if (!dest.name) dest.name = dest.body ? dest.body.data.name : (dest.v ? dest.v.name : (dest.point ? dest.point.name : ''));
     this.dest = dest;
+    this.flight = null;
+    this.nextEventAt = Infinity;
     this.active = true;
     this.legs = [];
     this.appr = null;
@@ -201,6 +190,9 @@ export class NavComputer {
     if (!this.active) return;
     this.active = false;
     this.phase = null;
+    this.flight = null;
+    this.nextEventAt = Infinity;
+    if (s.auto?.orbital && !s.landed && !s.parent) s.assist = 1; // preserve the achieved orbit when guidance releases it
     s.auto = null;
     s.targetFrame = 'none'; // the pilot's assist re-bases on the present motion
     if (s.ftl.nav) s.ftl.nav = null;
@@ -267,6 +259,10 @@ export class NavComputer {
 
   status() {
     if (!this.active) return null;
+    if (this.flight) {
+      const f = this.flight;
+      return { phase: f.stage, dest: this.destText(), eta: f.eta, wait: f.wait, deltaV: f.deltaV, burnSeconds: f.burnSeconds, route: 'Conventional', aim: null, aimLabel: '' };
+    }
     let eta = 0;
     const s = this.ship, d = this.dest;
     const ph = this.phase;
@@ -296,7 +292,7 @@ export class NavComputer {
   needsFtl() {
     const d = this.dest, s = this.ship;
     if (d.kind === 'park' || d.kind === 'hold') return false;
-    if (s.type.ftl === false) return false; // (no drive: the long way round, at sublight)
+    if (this.travelMode === 'conventional' || s.type.ftl === false) return false; // (no drive: the long way round, at sublight)
     if (d.kind === 'site' && d.body === s.body && this.hopDistance() < HOP_MAX && s.pos.length() < lockRadius(s.body)) return false;
     if ((d.kind === 'dock' || d.kind === 'meet') && this.otherDistance() < NEAR) return false;
     return true;
@@ -325,19 +321,31 @@ export class NavComputer {
     const o = this.other;
     if (o && o.dead) { this.cancel(`${this.dest.name} is gone`); return; }
     if (o && o.v && o.v.dead) { this.cancel(`${this.dest.name} is gone`); return; }
-    // powered flight takes physics steps (time warp up to x4); coasting,
-    // FTL and keeping station don't hold the clock back
-    if (g.warpIndex > 2 && this.phase !== 'cruise' && this.phase !== 'station') g.setWarp(2);
+    // Refresh authority for payload changes; time-warp safety reads the
+    // resulting command and its next world-time event after this update.
+    this.aMax = Math.min(A_CMD, .5 * maneuverAuthority(s).acceleration);
+    this.tau = s.big ? 6 : s.handling.velocityTime;
     s.assist = 2;
     const A = s.auto || (s.auto = {});
-    A.vel = A.vel || new THREE.Vector3();
+    A.vel = (A.vel || new THREE.Vector3()).copy(s.vel);
     A.nose = A.up = A.lvel = A.lnose = A.lup = null;
-    A.move = A.land = A.coast = false;
+    A.move = A.land = A.orbital = false;
+    A.coast = true; // a phase transition must not apply a stale velocity order
+    A.thrust = null;
+    A.referenceAccel = null;
+    const ref = this.phase === 'station' ? this.hold.ref : (['approach','meet'].includes(this.phase) ? this.other : null);
+    if (ref) {
+      const acc = this._refAccel || (this._refAccel = new THREE.Vector3());
+      if (ref.accelW) acc.copy(ref.accelW);
+      else { ref.getWorldPos(acc).sub(s.body.pos); acc.multiplyScalar(-s.body.GM / acc.length() ** 3); }
+      A.referenceAccel = acc;
+    }
+    this.nextEventAt = Infinity;
     this.aimLabel = '';
     this.phaseT += dt;
     const fn = this[PHASE_FN[this.phase]];
     if (fn) fn.call(this, A, dt);
-    if (this.active && !s.parent && s.ftl.state !== 'cruise' && s.auto) this.avoidHazards(A);
+    if (this.active && !s.parent && s.ftl.state !== 'cruise' && s.auto && !A.orbital) this.avoidHazards(A);
   }
 
 
@@ -379,11 +387,14 @@ export class NavComputer {
   go(phase) {
     this.phase = phase;
     this.phaseT = 0;
+    this._surfaceCeiling = null;
+    this.nextEventAt = this.game.t;
   }
 
   // velocity command toward an absolute (body-centred inertial) velocity, at
   // most this hull's comfortable acceleration away from the present one
   slew(A, vAbs) {
+    A.coast = false;
     const dv = _d.copy(vAbs).sub(this.ship.vel);
     const lim = this.aMax * this.tau;
     if (dv.length() > lim) dv.setLength(lim);
@@ -479,45 +490,58 @@ export class NavComputer {
   }
 
   // the next phase once clear of pads, hangars, the ground and big ships
+  setTravelMode(mode) {
+    if (!['auto', 'conventional', 'ftl'].includes(mode)) return;
+    this.travelMode = mode;
+    if (this.active && !['hold', 'park'].includes(this.dest.kind)) this.order(this.dest);
+  }
+
+  startOrbital(kind, then) {
+    this.flight = new OrbitalFlight(this, kind, then);
+    this.go('orbital');
+  }
+  orbitalPhase(A) { this.flight?.update(A); }
+  lockOrbitRadius() { return Math.max(this.parkRadius(this.ship.body), lockRadius(this.ship.body) * 1.035); }
+  enterRoute() {
+    const d = this.dest;
+    if (d.kind === 'dock' || d.kind === 'meet') {
+      if (this.otherDistance() < NEAR && this.other?.body === this.ship.body) this.go(d.kind === 'dock' ? 'approach' : 'meet');
+      else this.startOrbital('rendezvous', () => this.go(d.kind === 'dock' ? 'approach' : 'meet'));
+    } else if (d.kind === 'site') this.startOrbital('entry', () => this.go('descend'));
+    else this.done(`in orbit of ${this.ship.body.data.name}`);
+  }
+
   afterDepart() {
     const s = this.ship, d = this.dest, b = s.body;
     if (d.kind === 'hold') { this.startStation(); return; }
-    if (d.kind === 'park' || (d.kind === 'orbit' && d.body === b && s.pos.length() < lockRadius(b) * 1.03)) { this.go('park'); return; }
+    if (d.kind === 'park' || (d.kind === 'orbit' && d.body === b)) {
+      this.startOrbital('park', () => this.done(`parked in orbit of ${b.data.name}`)); return;
+    }
     if (!this.needsFtl()) {
-      if (d.kind === 'site') this.go('hop');
-      else if (d.kind === 'dock') { this.appr = null; this.go('approach'); }
-      else if (d.kind === 'meet') this.go('meet');
-      else this.go('park');
+      const destinationBody = d.body || this.other?.body;
+      if (destinationBody !== b) { this.startOrbital('journey', () => this.enterRoute()); return; }
+      if (d.kind === 'site' && this.hopDistance() < 250000 && s.altitude < 20000 && s.surfaceVel(_a).length() < 600) { this.go('hop'); return; }
+      if ((d.kind === 'dock' || d.kind === 'meet') && this.otherDistance() < NEAR) { this.enterRoute(); return; }
+      const safe = b.R + Math.max(b.atmHeight * 1.03, b.relief * 1.6 + 1500);
+      if (s.orbit().rp < safe) this.startOrbital('park', () => this.enterRoute());
+      else this.enterRoute();
       return;
     }
     if (s.pos.length() < lockRadius(b) * 1.03 && s.ftl.massLock()) this.go('climb');
     else { this.legs = this.plan(); this.go('align'); }
   }
 
-  // where an FTL trip goes on from once the drive drops out at the end
   arrive() {
     const s = this.ship, d = this.dest;
     if (d.kind === 'dock') { this.appr = null; this.go('approach'); return; }
     if (d.kind === 'meet') { this.go('meet'); return; }
-    if (d.kind === 'orbit') { this.done(`in orbit of ${d.name}`); return; }
-    if (d.kind === 'site' && s.body === d.body && s.pos.length() < lockRadius(d.body) * 1.02) { this.go('descend'); return; }
-    this.legs = this.plan();
-    this.go('align');
+    if (s.body === d.body) { this.enterRoute(); return; }
+    this.legs = this.plan();this.go('align');
   }
 
   climb(A) {
-    const s = this.ship, b = s.body;
-    const r = s.pos.length();
-    const up = _a.copy(s.pos).divideScalar(r);
-    const lock = s.ftl.massLock();
-    if (r > lockRadius(b) * 1.03 && (!lock || lock.body !== b)) { this.legs = this.plan(); this.go('align'); return; }
-    const vHeat = heatSpeed(s, s.env.density) * 0.9;
-    const vUp = Math.min(V_SPACE, vHeat);
-    // straight up over the ground, the world's spin carried along
-    this.slew(A, _b.copy(up).multiplyScalar(vUp).add(s.frameVel(_c)));
-    const head = _c.set(0, 0, -1).applyQuaternion(s.quat);
-    this.point(A, up, head.addScaledVector(up, -head.dot(up)).lengthSq() > 1e-4 ? head : _d.set(1, 0, 0));
-    this.aim(_d.copy(up).multiplyScalar(lockRadius(b) * 1.03).add(b.pos), 'MASS LOCK EDGE');
+    this.startOrbital('lock', () => { this.legs = this.plan(); this.go('align'); });
+    this.orbitalPhase(A);
   }
 
   // ---- FTL legs
@@ -716,22 +740,10 @@ export class NavComputer {
     if (hdir.lengthSq() < 1e-10) hdir.set(0, 0, -1).applyQuaternion(s.quat).addScaledVector(up, -_d.set(0, 0, -1).applyQuaternion(s.quat).dot(up));
     hdir.normalize();
     const hRel = r - b.R - gh;
-    const altT = H_HOVER + Math.min(cruiseHeight, sH * GLIDE);
-    let vh = Math.min(V_SPACE, Math.sqrt(2 * 0.6 * G0 * sH));
-    let vv = hRel > altT ? -Math.min(V_SPACE, Math.sqrt(2 * 0.6 * G0 * (hRel - altT))) : Math.min(120, (altT - hRel) * 0.5);
-    // the air ahead (where the descent will be in a few seconds) limits speed
-    const aheadAlt = Math.max(0, r - b.R + Math.min(0, vv) * 6);
-    const aheadAir = b.atm ? b.atmosphereAt(aheadAlt) : null;
-    const vHeat = aheadAir ? heatSpeed(s, aheadAir.density, aheadAir.temperature) * 0.85 : Infinity;
-    const sp = Math.hypot(vh, vv);
-    if (sp > vHeat) { vh *= vHeat / sp; vv *= vHeat / sp; }
-    const vAbs = this._va.copy(hdir).multiplyScalar(vh).addScaledVector(up, vv).add(s.frameVel(this._vb));
-    this.slew(A, vAbs);
-    // attitude: level in air and for small corrections; in vacuum, big
-    // velocity changes are made nose-first on the main engine
-    const dv = this._vb.copy(vAbs).sub(s.vel);
-    if (dv.length() > 80 && s.env.density < 1e-6) this.point(A, dv, up);
-    else this.level(A, sH > 30 ? hdir : null);
+    if (this._surfaceCeiling == null) this._surfaceCeiling = Math.max(hRel, 1000);
+    const altT = H_HOVER + Math.min(cruiseHeight, sH * GLIDE, this.phase === 'descend' ? this._surfaceCeiling : Infinity);
+    this._entryPilot ||= new OrbitalFlight(this, 'entry', () => {});
+    this._entryPilot.surface(A, {up:up.clone(), heading:hdir.clone(), range:sH, height:hRel, targetHeight:altT});
     s.gearTarget = hRel < 2000 ? 1 : 0;
     this.aim(_d.copy(site).multiplyScalar(b.R + gh).add(b.pos), (d.label || 'site').toUpperCase());
     if (sH < 40 && hRel < 150) this.go('land');
@@ -882,9 +894,10 @@ export class NavComputer {
     const dl = _a.copy(tgt).sub(local);
     const dist = dl.length();
     const last = pts.length === 1;
-    if (!last && dist < 40) { pts.shift(); return; }
+    if (!last && dist < (pts.length > 2 ? 25 : 4)) { pts.shift(); return; }
     const vmax = last ? 8 : 200;
-    const v = Math.min(vmax, Math.sqrt(2 * 0.4 * G0 * dist) + (last ? 1 : 4));
+    const brake = Math.min(s.limits.retro, s.limits.lateral, s.limits.down) / s.effMass * .35;
+    const v = Math.min(vmax, Math.sqrt(2 * brake * dist) * .7, dist * .1);
     const vW = this._vb.copy(dl).setLength(v).applyQuaternion(host.quat); // relative to the host
     this.slew(A, this._va.copy(vW).add(host.pointVelocity(local, _b)));
     const hostUp = _c.set(0, 1, 0).applyQuaternion(host.quat);
@@ -917,7 +930,8 @@ export class NavComputer {
     const agl = isFinite(s.agl) ? s.agl : s.lpos.y - spot.y;
     if (hd > 3) {
       // across the deck at height, slowing into the spot
-      const hv = Math.min(z.kind === 'pad' ? 3 : 12, Math.sqrt(2 * 0.25 * G0 * hd));
+      const brake = Math.min(s.limits.retro, s.limits.lateral) / s.effMass * .35;
+      const hv = Math.min(z.kind === 'pad' ? 3 : 12, Math.sqrt(2 * brake * hd) * .7, hd * .15);
       this.lvel.copy(hoff).setLength(hv);
       this.lvel.y = THREE.MathUtils.clamp((Math.min(z.max[1] - 10, spot.y + 12) - s.lpos.y) * 0.4, -3, 3);
       if (z.kind === 'pad') this.lvel.y = -THREE.MathUtils.clamp(agl * 0.2, 0.5, 3);
@@ -931,6 +945,7 @@ export class NavComputer {
   }
 
   done(msg) {
+    if (['orbit','park'].includes(this.dest?.kind) && !this.ship.landed && !this.ship.parent) this.ship.assist = 1;
     this.cancel(null);
     this.say(msg, 'nav');
     if (this.game.players.some((p) => this.game.focusOf(p) === this.ship) && this.game.audio && this.game.audio.clunk) this.game.audio.clunk();
@@ -941,7 +956,7 @@ export class NavComputer {
   // stand-off from the other: clear of both hulls (and of a big ship's 2 km FTL lock, for a big ship)
   standOff() {
     const o = this.other, s = this.ship;
-    const r = o.v ? o.v.type.radius : 0;
+    const r = o.type?.radius || o.v?.type.radius || 0;
     return s.big ? r + s.type.radius + 1500 : r + s.type.radius + 60;
   }
 
@@ -957,8 +972,8 @@ export class NavComputer {
     const goal = _b.copy(rel).setLength(want).add(P);
     const dl = _c.copy(goal).sub(s.getWorldPos(_d));
     const gd = dl.length();
-    const aB = this.aMax * 0.16;
-    const v = Math.min(s.big ? 120 : 200, Math.sqrt(2 * aB * gd));
+    const aB = Math.min(s.limits.retro, s.limits.lateral, s.limits.down) / s.effMass * .35;
+    const v = Math.min(s.big ? 120 : 200, Math.sqrt(2 * aB * gd) * .65, gd / (maneuverAuthority(s).turn * 2 + 25));
     const vAbs = dl.setLength(v).add(V).sub(s.body.vel);
     this.slew(A, vAbs);
     const dv = _d.copy(vAbs).sub(s.vel);
@@ -1031,30 +1046,7 @@ export class NavComputer {
   }
 
   parkPhase(A) {
-    const s = this.ship, b = s.body;
-    if (b.isStar) { this.done(`coasting around ${b.data.name}`); return; }
-    const r = s.pos.length();
-    const up = _a.copy(s.pos).divideScalar(r);
-    const R0 = this.parkRadius(b);
-    const dr = R0 - r;
-    // radial: toward the parking radius (heat-limited in air)
-    const aB = this.aMax * 0.24;
-    let vr = Math.sign(dr) * Math.min(V_SPACE, Math.sqrt(2 * aB * Math.abs(dr)));
-    // along track: circular speed at the parking radius, once out of the air
-    const vAbsNow = s.vel;
-    const horiz = _b.copy(vAbsNow).addScaledVector(up, -vAbsNow.dot(up));
-    if (horiz.lengthSq() < 1) horiz.copy(b.omega).cross(up);       // eastward
-    if (horiz.lengthSq() < 1e-12) horiz.set(0, 1, 0).cross(up);     // (a world that doesn't turn)
-    horiz.normalize();
-    const inAir = s.env.density > 1e-6;
-    const vc = Math.sqrt(b.GM / Math.max(r, R0));
-    const vt = inAir ? Math.min(vc, Math.max(0, vAbsNow.dot(horiz))) : vc;
-    if (inAir) vr = Math.min(vr, heatSpeed(s, s.env.density) * 0.85);
-    const vAbs = this._va.copy(horiz).multiplyScalar(vt).addScaledVector(up, vr);
-    this.slew(A, vAbs);
-    const dv = this._vb.copy(vAbs).sub(s.vel);
-    if (dv.length() > 30 && !inAir) this.point(A, dv, up);
-    else this.level(A, horiz);
-    if (Math.abs(dr) < Math.max(500, R0 * 0.002) && dv.length() < 3) this.done(`parked in orbit of ${b.data.name} · ${Math.round((r - b.R) / 1000).toLocaleString()} km`);
+    this.startOrbital('park', () => this.done(`parked in orbit of ${this.ship.body.data.name}`));
+    this.orbitalPhase(A);
   }
 }

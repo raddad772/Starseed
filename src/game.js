@@ -12,6 +12,7 @@ import { AttachedFrameVisual, initDeckFrames, updateDeckFrames } from './sim/dec
 import { thrustAvailability } from './sim/propulsion.js';
 import { WorldSims } from './sim/worldSims.js';
 import { WorldClock } from './sim/worldClock.js';
+import { WARP_LEVELS, requestedWarp, warpBeforeEvent } from './sim/warpConsent.js';
 import { NearGround } from './sim/nearGround.js';
 import { findCliffCountry, gentleNear } from './gen/volume.js';
 import * as THREE from 'three';
@@ -58,7 +59,7 @@ import { AudioEngine } from './audio.js';
 import * as U from './core/units.js';
 import { TerrainTiles } from './sim/terrainTiles.js';
 
-export const WARP_LEVELS = [1, 2, 4, 10, 50, 100, 1000, 10000, 100000];
+export { WARP_LEVELS } from './sim/warpConsent.js';
 // (the big ships' orbits above the FTL lock were laid out in km at the old tenth-size worlds: the
 // same places on worlds drawn at any size)
 const FLEET_K = U.LEN_SCALE / 0.1;
@@ -184,6 +185,7 @@ export class Game {
     const i = this.players.length;
     const p = new Player(this, i);
     p.input = input;
+    p.warpRequestIndex = 0;
     if (i > 0) this.engine.setViewCount(i + 1);
     // their HUD and suit screen: player 1's are in the page, others' are copies of them
     let root = document.querySelector('.hudView'), suitEl = document.querySelector('.suitScreen');
@@ -202,6 +204,7 @@ export class Game {
     }
     p.ui = { root, suitEl };
     this.players.push(p);
+    this.warpIndex = 0; // a joining player has not consented to fast time
     p.view = this.engine.views[i];
     p.ui.hud = new Hud(this, p, root);
     p.ui.quick = new QuickMenu(this, root.querySelector('.quickMenu'));
@@ -1435,28 +1438,17 @@ export class Game {
 
   setWarp(i) {
     i = Math.max(0, Math.min(WARP_LEVELS.length - 1, i));
-    // (a player stepping down below what their own ship travels at: the
-    // compression steps down first)
     const me = this.cur;
-    if (me && me.travelIndex > 0 && i < me.travelIndex) {
-      me.travelIndex = i > this.warpIndex ? i : 0;
-      this.message(me.travelIndex ? `Your ship travels ×${WARP_LEVELS[i].toLocaleString()}` : 'Travel compression off', 'nav');
-      if (me.travelIndex) return;
+    if (me) {
+      me.warpRequestIndex = i;
+      for (const p of this.players) p.travelIndex = 0;
+      const agreed = requestedWarp(this.players);
+      if (i > agreed) this.message('Time warp: waiting for the other player to choose a rate', 'nav');
     }
+    i = Math.min(i, requestedWarp(this.players));
     if (i > 2) {
-      const all = this.warpBlockers();
-      if (all.length) {
-        // Held back by someone else only: the asking player's own ship can
-        // still travel faster (travel compression: their ship alone, not the
-        // clock, so the sun, the planets and everyone else keep world time)
-        const own = me ? all.filter((b) => b.who === me || (b.v && me.aboard && b.v.root === me.vessel.root)) : all;
-        const can = me && !own.length && this.canCompress(me);
-        if (can) {
-          me.travelIndex = i;
-          this.message(`Time warp held (${all[0].why}) · your ship alone travels ×${WARP_LEVELS[i].toLocaleString()}`, 'nav');
-        } else this.message(`Time warp limited: ${all[0].why}`, 'caution');
-        i = Math.min(i, 2);
-      }
+      const blockers = this.warpBlockers();
+      if (blockers.length) i = 0;
     }
     if (i > 0 && this.players.some(p => p.understructure)) {
       i = 0;
@@ -1490,6 +1482,7 @@ export class Game {
     for (const v of this.vessels) {
       if (v.dead || v.landed) continue;
       const pl = v.pilot;
+      if (v.nav?.active && v.ftl?.state !== 'cruise' && (!v.auto?.coast || v.nav.phase !== 'orbital')) out.push({ v, who: pl, why: `${v.name} is maneuvering` });
       if (v.parent) {
         if (!v.attached) out.push({ v, who: pl, why: pl ? `manoeuvring inside ${v.parent.name}${who(pl)}` : `${v.name} is manoeuvring inside ${v.parent.name}` });
         continue;
@@ -1497,67 +1490,25 @@ export class Game {
       if (pl && v.wantsForce() && v.assist !== 2) { out.push({ v, who: pl, why: `thrusting${who(pl)}` }); continue; }
       const alt = v.altitude;
       if (v.body.atm && alt < v.body.atmHeight) out.push({ v, who: pl, why: pl ? `inside an atmosphere${who(pl)}` : `${v.name} is in an atmosphere` });
-      else if (alt < v.safeAltitude()) out.push({ v, who: pl, why: pl ? `too close to the surface${who(pl)}` : `${v.name} is flying near the surface` });
+      else if (alt < this.railClearance(v)) out.push({ v, who: pl, why: pl ? `too close to the surface${who(pl)}` : `${v.name} is flying near the surface` });
     }
     return out;
   }
 
-  // Whether player p's ship can travel faster than the clock: coasting free
-  // in space (not landed, not in a host, out of any air and well up, its
-  // drive idle), nobody else aboard it, no other player within 50 km
-  canCompress(p) {
-    if (!p.aboard || !p.vessel) return false;
-    const r = p.vessel.root;
-    if (r.dead || r.parent || r.landed || (r.ftl && r.ftl.state !== 'idle')) return false;
-    if ((r.body.atm && r.altitude < r.body.atmHeight * 1.02) || r.altitude < r.safeAltitude()) return false;
-    const rp = r.getWorldPos(_v1);
-    for (const q of this.players) {
-      if (q === p) continue;
-      if (q.aboard && q.vessel.root === r) return false;
-      if (q.worldPos(_v2).distanceTo(rp) < 50000) return false;
-    }
-    return true;
+  // All travel uses the shared clock. No vessel can privately advance its
+  // orbital phase while rendezvous targets remain at an earlier epoch.
+  canCompress() { return false; }
+  compressTravel() {
+    for (const v of this.vessels) v._compress = false;
+    for (const p of this.players) p.travelIndex = 0;
   }
 
-  // Travel compression, after the world's step: each compressing player's
-  // ship coasts ahead along its orbit by the time it gains on the clock
-  // (its rails anchor moves back), carrying everything aboard. It stops
-  // when the ship can't (a burn, air, another player near) or nobody holds
-  // the clock any more (then the clock itself goes faster).
-  compressTravel(dtReal) {
-    for (const v of this.vessels) v._compress = false;
-    for (const p of this.players) {
-      if (!(p.travelIndex > 0)) continue;
-      if (!this.canCompress(p)) {
-        p.travelIndex = 0;
-        p.ui.hud.message('Travel compression off: your ship is no longer coasting alone in space', 'caution');
-        continue;
-      }
-      if (!this.warpBlockers().length) { // (nobody holds the clock: it goes this fast for everyone)
-        const k = p.travelIndex;
-        p.travelIndex = 0;
-        this.setCur(p); this.setWarp(k); this.setCur(null);
-        continue;
-      }
-      const r = p.vessel.root;
-      r._compress = true; // (it coasts on rails from the next step)
-      if (!r.rails) continue; // (a burn: world time until it coasts again)
-      // (in steps along the orbit, like the clock's own warp: a step into air or
-      // too near the ground ends it there)
-      const extra = dtReal * Math.max(0, WARP_LEVELS[p.travelIndex] - this.warp);
-      const n = this.railSteps(r, extra), h = extra / n;
-      for (let i = 0; i < n; i++) {
-        r.railT0 -= h;
-        r.railsState(this.t, r.pos, r.vel);
-        r.checkSOI(); // (a new body re-anchors its rails and says so)
-        if ((r.body.atm && r.altitude < r.body.atmHeight * 1.02) || r.altitude < r.safeAltitude()) {
-          p.travelIndex = 0;
-          p.ui.hud.message('Travel compression off: near the ground or in the air', 'caution');
-          break;
-        }
-      }
-      this.syncTree(r);
-    }
+  updateWarp(dtReal) {
+    this.setCur(null);
+    let wanted = requestedWarp(this.players);
+    const event = Math.min(...this.vessels.filter(v => !v.dead).map(v => v.nav?.nextEventAt ?? Infinity));
+    wanted = warpBeforeEvent(WARP_LEVELS, wanted, this.t, event, dtReal);
+    this.setWarp(wanted);
   }
 
   toggleRamp(v = this.player.aboard ? this.player.vessel : this.player.ship) {
@@ -1745,8 +1696,8 @@ export class Game {
     // (player 1's M opens the pause screen's map: main.js sets onMapKey)
     if (input.hit('KeyM')) { if (this.onMapKey) this.onMapKey(this.player); else this.map.toggle(this.player); }
     if (this.state !== 'playing') return;
-    // (travelling faster than the clock: the keys step your own ship's rate)
-    const wi = this.player.travelIndex > 0 ? this.player.travelIndex : this.warpIndex;
+    // Each pilot changes their consent ceiling, even while waiting for the other.
+    const wi = this.player.warpRequestIndex || 0;
     if (input.hit('Comma')) this.setWarp(wi - 1);
     if (input.hit('Period')) this.setWarp(wi + 1);
     if (input.hit('Tab')) {
@@ -1859,7 +1810,7 @@ export class Game {
   }
 
   simulate(dtReal) {
-    const warp = this.warp;
+    let warp = this.warp;
     let dt = dtReal * warp;
     for (const v of this.vessels) { const c = v.ctrl; c.fwd = c.strafe = c.lift = c.pitch = c.yaw = c.roll = 0; c.boost = c.brake = false; }
     // each player's input -> the controls of the craft they fly (before the
@@ -1869,6 +1820,7 @@ export class Game {
       p._in = p.ui.suit.open ? this.blockedInput : p.input;
       p._mouse = p.ui.suit.open ? { dx: 0, dy: 0 } : p.input.mouse();
       const pv = this.piloted;
+      if (p.warpRequestIndex > 0 && (p.input.axis('KeyS','KeyW') || p.input.axis('KeyA','KeyD') || p.input.axis('KeyC','Space') || p.input.axis('KeyE','KeyQ') || p.input.down('KeyX'))) p.warpRequestIndex = 0;
       if (!pv) continue;
       this.pilotControls(pv, dtReal, p._mouse, p._in);
       // nav computers fly their ships: the pilot's stick and thrust are locked out until it's
@@ -1886,6 +1838,8 @@ export class Game {
     this.setCur(null);
     this.updateNearField();
     for (const v of this.vessels) v.nav.update(dtReal);
+    this.updateWarp(dtReal);
+    warp = this.warp; dt = dtReal * warp;
     // warp guard: thrust input or atmosphere drops rails warp
     if (warp > 4) {
       const why = this.warpBlocker();
@@ -2033,15 +1987,19 @@ export class Game {
   }
 
   // how each free vessel moves this frame
+  railClearance(v) {
+    const b = v.body, geometric = Math.max((b.atmHeight || 0) * 1.03, b.relief * 1.6 + 2000);
+    if (v.nav?.active && v.nav.phase === 'orbital' && v.auto?.coast && v.orbit().rp > b.R + geometric) return geometric;
+    return v.safeAltitude();
+  }
+
   rootMode(v, highWarp) {
     if (v.landed) return 'landed';
     if (v.ftl && v.ftl.state === 'cruise') return 'ftl';
-    const inSpace = v.altitude > (v.body.atm ? v.body.atmHeight * 1.02 : 0) && v.altitude > v.safeAltitude();
+    const inSpace = v.altitude > (v.body.atm ? v.body.atmHeight * 1.02 : 0) && v.altitude > this.railClearance(v);
     if (!inSpace) return 'physics';
     if (highWarp) return 'rails';
-    // (a ship travelling faster than the clock coasts, its assist resting as in a
-    // warp, until its pilot touches the thrusters)
-    if (v._compress) { const c = v.ctrl; if (!(c.fwd || c.strafe || c.lift || c.brake)) return 'rails'; }
+    if (v.auto?.coast) return 'rails';
     if (v.pilot || v.auto) return (!v.wantsForce() && v.assist !== 2) ? 'rails' : 'physics';
     // nobody at the controls: it just keeps its course
     return 'rails';
@@ -2050,7 +2008,13 @@ export class Game {
   railSteps(v, dt) {
     const r0 = v.pos.length();
     const vmag = Math.max(1, v.vel.length());
-    return Math.min(400, Math.max(1, Math.ceil(dt * vmag / Math.max(2000, (r0 - v.body.R) * 0.05))));
+    let n = Math.max(1, Math.ceil(dt * vmag / Math.max(2000, (r0 - v.body.R) * 0.05)));
+    for (const child of v.body.children) {
+      const relativeSpeed = v.vel.distanceTo(child.relVel);
+      if (v.pos.distanceTo(child.relPos) < child.soi + relativeSpeed * dt * 1.5)
+        n = Math.max(n, Math.ceil(dt * relativeSpeed / (child.soi * .15)));
+    }
+    return Math.min(400, n);
   }
 
   advanceVessels(dt) {
@@ -2110,9 +2074,17 @@ export class Game {
   railStep(v, h) {
     v.railsState(this.t, v.pos, v.vel);
     this.rotateOnly(v, h);
-    if (v.checkSOI()) this.tell(v, `Entered ${v.body.data.name}'s sphere of influence`, 'nav');
+    if (v.checkSOI()) {
+      this.tell(v, `Entered ${v.body.data.name}'s sphere of influence`, 'nav');
+      if (v.nav?.active) {
+        // Guidance must replan in the new frame before another accelerated
+        // step; an encounter may occur between scheduled correction events.
+        this.setWarp(0);
+        return true;
+      }
+    }
     const alt = v.altitude;
-    if ((v.body.atm && alt < v.body.atmHeight) || alt < v.safeAltitude()) {
+    if ((v.body.atm && alt < v.body.atmHeight) || alt < this.railClearance(v)) {
       v.rails = false;
       v._mode = 'physics';
       if (this.warp > 1) {

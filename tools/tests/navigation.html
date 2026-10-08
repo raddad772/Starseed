@@ -1,0 +1,16 @@
+<!doctype html><meta charset="utf-8"><title>Navigation and shared time validation</title>
+<style>body{margin:0;background:#10151b;color:#dae5f4;font:15px system-ui}header{padding:12px}button{margin-left:16px;padding:8px}iframe{border:0;width:1280px;height:1000px}pre{white-space:pre-wrap}#status{max-height:150px;overflow:auto}</style>
+<header><b>Navigation — two pilots, one clock</b><button id="run">Run navigation checks</button><pre id="status">Ready</pre></header><iframe title="Navigation test game"></iframe>
+<script type="module">
+const frame=document.querySelector('iframe'),status=document.querySelector('#status');
+document.querySelector('#run').onclick=()=>{
+ status.textContent='Starting normal native game…';
+ frame.onload=()=>{const script=frame.contentDocument.createElement('script');script.type='module';script.src='/tools/navigation-game-driver.js';frame.contentDocument.body.append(script);};
+ frame.src='/?seed=SOL&workers=2&date=2026-10-06T23:08';
+};
+window.addEventListener('message',event=>{
+ if(event.source!==frame.contentWindow||event.origin!==location.origin||event.data.type!=='navigation-test')return;
+ status.textContent=JSON.stringify(event.data.report,null,2);
+ if(event.data.image)fetch('/__webgpu_capture',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:'navigation-multiplayer',image:event.data.image,report:event.data.report})});
+});
+</script>

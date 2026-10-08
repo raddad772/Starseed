@@ -12,6 +12,7 @@
 
 import * as THREE from 'three';
 import { ASSIST_NAMES } from '../sim/ship.js';
+import { WARP_LEVELS } from '../sim/warpConsent.js';
 import { padGlyph } from '../padLayout.js';
 
 const ROWS = 8;                                 // rows shown at once
@@ -95,9 +96,9 @@ export class QuickMenu {
     });
     rows.push({
       id: 'time', label: 'Time', value: `×${g.warp.toLocaleString()}`, items: [
-        { label: 'Faster', value: `×${g.warp.toLocaleString()}`, key: 'Period', stay: true },
-        { label: 'Slower', key: 'Comma', stay: true },
-        { label: 'Normal speed', run: () => g.setWarp(0) },
+        { label: 'Request faster time', value: `requested ×${WARP_LEVELS[p.warpRequestIndex || 0].toLocaleString()}`, key: 'Period', stay: true },
+        { label: 'Request slower time', key: 'Comma', stay: true },
+        { label: 'Cancel time warp', run: () => g.setWarp(0) },
       ],
     });
     rows.push({ id: 'suit', label: 'Suit computer', items: [
@@ -113,6 +114,11 @@ export class QuickMenu {
   navMenu() {
     const g = this.game, nav = g.nav, t = g.target;
     const items = [{ label: nav.active ? 'Stop the nav computer' : 'Fly there', value: nav.active ? nav.destText() : (t ? t.data.name : 'no target'), key: 'KeyN' }];
+    items.push({ id: 'route', label: 'Travel mode', value: nav.travelMode, items: [
+      { label: 'Automatic', value: 'FTL when useful', run: () => nav.setTravelMode('auto') },
+      { label: 'Conventional', value: 'orbital transfers and launch windows', run: () => nav.setTravelMode('conventional') },
+      ...(nav.ship.type.ftl === false ? [] : [{ label: 'Prefer FTL', value: 'warp drive for long legs', run: () => nav.setTravelMode('ftl') }]),
+    ] });
     if (t && !t.isVessel && t.solid) {
       const chosen = nav.sites.get(t.id);
       const res = g.settlements.get(t.id);

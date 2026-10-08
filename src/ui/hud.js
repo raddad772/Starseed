@@ -4,6 +4,8 @@
 
 import * as THREE from 'three';
 import * as U from '../core/units.js';
+import { WARP_LEVELS } from '../sim/warpConsent.js';
+import { fmtEta } from '../sim/navComputer.js';
 import { ASSIST_NAMES } from '../sim/ship.js';
 import { lockRadius } from '../sim/ftl.js';
 import { PAD_LAYOUT, padDiagram, padButtonFor, padButtonText, padGlyph } from '../padLayout.js';
@@ -26,14 +28,6 @@ function fmtP(p) {
   if (p < 0.001) return (p * 1e5).toFixed(1) + ' Pa';
   if (p < 1) return (p * 1000).toFixed(0) + ' mbar';
   return p.toFixed(p < 10 ? 2 : 0) + ' bar';
-}
-
-// a rough time to go: "~40 s", "~3 min", "~1 h 20 min"
-function fmtEta(sec) {
-  if (!isFinite(sec)) return '—';
-  if (sec < 60) return `~${Math.max(5, Math.round(sec / 5) * 5)} s`;
-  if (sec < 3600) return `~${Math.round(sec / 60)} min`;
-  return `~${Math.floor(sec / 3600)} h ${Math.round((sec % 3600) / 60)} min`;
 }
 
 // One per player, over their view (root: its .hudView element). The loading
@@ -367,9 +361,12 @@ export class Hud {
     const lock = g.ftl.massLock();
     if (piloting && lock && g.ftl.state !== 'cruise') nrow('Mass lock', `${lock.body.data.name} +${((lock.lock - lock.dist) / 1000).toFixed(0)} km`, 'c-caution');
     nrow('Time warp', `×${g.warp.toLocaleString()}`, g.warp > 1 ? 'c-nav' : '');
+    if (g.players.length > 1) nrow('Warp requests', g.players.map(p => `${p.label}: ×${WARP_LEVELS[p.warpRequestIndex || 0].toLocaleString()}`).join(' · '), 'c-nav');
     nrow('Mission day', (g.t / 86400).toFixed(2));
     const ns = g.nav.status();
     if (ns) { nrow('Nav computer', ns.phase, 'c-nav'); nrow('Going to', ns.dest, 'c-nav'); nrow('Time to go', fmtEta(ns.eta), 'c-nav'); }
+    if (ns?.wait > 0) nrow('Launch window in', fmtEta(ns.wait), 'c-nav');
+    if (ns?.deltaV > 0) nrow('Maneuvers', `${U.fmtSpeed(ns.deltaV)} Δv · burn ${fmtEta(ns.burnSeconds)}`, 'c-nav');
     if (g.showSites) {
       const res = g.settlements.get(body.id);
       nrow('Survey', res ? `${res.sites.length} ${res.habitable ? 'city' : 'outpost'} sites` : 'surveying…', 'c-ok');
@@ -419,7 +416,7 @@ export class Hud {
       if (p.mode === 'ship' && p.vessel.big) chip(g.route ? `ROUTE · ${g.route.label.toUpperCase()} · ${tab} NEXT` : `${tab} · FIND YOUR WAY`, g.route ? 'nav' : '');
     }
     if (g.warp > 1) chip(`WARP ×${g.warp.toLocaleString()}`, 'nav');
-    if (p.travelIndex > 0) chip(`TRAVEL ×${g.travelRate(p).toLocaleString()} · YOUR SHIP`, 'nav');
+    if ((p.warpRequestIndex || 0) > g.warpIndex) chip(`WARP REQUEST ×${WARP_LEVELS[p.warpRequestIndex].toLocaleString()} · WAITING`, 'nav');
     const ns = g.nav.status();
     if (ns) chip(`NAV · ${ns.phase.toUpperCase()} · ${fmtEta(ns.eta)}`, 'nav');
     if (p.mode !== 'seat' && p.lastSeat && !p.lastSeat.vessel.dead) chip(`${this.keyName('KeyP', 'P')} · ${p.lastSeat.vessel.name.toUpperCase()} SEAT`);
