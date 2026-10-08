@@ -126,7 +126,7 @@ export class SiteWalker {
   recover() {
     this.pos = this.safe.pos.slice(); this.yaw = this.safe.yaw;
     this.vel = [0, 0, 0]; this.grounded = true; this.fallTime = 0;
-    this.alert = 'Suit recovery: returned to your last safe footing.';
+    this.alert = 'Returned to last safe footing';
   }
 
   takeAlert() { const a = this.alert; this.alert = null; return a; }

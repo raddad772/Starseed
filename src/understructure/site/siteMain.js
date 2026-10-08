@@ -7,6 +7,8 @@ import { compileSite } from '../plan/compile.js';
 import { inside } from '../plan/geom2.js';
 import { buildSiteScene } from './siteScene.js';
 import { SiteWalker } from './siteWalker.js';
+import { SiteGuide } from './siteGuide.js';
+import { SiteCompass } from './siteCompass.js';
 
 const $ = (id) => document.getElementById(id), params = new URLSearchParams(location.search);
 const seed = params.get('seed') || 'SUMP-07';
@@ -14,6 +16,8 @@ const plan = planSite(seed, { environment: { water: params.get('environment') !=
 const site = compileSite(plan);
 const visual = buildSiteScene(plan, site);
 const walker = new SiteWalker(visual.collision, site.spawn);
+const guide = new SiteGuide(plan), compass = new SiteCompass(document.body);
+const recordFind = plan.finds.find((f) => f.kind === 'record');
 const saveKey = `starseed.megasite.${params.has('test') ? 'test.' : ''}v1.${plan.seed}`;
 let saved = {}; try { saved = JSON.parse(localStorage.getItem(saveKey) || '{}'); } catch { /* private window */ }
 if (params.has('reset')) saved = {};
@@ -29,7 +33,7 @@ const engine = { scene: visual.scene, view, minExposure: 0.05, pixelRatio: 1 };
 let renderer, running = false, last = 0, time = 0, frame = 0, notice = '', noticeUntil = 0;
 const keys = new Set(), errors = [];
 $('site').textContent = plan.seed; $('seed').value = plan.seed;
-$('kinds').textContent = plan.landmarks.map((l) => l.name.toLowerCase()).join(' · ');
+$('kinds').textContent = `${plan.landmarks.map((l) => l.name.toLowerCase()).join(' · ')} · ${plan.nodes.filter((n) => n.kind === 'crossing').length} crossings · ${plan.nodes.filter((n) => n.kind === 'climb').length} climbs`;
 
 function fail(e) { errors.push(String(e?.stack || e)); $('fatal').hidden = false; $('fatal').textContent = 'The survey could not start: ' + (e?.message || e); running = false; }
 addEventListener('error', (e) => fail(e.error || e.message)); addEventListener('unhandledrejection', (e) => fail(e.reason));
@@ -38,10 +42,13 @@ function resize() {
   const ratio = Math.min(devicePixelRatio || 1, 1.5), w = Math.max(1, Math.floor(innerWidth * ratio)), h = Math.max(1, Math.floor(innerHeight * ratio));
   canvas.width = w; canvas.height = h; Object.assign(view, { width: w, height: h, rect: { x: 0, y: 0, w, h } }); camera.aspect = w / h; camera.updateProjectionMatrix();
 }
-function start() { running = true; $('intro').hidden = true; canvas.focus(); canvas.requestPointerLock?.()?.catch?.(() => {}); last = performance.now(); }
-function pause() { running = false; keys.clear(); document.exitPointerLock?.(); $('intro').hidden = false; $('start').textContent = 'Resume survey'; save(); }
+function start() { running = true; $('intro').hidden = true; $('start').textContent = 'Resume'; canvas.focus(); canvas.requestPointerLock?.()?.catch?.(() => {}); last = performance.now(); }
+function pause() { running = false; keys.clear(); document.exitPointerLock?.(); $('intro').hidden = false; save(); }
 $('start').onclick = start;
-$('generate').onclick = () => { const u = new URL(location.href); u.searchParams.set('seed', $('seed').value); location.href = u.href; };
+const load = (seedValue) => { const u = new URL(location.href); u.searchParams.set('seed', seedValue); location.href = u.href; };
+$('generate').onclick = () => load($('seed').value);
+$('seed').addEventListener('keydown', (e) => { if (e.key === 'Enter') load($('seed').value); });
+$('random').onclick = () => { const a = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789', b = new Uint32Array(8); crypto.getRandomValues(b); load([...b].map((x, i) => (i === 4 ? '-' : '') + a[x % a.length]).join('')); };
 addEventListener('resize', resize);
 addEventListener('keydown', (e) => {
   if (e.target instanceof HTMLInputElement || e.metaKey || e.ctrlKey) return;
@@ -65,12 +72,12 @@ function offer() {
     const d = Math.hypot(f.pos[0] - p[0], (f.pos[1] - p[1]) * 0.6, f.pos[2] - p[2]);
     if (d < bd) { bd = d; best = f; }
   }
-  if (best) return { type: 'find', find: best, text: best.kind === 'record' ? 'Recover the site record' : best.kind === 'crawler' ? 'Recover data from the stalled crawler' : 'Recover the data shard' };
+  if (best) return { type: 'find', find: best, text: best.kind === 'record' ? 'Take the site record' : best.kind === 'crawler' ? 'Pull data from the crawler' : 'Take the data shard' };
   const access = plan.nodes.find((n) => n.id === 'access');
   if (Math.abs(p[1] - access.y0) < 1 && inside([p[0], p[2]], plan.access.poly, 0)) {
     return state.collected.has(plan.finds.find((f) => f.kind === 'record').id)
-      ? { type: 'exit', text: "Ride the founders' lift to the surface" }
-      : { type: 'sealed', text: "The founders' lift is sealed. Its controls answer to the site record." };
+      ? { type: 'exit', text: "Take the founders' lift up" }
+      : { type: 'sealed', text: "Lift sealed: needs the site record" };
   }
   return null;
 }
@@ -82,8 +89,8 @@ function interact() {
     state.collected.add(o.find.id);
     const r = raw(), c = credit(r), gained = c - credit(before);
     toast(o.find.kind === 'record'
-      ? `SITE RECORD RECOVERED · +${o.find.units} units. The founders' lift will answer you now.`
-      : `GOLDEN PATH DATA +${gained} · site ${r}% · credit ${c}/170${r > 100 ? ' (exploration bonus ×3)' : ''}`);
+      ? `Site record +${o.find.units} · founders' lift unlocked`
+      : `Data +${gained} · site ${r}% · credit ${c}/170${r > 100 ? ' (×3 past 100%)' : ''}`);
     save();
   } else if (o.type === 'exit') { state.returned = true; toast('The lift rises toward daylight. Survey complete: you can come back to explore further.'); pause(); }
   else toast(o.text);
@@ -103,11 +110,17 @@ function hud() {
   const o = running ? offer() : null; $('prompt').hidden = !o; if (o) $('prompt').innerHTML = `<b>E</b>${o.text}`;
   const a = walker.takeAlert(); if (a) toast(a);
   $('toast').textContent = performance.now() < noticeUntil ? notice : ''; $('toast').hidden = !$('toast').textContent;
-  $('objective').textContent = state.collected.has(plan.finds.find((f) => f.kind === 'record').id) ? "Reach the founders' access shaft and ride its lift up" : 'Find the site record. Data finds along the way add to the Golden Path.';
+  // the compass: where the route goes next, in camera space
+  const tgt = guide.target(walker.pos, { recordTaken: state.collected.has(recordFind.id), recordPos: recordFind.pos });
+  const eye = camera.position, rel = new THREE.Vector3(tgt.pos[0] - eye.x, tgt.pos[1] + 1.2 - eye.y, tgt.pos[2] - eye.z);
+  const flat = Math.hypot(rel.x, rel.z), rise = tgt.pos[1] - walker.pos[1];
+  rel.applyQuaternion(camera.quaternion.clone().invert());
+  compass.draw([rel.x, rel.y, rel.z], `${Math.round(flat)} m`, Math.abs(rise) > 1.5 ? `${rise > 0 ? '▲' : '▼'} ${Math.abs(Math.round(rise))} m · ${tgt.label}` : tgt.label);
+  $('objective').textContent = state.collected.has(plan.finds.find((f) => f.kind === 'record').id) ? "Founders' lift" : 'Site record';
 }
 function render() {
-  hud();
   camera.position.set(walker.pos[0], walker.pos[1] + 1.68, walker.pos[2]); camera.rotation.set(walker.pitch, walker.yaw, 0); camera.updateMatrixWorld();
+  hud();
   visual.update(camera, time, state); engine.time = time; renderer.render(engine); frame++;
 }
 function input() {
@@ -122,7 +135,7 @@ const entryScan = plan.finds.find((f) => f.kind === 'entry-scan');
 function scanOnArrival() {
   if (!entryScan || state.collected.has(entryScan.id) || !running) return;
   state.collected.add(entryScan.id); save();
-  toast('Scanning… GOLDEN PATH DATA FOUND · processing · +1 unit. Find more.');
+  toast('Entry scan: data +1');
 }
 function loop(now) {
   requestAnimationFrame(loop);
@@ -131,6 +144,6 @@ function loop(now) {
   if (running) { walker.step(dt, input()); time += dt; if (time > 1.5) scanOnArrival(); }
   render();
 }
-if (params.has('test')) window.siteTest = { plan, site, walker, state, visual, errors, render, start, pause, interact, offer, raw, credit, get renderer() { return renderer; }, get frame() { return frame; }, engine };
-try { resize(); renderer = await DeferredRenderer.create(canvas, fail); engine.webgpu = renderer; $('start').disabled = false; $('start').textContent = 'Begin survey'; render(); last = performance.now(); requestAnimationFrame(loop); }
+if (params.has('test')) window.siteTest = { plan, site, walker, state, guide, visual, errors, render, start, pause, interact, offer, raw, credit, get renderer() { return renderer; }, get frame() { return frame; }, engine };
+try { resize(); renderer = await DeferredRenderer.create(canvas, fail); engine.webgpu = renderer; $('start').disabled = false; $('start').textContent = 'Start'; render(); last = performance.now(); requestAnimationFrame(loop); }
 catch (e) { fail(e); }
