@@ -1,11 +1,13 @@
 // Seeded local infrastructure prototype. World generation and walking consume the same plan.
 import { Rng, normalizeSeed } from '../core/rng.js';
-import { siteThemes,makePuzzles } from './anomalies.js';
+import { siteThemes,makePuzzles,LEGACY_PROFILES } from './anomalies.js';
 
 export const TILE = 4;
 export const DECK = -240;
 export const LIFT_SECONDS = 4.2;
 export const ACCESS = {halfWidth:.65,halfDepth:.85};
+// Old integrated saves predate explicit theme metadata; preserve their original selection.
+export function restoredProfile(seed,requested,saved){if(requested&&requested!=='auto')return requested;if(Array.isArray(saved?.themes))return saved.themes.join('-');if(saved?.version&&saved.version<=2)return Rng.fromString(`understructure-v1:${normalizeSeed(seed)}`).fork('themes').pick(LEGACY_PROFILES).join('-');return 'auto';}
 export const key = (x, z) => `${x},${z}`;
 export function generateUnderstructure(seed = 'SUMP-07',profile='auto') {
   seed = normalizeSeed(seed) || 'SUMP-07';
@@ -53,6 +55,15 @@ export function generateUnderstructure(seed = 'SUMP-07',profile='auto') {
       walkways:[[-114,-78,-118,-82]],color:'#dfb07d'},
   ];
   line([12,-13],[19,-13]);line([-12,-7],[-19,-7]);line([-12,-25],[-19,-25]);
+  if(themes.includes('gravity')){
+    chambers[1].gravity=1.6;
+    chambers.push({id:'low',name:'LIGHT-LOAD TRANSIT',kind:'platforms',gravity:.22,bounds:[78,142,-118,-82],ceiling:DECK+17,door:[78,-100],doorSide:-1,walkways:[],color:'#b7cffa',platforms:[[78,88,-104,-96,DECK],[93,99,-104,-96,DECK+1.2],[106,112,-104,-96,DECK+2.4],[119,125,-104,-96,DECK+3.6],[132,142,-106,-94,DECK+4.8]]});
+    line([12,-25],[19,-25]);
+  }
+  if(themes.includes('light')){
+    chambers.push({id:'light',name:'PHOTON CAUSEWAY',kind:'platforms',gravity:1,bounds:[78,138,-36,-4],ceiling:DECK+14,door:[78,-20],doorSide:-1,walkways:[],color:'#9ff0ea',platforms:[[78,88,-24,-16,DECK],[102,110,-24,-16,DECK],[126,138,-26,-14,DECK]],bridges:[[88,102,-22,-18,DECK],[110,126,-22,-18,DECK]]});
+    line([12,-7],[12,-5]);line([12,-5],[19,-5]);
+  }
   const nullChamber=chambers[0];
   if(!themes.includes('gravity')){nullChamber.kind='observation';nullChamber.name=themes.includes('time')?'DELAY WELL':'PARALLAX WELL';chambers[1].name='RETURN CISTERN';}
   if(themes.includes('space'))chambers[2].name='FOLD EXCHANGE';
@@ -79,7 +90,7 @@ export function generateUnderstructure(seed = 'SUMP-07',profile='auto') {
   // Keep structural columns clear of the crossing and far perimeter catwalks.
   const pillars=[];
   for(let z=-140;z>-280;z-=24)for(const x of [-44,-20,20,44])pillars.push({x,z,width:3,depth:4});
-  return {version:2,seed,themes,puzzles,tiles:[...tiles.values()],walls,rooms,edges,samples,
+  return {version:3,seed,themes,puzzles,tiles:[...tiles.values()],walls,rooms,edges,samples,
     deck:DECK,shaft:{min:[-2,-2],max:[2,2]},reservoir:{x:64,near:-122,far:-286,bottom:DECK-40,water:DECK-25,ceiling:DECK+22},
     walkways:[[-2,2,-286,-120],[-64,64,-126,-122],[-64,64,-286,-282],[-64,-60,-286,-122],[60,64,-286,-122],[-64,64,-206,-202]],
     access:{...ACCESS},megavault:{near:110,far:1710,zMin:-652,zMax:548,ceiling:-4,bottom:-904},
@@ -97,13 +108,15 @@ export function terrainHeight(x,z) {
 
 export function makeCollision(plan) {
   const occupied=new Set(plan.tiles.map(t=>key(t.x,t.z)));
-  function floorAt(x,z,{y=0,liftY=0,hatchOpen=false}={}) {
+  function floorAt(x,z,{y=0,liftY=0,hatchOpen=false,bridgeStage=0}={}) {
     const aperture=Math.abs(x)<plan.access.halfWidth&&Math.abs(z)<plan.access.halfDepth;
     if(aperture) {
       if(!hatchOpen&&y>-2)return 0;
       return Math.abs(y-liftY)<.8?liftY:null;
     }
     if(y>-2)return Math.hypot(x,z)<240?terrainHeight(x,z):null;
+    const room=chamberAt(plan,x,z);
+    if(room?.kind==='platforms'){const surfaces=[...room.platforms,...(room.bridges||[]).slice(0,bridgeStage)];return surfaces.filter(([a,b,c,d,top])=>x>=a&&x<=b&&z>=c&&z<=d&&top<=y+.45).reduce((best,p)=>best===null?p[4]:Math.max(best,p[4]),null);}
     if(Math.abs(y-DECK)>.8)return null;
     if(occupied.has(key(Math.floor((x+2)/TILE),Math.floor((z+2)/TILE))))return DECK;
     if(plan.walkways.some(([x0,x1,z0,z1])=>x>x0&&x<x1&&z>z0&&z<z1))return DECK;
@@ -133,5 +146,12 @@ export function makeCollision(plan) {
     for(const o of room.obstacles){const cy=Math.max(y+.42,Math.min(y+1.48,o.center[1]));if(Math.hypot(x-o.center[0],cy-o.center[1],z-o.center[2])<o.radius+radius)return false;}
     return true;
   }
-  return {floorAt,canStand,canFloat};
+  function canTraverse(x,y,z,room,radius=.42){
+    if(y+1.9>room.ceiling)return false;
+    const [a,b,c,d]=room.bounds;
+    // Capsule stays in the chamber except through its low entrance.
+    for(let i=0;i<12;i++){const angle=i*Math.PI/6,px=x+Math.cos(angle)*radius,pz=z+Math.sin(angle)*radius;if(px>=a&&px<=b&&pz>=c&&pz<=d)continue;if(px<a&&px>=a-2&&Math.abs(pz-room.door[1])<=1.85&&Math.abs(y-DECK)<.2)continue;return false;}
+    return true;
+  }
+  return {floorAt,canStand,canFloat,canTraverse};
 }

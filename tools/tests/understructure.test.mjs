@@ -24,7 +24,7 @@ test('open hatch has no floor with lift away; walls and catwalk edges contain lo
  s.pos=[0,DECK,-150];advance(s,5,{strafe:1});assert.ok(s.pos[0]<1.6);assert.equal(s.pos[1],DECK);
  for(const {x,z,width,depth} of s.plan.pillars)for(const [x0,x1,z0,z1] of s.plan.walkways)assert.ok(x+width/2<=x0||x-width/2>=x1||z+depth/2<=z0||z-depth/2>=z1);
 });
-test('all six theme profiles: walk, solve generated circuits, retrieve data, return by lift',()=>{
+test('all 21 theme profiles: walk, solve generated circuits, retrieve data, return by lift',()=>{
  for(const profile of THEME_PROFILES)for(const seed of ['SUMP-07','SITE-93']){
   const s=make(seed,profile.join('-'));descend(s);assert.equal(s.teleport(),false);
   walkRoute(s,0,-264);assert.equal(s.offer().type,'archive_data');s.interact();assert.equal(s.dataRecovered,false);
@@ -43,7 +43,7 @@ test('zero-g inertia, braking, shell and floating obstacles; safe floor-level ex
  flyTo(s,[79,DECK+12,-52]);s.yaw=Math.PI/2;advance(s,8,{forward:1});assert.ok(s.pos[0]>=78.4);assert.ok(s.zeroG);
  flyTo(s,[96,DECK+12,-52]);for(let i=0;i<80;i++)s.step(.25,{vertical:1,fast:true});assert.ok(s.pos[1]+1.9<=s.plan.chambers[0].ceiling+.001);
  const o=s.plan.chambers[0].obstacles[0];assert.equal(s.collision.canFloat(o.center[0],o.center[1]-1,o.center[2]),false);
- flyTo(s,[96,DECK+.05,-52]);flyTo(s,[82,DECK+.05,-52]);s.interact();assert.ok(s.solved.has('gravity'));flyTo(s,[77,DECK+.05,-52]);assert.equal(s.zeroG,false);assert.equal(s.pos[1],DECK);assert.deepEqual(s.velocity,[0,0,0]);
+ flyTo(s,[96,DECK+.05,-52]);flyTo(s,[82,DECK+.05,-52]);s.interact();assert.ok(s.carryingCell);flyTo(s,[77,DECK+.05,-52]);assert.equal(s.zeroG,false);assert.equal(s.pos[1],DECK);assert.deepEqual(s.velocity,[0,0,0]);
 });
 test('machinery time holds and reverses while player time and progress remain forward',()=>{
  assert.equal(machineryClock(6).state,'HELD');assert.equal(machineryClock(8).state,'REWIND');assert.equal(machineryClock(12).time,0);

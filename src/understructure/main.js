@@ -1,15 +1,19 @@
 import * as THREE from 'three';
 import { DeferredRenderer } from '../render/webgpu/renderer.js';
-import { generateUnderstructure, TILE, DECK, key } from './layout.js';
+import { generateUnderstructure } from './layout.js';
 import { buildScene } from './scene.js';
 import { UnderstructureSimulation } from './simulation.js';
-import { THEME_NAMES } from './anomalies.js';
+import { SurveyMap } from './surveyMap.js';
+import { surveyObjective,fieldStatus } from './guidance.js';
+import { THEME_NAMES,THEME_PROFILES } from './anomalies.js';
 
 const $=id=>document.getElementById(id),params=new URLSearchParams(location.search);
 const plan=generateUnderstructure(params.get('seed')||'SUMP-07',params.get('theme')||'auto'),saveKey=`starseed.understructure.${params.has('test')?'test.':''}v2.${plan.seed}.${plan.themes.join('-')}`;
 let saved={};try{saved=JSON.parse(localStorage.getItem(saveKey)||'{}');}catch{}
 if(params.has('test')&&params.has('reset'))saved={};
 const sim=new UnderstructureSimulation(plan,saved),visual=buildScene(plan),canvas=$('view');
+const mapView=new SurveyMap($('map'));
+for(const profile of THEME_PROFILES){const value=profile.join('-');if(!Array.from($('theme').options).some(o=>o.value===value))$('theme').add(new Option(profile.map(t=>THEME_NAMES[t]).join(' + '),value));}
 const camera=new THREE.PerspectiveCamera(73,1,.08,3200);camera.rotation.order='YXZ';
 const view={camera,width:1,height:1,rect:{x:0,y:0,w:1,h:1},meterRef:.18,maxExposure:3,exposureBias:1.3};
 const engine={scene:visual.scene,view,minExposure:.05,pixelRatio:1};
@@ -23,7 +27,7 @@ window.addEventListener('error',e=>fail(e.error||e.message));window.addEventList
 function save(){try{localStorage.setItem(saveKey,JSON.stringify(sim.save()));}catch{} }
 function toast(message){if(!message)return;$('toast').textContent=message;$('toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').hidden=true,4500);}
 function resize(){const ratio=Math.min(devicePixelRatio||1,1.5);const w=Math.max(1,Math.floor(innerWidth*ratio)),h=Math.max(1,Math.floor(innerHeight*ratio));canvas.width=w;canvas.height=h;Object.assign(view,{width:w,height:h,rect:{x:0,y:0,w,h}});camera.aspect=w/h;camera.updateProjectionMatrix();dirty=true;}
-function panel(id){const el=$(id);el.hidden=!el.hidden;if(!el.hidden){document.exitPointerLock?.();keys.clear();if(id==='mapPanel')drawMap();else drawNotes();}dirty=true;}
+function panel(id){const el=$(id);el.hidden=!el.hidden;if(!el.hidden){document.exitPointerLock?.();keys.clear();if(id==='mapPanel'){drawMap();$('map').focus();}else drawNotes();}dirty=true;}
 function pause(){running=false;keys.clear();document.exitPointerLock?.();$('intro').hidden=false;$('start').innerHTML='Resume survey <span>↗</span>';save();dirty=true;}
 function start(){running=true;$('intro').hidden=true;$('mapPanel').hidden=true;$('notesPanel').hidden=true;canvas.focus();canvas.requestPointerLock?.()?.catch?.(()=>toast('Mouse capture unavailable. Drag to look, or use arrow keys.'));last=performance.now();dirty=true;}
 $('start').onclick=start;$('pause').onclick=pause;
@@ -52,33 +56,18 @@ canvas.addEventListener('pointerdown',()=>{drag=true;if(running&&document.pointe
 window.addEventListener('pointerup',()=>drag=false);
 window.addEventListener('mousemove',e=>{if(running&&(document.pointerLockElement===canvas||drag)){sim.yaw-=e.movementX*.002;sim.pitch=Math.max(-1.4,Math.min(1.4,sim.pitch-e.movementY*.002));dirty=true;}});
 function drawNotes(){const parent=$('notes');parent.replaceChildren();const summary=document.createElement('p');summary.textContent=sim.dataRecovered?'Site record secured. Its contents remain unclassified.':`Repository circuits restored: ${sim.solved.size} / ${plan.puzzles.length}. Recover the record at the far end of lower collection.`;parent.append(summary);if(!sim.recorded.size){const p=document.createElement('p');p.textContent='No records yet. Find the lit survey contacts and press E nearby.';parent.append(p);}for(const sample of plan.samples.filter(s=>sim.recorded.has(s.id))){const a=document.createElement('article'),h=document.createElement('h3'),p=document.createElement('p');h.textContent=sample.title;p.textContent=sample.text;a.append(h,p);parent.append(a);}}
-function drawMap(){const c=$('map'),ctx=c.getContext('2d'),scale=1.65,ox=240,oz=40;ctx.clearRect(0,0,c.width,c.height);ctx.fillStyle='#0c1718';ctx.fillRect(0,0,c.width,c.height);
-  ctx.strokeStyle='#b9dcc00c';ctx.lineWidth=1;for(let x=0;x<c.width;x+=32){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,c.height);ctx.stroke();}for(let z=0;z<c.height;z+=32){ctx.beginPath();ctx.moveTo(0,z);ctx.lineTo(c.width,z);ctx.stroke();}
-  ctx.fillStyle='#87a99b';for(const t of plan.tiles)if(sim.discovered.has(key(t.x,t.z)))ctx.fillRect(ox+(t.x*TILE-2)*scale,oz+(-t.z*TILE-2)*scale,TILE*scale-.5,TILE*scale-.5);
-  if(sim.reservoirSeen){ctx.strokeStyle='#607f76';ctx.strokeRect(ox-64*scale,oz+122*scale,128*scale,164*scale);ctx.fillStyle='#87a99b';for(const [a,b,c,d] of plan.walkways)ctx.fillRect(ox+a*scale,oz-d*scale,(b-a)*scale,(d-c)*scale);ctx.fillStyle='#78958b';ctx.font='10px monospace';ctx.fillText('COLLECTION VOLUME',ox-57*scale,oz+150*scale);}
-  for(const room of plan.chambers)if(sim.chambersSeen.has(room.id)){
-    ctx.fillStyle=room.color+'66';for(const [a,b,c,d] of room.walkways)ctx.fillRect(ox+a*scale,oz-d*scale,(b-a)*scale,(d-c)*scale);
-    const [a,b,c,d]=room.bounds;ctx.strokeStyle=room.color;ctx.strokeRect(ox+a*scale,oz-d*scale,(b-a)*scale,(d-c)*scale);
-    ctx.fillStyle=room.color;ctx.font='9px monospace';ctx.fillText({null:sim.plan.themes.includes('gravity')?'0 G':'VIEW',upfall:'FLOW',resonance:'RELAY'}[room.id],ox+a*scale+5,oz-d*scale+13);
-  }
-  ctx.fillStyle='#e8b777';for(const p of sim.beacons){ctx.beginPath();ctx.arc(ox+p[0]*scale,oz-p[2]*scale,2.5,0,Math.PI*2);ctx.fill();}
-  ctx.strokeStyle='#e8b777';ctx.strokeRect(ox-5,oz-5,10,10);ctx.fillStyle='#a8baaf';ctx.font='10px monospace';ctx.fillText('SURFACE / 07',ox+10,oz+4);
-  ctx.save();ctx.translate(ox+sim.pos[0]*scale,oz-sim.pos[2]*scale);ctx.rotate(-sim.yaw);ctx.fillStyle='#fff8da';ctx.beginPath();ctx.moveTo(0,7);ctx.lineTo(-4,-4);ctx.lineTo(4,-4);ctx.closePath();ctx.fill();ctx.restore();
-  $('mapStats').textContent=`${sim.discovered.size} surveyed sections · ${sim.beacons.length} return beacons`;
-}
+function drawMap(){mapView.draw(sim);$('mapStats').textContent=`${sim.discovered.size} surveyed sections · ${sim.beacons.length} return beacons`;}
 function updateHUD(){
   $('zone').textContent=sim.zone;$('depth').innerHTML=`${sim.pos[1]>=0?'+':'−'}${Math.abs(sim.pos[1]).toFixed(1).padStart(5,'0')} <small>M</small>`;
   $('count').textContent=`${String(sim.recorded.size).padStart(2,'0')} / ${String(plan.samples.length).padStart(2,'0')}`;
   $('signal').textContent=sim.pos[1]>-2?'SUBSURFACE RETURN · UNCLASSIFIED':`LIVE CIRCUIT · ${Math.floor(sim.time/11)%2?'RETURN':'INTAKE'} CYCLE`;
-  const next=plan.puzzles.find(p=>!sim.solved.has(p.id));
-  const hints={gravity:sim.carryingCell?'Connect the cell at the amber socket beside the Null Well entrance':'East branch → Null Well · retrieve the floating cell, 12 m up',time:'Southwest branch → synchronizer · press E inside the lit interval',space:'Southwest branch → marked return frame · link it and cross'};
-  $('objective').textContent=sim.returned?'Site record returned · further exploration is optional':sim.dataRecovered?'Site record secured · T to return to the surface, or keep exploring':!sim.hatchOpen?'Investigate the surface hatch':sim.pos[1]>-2?'Step onto the platform · E for express descent':sim.moving?'Express descent · service level 08 / 240 m':next?hints[next.id]:'Repository open · retrieve the site record at the far end of lower collection';
+  $('objective').textContent=sim.returned?'Site record returned · further exploration is optional':surveyObjective(sim);
   $('circuits').textContent=`REPOSITORY CIRCUITS  ${sim.solved.size} / ${plan.puzzles.length}${sim.dataRecovered?' · RECORD SECURED':''}`;
   $('clock').hidden=!plan.themes.includes('time')||sim.pos[1]>-2;
   $('clock').textContent=`MACHINERY CLOCK / ${sim.machinery.state}`;
   const showPhase=sim.offer()?.type==='phase';$('phasePanel').hidden=!showPhase;
   if(showPhase){const p=plan.puzzles.find(p=>p.id==='time');$('phaseBand').style.left=`${(p.target-p.window/2)*100}%`;$('phaseBand').style.width=`${p.window*100}%`;$('phaseSweep').style.left=`${sim.phase.value*100}%`;$('phaseText').textContent=sim.phase.ready?'ALIGNED · PRESS E':'Press E when the amber line reaches the pale band';}
-  $('gravity').textContent=sim.zeroG?`LOCAL FIELD  0.00 G  /  ${Math.hypot(...sim.velocity).toFixed(1)} M/S`:'LOCAL FIELD  1.00 G';
+  $('gravity').textContent=fieldStatus(sim);
   $('floatHelp').hidden=!sim.zeroG;
   document.body.classList.toggle('zero-g',sim.zeroG);
   const offer=sim.offer();$('prompt').hidden=!offer||!running||!$('mapPanel').hidden||!$('notesPanel').hidden;

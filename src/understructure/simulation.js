@@ -19,12 +19,17 @@ export class UnderstructureSimulation {
     this.chambersSeen=new Set(list('chambersSeen').filter(id=>plan.chambers.some(c=>c.id===id)));
     this.velocity=[0,0,0];this.flowPaused=false;this.flowTime=0;this.resonanceAt=-100;
     this.carryingCell=!!saved.carryingCell;this.foldActive=false;this.foldCrossed=false;this.foldCooldown=0;this.foldCount=0;
+    this.bridgeStage=this.solved.has('light')?2:Math.max(0,Math.min(2,Number(saved.bridgeStage)||0));this.pressure=Number(saved.pressure)||0;this.echoStep=this.solved.has('resonance')?3:Math.max(0,Math.min(2,Number(saved.echoStep)||0));
+    this.jumpHeld=false;this.grounded=true;this.recoveries=0;this.recoveryAt=-100;this.safeLedge=null;this.route=[];
   }
-  get state(){return {y:this.pos[1],liftY:this.liftY,hatchOpen:this.hatchOpen&&this.hatchAmount>.98};}
+  get state(){return {bridgeStage:this.bridgeStage,y:this.pos[1],liftY:this.liftY,hatchOpen:this.hatchOpen&&this.hatchAmount>.98};}
   get moving(){return Math.abs(this.liftTarget-this.liftY)>.001;}
   get onPlatform(){return Math.abs(this.pos[0])<this.plan.access.halfWidth-.44&&Math.abs(this.pos[2])<this.plan.access.halfDepth-.44&&Math.abs(this.pos[1]-this.liftY)<.5;}
   get chamber(){return this.pos[1]<-2?chamberAt(this.plan,this.pos[0],this.pos[2]):null;}
   get zeroG(){return this.chamber?.kind==='zero-g';}
+  get jetpackEnabled(){return false;}
+  get gravity(){return this.zeroG?0:this.chamber?.gravity??1;}
+  get tetherActive(){return this.zeroG;}
   get complete(){return this.recorded.size===this.plan.samples.length;}
   get archiveReady(){return this.solved.size===this.plan.puzzles.length;}
   get exitReady(){return this.dataRecovered;}
@@ -43,10 +48,15 @@ export class UnderstructureSimulation {
     for(const p of this.plan.puzzles) {
       if(p.kind==='relay'&&!this.solved.has(p.id)){
         if(!this.carryingCell&&near(p.source))return {type:'cell',text:'Take charged return cell'};
-        if(near(p.socket))return {type:'socket',text:this.carryingCell?'Connect return cell':'Return socket · cell suspended above'};
+        if(near(p.socket))return {type:'socket',text:this.carryingCell?'Connect return cell':'Return socket · retrieve the cell from the Null Well'};
       }
       if(p.kind==='phase'&&!this.solved.has(p.id)&&near(p.pos))return {type:'phase',text:this.phase.ready?'Lock aligned transit bands':'Press when the sweep enters the lit band'};
       if(p.kind==='fold')for(let i=0;i<p.gates.length;i++)if(near(p.gates[i].pos))return {type:'fold',gate:i,text:this.foldCrossed&&!this.solved.has('space')?'Reconnect the far return terminal':this.foldActive?'Cross the marked threshold':'Link the folded return line'};
+    }
+    for(const p of this.plan.puzzles){
+      if(p.kind==='bridge')for(let i=0;i<3;i++)if(near(p.controls[i]))return {type:'bridge',index:i,text:i===2?'Connect solid-light return':this.bridgeStage>i?'Bridge latched · safe to cross':`Activate light bridge ${i+1}`};
+      if(p.kind==='pressure'&&!this.solved.has(p.id)&&near(p.pos))return {type:'pressure',text:`Set pressure ${p.target} / 3 · current ${this.pressure} / 3 · E cycles valve`};
+      if(p.kind==='echo'&&!this.solved.has(p.id))for(let i=0;i<3;i++)if(near(p.plates[i]))return {type:'echo',index:i,text:`Plate ${i+1} · follow ${p.order.map(i=>i+1).join(' → ')} · next ${p.order[this.echoStep]+1}`};
     }
     const sample=this.plan.samples.find(s=>!this.recorded.has(s.id)&&Math.hypot(x-s.pos[0],y-s.pos[1],z-s.pos[2])<2.8);
     if(sample)return {type:'sample',id:sample.id,text:'Record signal'};
@@ -63,10 +73,13 @@ export class UnderstructureSimulation {
     if(offer.type==='call'){this._startLift(DECK);return 'Access lift called.';}
     if(offer.type==='offline')return 'The express lift used reserve power. Recover the site record to authorise surface return; the local circuits open its repository.';
     if(offer.type==='archive_data'){this.recorded.add('reservoir');if(!this.archiveReady)return 'Restore the marked circuits to open this repository. Each chamber shows what its mechanism needs.';this.dataRecovered=true;return 'Site record secured. T activates surface return; the access lift is also online.';}
-    if(offer.type==='cell'){this.carryingCell=true;this.recorded.add('null');return 'Return cell acquired. Descend to the amber socket beside the entrance.';}
-    if(offer.type==='socket'){if(!this.carryingCell)return 'The matching cell is in the luminous ring above. Space rises; C descends; R brakes.';this.solved.add('gravity');this.carryingCell=false;return this._circuitMessage();}
+    if(offer.type==='cell'){this.carryingCell=true;this.recorded.add('null');return 'Return cell acquired. Carry it to Light-Load Transit, east of the southwest exchange. Space jumps between its ledges; your jetpack stays offline.';}
+    if(offer.type==='socket'){if(!this.carryingCell)return 'The matching cell is in the luminous ring above. The chamber tether uses Space to rise, C to descend and R to brake.';this.solved.add('gravity');this.carryingCell=false;return this._circuitMessage();}
     if(offer.type==='phase'){if(!this.phase.ready)return 'Not aligned yet. The bright band marks the safe interval; try again whenever the sweep overlaps it.';this.solved.add('time');this.recorded.add('resonance');this.resonanceAt=this.time;return this._circuitMessage();}
     if(offer.type==='fold'){if(this.foldCrossed&&!this.solved.has('space')){this.solved.add('space');return this._circuitMessage();}this.foldActive=true;return 'Matched thresholds linked. Walk through the dark frame, then reconnect the terminal on the other side.';}
+    if(offer.type==='bridge'){if(offer.index===2){if(this.bridgeStage<2)return 'Activate both bridge relays first.';this.solved.add('light');return this._circuitMessage();}if(this.bridgeStage>=offer.index){this.bridgeStage=Math.max(this.bridgeStage,offer.index+1);return 'Light bridge latched. It will stay solid; cross to the next relay.';}return 'Activate the previous relay first.';}
+    if(offer.type==='pressure'){const p=this.plan.puzzles.find(p=>p.id==='pressure');this.pressure=this.pressure%3+1;if(this.pressure===p.target){this.solved.add('pressure');return this._circuitMessage();}return `Pressure ${this.pressure} / 3. The reference gauge calls for ${p.target} / 3.`;}
+    if(offer.type==='echo'){const p=this.plan.puzzles.find(p=>p.id==='resonance');if(offer.index!==p.order[this.echoStep])return `Next is plate ${p.order[this.echoStep]+1}. Progress kept; the sequence remains on the display.`;this.echoStep++;this.resonanceAt=this.time;if(this.echoStep===3){this.solved.add('resonance');return this._circuitMessage();}return `Resonator pulse accepted. Next: plate ${p.order[this.echoStep]+1}.`;}
     if(offer.type==='sample'){this.recorded.add(offer.id);if(offer.id==='resonance')this.resonanceAt=this.time;return this.plan.samples.find(s=>s.id===offer.id).title;}
     if(offer.type==='resonance'){this.resonanceAt=this.time;return 'The sequence returns from somewhere deeper.';}
     if(offer.type==='upfall'){this.flowPaused=!this.flowPaused;return this.flowPaused?'Return flow held. The water stays suspended.':'Return flow restored.';}
@@ -79,6 +92,7 @@ export class UnderstructureSimulation {
     dt=Math.min(Math.max(dt,0),.25);
     for(let t=0;t<dt;t+=1/120)this._step(Math.min(1/120,dt-t),input);
     if(this.chamber)this.chambersSeen.add(this.chamber.id);
+    const last=this.route.at(-1);if(this.pos[1]<-2&&(!last||Math.hypot(...this.pos.map((v,i)=>v-last[i]))>3)){this.route.push([...this.pos]);if(this.route.length>350)this.route.shift();}
     if(this.pos[1]<-2){
       for(const t of this.plan.tiles)if(Math.hypot(this.pos[0]-t.x*TILE,this.pos[2]-t.z*TILE)<11)this.discovered.add(key(t.x,t.z));
       if(this.pos[2]<-126)this.reservoirSeen=true;
@@ -90,10 +104,12 @@ export class UnderstructureSimulation {
     if(this.moving){this.liftElapsed+=dt;const p=Math.min(1,this.liftElapsed/LIFT_SECONDS),ease=p*p*(3-2*p);this.liftY=this.liftStartY+(this.liftTarget-this.liftStartY)*ease;if(p===1||Math.abs(this.liftY-this.liftTarget)<.001)this.liftY=this.liftTarget;if(this.riding)this.pos[1]=this.liftY;}
     else this.riding=false;
     this.yaw+=(input.turn||0)*dt*1.5;this.pitch=Math.max(-1.4,Math.min(1.4,this.pitch+(input.look||0)*dt));
+    const jump=(input.vertical||0)>0&&!this.jumpHeld;this.jumpHeld=(input.vertical||0)>0;
     if(this.riding)return;
     if(this.zeroG){this._float(dt,input);return;}
+    if(this.chamber?.kind==='platforms'){this._traverse(dt,input,jump);return;}
     let f=input.forward||0,s=input.strafe||0;const len=Math.hypot(f,s);if(!len)return;f/=Math.max(1,len);s/=Math.max(1,len);
-    const speed=input.fast?5.5:3.1,dx=(-Math.sin(this.yaw)*f+Math.cos(this.yaw)*s)*speed*dt,dz=(-Math.cos(this.yaw)*f-Math.sin(this.yaw)*s)*speed*dt;
+    const speed=(input.fast?5.5:3.1)/Math.sqrt(Math.max(1,this.gravity)),dx=(-Math.sin(this.yaw)*f+Math.cos(this.yaw)*s)*speed*dt,dz=(-Math.cos(this.yaw)*f-Math.sin(this.yaw)*s)*speed*dt;
     const before=[...this.pos];
     for(const [axis,delta] of [[0,dx],[2,dz]]){
       const x=this.pos[0]+(axis===0?delta:0),z=this.pos[2]+(axis===2?delta:0);
@@ -101,6 +117,20 @@ export class UnderstructureSimulation {
     }
     if(this.zeroG)this.velocity=this.pos.map((p,i)=>(p-before[i])/dt);
     this._crossFold(before);
+  }
+  recover(){const room=this.chamber;if(room?.kind!=='platforms')return false;const safe=this.safeLedge?.room===room.id?this.safeLedge.pos:[room.door[0]+4,DECK,room.door[1]];this.pos=[...safe];this.velocity=[0,0,0];this.grounded=true;this.recoveries++;this.recoveryAt=this.time;return true;}
+  _traverse(dt,input,jump){
+    const room=this.chamber;const support=this.collision.floorAt(this.pos[0],this.pos[2],this.state);
+    this.grounded=support!==null&&Math.abs(this.pos[1]-support)<.04&&this.velocity[1]<=0;
+    if(this.grounded){this.pos[1]=support;this.velocity[1]=0;if(this.collision.canStand(this.pos[0],this.pos[2],this.state,.7))this.safeLedge={room:room.id,pos:[...this.pos]};if(jump)this.velocity[1]=4.6;}
+    let f=input.forward||0,s=input.strafe||0,n=Math.max(1,Math.hypot(f,s));f/=n;s/=n;const speed=input.fast?5.5:3.1;
+    for(const [axis,delta] of [[0,(-Math.sin(this.yaw)*f+Math.cos(this.yaw)*s)*speed*dt],[2,(-Math.cos(this.yaw)*f-Math.sin(this.yaw)*s)*speed*dt]]){const p=[...this.pos];p[axis]+=delta;if(this.collision.canTraverse(...p,room)){const floor=this.collision.floorAt(p[0],p[2],{...this.state,y:room.ceiling});if(floor!==null&&floor>this.pos[1]+.35)continue;this.pos[axis]=p[axis];}}
+    const oldY=this.pos[1];this.velocity[1]-=9.81*room.gravity*dt;const nextY=oldY+this.velocity[1]*dt;
+    const floor=this.collision.floorAt(this.pos[0],this.pos[2],{...this.state,y:oldY});
+    if(this.velocity[1]<=0&&floor!==null&&oldY>=floor-.04&&nextY<=floor){this.pos[1]=floor;this.velocity[1]=0;this.grounded=true;}else{this.pos[1]=nextY;this.grounded=false;}
+    if(this.pos[1]+1.9>room.ceiling){this.pos[1]=room.ceiling-1.9;this.velocity[1]=Math.min(0,this.velocity[1]);}
+    if(this.pos[1]<DECK-9)this.recover();
+    if(!this.chamber||this.chamber.id!==room.id){this.pos[1]=DECK;this.velocity=[0,0,0];this.grounded=true;}
   }
   _crossFold(before) {
     const p=this.plan.puzzles.find(p=>p.id==='space');if(!p||!this.foldActive||this.foldCooldown>0)return;
@@ -133,5 +163,5 @@ export class UnderstructureSimulation {
     if(this.beacons.some(p=>Math.hypot(p[0]-this.pos[0],p[1]-this.pos[1],p[2]-this.pos[2])<2))return false;
     this.beacons.push([...this.pos]);return true;
   }
-  save(){return {version:2,discovered:[...this.discovered],recorded:[...this.recorded],beacons:this.beacons,reservoirSeen:this.reservoirSeen,returned:this.returned,chambersSeen:[...this.chambersSeen],solved:[...this.solved],carryingCell:this.carryingCell,dataRecovered:this.dataRecovered};}
+  save(){return {version:3,themes:[...this.plan.themes],bridgeStage:this.bridgeStage,pressure:this.pressure,echoStep:this.echoStep,discovered:[...this.discovered],recorded:[...this.recorded],beacons:this.beacons,reservoirSeen:this.reservoirSeen,returned:this.returned,chambersSeen:[...this.chambersSeen],solved:[...this.solved],carryingCell:this.carryingCell,dataRecovered:this.dataRecovered};}
 }

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { generateUnderstructure } from './layout.js';
+import { generateUnderstructure,restoredProfile } from './layout.js';
 import { UnderstructureSimulation } from './simulation.js';
 import { buildScene } from './scene.js';
 import { SurveyHUD } from './surveyHUD.js';
@@ -108,8 +108,8 @@ export class SurveySession {
   constructor(game,player,site) {
     this.game=game;this.player=player;this.site=site;this.lastSave=0;this.wasUnderground=false;
     this.anchor={position:player.fPos.clone(),heading:player.heading.clone(),pitch:player.pitch};
-    this.plan=generateUnderstructure(site.seed,site.profile);
     let saved={};try{saved=JSON.parse(localStorage.getItem(site.saveKey)||'{}');}catch{}
+    this.plan=generateUnderstructure(site.seed,restoredProfile(site.seed,site.profile,saved));
     this.sim=new UnderstructureSimulation(this.plan,saved);this.visual=buildScene(this.plan);
     for(const p of this.sim.beacons)this.visual.addBeacon(p);
     const camera=new THREE.PerspectiveCamera(73,1,.08,3200);camera.rotation.order='YXZ';
@@ -125,7 +125,8 @@ export class SurveySession {
     const sim=this.sim,pad=input.usingPad;
     if(input.hit('KeyM'))this.hud.toggle('map');
     if(input.hit('KeyJ')||input.hit('KeyN'))this.hud.toggle('notes');
-    if(this.hud.panel)return;
+    this.player.jetOn=false; // Sector locomotion never forwards suit-thrust commands.
+    if(this.hud.panel){this.hud.mapView?.input(dt,input,mouse);return;}
     if(input.hit('KeyT')) {
       if(sim.pos[1]>-2&&!sim.moving){this.leave();return;}
       if(sim.teleport()){this.leave();return;}

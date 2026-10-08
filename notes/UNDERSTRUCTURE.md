@@ -20,11 +20,11 @@ other player to remain outside. `understructure.html` remains an independent dev
 
 # Underground megastructure prototype
 
-Owner: Starseed Megastructures (Codex). Worktree: `starseed-megastructures`, branch
-`codex/megastructures-webgpu`. Base: ba326f4. The 29 inherited fleet changes remain
-untouched; their hashes are recorded in understructure-baseline.json.
+Owner: Starseed Megastructures (Codex). Current worktree: `starseed-megastructure-themes`,
+branch `codex/megastructure-themes`, based on integrated main checkpoint 76a4eb0.
+The previous prototype worktree and its inherited fleet changes are frozen.
 
-Run `python3 tools/serve.py 8774`, then `/understructure.html?seed=SUMP-07`.
+Run `python3 tools/serve.py 8776`, then `/understructure.html?seed=SUMP-07&theme=gravity-light`.
 This is a playable local sector using the production raw WebGPU DeferredRenderer.
 No WebGL fallback, renderer backend modifications or general physics replacement.
 
@@ -45,13 +45,16 @@ map and return beacons supplement the objective; they do not gate extraction.
 
 ## Coherent site themes and easy mechanisms
 
-A seed chooses one or two themes; the entry panel can override that choice for testing.
+Six themes provide **21 profiles**: six singles and every pair. A seed chooses one or
+two themes; the entry panel can override that choice for testing.
 Room-graph branches, chamber heights, phase periods/offsets/bands and threshold marks
 vary deterministically. This is a small authored mechanism vocabulary with seeded
 parameters, not unrestricted procedural puzzle synthesis.
 
-- Weight: the Null Well locally cancels gravity. Fly to a charged cell, then put it in
-  the matching socket at the entrance. Concrete floats; the cistern's water rises.
+- Weight: retrieve a charged cell in the zero-g Null Well using its local field tether.
+  Carry it into Light-Load Transit, jump across 0.22 G ledges to its elevated socket,
+  then return along those ledges. The cistern has 1.6 G and rising water; ordinary
+  rooms retain 1 G. Gravity changes at room boundaries; its direction remains down.
 - Time: machinery moves forward, holds, then rewinds in a twelve-second cycle. The
   player, input and collected progress remain unaffected. Align a sweep with a broad
   visible band and press E. Misses have no penalty; the timing window is 2–2.8 seconds.
@@ -59,36 +62,66 @@ parameters, not unrestricted procedural puzzle synthesis.
   thresholds join two remote chambers, preserving relative motion direction. They
   work both ways. This uses opaque thresholds and immediate local transforms, not
   recursive see-through portal rendering.
+- Light: activate two hard-light bridge relays and cross to the far terminal. Bridges
+  latch permanently, including across saves; this is not a timed disappearing path.
+- Pressure: cycle a cistern valve to match a visible reference gauge. This is a local
+  circuit puzzle, not a gas simulation or suit-oxygen timer.
+- Resonance: press three plates in the displayed order. The next plate stays visible;
+  an incorrect choice keeps progress. Pulses are visual; audio is not implemented.
 
 ## Controls and persistence
 
 WASD walk/thrust; mouse, drag or arrows look; Shift faster; E interact; F hand light;
 M map; J notes; B beacon; T surface return after retrieval; Escape pause.
-In zero gravity, Space rises, C descends and R brakes. Drift persists without input.
+The jetpack is offline throughout the survey. In the platform rooms, Space triggers
+a ballistic jump; holding it cannot fly or repeatedly jump. Missed jumps recover to
+the last safe ledge without losing inventory or puzzle progress. In zero gravity,
+the chamber field tether uses Space to rise, C to descend and R to brake. Drift
+persists without input; this is chamber locomotion rather than suit propulsion.
 The amber doorway is the gravity boundary; descend to its floor-level sill to leave.
 The capsule tests chamber shell, ceiling and conservative floating-block envelopes.
 
-Progress is saved per seed **and theme profile** in v2 browser storage. Loading starts
-at surface access with recovered data/circuits/notes/map/beacons retained. A carried cell
-is retained across reloads. v1 prototype saves remain in storage under their older keys.
+The shared 3D survey map reveals discovered room volumes, real elevations, the access
+shaft, raised paths, bridge states, known folded links, objectives, beacons and the recent
+route. Drag to orbit, Shift/right-drag to pan, wheel or +/− to zoom, arrows to tilt/rotate.
+Fit, Top and level filters help separate overlapping geometry; click a room or marker
+to inspect it. Integrated gamepad look rotates the map. It uses a Canvas2D projection
+of 3D geometry, without allocating a second GPU renderer.
+
+Standalone progress remains keyed per seed **and theme profile** under the existing v2
+storage keys; the payload is version 3. The main-game adapter preserves old saved site
+themes when expanding the theme pool and saves explicit themes for future loads.
+Loading starts at surface access with recovered data/circuits/notes/map/beacons retained.
+Carried cells, partial plate sequences, pressure settings and bridge stages also persist.
+Recent route traces are per visit. v1 prototype saves remain under their older keys.
 Pause renders only a final changed frame; hidden tabs do not render. Active cap: 30 fps.
 No camera visibility depends on previous-frame occlusion queries or results.
 
 ## Validation — 2026-10-08
 
-`node --test tools/tests/understructure.test.mjs tools/tests/webgpu.test.mjs`: 15 passing.
-Coverage includes 100 connected seeds, all six theme combinations on two seeds using
-normal movement inputs, inaccessible repository before solving, data retrieval, lift
-return, optional shortcut and re-entry, zero-g inertia/braking/shell/obstacles, local
-clock reversal, bidirectional folded thresholds, cistern rails and saved partial progress.
+```sh
+node --test tools/tests/understructure.test.mjs tools/tests/understructure-themes.test.mjs tools/tests/understructure-integration.test.mjs tools/tests/understructure-planet-sites.test.mjs tools/tests/webgpu.test.mjs
+```
 
-`/tools/tests/understructure.html`: nine finite scenarios pass on weight/time and on
-time/distance profiles with no JavaScript/WebGPU errors. The fixture traverses reservoir
-loops, chambers and puzzles, exercises immediate camera turns, retrieves the record,
-returns to the surface, and reloads the real page to verify persistence. It pauses on
-completion. Actual Space/C/R controls were checked in the first chamber pass; actual
-T keyboard input was checked after record retrieval in the final pass.
-`?inspect=null` pauses at the first chamber; `?inspect=record` pauses after retrieval.
+**32 passing.** Coverage includes 100 connected seeds, all 21 theme profiles on two seeds
+using normal movement inputs, repository gating, retrieval and both returns, zero-g
+inertia/braking, room gravity, ballistic jumping, fall recovery, bridge collision and
+persistence, forgiving pressure/sequence circuits, folds/time, discovery-limited map
+geometry/projection/levels, old integrated saves, planet site rules and renderer checks.
+
+`/tools/tests/understructure.html?theme=gravity-light` and `?theme=pressure-resonance` each
+pass ten finite browser checks without JavaScript/WebGPU errors. These exercise the
+lift, catwalks, puzzle routes, 3D map orbit/zoom/filtering, retrieval, shortcut and actual
+page reload. The fixture pauses on completion. Actual Space input was also checked:
+a ballistic low-gravity jump rises and lands without enabling the pack. Actual M,
+map level selection and arrow rotation were checked through the browser UI.
+`?inspect=null`, `?inspect=jump`, `?inspect=map` and `?inspect=record` pause at useful stops.
+
+`/tools/tests/understructure-game.html` passes the native gravity/light round trip:
+physical hatch, shared renderer, both circuits, retrieval, shortcut and lift returns,
+saved re-entry, split-screen with the other player outside, bounded lighting resources,
+and normal world time. Return anchor error was zero. Finite tests used two workers;
+no sustained GPU benchmark was run.
 
 ## Integration boundaries
 
@@ -96,9 +129,9 @@ Owned files: src/understructure/*, understructure.html, understructure tests and
 Other Codex owns renderer optimizations, stations, spacecraft/re-entry and general physics.
 three-avbd is an evaluation candidate only, not an installed dependency.
 
-Production planet integration remains separate: deterministic world site placement,
-NearGround VolumeField carving (not just a heightfield hole), floraClearings and binding
-these surfaces to world collision. Coordinate terrain edits with Claude's Rivers worker.
-This prototype does not yet add orbital discovery, planetary hatch placement or endless
-streaming. There is one accessible service level plus the view into the larger structure.
-Railings block walking rather than allowing falls; decorative pipes have no rigid bodies.
+Planetary hatch placement and the scene-transition adapter are integrated. Actual
+NearGround VolumeField carving, orbital discovery and endless interior streaming remain
+future work; coordinate terrain changes with Claude's Rivers worker. There is one main
+service level with raised platform routes, plus the view into the larger structure.
+Ordinary catwalk railings contain walking; platform rooms allow recoverable falls.
+Decorative pipes have no rigid bodies. No renderer or general player-physics code changed.

@@ -55,7 +55,7 @@ export function buildScene(plan) {
   function cylinder(a,b,r,m='rust',segments=8){const dir=new THREE.Vector3().subVectors(new THREE.Vector3(...b),new THREE.Vector3(...a));const g=new THREE.CylinderGeometry(r,r,dir.length(),segments);g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),dir.normalize()));g.translate((a[0]+b[0])/2,(a[1]+b[1])/2,(a[2]+b[2])/2);addGeometry(g,m);}
   function label(text,x,y,z,{size=1.3,face=0,color='#bcc9b6'}={}) {
     const c=document.createElement('canvas');c.width=512;c.height=128;const ctx=c.getContext('2d');
-    ctx.fillStyle=color;ctx.font='bold 62px monospace';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(text,256,64);
+    ctx.fillStyle=color;ctx.font='bold 62px monospace';ctx.textAlign='center';ctx.textBaseline='middle';const measured=ctx.measureText(text).width;if(measured>480)ctx.font=`bold ${Math.floor(62*480/measured)}px monospace`;ctx.fillText(text,256,64);
     const t=new THREE.CanvasTexture(c);t.colorSpace=THREE.SRGBColorSpace;
     const mesh=new THREE.Mesh(new THREE.PlaneGeometry(size*4,size),new THREE.MeshBasicMaterial({map:t,transparent:true,depthWrite:false,side:THREE.DoubleSide}));mesh.position.set(x,y,z);mesh.rotation.y=face;root.add(mesh);return mesh;
   }

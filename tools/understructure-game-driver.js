@@ -15,7 +15,7 @@ try {
  if(p.mode!=='surface')gm.startOnSurface();
  for(let i=0;i<60&&gm.state!=='playing';i++)await window.debugRun(1000,16);
  site=gm.surfaceSurveys.sites[0];check(site,'Normal surface start must create an access hatch');
- restoreSave=localStorage.getItem(site.saveKey);localStorage.removeItem(site.saveKey);
+ site.profile='gravity-light';restoreSave=localStorage.getItem(site.saveKey);localStorage.removeItem(site.saveKey);
  // Fixture starts at the real hatch; entry itself uses the normal F interaction.
  const near=site.frame.position.clone().add(new THREE.Vector3(0,0,3).applyQuaternion(site.frame.rotation));
  p.placeOnSurface(site.body,near.normalize(),new THREE.Vector3(0,0,-1).applyQuaternion(site.frame.rotation));
@@ -29,7 +29,7 @@ try {
  await shot('survey-world-hatch',{body:site.body.data.name});
  const anchor=p.fPos.clone(),heading=p.heading.clone(),t0=gm.t,originalQ=site.body.q.clone();
  tick('KeyF');check(p.understructure,'F must enter through the normal surface interaction');const first=p.understructure;
- check(first.sim.pos[1]===0&&!first.sim.hatchOpen,'World F must not leak into local F');
+ check(!p.jetOn&&!first.sim.jetpackEnabled,'Sector must disable jetpack');check(first.sim.pos[1]===0&&!first.sim.hatchOpen,'World F must not leak into local F');
  check(gm.engine.webgpu===gpu&&gm.ship===ship&&gm.orbitalStation===station,'Sector must preserve renderer and fleet');
  gm.setWarp(3);check(gm.warp===1,'Survey must hold universe at normal speed');
  tick('KeyM');check(first.hud.panel==='map'&&!gm.map.open,'Local map must own M');tick('KeyM');
@@ -41,7 +41,7 @@ try {
  for(let i=0;i<30;i++){gm.renderView(p,true,1/60);await gpu.device.queue.onSubmittedWorkDone();if(i%5===0)await yieldNow();}
  check(gpu.lightBindings.entries.size===bindingCount,'Scene lighting bindings must remain bounded over repeated frames');
  report({stage:'Solving '+first.plan.themes.join(' + ')+' circuits'});
- solvePuzzles(first.sim);retrieveSiteRecord(first.sim);tick();
+ solvePuzzles(first.sim);tick('KeyM');check(first.hud.mapView,'Integrated 3D map missing');await shot('survey-3d-map');tick('KeyM');retrieveSiteRecord(first.sim);tick();
  await shot('survey-record',{record:first.sim.dataRecovered,circuits:first.sim.solved.size});
  // A second player stays in the world while P1 remains underground.
  const inp2=new Input(gm.canvas,{kbm:false,padIndex:31});const p2=gm.joinPlayer(inp2);check(p2,'Second player joins');

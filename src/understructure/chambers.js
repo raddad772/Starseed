@@ -4,8 +4,8 @@ import { DECK } from './layout.js';
 // Distinct infrastructure rooms attach to the seeded service graph. Their
 // structural footprint and gravity volume come from the collision plan.
 export function buildChambers(plan,{root,scene,mat,box,cylinder,label,lamp}) {
-  const drifting=[],droplets=[],resonators=[],gravity=plan.themes.includes('gravity');
-  const accents={null:0x96ddec,upfall:0x97d9c4,resonance:0xffbf78};
+  const drifting=[],droplets=[],resonators=[],bridges=[],gravity=plan.themes.includes('gravity');
+  const accents={null:0x96ddec,upfall:0x97d9c4,resonance:0xffbf78,low:0x9dbeff,light:0x82eadf};
   function light(x,y,z,color,power,range){const l=new THREE.PointLight(color,power,range,2);l.position.set(x,y,z);scene.add(l);return l;}
   function ring(x,y,z,r,material,axis='y',tube=.1){const mesh=new THREE.Mesh(new THREE.TorusGeometry(r,tube,6,48),material);if(axis==='y')mesh.rotation.x=Math.PI/2;if(axis==='x')mesh.rotation.y=Math.PI/2;mesh.position.set(x,y,z);root.add(mesh);return mesh;}
   function rails(x0,z0,x1,z1){for(const y of [DECK+.55,DECK+1.1])cylinder([x0,y,z0],[x1,y,z1],.04,'rust');const n=Math.ceil(Math.hypot(x1-x0,z1-z0)/3);for(let i=0;i<=n;i++)cylinder([x0+(x1-x0)*i/n,DECK,z0+(z1-z0)*i/n],[x0+(x1-x0)*i/n,DECK+1.1,z0+(z1-z0)*i/n],.04,'metal');}
@@ -33,12 +33,21 @@ export function buildChambers(plan,{root,scene,mat,box,cylinder,label,lamp}) {
     box(doorX,DECK+.025,doorZ,.24,.05,3.8,'amber');box(doorX,DECK+3.95,doorZ,.18,.12,4,'amber');
     const face=c.doorSide*Math.PI/2;
     label(c.name,doorX+c.doorSide*.08,DECK+3.15,doorZ,{size:.36,face});
-    label('RETURN  /  1 G',doorX-c.doorSide*.09,DECK+3.15,doorZ,{size:.34,face:-face,color:'#e8b777'});
+    label('RETURN / 1.00 G',doorX-c.doorSide*.09,DECK+3.15,doorZ,{size:.34,face:-face,color:'#e8b777'});
     // The long low approach contrasts with the unexpectedly tall volume.
     for(const s of [-1,1])for(let z=z0+3;z<z1;z+=7){box(s===-1?x0+.2:x1-.2,DECK+h/2,z,.25,h,.3,'metal');}
     light(cx,DECK+h*.65,cz,accents[c.id],620,48);
     light(cx,DECK+3,cz,accents[c.id],100,30);
-    if(c.kind==='zero-g') {
+    if(c.kind==='platforms'){
+      box(cx,DECK-12,cz,w,1,d,'dark');
+      for(const z of [z0-.22,z1+.22])box(cx,DECK-6,z,w,12,.44,'concrete');
+      for(const x of [x0-.22,x1+.22])box(x,DECK-6,cz,.44,12,d,'concrete');
+      for(let x=x0+6;x<x1;x+=12)lamp(x,DECK-10.5,z0+.5,'cyan');
+      label(c.id==='low'?'0.22 G / LIGHT LOAD':'SOLID LIGHT / TRANSIT',cx,DECK+9,z0+.2,{size:1.1,color:c.color});
+      for(const [i,p] of c.platforms.entries()){const [a,b,e,f,y]=p;box((a+b)/2,y-.7,(e+f)/2,b-a,1.4,f-e,'floor');box((a+b)/2,y+.02,(e+f)/2,b-a-.4,.04,.12,c.id==='low'?'amber':'cyan');for(const z of [e,f])box((a+b)/2,y-.05,z,b-a,.12,.1,'metal');label(String(i+1).padStart(2,'0'),(a+b)/2,y+1,f-.1,{size:.5,face:Math.PI,color:c.color});}
+      if(c.id==='low'){label('SPACE / JUMP    PACK OFFLINE',x0+.1,DECK+3,doorZ,{size:.5,face:Math.PI/2});label('RETURN CELL',136,DECK+7,-105.8,{size:.65});}
+      for(const [i,p] of (c.bridges||[]).entries()){const [a,b,e,f,y]=p;const material=new THREE.MeshStandardMaterial({color:'#75e6dc',emissive:'#3a9f99',emissiveIntensity:.6,transparent:true,opacity:.72,roughness:.25,side:THREE.DoubleSide});const mesh=new THREE.Mesh(new THREE.BoxGeometry(b-a,.13,f-e),material);mesh.position.set((a+b)/2,y-.07,(e+f)/2);root.add(mesh);bridges.push({mesh,index:i});for(const z of [e,f]){box((a+b)/2,y-.15,z,b-a,.04,.035,'metal');for(const x of [a,b])box(x,y+.05,z,.18,.1,.3,'cyan');}}
+    } else if(c.kind==='zero-g') {
       label('NO LOAD / 00',cx,DECK+16,z0+.3,{size:1.3,color:'#9adfea'});
       // Level rings and a plumb guide make the vertical distance legible.
       for(const y of [DECK+3,DECK+9,DECK+15]) {
@@ -60,7 +69,7 @@ export function buildChambers(plan,{root,scene,mat,box,cylinder,label,lamp}) {
         const m=new THREE.Mesh(new THREE.IcosahedronGeometry(.045+(i%3)*.015,0),mat.cyan);
         m.position.set(cx+Math.cos(angle)*r,y,cz+Math.sin(angle)*r);root.add(m);drifting.push({mesh:m,phase:i,center:m.position.toArray()});
       }
-      label('SPACE  ↑    C  ↓    R  BRAKE',x1-.1,DECK+2.5,cz,{size:.55,face:-Math.PI/2,color:'#9adfea'});
+      label('FIELD TETHER / SPACE ↑ C ↓ R BRAKE',x1-.1,DECK+2.5,cz,{size:.55,face:-Math.PI/2,color:'#9adfea'});
       label('DESCEND TO AMBER SILL',doorX+.11,DECK+5,doorZ,{size:.5,face:Math.PI/2,color:'#e8b777'});
     } else if(c.id==='null') {
       label('OBSERVATION / 07',cx,DECK+10,z0+.3,{size:1.2});
@@ -105,6 +114,7 @@ export function buildChambers(plan,{root,scene,mat,box,cylinder,label,lamp}) {
   waterDrops.frustumCulled=false;root.add(waterDrops);
   return {
     update(time,state) {
+      for(const b of bridges)b.mesh.visible=state.bridgeStage>b.index;
       for(const d of drifting){d.mesh.position.y=d.center[1]+Math.sin(state.machinery.time*.18+d.phase)*.16;d.mesh.rotation.set(state.machinery.time*.045+d.phase,state.machinery.time*.065+d.phase,Math.sin(state.machinery.time*.07+d.phase)*.2);}
       droplets.forEach((d,i)=>{pose.position.set(d.x,d.low+(gravity?((state.flowTime*.22+d.phase)%1):1-((state.flowTime*.22+d.phase)%1))*d.height,d.z);pose.scale.set(d.radius*.75,d.radius*3,d.radius*.75);pose.updateMatrix();waterDrops.setMatrixAt(i,pose.matrix);});waterDrops.instanceMatrix.needsUpdate=true;
       for(const r of resonators){const age=time-state.resonanceAt-r.delay,pulse=age>=0?Math.exp(-age*1.5)*Math.max(0,Math.cos(age*4)):0;r.material.emissiveIntensity=.3+pulse*6;}
