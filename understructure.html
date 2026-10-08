@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Starseed — Understructure</title>
+<link rel="stylesheet" href="./src/understructure/style.css">
+<script type="importmap">{"imports":{"three":"./vendor/three.module.js","three/addons/":"./vendor/addons/"}}</script>
+</head><body>
+<canvas id="view" tabindex="0" aria-label="First person underground exploration"></canvas>
+<div class="vignette"></div>
+<header><div class="wordmark">STARSEED <span>/ FIELD STUDY 01</span></div><div id="site">SUMP-07</div><button id="pause">Pause</button></header>
+<div id="telemetry"><span id="zone">SURFACE ACCESS</span><strong id="depth">+000.0 <small>M</small></strong><div id="signal">SUBSURFACE RETURN · UNCLASSIFIED</div></div>
+<div id="intro" class="panel"><div class="eyebrow">EXPLORATION PROTOTYPE</div><h1>Below the<br>ordinary.</h1><p>A hatch. A live circuit.<br>Something much larger underneath.</p><button id="start" class="primary">Begin survey <span>↗</span></button><div class="keys">WASD move · Mouse / arrows look<br>Shift walk faster · E interact · F light<br>M survey map · J field notes · B beacon</div><div class="seedrow"><label for="seed">Site seed</label><input id="seed" value="SUMP-07" maxlength="48"><button id="generate">Generate</button></div><a href="./index.html">Return to Starseed flight sandbox ↗</a></div>
+<div id="crosshair">·</div><div id="prompt" hidden></div><div id="toast" role="status" hidden></div>
+<footer><div><span class="eyebrow">FIELD OBJECTIVE</span><div id="objective">Investigate the surface hatch</div></div><div class="progress"><b id="count">00 / 03</b><span>ANOMALIES RECORDED</span></div><button id="mapButton">M &nbsp; Survey</button><button id="notesButton">J &nbsp; Notes</button></footer>
+<aside id="mapPanel" class="panel" hidden><button class="close" data-close="mapPanel">Close ×</button><div class="eyebrow">LOCAL SURVEY</div><h2>Extent unknown.</h2><p>Routes appear as you explore. Amber marks your return trail.</p><canvas id="map" width="480" height="580"></canvas><div id="mapStats"></div></aside>
+<aside id="notesPanel" class="panel" hidden><button class="close" data-close="notesPanel">Close ×</button><div class="eyebrow">FIELD NOTES</div><h2>Evidence of a function.</h2><div id="notes"></div><p class="muted">Survey notes and beacons are saved for this site in this browser.</p></aside>
+<div id="fatal" hidden role="alert"></div>
+<script type="module" src="./src/understructure/main.js"></script></body></html>

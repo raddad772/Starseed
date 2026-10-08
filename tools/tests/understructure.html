@@ -1,0 +1,30 @@
+<!doctype html><meta charset="utf-8"><title>Understructure finite validation</title>
+<style>body{margin:0;background:#131c1d;color:#deeddf;font:14px monospace}iframe{width:1280px;height:800px;border:0}pre{padding:15px;white-space:pre-wrap}img{width:640px;max-width:100%}</style>
+<pre id="result">Preparing the finite native WebGPU fixture…</pre><iframe id="game" src="../../understructure.html?seed=SUMP-07&test=1"></iframe>
+<script type="module">
+const out=document.querySelector('#result'),iframe=document.querySelector('#game');let test;
+const wait=ms=>new Promise(r=>setTimeout(r,ms));
+const check=(v,msg)=>{if(!v)throw Error(msg);};
+const report={checks:[],images:[]};window.testResult={status:'running'};
+try {
+ for(let i=0;i<300;i++){test=iframe.contentWindow?.understructureTest;if(test?.renderer&&test.frame)break;await wait(100);}
+ check(test?.renderer&&test.frame,'Native WebGPU renderer did not start');test.pause();
+ const {sim,renderer,visual}=test;
+ async function capture(name){test.render();await renderer.device.queue.onSubmittedWorkDone();const shot=await renderer.capture();let visible=0;for(let i=0;i<shot.pixels.length;i+=4)if(Math.max(shot.pixels[i],shot.pixels[i+1],shot.pixels[i+2])>25)visible++;check(visible>shot.width*shot.height*.02,name+' frame is effectively black');const src=await renderer.captureURL();report.images.push(name);const img=document.createElement('img');img.alt=name;img.src=src;document.body.append(img);(window.captures??={})[name]=src;}
+ const advance=(secs,input={})=>{for(let t=0;t<secs;t+=1/60)sim.step(Math.min(1/60,secs-t),input);};
+ await capture('surface');
+ advance(2.9,{forward:1});check(sim.offer()?.type==='hatch','Hatch unreachable from spawn');sim.interact();advance(1.5);advance(.8,{forward:1});check(sim.onPlatform,'Could not walk onto platform');sim.interact();advance(4);check(Math.abs(sim.pos[1]+14)<.1,'Lift is not continuous');await capture('shaft');advance(4.1);check(sim.pos[1]===-28,'Lift did not stop at floor');advance(5.8,{forward:1});check(sim.offer()?.id==='intake','First circuit not reachable');sim.interact();await capture('culvert');report.checks.push('Surface hatch, walking entry, continuous 28 m lift, basement exit and first record');
+ // Move at walk speed along the connected centre route, observing every six metres.
+ for(let i=0;i<18;i++){advance(2,{forward:1});test.render();}
+ check(sim.pos[2]<-122,'Trunk route is blocked');sim.pitch=-.18;sim.yaw=-.55;await capture('reservoir');report.checks.push('Walkable trunk route reaches reservoir');
+ // Verify fast view changes never need an earlier visibility result to show geometry.
+ for(const yaw of [0,Math.PI/2,Math.PI,-Math.PI/2,0]){sim.yaw=yaw;test.render();await renderer.device.queue.onSubmittedWorkDone();check(renderer.stats.calls>0,'Turn lost scene geometry');}
+ check(!test.errors.length,JSON.stringify(test.errors));report.checks.push('Five immediate 90/180-degree camera turns; no renderer or validation errors');
+ sim.yaw=0;advance(45,{forward:1});check(sim.pos[2]<-260,'Far reservoir path blocked');sim.pos=[...test.plan.samples[2].pos];sim.interact();
+ // Character collision coverage is in the CPU suite; direct placement here checks each distinct render sector.
+ sim.pos=[...test.plan.samples[1].pos];sim.yaw=0;sim.pitch=-.12;sim.interact();await capture('service-basement');check(sim.recorded.size===3,'Three observations not recorded');check(sim.beacon(),'Beacon placement failed');visual.addBeacon(sim.beacons.at(-1));test.save();
+ const saved=JSON.parse(iframe.contentWindow.localStorage.getItem('starseed.understructure.test.v1.SUMP-07'));check(saved.recorded.length===3&&saved.beacons.length>0,'Progress did not persist');report.checks.push('Three records, field beacon and persistent per-seed progress');
+ iframe.contentDocument.getElementById('mapButton').click();check(!iframe.contentDocument.getElementById('mapPanel').hidden,'Survey map did not open');iframe.contentDocument.querySelector('[data-close="mapPanel"]').click();iframe.contentDocument.getElementById('notesButton').click();check(iframe.contentDocument.querySelectorAll('#notes article').length===3,'Journal missing observations');report.checks.push('Map and journal controls');
+ iframe.contentDocument.querySelector('[data-close="notesPanel"]').click();test.pause();report.errors=test.errors;report.stats=renderer.stats;window.testResult={status:'passed',...report};out.textContent=JSON.stringify(window.testResult,null,2);
+} catch(e){test?.pause();window.testResult={status:'failed',error:e.stack,...report};out.textContent=JSON.stringify(window.testResult,null,2);}
+</script>
