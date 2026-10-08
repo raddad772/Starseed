@@ -104,16 +104,6 @@ export class ShipVisual {
       mesh.userData.kind = 'belly';
       this.fx.add(mesh); this.plumes.push(mesh);
     }
-    // re-entry plasma shell
-    const shell = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 16), new THREE.ShaderMaterial({
-      uniforms: { uHeat: { value: 0 }, uTime: { value: 0 }, uFlow: { value: new THREE.Vector3(0, 0, -1) } },
-      vertexShader: PLUME_VERT, fragmentShader: PLASMA_FRAG,
-      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.FrontSide,
-    }));
-    shell.scale.set(4.2, 3.4, 15.5);
-    shell.position.set(0, 1.2, 0);
-    this.fx.add(shell);
-    this.plasma = shell;
     this.time = 0;
     this.navBlink = 0;
     this.floodOn = false;
@@ -169,15 +159,6 @@ export class ShipVisual {
     // drive throats glow with the main engine (and cool slowly)
     this.throatHeat = (this.throatHeat || 0) + (mainT - (this.throatHeat || 0)) * Math.min(1, dt * (mainT > (this.throatHeat || 0) ? 3 : 0.4));
     for (const gm of m.engineGlow) gm.emissiveIntensity = this.throatHeat * 0.6;
-    // plasma
-    const pu = this.plasma.material.uniforms;
-    pu.uHeat.value = Math.max(0, Math.min(1.5, s.heatGlow - 0.05));
-    pu.uTime.value = this.time;
-    this.plasma.visible = pu.uHeat.value > 0.01;
-    if (this.plasma.visible) {
-      const vAir = s.surfaceVel(new THREE.Vector3()).applyQuaternion(s.quat.clone().invert()).normalize();
-      pu.uFlow.value.copy(vAir).negate();
-    }
     // nav lights blink
     this.navBlink = (this.navBlink + dt) % 1.6;
     for (const n of m.navLights) n.visible = this.navBlink < 0.12;

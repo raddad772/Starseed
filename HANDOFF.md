@@ -17,7 +17,25 @@ checks and the finite GPU regression fixture pass. WEBGPU.md records same-load f
 A/B timings and pixel differences, including timestamp-overlap limitations. Public renderer APIs
 remain compatible with the megastructure worktree. Dave now explicitly authorizes coordination
 with that chat; it owns src/understructure/* and local walking/zero-g, while this chat owns renderer,
-spacecraft/re-entry, orbital stations and later integration. Re-entry/stations/merge are still pending.
+spacecraft/re-entry, orbital stations and later integration. Stations/merge are still pending.
+
+## Re-entry and flight generations (Codex, 2026-10-08)
+Hull-bounds curvature, relative airflow and gas properties drive a Sutton–Graves screening model,
+with an incoming-energy cap and implicit radiation/cooling balance. The air coefficient is an
+approximation on other mixtures; this is not CFD or a validated shock-chemistry model. Pioneer,
+Expedition and Horizon have progressively stronger fictional thermal protection. FULL assist and
+the navigation computer use the same geometry/protection-dependent heat speed limit.
+All vessel visuals now share a hull-sized bow glow and downstream wake, including GLB fleets.
+Vacuum and sheltered bays immediately remove the effect; retained hull heat continues cooling.
+The finite `tools/tests/reentry.html` fixture exercises three actual fleet assets at two attitudes,
+animated shader time, pixel contributions and vacuum/bay transitions. Native shader regression
+includes the eighth forward family. Gas-family colours are art direction.
+Generation handling adjusts velocity response, terrain anticipation, touchdown speed and impact
+tolerance without exceeding engine ratings. Braking predictions include carried mass, atmospheric
+fans and current vector-pod orientation. In the same airless 1 km / 100 m/s downward test, Nomad
+cannot arrest the fall, Hearth survives a hard landing, and Neptune 3 recovers above 650 m. OFF/ROT
+retain pilot control. Eighteen thermal/handling/FTL/ramp tests pass; real flight feel still needs
+Dave's playtest. Use `node --test ...`; the offline shader loader is not needed for simulation tests.
 
 ## NOW: forests, shade, moonlight; Dave's queue (session 39d69fa8, 2026-10-06)
 

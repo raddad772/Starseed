@@ -5,6 +5,20 @@ export function thrustAvailability(v) {
   const density = v.parent ? Math.max(0, v.zone?.pressure || 0) * 1.225 : Math.max(0, v.env?.density || 0);
   return Math.min(1.2, density / spec.referenceDensity);
 }
+// Support of the actual thrust envelope along a unit ship-local direction.
+// Used by stopping-distance prediction; includes payload mass, thin-air fans
+// and the present pod angle without advancing actuator state.
+export function thrustAccelerationAlong(v, u) {
+  const L=v.limits;
+  let force=Math.abs(u.x)*L.lateral;
+  if(v.type.vectorPods) {
+    const angle=v.podTilt||0,sin=Math.sin(angle),cos=Math.cos(angle);
+    const along=u.y*sin-u.z*cos;
+    force+=Math.max(0,along*cos)*L.main+Math.max(0,along*sin)*L.belly;
+    force+=Math.max(0,u.z)*L.retro+Math.max(0,-u.y)*L.down;
+  } else force+=Math.abs(u.y)*(u.y>0?L.belly:L.down)+Math.abs(u.z)*(u.z>0?L.retro:L.main);
+  return force*thrustAvailability(v)/v.effMass;
+}
 export function applyPropulsion(v, force, torque, dt) {
   const available = thrustAvailability(v);
   force.multiplyScalar(available); torque.multiplyScalar(available);

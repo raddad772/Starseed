@@ -18,7 +18,7 @@ independently. Scalar/vec2 uniform arrays use explicit 16-byte std140 element wr
 `intermediate/` files are compiler diagnostics; do not commit them.
 
 Run `node --test tools/tests/webgpu.test.mjs`, then the finite `tools/tests/webgpu.html` browser fixture.
-It validates eight opaque and seven custom forward families, reversed depth, resource lifetime, clusters,
+It validates eight opaque and eight custom forward families, reversed depth, resource lifetime, clusters,
 decals/GTAO, viewscreens, GPU visibility/LOD and the map. `tools/tests/webgpu-scenes.html` exercises full
 scenes with fixed-exposure reference comparisons or native-only startup. The old WebGL renderer is only
 loaded by the explicit `?webglReference=1` test switch. Timings include queue completion; do not sum

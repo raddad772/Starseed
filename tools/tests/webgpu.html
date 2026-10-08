@@ -88,7 +88,7 @@ try {
   check(renderer.opaque.meshes.size===0,'Opaque instance buffers must be released on disposal');
   // Compile/rasterize every forward family with its real attribute layout.
   const target=renderer.targets.get(view);
-  for(const name of ['water','ribbon','plume','plasma','field','spray','ring']){
+  for(const name of ['water','ribbon','plume','plasma','entryPlasma','field','spray','ring']){
     const p=renderer.forward.programs.get(name+':3'),g=new THREE.BufferGeometry();
     for(const a of p.vertexDescriptor.layout.attributes){const n=Number(a.type.match(/vec(\d)/)?.[1]||1);g.setAttribute(a.name,new THREE.Float32BufferAttribute(new Float32Array(3*n),n));}
     g.setIndex([0,1,2]);const m=new THREE.ShaderMaterial({uniforms:{...front.material.uniforms,tWaterDepth:{value:target.sampledDepth},tSceneDepth:{value:target.sampledDepth},uMorph:{value:[1e9,2e9]}}});
@@ -190,7 +190,7 @@ try {
   const validationError = await renderer.device.popErrorScope();
   check(!validationError, validationError?.message);
   check(!errors.length, errors.join('\n'));
-  window.testResult = { status: 'passed', redPixels: red, bluePixels: blue, timestampQuery: renderer.timestamp, opaquePipelines:8,forwardPipelines:7,clusteredLights:{dark,lit,sealed,overlapping:70},transparent,offscreen:true,visibleInstances,decals:true,minAO,aoDirectUnchanged:true,scalarArrayABI:true,chunkCounts,gpuLOD:true,map:{orbitPixels,mapPixels},splitScreen:true,stats: renderer.stats };
+  window.testResult = { status: 'passed', redPixels: red, bluePixels: blue, timestampQuery: renderer.timestamp, opaquePipelines:8,forwardPipelines:8,clusteredLights:{dark,lit,sealed,overlapping:70},transparent,offscreen:true,visibleInstances,decals:true,minAO,aoDirectUnchanged:true,scalarArrayABI:true,chunkCounts,gpuLOD:true,map:{orbitPixels,mapPixels},splitScreen:true,stats: renderer.stats };
 } catch (error) {
   window.testResult = { status: 'failed', error: error.stack || String(error), validationErrors: errors };
 } finally {

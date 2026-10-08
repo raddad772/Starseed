@@ -33,6 +33,7 @@ import { Player, lookQuat } from './sim/player.js';
 import { FTL, lockRadius } from './sim/ftl.js';
 import { NavComputer } from './sim/navComputer.js';
 import { ShipVisual } from './render/shipVisual.js';
+import { ReentryVisual } from './render/reentryVisual.js';
 import { BigShipVisual } from './render/bigShipVisual.js';
 import { FleetVisual } from './render/fleetVisual.js';
 import { requestAirlock, outerAirlockOpen } from './sim/airlocks.js';
@@ -400,6 +401,7 @@ export class Game {
     v.interior = makeInterior(v);
     v.target = new VesselTarget(v);
     v.visual = v.type.frameOnly ? new AttachedFrameVisual(this.engine) : v.type.fleetAsset ? new FleetVisual(this.engine, v) : v.big ? new BigShipVisual(this.engine, v) : (v.type.template ? new GlbCraftVisual(this.engine, v) : new ShipVisual(this.engine, v));
+    if (v.visual.fx && !v.type.frameOnly) v.visual.entry = new ReentryVisual(v, v.visual.fx);
     if (v.type.legAttach) v.legAttach = v.type.legAttach.map((a) => new THREE.Vector3(...a));
     // lit by big ships' fixtures (a shuttle's cabin stays sealed from them)
     this.lights.adopt(v.visual.model.root, v.big ? null : (o) => o.name === 'interior');
@@ -446,7 +448,7 @@ export class Game {
       this.computeLighting();
       this.lights.update(this.camPos, this.camQuat, this.lighting, this.vessels, this.lamps(this.camPos));
       this.updateMeter();
-      for (const v of this.vessels) v.visual.update(0, this.camPos, this.lighting);
+      for (const v of this.vessels) { v.visual.update(0, this.camPos, this.lighting); v.visual.entry?.update(); }
       this.itemVisuals.update(this.camPos);
       const was = sc.mesh.visible;
       sc.mesh.visible = false; // (not in its own picture)
@@ -982,6 +984,7 @@ export class Game {
     const i = this.vessels.indexOf(v);
     if (i >= 0) this.vessels.splice(i, 1);
     const vis = v.visual;
+    vis?.entry?.dispose();
     if (vis && vis.model && vis.model.root) vis.model.root.removeFromParent();
     if (vis && vis.fx) vis.fx.removeFromParent();
     v.dead = true;
@@ -1697,7 +1700,7 @@ export class Game {
     this.computeLighting();
     this.lights.update(this.camPos, this.camQuat, this.lighting, this.vessels, this.lamps(this.camPos));
     this.updateMeter();
-    for (const v of this.vessels) v.visual.update(dtA, this.camPos, this.lighting);
+    for (const v of this.vessels) { v.visual.update(dtA, this.camPos, this.lighting); v.visual.entry?.update(); }
     this.itemVisuals.update(this.camPos);
     const atmos = this.world.update(this.camPos, dtA);
     this.updateSkyStars(dtA);

@@ -1,0 +1,56 @@
+<!doctype html><meta charset="utf-8"><base href="/"><title>Starseed re-entry validation</title>
+<script type="importmap">{"imports":{"three":"../../vendor/three.module.js"}}</script>
+<style>body{background:#0c111b;color:#dae5f4;font:15px system-ui;margin:20px}canvas,img{max-width:100%}pre{white-space:pre-wrap}</style>
+<h1>Fleet re-entry — finite native WebGPU test</h1><button id="run">Run validation</button><pre id="status">Ready</pre>
+<canvas id="view" width="640" height="480"></canvas><div id="shots"></div>
+<script type="module">
+import * as THREE from 'three';
+import {DeferredRenderer} from '../../src/render/webgpu/renderer.js';
+import {ReentryVisual} from '../../src/render/reentryVisual.js';
+import {FleetVisual} from '../../src/render/fleetVisual.js';
+import {Ship} from '../../src/sim/ship.js';
+import {VESSEL_TYPES} from '../../src/sim/vesselTypes.js';
+const status=document.querySelector('#status'),canvas=document.querySelector('#view');
+const check=(ok,message)=>{if(!ok)throw Error(message);};
+document.querySelector('#run').onclick=async()=>{
+ const errors=[],report={stage:'Running',cases:[]};let renderer;
+ document.querySelector('#run').disabled=true;
+ try {
+  renderer=await DeferredRenderer.create(canvas,e=>errors.push(e.message));renderer.device.pushErrorScope('validation');
+  const scene=new THREE.Scene(),transparentScene=new THREE.Scene(),camera=new THREE.PerspectiveCamera(54,4/3,.05,1e8);
+  const sun=new THREE.DirectionalLight(0xffffff,3);sun.position.set(1,2,-3);scene.add(sun,new THREE.HemisphereLight(0xabcfff,0x203040,.18));
+  const view={camera,width:640,height:480,rect:{x:0,y:0,w:640,h:480},meterRef:.18,maxExposure:1,exposureBias:1};
+  const engine={scene,transparentScene,view,minExposure:1,pixelRatio:1};
+  const body={R:1e6,GM:1e12,pos:new THREE.Vector3(),vel:new THREE.Vector3(),omega:new THREE.Vector3(),q:new THREE.Quaternion(),qInv:new THREE.Quaternion(),relief:0,atmHeight:1e5,
+    atm:{mu:28.97,comp:{N2:.78,O2:.22}},data:{name:'Fixture',Tsurf:290},atmosphereAt:()=>({density:.003,pressure:.002,temperature:240})};
+  const game={t:0,universe:{bodies:[body]}},F=new THREE.Vector3(),T=new THREE.Vector3();
+  const sheet=document.createElement('canvas');sheet.width=1280;sheet.height=1512;const ctx=sheet.getContext('2d');ctx.fillStyle='#0c111b';ctx.fillRect(0,0,sheet.width,sheet.height);
+  for(const [i,key] of ['pioneer_nomad','expedition_hearth','horizon_neptune3'].entries()) {
+   status.textContent='Loading '+key;
+   const ship=new Ship(game,VESSEL_TYPES[key],key);ship.body=body;ship.pos.set(0,1060000,0);ship.vel.set(0,0,-6000);ship.gear=ship.gearTarget=0;
+   const visual=new FleetVisual(engine,ship);await visual.ready;check(visual.model.loaded,'Fleet asset: '+visual.model.error);
+   const effect=new ReentryVisual(ship,visual.fx),size=Math.max(...effect.envelope.size);
+   for(let j=0;j<2;j++) {
+    ship.quat.setFromAxisAngle(new THREE.Vector3(1,0,0),j*Math.PI*.3);
+    for(let step=0;step<120;step++){game.t+=1/120;ship.aero(60000,F.set(0,0,0),T.set(0,0,0));ship.environment(1/120);}
+    const eye=ship.pos.clone().add(new THREE.Vector3(.68,.4,-1).multiplyScalar(size*1.3));
+    camera.quaternion.setFromRotationMatrix(new THREE.Matrix4().lookAt(eye,ship.pos,new THREE.Vector3(0,1,0)));
+    visual.update(0,eye);effect.update();check(effect.root.visible,'Supersonic flow must draw plasma');
+    for(let frame=0;frame<12;frame++){game.t+=1/60;effect.update();renderer.render(engine);await renderer.device.queue.onSubmittedWorkDone();}
+    const lit=await renderer.capture();effect.root.visible=false;renderer.render(engine);const dark=await renderer.capture();
+    let changed=0;for(let p=0;p<lit.pixels.length;p+=4)if(lit.pixels[p]>dark.pixels[p]+8||lit.pixels[p+2]>dark.pixels[p+2]+8)changed++;
+    check(changed>100,'Plasma must rasterize visible pixels: '+key);
+    ctx.putImageData(new ImageData(lit.pixels,640,480),j*640,i*504+24);ctx.fillStyle='#dae5f4';ctx.font='16px system-ui';ctx.fillText(key+(j?' / banked entry':' / nose first'),j*640+12,i*504+18);
+    report.cases.push({key,banked:!!j,changedPixels:changed,heatFlux:ship.heatFlux,mach:ship.env.mach,radius:ship.entry.radius,projectedArea:ship.entry.projectedArea});
+   }
+   ship.aero(200000,F,T);effect.update();check(!effect.root.visible,'Vacuum must immediately hide plasma');
+   ship.zone={pressure:1};ship.zoneEnv();effect.update();check(!effect.root.visible,'Sheltered bays must hide plasma');
+   effect.dispose();visual.model.root.removeFromParent();visual.fx.removeFromParent();
+  }
+  const error=await renderer.device.popErrorScope();check(!error&&!errors.length,error?.message||errors.join('\n'));
+  report.stage='Passed';const image=sheet.toDataURL('image/png'),img=new Image();img.src=image;document.querySelector('#shots').append(img);
+  await fetch('/__webgpu_capture',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:'reentry-fleet',image,report})});
+ }catch(error){report.stage='Failed';report.error=error.stack||String(error);}
+ finally{window.testResult=report;status.textContent=JSON.stringify(report,null,2);renderer?.dispose();document.querySelector('#run').disabled=false;}
+};
+</script>

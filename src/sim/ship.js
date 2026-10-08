@@ -40,7 +40,8 @@
 // long springs, thrust to move); see groundControl and wheelForce.
 
 import * as THREE from 'three';
-import { applyPropulsion, thrustAvailability } from './propulsion.js';
+import { applyPropulsion, thrustAvailability, thrustAccelerationAlong } from './propulsion.js';
+import { flightHandling } from './flightHandling.js';
 import { initAirlocks, updateAirlocks } from './airlocks.js';
 import { propagate, orbitInfo } from '../core/kepler.js';
 import { SHUTTLE, boxPenetration, boxesNear, deckBelow, insideBox } from './vesselTypes.js';
@@ -109,6 +110,7 @@ export class Ship {
     this.heatGlow = 0;
     this.heatFlux = 0;
     this.entryProfile = entryTier(type);
+    this.handling = flightHandling(type);
     this.entry = { ...entryGeometry(type,{x:0,y:0,z:-1}), direction:new THREE.Vector3(0,0,-1), heatLoad:0 };
     this._thermalT = game.t || 0;
     this.dead = false;
@@ -320,10 +322,8 @@ export class Ship {
   // can produce in the present attitude. Each axis is limited on its own, so
   // the best force along a direction u (ship-local) is sum |u_i| * limit_i.
   maxUpAccel() {
-    const L = this.limits;
     const u = _sa1.copy(this.pos).normalize().applyQuaternion(_q2.copy(this.quat).invert());
-    const F = Math.abs(u.x) * L.lateral + Math.abs(u.y) * (u.y > 0 ? L.belly : L.down) + Math.abs(u.z) * (u.z > 0 ? L.retro : L.main);
-    return F / this.mass - this.body.GM / this.pos.lengthSq();
+    return thrustAccelerationAlong(this,u) - this.body.GM / this.pos.lengthSq();
   }
 
   // Terrain along the present ground track: the vertical speed (m/s, + up)
@@ -343,10 +343,9 @@ export class Ship {
     const alt = this.pos.length() - b.R;
     const v0 = vSurf.dot(up);
     const a = Math.max(0.5, aClimb);
-    const L = this.limits;
     const back = _sa2.copy(vh).multiplyScalar(-1 / sp).applyQuaternion(_q2.copy(this.quat).invert());
-    const aBrake = (Math.abs(back.x) * L.lateral + Math.abs(back.y) * (back.y > 0 ? L.belly : L.down) + Math.abs(back.z) * (back.z > 0 ? L.retro : L.main)) / this.mass;
-    const horizon = Math.min(90, Math.max(6, 2 + sp / (0.5 * aBrake)));
+    const aBrake = thrustAccelerationAlong(this,back);
+    const horizon = Math.min(90, Math.max(6, 2 + sp / Math.max(.01,0.5 * aBrake))) * this.handling.lookAhead;
     for (let i = 0; i < AHEAD_N; i++) {
       const t = 0.3 * Math.pow(horizon / 0.3, i / (AHEAD_N - 1));
       const p = _sa2.copy(this.pos).addScaledVector(vh, t).applyQuaternion(b.qInv).normalize();
@@ -515,7 +514,7 @@ export class Ship {
     if (feedback && this.assist === 2 && c.roll === 0 && this.targetFrame === 'surface' && !this.landed) {
       const up = _v2.copy(this.pos).normalize().applyQuaternion(_q1.copy(this.quat).invert());
       const fwd = _v3.set(0, 0, -1);
-      if (Math.abs(up.dot(fwd)) < 0.9) tr.z += THREE.MathUtils.clamp(-up.x * 1.4, -0.8, 0.8);
+      if (Math.abs(up.dot(fwd)) < 0.9) tr.z += THREE.MathUtils.clamp(-up.x * this.handling.levelGain, -L.rate.z, L.rate.z);
       // auto-flare: while the ground guard is holding the ship off the
       // terrain, level the nose so the strong belly thrusters face down
       if (this._guardActive && c.pitch === 0) {
@@ -632,7 +631,7 @@ export class Ship {
       this.slip = approach(this.slip, c.strafe * 30 * prec, 1.0 * G0);
       if (c.brake) { this.cruise = approach(this.cruise, 0, 2.5 * G0); this.climb = approach(this.climb, 0, 2 * G0); this.slip = approach(this.slip, 0, 2 * G0); }
       // soft-landing guard: limit descent rate near the ground
-      if (isFinite(this.agl)) this.climb = Math.max(this.climb, -Math.max(1.2, this.agl * 0.35));
+      if (isFinite(this.agl)) this.climb = Math.max(this.climb, -Math.max(this.handling.touchdown, this.agl * 0.35));
       // touchdown: once a foot is down with no climb/cruise command, cut lift
       // and only damp rotation so the suspension rocks the hull onto all legs
       const legsDown = this.legState[0] + this.legState[1] + this.legState[2] + this.legState[3];
@@ -667,9 +666,9 @@ export class Ship {
     const guardUp = _nose.copy(this.pos).normalize();
     this._guardActive = false;
     if (isFinite(this.agl)) {
-      const aStop = Math.max(0.5, 0.5 * this.maxUpAccel());
+      const aStop = Math.max(0.5, this.handling.guardFraction * this.maxUpAccel());
       const vProf = Math.sqrt(2 * aStop * Math.max(0, this.agl - 1.5));
-      let minUp = -Math.max(1.2, vProf), terrainLimited = false;
+      let minUp = -Math.max(this.handling.touchdown, vProf), terrainLimited = false;
       // terrain ahead: climb to clear what the ground track is about to
       // cross, and slow down when even that climb would come too late
       const band = b.relief * 1.6 + 2200; // above the highest peaks
@@ -686,12 +685,12 @@ export class Ship {
       const vUp = this.targetVel.dot(guardUp);
       if (vUp < minUp) {
         this.targetVel.addScaledVector(guardUp, minUp - vUp);
-        if (!terrainLimited && vProf > 1.2) guardFF = aStop;
+        if (!terrainLimited && vProf > this.handling.touchdown) guardFF = aStop;
         this._guardActive = true;
       }
     }
     // required acceleration
-    const tau = this.big ? 6 : 0.7;
+    const tau = this.big ? 6 : this.handling.velocityTime;
     const req = _v1.copy(this.targetVel).sub(vRel).divideScalar(tau);
     if (guardFF) req.addScaledVector(guardUp, guardFF);
     // cancel gravity and (in the rotating frame) centrifugal + Coriolis
@@ -1248,7 +1247,7 @@ export class Ship {
         return;
       }
       this.touchdown = false;
-      const reqA = _v2.copy(A.lvel).sub(vRel).divideScalar(0.6);
+      const reqA = _v2.copy(A.lvel).sub(vRel).divideScalar(this.handling.deckTime);
       reqA.sub(gv);
       const flA = reqA.multiplyScalar(m).applyQuaternion(qi);
       outForce.set(THREE.MathUtils.clamp(flA.x, -L.lateral, L.lateral), THREE.MathUtils.clamp(flA.y, -L.down, L.belly), THREE.MathUtils.clamp(flA.z, -L.main, L.retro));
@@ -1264,7 +1263,7 @@ export class Ship {
     this.climb = approach(this.climb, c.lift * (c.boost ? 20 : 8) * prec, 1.2 * G0);
     this.slip = approach(this.slip, c.strafe * 12 * prec, 0.8 * G0);
     if (c.brake || (!c.fwd && Math.abs(this.cruise) < 30)) this.cruise = approach(this.cruise, 0, (c.brake ? 1.5 : 0.25) * G0);
-    if (isFinite(this.agl)) this.climb = Math.max(this.climb, -Math.max(0.8, this.agl * 0.35));
+    if (isFinite(this.agl)) this.climb = Math.max(this.climb, -Math.max(Math.min(.8,this.handling.touchdown), this.agl * 0.35));
     const legsDown = this.legState[0] + this.legState[1] + this.legState[2] + this.legState[3];
     if (legsDown > 0 && c.lift <= 0 && !c.fwd && !c.strafe && Math.abs(this.cruise) < 2 && this.climb <= 0.05 && vRel.length() < 3) {
       this.cruise = this.slip = 0;
@@ -1275,7 +1274,7 @@ export class Ship {
     }
     this.touchdown = false;
     this.targetVel.copy(fwdH).multiplyScalar(this.cruise).addScaledVector(rightH, this.slip).addScaledVector(up, this.climb);
-    const req = _v2.copy(this.targetVel).sub(vRel).divideScalar(0.6);
+    const req = _v2.copy(this.targetVel).sub(vRel).divideScalar(this.handling.deckTime);
     req.sub(gv); // hold against the plating (or the host's pull)
     const fl = req.multiplyScalar(m).applyQuaternion(qi);
     outForce.set(
@@ -1418,10 +1417,11 @@ export class Ship {
 
   impact(speed) {
     const now = this.game.t;
-    if (speed > 22) { this.destroy(`Hull breach on impact at ${speed.toFixed(0)} m/s`); return; }
+    const protection=this.handling;
+    if (speed > protection.impactBreak) { this.destroy(`Hull breach on impact at ${speed.toFixed(0)} m/s`); return; }
     if (now - this.lastImpact < 0.25) return;
     this.lastImpact = now;
-    const dmg = Math.max(0, speed - 3.5) * Math.max(0, speed - 3.5) * 0.004;
+    const dmg = Math.max(0, speed - protection.impactFree) ** 2 * protection.impactDamage;
     if (dmg > 0) {
       this.hull = Math.max(0, this.hull - dmg);
       this.game.onShipDamage && this.game.onShipDamage(this, dmg, 'impact');

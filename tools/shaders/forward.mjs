@@ -3,7 +3,7 @@ import { translate } from './translate.mjs';
 import { prune } from './prune.mjs';
 import { shaderKey } from '../../src/render/webgpu/uniforms.js';
 const root=process.env.STARSEED_SHADER_ROOT,compiler=process.argv[2],output=process.argv[3];
-const T=await import(root+'/src/render/terrainMaterial.js'),P=await import(root+'/src/render/shipVisual.js'),B=await import(root+'/src/render/bigShips.js'),F=await import(root+'/src/render/falls.js'),G=await import(root+'/src/render/giant.js');
+const T=await import(root+'/src/render/terrainMaterial.js'),P=await import(root+'/src/render/shipVisual.js'),B=await import(root+'/src/render/bigShips.js'),F=await import(root+'/src/render/falls.js'),G=await import(root+'/src/render/giant.js'),E=await import(root+'/src/render/reentryVisual.js');
 const clean=s=>s.replace(/\/\*[\s\S]*?\*\//g,'').replace(/\/\/[^\n]*/g,'').replace(/#include[^\n]*/g,'');
 function removeBlock(s,marker,replacement=''){const a=s.indexOf(marker);if(a<0)throw Error('Missing shader block '+marker);let i=s.indexOf('{',a)+1,n=1;for(;n;i++){if(s[i]==='{')n++;if(s[i]==='}')n--;}return s.slice(0,a)+replacement+s.slice(i);}
 let water=clean(T.FRAG);water=removeBlock(water,'if (isWater < 0.5)', 'if(isWater<0.5)discard;');water=removeBlock(water,'else {\n    float wrap','');
@@ -16,7 +16,7 @@ water=water.replace(/texture\(tOpaque, ([^)]+)\)/g,'texture(tOpaque, vec2(($1).x
 // gl_FragCoord already uses native coordinates, unlike projected UVs.
 water=water.replace('sceneZ(gl_FragCoord.xy / vec2(textureSize(tWaterDepth, 0)))','sceneZ(vec2(gl_FragCoord.x, float(textureSize(tWaterDepth,0).y)-gl_FragCoord.y) / vec2(textureSize(tWaterDepth,0)))');
 const imports=[],entries=[];
-for(const [name,vs,fs,defines] of [['water',T.VERT,water,'#define MAT_MODE 0\n'],['ribbon',T.RIBBON_VERT,water,'#define MAT_MODE 0\n#define RIBBON\n'],['plume',P.PLUME_VERT,P.PLUME_FRAG,''],['plasma',P.PLUME_VERT,P.PLASMA_FRAG,''],['field',B.FIELD_VERT,B.FIELD_FRAG,''],['spray',F.VERT,F.FRAG,''],['ring',G.RING_VERT,G.RING_FRAG.replace('float ringDensity(float r);',G.GLSL_RING_DENSITY),'']]){
+for(const [name,vs,fs,defines] of [['water',T.VERT,water,'#define MAT_MODE 0\n'],['ribbon',T.RIBBON_VERT,water,'#define MAT_MODE 0\n#define RIBBON\n'],['plume',P.PLUME_VERT,P.PLUME_FRAG,''],['plasma',P.PLUME_VERT,P.PLASMA_FRAG,''],['entryPlasma',E.ENTRY_VERT,E.ENTRY_FRAG,''],['field',B.FIELD_VERT,B.FIELD_FRAG,''],['spray',F.VERT,F.FRAG,''],['ring',G.RING_VERT,G.RING_FRAG.replace('float ringDensity(float r);',G.GLSL_RING_DENSITY),'']]){
  let fragment=prune(defines+'uniform mat4 viewMatrix;uniform mat4 projectionMatrix;\nconst float PI=3.14159265359;\n'+clean(fs));
  fragment=fragment.replace(/varying\s+(\w+)\s+(\w+)\s*;/g,(decl,type,name)=>(fragment.match(new RegExp('\\b'+name+'\\b','g'))||[]).length>1?decl:'');
  const varyings=[...fragment.matchAll(/varying\s+\w+\s+(\w+)\s*;/g)].map(m=>m[1]);

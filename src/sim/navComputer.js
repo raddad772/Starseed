@@ -35,6 +35,7 @@ import * as THREE from 'three';
 import { floraOf } from './floraField.js';
 import { meadowsNear } from '../gen/flora.js';
 import { lockRadius } from './ftl.js';
+import { heatSafeSpeed, gasProperties } from './reentry.js';
 
 const G0 = 9.81;
 const A_CMD = 2.5 * G0;      // commanded acceleration, small craft (crew comfort; the engines can do far more)
@@ -47,8 +48,8 @@ const NEAR = 50000;          // m: closer than this to a ship, fly over without 
 const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3(), _d = new THREE.Vector3();
 
 // stagnation-heating speed limit at an air density (as the FULL assist's limiter)
-function heatSpeed(rho) {
-  return rho > 1e-7 ? Math.cbrt(9e4 / (1.7415e-4 * Math.sqrt(rho / 1.5))) : Infinity;
+function heatSpeed(ship, rho, temperature = ship.env.temperature) {
+  return heatSafeSpeed(rho, ship.entry.radius, gasProperties(ship.body?.atm), ship.entryProfile, temperature);
 }
 
 export const PHASE_NAMES = {
@@ -509,7 +510,7 @@ export class NavComputer {
     const up = _a.copy(s.pos).divideScalar(r);
     const lock = s.ftl.massLock();
     if (r > lockRadius(b) * 1.03 && (!lock || lock.body !== b)) { this.legs = this.plan(); this.go('align'); return; }
-    const vHeat = heatSpeed(s.env.density) * 0.9;
+    const vHeat = heatSpeed(s, s.env.density) * 0.9;
     const vUp = Math.min(V_SPACE, vHeat);
     // straight up over the ground, the world's spin carried along
     this.slew(A, _b.copy(up).multiplyScalar(vUp).add(s.frameVel(_c)));
@@ -719,7 +720,8 @@ export class NavComputer {
     let vv = hRel > altT ? -Math.min(V_SPACE, Math.sqrt(2 * 0.6 * G0 * (hRel - altT))) : Math.min(120, (altT - hRel) * 0.5);
     // the air ahead (where the descent will be in a few seconds) limits speed
     const aheadAlt = Math.max(0, r - b.R + Math.min(0, vv) * 6);
-    const vHeat = b.atm ? heatSpeed(b.atmosphereAt(aheadAlt).density) * 0.85 : Infinity;
+    const aheadAir = b.atm ? b.atmosphereAt(aheadAlt) : null;
+    const vHeat = aheadAir ? heatSpeed(s, aheadAir.density, aheadAir.temperature) * 0.85 : Infinity;
     const sp = Math.hypot(vh, vv);
     if (sp > vHeat) { vh *= vHeat / sp; vv *= vHeat / sp; }
     const vAbs = this._va.copy(hdir).multiplyScalar(vh).addScaledVector(up, vv).add(s.frameVel(this._vb));
@@ -1038,7 +1040,7 @@ export class NavComputer {
     const inAir = s.env.density > 1e-6;
     const vc = Math.sqrt(b.GM / Math.max(r, R0));
     const vt = inAir ? Math.min(vc, Math.max(0, vAbsNow.dot(horiz))) : vc;
-    if (inAir) vr = Math.min(vr, heatSpeed(s.env.density) * 0.85);
+    if (inAir) vr = Math.min(vr, heatSpeed(s, s.env.density) * 0.85);
     const vAbs = this._va.copy(horiz).multiplyScalar(vt).addScaledVector(up, vr);
     this.slew(A, vAbs);
     const dv = this._vb.copy(vAbs).sub(s.vel);
