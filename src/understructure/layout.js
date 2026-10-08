@@ -1,12 +1,16 @@
 // Seeded local infrastructure prototype. World generation and walking consume the same plan.
 import { Rng, normalizeSeed } from '../core/rng.js';
+import { siteThemes,makePuzzles } from './anomalies.js';
 
 export const TILE = 4;
-export const DECK = -28;
+export const DECK = -240;
+export const LIFT_SECONDS = 4.2;
+export const ACCESS = {halfWidth:.65,halfDepth:.85};
 export const key = (x, z) => `${x},${z}`;
-export function generateUnderstructure(seed = 'SUMP-07') {
+export function generateUnderstructure(seed = 'SUMP-07',profile='auto') {
   seed = normalizeSeed(seed) || 'SUMP-07';
   const rng = Rng.fromString(`understructure-v1:${seed}`);
+  const themes=siteThemes(rng,profile),puzzles=makePuzzles(themes,rng,DECK);
   const tiles = new Map(), rooms = [], edges = [];
   const carve = (x,z,region='conduit') => { if (!tiles.has(key(x,z))) tiles.set(key(x,z), {x,z,region}); };
   const line = (a,b) => {
@@ -40,24 +44,50 @@ export function generateUnderstructure(seed = 'SUMP-07') {
   for(const [a,b] of edges)line([rooms[a].x,rooms[a].z],[rooms[b].x,rooms[b].z]);
   // An intentional trunk route makes the huge reservoir a discoverable landmark.
   line([0,-7],[0,-30]);
+  const chambers=[
+    {id:'null',name:'NULL WELL',kind:'zero-g',bounds:[78,110,-66,-38],ceiling:DECK+rng.int(20,24),door:[78,-52],doorSide:-1,
+      walkways:[[78,110,-66,-38]],color:'#9adfea'},
+    {id:'upfall',name:'UPFALL CISTERN',kind:'upfall',bounds:[-114,-78,-44,-12],ceiling:DECK+rng.int(13,17),door:[-78,-28],doorSide:1,
+      walkways:[[-114,-108,-44,-12],[-84,-78,-44,-12],[-114,-78,-44,-38],[-114,-78,-18,-12],[-114,-78,-29.6,-26.4]],color:'#9edac4'},
+    {id:'resonance',name:'RESONANCE HALL',kind:'resonance',bounds:[-114,-78,-118,-82],ceiling:DECK+rng.int(12,16),door:[-78,-100],doorSide:1,
+      walkways:[[-114,-78,-118,-82]],color:'#dfb07d'},
+  ];
+  line([12,-13],[19,-13]);line([-12,-7],[-19,-7]);line([-12,-25],[-19,-25]);
+  const nullChamber=chambers[0];
+  if(!themes.includes('gravity')){nullChamber.kind='observation';nullChamber.name=themes.includes('time')?'DELAY WELL':'PARALLAX WELL';chambers[1].name='RETURN CISTERN';}
+  if(themes.includes('space'))chambers[2].name='FOLD EXCHANGE';
+  nullChamber.obstacles=[
+    {center:[87,DECK+7,-60],radius:2.5}, {center:[103,DECK+12,-42],radius:2.4},
+    {center:[104,DECK+4,-61],radius:2.1}, {center:[87,DECK+15,-44],radius:2},
+  ];
   const walls=[];
   for(const t of tiles.values())for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]) {
     if(tiles.has(key(t.x+dx,t.z+dz)))continue;
     if(t.x===0&&t.z===-30&&dz===-1)continue;
+    if(chambers.some(c=>dx===-c.doorSide&&Math.abs(t.x*TILE+dx*TILE/2-c.door[0])<.01&&t.z*TILE===c.door[1]))continue;
     walls.push({x:t.x*TILE+dx*TILE/2,z:t.z*TILE+dz*TILE/2,axis:dx?'z':'x',region:t.region});
   }
   const samples=[
     {id:'intake',pos:[0,DECK,-20],title:'An occupied frequency',text:'The access circuit draws power in eleven-second intervals. The pulse continues far below the surveyed level.'},
     {id:'archive',pos:[24,DECK,-52],title:'Maintenance without occupants',text:'Replacement filters are stacked beside a live return line. None of the fittings match the dimensions of the doors.'},
-    {id:'reservoir',pos:[0,DECK,-264],title:'A reservoir with no catchment',text:'The water is flowing toward the surface. No intake, watershed or active weather system accounts for its volume.'},
+    {id:'reservoir',pos:[0,DECK,-264],title:'A reservoir with no catchment',text:'No intake, watershed or active weather system accounts for this volume. The maintenance catwalks continue beyond the reach of the hand light.'},
+    {id:'null',pos:[96,DECK+(themes.includes('gravity')?12:0),-52],title:themes.includes('gravity')?'Weight ends at the sill':'A pocket in the machinery',text:themes.includes('gravity')?'The planet is still above you. Inside this well, loose concrete hangs without support. Gravity returns exactly at the amber threshold, with no measurable change outside it.':'This little room faces a structural void over a kilometre across. The handrails and service doors continue in rows until they become too small to resolve.'},
+    {id:'upfall',pos:[-96,DECK,-41],title:'Return flow',text:'Water falls upward into dry ceiling drains. Closing the return valve suspends the moving columns in place. Neither state explains where the water goes.'},
+    {id:'resonance',pos:[-96,DECK,-100],title:'An answer in intervals',text:'A touch at the central plate travels through the hanging resonators. The lights return in a sequence unlike their spacing. It resembles an acknowledgment.'},
   ];
+  if(!themes.includes('gravity')){samples.find(s=>s.id==='upfall').title='The return line';samples.find(s=>s.id==='upfall').text=themes.includes('time')?'The same water passes this instrument again. Machinery pauses and rewinds in a twelve-second cycle; your own movements remain unaffected.':'The marked return threshold connects this cistern to a room that the survey places much farther away. The route is stable, but its measured length is not.';}
   // Keep structural columns clear of the crossing and far perimeter catwalks.
   const pillars=[];
   for(let z=-140;z>-280;z-=24)for(const x of [-44,-20,20,44])pillars.push({x,z,width:3,depth:4});
-  return {version:1,seed,tiles:[...tiles.values()],walls,rooms,edges,samples,
-    deck:DECK,shaft:{min:[-2,-2],max:[2,2]},reservoir:{x:64,near:-122,far:-286,bottom:-68,water:-53,ceiling:-6},
+  return {version:2,seed,themes,puzzles,tiles:[...tiles.values()],walls,rooms,edges,samples,
+    deck:DECK,shaft:{min:[-2,-2],max:[2,2]},reservoir:{x:64,near:-122,far:-286,bottom:DECK-40,water:DECK-25,ceiling:DECK+22},
     walkways:[[-2,2,-286,-120],[-64,64,-126,-122],[-64,64,-286,-282],[-64,-60,-286,-122],[60,64,-286,-122],[-64,64,-206,-202]],
-    pillars,spawn:[0,0,12]};
+    access:{...ACCESS},megavault:{near:110,far:1710,zMin:-652,zMax:548,ceiling:-4,bottom:-904},
+    pillars,chambers,spawn:[0,0,6]};
+}
+
+export function chamberAt(plan,x,z) {
+  return plan.chambers.find(c=>x>=c.bounds[0]&&x<=c.bounds[1]&&z>=c.bounds[2]&&z<=c.bounds[3])||null;
 }
 
 export function terrainHeight(x,z) {
@@ -68,8 +98,8 @@ export function terrainHeight(x,z) {
 export function makeCollision(plan) {
   const occupied=new Set(plan.tiles.map(t=>key(t.x,t.z)));
   function floorAt(x,z,{y=0,liftY=0,hatchOpen=false}={}) {
-    const shaft=Math.abs(x)<2&&Math.abs(z)<2;
-    if(shaft) {
+    const aperture=Math.abs(x)<plan.access.halfWidth&&Math.abs(z)<plan.access.halfDepth;
+    if(aperture) {
       if(!hatchOpen&&y>-2)return 0;
       return Math.abs(y-liftY)<.8?liftY:null;
     }
@@ -77,6 +107,7 @@ export function makeCollision(plan) {
     if(Math.abs(y-DECK)>.8)return null;
     if(occupied.has(key(Math.floor((x+2)/TILE),Math.floor((z+2)/TILE))))return DECK;
     if(plan.walkways.some(([x0,x1,z0,z1])=>x>x0&&x<x1&&z>z0&&z<z1))return DECK;
+    if(plan.chambers.some(c=>c.walkways.some(([x0,x1,z0,z1])=>x>=x0&&x<=x1&&z>=z0&&z<=z1)))return DECK;
     return null;
   }
   function canStand(x,z,state,radius=.3) {
@@ -87,5 +118,20 @@ export function makeCollision(plan) {
     }
     return true;
   }
-  return {floorAt,canStand};
+  function canFloat(x,y,z,radius=.42) {
+    const room=plan.chambers.find(c=>c.kind==='zero-g');if(!room)return false;const [x0,x1,z0,z1]=room.bounds;
+    if(y<DECK||y+1.9>room.ceiling)return false;
+    // Only the low doorway opens through the chamber shell. Floating above it
+    // cannot switch the character back to walking or snap them down to the floor.
+    for(let i=0;i<12;i++) {
+      const a=i*Math.PI/6,px=x+Math.cos(a)*radius,pz=z+Math.sin(a)*radius;
+      if(px>=x0&&px<=x1&&pz>=z0&&pz<=z1)continue;
+      if(px<x0&&px>=x0-2&&Math.abs(pz-room.door[1])<=1.85&&y<=DECK+.18)continue;
+      return false;
+    }
+    // Suspended blocks use spherical clearance envelopes, including their slow rotation.
+    for(const o of room.obstacles){const cy=Math.max(y+.42,Math.min(y+1.48,o.center[1]));if(Math.hypot(x-o.center[0],cy-o.center[1],z-o.center[2])<o.radius+radius)return false;}
+    return true;
+  }
+  return {floorAt,canStand,canFloat};
 }

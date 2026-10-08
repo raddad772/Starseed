@@ -2,6 +2,9 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { Rng } from '../core/rng.js';
 import { TILE, DECK, key, terrainHeight } from './layout.js';
+import { buildChambers } from './chambers.js';
+import { buildMegavault } from './megavault.js';
+import { buildMechanisms } from './mechanisms.js';
 
 export function buildScene(plan) {
   const rng=Rng.fromString(plan.seed).fork('surfaces'), scene=new THREE.Scene();
@@ -35,6 +38,8 @@ export function buildScene(plan) {
     cyan:new THREE.MeshStandardMaterial({color:'#9dbab1',emissive:'#b9efe0',emissiveIntensity:1.1}),
     ground:new THREE.MeshStandardMaterial({color:'#6c7260',map:tex,roughness:1}),
     water:new THREE.MeshStandardMaterial({color:'#1b3e3a',metalness:.55,roughness:.23}),
+    distant:new THREE.MeshStandardMaterial({color:'#2c4248',roughness:.9}),
+    abyss:new THREE.MeshStandardMaterial({color:'#0a1a22',roughness:1}),
   };
   function addGeometry(g,m){
     if(g.index){const indexed=g;g=g.toNonIndexed();indexed.dispose();}
@@ -67,21 +72,26 @@ export function buildScene(plan) {
     const x=rng.range(-170,170),z=rng.range(-180,100);if(Math.hypot(x,z)<16)continue;
     const r=rng.range(.2,1.4),g=new THREE.IcosahedronGeometry(r,0);g.scale(1,.65,1.2);g.translate(x,terrainHeight(x,z)+r*.25,z);addGeometry(g,'ground');
   }
-  // Cast access surround, flush metal hatch, tiny utility cabinet. No surface building.
-  box(-2.3,.1,0,.6,.2,5);box(2.3,.1,0,.6,.2,5);box(0,.1,-2.3,4,.2,.6);box(0,.1,2.3,4,.2,.6);
-  for(let x=-1.8;x<2;x+=.4)box(x,.215,2.35,.17,.02,.32,'rust');
-  box(3.3,.7,1,.65,1.4,.6,'metal');box(3.3,1.25,1.31,.35,.22,.02,'amber');
-  label('07',0,.23,2.1,{size:.35});
-  const hatch=new THREE.Group();hatch.position.set(-2,.08,0);root.add(hatch);
-  const lid=new THREE.Mesh(new THREE.BoxGeometry(3.98,.18,3.98),mat.metal);lid.position.set(2,-.09,0);hatch.add(lid);
-  for(let x=-1.5;x<=1.5;x+=.5){const rib=new THREE.Mesh(new THREE.BoxGeometry(.05,.05,3.65),mat.rust);rib.position.set(x+2,.02,0);hatch.add(rib);}
+  // A person-sized hatch covers a 1.3 x 1.7 m opening. Fill the coarse terrain
+  // tile around it; the larger shaft is entirely concealed beneath this collar.
+  const {halfWidth:hx,halfDepth:hz}=plan.access;
+  function collar(y,material){for(const s of [-1,1]){box(s*(2+hx)/2,y,0,2-hx,.32,4,material);box(0,y,s*(2+hz)/2,2*hx,.32,2-hz,material);}}
+  collar(-.16,'ground');collar(DECK-.16,'floor');
+  box(-hx-.1,.04,0,.2,.08,2*hz+.4,'metal');box(hx+.1,.04,0,.2,.08,2*hz+.4,'metal');
+  box(0,.04,-hz-.1,2*hx,.08,.2,'metal');box(0,.04,hz+.1,2*hx,.08,.2,'metal');
+  for(let x=-.5;x<=.5;x+=.25)box(x,.087,hz+.1,.08,.008,.12,'rust');
+  box(1.35,.35,.8,.35,.7,.3,'metal');box(1.35,.59,.958,.16,.1,.015,'amber');
+  const hatch=new THREE.Group();hatch.position.set(-hx,.06,0);root.add(hatch);
+  const lid=new THREE.Mesh(new THREE.BoxGeometry(2*hx-.02,.1,2*hz-.02),mat.metal);lid.position.set(hx,-.05,0);hatch.add(lid);
+  for(let x=-.45;x<=.45;x+=.3){const rib=new THREE.Mesh(new THREE.BoxGeometry(.025,.025,2*hz-.12),mat.rust);rib.position.set(x+hx,.01,0);hatch.add(rib);}
   const lift=new THREE.Group();root.add(lift);
-  const platform=new THREE.Mesh(new THREE.BoxGeometry(3.85,.25,3.85),mat.metal);platform.position.y=-.15;lift.add(platform);
-  const inset=new THREE.Mesh(new THREE.BoxGeometry(2.8,.04,2.8),mat.floor);inset.position.y=-.015;lift.add(inset);
+  const platform=new THREE.Mesh(new THREE.BoxGeometry(2*hx-.06,.25,2*hz-.06),mat.metal);platform.position.y=-.15;lift.add(platform);
+  const inset=new THREE.Mesh(new THREE.BoxGeometry(2*hx-.2,.04,2*hz-.2),mat.floor);inset.position.y=-.015;lift.add(inset);
   // The three shaft walls are solid; the fourth opens onto the basement only at its landing.
   box(-2.25,DECK/2,0,.5,-DECK,4.5);box(2.25,DECK/2,0,.5,-DECK,4.5);box(0,DECK/2,2.25,4,.0-DECK,.5);
   box(0,(DECK+4)/2,-2.25,4,-DECK-4,.5);
   for(let y=-3;y>DECK;y-=4){cylinder([-1.8,y,1.8],[-1.8,y-4,1.8],.06,'metal');lamp(1.93,y,0,'cyan');}
+  for(let level=1;level<=8;level++){const y=-level*30;label(String(level).padStart(2,'0')+' / TRANSIT',0,y+2,-1.99,{size:.4});box(0,y,-2.01,3.8,.15,.07,'amber');}
   const tileSet=new Set(plan.tiles.map(t=>key(t.x,t.z)));
   for(const t of plan.tiles) {
     if(t.x===0&&t.z===0)continue;
@@ -150,13 +160,16 @@ export function buildScene(plan) {
     box(p[0]+1.4,p[1]+1,p[2],.25,1.7,.3,'metal');box(p[0]+1.4,p[1]+1.75,p[2],.32,.09,.36,'cyan');
     const ring=new THREE.Mesh(new THREE.TorusGeometry(.12,.015,5,16),mat.amber);ring.position.set(p[0]+1.4,p[1]+1.4,p[2]+.16);root.add(ring);landmarks.push(ring);
   }
+  const mechanisms=buildMechanisms(plan,{root,mat,box,label});
+  const chamberVisuals=buildChambers(plan,{root,scene,mat,box,cylinder,label,lamp});
+  buildMegavault(plan,{box,cylinder,label});
   for(const [m,geoms] of batches) {const merged=mergeGeometries(geoms);const mesh=new THREE.Mesh(merged,mat[m]);root.add(mesh);for(const g of geoms)g.dispose();}
   const ambient=new THREE.HemisphereLight(0xc4d8d2,0x303b2e,1.8);scene.add(ambient);
   const sun=new THREE.DirectionalLight(0xffdfaf,2.4);sun.position.set(-60,70,-100);scene.add(sun);
   const lights=Array.from({length:12},()=>{const l=new THREE.PointLight(0xffd0a0,22,15,1.5);scene.add(l);return l;});
   // Broad reservoir maintenance lighting leaves the volume legible beyond the hand lamp.
   for(const x of [-38,38])for(const z of [-160,-220,-274]){
-    const l=new THREE.PointLight(0x8bb9ac,950,85,2);l.position.set(x,-40,z);scene.add(l);
+    const l=new THREE.PointLight(0x8bb9ac,950,85,2);l.position.set(x,DECK-12,z);scene.add(l);
   }
   const flashlight=new THREE.SpotLight(0xe2efe0,55,48,Math.PI/5,.7,1.35);scene.add(flashlight,flashlight.target);
   const beaconGroup=new THREE.Group();scene.add(beaconGroup);
@@ -171,6 +184,7 @@ export function buildScene(plan) {
     if(time-lastLight>.3){lastLight=time;const near=lamps.map(l=>[l,l.pos.distanceToSquared(camera.position)]).sort((a,b)=>a[1]-b[1]);lights.forEach((light,i)=>{const pick=near[i];light.position.copy(pick[0].pos);light.color.setHex(pick[0].color);light.intensity=pick[1]<2500?45:0;});}
     water.position.y=R.water+Math.sin(time*.23)*.09;
     landmarks.forEach((m,i)=>{m.rotation.z=time*.2+i;});
+    chamberVisuals.update(time,state);mechanisms.update(state);
   }
   function addBeacon(p){const m=new THREE.Mesh(new THREE.ConeGeometry(.14,.25,6),mat.amber);m.position.set(p[0],p[1]+.13,p[2]);beaconGroup.add(m);}
   return {scene,update,addBeacon,materials:mat};
