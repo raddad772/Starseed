@@ -519,7 +519,7 @@ export function segs(l) {
 // Ways that are ways no more: short passages off rooms and dead ends that end a few metres in at
 // a fall of rock (the structure goes on past them, out of reach). Kept clear like any passage
 function addCollapses(rng, S, nodes, links) {
-  const hosts = nodes.filter((n) => n.kind === 'room' || n.kind === 'deadend' || n.kind === 'staging');
+  const hosts = nodes.filter((n) => n.kind === 'room' || n.kind === 'deadend');   // (the founders' ways: not off the visitors' rock)
   rng.shuffle(hosts);
   const target = rng.int(3, 6), w = CORRIDOR_W * 0.9;
   let made = 0;

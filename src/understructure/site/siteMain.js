@@ -109,11 +109,14 @@ addEventListener('keydown', (e) => {
   keys.add(e.code); if (e.repeat) return;
   if (e.code === 'Escape') { if (!$('mapPanel').hidden) { toggleMap(); return; } pause(); }
   if (e.code === 'KeyM' && running) { toggleMap(); return; }
+  if (e.code === 'KeyH') { toggleHelp(); return; }
   if (!running || !$('mapPanel').hidden) return;
   if (e.code === 'KeyL') toggleLight();
   if (e.code === 'KeyF' || e.code === 'KeyE') interact();
 });
 addEventListener('keydown', () => { usingPad = false; }, true);
+// the keys, over the view while playing (H, or the controller's R3)
+function toggleHelp() { const h = $('help'); if (h.hidden) h.innerHTML = document.querySelector('#intro .keys').innerHTML; h.hidden = !h.hidden; }
 function toggleLight() { state.flashlight = !state.flashlight; toast(state.flashlight ? 'Hand light on' : 'Hand light off', false); }
 // the controller, once a frame
 function padControls(dt) {
@@ -126,6 +129,7 @@ function padControls(dt) {
   else if ($('mapPanel').hidden) {
     if (pad.hit('KeyF')) interact();
     if (pad.hit('KeyL')) toggleLight();
+    if (pad.hit('KeyH')) toggleHelp();
     const m = pad.mouse();
     walker.yaw -= m.dx; walker.pitch = Math.max(-1.45, Math.min(1.45, walker.pitch - m.dy));
   }

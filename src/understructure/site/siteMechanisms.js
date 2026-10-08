@@ -21,6 +21,10 @@ export class SiteMechanisms {
     this.visual = new Map();
     const glow = (c, i = 1.4) => new THREE.MeshStandardMaterial({ color: c, emissive: c, emissiveIntensity: i });
     const M = { slab: mat.metal, dark: mat.dark, amber: glow('#ffb860'), cyan: glow('#9ff0e0'), red: glow('#ff6040', 1.2), light: new THREE.MeshStandardMaterial({ color: '#9ff0ea', emissive: '#7fe8e0', emissiveIntensity: 1.1, transparent: true, opacity: 0.55, depthWrite: false }), fold: new THREE.MeshStandardMaterial({ color: '#c8b8ff', emissive: '#a890ff', emissiveIntensity: 1.2, transparent: true, opacity: 0.35, depthWrite: false, side: THREE.DoubleSide }) };
+    // a time span: solid, solid and about to go, and the ghost of it while it's gone (fainter to stronger as it comes back)
+    M.timeOn = new THREE.MeshStandardMaterial({ color: '#c9b48a', emissive: '#ffcf7a', emissiveIntensity: 0.55, metalness: 0.4, roughness: 0.5 });
+    M.timeDim = new THREE.MeshStandardMaterial({ color: '#6a604c', emissive: '#ff9a40', emissiveIntensity: 0.08, metalness: 0.4, roughness: 0.5 });
+    M.ghost = [0.07, 0.16, 0.3].map((o) => new THREE.MeshStandardMaterial({ color: '#ffd59a', emissive: '#ffb860', emissiveIntensity: 0.9, transparent: true, opacity: o, depthWrite: false }));
     this.M = M;
     for (const g of this.gates) {
       const v = {};
@@ -40,8 +44,13 @@ export class SiteMechanisms {
       } else if (g.kind === 'span') {
         const f = g.floor, shape = new THREE.Shape(f.poly.map(([x, z]) => new THREE.Vector2(x, -z)));
         const geo = new THREE.ExtrudeGeometry(shape, { depth: 0.12, bevelEnabled: false }); geo.rotateX(-Math.PI / 2); geo.translate(0, f.y - 0.12, 0);
-        v.bridge = new THREE.Mesh(geo, g.theme === 'light' ? M.light : mat.metal);
+        v.bridge = new THREE.Mesh(geo, g.theme === 'light' ? M.light : M.timeOn);
         root.add(v.bridge);
+        if (g.theme === 'time') {
+          // its ghost while it's gone, and a lamp at each corner telling where it is in its cycle
+          v.ghost = new THREE.Mesh(geo, M.ghost[0]); root.add(v.ghost);
+          v.tells = f.poly.map(([x, z]) => { const m = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 0.16), M.cyan); m.position.set(x, f.y + 0.95, z); root.add(m); const post = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.9, 6), mat.metal); post.position.set(x, f.y + 0.45, z); root.add(post); return m; });
+        }
         collision.addFloor({ poly: f.poly, y: f.y, active: () => this.spanPresent(g) });
       } else if (g.kind === 'fold') {
         v.membranes = g.frames.map((fr) => {
@@ -139,7 +148,17 @@ export class SiteMechanisms {
         v.lamp.material = this.solved.has(g.id) ? this.M.cyan : this.M.red;
       } else if (g.kind === 'span') {
         if (g.theme === 'light') v.bridge.visible = this.solved.has(g.id);
-        else { const ph = this.phase(g); v.bridge.visible = ph < g.cycle.open || (ph > g.cycle.period - 0.6 && Math.floor(this.time * 12) % 2 === 0); }
+        else {
+          // solid (steady), about to go (its glow stuttering for the last 1.5 s), gone (a ghost that
+          // strengthens as it comes back, flickering just before); the corner lamps the same: cyan,
+          // amber blinking, red, amber
+          const c = g.cycle, ph = this.phase(g), on = ph < c.open, blink = Math.floor(this.time * 8) % 2 === 0;
+          const going = on && ph > c.open - 1.5, coming = !on && ph > c.period - 1.5;
+          v.bridge.visible = on; v.bridge.material = going && blink ? this.M.timeDim : this.M.timeOn;
+          v.ghost.visible = !on; v.ghost.material = this.M.ghost[coming ? (blink ? 2 : 1) : (ph - c.open) / (c.period - c.open) > 0.5 ? 1 : 0];
+          const lamp = on ? (going ? (blink ? this.M.amber : this.M.dark) : this.M.cyan) : (coming ? (blink ? this.M.amber : this.M.dark) : this.M.red);
+          for (const t of v.tells) t.material = lamp;
+        }
       } else if (g.kind === 'fold') for (const m of v.membranes) m.visible = this.solved.has(g.id);
       for (const k of g.keys) {
         const prop = v.keys.get(k.id);

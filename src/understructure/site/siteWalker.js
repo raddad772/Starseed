@@ -19,6 +19,7 @@ export class SiteWalker {
     this.grounded = true;
     this.gravity = 1;
     this.safe = { pos: this.pos.slice(), yaw: this.yaw };
+    this.footings = []; this.clock = 0; this.stalled = 0;   // (footings a moment back, for getting out of a wedge)
     this.fallTime = 0;
     this.alert = null;
   }
@@ -84,6 +85,16 @@ export class SiteWalker {
       v[0] = vx * cs - vz * sn; v[2] = vx * sn + vz * cs;
       this.folded = (this.folded || 0) + 1;
     }
+    // wedged (pushing, not moving, and nowhere to go): back to footing from a few seconds ago
+    this.clock += dt;
+    const pushing = Math.hypot(want[0], want[1]) > 0.5, gone = Math.hypot(p[0] - before[0], p[2] - before[2]);
+    this.stalled = pushing && gone < 0.1 * speed * dt ? this.stalled + dt : 0;
+    if (this.stalled > 0.6) {
+      this.stalled = 0;
+      let free = false;
+      for (let k = 0; k < 8 && !free; k++) { const a = k * Math.PI / 4; free = tryMove(p[0] + Math.cos(a) * 0.15, p[2] + Math.sin(a) * 0.15); }
+      if (!free) { const back = this.footings.find((q) => this.clock - q.t > 2 && Math.hypot(q.pos[0] - p[0], q.pos[2] - p[2]) > 2); if (back) { this.safe = { pos: back.pos.slice(), yaw: back.yaw }; this.recover(); return; } }
+    }
     // vertical: gravity, ground, ceiling
     if (this.grounded) {
       const fl = c.supportAt(p[0], p[2], p[1] + STEP, R, STEP + 0.5);
@@ -107,6 +118,8 @@ export class SiteWalker {
       this.fallTime = 0;
       // remember solid footing (not mid-jump, not on a ledge edge in a low-g room)
       if (g >= 1 && Math.hypot(v[0], v[2]) < RUN + 0.1) { this.safe.pos = p.slice(); this.safe.yaw = this.yaw; }
+      // (and every half second, while moving freely, into the few kept for a wedge, newest first)
+      if (g >= 1 && this.stalled === 0 && (!this.footings.length || this.clock - this.footings[0].t > 0.5)) { this.footings.unshift({ pos: p.slice(), yaw: this.yaw, t: this.clock }); this.footings.length = Math.min(this.footings.length, 16); }
     } else if (v[1] < -2) {
       this.fallTime += dt;
       if (this.fallTime > 2.2 || p[1] < this.safe.pos[1] - 40) this.recover();

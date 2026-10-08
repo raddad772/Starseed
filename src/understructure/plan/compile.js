@@ -524,12 +524,15 @@ function sideDoors(out, seeps, water, pts, y, w, h, tunnel, wet, rng, def = null
 function collapseEnd(out, pts, y, w, h, rng) {
   const e = pts.at(-1), d = G.norm(G.sub(e, pts.at(-2))), side = G.perp(d);
   out.push(vprism(G.orientedRect(G.add(e, G.mul(d, 0.6)), d, 0.8, w + WALL), y - SLAB, y + h + SLAB * 0.75, 'rock'));
-  for (let k = 0; k < 18; k++) {
-    const back = rng.range(0, 3.4), rise = (1 - back / 3.6) * h * 0.9, p = G.add(G.add(e, G.mul(d, -back)), G.mul(side, rng.range(-w * 0.9, w * 0.9)));
-    if (k % 3 === 2) { out.push(shard(rng, [p[0], y - 0.25 + rng.range(0, rise * 0.4), p[1]], [rng.range(-0.7, 0.7), 1, rng.range(-0.7, 0.7)], rng.range(0.5, 0.6 + rise * 0.7), rng.range(0.35, 0.8), 'rock')); continue; }
-    // (broken blocks of the passage itself, tumbled)
-    const a = rng.range(0, Math.PI), y0 = y - 0.2 + rng.range(0, rise * 0.55), sz = rng.range(0.35, 0.95);
-    out.push({ o: [p[0], 0, p[1]], u: X, v: Z, w: Y, poly: G.orientedRect([0, 0], [Math.cos(a), Math.sin(a)], sz, sz * rng.range(0.5, 0.9)), w0: y0, w1: y0 + sz * rng.range(0.6, 1.3), mat: rng.chance(0.6) ? 'concrete' : 'rock', taper: rng.range(0.55, 0.9) });
+  // the fall: one heap of rock across the way, steep and solid (nothing to get wedged in), from
+  // the floor 3.6 m back up most of the way to the ceiling at the plug
+  const run = 3.6, top = h * 0.82;
+  out.push({ o: [e[0], y - 0.1, e[1]], u: [d[0], 0, d[1]], v: Y, w: [side[0], 0, side[1]], poly: [[-run, 0], [0.2, 0], [0.2, top], [-0.9, top * 0.9], [-run * 0.55, top * 0.62]], w0: -w - 0.05, w1: w + 0.05, mat: 'rock' });
+  // blocks of the passage itself bedded in its face, sunk well into it
+  for (let k = 0; k < 10; k++) {
+    const back = rng.range(0.4, run - 0.4), face = Math.max(0, (1 - back / run) * top * 1.05), p = G.add(G.add(e, G.mul(d, -back)), G.mul(side, rng.range(-w * 0.85, w * 0.85)));
+    const a = rng.range(0, Math.PI), sz = rng.range(0.3, 0.8);
+    out.push({ o: [p[0], 0, p[1]], u: X, v: Z, w: Y, poly: G.orientedRect([0, 0], [Math.cos(a), Math.sin(a)], sz, sz * rng.range(0.5, 0.9)), w0: y + face - sz * 0.9, w1: y + face + sz * rng.range(0.15, 0.4), mat: rng.chance(0.6) ? 'concrete' : 'rock', taper: rng.range(0.55, 0.9) });
   }
   // and a slab of the ceiling down across it
   const s0 = G.add(G.add(e, G.mul(d, -1.2)), G.mul(side, -w * 0.95)), s1 = G.add(G.add(e, G.mul(d, -0.4)), G.mul(side, w * 0.95));
