@@ -24,9 +24,12 @@ export function reservoirRoutes(deck){
 }
 export function routeFloor(route,x,z){const dx=route.b[0]-route.a[0],dz=route.b[2]-route.a[2],n=dx*dx+dz*dz,t=((x-route.a[0])*dx+(z-route.a[2])*dz)/n;
   if(t<-.001||t>1.001)return null;const clamped=Math.max(0,Math.min(1,t));if(Math.hypot(x-route.a[0]-dx*clamped,z-route.a[2]-dz*clamped)>route.width/2)return null;
-  return route.a[1]+(route.b[1]-route.a[1])*clamped;
+  const across=((x-route.a[0])*-dz+(z-route.a[2])*dx)/Math.sqrt(n);
+  return route.a[1]+(route.b[1]-route.a[1])*clamped+across*(route.bank||0)*Math.sin(Math.PI*clamped);
 }
 export function dataFragments(deck){
   const entries=[[-56,deck,40,1],[40,deck,44,3],[-16,deck,20,1],[-48,deck,-76,3],[48,deck,-76,3],[-24,deck,-100,1],[24,deck,-100,3],[-24,deck,-28,3],[48,deck+12,-174,3],[-48,deck+26,-224,3],[-72,deck+12,-174,3],[72,deck+26,-224,3],[-72,deck+42,-268,3],[-40,deck,20,1]];
   return [{id:'entry-signal',pos:[0,deck,-12],value:1,title:'Damaged survey crawler signal',automatic:true},...entries.map(([x,y,z,value],i)=>({id:'fragment-'+i,pos:[x,y,z],value,title:value===1?'Maintenance crawler log':i<8?'Maintenance memory fragment':'Relay buffer fragment'}))];
 }
+// Shared display/hit point; the old navigation anchor remains usable for saves.
+export function fragmentContact(f){return f.automatic?f.pos:f.value===1?[f.pos[0]+1.25,f.pos[1]+.4,f.pos[2]+1.35]:[f.pos[0]+1.35,f.pos[1]+1,f.pos[2]+1.63];}

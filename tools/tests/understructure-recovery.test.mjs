@@ -19,9 +19,9 @@ test('entry scan automatically awards one unit once and plays its readable seque
  const s=make();descend(s);walkLine(s,0,-12);assert.ok(s.fragments.has('entry-signal'));assert.equal(s.rawData,1);assert.match(scanMessage(s),/SCANNING|GOLDEN PATH/);s.time=s.scanAt+2;assert.match(scanMessage(s),/GOLDEN PATH DATA FOUND/);s.time=s.scanAt+4;assert.match(scanMessage(s),/PROCESSING/);s.time=s.scanAt+6;assert.match(scanMessage(s),/Find more/);
  const saved=new UnderstructureSimulation(s.plan,s.save());descend(saved);walkLine(saved,0,-12);assert.equal(saved.rawData,1);assert.equal(scanMessage(saved),'');
 });
-test('utility loop, blind rooms and solid machinery remain traversable without mandatory rewards',()=>{
+test('optional intrusion, blind rooms and solid machinery remain traversable without mandatory rewards',()=>{
  for(const seed of ['DECAY','SUMP-07','SITE-93']){const s=make(seed);descend(s);const before=s.solved.size;
-  for(const [x,z] of [[-40,20],[-16,20],[16,20],[40,20],[40,44],[-56,40]])walkRoute(s,x,z);
+  for(const [x,z] of [[-40,0],[-40,20],[-56,40]])walkRoute(s,x,z);
   assert.equal(s.solved.size,before);assert.ok(s.plan.service.rooms.some(room=>!s.plan.fragments.some(f=>insidePolygon(room.polygon,f.pos[0],f.pos[2]))));
   for(const o of s.plan.utility.equipment){const [a,b,c,d,y]=o.bounds;assert.equal(s.collision.canStand((a+b)/2,(c+d)/2,{...s.state,y},.42),false);}
  }

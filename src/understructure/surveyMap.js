@@ -33,23 +33,24 @@ export function surveyMapData(plan,sim,layer='all') {
     }
     for(const room of plan.chambers)if(sim.chambersSeen.has(room.id)){
       const color=sim.chamber?.id===room.id?'#ffd391':room.color;
-      add(room.id,room.name+` · ${(room.kind==='zero-g'?0:room.gravity??1).toFixed(2)} G`,[...room.bounds,DECK,room.ceiling],color,'shell');
+      add(room.id,room.name+` · ${(room.kind==='zero-g'?0:room.gravity??1).toFixed(2)} G`,[...room.bounds,room.base??DECK,room.ceiling],color,'shell');
       for(const p of room.walkways)if(layer!=='raised')add(room.id,room.name,[...p,DECK-.4,DECK],color,'path');
       for(const p of room.platforms||[])if(layer==='all'||(layer==='service'?p[4]===DECK:p[4]>DECK))add(room.id,room.name,[...p.slice(0,4),p[4]-.6,p[4]],color,'path');
       for(const [i,p] of (room.bridges||[]).entries())if(layer!=='raised')add(room.id,`Bridge ${i+1} · ${sim.bridgeStage>i?'solid':'unpowered'}`,[...p.slice(0,4),p[4]-.15,p[4]],sim.bridgeStage>i?'#9ffff2':'#37616c',sim.bridgeStage>i?'bridge':'ghost');
-      if(room.id==='low')for(let i=1;i<room.platforms.length;i++){const a=room.platforms[i-1],b=room.platforms[i];links.push({a:[(a[0]+a[1])/2,a[4],-100],b:[(b[0]+b[1])/2,b[4],-100],kind:'jump'});}
+      if(room.id==='low')for(let i=1;i<room.platforms.length;i++){const a=room.platforms[i-1],b=room.platforms[i];links.push({a:[(a[0]+a[1])/2,a[4],(a[2]+a[3])/2],b:[(b[0]+b[1])/2,b[4],(b[2]+b[3])/2],kind:'jump'});}
       if(room.id==='null'&&room.kind==='zero-g')links.push({a:[96,DECK,-52],b:[96,DECK+12,-52],kind:'tether'});
     }
+    for(const r of plan.traversal.highRoutes)if(sim.chambersSeen.has('low')||sim.chambersSeen.has('return-shaft')){const [a,b]=[r.a,r.b];add(r.id,'Raised machinery crossing',[Math.min(a[0],b[0])-2,Math.max(a[0],b[0])+2,Math.min(a[2],b[2])-2,Math.max(a[2],b[2])+2,a[1]-.3,a[1]],'#d8c799','path');links.push({a,b,kind:'gallery'});}
     for(const p of plan.puzzles)if(sim.chambersSeen.has(p.room)){
       const pos=p.socket||p.pos||p.controls?.at(-1)||p.plates?.[0]||p.gates?.[0].pos;
       // A socket in another chamber is revealed only when that chamber is surveyed.
       if(p.id==='gravity'&&!sim.chambersSeen.has('low')){markers.push({pos:p.source,label:'Return cell',kind:'objective'});continue;}
       markers.push({pos,label:p.name+(sim.solved.has(p.id)?' · restored':''),kind:sim.solved.has(p.id)?'complete':'objective'});
     }
-    if(sim.reservoirSeen)markers.push({pos:plan.finalCache.pos,label:sim.dataRecovered?'Central record recovered':'Central backup · +90%',kind:sim.dataRecovered?'complete':'objective'});
+    if(sim.reservoirSeen&&!sim.dataRecovered)markers.push({pos:plan.finalCache.pos,label:'Central backup · +90%',kind:'objective'});
     if(sim.foldActive){const p=plan.puzzles.find(p=>p.id==='space');if(p&&p.gates.every(g=>plan.chambers.some(c=>sim.chambersSeen.has(c.id)&&g.pos[0]>=c.bounds[0]&&g.pos[0]<=c.bounds[1]&&g.pos[2]>=c.bounds[2]&&g.pos[2]<=c.bounds[3])))links.push({a:p.gates[0].pos,b:p.gates[1].pos,kind:'fold'});}
   }
-  if(layer!=='surface')for(const f of plan.fragments)if(sim.fragmentsSeen.has(f.id))markers.push({pos:f.pos,label:`${f.title} · ${f.value}%${sim.fragments.has(f.id)?' recovered':''}`,kind:sim.fragments.has(f.id)?'complete':'objective'});
+  if(layer!=='surface')for(const f of plan.fragments)if(sim.fragmentsSeen.has(f.id)&&!sim.fragments.has(f.id))markers.push({pos:f.pos,label:`${f.title} · ${f.value}%`,kind:'objective'});
   for(const p of sim.beacons)markers.push({pos:p,label:'Return beacon',kind:'beacon'});
   return {boxes,links,markers};
 }
@@ -59,8 +60,9 @@ export function mapProject(point,{azimuth,elevation,center,scale,width,height,pa
 }
 
 export class SurveyMap {
-  constructor(canvas){
+  constructor(canvas,{compact=false}={}){
     this.canvas=canvas;this.layer='all';this.azimuth=-.45;this.elevation=.75;this.zoom=1;this.pan=[0,0];this.selected=null;this.listeners=[];
+    this.compact=compact;if(compact){canvas.setAttribute('aria-label','Nearby discovered rooms');return;}
     canvas.tabIndex=0;canvas.setAttribute('aria-label','Three-dimensional survey map. Drag to rotate, wheel to zoom.');canvas.style.touchAction='none';
     this.toolbar=document.createElement('div');this.toolbar.style.cssText='display:flex;flex-wrap:wrap;gap:8px;align-items:center;font:11px monospace;margin:8px 0;color:#b6d6da';
     const title=document.createElement('span');title.textContent='3D SURVEY';title.style.marginRight='auto';
@@ -84,14 +86,17 @@ export class SurveyMap {
   redraw(){if(this.sim)this.draw(this.sim);}
   input(dt,input,mouse){this.azimuth+=input.axis('ArrowLeft','ArrowRight')*dt;this.elevation=Math.max(.12,Math.min(Math.PI/2,this.elevation+input.axis('ArrowDown','ArrowUp')*dt));if(input.usingPad){this.azimuth+=mouse.dx;this.elevation=Math.max(.12,Math.min(Math.PI/2,this.elevation+mouse.dy));}this.redraw();}
   draw(sim){
-    this.sim=sim;const {boxes,links,markers}=surveyMapData(sim.plan,sim,this.layer),c=this.canvas,ctx=c.getContext('2d');
+    this.sim=sim;if(this.compact)this.layer=sim.pos[1]>DECK+65?'surface':'all';
+    const data=surveyMapData(sim.plan,sim,this.layer),c=this.canvas,ctx=c.getContext('2d');
+    let {boxes,links,markers}=data;
+    if(this.compact){const radius=this.layer==='surface'?16:70;boxes=boxes.filter(b=>Math.hypot(Math.max(b.bounds[0]-sim.pos[0],0,sim.pos[0]-b.bounds[1]),Math.max(b.bounds[2]-sim.pos[2],0,sim.pos[2]-b.bounds[3]))<radius&&b.bounds[4]<sim.pos[1]+24&&b.bounds[5]>sim.pos[1]-24).map(b=>({...b,bounds:[...b.bounds.slice(0,4),Math.max(b.bounds[4],sim.pos[1]-22),Math.min(b.bounds[5],sim.pos[1]+22)]}));links=links.filter(l=>l.a[1]>sim.pos[1]-24&&l.b[1]<sim.pos[1]+24);}
     const pts=boxes.flatMap(b=>{const [a,d,e,f,y,h]=b.bounds;return [[a,y,e],[d,h,f]];});if(!pts.length)pts.push([0,DECK,0]);
     const min=[0,1,2].map(i=>Math.min(...pts.map(p=>p[i]))),max=[0,1,2].map(i=>Math.max(...pts.map(p=>p[i]))),center=min.map((a,i)=>(a+max[i])/2);
     const basis={azimuth:this.azimuth,elevation:this.elevation,center,scale:1,width:0,height:0};
     const corners=boxes.flatMap(b=>{const [a,d,e,f,y,h]=b.bounds;return [a,d].flatMap(x=>[e,f].flatMap(z=>[y,h].map(v=>mapProject([x,v,z],basis))));});
     const lo=[0,1].map(i=>Math.min(...corners.map(p=>p[i]),-8)),hi=[0,1].map(i=>Math.max(...corners.map(p=>p[i]),8));
     const scale=Math.min((c.width-52)/Math.max(35,hi[0]-lo[0]),(c.height-82)/Math.max(35,hi[1]-lo[1]))*this.zoom;
-    const view={...basis,width:c.width,height:c.height,scale,pan:[this.pan[0]-(hi[0]+lo[0])/2*scale,this.pan[1]-(hi[1]+lo[1])/2*scale]};this.view=view;const p=v=>mapProject(v,view);
+    const view=this.compact?{...basis,center:[...sim.pos],elevation:1.05,width:c.width,height:c.height,scale:c.width/(this.layer==='surface'?32:140),pan:[0,0]}:{...basis,width:c.width,height:c.height,scale,pan:[this.pan[0]-(hi[0]+lo[0])/2*scale,this.pan[1]-(hi[1]+lo[1])/2*scale]};this.view=view;const p=v=>mapProject(v,view);
     ctx.fillStyle='#071821';ctx.fillRect(0,0,c.width,c.height);ctx.strokeStyle='#15343f';ctx.lineWidth=1;for(let x=0;x<c.width;x+=32){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,c.height);ctx.stroke();}for(let y=0;y<c.height;y+=32){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(c.width,y);ctx.stroke();}
     const line=(a,b,color,dash=[])=>{ctx.strokeStyle=color;ctx.setLineDash(dash);ctx.beginPath();ctx.moveTo(...p(a).slice(0,2));ctx.lineTo(...p(b).slice(0,2));ctx.stroke();ctx.setLineDash([]);};
     const faces=[];this.hit=[];
@@ -112,7 +117,13 @@ export class SurveyMap {
     const a=p(sim.pos),ahead=p([sim.pos[0]-Math.sin(sim.yaw)*8,sim.pos[1],sim.pos[2]-Math.cos(sim.yaw)*8]),angle=Math.atan2(ahead[1]-a[1],ahead[0]-a[0]);ctx.save();ctx.translate(a[0],a[1]);ctx.rotate(angle);ctx.fillStyle='#fff3bd';ctx.strokeStyle='#071821';ctx.beginPath();ctx.moveTo(10,0);ctx.lineTo(-6,-5);ctx.lineTo(-3,0);ctx.lineTo(-6,5);ctx.closePath();ctx.fill();ctx.stroke();ctx.restore();
     ctx.fillStyle='#bcd3d6';ctx.font='11px monospace';const north=p([center[0],center[1],center[2]-12]),origin=p(center);ctx.strokeStyle='#769ba4';ctx.beginPath();ctx.moveTo(c.width-38,38);ctx.lineTo(c.width-38+(north[0]-origin[0])*1.5,38+(north[1]-origin[1])*1.5);ctx.stroke();ctx.fillText('N',c.width-40+(north[0]-origin[0])*1.8,38+(north[1]-origin[1])*1.8);
     ctx.fillText(`${Math.round(Math.abs(sim.pos[1]))} m depth  /  ${sim.gravity.toFixed(2)} G`,14,22);
-    this.info.textContent=(this.selected||sim.zone)+' · '+'Drag orbit · Shift-drag pan · wheel / + − zoom · arrows tilt/rotate. Amber: you & objectives · teal: surveyed · dashed: links. Unexplored rooms hidden.';
+    if(this.info)this.info.textContent=(this.selected||sim.zone)+' · '+'Drag orbit · Shift-drag pan · wheel / + − zoom · arrows tilt/rotate. Amber: you & objectives · teal: surveyed · dashed: links. Unexplored rooms hidden.';
   }
-  dispose(){for(const off of this.listeners)off();this.toolbar.remove();this.info.remove();}
+  dispose(){for(const off of this.listeners)off();this.toolbar?.remove();this.info?.remove();}
+}
+
+export class MiniSurveyMap {
+ constructor(parent,open){this.button=document.createElement('button');this.button.setAttribute('aria-label','Expand survey map');this.button.style.cssText='position:absolute;right:24px;bottom:132px;width:min(210px,29%);padding:0;background:#071821dd;border:1px solid #6c969866;pointer-events:auto;z-index:14';this.canvas=document.createElement('canvas');this.canvas.width=360;this.canvas.height=280;this.canvas.style.cssText='display:block;width:100%;height:auto;opacity:.9';this.button.append(this.canvas);parent.append(this.button);this.map=new SurveyMap(this.canvas,{compact:true});this.button.onclick=open;}
+ update(sim){const stamp=Math.floor(sim.time*10);if(stamp!==this.last){this.last=stamp;this.map.draw(sim);}}
+ dispose(){this.map.dispose();this.button.remove();}
 }

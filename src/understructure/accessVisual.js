@@ -20,8 +20,8 @@ export function buildAccess(plan,{root,mat,box,cylinder,lamp,label}){
   const lid=new THREE.Mesh(new THREE.BoxGeometry(2*hx-.02,.1,2*hz-.02),mat.metal);lid.position.set(hx,-.05,0);hatch.add(lid);
   for(let x=-.45;x<=.45;x+=.3){const rib=new THREE.Mesh(new THREE.BoxGeometry(.025,.025,2*hz-.12),mat.rust);rib.position.set(x+hx,.01,0);hatch.add(rib);}
   // A fixed ladder ends in a room, with room to stand and inspect the lift.
-  for(const x of [-.46,.46])cylinder([x,Y,Z+.65],[x,.22,Z+.65],.04,'metal');
-  for(let y=Y+.2;y<.2;y+=.28)cylinder([-.46,y,Z+.65],[.46,y,Z+.65],.035,'rust');
+  for(const x of [-.46,.46])cylinder([x,Y,Z+.65],[x,-.15,Z+.65],.04,'metal');
+  for(let y=Y+.2;y<-.15;y+=.28)cylinder([-.46,y,Z+.65],[.46,y,Z+.65],.035,'rust');
   for(const z of [2.8,7])lamp(-2.75,-.55,z,'cyan');
   box(2.77,Y+.8,6,.3,1.6,2.8,'metal');box(2.56,Y+1.1,6,.06,.5,1.8,'dark');
   box(-2.72,Y+.25,4,.4,.5,2.7,'metal');
@@ -29,6 +29,20 @@ export function buildAccess(plan,{root,mat,box,cylinder,lamp,label}){
   const lift=new THREE.Group();root.add(lift);
   const platform=new THREE.Mesh(new THREE.BoxGeometry(2*hx-.06,.25,2*hz-.06),mat.metal);platform.position.y=-.15;lift.add(platform);
   const inset=new THREE.Mesh(new THREE.BoxGeometry(2*hx-.2,.04,2*hz-.2),mat.floor);inset.position.y=-.015;lift.add(inset);
+  lift.name='access-lift-car';lift.userData.dynamicCollision=true;
+  const carBox=(x,y,z,w,h,d,m='metal')=>{const mesh=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat[m]);mesh.position.set(x,y,z);lift.add(mesh);return mesh;};
+  // An open-through lift cage: front entry at the bunker, rear exit below.
+  for(const x of [-.57,.57]){
+    for(const z of [-.69,.69])carBox(x,1.12,z,.055,2.24,.055);
+    for(const y of [.55,1.08,2.24])carBox(x,y,0,.06,.065,1.44);
+  }
+  for(const z of [-.69,.69]){carBox(0,2.24,z,1.2,.12,.12);carBox(0,2.165,z,.66,.025,.07,'cyan');}
+  for(let z=-.58;z<.6;z+=.16)carBox(0,.014,z,.99,.018,.028,'metal');
+  for(const x of [-.51,.51])carBox(x,.014,0,.045,.018,1.36,'amber');
+  carBox(.48,1.2,.35,.15,.38,.3);carBox(.397,1.25,.35,.012,.15,.16,'cyan');
+  for(const x of [-.6,.6])cylinder([x,deck,-.74],[x,Y+2.5,-.74],.035,'rust');
+  const carLight=new THREE.PointLight(0xb9e0d4,5,4,2);carLight.position.set(0,2.08,0);lift.add(carLight);
+  box(1.1,Y+1.15,.65,.28,.5,.35,'metal');box(.951,Y+1.2,.65,.02,.15,.19,'cyan');
   // The slab above conceals the shaft tops; there are no faces at terrain height.
   function wall(x,z,w,d,lo,hi){box(x,(lo+hi)/2,z,w,hi-lo,d);}
   wall(-2.25,0,.5,4.5,deck,Y-.34);wall(0,2.25,4,.5,deck,Y-.34);

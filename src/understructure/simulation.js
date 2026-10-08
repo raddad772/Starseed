@@ -3,6 +3,7 @@ import { ACCESS,inBunker } from './access.js';
 import { insidePolygon } from './oblique.js';
 import { DECK, TILE, LIFT_SECONDS, key, makeCollision, chamberAt } from './layout.js';
 import { creditedData } from './recovery.js';
+import { fragmentContact } from './infrastructure.js';
 import { machineryClock,phaseReading } from './anomalies.js';
 
 // Small kinematic controller, deliberately separate from vessel/general rigid-body physics.
@@ -33,7 +34,7 @@ export class UnderstructureSimulation {
   get state(){return {bridgeStage:this.bridgeStage,y:this.pos[1],liftY:this.liftY,hatchOpen:this.hatchOpen&&this.hatchAmount>.98};}
   get moving(){return Math.abs(this.liftTarget-this.liftY)>.001;}
   get onPlatform(){return Math.abs(this.pos[0])<this.plan.access.halfWidth-.44&&Math.abs(this.pos[2])<this.plan.access.halfDepth-.44&&Math.abs(this.pos[1]-this.liftY)<.5;}
-  get chamber(){return this.pos[1]<-2?chamberAt(this.plan,this.pos[0],this.pos[2]):null;}
+  get chamber(){return this.pos[1]<-2?chamberAt(this.plan,this.pos[0],this.pos[2],this.pos[1]):null;}
   get zeroG(){return this.chamber?.kind==='zero-g';}
   get jetpackEnabled(){return this.pos[1]>-.6;}
   get inBunker(){return inBunker(this.pos)&&!this.moving;}
@@ -56,7 +57,7 @@ export class UnderstructureSimulation {
     if(!this.moving&&Math.abs(y-DECK)<.4&&Math.hypot(x,z+3.6)<2.6&&this.liftY>ACCESS.top-1)return {type:'call',text:'Call access lift'};
     if(this.moving)return null;
     const near=p=>Math.hypot(x-p[0],y-p[1],z-p[2])<2.5;
-    for(const f of this.plan.fragments)if(!f.automatic&&!this.fragments.has(f.id)&&near(f.pos))return {type:'fragment',id:f.id,text:`Recover ${f.value===1?'crawler log':'memory fragment'} · +${f.value}%`};
+    for(const f of this.plan.fragments)if(!f.automatic&&!this.fragments.has(f.id)&&near(fragmentContact(f)))return {type:'fragment',id:f.id,text:`Recover ${f.value===1?'crawler log':'memory fragment'} · +${f.value}%`};
     const archive=this.plan.finalCache;
     if(!this.dataRecovered&&near(archive.pos))return {type:'archive_data',id:'reservoir',text:this.archiveReady?'Recover central record · +90%':'Archive bus offline · restore the damaged return circuits'};
     for(const p of this.plan.puzzles) {
@@ -150,7 +151,7 @@ export class UnderstructureSimulation {
     if(this.zeroG)this.velocity=this.pos.map((p,i)=>(p-before[i])/dt);
     this._crossFold(before);
   }
-  recover(){const room=this.chamber;if(room?.kind!=='platforms')return false;const safe=this.safeLedge?.room===room.id?this.safeLedge.pos:[room.door[0]+4,DECK,room.door[1]];this.pos=[...safe];this.velocity=[0,0,0];this.grounded=true;this.recoveries++;this.recoveryAt=this.time;return true;}
+  recover(){const room=this.chamber;if(room?.kind!=='platforms')return false;const safe=this.safeLedge?.room===room.id?this.safeLedge.pos:[room.door[0]-room.doorSide*4,room.base??DECK,room.door[1]];this.pos=[...safe];this.velocity=[0,0,0];this.grounded=true;this.recoveries++;this.recoveryAt=this.time;return true;}
   _traverse(dt,input,jump){
     const room=this.chamber,platforms=room?.kind==='platforms';
     const support=this.collision.floorBelow(this.pos[0],this.pos[2],this.pos[1],this.state);
@@ -174,7 +175,7 @@ export class UnderstructureSimulation {
     const floor=this.collision.floorBelow(this.pos[0],this.pos[2],oldY,this.state);
     if(this.velocity[1]<=0&&floor!==null&&oldY>=floor-.04&&nextY<=floor){this.pos[1]=floor;this.velocity[1]=0;this.grounded=true;}else{this.pos[1]=nextY;this.grounded=false;}
     const ceiling=this.collision.ceilingAt(...this.pos);if(this.pos[1]+1.9>ceiling){this.pos[1]=ceiling-1.9;this.velocity[1]=Math.min(0,this.velocity[1]);}
-    if(platforms&&this.pos[1]<DECK-9)this.recover();
+    if(platforms&&this.pos[1]<(room.base??DECK)-(room.pitDepth??9)+1)this.recover();
     this._crossFold(before);
   }
   _crossFold(before) {
@@ -199,9 +200,9 @@ export class UnderstructureSimulation {
     const speed=Math.hypot(...this.velocity);if(speed>cap)this.velocity=this.velocity.map(v=>v*cap/speed);
     for(const i of [0,1,2]) {
       const p=[...this.pos];p[i]+=this.velocity[i]*dt;
-      if(this.collision.canFloat(...p))this.pos=p;else this.velocity[i]=0;
+      if(this.collision.canFloat(...p,.42,this.chamber))this.pos=p;else this.velocity[i]=0;
     }
-    if(!this.zeroG){this.pos[1]=DECK;this.velocity=[0,0,0];}
+    if(!this.zeroG){this.pos[1]=this.collision.floorAt(this.pos[0],this.pos[2],this.state)??this.pos[1];this.velocity=[0,0,0];this.grounded=true;}
   }
   beacon(){
     if(this.moving||this.beacons.length>=40)return false;

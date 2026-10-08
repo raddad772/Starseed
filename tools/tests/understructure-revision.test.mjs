@@ -17,7 +17,7 @@ test('bunker entry disables the pack, alerts, supports jumping and keeps the cei
  for(let i=0;i<100;i++){s.step(.01,{vertical:1});high=Math.max(high,s.pos[1]);assert.ok(s.pos[1]+1.9<=-.38+.001);}assert.ok(high>-3.2+.5);assert.equal(s.pos[1],-3.2);
 });
 test('gravity transition alerts describe entry and planetary restoration, once per transition',()=>{
- const s=make();s.pos=[84,DECK,-100];s.step(.01);assert.equal(suitAlert(s),'Warning: reduced gravity detected.');const at=s.gravityAlertAt;advance(s,.4);assert.equal(s.gravityAlertAt,at);walkLine(s,76,-100);assert.equal(suitAlert(s),'Regular planetary body gravity restored.');advance(s,5);assert.equal(suitAlert(s),'');
+ const s=make();s.pos=[16,DECK+16.8,-52];s.step(.01);assert.equal(suitAlert(s),'Warning: reduced gravity detected.');const at=s.gravityAlertAt;advance(s,.4);assert.equal(s.gravityAlertAt,at);walkLine(s,10,-52);assert.equal(suitAlert(s),'Regular planetary body gravity restored.');advance(s,5);assert.equal(suitAlert(s),'');
  s.pos=[82,DECK,-52];s.step(.01);assert.equal(suitAlert(s),'Warning: zero gravity detected.');
 });
 test('the socket explains its separate source room without offering local flight controls',()=>{

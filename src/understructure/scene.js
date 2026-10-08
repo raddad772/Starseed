@@ -138,6 +138,7 @@ export function buildScene(plan) {
     const ring=new THREE.Mesh(new THREE.TorusGeometry(.12,.015,5,16),mat.amber);ring.position.set(p[0]+1.4,p[1]+1.4,p[2]+.16);root.add(ring);landmarks.push(ring);
   }
   buildCollectionRoutes(plan,{root,mat,box,cylinder,pipe,label,lamp});
+  buildCollectionRoutes({...plan,routes:plan.traversal.highRoutes,routeLandings:plan.traversal.highRoutes.map(r=>r.b),reservoir:{ceiling:plan.deck+30}},{root,mat,box,cylinder,pipe,label,lamp});
   const mechanisms=buildMechanisms(plan,{root,scene,mat,box,cylinder,label});
   const chamberVisuals=buildChambers(plan,{root,scene,mat,box,cylinder,label,lamp,addGeometry});
   buildMegavault(plan,{box,cylinder,label});
@@ -151,25 +152,28 @@ export function buildScene(plan) {
   const ambient=new THREE.HemisphereLight(0xc4d8d2,0x303b2e,1.8);scene.add(ambient);
   const sun=new THREE.DirectionalLight(0xffdfaf,2.4);sun.position.set(-60,70,-100);scene.add(sun);
   const portals=lightingCells(plan);
-  const lights=lamps.map(f=>{const l=new THREE.SpotLight(f.color,f.power||95,38,1.2,.4,2);l.position.copy(f.pos);l.target.position.copy(f.pos).add(new THREE.Vector3(0,-1,0));l.castShadow=true;l.userData.cells=portals.membership(f.pos);l.userData.power=f.power||95;scene.add(l,l.target);return l;});
+  const lights=lamps.map(f=>{const l=new THREE.SpotLight(f.color,f.power||95,38,1.2,.4,2);l.position.copy(f.pos);l.target.position.copy(f.pos).add(new THREE.Vector3(0,-1,0));l.castShadow=true;l.userData.rectAspect=2.4;l.userData.cells=portals.membership(f.pos);l.userData.power=f.power||95;scene.add(l,l.target);return l;});
   // Broad reservoir maintenance lighting leaves the volume legible beyond the hand lamp.
   const hallLights=[];
   for(const x of [-38,38])for(const z of [-160,-220,-274]){
     box(x,DECK-11.8,z,2.3,.7,2.3,'metal');box(x,DECK-12.22,z,1.8,.12,1.8,'cyan');cylinder([x,DECK-11.5,z],[x,R.ceiling,z],.12,'metal');const l=new THREE.PointLight(0x8bb9ac,250,65,2);l.position.set(x,DECK-12.4,z);scene.add(l);hallLights.push(l);
   }
   for(const [m,geoms] of batches) {const merged=mergeGeometries(geoms);const mesh=new THREE.Mesh(merged,mat[m]);mesh.userData.noLocalShadow=m==='weathered';root.add(mesh);if(['concrete','floor','metal','rust','rock'].includes(m))collisionMeshes.push(mesh);for(const g of geoms)g.dispose();}
-  root.traverse(o=>{if(o.isMesh&&!o.isInstancedMesh&&!o.userData.dynamicCollision&&!o.parent?.userData.dynamicCollision&&!o.userData.noLocalShadow&&!o.material.transparent&&[mat.metal,mat.rust,mat.concrete,mat.floor].includes(o.material)&&!collisionMeshes.includes(o))collisionMeshes.push(o);});
+  root.traverse(o=>{if(o.isMesh&&!o.isInstancedMesh&&!o.userData.dynamicCollision&&!o.parent?.userData.dynamicCollision&&!o.userData.noLocalShadow&&!o.material.transparent&&(o.userData.architectureCollision||[mat.metal,mat.rust,mat.concrete,mat.floor].includes(o.material))&&!collisionMeshes.includes(o))collisionMeshes.push(o);});
   const collider=new GeometryCollision(collisionMeshes);
   const flashlight=new THREE.SpotLight(0xe2efe0,120,120,Math.PI/7,.65,1.15);flashlight.castShadow=true;flashlight.userData.shadowPriority=1;scene.add(flashlight,flashlight.target);
   const beaconGroup=new THREE.Group();scene.add(beaconGroup);
   const skyColor=new THREE.Color('#87908a'),belowColor=new THREE.Color('#0a1b1c');
+  const hatchLight=new THREE.SpotLight(0xe0e9df,55,9,.7,.85,2);hatchLight.position.set(0,1,plan.access.hatchZ);hatchLight.target.position.set(0,plan.access.top,plan.access.hatchZ);hatchLight.castShadow=true;hatchLight.userData.shadowPriority=.5;scene.add(hatchLight,hatchLight.target);
   function update(camera,dt,time,state) {
-    const underground=THREE.MathUtils.smoothstep(-camera.position.y,.1,1.4);sky.visible=camera.position.y>-6;sunDisc.visible=sky.visible;
+    // Spread the outdoor transition over the whole ladder descent. The open
+    // hatch retains a physical pool of daylight after the exterior fill fades.
+    const underground=THREE.MathUtils.smoothstep(1.7-camera.position.y,0,4.2);sky.visible=camera.position.y>-6;sunDisc.visible=sky.visible;
     scene.background.copy(skyColor).lerp(belowColor,underground);scene.fog.color.copy(scene.background);scene.fog.density=THREE.MathUtils.lerp(.006,.012,underground);
-    ambient.intensity=THREE.MathUtils.lerp(1.8,.085,underground);sun.intensity=2.4*(1-underground);
+    ambient.intensity=THREE.MathUtils.lerp(1.8,.085,underground);sun.intensity=2.4*(1-underground);hatchLight.intensity=55*state.hatchAmount;
     hatch.rotation.z=state.hatchAmount*Math.PI*.53;lift.position.y=state.liftY;
     flashlight.position.copy(camera.position);flashlight.target.position.set(0,-.03,-1).applyQuaternion(camera.quaternion).add(camera.position);flashlight.intensity=state.flashlight?120:0;
-    const visible=portals.visible(camera);for(const light of lights){light.visible=!visible||!light.userData.cells.length||light.userData.cells.some(id=>visible.has(id));}
+    const visible=portals.visible(camera);for(const light of lights){light.visible=light.position.distanceToSquared(camera.position)<(light.distance+2)**2||!visible||!light.userData.cells.length||light.userData.cells.some(id=>visible.has(id));}
 
     water.position.y=R.water+Math.sin(time*.23)*.09;
     landmarks.forEach((m,i)=>{m.rotation.z=time*.2+i;});

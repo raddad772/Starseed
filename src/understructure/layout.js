@@ -1,3 +1,4 @@
+import { traversalGraph } from './traversalGraph.js';
 import { manifestationPlan } from './phenomena.js';
 import { serviceSector,serviceAt } from './service.js';
 import { ACCESS,accessFloor } from './access.js';
@@ -18,7 +19,7 @@ export const key = (x, z) => `${x},${z}`;
 export function generateUnderstructure(seed = 'SUMP-07',profile='auto',environment) {
   seed = normalizeSeed(seed) || 'SUMP-07';
   const rng = Rng.fromString(`understructure-v1:${seed}`);
-  const themes=siteThemes(rng,profile),puzzles=makePuzzles(themes,rng,DECK);
+  const themes=siteThemes(rng,profile),puzzles=makePuzzles(themes,rng,DECK),traversal=traversalGraph(seed,themes,DECK);
   const chambers=[
     {id:'null',name:'NULL WELL',kind:'zero-g',bounds:[78,110,-66,-38],ceiling:DECK+rng.int(20,24),door:[78,-52],doorSide:-1,
       walkways:[[78,110,-66,-38]],color:'#9adfea'},
@@ -46,7 +47,16 @@ export function generateUnderstructure(seed = 'SUMP-07',profile='auto',environme
     {center:[87,DECK+7,-60],radius:2.5}, {center:[103,DECK+12,-42],radius:2.4},
     {center:[104,DECK+4,-61],radius:2.1}, {center:[87,DECK+15,-44],radius:2},
   ];
-  const service=serviceSector(seed,DECK,chambers),rooms=service.rooms,edges=service.links.map(l=>[l.a,l.b]);
+  if(traversal.vertical){
+    const low=chambers.find(c=>c.id==='low');low.base=DECK+12;low.bounds=[12,78,-70,-34];low.ceiling=DECK+29;low.door=[78,-52];low.doorSide=1;low.pitDepth=7;
+    low.platforms=low.platforms.map(([a,b,c,d,h])=>[156-b,156-a,c+48,d+48,h+12]);
+    low.platforms.at(-1)[0]=12;
+    low.exits=[{axis:'x',coordinate:12,center:-52,y:DECK+16.8,halfWidth:2.2}];
+    nullChamber.exits=[{axis:'x',coordinate:78,center:-52,y:DECK+12,halfWidth:2.2}];
+    const relay=puzzles.find(p=>p.id==='gravity');relay.socket=[20,DECK+16.8,-52];
+    const x=traversal.returnX;chambers.push({id:'return-shaft',name:'SHIELDED TRANSIT SHAFT',kind:'zero-g',openVolume:true,base:DECK,bounds:[x-5,x+5,-102,-90],ceiling:DECK+28,door:[x,-90],doorSide:1,walkways:[[x-5,x+5,-102,-90]],color:'#9adfea',obstacles:[]});
+  }
+  const service=serviceSector(seed,DECK,chambers,traversal),rooms=service.rooms,edges=service.links.map(l=>[l.a,l.b]);
   const utility={equipment:[{kind:'expedition-case',bounds:[-6,-4,-5,-3,DECK,DECK+.85]},{kind:'drill-base',bounds:[4,5.4,-8.2,-4.8,DECK,DECK+.9]}]},walls=[],tiles=[];
   // Coarse samples are navigation diagnostics only, never visible architecture.
   for(let x=-19;x<=19;x++)for(let z=-31;z<=14;z++)if(serviceAt(service,x*TILE,z*TILE))tiles.push({x,z,region:'service'});
@@ -65,15 +75,16 @@ export function generateUnderstructure(seed = 'SUMP-07',profile='auto',environme
   const pillars=[];
   for(let z=-140;z>-280;z-=24)for(const x of [-51,51])pillars.push({x,z,width:3,depth:4});
   const routes=reservoirRoutes(DECK),routeLandings=[routes[0].a,routes.at(-1).b,...routes.slice(1).filter((r,i)=>{const q=routes[i];return Math.abs((r.b[0]-r.a[0])*(q.b[2]-q.a[2])-(r.b[2]-r.a[2])*(q.b[0]-q.a[0]))>.001;}).map(r=>r.a)],fragments=dataFragments(DECK);
-  return {version:5,manifestations:manifestationPlan(seed,service,DECK),service,oblique:obliqueSector(seed,DECK,service.rooms.find(r=>r.id==='blind-stub').polygon),generator,utility,routes,routeLandings,fragments,finalCache:{pos:[56,DECK+42,-268],value:90},seed,themes,puzzles,tiles,walls,rooms,edges,samples,
+  fragments.find(f=>f.id==='fragment-1').pos=[40,DECK+12,-174];fragments.find(f=>f.id==='fragment-2').pos=[-40,DECK,0];
+  return {version:6,traversal,manifestations:manifestationPlan(seed,service,DECK),service,oblique:obliqueSector(seed,DECK,service.rooms.find(r=>r.id==='blind-stub').polygon),generator,utility,routes,routeLandings,fragments,finalCache:{pos:[56,DECK+42,-268],value:90},seed,themes,puzzles,tiles,walls,rooms,edges,samples,
     deck:DECK,shaft:{min:[-2,-2],max:[2,2]},reservoir:{x:64,near:-122,far:-286,bottom:DECK-40,water:DECK-25,ceiling:DECK+60},
     walkways:[[-2,2,-286,-120],[-64,64,-126,-122],[-64,64,-286,-282],[-64,-60,-286,-122],[60,64,-286,-122],[-64,64,-206,-202]],
     access:{...ACCESS},megavault:{near:110,far:1710,zMin:-652,zMax:548,ceiling:-4,bottom:-904},
     pillars,chambers,spawn:[0,0,14]};
 }
 
-export function chamberAt(plan,x,z) {
-  return plan.chambers.find(c=>x>=c.bounds[0]&&x<=c.bounds[1]&&z>=c.bounds[2]&&z<=c.bounds[3])||null;
+export function chamberAt(plan,x,z,y=DECK) {
+  return plan.chambers.find(c=>x>=c.bounds[0]&&x<=c.bounds[1]&&z>=c.bounds[2]&&z<=c.bounds[3]&&y>=(c.base??DECK)-(c.pitDepth?c.pitDepth+1:10)&&y<c.ceiling+.2)||null;
 }
 
 export function terrainHeight(x,z) {
@@ -86,11 +97,11 @@ export function makeCollision(plan) {
   function floorAt(x,z,{y=0,liftY=ACCESS.top,hatchOpen=false,bridgeStage=0}={}) {
     const entry=accessFloor(x,z,{y,liftY,hatchOpen});if(entry!==undefined)return entry;
     if(y>-2)return Math.hypot(x,z)<240?terrainHeight(x,z):null;
-    const room=chamberAt(plan,x,z);
+    const room=chamberAt(plan,x,z,y);
     if(room?.kind==='platforms'){const surfaces=[...room.platforms,...(room.bridges||[]).slice(0,bridgeStage)];return surfaces.filter(([a,b,c,d,top])=>x>=a&&x<=b&&z>=c&&z<=d&&top<=y+.45).reduce((best,p)=>best===null?p[4]:Math.max(best,p[4]),null);}
     const lookout=generatorFloor(plan.generator,x,z,y);if(lookout!==null)return lookout;
-    const landing=plan.routeLandings.find(p=>Math.abs(x-p[0])<=2&&Math.abs(z-p[2])<=2&&Math.abs(y-p[1])<.4);if(landing)return landing[1];
-    const levels=plan.routes.map(r=>routeFloor(r,x,z)).filter(h=>h!==null&&Math.abs(h-y)<.8);
+    const landing=[...plan.routeLandings,...plan.traversal.highRoutes.flatMap(r=>[r.a,r.b])].find(p=>Math.abs(x-p[0])<=2&&Math.abs(z-p[2])<=2&&Math.abs(y-p[1])<.4);if(landing)return landing[1];
+    const levels=[...plan.routes,...plan.traversal.highRoutes].map(r=>routeFloor(r,x,z)).filter(h=>h!==null&&Math.abs(h-y)<.8);
     if(levels.length)return levels.sort((a,b)=>Math.abs(a-y)-Math.abs(b-y))[0];
     if(Math.abs(y-DECK)>.8)return null;
     if(Math.abs(x)<=2&&Math.abs(z)<=2)return DECK;
@@ -114,15 +125,17 @@ export function makeCollision(plan) {
     }
     return true;
   }
-  function canFloat(x,y,z,radius=.42) {
-    const room=plan.chambers.find(c=>c.kind==='zero-g');if(!room)return false;const [x0,x1,z0,z1]=room.bounds;
-    if(y<DECK||y+1.9>room.ceiling)return false;
-    // Only the low doorway opens through the chamber shell. Floating above it
-    // cannot switch the character back to walking or snap them down to the floor.
+  function canFloat(x,y,z,radius=.42,from=null) {
+    const room=from||plan.chambers.find(c=>c.kind==='zero-g'&&x>=c.bounds[0]-2&&x<=c.bounds[1]+2&&z>=c.bounds[2]-2&&z<=c.bounds[3]+2);if(!room)return false;const [x0,x1,z0,z1]=room.bounds;
+    if(y<(room.base??DECK)||y+1.9>room.ceiling)return false;
+    // Only declared ground and raised doorways open through the chamber shell.
+    // Exiting preserves the elevation of the adjoining walkable surface.
     for(let i=0;i<12;i++) {
       const a=i*Math.PI/6,px=x+Math.cos(a)*radius,pz=z+Math.sin(a)*radius;
       if(px>=x0&&px<=x1&&pz>=z0&&pz<=z1)continue;
+      if(room.openVolume&&floorAt(px,pz,{y})!==null)continue;
       if(px<x0&&px>=x0-2&&Math.abs(pz-room.door[1])<=1.85&&y<=DECK+.18)continue;
+      if((room.exits||[]).some(e=>Math.abs(px-e.coordinate)<=2&&Math.abs(pz-e.center)<=e.halfWidth&&Math.abs(y-e.y)<.2))continue;
       return false;
     }
     // Suspended blocks use spherical clearance envelopes, including their slow rotation.
@@ -132,27 +145,27 @@ export function makeCollision(plan) {
   function canTraverse(x,y,z,room,radius=.42){
     if(y+1.9>room.ceiling)return false;
     const [a,b,c,d]=room.bounds;
-    // Capsule stays in the chamber except through its low entrance.
-    for(let i=0;i<12;i++){const angle=i*Math.PI/6,px=x+Math.cos(angle)*radius,pz=z+Math.sin(angle)*radius;if(px>=a&&px<=b&&pz>=c&&pz<=d)continue;if(px<a&&px>=a-2&&Math.abs(pz-room.door[1])<=1.85&&Math.abs(y-DECK)<.2)continue;return false;}
+    // Keep the capsule inside except at declared entrance/return thresholds.
+    for(let i=0;i<12;i++){const angle=i*Math.PI/6,px=x+Math.cos(angle)*radius,pz=z+Math.sin(angle)*radius;if(px>=a&&px<=b&&pz>=c&&pz<=d)continue;if(Math.abs(px-room.door[0])<=2&&Math.abs(pz-room.door[1])<=1.85&&Math.abs(y-(room.base??DECK))<.2)continue;if((room.exits||[]).some(e=>Math.abs(px-e.coordinate)<=2&&Math.abs(pz-e.center)<=e.halfWidth&&Math.abs(y-e.y)<.2))continue;return false;}
     return clear(x,y,z);
   }
   function floorBelow(x,z,y,state){
     if(y>-.6)return floorAt(x,z,{...state,y:0});
     if(y>ACCESS.top-.5)return floorAt(x,z,{...state,y:ACCESS.top});
-    const candidates=[DECK,...plan.routes.map(r=>routeFloor(r,x,z)).filter(h=>h!==null),...plan.chambers.flatMap(c=>(c.platforms||[]).map(p=>p[4]))];
+    const candidates=[DECK,...[...plan.routes,...plan.traversal.highRoutes].map(r=>routeFloor(r,x,z)).filter(h=>h!==null),...plan.chambers.flatMap(c=>(c.platforms||[]).map(p=>p[4]))];
     return candidates.filter(h=>h<=y+.05).sort((a,b)=>b-a).map(h=>floorAt(x,z,{...state,y:h})).find(h=>h!==null&&h<=y+.05)??null;
   }
   function ceilingAt(x,y,z){
     if(y>-.6)return Infinity;
     if(y>ACCESS.top-.5)return -.38;
-    const c=chamberAt(plan,x,z);if(c)return c.ceiling;
+    const c=chamberAt(plan,x,z,y);if(c)return c.ceiling;
+    const route=[...plan.routes,...plan.traversal.highRoutes].find(r=>r.covered&&routeFloor(r,x,z)!==null&&y>=routeFloor(r,x,z)-.8);if(route)return routeFloor(route,x,z)+3.5;
     const r=serviceAt(plan.service,x,z)||plan.oblique.regions.find(r=>insidePolygon(r.polygon,x,z));
     if(r)return DECK+r.height;
-    const route=plan.routes.find(r=>r.covered&&routeFloor(r,x,z)!==null);if(route)return routeFloor(route,x,z)+3.5;
     return plan.reservoir.ceiling;
   }
   function canJumpMove(x,y,z,state){
-    const c=chamberAt(plan,x,z);
+    const c=chamberAt(plan,x,z,y);
     if(c?.kind==='platforms')return canTraverse(x,y,z,c);
     const floor=floorBelow(x,z,y,state);if(floor===null)return false;
     return clear(x,y,z)&&canStand(x,z,{...state,y:floor},.42)&&y+1.9<=ceilingAt(x,y,z)+.001;

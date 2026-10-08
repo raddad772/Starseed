@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { DECK } from './layout.js';
 import { buildDataDrone } from './dataDrones.js';
+import { fragmentContact } from './infrastructure.js';
 
 // Readable, small controls stay beside the phenomenon they affect. These are
 // game mechanisms, not general physics or recursive portal rendering.
@@ -38,7 +39,11 @@ export function buildMechanisms(plan,{root,scene,mat,box,cylinder,label}) {
   }
   for(const [i,f] of plan.fragments.entries()){
     if(f.value===1){drones.push(buildDataDrone(f,i,{root,mat}));continue;}
-    const [fx,y,z]=f.pos,x=fx+1.35;glow([x,y+1,z+1.4],4);box(x,y+.65,z+1.4,.7,1.3,.4,'metal');box(x+.33,y+.9,z+1.65,.08,.55,.04,'rust');const m=mesh(.2,.12,.045,mat.cyan,[x,y+1,z+1.63]);fragments.push({id:f.id,mesh:m});
+    const [x,screenY,front]=fragmentContact(f),y=f.pos[1],z=front-.23;glow([x,screenY,z],4);box(x,y+.72,z,.88,1.44,.4,'metal');box(x,screenY,front,.7,.5,.05,'dark');
+    const screen=new THREE.Group();root.add(screen);
+    for(let row=0;row<3;row++){const m=mesh(.49-row*.09,.035,.014,mat.cyan,[x-.03,screenY+.13-row*.11,front+.032]);screen.attach(m);}
+    label('memory buffer',x,screenY,front+.034,{size:.13});
+    fragments.push({id:f.id,screen});
   }
   const a=plan.finalCache.pos,y=a[1];
   box(a[0],y+.8,a[2]-1,1.4,1.6,.5,'metal');box(a[0],y+1.5,a[2]-.73,1.12,.6,.05,'dark');
@@ -47,7 +52,7 @@ export function buildMechanisms(plan,{root,scene,mat,box,cylinder,label}) {
   label('BACKUP / CENTRAL RECORD',a[0],y+.8,a[2]-.741,{size:.3});
   return {update(state){
     for(const drone of drones)drone.update(state);
-    for(const f of fragments)f.mesh.material=state.fragments.has(f.id)?mat.dark:mat.cyan;
+    for(const f of fragments)f.screen.visible=!state.fragments.has(f.id);
     if(cell){cell.visible=!state.carryingCell&&!state.solved.has('gravity');cell.rotation.y=state.time*.35;}
     if(sweep){const p=plan.puzzles.find(p=>p.id==='time');sweep.position.x=p.pos[0]+(state.phase.value-.5)*2.8;sweep.material=state.phase.ready?mat.cyan:mat.amber;phaseGlow.visible=!state.solved.has('time');}
     for(const i of indicators)i.mesh.material=(i.id.startsWith('bridge:')?state.bridgeStage>Number(i.id.split(':')[1]):state.solved.has(i.id))?mat.cyan:mat.amber;

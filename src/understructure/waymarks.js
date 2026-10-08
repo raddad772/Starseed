@@ -1,19 +1,20 @@
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import * as THREE from 'three';
 import { Rng } from '../core/rng.js';
-import { outsideSegments,insidePolygon } from './oblique.js';
+import { outsideSegments,insidePolygon,rectangle,subtractMany } from './oblique.js';
 import { horizontalPanel } from './surfaces.js';
 
 export function buildWaymarks(plan,{root,mat,addGeometry}){
  const rng=Rng.fromString(plan.seed).fork('faded-waymarks'),y=plan.deck;
  // Broken painted bands, physically on surfaces. No arrows, English or quest meaning.
+ const holes=plan.chambers.filter(c=>c.openVolume).map(c=>rectangle(c.bounds));
  const palettes=['#ac8f58','#769b95','#98695b'],batches=palettes.map(()=>[]);
  for(const [i,link] of plan.service.links.entries()){
   const dx=link.b[0]-link.a[0],dz=link.b[1]-link.a[1],len=Math.hypot(dx,dz),nx=-dz/len,nz=dx/len;
 
   for(let t=0;t<len;t+=.7){if(rng.chance(.19))continue;const end=Math.min(len,t+rng.range(.35,.69));
    for(const offset of [1.12,1.35]){const a=[link.a[0]+dx*t/len+nx*offset,link.a[1]+dz*t/len+nz*offset],b=[link.a[0]+dx*end/len+nx*offset,link.a[1]+dz*end/len+nz*offset],w=.035;
-    const p=[[a[0]-nx*w,a[1]-nz*w],[b[0]-nx*w,b[1]-nz*w],[b[0]+nx*w,b[1]+nz*w],[a[0]+nx*w,a[1]+nz*w]],g=horizontalPanel(p,y+.012);batches[i%3].push(g);
+    const p=[[a[0]-nx*w,a[1]-nz*w],[b[0]-nx*w,b[1]-nz*w],[b[0]+nx*w,b[1]+nz*w],[a[0]+nx*w,a[1]+nz*w]];for(const poly of subtractMany(p,holes))batches[i%3].push(horizontalPanel(poly,y+.012));
    }
   }
  }

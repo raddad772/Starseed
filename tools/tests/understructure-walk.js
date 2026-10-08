@@ -62,13 +62,21 @@ export function walkOblique(sim,x,z){
 export function enterBunker(sim){walkLine(sim,0,ACCESS.hatchZ+1.6);if(!sim.hatchOpen){sim.interact();advance(sim,1.5);}sim.interact();advance(sim,ACCESS.climbSeconds+.1);}
 export function ascendSurface(sim){walkLine(sim,0,ACCESS.hatchZ);sim.interact();advance(sim,ACCESS.climbSeconds+.1);}
 export function descend(sim){enterBunker(sim);walkLine(sim,0,0);sim.interact();advance(sim,LIFT_SECONDS+.1);walkLine(sim,0,-4);}
+export function solveGravityRoute(sim){
+ const p=sim.plan.puzzles.find(p=>p.kind==='relay');
+      walkRoute(sim,76,-52);walkLine(sim,82,-52);flyTo(sim,[96,DECK+.05,-52]);flyTo(sim,p.source);sim.interact();
+      const low=sim.plan.chambers.find(c=>c.id==='low');
+      flyTo(sim,[79.1,low.base,-52]);flyTo(sim,[77,low.base,-52]);walkLine(sim,72,-52);
+      for(const platform of low.platforms.slice(1))jumpTo(sim,(platform[0]+platform[1])/2,(platform[2]+platform[3])/2);sim.interact();
+      walkLine(sim,20,-52);walkLine(sim,10,-52);
+      for(const r of sim.plan.traversal.highRoutes)walkLine(sim,r.b[0],r.b[2]);
+      flyTo(sim,[sim.plan.traversal.returnX,sim.pos[1],-99]);flyTo(sim,[sim.plan.traversal.returnX,DECK+.05,-99]);flyTo(sim,[sim.plan.traversal.returnX+6,DECK+.05,-99]);walkLine(sim,sim.plan.traversal.returnX+8,-96);
+
+}
 export function solvePuzzles(sim){
   for(const p of sim.plan.puzzles){
     if(p.kind==='relay'){
-      walkRoute(sim,76,-52);walkLine(sim,82,-52);flyTo(sim,[96,DECK+.05,-52]);flyTo(sim,p.source);sim.interact();
-      flyTo(sim,[96,DECK+.05,-52]);flyTo(sim,[77,DECK+.05,-52]);walkLine(sim,76,-52);
-      walkRoute(sim,76,-100);walkLine(sim,84,-100);for(const x of [96,109,122,136])jumpTo(sim,x,-100);sim.interact();
-      for(const x of [122,109,96,84])jumpTo(sim,x,-100);walkLine(sim,76,-100);
+      solveGravityRoute(sim);
     }
     if(p.kind==='phase'){
       walkRoute(sim,-76,-100);walkLine(sim,-96,-100);

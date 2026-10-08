@@ -33,8 +33,8 @@ test('female voice preference, non-overlap, mute and persistent readable instruc
 
 test('doorway cuts preserve corridor side walls all the way to the neighboring room',()=>{
  const ray=new THREE.Raycaster();visual.scene.updateMatrixWorld(true);
- for(const c of plan.chambers)for(const dz of [-1,1]){
-  ray.set(new THREE.Vector3(c.door[0]+c.doorSide,DECK+1.6,c.door[1]),new THREE.Vector3(0,0,dz));
+ for(const c of plan.chambers.filter(c=>!c.openVolume))for(const dz of [-1,1]){
+  ray.set(new THREE.Vector3(c.door[0]+c.doorSide*.2,(c.base??DECK)+1.6,c.door[1]),new THREE.Vector3(0,0,dz));
   const hits=ray.intersectObjects(visual.scene.children,true).filter(h=>!h.object.material.transparent);
   assert.ok(hits.length&&hits[0].distance<2.21,c.id+' side wall missing');
  }

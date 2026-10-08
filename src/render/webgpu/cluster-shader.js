@@ -32,8 +32,14 @@ fn clusterLight(world:vec3f,normal:vec3f,alb:vec4f,s:vec4f,rough:f32,kind:u32,pi
   if(l.kindInner.z>0.5&&(any(local<l.roomMin.xyz)||any(local>l.roomMax.xyz))){continue;}
   let delta=l.positionRange.xyz-p;let d2=max(dot(delta,delta),select(0.01,0.25,l.kindInner.x==2.0));let dist=sqrt(d2);if(dist>=l.positionRange.w){continue;}
   let L=delta/dist;let nd=max(dot(N,L),0.0);var attenuation=pow(max(1.0-pow(dist/l.positionRange.w,4.0),0.0),2.0)/d2;
-  if(l.kindInner.x>0.5){let c=dot(-L,l.directionOuter.xyz);let beam=smoothstep(l.directionOuter.w,l.kindInner.y,c);attenuation*=select(beam,max(beam,0.04*smoothstep(l.directionOuter.w-0.3,l.directionOuter.w,c)),l.kindInner.x==2.0);}
-  let E=l.colorBounce.xyz*attenuation*localShadow(world,normal,l.kindInner.w);let diffuse=alb.rgb*(1.0-s.z)/3.14159265;
+  if(l.kindInner.x==3.0){
+   // Rectangular fixture beam, with feathered edges and no new light bindings.
+   let ray=-delta;let forward=dot(ray,l.directionOuter.xyz);if(forward<=0.0){continue;}
+   let spread=forward*sqrt(1.0-l.directionOuter.w*l.directionOuter.w)/max(l.directionOuter.w,0.01);
+   let x=abs(dot(ray,l.roomMax.xyz))/max(spread,0.01);let y=abs(dot(ray,cross(l.directionOuter.xyz,l.roomMax.xyz)))*l.roomMin.w/max(spread,0.01);
+   attenuation*=(1.0-smoothstep(0.55,1.0,x))*(1.0-smoothstep(0.55,1.0,y));
+  }else if(l.kindInner.x>0.5){let c=dot(-L,l.directionOuter.xyz);let beam=smoothstep(l.directionOuter.w,l.kindInner.y,c);attenuation*=select(beam,max(beam,0.04*smoothstep(l.directionOuter.w-0.3,l.directionOuter.w,c)),l.kindInner.x==2.0);}
+  let E=l.colorBounce.xyz*attenuation*mix(1.0,localShadow(world,normal,l.kindInner.w),l.roomMax.w);let diffuse=alb.rgb*(1.0-s.z)/3.14159265;
   color+=E*diffuse*(nd+select(s.x,0.0,kind==0u)*max(-dot(N,L),0.0)+l.colorBounce.w*alb.a);
   if(kind!=2u){let H=normalize(V+L);let nv=max(dot(N,V),0.001);let nh=max(dot(N,H),0.0);let vh=max(dot(V,H),0.0);let rough=max(rough,0.05);let a2=pow(rough,4.0);let D=a2/(3.14159265*pow(nh*nh*(a2-1.0)+1.0,2.0));let k=pow(rough+1.0,2.0)/8.0;let G=nv/(nv*(1.0-k)+k)*nd/(nd*(1.0-k)+k);let F0=mix(vec3f(s.w),alb.rgb,s.z);let F=F0+(1.0-F0)*pow(1.0-vh,5.0);color+=E*D*G*F/(4.0*nv);}
  }

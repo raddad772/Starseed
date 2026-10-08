@@ -1,7 +1,7 @@
 import { SurveyCompass } from './compass.js';
 import { noticeDuration,appendNoticeLog } from './suitVoice.js';
 import { mysteryEntries } from './recovery.js';
-import { SurveyMap } from './surveyMap.js';
+import { SurveyMap,MiniSurveyMap } from './surveyMap.js';
 import { surveyObjective,fieldStatus,recoveryStatus,mysteryStatus,scanMessage,suitAlert } from './guidance.js';
 import { THEME_NAMES } from './anomalies.js';
 
@@ -14,19 +14,19 @@ export class SurveyHUD {
     this.status=document.createElement('div');this.status.style.cssText='max-width:650px;background:#091b20b8;padding:14px 18px;border-left:2px solid #8acabb';
     this.actions=document.createElement('div');this.actions.style.cssText='position:absolute;bottom:24px;left:24px;right:24px;white-space:pre-line;background:#091b20b8;padding:12px 18px';
     this.sheet=document.createElement('div');this.sheet.style.cssText='position:absolute;inset:155px 24px 135px;overflow:auto;background:#0b2026f0;padding:20px;pointer-events:auto';this.sheet.hidden=true;
-    this.compass=new SurveyCompass(this.el);this.el.append(this.status,this.sheet,this.actions);document.getElementById('hud').append(this.el);
+    this.miniMap=new MiniSurveyMap(this.el,()=>this.toggle('map'));this.miniMap.button.style.bottom='170px';this.compass=new SurveyCompass(this.el);this.el.append(this.status,this.sheet,this.actions);document.getElementById('hud').append(this.el);
     this.soundButton=document.createElement('button');this.soundButton.style.cssText='position:absolute;right:24px;top:24px;pointer-events:auto';
     const updateSound=()=>{this.soundButton.textContent=session.sound.enabled?'Sound on':'Sound off';this.soundButton.setAttribute('aria-pressed',String(session.sound.enabled));};
     this.soundButton.onclick=()=>{session.sound.setEnabled(!session.sound.enabled);updateSound();};updateSound();this.el.append(this.soundButton);
     this.voiceButton=document.createElement('button');this.voiceButton.style.cssText='position:absolute;right:124px;top:24px;pointer-events:auto';const updateVoice=()=>{this.voiceButton.textContent=session.sound.voice.enabled?'Voice on':'Voice off';this.voiceButton.setAttribute('aria-pressed',String(session.sound.voice.enabled));};this.voiceButton.onclick=()=>{session.sound.voice.setEnabled(!session.sound.voice.enabled);session.sound.voice.unlock();updateVoice();};updateVoice();this.el.append(this.voiceButton);
   }
   toast(text){if(text){this.session.sim.remember(text);this.notice=text;this.noticeUntil=performance.now()+noticeDuration(text);}}
-  toggle(panel){this.mapView?.dispose();this.mapView=null;this.panel=this.panel===panel?null:panel;if(this.panel)document.exitPointerLock?.();this.sheet.hidden=!this.panel;this.sheet.replaceChildren();if(this.panel==='map'){this.map=document.createElement('canvas');this.map.width=640;this.map.height=600;this.map.style.cssText='max-width:100%;max-height:100%;object-fit:contain';this.sheet.append(this.map);this.mapView=new SurveyMap(this.map);this.map.focus();}if(this.panel==='notes')this.notes();}
+  toggle(panel){this.mapView?.dispose();this.mapView=null;this.panel=this.panel===panel?null:panel;if(this.panel)document.exitPointerLock?.();this.sheet.hidden=!this.panel;this.sheet.replaceChildren();if(this.panel==='map'){this.map=document.createElement('canvas');this.map.width=640;this.map.height=600;this.map.style.cssText='max-width:100%;max-height:100%;object-fit:contain';this.sheet.append(this.map);this.mapView=new SurveyMap(this.map);this.map.focus();}if(this.panel==='notes')this.notes();if(!this.panel){this.session.game.canvas.focus();this.player.input.requestLock();}}
   notes(){const {sim,plan}=this.session;appendNoticeLog(this.sheet,sim);const head=document.createElement('p');head.textContent=plan.themes.map(t=>THEME_NAMES[t]).join(' + ')+' · '+sim.recorded.size+' observations · '+recoveryStatus(sim)+' · '+mysteryStatus(sim);this.sheet.append(head);for(const entry of mysteryEntries(sim.campaignTotal)){const h=document.createElement('h3'),p=document.createElement('p');h.textContent=entry.title;p.textContent=entry.text;this.sheet.append(h,p);}for(const sample of plan.samples.filter(s=>sim.recorded.has(s.id))){const h=document.createElement('h3'),p=document.createElement('p');h.textContent=sample.title;p.textContent=sample.text;this.sheet.append(h,p);}}
   drawMap(){this.mapView.draw(this.session.sim);}
   update(){
     const {sim,plan}=this.session,rc=this.player.view.rect;Object.assign(this.el.style,{left:rc.x+'px',top:rc.y+'px',width:rc.w+'px',height:rc.h+'px'});
-    this.compass.update(sim);if((suitAlert(sim)||scanMessage(sim))&&this.notice)this.noticeUntil=Math.max(this.noticeUntil,performance.now()+noticeDuration(this.notice));
+    this.miniMap.button.hidden=!!this.panel;if(!this.panel)this.miniMap.update(sim);this.compass.update(sim);if((suitAlert(sim)||scanMessage(sim))&&this.notice)this.noticeUntil=Math.max(this.noticeUntil,performance.now()+noticeDuration(this.notice));
     const objective=surveyObjective(sim);
     this.status.textContent=`${sim.zone} · ${Math.abs(sim.pos[1]).toFixed(1)} m depth\n${fieldStatus(sim)}\n${objective}\n${recoveryStatus(sim)}`;this.status.style.whiteSpace='pre-line';
     const pad=this.player.input.usingPad,use=pad?'X':'E',offer=sim.offer();
@@ -36,5 +36,5 @@ export class SurveyHUD {
     this.actions.textContent=(this.panel?`${this.panel.toUpperCase()} · press ${this.panel==='map'?(pad?'View':'M'):(pad?'D-pad right':'J')} to close`:offer?`${use} · ${offer.text}${phase}`:objective)+'\n'+((suitAlert(sim)||scanMessage(sim))?(suitAlert(sim)||scanMessage(sim))+'\n':performance.now()<this.noticeUntil?this.notice+'\n':'')+controls+float;
     if(this.panel==='map')this.drawMap();
   }
-  dispose(){this.compass.dispose();this.mapView?.dispose();this.el.remove();}
+  dispose(){this.miniMap.dispose();this.compass.dispose();this.mapView?.dispose();this.el.remove();}
 }

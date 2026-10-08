@@ -6,7 +6,7 @@ import { DeferredRenderer } from '../render/webgpu/renderer.js';
 import { generateUnderstructure } from './layout.js';
 import { buildScene } from './scene.js';
 import { UnderstructureSimulation } from './simulation.js';
-import { SurveyMap } from './surveyMap.js';
+import { SurveyMap,MiniSurveyMap } from './surveyMap.js';
 import { surveyObjective,fieldStatus,recoveryStatus,mysteryStatus,scanMessage,suitAlert } from './guidance.js';
 import { bankRecovery,mysteryEntries } from './recovery.js';
 import { THEME_NAMES,THEME_PROFILES } from './anomalies.js';
@@ -24,6 +24,8 @@ $('sound').onclick=()=>{sound.setEnabled(!sound.enabled);updateSoundButton();};u
 const compass=new SurveyCompass(document.body);compass.canvas.style.left='36px';compass.canvas.style.right='auto';compass.canvas.style.top='105px';
 const voiceButton=$('voice');const syncVoice=()=>{voiceButton.textContent=sound.voice.enabled?'Voice on':'Voice off';voiceButton.setAttribute('aria-pressed',String(sound.voice.enabled));};voiceButton.onclick=()=>{sound.voice.setEnabled(!sound.voice.enabled);sound.voice.unlock();syncVoice();};syncVoice();
 const mapView=new SurveyMap($('map'));
+const miniMap=new MiniSurveyMap(document.body,()=>panel('mapPanel'));
+function captureMouse(){if(running&&$('mapPanel').hidden&&$('notesPanel').hidden){canvas.focus();canvas.requestPointerLock?.()?.catch?.(()=>{});}}
 for(const profile of THEME_PROFILES){const value=profile.join('-');if(!Array.from($('theme').options).some(o=>o.value===value))$('theme').add(new Option(profile.map(t=>THEME_NAMES[t]).join(' + '),value));}
 const camera=new THREE.PerspectiveCamera(73,1,.08,3200);camera.rotation.order='YXZ';
 const view={camera,width:1,height:1,rect:{x:0,y:0,w:1,h:1},meterRef:.18,maxExposure:3,exposureBias:1.3};
@@ -41,14 +43,14 @@ syncData();
 function save(){syncData();try{localStorage.setItem(saveKey,JSON.stringify(sim.save()));}catch{} }
 function toast(message){if(!message)return;sim.remember(message);notice=message;noticeUntil=performance.now()+noticeDuration(message);dirty=true;}
 function resize(){const ratio=Math.min(devicePixelRatio||1,1.5);const w=Math.max(1,Math.floor(innerWidth*ratio)),h=Math.max(1,Math.floor(innerHeight*ratio));canvas.width=w;canvas.height=h;Object.assign(view,{width:w,height:h,rect:{x:0,y:0,w,h}});camera.aspect=w/h;camera.updateProjectionMatrix();dirty=true;}
-function panel(id){const el=$(id);el.hidden=!el.hidden;if(!el.hidden){document.exitPointerLock?.();keys.clear();if(id==='mapPanel'){drawMap();$('map').focus();}else drawNotes();}dirty=true;}
+function panel(id){const el=$(id);el.hidden=!el.hidden;if(!el.hidden){document.exitPointerLock?.();keys.clear();if(id==='mapPanel'){drawMap();$('map').focus();}else drawNotes();}else captureMouse();dirty=true;}
 function pause(){running=false;sound.setActive(false);keys.clear();document.exitPointerLock?.();$('intro').hidden=false;$('start').innerHTML='Resume survey <span>↗</span>';save();dirty=true;}
 function start(){running=true;sound.unlock();sound.setActive(true);$('intro').hidden=true;$('mapPanel').hidden=true;$('notesPanel').hidden=true;canvas.focus();canvas.requestPointerLock?.()?.catch?.(()=>toast('Mouse capture unavailable. Drag to look, or use arrow keys.'));last=performance.now();dirty=true;}
 $('start').onclick=start;$('pause').onclick=pause;
 $('generate').onclick=()=>{const u=new URL(location.href);u.searchParams.set('seed',$('seed').value);u.searchParams.set('theme',$('theme').value);location.href=u.href;};
 $('seed').addEventListener('keydown',e=>{if(e.key==='Enter')$('generate').click();});
 $('mapButton').onclick=()=>panel('mapPanel');$('notesButton').onclick=()=>panel('notesPanel');
-for(const el of document.querySelectorAll('[data-close]'))el.onclick=()=>{$(el.dataset.close).hidden=true;dirty=true;};
+for(const el of document.querySelectorAll('[data-close]'))el.onclick=()=>{$(el.dataset.close).hidden=true;captureMouse();dirty=true;};
 window.addEventListener('resize',resize);window.addEventListener('blur',()=>{keys.clear();});
 document.addEventListener('visibilitychange',()=>{keys.clear();last=performance.now();if(document.hidden)save();else dirty=true;});
 window.addEventListener('pagehide',()=>{save();sound.dispose();renderer?.dispose();});
@@ -56,7 +58,7 @@ window.addEventListener('keydown',e=>{
   if((e.target instanceof HTMLInputElement||e.target instanceof HTMLSelectElement)||e.metaKey||e.ctrlKey||e.altKey)return;
   if(['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space','KeyC','KeyR'].includes(e.code))e.preventDefault();
   keys.add(e.code);if(e.repeat)return;
-  if(e.code==='Escape'){if(!$('mapPanel').hidden||!$('notesPanel').hidden){$('mapPanel').hidden=$('notesPanel').hidden=true;}else pause();}
+  if(e.code==='Escape'){if(!$('mapPanel').hidden||!$('notesPanel').hidden){$('mapPanel').hidden=$('notesPanel').hidden=true;captureMouse();}else pause();}
   if(e.code==='KeyM')panel('mapPanel');if(e.code==='KeyJ')panel('notesPanel');
   if(!running||!$('mapPanel').hidden||!$('notesPanel').hidden)return;
   if(e.code==='KeyE'){toast(sim.interact());save();dirty=true;}
@@ -72,6 +74,7 @@ window.addEventListener('mousemove',e=>{if(running&&(document.pointerLockElement
 function drawNotes(){const parent=$('notes');parent.replaceChildren();appendNoticeLog(parent,sim);for(const entry of mysteryEntries(sim.campaignTotal)){const h=document.createElement('h3'),p=document.createElement('p');h.textContent=entry.title;p.textContent=entry.text;parent.append(h,p);}const summary=document.createElement('p');summary.textContent=recoveryStatus(sim)+' · '+mysteryStatus(sim);parent.append(summary);if(!sim.recorded.size){const p=document.createElement('p');p.textContent='No records yet. Find the lit survey contacts and press E nearby.';parent.append(p);}for(const sample of plan.samples.filter(s=>sim.recorded.has(s.id))){const a=document.createElement('article'),h=document.createElement('h3'),p=document.createElement('p');h.textContent=sample.title;p.textContent=sample.text;a.append(h,p);parent.append(a);}}
 function drawMap(){mapView.draw(sim);$('mapStats').textContent=`${sim.serviceSeen.size+sim.sectorsSeen.size+sim.chambersSeen.size} surveyed rooms & connections · ${sim.beacons.length} return beacons`;}
 function updateHUD(){
+  miniMap.button.hidden=!$('intro').hidden||!$('mapPanel').hidden||!$('notesPanel').hidden;if(!miniMap.button.hidden)miniMap.update(sim);
   $('zone').textContent=sim.zone;$('depth').innerHTML=`${sim.pos[1]>=0?'+':'−'}${Math.abs(sim.pos[1]).toFixed(1).padStart(5,'0')} <small>M</small>`;
   $('count').textContent=`${String(sim.recorded.size).padStart(2,'0')} / ${String(plan.samples.length).padStart(2,'0')}`;
   $('signal').textContent=sim.pos[1]>-2?'SUBSURFACE RETURN · UNCLASSIFIED':`LIVE CIRCUIT · ${Math.floor(sim.time/11)%2?'RETURN':'INTAKE'} CYCLE`;

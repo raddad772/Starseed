@@ -50,12 +50,12 @@ export class ClusteredLights {
  }
  collect(engine){
   const camera=engine.view.camera,view=camera.matrixWorldInverse,out=[];
-  const push=(position,range,color,bounce=0,direction=new THREE.Vector3(),outer=-1,kind=0,inner=1,box=null,shadow=0)=>out.push([...position.toArray(),range,...color, bounce,...direction.toArray(),outer,kind,inner,box?1:0,shadow,...(box?.min.toArray()||[-1e20,-1e20,-1e20]),0,...(box?.max.toArray()||[1e20,1e20,1e20]),0]);
+  const push=(position,range,color,bounce=0,direction=new THREE.Vector3(),outer=-1,kind=0,inner=1,box=null,shadow=0,shadowWeight=1,rectAxis=null,rectAspect=1)=>out.push([...position.toArray(),range,...color, bounce,...direction.toArray(),outer,kind,inner,box?1:0,shadow,...(box?.min.toArray()||[-1e20,-1e20,-1e20]),rectAspect,...(rectAxis?.toArray()||box?.max.toArray()||[1e20,1e20,1e20]),shadowWeight]);
   engine.scene.traverseVisible(o=>{
    if((!o.isPointLight&&!o.isSpotLight)||o.intensity<=0||o.userData.webgpuHandLight)return;
    const p=o.getWorldPosition(new THREE.Vector3()).applyMatrix4(view),c=o.color.clone().multiplyScalar(o.intensity);
    const dir=o.isSpotLight?o.target.getWorldPosition(new THREE.Vector3()).sub(o.getWorldPosition(new THREE.Vector3())).transformDirection(view):new THREE.Vector3();
-   push(p,o.distance||20000,[c.r,c.g,c.b],0,dir,o.isSpotLight?Math.cos(o.angle):-1,o.isSpotLight?1:0,o.isSpotLight?Math.cos(o.angle*(1-o.penumbra)):1,null,this.shadows.slots.get(o)||0);
+   push(p,o.distance||20000,[c.r,c.g,c.b],0,dir,o.isSpotLight?Math.cos(o.angle):-1,o.isSpotLight?(o.userData.rectAspect?3:1):0,o.isSpotLight?Math.cos(o.angle*(1-o.penumbra)):1,null,this.shadows.slots.get(o)||0,this.shadows.weights?.get(o)??1,o.userData.rectAspect?new THREE.Vector3(1,0,0).transformDirection(view):null,o.userData.rectAspect||1);
   });
   const H=HAND_LIGHT;if(H.uHandE.value.lengthSq()>0)push(H.uHandPos.value.clone().applyMatrix4(view),20000,H.uHandE.value.toArray(),0,H.uHandDir.value.clone().transformDirection(view),H.uHandCone.value.y,2,H.uHandCone.value.x);
   engine.lightRig?.forEachNativeFixture((p,color,range,bounce,box)=>push(p,range,color,bounce,undefined,undefined,0,1,box));

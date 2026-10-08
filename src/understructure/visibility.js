@@ -6,11 +6,11 @@ import { insidePolygon,intersectPolygon,rectangle,ribbon } from './oblique.js';
 export function lightingCells(plan){
  const y=plan.deck,R=plan.reservoir;
  const cells=[...plan.service.regions,...plan.oblique.regions].map(r=>({id:r.id,polygon:r.polygon,lo:y-.5,hi:y+r.height}));
- for(const c of plan.chambers)cells.push({id:c.id,polygon:rectangle(c.bounds),lo:y-12,hi:c.ceiling});
+ for(const c of plan.chambers)cells.push({id:c.id,polygon:rectangle(c.bounds),lo:(c.base??y)-(c.pitDepth??12),hi:c.ceiling});
  cells.push({id:'hall',polygon:rectangle([-64,64,R.far,R.near]),lo:R.bottom,hi:R.ceiling},
   {id:'shaft',polygon:rectangle([-2,2,-2,2]),lo:y,hi:plan.access.top+.5},
   {id:'bunker',polygon:rectangle(plan.access.room),lo:plan.access.top-.2,hi:.5});
- for(const [i,r] of plan.routes.entries())if(r.covered)cells.push({id:'gallery-'+i,polygon:ribbon([r.a[0],r.a[2]],[r.b[0],r.b[2]],4.4),lo:Math.min(r.a[1],r.b[1])-.4,hi:Math.max(r.a[1],r.b[1])+3.6});
+ for(const [i,r] of [...plan.routes,...plan.traversal.highRoutes].entries())if(r.covered)cells.push({id:'gallery-'+i,polygon:ribbon([r.a[0],r.a[2]],[r.b[0],r.b[2]],4.4),lo:Math.min(r.a[1],r.b[1])-.4,hi:Math.max(r.a[1],r.b[1])+3.6});
  const edges=cells.map(()=>[]);
  for(let i=0;i<cells.length;i++)for(let j=i+1;j<cells.length;j++){
   const a=cells[i],b=cells[j],lo=Math.max(a.lo,b.lo),hi=Math.min(a.hi,b.hi);if(hi<lo)continue;

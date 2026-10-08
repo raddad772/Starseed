@@ -1,3 +1,47 @@
+## Vertical visit graph and playtest fixes (2026-10-08)
+
+Gravity-themed sites now compile an explicit visit sequence before building their
+service volumes: staging → intake lower → zero-g pump well (+12 m) → fractured
+low-gravity gallery (+16.8 m) → the same intake volume above → transit shaft
+(+18.6 m) → return machinery. The upper return happens after two distinct spaces.
+This is an authored graph template with seeded dimensions/footprints and a seeded
+return span, not a general-purpose arbitrary graph packing algorithm. Other theme
+profiles retain their corresponding puzzle routes and the existing collection-hall
+ascent. The new vertical loop applies to sites containing the gravity theme.
+
+The former eleven service rooms are reduced to four, including the excavation and
+one optional blind inspection branch. Large process cylinders fill the machinery
+volumes; optional polygon spaces and data finds remain. Raised doorways, wall cuts,
+map elevations and static triangle collision match the new route. The upper pressure
+passage rises gently and rolls by about seven degrees, flattening at both thresholds;
+floors, walls, ceiling and walking support follow that bank. Gravity still points down.
+
+A second zero-g shaft lets the player descend from the upper passage. Its lower
+forcefield is a real movement limit with visible emitters and a translucent lattice.
+The shaft continues another 120 m below it, inaccessible but visible. Painted bands
+are clipped away from that opening. Compass guidance points past the gallery end
+before descending so the landing slab is not mistaken for a blocked flight path.
+
+Also repaired: closed-hatch ladder clearance; gentler outdoor-light transition and
+hatch daylight; recognizable lift cage, grating and controls; persistent corner map;
+map-close mouse capture requests in both hosts; front-facing terminal interaction,
+screen-like terminal housings and removal of downloaded markers; broader moving haze;
+sealed cistern basin, coherent water strands, ripples and smoother transparent drops;
+world-planar walkway UVs; rectangular fixture beams. Local shadows fade spatially as
+the bounded four-map selection changes. Visibility uses the current camera only—no
+occlusion query, readback or frame-old visibility result.
+
+Validation: all 70 CPU checks passed together, including all 21 theme profiles on two
+seeds; focused geometry/traversal checks cover the final bank and shell edits. The
+finite native playtest passes 13 captures, movement through the complete vertical
+route, front pickup, map marker removal, field collision, both circuits, central data,
+surface shortcut and actual reload, with zero validation errors. M-close is verified
+to request capture inside its event handler; actual Chrome permission behavior was
+not automated. Main-game native entry, retrieval, both returns, saved re-entry,
+split-screen, bounded bindings and rotating-world return pass with zero position
+error. Evidence: `br/outputs/megastructure-revision/`. No user Chrome or inactive-agent
+coordination was used. Existing recovered data IDs and credit rules are preserved.
+
 ## Softer spectral haze (2026-10-08)
 
 Dave requested a Control-inspired, almost blurry appearance for rainbow particles.

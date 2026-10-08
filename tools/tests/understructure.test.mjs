@@ -40,7 +40,7 @@ test('zero-g inertia, braking, shell and floating obstacles; safe floor-level ex
  const s=make('FLIGHT','gravity');s.pos=[76,DECK,-52];s.hatchOpen=true;s.hatchAmount=1;s.liftY=s.liftTarget=DECK;
  walkLine(s,82,-52);assert.ok(s.zeroG);advance(s,1,{brake:true});advance(s,1,{vertical:1});const y=s.pos[1];advance(s,.8);assert.ok(s.pos[1]>y+1);advance(s,1,{brake:true});assert.ok(Math.hypot(...s.velocity)<.01);
  flyTo(s,s.plan.puzzles[0].source);assert.equal(s.offer().type,'cell');s.interact();assert.ok(s.carryingCell);
- flyTo(s,[79,DECK+12,-52]);s.yaw=Math.PI/2;advance(s,8,{forward:1});assert.ok(s.pos[0]>=78.4);assert.ok(s.zeroG);
+ flyTo(s,[79,DECK+7,-52]);s.yaw=Math.PI/2;advance(s,8,{forward:1});assert.ok(s.pos[0]>=78.4);assert.ok(s.zeroG);
  flyTo(s,[96,DECK+12,-52]);for(let i=0;i<80;i++)s.step(.25,{vertical:1,fast:true});assert.ok(s.pos[1]+1.9<=s.plan.chambers[0].ceiling+.001);
  const o=s.plan.chambers[0].obstacles[0];assert.equal(s.collision.canFloat(o.center[0],o.center[1]-1,o.center[2]),false);
  flyTo(s,[96,DECK+.05,-52]);flyTo(s,[82,DECK+.05,-52]);s.interact();assert.ok(s.carryingCell);flyTo(s,[77,DECK+.05,-52]);assert.equal(s.zeroG,false);assert.equal(s.pos[1],DECK);advance(s,.1);assert.deepEqual(s.velocity,[0,0,0]);

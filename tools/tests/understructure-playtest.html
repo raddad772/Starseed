@@ -1,0 +1,37 @@
+<!doctype html><meta charset="utf-8"><title>Survey playtest fixes</title>
+<style>body{background:#101819;color:#dde8df;font:14px monospace}iframe{width:1100px;height:800px;border:0}img{width:550px}pre{white-space:pre-wrap}</style>
+<pre id="result">Starting finite playtest checks…</pre><div id="shots"></div><iframe id="game"></iframe>
+<script type="module">
+import {walkLine,advance,enterBunker,walkRoute,flyTo,jumpTo,solvePuzzles,retrieveSiteRecord} from './understructure-walk.js';
+import { surveyMapData } from '../../src/understructure/surveyMap.js';
+const frame=document.querySelector('iframe'),out=document.querySelector('#result'),shots=document.querySelector('#shots'),check=(ok,text)=>{if(!ok)throw Error(text);};let t;
+frame.src='/understructure.html?seed=SUMP-07&theme=gravity-light&test=playtest-check&reset=1';
+try{
+ for(let i=0;i<300;i++){t=frame.contentWindow?.understructureTest;if(t?.renderer&&t.frame)break;await new Promise(r=>setTimeout(r,100));}
+ check(t?.renderer,'Renderer ready');t.pause();t.renderer.device.pushErrorScope('validation');
+ const capture=async name=>{out.textContent='Checking '+name;t.render();await t.renderer.device.queue.onSubmittedWorkDone();const img=new Image();img.alt=name;img.src=await t.renderer.captureURL();shots.append(img);};
+ walkLine(t.sim,0,10);t.sim.pitch=-.85;await capture('closed-hatch-clearance');enterBunker(t.sim);t.sim.pitch=-.1;await capture('recognizable-lift');
+ walkLine(t.sim,0,0);t.sim.interact();advance(t.sim,4.3);walkLine(t.sim,0,-26);t.sim.yaw=-.36;t.sim.pitch=.2;
+ const m=t.plan.manifestations[0];t.sim.time=m.period-m.phase+m.duration/2;await capture('room-wide-haze');const before=t.visual.manifestations.effects[0].mesh.instanceMatrix.array.slice();advance(t.sim,2);await capture('room-wide-haze-moving');const after=t.visual.manifestations.effects[0].mesh.instanceMatrix.array;let moved=0;for(let i=12;i<after.length;i+=16)if(Math.hypot(...[0,1,2].map(j=>after[i+j]-before[i+j]))>.1)moved++;check(moved>20,'Wisps visibly move in two seconds');
+ const doc=frame.contentDocument;doc.getElementById('intro').hidden=true;t.render();const mini=doc.querySelector('[aria-label="Expand survey map"] canvas');check(mini&&!mini.parentElement.hidden,'Persistent corner map visible');const miniImg=new Image();miniImg.alt='corner-survey-map';miniImg.src=mini.toDataURL();shots.append(miniImg);
+ walkRoute(t.sim,-50,-72);walkLine(t.sim,-46.65,-72);walkLine(t.sim,-46.65,-73.5);check(t.sim.offer()?.type==='fragment','Terminal can be used from its lit front');await capture('data-terminal-front');const id=t.sim.offer().id;t.sim.interact();check(t.sim.fragments.has(id),'Front pickup succeeds');check(!surveyMapData(t.plan,t.sim).markers.some(m=>m.pos===t.plan.fragments.find(f=>f.id===id).pos),'Downloaded terminal removed from survey');
+ walkRoute(t.sim,-76,-28);walkLine(t.sim,-81,-28);walkLine(t.sim,-96,-28);t.sim.yaw=Math.PI/2;t.sim.pitch=.08;await capture('cistern-enclosed-water');advance(t.sim,1);await capture('cistern-water-moving');
+ walkLine(t.sim,-81,-28);walkLine(t.sim,-76,-28);walkRoute(t.sim,76,-52);walkLine(t.sim,82,-52);
+ const sim=t.sim,deck=t.plan.deck,relay=t.plan.puzzles.find(p=>p.id==='gravity'),low=t.plan.chambers.find(c=>c.id==='low');
+ flyTo(sim,[96,deck+.05,-52]);flyTo(sim,relay.source);sim.interact();check(sim.carryingCell,'Floating cell retrieved');sim.yaw=Math.PI/2;sim.pitch=-.28;await capture('zero-g-ascent');
+ flyTo(sim,[79.1,low.base,-52]);flyTo(sim,[77,low.base,-52]);walkLine(sim,72,-52);sim.yaw=Math.PI/2;sim.pitch=-.14;await capture('low-gravity-return-gallery');
+ for(const p of low.platforms.slice(1))jumpTo(sim,(p[0]+p[1])/2,(p[2]+p[3])/2);sim.interact();check(sim.solved.has('gravity'),'Gravity return solved');walkLine(sim,20,-52);walkLine(sim,10,-52);sim.yaw=2.2;sim.pitch=-.26;await capture('same-volume-upper-crossing');
+ for(const r of t.plan.traversal.highRoutes){if(r.bank){walkLine(sim,(r.a[0]+r.b[0])/2,(r.a[2]+r.b[2])/2);sim.yaw=0;sim.pitch=-.12;await capture('banked-settled-passage');}walkLine(sim,r.b[0],r.b[2]);}
+ const x=t.plan.traversal.returnX;flyTo(sim,[x,sim.pos[1],-99]);sim.yaw=Math.PI;sim.pitch=-1.12;await capture('shielded-deep-transit-shaft');flyTo(sim,[x,deck+.05,-99]);advance(sim,2,{vertical:-1});check(sim.pos[1]>=deck,'Field blocks descent');flyTo(sim,[x+6,deck+.05,-99]);walkLine(sim,x+8,-96);
+ walkRoute(sim,76,-20);walkLine(sim,84,-20);sim.interact();walkLine(sim,106,-20);sim.interact();walkLine(sim,134,-20);sim.interact();walkLine(sim,76,-20);check(sim.archiveReady,'Both circuits restored');
+ retrieveSiteRecord(sim);check(sim.dataRecovered,'Central record recovered');check(sim.teleport(),'Surface shortcut works');t.save();
+ const error=await t.renderer.device.popErrorScope();check(!error,error?.message);check(!t.errors.length,t.errors.join('\n'));
+ const previous=t,saved=sim.save();frame.src=frame.src.replace('&reset=1','');
+ for(let i=0;i<300;i++){const next=frame.contentWindow?.understructureTest;if(next&&next!==previous&&next.renderer&&next.frame){t=next;break;}await new Promise(r=>setTimeout(r,100));}
+ check(t!==previous,'Reload ready');t.pause();check(t.sim.dataRecovered&&t.sim.solved.size===saved.solved.length,'Reload preserves progress');
+ // Verify the M-close event requests capture within that same user event. The
+ // fixture stubs the browser permission itself; trusted capture is browser-owned.
+ const doc2=frame.contentDocument,canvas=doc2.getElementById('view'),original=canvas.requestPointerLock;let requests=0;canvas.requestPointerLock=()=>{requests++;return Promise.resolve();};t.start();const sendM=()=>doc2.defaultView.dispatchEvent(new KeyboardEvent('keydown',{code:'KeyM',key:'m',bubbles:true}));sendM();const beforeClose=requests;sendM();check(requests===beforeClose+1&&doc2.getElementById('mapPanel').hidden,'M-close requests mouse recapture');t.pause();canvas.requestPointerLock=original;
+ out.textContent=JSON.stringify({status:'passed',movedWisps:moved,captures:shots.children.length,verticalRoute:true,bankedPassage:true,fieldCollision:true,recordAndReload:true,mapRecaptureRequested:true,errors:[]});
+}catch(e){out.textContent=JSON.stringify({status:'failed',error:e.stack});t?.pause();}
+</script>

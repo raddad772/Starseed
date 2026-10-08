@@ -42,6 +42,6 @@ test('ambient water follows wet world/valve; generator sound follows the survivi
 
 test('structural decay is deterministic, bounded and wet runoff is absent on dry planets',()=>{
   const build=p=>{const vertices=[];const stats=buildDecayDetails(p,{addGeometry(g){assert.ok(Array.from(g.attributes.position.array).every(Number.isFinite));vertices.push(...g.attributes.position.array);g.dispose();}});return {stats,vertices};};
-  const a=build(generateUnderstructure('A')),b=build(generateUnderstructure('A'));assert.deepEqual(a,b);assert.ok(a.stats.bands>100&&a.stats.streaks>50&&a.stats.flakes>100);assert.ok(a.vertices.length<500000);
+  const a=build(generateUnderstructure('A')),b=build(generateUnderstructure('A'));assert.deepEqual(a,b);assert.ok(a.stats.bands>60&&a.stats.streaks>35&&a.stats.flakes>60);assert.ok(a.vertices.length<500000);
   assert.equal(build(generateUnderstructure('A','auto',surveyEnvironment({}))).stats.streaks,0);
 });

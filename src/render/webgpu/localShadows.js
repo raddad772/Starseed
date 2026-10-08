@@ -27,13 +27,16 @@ export class LocalShadows {
   e.release=()=>{e.vertices.destroy();e.indices?.destroy();this.geometry.delete(g);g.removeEventListener('dispose',e.release);};g.addEventListener('dispose',e.release);this.geometry.set(g,e);return e;
  }
  update(engine){
-  this.slots=new WeakMap();this.stats={lights:0,draws:0};if(!engine.scene.userData.localShadows)return;
+  this.slots=new WeakMap();this.weights=new WeakMap();this.stats={lights:0,draws:0};if(!engine.scene.userData.localShadows)return;
   const camera=engine.view.camera,lights=[],meshes=[];
   engine.scene.traverseVisible(o=>{
    if(o.isSpotLight&&o.castShadow&&o.intensity>0&&o.position.distanceTo(camera.position)<(o.distance||100))lights.push(o);
    if(o.isMesh&&!o.userData.noLocalShadow&&!o.isInstancedMesh&&!Array.isArray(o.material)&&o.material.visible&&!o.material.transparent&&!o.material.isMeshBasicMaterial&&o.layers.test(camera.layers))meshes.push(o);
   });
-  lights.sort((a,b)=>(b.userData.shadowPriority||0)-(a.userData.shadowPriority||0)||a.position.distanceToSquared(camera.position)-b.position.distanceToSquared(camera.position));lights.length=Math.min(COUNT,lights.length);if(!lights.length)return;
+  lights.sort((a,b)=>(b.userData.shadowPriority||0)-(a.userData.shadowPriority||0)||a.position.distanceToSquared(camera.position)-b.position.distanceToSquared(camera.position));
+  const boundary=lights[COUNT]?.position.distanceTo(camera.position)??Infinity;
+  for(const light of lights.slice(0,COUNT)){const distance=light.position.distanceTo(camera.position),gap=boundary-distance,range=light.distance||100;this.weights.set(light,light.userData.shadowPriority?1:THREE.MathUtils.smoothstep(gap,0,5)*(1-THREE.MathUtils.smoothstep(distance,range-6,range)));}
+  lights.length=Math.min(COUNT,lights.length);if(!lights.length)return;
   const d=this.device,needed=lights.length*meshes.length*256;
   if(!this.drawBuffer||needed>this.capacity){this.drawBuffer?.destroy();this.capacity=Math.max(256,needed);this.drawBuffer=d.createBuffer({label:'local shadow transforms',size:this.capacity,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST});this.group=d.createBindGroup({layout:this.layout,entries:[{binding:0,resource:{buffer:this.drawBuffer,size:64}}]});}
   const transforms=new Float32Array(this.capacity/4),projections=new Float32Array(COUNT*16),draws=[],mvp=new THREE.Matrix4();

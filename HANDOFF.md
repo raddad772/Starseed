@@ -11,6 +11,20 @@ maps and viewscreens are native. WebGL exists only in explicit test tooling (`?w
 no production fallback. Other browser/GPU combinations still need certification; no speedup or exact
 pixel-parity claim is made. Dave confirmed sole-agent work and no coordination messages this session.
 
+## Megastructure vertical-route checkpoint (Codex, 2026-10-08)
+On `codex/landing-guide`, server 8779. Gravity sites now use a visit graph for a zero-g
+ascent, elevated low-gravity broken gallery, return through the same intake volume
+above, banked/sloping pressure passage, and second zero-g descent. A forcefield seals
+a visible 120 m deeper shaft. Service rooms are reduced from eleven to four, with
+large machinery and short optional branches. The collection hall and other themes
+retain their existing route templates. This is not yet a general graph packer.
+
+Includes the latest ladder/lift, lighting/shadow handoff, corner-map/capture, terminal,
+water, moving haze and walkway-texture fixes. See `notes/UNDERSTRUCTURE.md` for exact
+scope and validation. Seventy CPU checks pass; native standalone and main-game round
+trips pass. Room/corridor pitch and roll are now supported in the raised pressure
+passage; gravity-direction reversal remains a separate future request.
+
 ## Megastructure atmosphere and collision follow-up (Codex, 2026-10-08)
 Latest visual refinement: rainbow effects use soft, feathered chromatic wisps in both
 ordinary rooms and zero-g, per Dave’s Control-inspired reference. Native images and
