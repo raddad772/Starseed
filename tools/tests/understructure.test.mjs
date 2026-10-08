@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { generateUnderstructure,makeCollision,key,DECK,LIFT_SECONDS } from '../../src/understructure/layout.js';
 import { UnderstructureSimulation } from '../../src/understructure/simulation.js';
 import { THEME_PROFILES,machineryClock } from '../../src/understructure/anomalies.js';
-import { walkLine,walkRoute,flyTo,advance,descend,solvePuzzles,retrieveSiteRecord } from './understructure-walk.js';
+import { walkLine,walkRoute,flyTo,advance,descend,solvePuzzles,retrieveSiteRecord,climbCollection,descendCollection } from './understructure-walk.js';
 function connected(plan){const cells=new Set(plan.tiles.map(t=>key(t.x,t.z))),seen=new Set(['0,0']),queue=[[0,0]];for(let i=0;i<queue.length;i++){const [x,z]=queue[i];for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){const k=key(x+dx,z+dz);if(cells.has(k)&&!seen.has(k)){seen.add(k);queue.push([x+dx,z+dz]);}}}return seen;}
 const make=(seed='SUMP-07',theme='auto')=>new UnderstructureSimulation(generateUnderstructure(seed,theme));
 
@@ -27,7 +27,7 @@ test('open hatch has no floor with lift away; walls and catwalk edges contain lo
 test('all 21 theme profiles: walk, solve generated circuits, retrieve data, return by lift',()=>{
  for(const profile of THEME_PROFILES)for(const seed of ['SUMP-07','SITE-93']){
   const s=make(seed,profile.join('-'));descend(s);assert.equal(s.teleport(),false);
-  walkRoute(s,0,-264);assert.equal(s.offer().type,'archive_data');s.interact();assert.equal(s.dataRecovered,false);
+  climbCollection(s);walkLine(s,56,-268);assert.equal(s.offer().type,'archive_data');s.interact();assert.equal(s.dataRecovered,false);descendCollection(s);
   solvePuzzles(s);assert.ok(s.archiveReady);assert.equal(s.exitReady,false);retrieveSiteRecord(s);assert.ok(s.exitReady);
   walkRoute(s,0,0);assert.equal(s.offer().type,'lift');s.interact();advance(s,LIFT_SECONDS+.1);walkLine(s,0,6);assert.ok(s.returned);
   const restored=new UnderstructureSimulation(s.plan,JSON.parse(JSON.stringify(s.save())));assert.deepEqual(restored.save(),s.save());assert.ok(restored.dataRecovered);

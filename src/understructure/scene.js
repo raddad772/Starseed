@@ -4,6 +4,7 @@ import { Rng } from '../core/rng.js';
 import { TILE, DECK, key, terrainHeight } from './layout.js';
 import { buildChambers } from './chambers.js';
 import { buildMegavault } from './megavault.js';
+import { dressUtilities,collectionSideWall,buildCollectionRoutes } from './infrastructureVisual.js';
 import { buildMechanisms } from './mechanisms.js';
 
 export function buildScene(plan) {
@@ -33,6 +34,7 @@ export function buildScene(plan) {
     floor:new THREE.MeshStandardMaterial({color:'#525e55',map:tex,roughness:.87}),
     metal:new THREE.MeshStandardMaterial({color:'#394b46',roughness:.6,metalness:.55}),
     rust:new THREE.MeshStandardMaterial({color:'#8c6342',roughness:.9,metalness:.25}),
+    stain:new THREE.MeshStandardMaterial({color:'#263d33',roughness:1}),
     dark:new THREE.MeshStandardMaterial({color:'#152626',roughness:.78}),
     amber:new THREE.MeshStandardMaterial({color:'#d2ae6e',emissive:'#ffc075',emissiveIntensity:1.3}),
     cyan:new THREE.MeshStandardMaterial({color:'#9dbab1',emissive:'#b9efe0',emissiveIntensity:1.1}),
@@ -118,6 +120,7 @@ export function buildScene(plan) {
   }
   for(const wall of plan.walls){if(wall.region==='access'&&wall.z>=-2)continue;box(wall.x,DECK+2,wall.z,wall.axis==='x'?4:.24,4,wall.axis==='z'?4:.24);}
   for(const room of plan.rooms) {
+    if(room.utility)continue;
     const x=room.x*TILE,z=room.z*TILE;
     // Recessed, wall-mounted equipment keeps the entire walkable plan free of hidden obstacles.
     const back=z-room.rz*TILE-1.83;
@@ -127,12 +130,13 @@ export function buildScene(plan) {
     }
     if(room.kind==='Storm collector')for(let i=-1;i<=1;i++)cylinder([x+i*1.2,DECK+3.7,z-room.rz*4],[x+i*1.2,DECK+3.7,z+room.rz*4],.22,'rust');
   }
+  dressUtilities(plan,{box,cylinder,label,lamp});
   label('RETURN / 07',0,DECK+2.7,-5,{size:.5,face:Math.PI});
   label('LOWER COLLECTION',0,DECK+3.2,-117.8,{size:.7});
   // Reservoir: the walkway is twenty-five metres above water, under a buried twenty-two-metre vault.
   const R=plan.reservoir;
   box(0,R.bottom-.6,(R.near+R.far)/2,128,1,164,'dark');
-  box(-64.4,(R.bottom+R.ceiling)/2,-204,.8,R.ceiling-R.bottom,164);box(64.4,(R.bottom+R.ceiling)/2,-204,.8,R.ceiling-R.bottom,164);
+  collectionSideWall(plan,-1,{box});collectionSideWall(plan,1,{box});
   box(0,(R.bottom+R.ceiling)/2,R.far-.4,128,R.ceiling-R.bottom,.8);
   // Front wall leaves a real 4 m door from the service conduit.
   box(-33,(R.bottom+R.ceiling)/2,R.near+.3,62,R.ceiling-R.bottom,.6);box(33,(R.bottom+R.ceiling)/2,R.near+.3,62,R.ceiling-R.bottom,.6);
@@ -160,7 +164,8 @@ export function buildScene(plan) {
     box(p[0]+1.4,p[1]+1,p[2],.25,1.7,.3,'metal');box(p[0]+1.4,p[1]+1.75,p[2],.32,.09,.36,'cyan');
     const ring=new THREE.Mesh(new THREE.TorusGeometry(.12,.015,5,16),mat.amber);ring.position.set(p[0]+1.4,p[1]+1.4,p[2]+.16);root.add(ring);landmarks.push(ring);
   }
-  const mechanisms=buildMechanisms(plan,{root,mat,box,label});
+  buildCollectionRoutes(plan,{root,mat,box,cylinder,label,lamp});
+  const mechanisms=buildMechanisms(plan,{root,mat,box,cylinder,label});
   const chamberVisuals=buildChambers(plan,{root,scene,mat,box,cylinder,label,lamp});
   buildMegavault(plan,{box,cylinder,label});
   for(const [m,geoms] of batches) {const merged=mergeGeometries(geoms);const mesh=new THREE.Mesh(merged,mat[m]);root.add(mesh);for(const g of geoms)g.dispose();}

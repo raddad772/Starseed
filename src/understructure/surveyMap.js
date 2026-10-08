@@ -12,9 +12,10 @@ export function surveyMapData(plan,sim,layer='all') {
   if(layer!=='surface'){
     if(layer!=='raised')for(const t of plan.tiles)if(sim.discovered.has(key(t.x,t.z)))add('tile:'+key(t.x,t.z),t.region.startsWith('room:')?plan.rooms[Number(t.region.split(':')[1])].kind:'Service conduit',[t.x*TILE-1.9,t.x*TILE+1.9,t.z*TILE-1.9,t.z*TILE+1.9,DECK-.4,DECK+3.8],'#678fa1','tile');
     if(sim.reservoirSeen&&layer!=='raised'){
-      add('reservoir','Lower collection · record repository',[-64,64,-286,-122,DECK-40,DECK+22],'#3a8395','shell');
+      add('reservoir','Lower collection · record repository',[-64,64,-286,-122,plan.reservoir.bottom,plan.reservoir.ceiling],'#3a8395','shell');
       for(const p of plan.walkways)add('catwalk','Collection catwalk',[...p,DECK-.5,DECK],'#75a3ac','path');
     }
+    if(sim.reservoirSeen&&layer!=='surface')for(const r of plan.routes){if(layer==='service'&&Math.min(r.a[1],r.b[1])>DECK)continue;const [a,b]=[r.a,r.b];add(r.id,r.covered?'Collection service gallery':'Collection upper crossing',[Math.min(a[0],b[0])-2,Math.max(a[0],b[0])+2,Math.min(a[2],b[2])-2,Math.max(a[2],b[2])+2,Math.min(a[1],b[1])-.2,Math.max(a[1],b[1])],r.covered?'#789080':'#d8c799','path');links.push({a,b,kind:'gallery'});}
     for(const room of plan.chambers)if(sim.chambersSeen.has(room.id)){
       const color=sim.chamber?.id===room.id?'#ffd391':room.color;
       add(room.id,room.name+` · ${(room.kind==='zero-g'?0:room.gravity??1).toFixed(2)} G`,[...room.bounds,DECK,room.ceiling],color,'shell');
@@ -30,9 +31,10 @@ export function surveyMapData(plan,sim,layer='all') {
       if(p.id==='gravity'&&!sim.chambersSeen.has('low')){markers.push({pos:p.source,label:'Return cell',kind:'objective'});continue;}
       markers.push({pos,label:p.name+(sim.solved.has(p.id)?' · restored':''),kind:sim.solved.has(p.id)?'complete':'objective'});
     }
-    if(sim.reservoirSeen)markers.push({pos:[0,DECK,-264],label:sim.dataRecovered?'Record recovered':'Site record',kind:sim.dataRecovered?'complete':'objective'});
+    if(sim.reservoirSeen)markers.push({pos:plan.finalCache.pos,label:sim.dataRecovered?'Central record recovered':'Central backup · +90%',kind:sim.dataRecovered?'complete':'objective'});
     if(sim.foldActive){const p=plan.puzzles.find(p=>p.id==='space');if(p&&p.gates.every(g=>plan.chambers.some(c=>sim.chambersSeen.has(c.id)&&g.pos[0]>=c.bounds[0]&&g.pos[0]<=c.bounds[1]&&g.pos[2]>=c.bounds[2]&&g.pos[2]<=c.bounds[3])))links.push({a:p.gates[0].pos,b:p.gates[1].pos,kind:'fold'});}
   }
+  if(layer!=='surface')for(const f of plan.fragments)if(sim.fragmentsSeen.has(f.id))markers.push({pos:f.pos,label:`${f.title} · ${f.value}%${sim.fragments.has(f.id)?' recovered':''}`,kind:sim.fragments.has(f.id)?'complete':'objective'});
   for(const p of sim.beacons)markers.push({pos:p,label:'Return beacon',kind:'beacon'});
   return {boxes,links,markers};
 }

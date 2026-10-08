@@ -1,7 +1,14 @@
+import { mysteryProgress } from './recovery.js';
+export function scanMessage(sim){const t=sim.time-sim.scanAt;if(t<0||t>9)return '';return t<1.5?'SCANNING DATA…':t<3.5?'GOLDEN PATH DATA FOUND · +1 UNIT':t<5?'PROCESSING…':'SIGNAL SAVED · Find more Golden Path data';}
 export function surveyObjective(sim){
   if(sim.time-sim.recoveryAt<4)return 'Safety tether returned you to a stable ledge · progress kept';
-  const p=sim.plan.puzzles.find(p=>!sim.solved.has(p.id));
-  const hints={gravity:sim.carryingCell?'East / Light-Load Transit · jump to the raised return socket':'East / Null Well · use the field tether to retrieve the cell',time:'Southwest / synchronizer · interact inside the lit interval',space:'Southwest / return frame · link, cross, reconnect',light:'Northeast / Photon Causeway · latch both bridges and connect the far relay',pressure:'Northwest / cistern · set the valve to the reference pressure',resonance:'Southwest / resonators · follow the displayed plate sequence'};
-  return sim.dataRecovered?'Site record secured · return or keep exploring':sim.pos[1]>-2?'Open the hatch, step onto the platform and descend':sim.moving?'Express transit · service level 08':p?hints[p.id]:'Repository open · retrieve the record at the far end of lower collection';
+  if(sim.dataRecovered)return 'Central record secured · return or explore for more data';
+  if(sim.pos[1]>-2)return 'Investigate the ground hatch';
+  if(sim.moving)return 'Express transit · service level 08';
+  const hints={gravity:sim.carryingCell?'An empty supply socket lies beyond the fractured return deck':'A live supply cell is stranded above the pump well',time:'The damaged synchronizer repeats its last cycle',space:'The maintenance thresholds no longer agree with the survey',light:'The old crossing has collapsed; its emergency projectors still have power',pressure:'The return manifold is out of balance; check its reference gauge',resonance:'The pump-start sequence is still legible on the service diagram'};
+  const p=sim.plan.puzzles.find(p=>!sim.solved.has(p.id)&&(p.room===sim.chamber?.id||(p.id==='gravity'&&sim.chamber?.id==='low')));
+  return p?hints[p.id]:sim.archiveReady?'Archive bus restored · follow the rising service galleries to the upper backup rack':'Trace the damaged return lines · recover Golden Path data';
 }
-export function fieldStatus(sim){return `PACK OFFLINE · ${sim.gravity.toFixed(2)} G${sim.tetherActive?' · CHAMBER TETHER ACTIVE':sim.chamber?.kind==='platforms'?' · SPACE JUMPS, HOLDING DOES NOT THRUST':''}`;}
+export function recoveryStatus(sim){return `DATA ${sim.rawData}% · ${sim.dataCredit}/170 site credit${sim.rawData>100?' · EXCESS ×3':''} / GOLDEN PATH ${sim.campaignTotal}${mysteryProgress(sim.campaignTotal).next?' / '+mysteryProgress(sim.campaignTotal).next:''}`;}
+export function mysteryStatus(sim){const p=mysteryProgress(sim.campaignTotal);return `Golden Path · ${p.stage} mystery milestone${p.stage===1?'':'s'} reached · `+(p.next?`${Math.max(0,p.next-sim.campaignTotal)} more data to the ${p.next}-unit lead. Any planetary megastructure contributes.`:'Both current leads reconstructed. Further exploration remains credited.');}
+export function fieldStatus(sim){return `PACK OFFLINE · ${sim.gravity.toFixed(2)} G${sim.tetherActive?' · CHAMBER TETHER ACTIVE':sim.chamber?.kind==='platforms'?' · SPACE JUMPS':''}`;}

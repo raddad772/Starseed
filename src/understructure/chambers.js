@@ -43,34 +43,45 @@ export function buildChambers(plan,{root,scene,mat,box,cylinder,label,lamp}) {
       for(const z of [z0-.22,z1+.22])box(cx,DECK-6,z,w,12,.44,'concrete');
       for(const x of [x0-.22,x1+.22])box(x,DECK-6,cz,.44,12,d,'concrete');
       for(let x=x0+6;x<x1;x+=12)lamp(x,DECK-10.5,z0+.5,'cyan');
-      label(c.id==='low'?'0.22 G / LIGHT LOAD':'SOLID LIGHT / TRANSIT',cx,DECK+9,z0+.2,{size:1.1,color:c.color});
-      for(const [i,p] of c.platforms.entries()){const [a,b,e,f,y]=p;box((a+b)/2,y-.7,(e+f)/2,b-a,1.4,f-e,'floor');box((a+b)/2,y+.02,(e+f)/2,b-a-.4,.04,.12,c.id==='low'?'amber':'cyan');for(const z of [e,f])box((a+b)/2,y-.05,z,b-a,.12,.1,'metal');label(String(i+1).padStart(2,'0'),(a+b)/2,y+1,f-.1,{size:.5,face:Math.PI,color:c.color});}
-      if(c.id==='low'){label('SPACE / JUMP    PACK OFFLINE',x0+.1,DECK+3,doorZ,{size:.5,face:Math.PI/2});label('RETURN CELL',136,DECK+7,-105.8,{size:.65});}
-      for(const [i,p] of (c.bridges||[]).entries()){const [a,b,e,f,y]=p;const material=new THREE.MeshStandardMaterial({color:'#75e6dc',emissive:'#3a9f99',emissiveIntensity:.6,transparent:true,opacity:.72,roughness:.25,side:THREE.DoubleSide});const mesh=new THREE.Mesh(new THREE.BoxGeometry(b-a,.13,f-e),material);mesh.position.set((a+b)/2,y-.07,(e+f)/2);root.add(mesh);bridges.push({mesh,index:i});for(const z of [e,f]){box((a+b)/2,y-.15,z,b-a,.04,.035,'metal');for(const x of [a,b])box(x,y+.05,z,.18,.1,.3,'cyan');}}
+      // These are surviving service slabs on old piers, not floating numbered pads.
+      label(c.id==='low'?'RETURN MAIN / SUBSIDENCE':'OVERFLOW / ACCESS DECK LOST',cx,DECK+6,z0+.2,{size:.7,color:'#989f88'});
+      const pipeZ=z0+5;
+      cylinder([x0,DECK+2.8,pipeZ],[x1,DECK+2.8,pipeZ],2.1,'rust',16);
+      for(let x=x0+2;x<x1;x+=9){cylinder([x,DECK+2.8,pipeZ],[x+.25,DECK+2.8,pipeZ],2.3,'metal',16);box(x,DECK-3,pipeZ,2,12,4,'concrete');}
+      for(const [i,p] of c.platforms.entries()){const [a,b,e,f,y]=p,mid=(a+b)/2;
+        box(mid,y-.55,(e+f)/2,b-a,1.1,f-e,'floor');
+        for(const z of [e+1,f-1]){box(mid,(y+DECK-11)/2,z,2,y-DECK+11,1.5,'concrete');box(mid,y-.7,z,b-a,.25,.22,'metal');}
+        // Broken edge bars and a fallen span below explain the missing deck.
+        if(i<c.platforms.length-1){const next=c.platforms[i+1];for(const z of [e+1,e+2.5,f-1])cylinder([b-.3,y-.15,z],[b+.65,y-.4,z+.2],.035,'rust');box((b+next[0])/2,DECK-10.8,(e+f)/2,next[0]-b,.35,f-e,'concrete');}
+        for(const z of [e,f]){cylinder([a+.6,y+1,z],[Math.min(b-.6,a+2.5),y+.65,z],.045,'rust');cylinder([a+.6,y,z],[a+.6,y+1,z],.04,'metal');}
+        box(mid,y+.015,f-.6,b-a-.8,.025,.07,'rust');
+      }
+      if(c.id==='low'){label('LOCAL FIELD / 0.22 G',x0+.1,DECK+3,doorZ,{size:.4,face:Math.PI/2,color:'#a7b3b0'});label('SUPPLY RETURN',136,DECK+7,-105.8,{size:.5,color:'#a7b3b0'});}
+      for(const [i,p] of (c.bridges||[]).entries()){const [a,b,e,f,y]=p;const material=new THREE.MeshStandardMaterial({color:'#75e6dc',emissive:'#3a9f99',emissiveIntensity:.6,transparent:true,opacity:.72,roughness:.25,side:THREE.DoubleSide});const mesh=new THREE.Mesh(new THREE.BoxGeometry(b-a,.13,f-e),material);mesh.position.set((a+b)/2,y-.07,(e+f)/2);root.add(mesh);bridges.push({mesh,index:i});for(const z of [e,f]){box((a+b)/2,y-.15,z,b-a,.04,.035,'metal');for(const x of [a,b]){box(x,y-.1,z,.5,.5,.6,'metal');box(x,y+.17,z,.18,.05,.3,'cyan');}}}
     } else if(c.kind==='zero-g') {
-      label('NO LOAD / 00',cx,DECK+16,z0+.3,{size:1.3,color:'#9adfea'});
+      label('PUMP WELL / FIELD FAULT',cx,DECK+16,z0+.3,{size:1.3,color:'#9adfea'});
       // Level rings and a plumb guide make the vertical distance legible.
       for(const y of [DECK+3,DECK+9,DECK+15]) {
-        ring(cx,y,cz,10,mat.cyan,'y',.026);
+        ring(cx,y,cz,10,mat.rust,'y',.08);
         for(const x of [x0+.3,x1-.3])box(x,y,cz,.08,.08,d-.6,'cyan');
         for(const z of [z0+.3,z1-.3])box(cx,y,z,w-.6,.08,.08,'cyan');
       }
       // Chamber ring walls stop well outside the central vertical route.
       const sample=plan.samples.find(s=>s.id==='null');
-      ring(sample.pos[0],sample.pos[1]+.15,sample.pos[2],3.6,mat.cyan,'y',.07);
+      ring(sample.pos[0],sample.pos[1]+.15,sample.pos[2],3.6,mat.metal,'y',.16);cylinder([cx,DECK+17,z0+3],[cx,c.ceiling,z0+3],1.8,'rust',16);
       for(let y=DECK+.6;y<c.ceiling-1;y+=1.5)box(x0+.25,y,doorZ,.07,.38,.16,'amber');
       for(const [i,o] of c.obstacles.entries()) {
         const mesh=new THREE.Mesh(new THREE.BoxGeometry(o.radius*1.05,o.radius*.7,o.radius*.95),mat.concrete);
         mesh.position.set(...o.center);root.add(mesh);drifting.push({mesh,phase:i*1.9,center:o.center});
-        const band=new THREE.Mesh(new THREE.BoxGeometry(o.radius*1.06,.08,o.radius*.98),mat.cyan);mesh.add(band);
+        const band=new THREE.Mesh(new THREE.BoxGeometry(o.radius*1.06,.08,o.radius*.98),mat.rust);mesh.add(band);
       }
       for(let i=0;i<38;i++) {
         const angle=i*2.39996,r=5+(i%7)*.7,y=DECK+2+(i*3.7%(h-4));
         const m=new THREE.Mesh(new THREE.IcosahedronGeometry(.045+(i%3)*.015,0),mat.cyan);
         m.position.set(cx+Math.cos(angle)*r,y,cz+Math.sin(angle)*r);root.add(m);drifting.push({mesh:m,phase:i,center:m.position.toArray()});
       }
-      label('FIELD TETHER / SPACE ↑ C ↓ R BRAKE',x1-.1,DECK+2.5,cz,{size:.55,face:-Math.PI/2,color:'#9adfea'});
-      label('DESCEND TO AMBER SILL',doorX+.11,DECK+5,doorZ,{size:.5,face:Math.PI/2,color:'#e8b777'});
+      label('SERVICE TETHER / FIELD FAULT',x1-.1,DECK+2.5,cz,{size:.55,face:-Math.PI/2,color:'#9adfea'});
+      label('GRAVITY RETURN / FLOOR ACCESS',doorX+.11,DECK+5,doorZ,{size:.5,face:Math.PI/2,color:'#e8b777'});
     } else if(c.id==='null') {
       label('OBSERVATION / 07',cx,DECK+10,z0+.3,{size:1.2});
       // Ordinary suspended equipment gives this room a different reading in sites without weight anomalies.
@@ -105,7 +116,7 @@ export function buildChambers(plan,{root,scene,mat,box,cylinder,label,lamp}) {
         const glow=new THREE.MeshStandardMaterial({color:'#8a5a32',emissive:'#ffb85f',emissiveIntensity:.3});
         const m=ring(x,bottom-.05,z,1,glow,'y',.1);resonators.push({mesh:m,material:glow,delay:i*.22});
       }
-      label('LISTENING / 12',cx,DECK+7,z0+.12,{size:1.1,color:'#dfb07d'});
+      label('PUMP RETURN / 12',cx,DECK+7,z0+.12,{size:1.1,color:'#dfb07d'});
       for(const z of [z0+2,z1-2])for(let x=x0+3;x<x1;x+=5)lamp(x,DECK+.35,z,'amber');
     }
   }

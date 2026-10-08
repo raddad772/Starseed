@@ -36,7 +36,7 @@ export function walkRoute(sim,x,z) {
     const [a,b]=queue[i];
     for(const [dx,dz] of [[4,0],[-4,0],[0,4],[0,-4]]) {
       const nx=a+dx,nz=b+dz,id=k(nx,nz);
-      if(Math.abs(nx)>80||nz>4||nz< -288||parents.has(id))continue;
+      if(Math.abs(nx)>80||nz>60||nz< -288||parents.has(id))continue;
       if(!sim.collision.canStand(nx,nz,sim.state,.42))continue;
       parents.set(id,k(a,b));queue.push([nx,nz]);
     }
@@ -75,7 +75,10 @@ export function solvePuzzles(sim){
     if(!sim.solved.has(p.id))throw Error('Circuit not solved: '+p.id);
   }
 }
-export function retrieveSiteRecord(sim){walkRoute(sim,0,-264);sim.interact();if(!sim.dataRecovered)throw Error('Site record not recovered');}
+export function climbCollection(sim,onCrossing=()=>{}){walkRoute(sim,-60,-204);walkLine(sim,-62,-204);for(const r of sim.plan.routes){walkLine(sim,r.b[0],r.b[2]);onCrossing(r,sim);}}
+export function descendCollection(sim){const routes=sim.plan.routes;walkLine(sim,routes.at(-1).b[0],routes.at(-1).b[2]);for(const r of [...routes].reverse())walkLine(sim,r.a[0],r.a[2]);walkLine(sim,-60,-204);}
+export function retrieveSiteRecord(sim){climbCollection(sim);walkLine(sim,...[sim.plan.finalCache.pos[0],sim.plan.finalCache.pos[2]]);sim.interact();if(!sim.dataRecovered)throw Error('Site record not recovered');descendCollection(sim);}
+
 
 // Jump with ordinary input, steer to the ledge in flight, then wait for landing.
 export function jumpTo(sim,x,z){

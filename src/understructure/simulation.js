@@ -1,4 +1,5 @@
 import { DECK, TILE, LIFT_SECONDS, key, makeCollision, chamberAt } from './layout.js';
+import { creditedData } from './recovery.js';
 import { machineryClock,phaseReading } from './anomalies.js';
 
 // Small kinematic controller, deliberately separate from vessel/general rigid-body physics.
@@ -15,6 +16,9 @@ export class UnderstructureSimulation {
     this.beacons=list('beacons').filter(p=>Array.isArray(p)&&p.length===3&&p.every(Number.isFinite)).slice(-40);
     this.solved=new Set(list('solved').filter(id=>plan.puzzles.some(p=>p.id===id)));
     this.dataRecovered=!!saved.dataRecovered;
+    this.fragments=new Set(list('fragments').filter(id=>plan.fragments.some(f=>f.id===id)));
+    this.fragmentsSeen=new Set(list('fragmentsSeen').filter(id=>plan.fragments.some(f=>f.id===id)));
+    this.campaignTotal=0;this.scanAt=-100;
     this.reservoirSeen=!!saved.reservoirSeen;this.returned=!!saved.returned&&this.exitReady;
     this.chambersSeen=new Set(list('chambersSeen').filter(id=>plan.chambers.some(c=>c.id===id)));
     this.velocity=[0,0,0];this.flowPaused=false;this.flowTime=0;this.resonanceAt=-100;
@@ -30,6 +34,8 @@ export class UnderstructureSimulation {
   get jetpackEnabled(){return false;}
   get gravity(){return this.zeroG?0:this.chamber?.gravity??1;}
   get tetherActive(){return this.zeroG;}
+  get rawData(){return (this.dataRecovered?this.plan.finalCache.value:0)+this.plan.fragments.filter(f=>this.fragments.has(f.id)).reduce((n,f)=>n+f.value,0);}
+  get dataCredit(){return creditedData(this.rawData);}
   get complete(){return this.recorded.size===this.plan.samples.length;}
   get archiveReady(){return this.solved.size===this.plan.puzzles.length;}
   get exitReady(){return this.dataRecovered;}
@@ -43,8 +49,9 @@ export class UnderstructureSimulation {
     if(!this.moving&&Math.abs(y-DECK)<.4&&Math.hypot(x,z+3.6)<2.6&&this.liftY>-2)return {type:'call',text:'Call access lift'};
     if(this.moving)return null;
     const near=p=>Math.hypot(x-p[0],y-p[1],z-p[2])<2.5;
-    const archive=this.plan.samples.find(s=>s.id==='reservoir');
-    if(!this.dataRecovered&&near(archive.pos))return {type:'archive_data',id:'reservoir',text:this.archiveReady?'Retrieve the site record':'Repository locked · restore the local circuits'};
+    for(const f of this.plan.fragments)if(!f.automatic&&!this.fragments.has(f.id)&&near(f.pos))return {type:'fragment',id:f.id,text:`Recover memory fragment · +${f.value}%`};
+    const archive=this.plan.finalCache;
+    if(!this.dataRecovered&&near(archive.pos))return {type:'archive_data',id:'reservoir',text:this.archiveReady?'Recover central record · +90%':'Archive bus offline · restore the damaged return circuits'};
     for(const p of this.plan.puzzles) {
       if(p.kind==='relay'&&!this.solved.has(p.id)){
         if(!this.carryingCell&&near(p.source))return {type:'cell',text:'Take charged return cell'};
@@ -72,9 +79,10 @@ export class UnderstructureSimulation {
     if(offer.type==='lift'){this.riding=true;this._startLift(this.liftY>-2?DECK:0);return this.liftTarget===0?'Ascending · surface access':'Express descent · eight levels below';}
     if(offer.type==='call'){this._startLift(DECK);return 'Access lift called.';}
     if(offer.type==='offline')return 'The express lift used reserve power. Recover the site record to authorise surface return; the local circuits open its repository.';
-    if(offer.type==='archive_data'){this.recorded.add('reservoir');if(!this.archiveReady)return 'Restore the marked circuits to open this repository. Each chamber shows what its mechanism needs.';this.dataRecovered=true;return 'Site record secured. T activates surface return; the access lift is also online.';}
-    if(offer.type==='cell'){this.carryingCell=true;this.recorded.add('null');return 'Return cell acquired. Carry it to Light-Load Transit, east of the southwest exchange. Space jumps between its ledges; your jetpack stays offline.';}
-    if(offer.type==='socket'){if(!this.carryingCell)return 'The matching cell is in the luminous ring above. The chamber tether uses Space to rise, C to descend and R to brake.';this.solved.add('gravity');this.carryingCell=false;return this._circuitMessage();}
+    if(offer.type==='fragment'){const f=this.plan.fragments.find(f=>f.id===offer.id),before=this.dataCredit;this.fragments.add(f.id);this.fragmentsSeen.add(f.id);return `Fragment recovered · +${f.value}% · ${this.rawData}% recovered · +${this.dataCredit-before} credited data${this.rawData>100?' (excess ×3)':''}`;}
+    if(offer.type==='archive_data'){this.recorded.add('reservoir');if(!this.archiveReady)return 'The archive bus has lost its return path. Repair the local equipment circuits to read this cache.';this.dataRecovered=true;return 'Central record recovered · +90%. Surface return is online. More fragments are optional; recovery above 100% earns triple credit.';}
+    if(offer.type==='cell'){this.carryingCell=true;this.recorded.add('null');return 'Return cell acquired. The fractured return gallery has an empty supply socket beyond its broken maintenance deck. Space jumps across the surviving slabs.';}
+    if(offer.type==='socket'){if(!this.carryingCell)return 'A live supply cell is stranded in the pump well above. The chamber tether uses Space to rise, C to descend and R to brake.';this.solved.add('gravity');this.carryingCell=false;return this._circuitMessage();}
     if(offer.type==='phase'){if(!this.phase.ready)return 'Not aligned yet. The bright band marks the safe interval; try again whenever the sweep overlaps it.';this.solved.add('time');this.recorded.add('resonance');this.resonanceAt=this.time;return this._circuitMessage();}
     if(offer.type==='fold'){if(this.foldCrossed&&!this.solved.has('space')){this.solved.add('space');return this._circuitMessage();}this.foldActive=true;return 'Matched thresholds linked. Walk through the dark frame, then reconnect the terminal on the other side.';}
     if(offer.type==='bridge'){if(offer.index===2){if(this.bridgeStage<2)return 'Activate both bridge relays first.';this.solved.add('light');return this._circuitMessage();}if(this.bridgeStage>=offer.index){this.bridgeStage=Math.max(this.bridgeStage,offer.index+1);return 'Light bridge latched. It will stay solid; cross to the next relay.';}return 'Activate the previous relay first.';}
@@ -84,13 +92,14 @@ export class UnderstructureSimulation {
     if(offer.type==='resonance'){this.resonanceAt=this.time;return 'The sequence returns from somewhere deeper.';}
     if(offer.type==='upfall'){this.flowPaused=!this.flowPaused;return this.flowPaused?'Return flow held. The water stays suspended.':'Return flow restored.';}
   }
-  _circuitMessage(){return this.archiveReady?'Repository unlocked. Retrieve the site record at the far end of lower collection.':`Repository circuit restored · ${this.solved.size} / ${this.plan.puzzles.length}`;}
+  _circuitMessage(){return this.archiveReady?'Archive bus restored. Follow the collection-hall service galleries to the upper backup rack.':`Repository circuit restored · ${this.solved.size} / ${this.plan.puzzles.length}`;}
   _startLift(y){this.liftStartY=this.liftY;this.liftElapsed=0;this.liftTarget=y;}
   teleport(){if(!this.exitReady||this.pos[1]>-2)return false;this.pos=[...this.plan.spawn];this.velocity=[0,0,0];this.liftY=this.liftTarget=0;this.riding=false;this.returned=true;return true;}
   step(dt,input={}) {
     // Substeps keep the capsule from crossing walls even after a slow rendered frame.
     dt=Math.min(Math.max(dt,0),.25);
     for(let t=0;t<dt;t+=1/120)this._step(Math.min(1/120,dt-t),input);
+    for(const f of this.plan.fragments){const distance=Math.hypot(...f.pos.map((v,i)=>v-this.pos[i]));if(distance<9)this.fragmentsSeen.add(f.id);if(f.automatic&&distance<3&&!this.fragments.has(f.id)){this.fragments.add(f.id);this.scanAt=this.time;}}
     if(this.chamber)this.chambersSeen.add(this.chamber.id);
     const last=this.route.at(-1);if(this.pos[1]<-2&&(!last||Math.hypot(...this.pos.map((v,i)=>v-last[i]))>3)){this.route.push([...this.pos]);if(this.route.length>350)this.route.shift();}
     if(this.pos[1]<-2){
@@ -163,5 +172,5 @@ export class UnderstructureSimulation {
     if(this.beacons.some(p=>Math.hypot(p[0]-this.pos[0],p[1]-this.pos[1],p[2]-this.pos[2])<2))return false;
     this.beacons.push([...this.pos]);return true;
   }
-  save(){return {version:3,themes:[...this.plan.themes],bridgeStage:this.bridgeStage,pressure:this.pressure,echoStep:this.echoStep,discovered:[...this.discovered],recorded:[...this.recorded],beacons:this.beacons,reservoirSeen:this.reservoirSeen,returned:this.returned,chambersSeen:[...this.chambersSeen],solved:[...this.solved],carryingCell:this.carryingCell,dataRecovered:this.dataRecovered};}
+  save(){return {version:4,fragments:[...this.fragments],fragmentsSeen:[...this.fragmentsSeen],themes:[...this.plan.themes],bridgeStage:this.bridgeStage,pressure:this.pressure,echoStep:this.echoStep,discovered:[...this.discovered],recorded:[...this.recorded],beacons:this.beacons,reservoirSeen:this.reservoirSeen,returned:this.returned,chambersSeen:[...this.chambersSeen],solved:[...this.solved],carryingCell:this.carryingCell,dataRecovered:this.dataRecovered};}
 }

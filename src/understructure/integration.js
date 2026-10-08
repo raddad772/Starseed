@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { bankRecovery } from './recovery.js';
 import { generateUnderstructure,restoredProfile } from './layout.js';
 import { UnderstructureSimulation } from './simulation.js';
 import { buildScene } from './scene.js';
@@ -116,11 +117,13 @@ export class SurveySession {
     this.view={camera,width:1,height:1,rect:{x:0,y:0,w:1,h:1},meterRef:.18,maxExposure:3,exposureBias:1.3};
     this.engine={scene:this.visual.scene,view:this.view,minExposure:.05,pixelRatio:game.engine.pixelRatio,time:0};
     this.hud=new SurveyHUD(player,this);
+    this.ledgerKey=`starseed.golden-path.${new URLSearchParams(location.search).has('surveyTest')?'test':'campaign'}.v1`;this.syncData();
     player.ui.quick.close();player.ui.suit.close();
     if(game.map.open&&game.map.owner===player)game.map.toggle(player);
     game.setWarp(0);player.jetOn=false;player.prompt=null;player.ui.root.style.visibility='hidden';
   }
-  save() {try{localStorage.setItem(this.site.saveKey,JSON.stringify(this.sim.save()));}catch{}}
+  syncData(){const result=bankRecovery(localStorage,this.ledgerKey,this.site.saveKey,this.sim.rawData);this.sim.campaignTotal=result.total;if(result.newLead)this.hud.toast('GOLDEN PATH · New lead reconstructed · open field notes');this.lastBankedData=this.sim.rawData;}
+  save() {this.syncData();try{localStorage.setItem(this.site.saveKey,JSON.stringify(this.sim.save()));}catch{}}
   update(dt,input,mouse) {
     const sim=this.sim,pad=input.usingPad;
     if(input.hit('KeyM'))this.hud.toggle('map');
@@ -137,6 +140,7 @@ export class SurveySession {
     if(input.hit('KeyB')||input.hit('KeyK')) {if(sim.beacon()){this.visual.addBeacon(sim.beacons.at(-1));this.save();}}
     sim.yaw-=mouse.dx;sim.pitch=THREE.MathUtils.clamp(sim.pitch-mouse.dy,-1.4,1.4);
     sim.step(dt,{forward:input.axis('KeyS','KeyW'),strafe:input.axis('KeyA','KeyD'),vertical:input.axis('KeyC','Space')-(pad&&input.down('KeyP')?1:0),brake:input.down('KeyR')||input.down('KeyX')||(pad&&input.down('KeyH')),turn:input.axis('ArrowRight','ArrowLeft'),look:input.axis('ArrowDown','ArrowUp'),fast:input.down('ShiftLeft')});
+    if(sim.rawData!==this.lastBankedData)this.save();
     if(sim.pos[1]<-2)this.wasUnderground=true;
     if(this.wasUnderground&&sim.pos[1]>=-.01&&!sim.moving){this.leave();return;}
     this.lastSave+=dt;if(this.lastSave>10){this.lastSave=0;this.save();}

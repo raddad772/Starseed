@@ -1,3 +1,46 @@
+## Decayed infrastructure and Golden Path recovery (2026-10-08)
+
+The collection hall is now 100 m tall from sump bottom to ceiling, with crossings at
+12, 26 and 42 m above its original deck. Walkable service stairs/galleries leave the
+hall through real wall openings and bring the player back over earlier routes. The
+local capsule uses continuous ramps under visible stair nosings. Only this landmark
+has the repeated vertical route; the ordinary basements remain compact.
+
+Low-gravity traversal follows broken service slabs on piers with fallen spans, exposed
+bars and damaged rails. Hard-light crossings are emergency equipment replacing a lost
+maintenance deck. Controls belong to pump/supply equipment. Six additional utility rooms
+form a bypass loop with blind branches; large overhead pipes and solid corner machinery
+leave navigable aisles. Some rooms have no reward or interaction. Existing service-grid
+placement and themes retain their seeded streams.
+
+Golden Path recovery rules:
+- An automatic entry scan awards one unit once, with scanning/found/processing/find-more
+  messages. Re-entry preserves it without replaying the award.
+- Optional memory fragments award 1 or 3 raw units (site percentage points).
+- The final upper backup cache awards **90 units** and enables surface return immediately.
+  Completion does not require reaching 100% or collecting every side fragment.
+- Within each site, raw units above 100 earn triple credit. Credit is capped at **170 per
+  megastructure**. This layout offers 125 raw units, sufficient to reach the cap.
+- Shared cumulative milestones are **200**, then **500** credited units. Excess is retained;
+  further planetary megastructures remain valid sources at both stages. The first two
+  decoded leads appear in field notes; destination/mission content beyond these journal
+  leads is not implemented in this pass.
+- The ledger records each site's highest recovery and credits only increases, independent
+  of pickup order. Reloading/re-entering cannot duplicate rewards. Per-site payloads are
+  version 4; earlier completed sites retain extraction and receive their 90-unit record.
+  Native campaign, standalone demo and test ledgers are separate local-storage namespaces.
+
+Browser validation: gravity/light and pressure/resonance each pass **11 finite checks**,
+with no JavaScript/WebGPU errors. Captures verify the upper view, enclosed stairs, pipe
+gallery and broken deck; the entry popup visibly awards one unit. No planet workers
+were run in this pass.
+
+CPU validation: **38 tests pass**, including all 21 profiles on two seeds with normal
+movement, repeated-height traversal and walking descent, optional empty-room routes,
+solid machinery, startup scan persistence, 90-unit completion, triple excess/cap rules,
+per-site deduplication and both cumulative milestones. Add
+`tools/tests/understructure-recovery.test.mjs` to the command below.
+
 ## Main-game integration (2026-10-08)
 
 The frozen prototype checkpoints are merged into main. Each solid life-bearing planet has at
@@ -52,7 +95,7 @@ vary deterministically. This is a small authored mechanism vocabulary with seede
 parameters, not unrestricted procedural puzzle synthesis.
 
 - Weight: retrieve a charged cell in the zero-g Null Well using its local field tether.
-  Carry it into Light-Load Transit, jump across 0.22 G ledges to its elevated socket,
+  Carry it into the fractured return gallery, jump across 0.22 G ledges to its elevated socket,
   then return along those ledges. The cistern has 1.6 G and rising water; ordinary
   rooms retain 1 G. Gravity changes at room boundaries; its direction remains down.
 - Time: machinery moves forward, holds, then rewinds in a twelve-second cycle. The
