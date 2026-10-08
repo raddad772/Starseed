@@ -362,11 +362,12 @@ export function compileSite(plan) {
     for (let y = st.y1 + 6; y < plan.surfaceY - 2; y += rng.range(9, 15)) lamps.push({ pos: [st.center[0] + 1.2, y, st.center[1]], color: 'work', power: 40, wall: true, range: 16, mount: 'cable', top: plan.surfaceY });
   }
   const gates = compileGates(solids, lamps, plan, byId, vols, doorsOf, rng.fork('gates'));
+  const workingDoors = placeWorkingDoors(plan, doorsOf, gates);
   for (const f of plan.finds) markers.push({ ...f });
   const s0 = byId.get('staging'), first = plan.links.find((l) => l.a === 'staging');
   const look = first ? [first.path[1][0], first.path[1][2]] : G.add(s0.center, [0, -1]);
   return {
-    solids, lamps, zones, markers, water, stats, doors: doorsOf, seeps: [...seeps, ...intr.seeps], drips, faults, gates,
+    solids, lamps, zones, markers, water, stats, doors: doorsOf, seeps: [...seeps, ...intr.seeps], drips, faults, gates, workingDoors,
     machinesLive: plan.machines.filter((m) => live.has(m.id)).map((m) => [m.center[0], (m.y0 + m.y1) / 2, m.center[1]]),
     spawn: { pos: [s0.center[0], s0.y0, s0.center[1]], yaw: Math.atan2(-(look[0] - s0.center[0]), -(look[1] - s0.center[1])) },
     spaces: [...plan.nodes.filter((n) => n.kind !== 'crossing' && n.kind !== 'access').map((n) => ({ id: n.id, name: n.name, poly: n.poly, y0: n.y0, y1: n.y1 })),
@@ -390,15 +391,18 @@ function compileGates(out, lamps, plan, byId, vols, doorsOf, rng) {
       const P = (t) => G.lerp(a, b, t), Q = (t) => G.lerp(A, B, t);
       r.barrier = { poly: G.ccw([P(d.inner[0]), P(d.inner[1]), Q(d.outer[1]), Q(d.outer[0])]), y0: d.y0, y1: d.y1 };
       const mid = G.lerp(P(d.inner[0]), P(d.inner[1]), 0.5), inward = G.norm(G.perp(G.sub(b, a)));
-      // the control beside the door, on the side you arrive from (outside the room)
-      const outPt = G.add(G.lerp(Q(d.outer[0]), Q(d.outer[1]), 0.5), G.mul(inward, -0.6)), along = G.norm(G.sub(b, a));
-      r.control = { pos: [...G.add(outPt, G.mul(along, (G.dist(P(d.inner[0]), P(d.inner[1])) / 2 + 0.7))), d.y0], face: Math.atan2(-inward[0], -inward[1]) };
+      // the control beside the door, on the side you arrive from (outside the room): in the passage's
+      // corner just short of the doorway, in reach from in front of the door (not in the passage's wall)
+      const half = G.dist(P(d.inner[0]), P(d.inner[1])) / 2, outPt = G.add(G.lerp(Q(d.outer[0]), Q(d.outer[1]), 0.5), G.mul(inward, -1.1)), along = G.norm(G.sub(b, a));
+      r.control = { pos: [...G.add(outPt, G.mul(along, Math.max(0.6, half - 0.55))), d.y0], face: Math.atan2(-inward[0], -inward[1]) };
       r.control.pos = [r.control.pos[0], d.y0, r.control.pos[1]];
       r.door = { mid, inward, along, width: G.dist(P(d.inner[0]), P(d.inner[1])), y0: d.y0, y1: d.y1 };
     } else if (g.kind === 'span') {
       const n = byId.get(g.node), [a, b] = n.walk, dd = G.norm(G.sub(b, a)), side = G.perp(dd);
       const p0 = G.add(a, G.mul(dd, g.span.from - 0.05)), p1 = G.add(a, G.mul(dd, g.span.to + 0.05));
       r.floor = { poly: G.ccw([G.add(p0, G.mul(side, 1.3)), G.add(p1, G.mul(side, 1.3)), G.add(p1, G.mul(side, -1.3)), G.add(p0, G.mul(side, -1.3))]), y: g.span.y };
+      // (for a span that falls and comes back: along what it tumbles, and how far down the pit's floor is)
+      r.axis = dd; r.pitFloor = vols.get(n.landmark)?.y0 ?? g.span.y - 40;
     } else if (g.kind === 'fold') {
       const l = plan.links.find((q) => q.id === g.link), y = l.path[0][1], w = l.width;
       const c = g.collapse, dir = c.dir, side = G.perp(dir), cp = [c.p[0], c.p[2]];
@@ -538,6 +542,35 @@ function collapseEnd(out, pts, y, w, h, rng) {
   const s0 = G.add(G.add(e, G.mul(d, -1.2)), G.mul(side, -w * 0.95)), s1 = G.add(G.add(e, G.mul(d, -0.4)), G.mul(side, w * 0.95));
   out.push(beam([s0[0], y + h * 0.35, s0[1]], [s1[0], y + h * 0.75, s1[1]], 0.5, 0.18, 'concrete'));
 }
+// Doors that still work, on some of the doorways into rooms the gates don't hold: a powered door
+// that lifts as you come (a lit frame, clean metal: not the rusted ones that never open), or, on
+// a site out of step with time, one flickering between fallen to pieces and whole (passable only
+// in its broken moments). The runtime draws, moves and collides them (site/siteMechanisms.js)
+function placeWorkingDoors(plan, doorsOf, gates) {
+  const fr = Rng.fromString(`megasite-doors:${plan.seed}`), held = new Set(gates.filter((g) => g.kind === 'door').map((g) => g.link));
+  let flicker = gates.some((g) => g.theme === 'time') ? fr.int(1, 2) : fr.chance(0.3) ? 1 : 0;
+  const out = [];
+  for (const n of plan.nodes) {
+    if (!['room', 'core', 'deadend'].includes(n.kind)) continue;
+    for (const d of doorsOf.get(n.id) || []) {
+      const l = plan.links.find((q) => q.id === d.link);
+      if (!l || held.has(l.id) || l.kind === 'collapse') continue;
+      const kind = l.main && flicker > 0 && fr.chance(0.35) ? 'flicker' : fr.chance(0.26) ? 'powered' : null;
+      if (!kind) continue;
+      if (kind === 'flicker') flicker--;
+      const poly = n.poly, a = poly[d.edge], b = poly[(d.edge + 1) % poly.length], A = offsetVertex(poly, d.edge, WALL), B = offsetVertex(poly, (d.edge + 1) % poly.length, WALL);
+      const P = (t) => G.lerp(a, b, t), Q = (t) => G.lerp(A, B, t);
+      const mid = G.lerp(G.lerp(P(d.inner[0]), P(d.inner[1]), 0.5), G.lerp(Q(d.outer[0]), Q(d.outer[1]), 0.5), 0.5);
+      out.push({
+        id: `w${out.length}`, kind, node: n.id, link: l.id, mid, inward: G.norm(G.perp(G.sub(b, a))), along: G.norm(G.sub(b, a)), width: G.dist(P(d.inner[0]), P(d.inner[1])), y0: d.y0, y1: d.y1,
+        barrier: { poly: G.ccw([P(d.inner[0]), P(d.inner[1]), Q(d.outer[1]), Q(d.outer[0])]), y0: d.y0, y1: d.y1 },
+        cycle: kind === 'flicker' ? { period: fr.range(6.5, 9), open: fr.range(2.8, 3.8), offset: fr.range(0, 9) } : null,
+      });
+    }
+  }
+  return out;
+}
+
 // The ground's own history in the place: a fault or two across it, the first through the breach (the
 // visitors came down where the wound had cracked the shell). What crosses one has moved with it: a
 // passage sagged and rolled, a ceiling broken open where it runs, water getting in

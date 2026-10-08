@@ -4,9 +4,10 @@
 //   span (light, time)                   a gap in a catwalk; a bridge or a cycling deck
 //   fold (distance)                      rubble in a passage; frames joining its two sides
 import * as THREE from 'three';
+import { inside, inflate } from '../plan/geom2.js';
 import { THEME_NAMES } from '../plan/themes.js';
 
-const REACH = 2.3;
+const REACH = 2.8;
 
 export class SiteMechanisms {
   constructor(site, collision, root, mat, saved = {}) {
@@ -26,6 +27,33 @@ export class SiteMechanisms {
     M.timeDim = new THREE.MeshStandardMaterial({ color: '#6a604c', emissive: '#ff9a40', emissiveIntensity: 0.08, metalness: 0.4, roughness: 0.5 });
     M.ghost = [0.07, 0.16, 0.3].map((o) => new THREE.MeshStandardMaterial({ color: '#ffd59a', emissive: '#ffb860', emissiveIntensity: 0.9, transparent: true, opacity: o, depthWrite: false }));
     this.M = M;
+    // doors that work (plan/compile.js placeWorkingDoors): a powered one lifts as you come; a
+    // flickering one jumps between wrecked (open) and whole (shut), its corner lamps telling which
+    this.working = (site.workingDoors || []).map((d) => {
+      const v = { d, open: d.kind === 'flicker' ? 0 : 0 }, h = d.y1 - d.y0, yaw = Math.atan2(d.along[0], d.along[1]) - Math.PI / 2;
+      const at = (s, o, y) => [d.mid[0] + d.along[0] * s + d.inward[0] * o, y, d.mid[1] + d.along[1] * s + d.inward[1] * o];
+      const box = (w, hh, dp, pos, m) => { const g = new THREE.Mesh(new THREE.BoxGeometry(w, hh, dp), m); g.position.set(...pos); g.rotation.y = yaw; root.add(g); return g; };
+      if (d.kind === 'powered') {
+        v.panel = box(d.width + 0.06, h, 0.18, at(0, 0, d.y0 + h / 2), mat.metal);
+        // its lit frame: both jambs and the lintel, both faces
+        for (const o of [-0.32, 0.32]) {
+          for (const sg of [-1, 1]) box(0.07, h, 0.05, at(sg * (d.width / 2 + 0.06), o, d.y0 + h / 2), M.cyan);
+          box(d.width + 0.2, 0.07, 0.05, at(0, o, d.y1 + 0.05), M.cyan);
+        }
+      } else {
+        v.whole = box(d.width + 0.06, h, 0.2, at(0, 0, d.y0 + h / 2), mat.rust);
+        // the wreck: what's left of it hanging from the lintel and the jambs
+        v.wreck = new THREE.Group(); root.add(v.wreck);
+        for (const [s0, w, hh, y] of [[-0.42, 0.26, h * 0.55, d.y1 - h * 0.27], [0.4, 0.3, h * 0.35, d.y1 - h * 0.17], [0.05, d.width * 0.8, 0.45, d.y1 - 0.22], [-0.46, 0.16, h * 0.3, d.y0 + h * 0.15]]) {
+          const g = new THREE.Mesh(new THREE.BoxGeometry(w, hh, 0.16), mat.rust); g.position.set(...at(s0 * d.width, 0, y)); g.rotation.set(0, yaw, (s0 > 0 ? -1 : 1) * 0.12); v.wreck.add(g);
+        }
+        v.tells = [-1, 1].flatMap((sg) => [-0.35, 0.35].map((o) => box(0.14, 0.14, 0.14, at(sg * (d.width / 2 + 0.2), o, d.y1 + 0.15), M.red)));
+      }
+      // (never shut on you: whoever's in the doorway when it turns stays in the gap till they step out)
+      v.gap = inflate(d.barrier.poly, 0.45);
+      collision.addBlocker({ poly: d.barrier.poly, y0: d.y0, y1: d.y1, active: () => v.open < 0.7 && !v.inGap });
+      return v;
+    });
     for (const g of this.gates) {
       const v = {};
       if (g.kind === 'door') {
@@ -44,13 +72,17 @@ export class SiteMechanisms {
       } else if (g.kind === 'span') {
         const f = g.floor, shape = new THREE.Shape(f.poly.map(([x, z]) => new THREE.Vector2(x, -z)));
         const geo = new THREE.ExtrudeGeometry(shape, { depth: 0.12, bevelEnabled: false }); geo.rotateX(-Math.PI / 2); geo.translate(0, f.y - 0.12, 0);
-        v.bridge = new THREE.Mesh(geo, g.theme === 'light' ? M.light : M.timeOn);
-        root.add(v.bridge);
         if (g.theme === 'time') {
-          // its ghost while it's gone, and a lamp at each corner telling where it is in its cycle
+          // a deck that falls and comes back: hung on a pivot at its middle, to drop and tumble
+          const cx = f.poly.reduce((a, q) => a + q[0], 0) / f.poly.length, cz = f.poly.reduce((a, q) => a + q[1], 0) / f.poly.length;
+          const local = geo.clone(); local.translate(-cx, -f.y, -cz);
+          v.pivot = new THREE.Group(); v.pivot.position.set(cx, f.y, cz); root.add(v.pivot);
+          v.bridge = new THREE.Mesh(local, M.timeOn); v.pivot.add(v.bridge);
+          v.axis = new THREE.Vector3(g.axis?.[0] ?? 1, 0, g.axis?.[1] ?? 0).normalize();
+          // its ghost where it'll be, while it's gone; and a lamp at each corner telling where it is in its cycle
           v.ghost = new THREE.Mesh(geo, M.ghost[0]); root.add(v.ghost);
           v.tells = f.poly.map(([x, z]) => { const m = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 0.16), M.cyan); m.position.set(x, f.y + 0.95, z); root.add(m); const post = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.9, 6), mat.metal); post.position.set(x, f.y + 0.45, z); root.add(post); return m; });
-        }
+        } else { v.bridge = new THREE.Mesh(geo, M.light); root.add(v.bridge); }
         collision.addFloor({ poly: f.poly, y: f.y, active: () => this.spanPresent(g) });
       } else if (g.kind === 'fold') {
         v.membranes = g.frames.map((fr) => {
@@ -139,6 +171,25 @@ export class SiteMechanisms {
 
   update(dt, p) {
     this.time += dt;
+    for (const v of this.working) {
+      const d = v.d, h = d.y1 - d.y0;
+      v.inGap = p[1] > d.y0 - 0.5 && p[1] < d.y1 && inside([p[0], p[2]], v.gap, 0);
+      if (d.kind === 'powered') {
+        // lifts when you're near and on its level, quick enough not to stop you; drops behind you
+        const near = Math.hypot(p[0] - d.mid[0], p[2] - d.mid[1]) < 4.2 && p[1] > d.y0 - 1 && p[1] < d.y1;
+        v.open += Math.sign((near ? 1 : 0) - v.open) * Math.min(Math.abs((near ? 1 : 0) - v.open), dt / 0.4);
+        v.panel.position.y = d.y0 + h / 2 + v.open * (h - 0.25);
+      } else {
+        const c = d.cycle, ph = ((this.time + c.offset) % c.period + c.period) % c.period, on = ph < c.open, blink = Math.floor(this.time * 9) % 2 === 0;
+        const turning = on ? ph > c.open - 1.2 : ph > c.period - 1.2;
+        v.open = on ? 1 : 0;
+        // (about to turn: it glitches between the two)
+        const showWreck = turning && blink ? !on : on;
+        v.wreck.visible = showWreck; v.whole.visible = !showWreck;
+        const lamp = turning ? (blink ? this.M.amber : this.M.dark) : on ? this.M.cyan : this.M.red;
+        for (const t of v.tells) t.material = lamp;
+      }
+    }
     for (const g of this.gates) {
       const v = this.visual.get(g.id);
       if (g.kind === 'door') {
@@ -154,8 +205,18 @@ export class SiteMechanisms {
           // amber blinking, red, amber
           const c = g.cycle, ph = this.phase(g), on = ph < c.open, blink = Math.floor(this.time * 8) % 2 === 0;
           const going = on && ph > c.open - 1.5, coming = !on && ph > c.period - 1.5;
-          v.bridge.visible = on; v.bridge.material = going && blink ? this.M.timeDim : this.M.timeOn;
-          v.ghost.visible = !on; v.ghost.material = this.M.ghost[coming ? (blink ? 2 : 1) : (ph - c.open) / (c.period - c.open) > 0.5 ? 1 : 0];
+          // gone, it falls: down the pit under gravity, tumbling, till it meets the floor; then the
+          // same played backwards, rising into place just as it's due (shuddering before it goes)
+          let y = 0, ang = 0, back = false;
+          if (on) { if (going) y = 0.03 * Math.sin(this.time * 53) * Math.min(1, (ph - (c.open - 1.5)) / 1.5); }
+          else {
+            const D = c.period - c.open, t = ph - c.open, tt = t < D / 2 ? t : D - t, depth = Math.max(2, g.floor.y - g.pitFloor - 0.6);
+            back = t >= D / 2;
+            y = -Math.min(depth, 4.905 * tt * tt); ang = 0.85 * Math.min(tt, Math.sqrt(depth / 4.905));
+          }
+          v.pivot.position.y = g.floor.y + y; v.pivot.quaternion.setFromAxisAngle(v.axis, ang);
+          v.bridge.material = back ? this.M.timeOn : going && blink ? this.M.timeDim : this.M.timeOn;
+          v.ghost.visible = !on; v.ghost.material = this.M.ghost[coming ? (blink ? 2 : 1) : 0];
           const lamp = on ? (going ? (blink ? this.M.amber : this.M.dark) : this.M.cyan) : (coming ? (blink ? this.M.amber : this.M.dark) : this.M.red);
           for (const t of v.tells) t.material = lamp;
         }
