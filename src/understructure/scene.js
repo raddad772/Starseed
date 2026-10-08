@@ -135,8 +135,8 @@ export function buildScene(plan) {
   for(const x of [-1.95,1.95]) {rail(x,-126,x,-202);rail(x,-206,x,-282);}
   for(const x of [-60,60]){rail(x,-126,x,-202);rail(x,-206,x,-282);}
   for(const z of [-126,-202,-206,-282]){rail(-60,z,-2,z);rail(2,z,60,z);}
-  for(let z=-140;z>-285;z-=24)for(const x of [-44,-20,20,44]) {
-    box(x,(R.bottom+R.ceiling)/2,z,3,R.ceiling-R.bottom,4);box(x,R.ceiling-2,z,7,4,8);
+  for(const {x,z,width,depth} of plan.pillars) {
+    box(x,(R.bottom+R.ceiling)/2,z,width,R.ceiling-R.bottom,depth);box(x,R.ceiling-2,z,7,4,8);
     box(x,DECK+3,z+2.02,1.3,.1,.04,'cyan');lamps.push({pos:new THREE.Vector3(x,DECK+3,z+3),color:0x9ecfc0});
     cylinder([x-.9,R.bottom,z+2.2],[x-.9,R.ceiling,z+2.2],.23,'rust');
   }

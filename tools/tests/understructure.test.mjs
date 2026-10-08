@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { generateUnderstructure,makeCollision,key,TILE,DECK } from '../../src/understructure/layout.js';
 import { UnderstructureSimulation } from '../../src/understructure/simulation.js';
+import { walkLine,walkRoute } from './understructure-walk.js';
 
 function connected(plan){const cells=new Set(plan.tiles.map(t=>key(t.x,t.z))),seen=new Set(['0,0']),queue=[[0,0]];for(let i=0;i<queue.length;i++){const [x,z]=queue[i];for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){const k=key(x+dx,z+dz);if(cells.has(k)&&!seen.has(k)){seen.add(k);queue.push([x+dx,z+dz]);}}}return seen;}
 function advance(s,secs,input={}){for(let t=0;t<secs;t+=1/60)s.step(Math.min(1/60,secs-t),input);}
@@ -28,4 +29,22 @@ test('catwalks have continuous junctions and prevent walking into reservoir void
 test('survey and beacons persist per site without inventing unvisited map data',()=>{
  const p=generateUnderstructure(),s=new UnderstructureSimulation(p);s.pos=[...p.samples[0].pos];s.step(.02);s.interact();assert.ok(s.recorded.has('intake'));assert.ok(s.beacon());assert.equal(s.beacon(),false);assert.ok(s.discovered.size<p.tiles.length);
  const restored=new UnderstructureSimulation(p,JSON.parse(JSON.stringify(s.save())));assert.deepEqual(restored.save(),s.save());assert.deepEqual(restored.pos,p.spawn);
+});
+test('reservoir structural columns never intersect a walkable catwalk',()=>{
+ const p=generateUnderstructure();
+ for(const {x,z,width,depth} of p.pillars)for(const [x0,x1,z0,z1] of p.walkways)
+  assert.ok(x+width/2<=x0||x-width/2>=x1||z+depth/2<=z0||z-depth/2>=z1,`Column at ${x},${z} blocks a catwalk`);
+});
+test('complete survey and return using walking inputs across five seeded layouts',()=>{
+ for(const seed of ['SUMP-07','A','B','SITE-24','SITE-93']) {
+  const p=generateUnderstructure(seed),s=new UnderstructureSimulation(p);
+  walkLine(s,0,4);assert.equal(s.offer()?.type,'hatch');s.interact();advance(s,1.5);
+  walkLine(s,0,0);assert.equal(s.offer()?.type,'lift');s.interact();advance(s,8.1);assert.equal(s.pos[1],DECK);
+  for(const sample of p.samples){walkRoute(s,sample.pos[0],sample.pos[2]);assert.equal(s.offer()?.id,sample.id);s.interact();}
+  assert.equal(s.recorded.size,3);assert.equal(s.returned,false);
+  assert.ok(s.beacon());walkRoute(s,0,0);s.interact();advance(s,8.1);walkLine(s,0,8);
+  assert.equal(s.pos[1],0);assert.equal(s.returned,true);assert.ok(s.reservoirSeen);
+  const restored=new UnderstructureSimulation(p,JSON.parse(JSON.stringify(s.save())));
+  assert.equal(restored.returned,true);assert.deepEqual(restored.save(),s.save());
+ }
 });

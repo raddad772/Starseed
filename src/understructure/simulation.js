@@ -9,7 +9,7 @@ export class UnderstructureSimulation {
     this.flashlight=true;this.time=0;this.discovered=new Set((saved.discovered||[]).filter(x=>typeof x==='string'));
     this.recorded=new Set((saved.recorded||[]).filter(x=>plan.samples.some(s=>s.id===x)));
     this.beacons=(saved.beacons||[]).filter(p=>Array.isArray(p)&&p.length===3&&p.every(Number.isFinite)).slice(-40);
-    this.reservoirSeen=!!saved.reservoirSeen;this.returned=false;
+    this.reservoirSeen=!!saved.reservoirSeen;this.returned=!!saved.returned&&this.recorded.size===plan.samples.length;
   }
   get state(){return {y:this.pos[1],liftY:this.liftY,hatchOpen:this.hatchOpen&&this.hatchAmount>.98};}
   get moving(){return Math.abs(this.liftTarget-this.liftY)>.001;}
@@ -60,5 +60,5 @@ export class UnderstructureSimulation {
     if(this.beacons.some(p=>Math.hypot(p[0]-this.pos[0],p[1]-this.pos[1],p[2]-this.pos[2])<2))return false;
     this.beacons.push([...this.pos]);return true;
   }
-  save(){return {version:1,discovered:[...this.discovered],recorded:[...this.recorded],beacons:this.beacons,reservoirSeen:this.reservoirSeen};}
+  save(){return {version:1,discovered:[...this.discovered],recorded:[...this.recorded],beacons:this.beacons,reservoirSeen:this.reservoirSeen,returned:this.returned};}
 }

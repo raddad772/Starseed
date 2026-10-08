@@ -1,7 +1,8 @@
 <!doctype html><meta charset="utf-8"><title>Understructure finite validation</title>
 <style>body{margin:0;background:#131c1d;color:#deeddf;font:14px monospace}iframe{width:1280px;height:800px;border:0}pre{padding:15px;white-space:pre-wrap}img{width:640px;max-width:100%}</style>
-<pre id="result">Preparing the finite native WebGPU fixture…</pre><iframe id="game" src="../../understructure.html?seed=SUMP-07&test=1"></iframe>
+<pre id="result">Preparing the finite native WebGPU fixture…</pre><iframe id="game" src="../../understructure.html?seed=SUMP-07&test=1&reset=1"></iframe>
 <script type="module">
+import { walkLine,walkRoute } from './understructure-walk.js';
 const out=document.querySelector('#result'),iframe=document.querySelector('#game');let test;
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
 const check=(v,msg)=>{if(!v)throw Error(msg);};
@@ -20,11 +21,23 @@ try {
  // Verify fast view changes never need an earlier visibility result to show geometry.
  for(const yaw of [0,Math.PI/2,Math.PI,-Math.PI/2,0]){sim.yaw=yaw;test.render();await renderer.device.queue.onSubmittedWorkDone();check(renderer.stats.calls>0,'Turn lost scene geometry');}
  check(!test.errors.length,JSON.stringify(test.errors));report.checks.push('Five immediate 90/180-degree camera turns; no renderer or validation errors');
- sim.yaw=0;advance(45,{forward:1});check(sim.pos[2]<-260,'Far reservoir path blocked');sim.pos=[...test.plan.samples[2].pos];sim.interact();
- // Character collision coverage is in the CPU suite; direct placement here checks each distinct render sector.
- sim.pos=[...test.plan.samples[1].pos];sim.yaw=0;sim.pitch=-.12;sim.interact();await capture('service-basement');check(sim.recorded.size===3,'Three observations not recorded');check(sim.beacon(),'Beacon placement failed');visual.addBeacon(sim.beacons.at(-1));test.save();
- const saved=JSON.parse(iframe.contentWindow.localStorage.getItem('starseed.understructure.test.v1.SUMP-07'));check(saved.recorded.length===3&&saved.beacons.length>0,'Progress did not persist');report.checks.push('Three records, field beacon and persistent per-seed progress');
+ walkRoute(sim,0,-264);check(sim.offer()?.id==='reservoir','Reservoir signal unreachable');sim.interact();
+ // Exercise every reservoir loop, including the far catwalk formerly blocked by columns.
+ for(const [x,z] of [[0,-284],[-62,-284],[-62,-204],[0,-204],[62,-204],[62,-284],[0,-284]])walkLine(sim,x,z);
+ sim.yaw=-Math.PI/2;sim.pitch=-.12;await capture('far-catwalk');report.checks.push('All reservoir catwalk loops traversed with walking inputs');
+ walkRoute(sim,24,-52);check(sim.offer()?.id==='archive','Service branch signal unreachable');sim.interact();sim.yaw=0;await capture('service-basement');check(sim.recorded.size===3,'Three observations not recorded');check(sim.beacon(),'Beacon placement failed');visual.addBeacon(sim.beacons.at(-1));
+ walkRoute(sim,0,0);check(sim.offer()?.type==='lift','Return lift unreachable');sim.interact();advance(8.1);walkLine(sim,0,8);check(sim.pos[1]===0&&sim.returned,'Survey could not be returned to the surface');test.save();await capture('survey-returned');
+ const saved=JSON.parse(iframe.contentWindow.localStorage.getItem('starseed.understructure.test.v1.SUMP-07'));check(saved.recorded.length===3&&saved.beacons.length>0&&saved.returned,'Progress did not persist');
+ report.checks.push('Full survey, ascent and surface return without teleporting');
  iframe.contentDocument.getElementById('mapButton').click();check(!iframe.contentDocument.getElementById('mapPanel').hidden,'Survey map did not open');iframe.contentDocument.querySelector('[data-close="mapPanel"]').click();iframe.contentDocument.getElementById('notesButton').click();check(iframe.contentDocument.querySelectorAll('#notes article').length===3,'Journal missing observations');report.checks.push('Map and journal controls');
- iframe.contentDocument.querySelector('[data-close="notesPanel"]').click();test.pause();report.errors=test.errors;report.stats=renderer.stats;window.testResult={status:'passed',...report};out.textContent=JSON.stringify(window.testResult,null,2);
+ iframe.contentDocument.querySelector('[data-close="notesPanel"]').click();test.pause();report.errors=[...test.errors];report.stats=renderer.stats;
+ // Reload the actual entry module and read the saved test site through the normal load path.
+ const previous=test;iframe.src='../../understructure.html?seed=SUMP-07&test=1';
+ for(let i=0;i<300;i++){const next=iframe.contentWindow?.understructureTest;if(next&&next!==previous&&next.renderer&&next.frame){test=next;break;}await wait(100);}
+ check(test!==previous&&test.sim.returned&&test.sim.recorded.size===3&&test.sim.discovered.size===sim.discovered.size,'Completed survey did not survive page reload');
+ check(test.sim.beacons.length===saved.beacons.length,'Return beacons did not survive page reload');
+ check(iframe.contentDocument.getElementById('objective').textContent.startsWith('Survey returned'),'Reload lost the completion objective');
+ check(!test.errors.length,JSON.stringify(test.errors));test.pause();report.checks.push('Actual page reload restores completion, field notes, explored map and return beacons');
+ window.testResult={status:'passed',...report};out.textContent=JSON.stringify(window.testResult,null,2);
 } catch(e){test?.pause();window.testResult={status:'failed',error:e.stack,...report};out.textContent=JSON.stringify(window.testResult,null,2);}
 </script>

@@ -51,10 +51,13 @@ export function generateUnderstructure(seed = 'SUMP-07') {
     {id:'archive',pos:[24,DECK,-52],title:'Maintenance without occupants',text:'Replacement filters are stacked beside a live return line. None of the fittings match the dimensions of the doors.'},
     {id:'reservoir',pos:[0,DECK,-264],title:'A reservoir with no catchment',text:'The water is flowing toward the surface. No intake, watershed or active weather system accounts for its volume.'},
   ];
+  // Keep structural columns clear of the crossing and far perimeter catwalks.
+  const pillars=[];
+  for(let z=-140;z>-280;z-=24)for(const x of [-44,-20,20,44])pillars.push({x,z,width:3,depth:4});
   return {version:1,seed,tiles:[...tiles.values()],walls,rooms,edges,samples,
     deck:DECK,shaft:{min:[-2,-2],max:[2,2]},reservoir:{x:64,near:-122,far:-286,bottom:-68,water:-53,ceiling:-6},
     walkways:[[-2,2,-286,-120],[-64,64,-126,-122],[-64,64,-286,-282],[-64,-60,-286,-122],[60,64,-286,-122],[-64,64,-206,-202]],
-    spawn:[0,0,12]};
+    pillars,spawn:[0,0,12]};
 }
 
 export function terrainHeight(x,z) {

@@ -7,7 +7,7 @@ import { UnderstructureSimulation } from './simulation.js';
 const $=id=>document.getElementById(id),params=new URLSearchParams(location.search);
 const plan=generateUnderstructure(params.get('seed')||'SUMP-07'),saveKey=`starseed.understructure.${params.has('test')?'test.':''}v1.${plan.seed}`;
 let saved={};try{saved=JSON.parse(localStorage.getItem(saveKey)||'{}');}catch{}
-if(params.has('test'))saved={};
+if(params.has('test')&&params.has('reset'))saved={};
 const sim=new UnderstructureSimulation(plan,saved),visual=buildScene(plan),canvas=$('view');
 const camera=new THREE.PerspectiveCamera(73,1,.08,900);camera.rotation.order='YXZ';
 const view={camera,width:1,height:1,rect:{x:0,y:0,w:1,h:1},meterRef:.18,maxExposure:3,exposureBias:1.3};
