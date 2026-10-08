@@ -491,6 +491,19 @@ export class Game {
   // ------------------------------------------------------------------ start sequence
 
   begin() {
+    const key = this.opts.startChoice || this.startPending;
+    if (!this.opts.testSpot && (key === 'carrier' || key?.startsWith('orbit:'))) {
+      // Space flight only needs the system's body parameters. Surface history
+      // and landing surveys may run later; neither is a boarding prerequisite.
+      const b = this.startBody;
+      this.startDir = null;
+      this.respawnInfo = { body: b, dir: new THREE.Vector3(1, 0, 0) };
+      this.spawnFleet(b);
+      this.placed = true;
+      this.startChoice = key;
+      this.applyStart(key);
+      return;
+    }
     const b = this.startBody;
     this.loadText = `Surveying ${b.data.name} for a landing site`;
     this.screenHud.setLoading(this.loadText, 0);
@@ -498,12 +511,14 @@ export class Game {
     // run now; surveyed before it, the sites were the procedural ground's, where the sim may have sea:
     // SOL Earth's start had been 667 m under it)
     this.startSim(b).then(() => this.requestSurvey(b, -50)).then((res) => {
+      if (this.disposed) return;
       // (the world as it is now, on the shared clock: of the survey's sites, the best one in daylight)
       this.t = this.clock.now();
       this.universe.update(this.t);
       const site = res && res.sites && this.daySite(b, res.sites);
       this.placeStart(b, site ? new THREE.Vector3(...site.dir) : this.fallbackSite(b), site);
     }, (err) => {
+      if (this.disposed) return;
       console.error(err);
       this.placeStart(b, this.fallbackSite(b), null);
     });
@@ -517,8 +532,8 @@ export class Game {
     return new Promise((res) => {
       const poll = () => {
         const st = ws.status.get(id);
-        if (st === 'ready' || st === 'failed' || st === undefined) res();
-        else { if (st === 'running') this.screenHud.setLoading(`Simulating ${b.data.name}'s history`, 0); setTimeout(poll, 250); }
+        if (this.disposed || st === 'ready' || st === 'failed' || st === undefined) res();
+        else { setTimeout(poll, 250); }
       };
       poll();
     });
@@ -597,6 +612,23 @@ export class Game {
   // it: the home landing site, or a spot chosen on any world (spot: a
   // survey's start spot, for the arrival message)
   startOnSurface(b = this.startBody, dir = this.startDir, spot = null) {
+    if (!dir) {
+      const token = this.startToken;
+      this.beginLoading('surface', `Surveying ${b.data.name} for a landing site`);
+      this.loadHold = true;
+      this.startSim(b).then(() => this.disposed ? null : this.requestSurvey(b, -50)).then(res => {
+        if (this.disposed || token !== this.startToken) return;
+        const site = res?.sites && this.daySite(b, res.sites);
+        this.startDir = site ? new THREE.Vector3(...site.dir) : this.fallbackSite(b);
+        this.loadHold = false;
+        this.startOnSurface(b, this.startDir, site);
+      }).catch(error => {
+        if (this.disposed || token !== this.startToken) return;
+        console.error(error); this.loadHold = false;
+        this.startDir = this.fallbackSite(b); this.startOnSurface(b, this.startDir);
+      });
+      return;
+    }
     const s = this.ship, p = this.players[0];
     for (const q of this.players) q.understructure?.leave(false);
     this.respawnInfo = { body: b, dir: dir.clone() };
@@ -2185,11 +2217,17 @@ export class Game {
     if (this.debugFree && p === this.players[0]) { this.freecam.update(dt, dt, this.input); return; }
     if (this.state === 'loading' && !this.respawnInfo) return;
     const pv = this.piloted;
+    // External views of a berthed craft must also clear its containing hull.
+    const cameraVessel = pv?.root;
+    if (cameraVessel && p._cameraVessel !== cameraVessel) {
+      p.chaseQuat.copy(cameraVessel.quat);
+      p._cameraVessel = cameraVessel;
+    }
     if (this.camMode === 'landing' && pv) {
       // locked landing view: level with the local horizon (the host's deck
       // inside a big ship), above and behind along the ship's heading, aimed
       // a little ahead of the ground under it; rigid, no lag
-      const s = pv;
+      const s = cameraVessel;
       const R = s.type.radius;
       const wp = s.getWorldPos(_v1);
       const up = s.parent ? _v2.set(0, 1, 0).applyQuaternion(s.parent.quat) : _v2.copy(s.pos).normalize();
@@ -2209,7 +2247,7 @@ export class Game {
       // above and behind, the craft low in the frame and the way ahead in
       // view; the camera lags a turn a little, catching up faster the further
       // round it falls (it must never end up out in front)
-      const s = pv;
+      const s = cameraVessel;
       const R = s.type.radius;
       const wp = s.getWorldPos(_v1);
       const lag = this.chaseQuat.angleTo(s.quat);
@@ -2222,7 +2260,7 @@ export class Game {
       return;
     }
     const s = p.aboard ? p.vessel : p.ship;
-    this.chaseQuat.copy(s.quat);
+    this.chaseQuat.copy(cameraVessel?.quat || s.quat);
     p.computeCamera(this.camPos, this.camQuat);
     // shake: thrust, re-entry, landing impact
     const shake = Math.min(1, s.heatGlow * 0.5 + (p.mode === 'seat' ? (s.limits.main > 0 ? s.thrustLocal.length() / s.limits.main : 0) * (s.big ? 0.05 : 0.15) + s.env.dynPressure / 4e5 : 0)) + (s.ftl.state === 'cruise' ? 0.05 : 0);
@@ -2478,6 +2516,10 @@ export class Game {
     this.setCur(null);
     this.players[0].deathShown = false;
     for (const v of this.vessels) v.nav.cancel(null);
+    if (this.startChoice?.startsWith('orbit:') || this.startChoice === 'carrier') {
+      this.applyStart(this.startChoice);
+      return;
+    }
     const ri = this.respawnInfo;
     const b = ri.body;
     for (const v of this.vessels) { v.ftl.state = 'idle'; v.ftl.speed = 0; }
@@ -2502,6 +2544,7 @@ export class Game {
   }
 
   dispose() {
+    this.disposed = true;
     this.intro?.dispose();
     window.removeEventListener('resize', this._onResize);
     this.surfaceSurveys.dispose();

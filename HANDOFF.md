@@ -11,6 +11,21 @@ maps and viewscreens are native. WebGL exists only in explicit test tooling (`?w
 no production fallback. Other browser/GPU combinations still need certification; no speedup or exact
 pixel-parity claim is made. Dave confirmed sole-agent work and no coordination messages this session.
 
+## Neptune flight fixes and orbital startup (8 October 2026)
+Nav departure now recognizes authored ejection berths instead of reading a nonexistent hangar
+mouth. Cargo holds without flight entrances are excluded from autonomous docking. External
+views use the containing vessel while berthed and return to the piloted craft on release.
+EVA sweeps the suit against the existing moving ship colliders, clips inward relative velocity,
+and slides along hulls; this is CPU kinematic contact, not an AVBD integration. Tests cover thin
+walls, rotated/moving hulls, swung doors and open passages. Surface walking remains separate.
+
+Orbit/carrier startup places the fleet before world simulation or landing survey. Background
+simulation no longer overwrites loading text; only an actual surface start requests its landing
+site. Orbital Launch no longer opens the additional surface loading cover. No detailed cache
+feature was added. 35 focused CPU tests and seven finite native Neptune checks pass (owned tab,
+workers=2, worldsim=0); the native check exercises N from Neptune's helm in its carrier berth.
+The normal mirror opening / Free exploration entry changes are still in progress.
+
 ## Authored systems, fast chart and opening preparation (8 October 2026)
 
 `notes/SYSTEM_AUTHORING.md` documents recipe inputs, address/position placements, offline seed search,

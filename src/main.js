@@ -224,6 +224,7 @@ function boot(s, saved = null, expedition = null) {
     if (!navigator.gpu) throw new Error('WebGPU is unavailable');
     game = new Game(canvas, input, s, {
       systemDefinition: saved?.world.definition || expedition?.systemDefinition,
+      startChoice,
       workers: params.get('workers') ? +params.get('workers') : undefined,
       worldsim: params.get('worldsim') !== '0', simN: params.get('simN') ? +params.get('simN') : undefined,
       simWorkers: params.get('simWorkers') ? +params.get('simWorkers') : undefined,
@@ -256,7 +257,7 @@ function boot(s, saved = null, expedition = null) {
     restoreFlight(game, saved, { inputForPlayer: i => i === 1 && p2Pad !== null ? makeP2Input(p2Pad) : null });
     game.campaign = saved;
   } else if (expedition) { provisionExpedition(game, expedition);game.setPaused(true); }
-  else if (startChoice) { game.requestStart(startChoice); previewed = startChoice; } // the briefing shows the chosen start live
+  else if (startChoice) { if (!game.placed) game.requestStart(startChoice); previewed = startChoice; }
   if(game.campaign?.story.intro.tutorial)game.intro=new FlightIntro(game,{checkpoint:()=>flightSaves.checkpoint(),openLog:()=>showPause('expedition')});
   if(game.campaign)void prepareOpeningSystems(game.campaign);
   applySettings();
@@ -367,7 +368,7 @@ function launchGame() {
   previewed = null;
   if (game) game.launch();
   // (behind a loading screen until the ground round the start is in: ui/loadScreen.js)
-  if (loadScreen) loadScreen.begin();
+  if (loadScreen && (game?.player.mode === 'surface' || game?.player.vessel?.landed)) loadScreen.begin();
 }
 // back to the briefing from the game (the pause menu's Change system)
 function toBriefing(resetCampaign = true) {

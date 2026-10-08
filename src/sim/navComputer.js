@@ -441,6 +441,13 @@ export class NavComputer {
       // inside a big ship's pad or hangar zone: its deck frame
       const z = s.zone;
       A.move = true;
+      // Berths eject along the craft's authored launch vector in stepChild.
+      // They have no hangar mouth (Neptune's ventral recess and escape pods).
+      if (z?.kind === 'berth' && s.type.launch) return;
+      if (!z || (z.kind !== 'pad' && !z.mouth)) {
+        this.cancel('leave this cargo hold manually before engaging navigation');
+        return;
+      }
       this.lup.set(0, 1, 0);
       if (z.kind === 'pad') {
         this.lvel.set(-s.lvel.x * 0.5, 10, -s.lvel.z * 0.5);
@@ -826,11 +833,15 @@ export class NavComputer {
 
   // waypoints in the host's frame: around its hull, then down onto a free pad
   // or in through the hangar door
-  fitsBay(zone) { return !zone.maxCraftSize || hullEnvelope(this.ship.type).size.every((size,i)=>size<=zone.maxCraftSize[i]); }
+  fitsBay(zone) {
+    return (zone.kind === 'pad' || !!zone.mouth) &&
+      (!zone.maxCraftSize || hullEnvelope(this.ship.type).size.every((size,i)=>size<=zone.maxCraftSize[i]));
+  }
 
   approachPlan() {
     const s = this.ship, host = this.dest.v;
     const zones = host.type.zones.filter(z=>this.fitsBay(z));
+    if (!zones.length) return null;
     const pads = zones.filter((z) => z.kind === 'pad');
     const busy = (z) => host.children.some((c) => c !== s && c.zone === z);
     const pts = [];
