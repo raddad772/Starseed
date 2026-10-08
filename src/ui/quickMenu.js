@@ -128,6 +128,13 @@ export class QuickMenu {
       if (res) for (const sp of res.spots || []) sites.push({ ...choose({ dirF: new THREE.Vector3(...sp.dir), label: sp.label.toLowerCase() }, sp.label), value: `${sp.biome} · ${sp.temperatureC} °C` });
       else sites.push({ label: 'Surveying…', value: '' });
       items.push({ id: 'landat', label: 'Land at', value: chosen === 'orbit' ? 'orbit' : (chosen ? chosen.label : 'best site'), items: sites });
+      if(nav.canLand&&!nav.active&&chosen!=='orbit')items.push({label:'Guide to landing site',value:'manual controls · flying boxes',run:()=>{
+        nav.landingGuide.select(nav.destinationFor(t));g.message('Landing guide selected · controls remain with you. Follow the boxes, match speed, then hover and settle.','nav');
+      }});
+    }
+    if(nav.canLand){
+      items.push({label:'Landing guide',value:nav.landingGuide.enabled?'on':'off',stay:true,run:()=>{nav.landingGuide.enabled=!nav.landingGuide.enabled;}});
+      if(nav.landingGuide.dest)items.push({label:'Rejoin from this direction',value:'reset approach corridor',run:()=>nav.landingGuide.rejoin()});
     }
     return { id: 'navc', label: 'Nav computer', value: nav.active ? nav.status().phase.toLowerCase() : (t ? t.data.name : ''), items };
   }

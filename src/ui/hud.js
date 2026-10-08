@@ -10,6 +10,7 @@ import { ASSIST_NAMES } from '../sim/ship.js';
 import { lockRadius } from '../sim/ftl.js';
 import { PAD_LAYOUT, padDiagram, padButtonFor, padButtonText, padGlyph } from '../padLayout.js';
 import { markerVelocity, drawVelocityMarkers } from './velMarkers.js';
+import { drawLandingGuide } from './landingHUD.js';
 
 const $ = (id) => document.getElementById(id);
 const _v = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3();
@@ -472,6 +473,7 @@ export class Hud {
         if (!s.parent) this.drawAttitude();
         this.drawAltTape();
         if (!s.big) this.drawDockingGuides();
+        if(s.pilot===p&&!s.parent)drawLandingGuide(this,s.nav.landingGuide.update());
       }
       this.drawStick();
     }

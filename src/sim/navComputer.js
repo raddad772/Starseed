@@ -22,6 +22,7 @@ import { meadowsNear } from '../gen/flora.js';
 import { lockRadius } from './ftl.js';
 import { hullEnvelope } from './reentry.js';
 import { OrbitalFlight, maneuverAuthority } from './orbitalFlight.js';
+import { LandingGuide } from './landingGuide.js';
 
 const G0 = 9.81;
 const A_CMD = 2.5 * G0;      // commanded acceleration, small craft (crew comfort; the engines can do far more)
@@ -78,6 +79,7 @@ export class NavComputer {
   }
 
   get canLand() { return !!this.ship.type.legs; }
+  get landingGuide() { return this._landingGuide ||= new LandingGuide(this); }
 
   // messages: plain for the ship you are aboard, signed by the ship otherwise
   say(text, kind = 'nav') {
@@ -117,6 +119,10 @@ export class NavComputer {
   // pick where on a world this ship lands (null: the default; 'orbit': none)
   chooseSite(body, site) {
     if (site) this.sites.set(body.id, site); else this.sites.delete(body.id);
+    if(this._landingGuide?.dest?.body===body){
+      const d=this.destinationFor(body);
+      this._landingGuide.dest=d?.kind==='site'?d:null;this._landingGuide.rejoin();
+    }
     if (this.active && this.dest && this.dest.body === body) {
       const d = this.destinationFor(body);
       if (d) this.dest = d;

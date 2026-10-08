@@ -3132,3 +3132,35 @@ reticle point (T) or the best surveyed site.
   `renderer.compileAsync`.
 - Lift trigger points must be within reach of the door the player walks to (2 m radius).
 - Hidden-pane screenshots and timings are slower than real; the pane tab may still render.
+
+## Manual landing guide (Codex, 2026-10-08)
+
+Select a solid world and use Quick menu (` / D-pad left) → Nav computer → Land at,
+then Guide to landing site. This selects advisory guidance without engaging the
+nav computer or changing assist. Landing orders show guidance automatically;
+N releases the nav computer while keeping the guide. The same menu can hide the
+guide or rejoin from the current direction. V / camera-view control cycles to
+the existing landing camera.
+
+A body-fixed, curved approach corridor stays attached to the selected site as the
+planet turns. Gates fade with distance and clip at the camera/viewport immediately.
+The readout gives surface speed, vertical speed, suggested targets and path error;
+near the site it switches to hover, drift, gear and gentle-settle cues. Braking,
+excessive descent, hot entry, weak loaded thrust, steep ground and overshoot have
+explicit cues. Orbital/remote arrivals show a deorbit/arrival handoff rather than
+an apparent tunnel through a planet. The guide doesn't fly a deorbit maneuver.
+
+Surface speed targets share the nav computer's unchanged acceleration, heat and
+terrain envelope in surfaceGuidance.js. Manual descent also follows the slope
+while on-path. Stopping warnings use present-attitude lift authority, including
+payload and vector pods. Corridor terrain is sampled at its center and sides;
+this is an advisory approach, not obstacle-certified pathfinding or a guarantee
+against unsampled ridges, trees or buildings. Check the ground during final hover.
+No renderer, physics forces, GPU visibility query or previous-frame culling change.
+
+Validation: eight focused guidance checks plus 31 existing flight, re-entry,
+orbital-navigation and station checks pass. The native finite landing-guide
+fixture checks Quick menu selection with autopilot off, projected approach boxes,
+a 180-degree view change, final hover warnings and hiding the guide. Captured
+frames use the real game renderer and HUD. Manual flight feel awaits Dave's test;
+fixture placement does not claim a pilot completed an unaided landing.
