@@ -152,9 +152,10 @@ export class WorldSims {
   }
 
   async request(id) {
-    if (this.status.has(id)) return;
+    if (this.disposed || this.status.has(id)) return;
     this.status.set(id, 'queued');
     const cached = await dbGet(await this.dbP, this.key(id));
+    if (this.disposed) return;
     if (cached) {
       // (one cached before its seasons were kept: worked out once, kept, and the world shown with them)
       if (cached.Nc && cached.seasonV !== SEASON_V) {
@@ -182,10 +183,11 @@ export class WorldSims {
 
   // a world's refinement: from the cache, or its six faces queued (the start world's first)
   async requestRefine(id, snap) {
-    if (this.refine.has(id)) return;
+    if (this.disposed || this.refine.has(id)) return;
     const st = { R: null, done: 0, total: 0, status: 'queued' };
     this.refine.set(id, st);
     const cached = await dbGet(await this.dbP, this.refKey(id));
+    if (this.disposed) return;
     if (cached && cached.version === TILE_VERSION) {
       st.R = fromStorable(cached);
       // (its rivers made again where they were made another way: the refinement itself kept)
@@ -220,6 +222,7 @@ export class WorldSims {
   }
 
   _next() {
+    if (this.disposed) return;
     for (const w of this.workers) {
       if (w.job || !this.queue.length) continue;
       const job = this._pick(w);
@@ -300,6 +303,7 @@ export class WorldSims {
   }
 
   _apply(id, snap, fromCache) {
+    if (this.disposed) return;
     this.status.set(id, 'ready');
     const g = this.game, b = g.system.bodies[id];
     // (where to watch its aurora: read from the snapshot, so cached worlds have it too)
@@ -323,6 +327,7 @@ export class WorldSims {
   }
 
   _applyRefine(id, st, fromCache) {
+    if (this.disposed) return;
     st.status = 'ready';
     const g = this.game, b = g.system.bodies[id];
     b.terrain.refine = st.R;
@@ -335,5 +340,10 @@ export class WorldSims {
     this._progress();
   }
 
-  dispose() { for (const w of this.workers) w.worker.terminate(); if (this.el) this.el.remove(); }
+  dispose() {
+    this.disposed = true;
+    for (const w of this.workers) w.worker.terminate();
+    this.dbP.then(db => db?.close());
+    if (this.el) this.el.remove();
+  }
 }

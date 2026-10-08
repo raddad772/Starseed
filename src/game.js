@@ -16,6 +16,7 @@ import { WARP_LEVELS, requestedWarp, warpBeforeEvent } from './sim/warpConsent.j
 import { NearGround } from './sim/nearGround.js';
 import { findCliffCountry, gentleNear } from './gen/volume.js';
 import * as THREE from 'three';
+import { updateMirrorView,keepOutsideMirror } from './campaign/mirrorScene.js';
 import { getSystem } from './gen/systemCache.js';
 import { S_LEN, S_H, S_WDEPTH } from './gen/terrain.js';
 import { Universe } from './sim/universe.js';
@@ -479,6 +480,7 @@ export class Game {
       const was = sc.mesh.visible;
       sc.mesh.visible = false; // (not in its own picture)
       const atmos = this.world.update(this.camPos, 0);
+      updateMirrorView(this);
       this.updateSkyStars(0);
       this.updateEffects(dtReal * 2);
       e.render(dtReal * 2, this.sky, atmos, false);
@@ -493,8 +495,8 @@ export class Game {
   begin() {
     const key = this.opts.startChoice || this.startPending;
     if (!this.opts.testSpot && (key === 'carrier' || key?.startsWith('orbit:'))) {
-      // Space flight only needs the system's body parameters. Surface history
-      // and landing surveys may run later; neither is a boarding prerequisite.
+      // Place the orbital preview without finding a landing site. applyStart
+      // loads cached planetary history (or generates it) before flight begins.
       const b = this.startBody;
       this.startDir = null;
       this.respawnInfo = { body: b, dir: new THREE.Vector3(1, 0, 0) };
@@ -525,17 +527,35 @@ export class Game {
   }
 
   // the start world's sim (worldSims.js): resolves once it's in, or failed, or there are none
-  startSim(b) {
+  startSim(b, onProgress) {
     const ws = this.worldSims, id = b.data.id;
     if (!ws || !b.data.terrain || !b.solid) return Promise.resolve();
     ws.request(id);
     return new Promise((res) => {
       const poll = () => {
         const st = ws.status.get(id);
+        onProgress?.(st, ws.phase.get(id));
         if (this.disposed || st === 'ready' || st === 'failed' || st === undefined) res();
         else { setTimeout(poll, 250); }
       };
       poll();
+    });
+  }
+
+  waitForOrbitalHistory(b) {
+    if (!this.worldSims || !b.solid || !b.data.terrain) return;
+    const token = this.startToken;
+    this.loadHold = true;
+    this.loadText = `Loading ${b.data.name}'s planetary history`;
+    this.startSim(b, (status, phase) => {
+      if (this.disposed || token !== this.startToken) return;
+      this.loadText = status === 'running'
+        ? `Generating ${b.data.name}'s planetary history${phase ? ` · ${phase}` : ''}`
+        : `Loading ${b.data.name}'s planetary history`;
+    }).then(() => {
+      if (this.disposed || token !== this.startToken) return;
+      this.loadHold = false;
+      this.loadText = `Preparing orbit of ${b.data.name}`;
     });
   }
 
@@ -796,6 +816,7 @@ export class Game {
     else if (key && key.startsWith('orbit:') && this.universe.bodies[+key.slice(6)]) this.startInOrbit(this.universe.bodies[+key.slice(6)]);
     else if (key && key.startsWith('site:') && this.universe.bodies[+key.split(':')[1]]) this.startAtSpot(this.universe.bodies[+key.split(':')[1]], key.split(':')[2]);
     else this.startOnSurface();
+    if (this.loadMode === 'space') this.waitForOrbitalHistory(this.player.currentBody());
     // the simulated worlds, the one we start at first
     if (this.worldSims) {
       const id = key && key.startsWith('orbit:') ? +key.slice(6) : key && key.startsWith('site:') ? +key.split(':')[1] : (this.ship && this.ship.body && this.ship.body.data ? this.ship.body.data.id : null);
@@ -1728,6 +1749,7 @@ export class Game {
     this.itemVisuals.update(this.camPos);
     this.surfaceSurveys.render(this.camPos);
     const atmos = this.world.update(this.camPos, dtA);
+    updateMirrorView(this);
     this.updateSkyStars(dtA);
     this.updateEffects(dtReal);
     if (this.map.open && this.map.owner === p) this.map.render(dtReal, p.view.rect);
@@ -1926,6 +1948,7 @@ export class Game {
     this.berthYachtIfHome();
     for (const v of this.vessels) if (v.pilot && !v.dead) this.chooseReference(v);
     for (const p of this.players) { this.setCur(p); this.stepPlayer(p, dtReal); }
+    keepOutsideMirror(this);
     this.setCur(null);
   }
 

@@ -6,6 +6,10 @@
 .expeditionSetup .explain {font-weight:400;color:var(--ink-dim);font-size:12px}
 .expeditionSetup footer {display:flex;gap:12px;flex-wrap:wrap}
 .newExpeditionCard {width:min(660px,100%);max-height:95vh;overflow:auto;box-sizing:border-box;background:#071018;padding:28px;border:1px solid var(--hair);border-radius:8px}
+.openingTitle {position:absolute;left:5vw;bottom:7vh;width:300px;gap:10px!important}
+.openingTitle h1 {font-size:30px;line-height:1.1;margin:0;letter-spacing:.06em}
+.openingTitle p {margin:4px 0 10px;line-height:1.6}
+.openingPlace {color:var(--ink-dim);font-size:11px}
 .introHud {position:fixed;left:50%;top:14px;transform:translateX(-50%);width:min(540px,60vw);padding:12px 16px;background:rgba(4,13,20,.92);border-left:2px solid var(--target);z-index:4;pointer-events:none;font-size:12px}
 .introHud strong {font-size:14px;color:var(--target)}
 .introHud p {margin:6px 0;line-height:1.5}.introHud small{color:var(--ink-dim)}

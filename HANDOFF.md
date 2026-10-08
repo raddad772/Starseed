@@ -19,12 +19,28 @@ EVA sweeps the suit against the existing moving ship colliders, clips inward rel
 and slides along hulls; this is CPU kinematic contact, not an AVBD integration. Tests cover thin
 walls, rotated/moving hulls, swung doors and open passages. Surface walking remains separate.
 
-Orbit/carrier startup places the fleet before world simulation or landing survey. Background
-simulation no longer overwrites loading text; only an actual surface start requests its landing
-site. Orbital Launch no longer opens the additional surface loading cover. No detailed cache
-feature was added. 35 focused CPU tests and seven finite native Neptune checks pass (owned tab,
-workers=2, worldsim=0); the native check exercises N from Neptune's helm in its carrier berth.
-The normal mirror opening / Free exploration entry changes are still in progress.
+Orbit/carrier startup places the preview without a landing survey, but **planetary history must
+finish before flight begins** (Dave's latest clarification). `startSim` uses the existing IndexedDB
+snapshot first and generates on a miss. The loading text distinguishes history loading/generation
+from landing-site surveying. Terrain detail continues through existing descent streaming; no new
+detailed cache feature was added. Chrome and the in-app browser have separate caches. A generation
+version change also invalidates old snapshots. Full history-enabled descent performance is unmeasured.
+
+Normal startup now shows an EVA view beside the craft outside a physical, closed mirrored shell,
+with Start game, Saved flights and Free exploration. Start game selects the fleet/difficulties and
+starts with the daughter's boarding invitation. Free exploration retains the seed/world/start
+picker; explicit seed URLs still open it. The mirror radius encloses all planetary apocentres; its
+anchor persists in JSON and return journeys arrive outside it. The native reflection pass samples
+the sky cubemap, with double-precision altitude subtraction and reversed-depth occlusion. It does
+not yet reflect nearby ships or render the central black hole/jets. The incident still uses survey
+telemetry/dialogue: no animated aperture or daughter's NPC flight yet.
+
+47 focused CPU checks pass (45 together, then the 10-test flight/cache file including two new
+cache lifecycle cases). Finite native checks pass: Neptune 7, title/Free exploration 10, played
+tutorial 27, skip/setup 12 and fleet passage 22. Native fixtures use two workers and worldsim=0;
+they validate controls, state, saves and rendering, not terrain generation or descent performance.
+Closing/changing a game now prevents pending world-cache reads from starting disposed workers or
+rebuilding disposed terrain. Preserve the unrelated dirty fleet work.
 
 ## Authored systems, fast chart and opening preparation (8 October 2026)
 
@@ -75,7 +91,8 @@ Pause → Galaxy is implemented. The mirror host is still the chosen new-game se
 FSPB-8DTW gives Brukrol (F6V). Receiver selection is implemented: default region yields Legoazeaks
 (G9V), seed RX-e60889908de3ebbf-6, body 9 Tavont (microbial mats), about 6.70 ly away. The actual
 megastructure-presence predicate passes at current 100% tuning. The site entrance still places
-lazily on surface arrival; a pinned playable entrance and physical mirrored enclosure need work.
+lazily on surface arrival; a pinned playable entrance needs work. The physical mirrored enclosure
+is now present (see the opening checkpoint above), with the staged aperture still pending.
 Do not describe these as fully validated story locations or the online transport as implemented.
 
 ## Tutorial is single-player (latest policy, 2026-10-08)

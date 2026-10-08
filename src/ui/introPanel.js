@@ -21,5 +21,5 @@ export function renderIntroPanel(root,intro,onChange=()=>{}){
     button('Retry flight practice safely',()=>intro.act('retry'));
     add('p','The introduction is single-player. Multiplayer unlocks when you finish or skip it.');
     button('Skip introduction',()=>intro.act('skip'));
-  }else add('p','Open Galaxy to follow the transmission or chart your own route. The flight basics below remain available. The full physical mirror scene is still being built.');
+  }else add('p','Open Galaxy to follow the transmission or chart your own route. The flight basics below remain available.');
 }

@@ -9,10 +9,11 @@ const pad=key=>window.game.players[1].input.padRouter({hits:new Set([key]),held:
 const settle=()=>window.debugRun(15000,16,(n,g)=>g.state!=='playing'||n<3);
 let storage;
 try{
- await wait(()=>window.flightSaves&&document.querySelector('.expeditionSetup'));window.debugHold=true;
+ await wait(()=>window.flightSaves&&document.querySelector('.openingTitle'));window.debugHold=true;
  storage=new CampaignStorage({name:'starseed-galaxy-test-'+crypto.randomUUID()});const saves=window.flightSaves;saves.storage=storage;
+ document.querySelector('.openingTitle .primary').click();
  const form=document.querySelector('.expeditionSetup');form.elements.seed.value='SOL';form.elements.flight.value='medium';form.elements.intro.value='skip';form.requestSubmit();
- await wait(()=>window.game?.launched);await settle();let g=window.game;window.joinP2(99);
+ await wait(()=>window.game?.launched);await settle();let g=window.game;g.players[0].recallSeat();window.joinP2(99);
  check(g.players.length===2&&g.campaign.story.intro.status==='complete','Two-person expedition starts at the completed introduction');
  const id=g.campaign.campaignId,n=g.vessels.length,t=g.t;g.ship.hull=.71;g.ship.hullTemp=530;
  const local=g.items.create('lamp');g.items.place(local,'surface',g.startBody,new THREE.Vector3(g.startBody.R,0,0),new THREE.Quaternion());

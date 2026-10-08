@@ -17,7 +17,8 @@ function expedition(rules={flight:'easy'}){
  provisionExpedition(g,{rules});return g;
 }
 for(const [flight,era,lead]of [['easy','horizon','neptune3'],['medium','expedition','hearth'],['hard','pioneer','nomad']])test(`${flight} creates only its selected fleet once, carries cargo and survives JSON restore`,()=>{
- const g=expedition({flight});assert.equal(g.ship.type.key,`${era}_${lead}`);assert.equal(g.players[0].vessel,g.ship);
+ const g=expedition({flight});assert.equal(g.ship.type.key,`${era}_${lead}`);assert.equal(g.players[0].mode,'eva');assert.equal(g.players[0].vessel,null);
+ assert.equal(g.players[0].body.isStar,true);assert.ok(g.ship.pos.length()>g.mirrorShell.radius);assert.ok(g.players[0].ePos.distanceTo(g.ship.pos)>g.ship.type.radius);
  assert(g.vessels.every(v=>v.type.key.startsWith(era+'_')||['runabout','pod'].includes(v.type.key)));
  assert(g[era+'Fleet'].some(v=>v.cargo?.attached));const count=g.vessels.length;
  assert.throws(()=>provisionExpedition(g,{rules:{flight}}),/already/);assert.equal(g.vessels.length,count);

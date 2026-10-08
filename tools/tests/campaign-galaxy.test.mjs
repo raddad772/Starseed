@@ -95,7 +95,7 @@ import { provisionExpedition,seatExpeditionPlayer } from '../../src/campaign/new
 import { VESSEL_TYPES } from '../../src/sim/vesselTypes.js';
 for(const flight of ['easy','medium','hard'])test(`${flight} fleet passage preserves its cargo and places assemblies in separated circular orbits`,()=>{
  const g=game();g.surfaceSurveys.planetSites={};g.placeInOrbit=Game.prototype.placeInOrbit;g.clampCargo=Game.prototype.clampCargo;g.beginLoading=()=>{};
- provisionExpedition(g,{rules:{flight}});seatExpeditionPlayer(g,g.addPlayer({}));g.campaign=finishIntroduction(g.campaign,'skipped');
+ provisionExpedition(g,{rules:{flight}});seatExpeditionPlayer(g,g.players[0]);seatExpeditionPlayer(g,g.addPlayer({}));g.campaign=finishIntroduction(g.campaign,'skipped');
  const c=snapshot(g),out=prepareJourney(c,c.generation.storyAnchors.receiver.systemId),h=restored(out);
  assert.equal(h.players[1].vessel,h.ship2);assert.equal(h.vessels.length,g.vessels.length);
  for(const v of g.vessels.filter(v=>v.parent)){const other=h.vessels.find(s=>s.campaignId===v.campaignId);assert.equal(other.parent.campaignId,v.parent.campaignId);assert.deepEqual(other.lpos.toArray(),v.lpos.toArray());}

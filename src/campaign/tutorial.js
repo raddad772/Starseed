@@ -4,7 +4,7 @@ import { pinReceiver } from './galaxy.js';
 
 export const INTRO_STEPS = ['welcome','target','translate','brake','scan','anomaly','crossing','closed','analysis','ready'];
 export const INTRO_COPY = {
-  welcome: ['A home you bring along', 'Your expedition has spent years studying the enormous black hole and a nearby system enclosed by a perfect mirror. Before the next survey, get comfortable with your craft. There is no hurry.', 'Begin flight practice'],
+  welcome: ['An invitation from your daughter', 'Daughter: “Hey, get in your craft. I’ve got some interesting readings.” You are on a spacewalk beside your home craft, above the mirror that encloses this whole system. Drift to the airlock and press F when prompted, then take the helm. P takes you straight to your pilot seat. There is no hurry.', 'Board your craft'],
   target: ['Find the survey reference', 'Select the survey reference craft: Tab cycles targets, or use the button below. On a controller, aim at its marker and press RB.', 'Select survey reference'],
   translate: ['A small change in velocity', 'W/S translates forward/back, A/D sideways and Space/C vertically. On a controller, use the left stick; H or R3 shows the full layout. Move at least 12 m relative to the reference craft. Light inputs are enough.', 'Use navigation assistance'],
   brake: ['Match velocity', 'Apply a short opposite burn to reduce drift: A if you moved with D, S if you used W. Settle below 2 m/s relative speed. ROT assistance lets you coast; X braking belongs to FULL assistance and its current reference frame. Enter lets the nav computer help match the reference craft.', 'Match with navigation'],

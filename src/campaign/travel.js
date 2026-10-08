@@ -67,11 +67,14 @@ export function prepareJourney(source,destinationId) {
   const preferred=universe.bodies[destination.bodyId??system.startBodyId];
   const candidates=[preferred,...universe.bodies.filter(b=>b.data.kind==='planet'&&b!==preferred)];
   const minimum=b=>Math.max(b.R+Math.max(b.atmHeight*1.5,b.relief+30000)+clearance,clearance/(2*Math.sin(spacing/2)));
-  const body=candidates.find(b=>b&&!b.isStar&&minimum(b)<b.soi*.45);
+  const mirror=c.generation.storyAnchors.mirror;
+  const enclosed=mirror?.version===1&&mirror.seed===w.seed&&Number.isFinite(mirror.radius)&&mirror.radius>universe.star.R;
+  const body=enclosed?universe.star:candidates.find(b=>b&&!b.isStar&&minimum(b)<b.soi*.45);
   if(!body)fail('No safe fleet arrival orbit is available in this system.');
-  w.respawn={body:body.id,dir:[1,0,0]};w.startDir=[1,0,0];w.startChoice=`orbit:${body.id}`;
+  w.respawn={body:body.id,dir:[1,0,0]};w.startDir=[1,0,0];w.startSiteKnown=false;w.startChoice=`orbit:${body.id}`;
   // Wide, co-planar circular orbits; preserve every nested deck/cargo frame.
-  const radius=Math.max(minimum(body),Math.min(body.soi*.45,Math.max(lockRadius(body)*1.1,body.R+body.atmHeight*2+150000)));
+  const radius=enclosed?mirror.radius+Math.max(30000,clearance):Math.max(minimum(body),Math.min(body.soi*.45,Math.max(lockRadius(body)*1.1,body.R+body.atmHeight*2+150000)));
+  const arrivalSpacing=enclosed?2*Math.asin(Math.min(.1,clearance/(2*radius))):spacing;
   const axis=new THREE.Vector3(0,1,0).applyQuaternion(body.qTilt),base=new THREE.Vector3(1,0,0).applyQuaternion(body.qTilt);
   const tangent=axis.clone().cross(base);
   for(const v of w.vessels) {
@@ -82,7 +85,7 @@ export function prepareJourney(source,destinationId) {
     v.nav={travelMode:v.nav.travelMode,order:null,sites:memory.navSites[v.id]||[]};
   }
   roots.forEach((v,i)=>{
-    const angle=(i-(roots.length-1)/2)*spacing;
+    const angle=(i-(roots.length-1)/2)*arrivalSpacing;
     const dir=base.clone().multiplyScalar(Math.cos(angle)).addScaledVector(tangent,Math.sin(angle)),pro=axis.clone().cross(dir);
     v.pos=dir.clone().multiplyScalar(radius).toArray();v.vel=pro.clone().multiplyScalar(Math.sqrt(body.GM/radius)).toArray();
     v.quat=new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(pro.clone().cross(dir),dir,pro.clone().negate())).toArray();

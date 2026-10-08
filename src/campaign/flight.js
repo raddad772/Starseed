@@ -76,7 +76,7 @@ export function captureFlight(game, campaign) {
   c.fleet={provisioned:true,vesselIds:[...ids.values()]};
   c.players=persons.map(p=>({id:playerIds.get(p),index:p.index,active:game.players.includes(p),label:p.label,mode:p.mode,body:p.body.id,vessel:ref(p.vessel),ownShip:ref(p.ownShip),lastSeat:p.lastSeat?{vessel:ref(p.lastSeat.vessel),seat:p.lastSeat.seat}:null,target:targetRef(p.target,ids),...vectors(p,PVECS),evaQuat:p.evaQuat.toArray(),...pick(p,PNUMS,0),...pick(p,PFLAGS,false),siteReturn:!!p.understructure}));
   c.world={version:FLIGHT_VERSION,seed:game.seed,...(game.system.definition?{definition:structuredClone(game.system.definition)}:{}),systemVersion:GENERATOR_VERSION,worldVersion:SIM_VERSION,lengthScale:LEN_SCALE,worldsim:!!game.worldSims,simN:game.worldSims?.N??null,
-    fleetEra:game.fleetEra??null,startDir:game.startDir?.toArray()??[1,0,0],startChoice:game.startChoice??'surface',respawn:{body:game.respawnInfo?.body.id??game.startBody.id,dir:game.respawnInfo?.dir.toArray()??[1,0,0]},
+    fleetEra:game.fleetEra??null,startDir:game.startDir?.toArray()??[1,0,0],startSiteKnown:!!game.startDir,startChoice:game.startChoice??'surface',respawn:{body:game.respawnInfo?.body.id??game.startBody.id,dir:game.respawnInfo?.dir.toArray()??[1,0,0]},
     aliases:Object.fromEntries(ALIASES.map(k=>[k,ref(game[k])])),groups:Object.fromEntries(GROUPS.map(k=>[k,(game[k]||[]).map(ref)])),
     vessels:game.vessels.map(v=>({id:ref(v),type:v.type.key,signature:vesselSignature(v.type),name:v.name,registry:v.registry||'',body:v.body.id,parent:ref(v.parent),zone:v.zone?clone(v.zone):null,cargo:v.cargo?.parent===v&&v.cargo.attached?ref(v.cargo):null,refVessel:ref(v.refVessel),home:v.home?{host:ref(v.home.host),hatch:clone(v.home.hatch)}:null,hatchKey:v.hatchKey??null,
       ...vectors(v,VECTORS),...vectors(v,QUATS),...pick(v,NUMBERS,0),...pick(v,FLAGS,false),deathCause:v.deathCause,targetFrame:v.targetFrame,railR0:[...v.railR0],railV0:[...v.railV0],legState:[...v.legState],legComp:[...v.legComp],heatLoad:v.entry.heatLoad,
@@ -104,6 +104,7 @@ export function validateFlight(c) {
   const numbers=(o,keys)=>keys.every(k=>Number.isFinite(o[k]));
   if(!obj(c.fleet)||c.fleet.provisioned!==true||!Array.isArray(c.fleet.vesselIds)||!unique(c.fleet.vesselIds)||c.fleet.vesselIds.length!==ships.size||c.fleet.vesselIds.some(id=>!ships.has(id)))fail('Invalid fleet manifest.');
   if(!obj(w.aliases)||!w.aliases.ship||!obj(w.groups)||!vec(w.startDir)||!vec(w.respawn?.dir)||!body(w.respawn?.body))fail('Invalid flight start references.');
+  if(w.startSiteKnown!==undefined&&typeof w.startSiteKnown!=='boolean')fail('Invalid landing-site state.');
   if(![null,'pioneer','expedition','horizon'].includes(w.fleetEra)||typeof w.startChoice!=='string')fail('Invalid fleet or start policy.');
   for(const k of ALIASES)if(!reference(w.aliases[k]))fail('Missing named vessel.');
   for(const k of GROUPS)if(!Array.isArray(w.groups[k])||w.groups[k].some(id=>!ships.has(id))||!unique(w.groups[k]))fail('Invalid fleet group.');
@@ -198,7 +199,7 @@ export function restoreFlight(game,c,{inputForPlayer}={}) {
   }
   for(const v of ships.values())if(v.parent)v.parent.children.push(v);
   for(const key of ALIASES)game[key]=ref(w.aliases[key]);for(const key of GROUPS)game[key]=w.groups[key].map(ref);
-  game.fleetEra=w.fleetEra;game.startDir=new THREE.Vector3(...w.startDir);game.startChoice=w.startChoice;game.respawnInfo={body:game.universe.bodies[w.respawn.body],dir:new THREE.Vector3(...w.respawn.dir)};
+  game.fleetEra=w.fleetEra;game.startDir=w.startSiteKnown===false?null:new THREE.Vector3(...w.startDir);game.startChoice=w.startChoice;game.respawnInfo={body:game.universe.bodies[w.respawn.body],dir:new THREE.Vector3(...w.respawn.dir)};
   const players=new Map();game.awayPlayers=[];
   for(const saved of c.players){let p=game.players[saved.index];if(!p){const input=saved.active&&!tutorialIsActive(c)&&inputForPlayer?.(saved.index);p=input?game.addPlayer(input):new Player(game,saved.index);if(!input)game.awayPlayers[saved.index]=p;}players.set(saved.id,p);
     Object.assign(p,pick(saved,['label','mode',...PNUMS,...PFLAGS]));for(const k of PVECS)p[k].fromArray(saved[k]);p.evaQuat.fromArray(saved.evaQuat);p.body=game.universe.bodies[saved.body];p.vessel=ref(saved.vessel);p.ownShip=ref(saved.ownShip);p.lastSeat=saved.lastSeat?{vessel:ref(saved.lastSeat.vessel),seat:saved.lastSeat.seat}:null;p.target=target(saved.target);p.warpRequestIndex=0;p.travelIndex=0;p.jetOn=false;

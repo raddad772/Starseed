@@ -3,15 +3,41 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { Game } from '../../src/game.js';
 import { Player } from '../../src/sim/player.js';
+import { WorldSims } from '../../src/sim/worldSims.js';
 import { sweepSuit, collideEva } from '../../src/sim/evaContacts.js';
 import { orbitalFlight } from '../orbital-flight-fixture.js';
 
 const V=(...p)=>new THREE.Vector3(...p);
-test('orbital startup never waits for a planetary simulation or landing survey',()=>{
+test('orbital placement does not require a landing-site survey',()=>{
   let spawned=false,applied=null;
   const g={opts:{startChoice:'orbit:3'},startBody:{id:3},spawnFleet(){spawned=true;},applyStart(key){applied=key;},startSim(){throw Error('should not simulate before orbital placement');},requestSurvey(){throw Error('should not survey before orbital placement');}};
   Game.prototype.begin.call(g);
   assert.equal(spawned,true);assert.equal(g.placed,true);assert.equal(applied,'orbit:3');assert.equal(g.startDir,null);
+});
+test('entering orbit waits for planetary history and ignores a stale world selection',async()=>{
+  let complete,progress;
+  const body={solid:true,data:{name:'Fixture',terrain:{}}};
+  const g={worldSims:{},startToken:1,startSim(b,callback){assert.equal(b,body);progress=callback;return new Promise(resolve=>complete=resolve);}};
+  Game.prototype.waitForOrbitalHistory.call(g,body);assert.equal(g.loadHold,true);
+  progress('running','climate');assert.match(g.loadText,/Generating Fixture.*climate/);
+  complete();await Promise.resolve();assert.equal(g.loadHold,false);
+  Game.prototype.waitForOrbitalHistory.call(g,body);g.startToken=2;g.loadText='New selection';complete();await Promise.resolve();
+  assert.equal(g.loadHold,true);assert.equal(g.loadText,'New selection');
+});
+test('planetary history uses the cached snapshot without queuing generation',async()=>{
+  const snapshot={N:12,fixture:true};
+  let read,applied;
+  const db={transaction(){return{objectStore(){return{get(key){assert.equal(key,'fixture-history');read={result:snapshot};return read;}};}};}};
+  const ws={status:new Map(),dbP:Promise.resolve(db),key:()=> 'fixture-history',_apply(...args){applied=args;},_next(){throw Error('cached history must not generate');}};
+  const pending=WorldSims.prototype.request.call(ws,3);await Promise.resolve();
+  assert.equal(ws.status.get(3),'queued');read.onsuccess();await pending;
+  assert.deepEqual(applied,[3,snapshot,true]);
+});
+test('leaving a world while its cache read is pending cannot apply or generate it',async()=>{
+  let read;
+  const db={transaction(){return{objectStore(){return{get(){read={result:null};return read;}};}};}};
+  const ws={status:new Map(),dbP:Promise.resolve(db),key:()=> 'fixture-history',_apply(){throw Error('disposed history applied');},_next(){throw Error('disposed worker started');}};
+  const pending=WorldSims.prototype.request.call(ws,3);await Promise.resolve();ws.disposed=true;read.onsuccess();await pending;
 });
 function berthed() {
   const f=orbitalFlight('yacht'),g=f.game,c=f.addShip('carrier');

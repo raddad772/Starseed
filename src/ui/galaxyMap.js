@@ -92,5 +92,5 @@ export function renderGalaxyMap(root,{saves,state,consent,onVote,onCancel,onLoca
   fill();search.oninput=()=>{state.filter=search.value;fill();};selectBox.onchange=()=>select(selectBox.value);
   const addressLabel=el('label','Go to a cell address',browse),address=el('input',undefined,addressLabel);address.placeholder='3:0:2';address.setAttribute('aria-label','Cell address');
   button('Chart address',()=>{try{select(parseAddress(address.value),true);}catch(e){status.textContent=e.message;}},browse);
-  el('p','The central symbol marks the black hole’s location. Its flight-sky rendering and the physical mirrored enclosure are still to come.',root,'note');
+  el('p','The central symbol marks the black hole’s location. The mirrored enclosure marks your expedition’s starting system.',root,'note');
 }

@@ -10,13 +10,14 @@ export class FlightIntro {
     this.hud=document.createElement('aside');this.hud.className='introHud';this.hud.setAttribute('aria-label','Flight tutorial');document.body.append(this.hud);
     this.title=document.createElement('strong');this.text=document.createElement('p');this.metrics=document.createElement('small');this.hud.append(this.title,this.text,this.metrics);
     this.revision=0;this.render();
+    this.hud.hidden=!game.launched;
   }
   get state(){return this.game.campaign.story.intro.tutorial;}
   get active(){return this.state.step!=='ready';}
   get reference(){return this.game.vessels.find(v=>v.campaignId===this.state.referenceId);}
   measurements(){
     const p=this.game.players[0],v=p.vessel,ref=this.reference;
-    if(!v||v.body!==ref?.body||v.dead||p.deathShown)return {valid:false,targeted:false,range:Infinity,relativeSpeed:Infinity,offset:[0,0,0]};
+    if(!p.aboard||!v||v.body!==ref?.body||v.dead||p.deathShown)return {valid:false,targeted:false,range:Infinity,relativeSpeed:Infinity,offset:[0,0,0]};
     const delta=v.pos.clone().sub(ref.pos),relative=v.vel.clone().sub(ref.vel);
     return {valid:true,targeted:p.target===ref.target,range:delta.length(),relativeSpeed:relative.length(),offset:delta.applyQuaternion(ref.quat.clone().invert()).toArray()};
   }
@@ -26,6 +27,7 @@ export class FlightIntro {
     if(!this.active)return;
     if(g.state!=='playing'||g.paused||!g.launched)return;
     const m=this.measurements();
+    if(this.state.step==='welcome'&&g.players[0].flying){this.state.step='target';this.changed();}
     if(this.active){
       if(g.players[0].input.hit('Enter'))this.act();
       if(m.valid&&advanceTutorial(this.state,m,dt)){
@@ -50,7 +52,10 @@ export class FlightIntro {
       const p=g.players[0];if(!p.flying)throw Error('Return to the pilot seat first (P).');
       p.target=this.reference.target;p.vessel.nav.order({kind:'meet',v:this.reference,name:'Survey reference'});return;
     }
-    if(t.step==='welcome')t.step='target';
+    if(t.step==='welcome'){
+      g.players[0].recallSeat();
+      if(g.players[0].flying)t.step='target';
+    }
     else if(t.step==='target')g.players[0].target=this.reference.target;
     else if(['translate','brake'].includes(t.step)){this.act('assist');return;}
     else if(t.step==='scan'){t.scanning=true;g.players[0].target=this.reference.target;}
@@ -72,7 +77,7 @@ export class FlightIntro {
   retry(){
     if(!this.active)return;
     const g=this.game,ref=this.reference;
-    if(ref.dead)g.placeInOrbit(ref,g.startBody,Math.max(100000,ref.pos.length()-ref.body.R),.4);
+    if(ref.dead)g.placeInOrbit(ref,ref.body,Math.max(100000,ref.pos.length()-ref.body.R),.4);
     for(const p of g.players){const v=p.ownShip;if(!v)continue;
       if(v.parent)v.leaveParent();v.nav.cancel(null);v.ftl.state='idle';v.ftl.speed=0;
       v.dead=false;v.hull=1;v.hullTemp=290;v.landed=false;v.rails=false;v.body=ref.body;

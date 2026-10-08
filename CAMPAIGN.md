@@ -2,6 +2,23 @@
 
 ## Latest requirements and checkpoint (8 October 2026)
 
+Normal startup now presents EVA outside the craft at the mirrored enclosure, with **Start game**,
+**Saved flights** and **Free exploration**. Start game opens fleet/difficulty setup, then the daughter's
+boarding invitation. Free exploration keeps the old seed/world/start picker. Earth/SOL remains a
+simulation fixture; the default story uses FSPB-8DTW. The optional introduction remains single-player.
+
+The shell is a saved, closed physical boundary enclosing every planetary apocentre. Its native
+WebGPU reflection samples the sky cubemap and preserves foreground depth. Nearby-object reflection,
+the black-hole/disk/jets and the animated aperture/daughter's flight remain pending; the incident
+still uses interactive telemetry and dialogue. Fleet return, save/reload and unknown landing-site
+state are preserved. Native checks pass for entry (10), tutorial (27), skip (12) and fleet travel (22).
+
+**Current descent experiment:** use cached planetary history before allowing planetary orbital
+flight, generating it on a cache miss; keep detailed terrain generation on demand during descent.
+Do not add further detailed cache products yet. The orbit preview does not require a landing-site
+survey. WorldSim cache is per browser profile/origin and generation version. History-enabled descent
+performance remains to be measured; worldsim=0 control/render fixtures cannot establish it.
+
 See `notes/SYSTEM_AUTHORING.md` for implemented recipe formats, seed search, opening bundles and
 cache limits. Galactic charts use only the cheap formation head. A 200-star chart measured 20.1 ms
 cold and 0.62 ms cached in the owned browser fixture. Actual life/past-life history belongs to the
@@ -14,7 +31,8 @@ still have their own cache. This is **not seamless travel**: main.js still recon
 the renderer and awaits startSim; the game still uses a loading cover while terrain/refinement
 and visible resources become ready. Do not present system metadata readiness as terrain readiness.
 
-For invisible jump/descent loading, the next performance milestone must:
+For eventual invisible jump/descent loading, the following work remains deferred until the current
+history-cached, terrain-on-descent experiment has been evaluated:
 
 - Retain the renderer/device and reusable fleet resources across system changes.
 - Prepare whole-world snapshots, refinement/rivers and coarse render coverage for the destination
@@ -102,11 +120,11 @@ Current limits: one resident star system; pinned generator versions and exact ve
 
 **Current policy (8 October): the entire introduction is single-player.** Controller and Settings joining stay locked until completion or skip. New Expedition clears an existing second-player connection; older tutorial saves retain player two as away crew, with their ship, location and inventory preserved for rejoining afterwards. Skipping is immediate for the solo player. This supersedes the original shared-skip design.
 
-A normal first visit opens New Expedition before creating a sandbox renderer or fleet. Choose the expedition name/seed, three independent difficulty settings, and Play or Skip. Explicit seed/test/era links retain the sandbox route; campaign URLs return to setup/saved flights on reload. New Expedition is also available from the briefing and Expedition pause page. Creating another expedition preserves the old save slot.
+A normal first visit shows the mirrored EVA title scene. Start game opens the expedition name/seed, three independent difficulty settings, and Play or Skip. Explicit seed/test/era links retain the sandbox route; campaign URLs return to the title/saved flights on reload. New Expedition is also available from the briefing and Expedition pause page. Creating another expedition preserves the old save slot.
 
 `src/campaign/newGame.js` provisions just the chosen era, carried craft and a survey reference once: Horizon/Neptune 3, Expedition/Hearth or Pioneer/Nomad. Player two uses an existing assigned craft. The tutorial starts on coasting orbits with ROT assistance; manual translation and opposite burns use the hull's actual engines. Optional rendezvous guidance helps with the same tasks. Ordinary practice accidents restore the training craft without story penalties. Completed campaigns use their own recovery path rather than assuming the legacy carrier's berths.
 
-`src/campaign/{tutorial,intro}.js` implements targeting, 12 m relative movement, braking below 2 m/s, a stable two-second scan, the anomalous reading, the crossing/closed-surface dialogue and three probe observations. The mirror incident is currently presented as interactive survey telemetry, following live flight practice. The diagram is a signal reconstruction; it is **not** a rendered star-system enclosure or a physical aperture the player can fly through. The full scene in STORY.md still depends on the central visuals and galaxy model. Finishing or skipping records the same four journal entries and first receiver lead once. The receiver retains its stable story address; the galaxy checkpoint below pins a generated life-bearing destination and enables travel.
+`src/campaign/{tutorial,intro}.js` implements boarding, targeting, 12 m relative movement, braking below 2 m/s, a stable two-second scan, the anomalous reading, the crossing/closed-surface dialogue and three probe observations. A physical mirrored enclosure now surrounds the system, but the incident is still presented as interactive survey telemetry following live flight practice. The diagram reconstructs the signal; there is no physical aperture to fly through yet. The full scene in STORY.md still depends on the central visuals and galaxy model. Finishing or skipping records the same four journal entries and first receiver lead once. The receiver retains its stable story address; the galaxy checkpoint below pins a generated life-bearing destination and enables travel.
 
 The saved tutorial checkpoint retains phase, partial scan and probe progress. The solo player can skip immediately; controller joining stays locked until the story checkpoint completes. Initial creation and story transitions request saves even while paused. A transition during an in-flight database write cannot be overwritten by the older snapshot, and queues the next revision.
 

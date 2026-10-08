@@ -23,6 +23,7 @@ import { tutorialIsActive } from './campaign/tutorial.js';
 import { createCampaign } from './campaign/state.js';
 import { JourneyConsent } from './campaign/travel.js';
 import { renderGalaxyMap } from './ui/galaxyMap.js';
+import { restoreMirror } from './campaign/mirrorScene.js';
 
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -69,6 +70,7 @@ function saveStatus(message) {
 }
 let seed = readSeed();
 let launched = false;
+let titlePreview = false;
 let loadScreen = null;     // (ui/loadScreen.js: on arriving, until the ground round you is in)
 const canvas = $('view');
 const input = new Input(canvas);
@@ -185,8 +187,12 @@ function showWorld(id, preview) {
   wirePicks(box);
   if (preview) pickStart(`orbit:${id}`);
   if (!body || !body.solid) return;
-  game.requestSurvey(body, 90).then((res) => {
-    if (customWorld !== id) return;
+  const showingGame=game;
+  showingGame.startSim(body).then(()=> {
+    if (game!==showingGame || customWorld!==id) return null;
+    return showingGame.requestSurvey(body,90);
+  }).then((res) => {
+    if (game!==showingGame || customWorld !== id) return;
     const spots = (res && res.spots) || [];
     box.innerHTML = orbit + spots.map((sp) => pickButton(`site:${id}:${sp.key}`, sp.label,
       `${sp.biome} · ${sp.temperatureC} °C · ${sp.elevation.toLocaleString()} m`)).join('');
@@ -259,6 +265,7 @@ function boot(s, saved = null, expedition = null) {
   } else if (expedition) { provisionExpedition(game, expedition);game.setPaused(true); }
   else if (startChoice) { if (!game.placed) game.requestStart(startChoice); previewed = startChoice; }
   if(game.campaign?.story.intro.tutorial)game.intro=new FlightIntro(game,{checkpoint:()=>flightSaves.checkpoint(),openLog:()=>showPause('expedition')});
+  restoreMirror(game);
   if(game.campaign)void prepareOpeningSystems(game.campaign);
   applySettings();
   if (!saved && p2Pad !== null && !tutorialIsActive(game.campaign)) game.joinPlayer(makeP2Input(p2Pad));
@@ -276,31 +283,58 @@ function openNewExpedition(){
   if(pause.open)pause.hide();game?.setPaused(true);input.releaseLock();
   $('briefing').hidden=true;$('hud').hidden=true;$('overlay').hidden=false;
   const card=document.createElement('section');card.className='newExpeditionCard';$('overlay').replaceChildren(card);
-  renderExpeditionSetup(card,{details:true,seed,onBack:()=>{if(launched)showPause('expedition');else{ $('overlay').hidden=true;$('briefing').hidden=false;if(!game)boot(seed);}},onCreate:async(rules,options)=>{
+  renderExpeditionSetup(card,{details:true,submitLabel:'Start game',seed:seed==='SOL'?DEFAULT_SEED:seed,onBack:()=>{if(launched)showPause('expedition');else showTitle();},onCreate:async(rules,options)=>{
     const nextSeed=normalizeSeed(options.seed);if(!nextSeed)throw Error('Enter a region seed.');
     const campaign=createCampaign({seed:nextSeed,label:options.label,rules});
     const origin=resolveSystem(campaign,`system/${nextSeed}`);
-    if(game?.campaign&&game.placed&&game.state==='playing')await flightSaves.save();
+    if(!titlePreview&&game?.campaign&&game.placed&&game.state==='playing')await flightSaves.save();
     restoreInProgress=true;
     try{
       await prepareSystem(origin.definition||origin.seed);
       seed=origin.seed;const fresh=boot(seed,null,{rules,label:options.label,campaign,systemDefinition:origin.definition});if(!fresh)throw Error('Could not prepare this expedition.');
       await fresh.engine.webgpuReady;
+      titlePreview=false;
       launched=true;fresh.launched=true;fresh.everLaunched=true;previewed=null;$('hud').hidden=false;
-      // Generate terrain in the background while the lesson takes place in orbit.
-      fresh.startSim(fresh.startBody);
       fresh.setPaused(true);flightSaves.checkpoint();
       if(options.intro==='skip')fresh.intro.act('skip');
     }finally{restoreInProgress=false;}
-    showPause('expedition');
+    resume();
   }});
   const saved=document.createElement('button');saved.type='button';saved.textContent='Saved flights';saved.onclick=openSavedFlights;card.querySelector('footer').append(saved);
 }
+function showTitle(){
+  if(restoreInProgress||journeyInProgress)return;
+  if(pause.open)pause.hide();
+  if(!titlePreview){
+    seed=DEFAULT_SEED;
+    const campaign=createCampaign({seed});
+    const origin=resolveSystem(campaign,`system/${seed}`);
+    boot(origin.seed,null,{campaign,systemDefinition:origin.definition});
+    titlePreview=true;launched=false;
+  }
+  game?.setPaused(true);input.releaseLock();
+  $('briefing').hidden=true;$('hud').hidden=true;$('overlay').hidden=false;
+  const card=document.createElement('section');card.className='card openingTitle';
+  const title=document.createElement('h1');title.textContent='Starseed Infinite';
+  const text=document.createElement('p');text.textContent='A home among the stars. An invitation to explore.';
+  const place=document.createElement('p');place.className='openingPlace';place.textContent='Outside the mirrored system · EVA beside your craft';
+  card.append(title,text,place);
+  for(const [label,fn] of [['Start game',openNewExpedition],['Saved flights',openSavedFlights],['Free exploration',openFreeExploration]]){
+    const button=document.createElement('button');button.textContent=label;button.onclick=fn;if(label==='Start game')button.className='primary';card.append(button);
+  }
+  $('overlay').replaceChildren(card);
+}
+function openFreeExploration(){
+  if(pause.open)pause.hide();
+  titlePreview=false;launched=false;startChoice=null;input.releaseLock();
+  $('overlay').hidden=true;$('briefing').hidden=false;$('hud').hidden=true;
+  showBriefing(seed);boot(seed);
+}
 function openSavedFlights(){
-  if(game){showPause('expedition');return;}
+  if(game&&!titlePreview){showPause('expedition');return;}
   const card=document.createElement('section');card.className='newExpeditionCard';$('overlay').hidden=false;$('overlay').replaceChildren(card);
   renderExpeditionPanel(card,flightSaves);
-  const back=document.createElement('button');back.textContent='New expedition';back.onclick=openNewExpedition;card.append(back);
+  const back=document.createElement('button');back.textContent='Back';back.onclick=showTitle;card.append(back);
 }
 
 async function prepareRestoredFlight(restored, saved) {
@@ -311,7 +345,7 @@ async function prepareRestoredFlight(restored, saved) {
     await restored.startSim(restored.universe.bodies[id]);
     if (restored.worldSims?.status.get(id) === 'failed') throw Error('A saved world could not finish rebuilding. The saved slot is unchanged.');
   }
-  for (const site of saved.world.sites) restored.surfaceSurveys.addNear({ body: restored.universe.bodies[site.body], fPos: restored.startDir.clone().fromArray(site.position), heading: restored.startDir.clone().fromArray(site.heading) });
+  for (const site of saved.world.sites) restored.surfaceSurveys.addNear({ body: restored.universe.bodies[site.body], fPos: restored.ship.pos.clone().fromArray(site.position), heading: restored.ship.pos.clone().fromArray(site.heading) });
   launched = true; restored.launched = true; restored.everLaunched = true; previewed = null;
   $('briefing').hidden = true;
   restored.beginLoading(restored.players.some(p => p.mode === 'surface') ? 'surface' : 'space', 'Restoring the expedition');
@@ -333,6 +367,7 @@ async function loadSavedFlight(saved) {
   $('overlay').innerHTML = '<div class="card"><h2>Restoring expedition…</h2><p>Your simulation stays at its saved time while the worlds rebuild.</p></div>';
   try {
     seed = saved.world.seed;
+    titlePreview=false;
     await prepareSystem(saved.world.definition||seed);
     const restored = boot(seed, saved);
     await prepareRestoredFlight(restored, saved);
@@ -519,13 +554,14 @@ window.addEventListener('gamepadconnected', (e) => {
 
 await prepareSystem(seed).catch(error=>console.warn('Opening system cache unavailable:',error.message));
 showBriefing(seed);
-if(explicitSandbox)boot(seed);else openNewExpedition();
+if(explicitSandbox)boot(seed);else showTitle();
 const savedFlights = document.createElement('button');
 savedFlights.type = 'button'; savedFlights.textContent = 'Saved flights';
 savedFlights.onclick = openSavedFlights;
 $('launch').after(savedFlights);
-const newExpedition=document.createElement('button');newExpedition.textContent='New expedition';newExpedition.className='primary';newExpedition.onclick=openNewExpedition;$('launch').before(newExpedition);
-$('launch').textContent='Launch sandbox';
+const newExpedition=document.createElement('button');newExpedition.textContent='Start game';newExpedition.onclick=openNewExpedition;$('launch').after(newExpedition);
+$('launch').textContent='Enter free exploration';
+const titleButton=document.createElement('button');titleButton.textContent='Main menu';titleButton.onclick=showTitle;savedFlights.after(titleButton);
 
 let manual = false;
 function loop(now) {
