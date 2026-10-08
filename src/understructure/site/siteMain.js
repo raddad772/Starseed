@@ -14,6 +14,9 @@ import { THEME_NAMES } from '../plan/themes.js';
 import { SiteSound } from './siteSound.js';
 import { SiteMap } from './siteMap.js';
 import { buildAirDust } from '../dustVisual.js';
+import { buildManifestations } from '../manifestationVisual.js';
+import { buildZeroGWonder } from '../zeroGVisual.js';
+import { Rng } from '../../core/rng.js';
 
 const $ = (id) => document.getElementById(id), params = new URLSearchParams(location.search);
 const seed = params.get('seed') || 'SUMP-07';
@@ -31,6 +34,18 @@ const mech = new SiteMechanisms(site, visual.collision, visual.root, visual.mat,
 const sound = new SiteSound(plan, site);
 const map = new SiteMap(plan, site, saved.map || {});
 const dust = buildAirDust(plan, visual.root, { underground: () => true });
+// quiet, outside-context touches: slow rainbow sheens and seeps in three rooms,
+// reactive glints and mist in the zero-g wells
+const quiet = (() => {
+  const rng = Rng.fromString(plan.seed).fork('site-manifestations');
+  const rooms = rng.shuffle(plan.nodes.filter((n) => n.kind === 'room' || n.kind === 'deadend').slice()).slice(0, 3);
+  return rooms.map((r, i) => ({ id: r.id, kind: i === 1 ? 'sheen' : 'seep', pos: [r.center[0], r.y1 - 0.35, r.center[1]], polygon: r.poly, spread: rng.range(0.64, 0.88), depth: rng.range(0.42, 0.8) * (r.y1 - r.y0), floor: r.y0, phase: rng.range(0, 90), period: rng.range(64, 110), duration: rng.range(18, 28), hue: rng.next() }));
+})();
+const manifestations = buildManifestations({ seed: plan.seed, manifestations: quiet }, visual.root);
+const wonders = plan.nodes.filter((n) => n.kind === 'climb' && n.mode === 'zero-g').slice(0, 3).map((n) => {
+  const xs = n.poly.map((q) => q[0]), zs = n.poly.map((q) => q[1]);
+  return buildZeroGWonder({ seed: plan.seed + ':' + n.id, deck: n.y0, chambers: [{ kind: 'zero-g', bounds: [Math.min(...xs) + 0.8, Math.max(...xs) - 0.8, Math.min(...zs) + 0.8, Math.max(...zs) - 0.8], ceiling: n.y1 }] }, visual.root);
+});
 const miniCanvas = document.createElement('canvas'); miniCanvas.className = 'minimap'; document.body.append(miniCanvas);
 const mapCanvas = $('map');
 const syncButtons = () => { $('sound').textContent = sound.enabled ? 'Sound on' : 'Sound off'; $('voice').textContent = sound.voice.enabled ? 'Voice on' : 'Voice off'; };
@@ -164,7 +179,9 @@ function hud() {
 function render() {
   camera.position.set(walker.pos[0], walker.pos[1] + 1.68, walker.pos[2]); camera.rotation.set(walker.pitch, walker.yaw, 0); camera.updateMatrixWorld();
   hud();
-  visual.update(camera, time, state); dust.update(camera, time); engine.time = time; renderer.render(engine); frame++;
+  visual.update(camera, time, state); dust.update(camera, time); manifestations.update(camera, time);
+  for (const w of wonders) w.update(time, { pos: walker.pos, pitch: walker.pitch, yaw: walker.yaw, zeroG: walker.gravity === 0, velocity: walker.vel });
+  engine.time = time; renderer.render(engine); frame++;
 }
 function input() {
   return {
