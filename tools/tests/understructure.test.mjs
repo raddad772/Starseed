@@ -10,7 +10,7 @@ const make=(seed='SUMP-07',theme='auto')=>new UnderstructureSimulation(generateU
 test('100 deterministic sites: connected rooms, accessible signals and one/two themes',()=>{
  assert.deepEqual(generateUnderstructure('A'),generateUnderstructure('A'));
  assert.notDeepEqual(generateUnderstructure('A').edges,generateUnderstructure('B').edges);
- for(let i=0;i<100;i++){const p=generateUnderstructure(`SITE-${i}`),seen=connected(p);assert.equal(seen.size,p.tiles.length);assert.ok(p.themes.length>=1&&p.themes.length<=2);assert.equal(p.puzzles.length,p.themes.length);for(const r of p.rooms)assert.ok(seen.has(key(r.x,r.z)));assert.ok(seen.has('0,-30'));const c=makeCollision(p);for(const s of p.samples)assert.ok(s.id==='null'&&p.themes.includes('gravity')?c.canFloat(...s.pos):c.canStand(s.pos[0],s.pos[2],{y:DECK,liftY:DECK,hatchOpen:true},.42),s.id);assert.equal(c.canFloat(999,DECK,999),false);}
+ for(let i=0;i<100;i++){const p=generateUnderstructure(`SITE-${i}`),seen=connected(p);assert.equal(seen.size,p.tiles.length);assert.ok(p.themes.length>=1&&p.themes.length<=2);assert.equal(p.puzzles.length,p.themes.length);for(const r of p.rooms)assert.ok(seen.has(key(r.x,r.z)));assert.ok(seen.has('0,-30'));const c=makeCollision(p);for(const s of p.samples)assert.ok(s.id==='null'&&p.themes.includes('gravity')?c.canFloat(...s.pos):c.canStand(s.pos[0],s.pos[2],{y:s.pos[1],liftY:DECK,hatchOpen:true},.42),s.id);assert.equal(c.canFloat(999,DECK,999),false);}
 });
 test('person-sized hatch and continuous express lift descend eight levels in 4.2 seconds',()=>{
  const s=make();assert.equal(s.plan.access.halfWidth*2,1.3);assert.equal(s.plan.access.halfDepth*2,1.7);

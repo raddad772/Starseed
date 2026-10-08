@@ -12,10 +12,16 @@ export function surveyMapData(plan,sim,layer='all') {
   if(layer!=='surface'){
     if(layer!=='raised')for(const t of plan.tiles)if(sim.discovered.has(key(t.x,t.z)))add('tile:'+key(t.x,t.z),t.region.startsWith('room:')?plan.rooms[Number(t.region.split(':')[1])].kind:'Service conduit',[t.x*TILE-1.9,t.x*TILE+1.9,t.z*TILE-1.9,t.z*TILE+1.9,DECK-.4,DECK+3.8],'#678fa1','tile');
     if(sim.reservoirSeen&&layer!=='raised'){
-      add('reservoir','Lower collection · record repository',[-64,64,-286,-122,plan.reservoir.bottom,plan.reservoir.ceiling],'#3a8395','shell');
+      add('reservoir',plan.generator.name+' · record repository',[-64,64,-286,-122,plan.reservoir.bottom,plan.reservoir.ceiling],'#3a8395','shell');
       for(const p of plan.walkways)add('catwalk','Collection catwalk',[...p,DECK-.5,DECK],'#75a3ac','path');
     }
     if(sim.reservoirSeen&&layer!=='surface')for(const r of plan.routes){if(layer==='service'&&Math.min(r.a[1],r.b[1])>DECK)continue;const [a,b]=[r.a,r.b];add(r.id,r.covered?'Collection service gallery':'Collection upper crossing',[Math.min(a[0],b[0])-2,Math.max(a[0],b[0])+2,Math.min(a[2],b[2])-2,Math.max(a[2],b[2])+2,Math.min(a[1],b[1])-.2,Math.max(a[1],b[1])],r.covered?'#789080':'#d8c799','path');links.push({a,b,kind:'gallery'});}
+    if(sim.reservoirSeen&&layer!=='service')for(const c of plan.generator.cores)add('generator-'+c.id,`Generator ${c.id+1} · ${c.active?'intermittent output':'dormant'}`,[c.x-c.radius,c.x+c.radius,c.z-c.radius,c.z+c.radius,c.base,c.top],c.active?'#e5b46e':'#647b80','shell');
+    if(sim.lookoutSeen&&layer!=='service'){
+      const h=plan.generator,r=h.spur,[a,b,c,d,y]=h.lookout;
+      add(r.id,'Fault inspection bridge',[-2,2,r.b[2],r.a[2],y-.4,y],'#d8c799','path');
+      add('fault-lookout','Fault lookout · distant extent unsurveyed',[a,b,c,d,y-.4,y],'#d8c799','path');links.push({a:r.a,b:r.b,kind:'gallery'});
+    }
     for(const room of plan.chambers)if(sim.chambersSeen.has(room.id)){
       const color=sim.chamber?.id===room.id?'#ffd391':room.color;
       add(room.id,room.name+` · ${(room.kind==='zero-g'?0:room.gravity??1).toFixed(2)} G`,[...room.bounds,DECK,room.ceiling],color,'shell');

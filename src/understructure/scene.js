@@ -3,6 +3,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { Rng } from '../core/rng.js';
 import { TILE, DECK, key, terrainHeight } from './layout.js';
 import { buildChambers } from './chambers.js';
+import { buildGeneratorHall } from './generatorVisual.js';
 import { buildMegavault } from './megavault.js';
 import { dressUtilities,collectionSideWall,buildCollectionRoutes } from './infrastructureVisual.js';
 import { buildMechanisms } from './mechanisms.js';
@@ -133,11 +134,10 @@ export function buildScene(plan) {
   dressUtilities(plan,{box,cylinder,label,lamp});
   label('RETURN / 07',0,DECK+2.7,-5,{size:.5,face:Math.PI});
   label('LOWER COLLECTION',0,DECK+3.2,-117.8,{size:.7});
-  // Reservoir: the walkway is twenty-five metres above water, under a buried twenty-two-metre vault.
+  // A hundred-metre generator volume, crossed on four service levels.
   const R=plan.reservoir;
   box(0,R.bottom-.6,(R.near+R.far)/2,128,1,164,'dark');
   collectionSideWall(plan,-1,{box});collectionSideWall(plan,1,{box});
-  box(0,(R.bottom+R.ceiling)/2,R.far-.4,128,R.ceiling-R.bottom,.8);
   // Front wall leaves a real 4 m door from the service conduit.
   box(-33,(R.bottom+R.ceiling)/2,R.near+.3,62,R.ceiling-R.bottom,.6);box(33,(R.bottom+R.ceiling)/2,R.near+.3,62,R.ceiling-R.bottom,.6);
   box(0,(R.ceiling+DECK+4)/2,R.near+.3,4,R.ceiling-DECK-4,.6);box(0,(R.bottom+DECK)/2,R.near+.3,4,DECK-R.bottom,.6);
@@ -154,10 +154,10 @@ export function buildScene(plan) {
     box(x,DECK+3,z+2.02,1.3,.1,.04,'cyan');lamps.push({pos:new THREE.Vector3(x,DECK+3,z+3),color:0x9ecfc0});
     cylinder([x-.9,R.bottom,z+2.2],[x-.9,R.ceiling,z+2.2],.23,'rust');
   }
-  for(let z=-140;z>-280;z-=16){lamp(0,DECK+3.8,z,'amber');box(0,DECK+4,z,.1,.3,.1,'metal');cylinder([0,DECK+4,z],[0,R.ceiling,z],.027,'metal');}
+  for(let z=-140;z>-280;z-=16){lamp(-2.8,DECK+3.8,z,'amber');box(-2.8,DECK+4,z,.1,.3,.1,'metal');cylinder([-2.8,DECK+4,z],[-2.8,R.ceiling,z],.027,'metal');}
   for(let z=-130;z>-280;z-=16){box(0,R.ceiling-1,z,128,2,1);}
   for(const x of [-57,57]) {cylinder([x,DECK+8,-123],[x,DECK+8,-282],1.4,'rust',16);}
-  label('Σ / 104',0,DECK+7,-285.5,{size:3});
+  label('Σ / 104',-44,DECK+7,-285.5,{size:3});
   label('NO CATCHMENT',0,DECK+2.5,-279,{size:.45,color:'#92ac9b'});
   for(const sample of plan.samples){
     const p=sample.pos;
@@ -168,13 +168,15 @@ export function buildScene(plan) {
   const mechanisms=buildMechanisms(plan,{root,mat,box,cylinder,label});
   const chamberVisuals=buildChambers(plan,{root,scene,mat,box,cylinder,label,lamp});
   buildMegavault(plan,{box,cylinder,label});
+  const generatorVisuals=buildGeneratorHall(plan,{root,scene,mat,box,cylinder,label,addGeometry});
   for(const [m,geoms] of batches) {const merged=mergeGeometries(geoms);const mesh=new THREE.Mesh(merged,mat[m]);root.add(mesh);for(const g of geoms)g.dispose();}
   const ambient=new THREE.HemisphereLight(0xc4d8d2,0x303b2e,1.8);scene.add(ambient);
   const sun=new THREE.DirectionalLight(0xffdfaf,2.4);sun.position.set(-60,70,-100);scene.add(sun);
   const lights=Array.from({length:12},()=>{const l=new THREE.PointLight(0xffd0a0,22,15,1.5);scene.add(l);return l;});
   // Broad reservoir maintenance lighting leaves the volume legible beyond the hand lamp.
+  const hallLights=[];
   for(const x of [-38,38])for(const z of [-160,-220,-274]){
-    const l=new THREE.PointLight(0x8bb9ac,950,85,2);l.position.set(x,DECK-12,z);scene.add(l);
+    const l=new THREE.PointLight(0x8bb9ac,950,85,2);l.position.set(x,DECK-12,z);scene.add(l);hallLights.push(l);
   }
   const flashlight=new THREE.SpotLight(0xe2efe0,55,48,Math.PI/5,.7,1.35);scene.add(flashlight,flashlight.target);
   const beaconGroup=new THREE.Group();scene.add(beaconGroup);
@@ -189,8 +191,9 @@ export function buildScene(plan) {
     if(time-lastLight>.3){lastLight=time;const near=lamps.map(l=>[l,l.pos.distanceToSquared(camera.position)]).sort((a,b)=>a[1]-b[1]);lights.forEach((light,i)=>{const pick=near[i];light.position.copy(pick[0].pos);light.color.setHex(pick[0].color);light.intensity=pick[1]<2500?45:0;});}
     water.position.y=R.water+Math.sin(time*.23)*.09;
     landmarks.forEach((m,i)=>{m.rotation.z=time*.2+i;});
-    chamberVisuals.update(time,state);mechanisms.update(state);
+    chamberVisuals.update(time,state);mechanisms.update(state);generatorVisuals.update(time);
+    for(const l of hallLights)l.intensity=620*generatorVisuals.reading.sag;
   }
   function addBeacon(p){const m=new THREE.Mesh(new THREE.ConeGeometry(.14,.25,6),mat.amber);m.position.set(p[0],p[1]+.13,p[2]);beaconGroup.add(m);}
-  return {scene,update,addBeacon,materials:mat};
+  return {scene,update,addBeacon,materials:mat,generator:generatorVisuals};
 }

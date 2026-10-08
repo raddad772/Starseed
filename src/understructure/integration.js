@@ -1,3 +1,4 @@
+import { surveyEnvironment } from './generatorHall.js';
 import * as THREE from 'three';
 import { bankRecovery } from './recovery.js';
 import { generateUnderstructure,restoredProfile } from './layout.js';
@@ -110,7 +111,7 @@ export class SurveySession {
     this.game=game;this.player=player;this.site=site;this.lastSave=0;this.wasUnderground=false;
     this.anchor={position:player.fPos.clone(),heading:player.heading.clone(),pitch:player.pitch};
     let saved={};try{saved=JSON.parse(localStorage.getItem(site.saveKey)||'{}');}catch{}
-    this.plan=generateUnderstructure(site.seed,restoredProfile(site.seed,site.profile,saved));
+    this.plan=generateUnderstructure(site.seed,restoredProfile(site.seed,site.profile,saved),surveyEnvironment(site.body.data));
     this.sim=new UnderstructureSimulation(this.plan,saved);this.visual=buildScene(this.plan);
     for(const p of this.sim.beacons)this.visual.addBeacon(p);
     const camera=new THREE.PerspectiveCamera(73,1,.08,3200);camera.rotation.order='YXZ';

@@ -1,3 +1,4 @@
+import { surveyEnvironment } from './generatorHall.js';
 import * as THREE from 'three';
 import { DeferredRenderer } from '../render/webgpu/renderer.js';
 import { generateUnderstructure } from './layout.js';
@@ -9,7 +10,7 @@ import { bankRecovery,mysteryEntries } from './recovery.js';
 import { THEME_NAMES,THEME_PROFILES } from './anomalies.js';
 
 const $=id=>document.getElementById(id),params=new URLSearchParams(location.search);
-const plan=generateUnderstructure(params.get('seed')||'SUMP-07',params.get('theme')||'auto'),saveKey=`starseed.understructure.${params.has('test')?'test.':''}v2.${plan.seed}.${plan.themes.join('-')}`;
+const plan=generateUnderstructure(params.get('seed')||'SUMP-07',params.get('theme')||'auto',params.get('environment')==='barren'?surveyEnvironment({}):undefined),saveKey=`starseed.understructure.${params.has('test')?'test.':''}v2.${plan.seed}.${plan.themes.join('-')}`;
 let saved={};try{saved=JSON.parse(localStorage.getItem(saveKey)||'{}');}catch{}
 if(params.has('test')&&params.has('reset'))saved={};
 const sim=new UnderstructureSimulation(plan,saved),visual=buildScene(plan),canvas=$('view');

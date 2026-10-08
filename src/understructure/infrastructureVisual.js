@@ -56,13 +56,18 @@ export function buildCollectionRoutes(plan,{root,mat,box,cylinder,label,lamp}){
       if(!covered){
         // Rail ends stop short of junctions so the walking route is visibly open.
         const inset=2.5/length;
-        for(const h of [.55,1.1])cylinder([a[0]+dx*inset+nx*side*1.9,a[1]+h,a[2]+dz*inset+nz*side*1.9],[b[0]-dx*inset+nx*side*1.9,b[1]+h,b[2]-dz*inset+nz*side*1.9],.045,'rust');
+        for(const h of [.55,1.1]){
+          const start=[a[0]+dx*inset+nx*side*1.9,a[1]+h,a[2]+dz*inset+nz*side*1.9],end=[b[0]-dx*inset+nx*side*1.9,b[1]+h,b[2]-dz*inset+nz*side*1.9];
+          // The optional fault bridge joins the north edge of the highest crossing.
+          if(a[2]===-268&&b[2]===-268&&side===-1){cylinder(start,[-2.4,start[1],start[2]],.045,'rust');cylinder([2.4,end[1],end[2]],end,.045,'rust');}
+          else cylinder(start,end,.045,'rust');
+        }
       }
-      const n=Math.ceil(length/5);for(let i=1;i<n;i++){const t=i/n,x=a[0]+dx*t+nx*side*1.9,z=a[2]+dz*t+nz*side*1.9,y=a[1]+(b[1]-a[1])*t;if(!covered)cylinder([x,y,z],[x,y+1.1,z],.04,'metal');}
+      const n=Math.ceil(length/5);for(let i=1;i<n;i++){const t=i/n,x=a[0]+dx*t+nx*side*1.9,z=a[2]+dz*t+nz*side*1.9,y=a[1]+(b[1]-a[1])*t;if(!covered&&!(a[2]===-268&&side===-1&&Math.abs(x)<2.5))cylinder([x,y,z],[x,y+1.1,z],.04,'metal');}
     }
     const n=Math.ceil(length/7);for(let i=1;i<n;i++){const t=i/n,x=a[0]+dx*t,z=a[2]+dz*t,y=a[1]+(b[1]-a[1])*t;
       if(covered){lamp(x,y+3.35,z,'amber');cylinder([x+nx*1.55,y+2.8,z+nz*1.55],[x+dx/n+nx*1.55,y+(b[1]-a[1])/n+2.8,z+dz/n+nz*1.55],.18,'rust');}
-      else {for(const side of [-1,1])cylinder([x+nx*side*2.2,y-.2,z+nz*side*2.2],[x+nx*side*2.2,plan.reservoir.ceiling,z+nz*side*2.2],.055,'metal');lamp(x+nx*2.2,y+2.8,z+nz*2.2,'cyan');}
+      else {for(const side of [-1,1])if(!(a[2]===-268&&Math.abs(x)<2.5))cylinder([x+nx*side*2.2,y-.2,z+nz*side*2.2],[x+nx*side*2.2,plan.reservoir.ceiling,z+nz*side*2.2],.055,'metal');lamp(x+nx*2.2,y+2.8,z+nz*2.2,'cyan');}
     }
     if(covered&&a[1]!==b[1]){
       // Shallow stair nosings read as an old service stair; the capsule uses a ramp.

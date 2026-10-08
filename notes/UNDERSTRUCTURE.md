@@ -1,3 +1,35 @@
+## Wounded generator hall (2026-10-08)
+
+The 128 × 164 × 100 m collection volume now contains six 67 m generator towers.
+Exactly one survives, chosen by a separate seeded stream; its identity is stable across
+visits, and all six positions occur. Slow failed-start envelopes drive its emission,
+local light, sparse sparks and a sag in the maintenance supply. The hall supply follows elapsed survey time;
+individual time-anomaly rooms retain their own machinery clock. No occlusion queries or prior-frame visibility.
+
+Three environmental wounds vary by seed: tectonic shear, a cooled igneous intrusion,
+or an aquifer breach. Native integration passes the planet's life, liquid-water and
+vegetation-colour data. Aquifer seepage requires water; damp colonies require both life
+and water. These are sparse visual mats, not simulated planetary flora or deep roots.
+The standalone demo defaults to a wet living environment; `environment=barren` exercises
+the dry, lifeless variant. Historical geological damage is not a live tectonic simulation.
+
+The upper crossing has an optional 58 m service branch through a real opening in the
+rear wall to an 18 m lookout. It has matching support/collision, open rail junctions,
+later bracing through broken decks, an optional observation and persistent map discovery.
+Beyond it is a 560 m wide, 900 m deep distribution chasm with actual layered geometry
+and human-sized bays. The lookout is walkable; that distant extent remains scenery.
+The original final-cache route, circuits, 125 raw units / 170 maximum credit, 200/500
+milestones and immediate extraction after the 90-unit cache remain intact. Old saves
+retain progress; the new lookout discovery defaults to unseen.
+
+Validation: 42 CPU checks, including all 21 theme profiles, seed coverage, old data
+recovery, ordinary walking to/from the lookout and raycast headroom against rendered
+reactors/rock along each crossing. Native finite fixtures passed 12 checks each on
+SUMP-07 (Weight/Light, generator 01, igneous) and HALL-6 (Pressure/Resonance, generator
+05, aquifer), including reload, map, return, and changing core-light output, with no
+JavaScript/WebGPU errors. The final lighting/material pass was rechecked on SUMP-07.
+This pass did not run planetary workers or change the shared renderer/general physics.
+
 ## Decayed infrastructure and Golden Path recovery (2026-10-08)
 
 The collection hall is now 100 m tall from sump bottom to ceiling, with crossings at
