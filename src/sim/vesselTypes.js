@@ -1,4 +1,5 @@
 import { TENDER_YACHT } from './layouts/auxiliary.data.js';
+import { ORBITAL_STATION } from './layouts/orbitalStation.js';
 import { DECK_FRAME_TYPES } from './deckFrames.js';
 import { applyEstablishedRefit } from './establishedRefit.js';
 // Vessel classes: mass, thrusters, colliders, docking zones, walkable layout
@@ -472,6 +473,7 @@ const RUNABOUT = {
 };
 
 export const VESSEL_TYPES = {
+  orbital_station: ORBITAL_STATION,
   tender_yacht:TENDER_YACHT,runabout:RUNABOUT,
   ...DECK_FRAME_TYPES,
   ...PIONEER_TYPES,

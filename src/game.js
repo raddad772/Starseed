@@ -34,6 +34,8 @@ import { FTL, lockRadius } from './sim/ftl.js';
 import { NavComputer } from './sim/navComputer.js';
 import { ShipVisual } from './render/shipVisual.js';
 import { ReentryVisual } from './render/reentryVisual.js';
+import { OrbitalStationVisual } from './render/orbitalStation.js';
+import { hullEnvelope } from './sim/reentry.js';
 import { BigShipVisual } from './render/bigShipVisual.js';
 import { FleetVisual } from './render/fleetVisual.js';
 import { requestAirlock, outerAirlockOpen } from './sim/airlocks.js';
@@ -400,7 +402,7 @@ export class Game {
     if (v.type.turbolift) v.turbolift = new Turbolift(v, v.type.turbolift);
     v.interior = makeInterior(v);
     v.target = new VesselTarget(v);
-    v.visual = v.type.frameOnly ? new AttachedFrameVisual(this.engine) : v.type.fleetAsset ? new FleetVisual(this.engine, v) : v.big ? new BigShipVisual(this.engine, v) : (v.type.template ? new GlbCraftVisual(this.engine, v) : new ShipVisual(this.engine, v));
+    v.visual = v.type.station ? new OrbitalStationVisual(this.engine,v) : v.type.frameOnly ? new AttachedFrameVisual(this.engine) : v.type.fleetAsset ? new FleetVisual(this.engine, v) : v.big ? new BigShipVisual(this.engine, v) : (v.type.template ? new GlbCraftVisual(this.engine, v) : new ShipVisual(this.engine, v));
     if (v.visual.fx && !v.type.frameOnly) v.visual.entry = new ReentryVisual(v, v.visual.fx);
     if (v.type.legAttach) v.legAttach = v.type.legAttach.map((a) => new THREE.Vector3(...a));
     // lit by big ships' fixtures (a shuttle's cabin stays sealed from them)
@@ -945,6 +947,8 @@ export class Game {
     const lockAlt = lockRadius(b) - b.R;
     this.placeInOrbit(this.tender, b, lockAlt + 90000 * FLEET_K, 0.35);
     this.placeInOrbit(this.carrier, b, lockAlt + 280000 * FLEET_K, -0.45);
+    if (!this.orbitalStation) this.orbitalStation = this.addVessel('orbital_station', 'Meridian Reach', 'PORT-01');
+    this.placeInOrbit(this.orbitalStation, b, lockAlt + 45000 * FLEET_K, 0.12);
     this.dockCarried();
     // (and the three eras' fleets, each on an orbit of its own: eraFleets.js)
     parkEraFleets(this, b);
@@ -985,6 +989,7 @@ export class Game {
     if (i >= 0) this.vessels.splice(i, 1);
     const vis = v.visual;
     vis?.entry?.dispose();
+    vis?.dispose?.();
     if (vis && vis.model && vis.model.root) vis.model.root.removeFromParent();
     if (vis && vis.fx) vis.fx.removeFromParent();
     v.dead = true;
@@ -1059,6 +1064,7 @@ export class Game {
   // Whether a volume takes a craft: behind a door only while it is open, and
   // a snug one (a container's hold) only what fits inside it
   zoneAdmits(h, z, v) {
+    if (z.maxCraftSize && hullEnvelope(v.type).size.some((size,i)=>size>z.maxCraftSize[i])) return false;
     if (z.whenFree && h.attached) return false;
     if (z.door && h.doors[z.door] && h.doors[z.door].open < 0.6) return false;
     if (z.snug) {

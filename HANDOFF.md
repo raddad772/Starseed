@@ -17,7 +17,7 @@ checks and the finite GPU regression fixture pass. WEBGPU.md records same-load f
 A/B timings and pixel differences, including timestamp-overlap limitations. Public renderer APIs
 remain compatible with the megastructure worktree. Dave now explicitly authorizes coordination
 with that chat; it owns src/understructure/* and local walking/zero-g, while this chat owns renderer,
-spacecraft/re-entry, orbital stations and later integration. Stations/merge are still pending.
+spacecraft/re-entry, orbital stations and later integration. Megastructure integration is still pending.
 
 ## Re-entry and flight generations (Codex, 2026-10-08)
 Hull-bounds curvature, relative airflow and gas properties drive a Sutton–Graves screening model,
@@ -36,6 +36,23 @@ fans and current vector-pod orientation. In the same airless 1 km / 100 m/s down
 cannot arrest the fall, Hearth survives a hard landing, and Neptune 3 recovers above 650 m. OFF/ROT
 retain pilot control. Eighteen thermal/handling/FTL/ramp tests pass; real flight feel still needs
 Dave's playtest. Use `node --test ...`; the offline shader loader is not needed for simulation tests.
+
+## Meridian Reach orbital station (Codex, 2026-10-08)
+Normal fleet startup now places Meridian Reach in orbit of the starting planet. It is a normal
+navigation/Fleet target: small craft receive a docking destination. Two 66 × 28 × 115 m bays
+have gravity plating, pressure fields, marked landing envelopes, pedestrian routes and overhead
+cargo gantries. A walkable concourse/spine joins traffic control, medical, crew quarters, engineering,
+life support and hydroponics, with a lift to the upper orbital-control room. The exterior adds a
+habitation ring, solar arrays, radiators, stores, communications dishes and shielded reactor.
+Structure/room openings share render and collision dimensions; the curved ring uses conservative
+contact boxes. The upper ring is exterior geometry, not a continuous walkable ring interior.
+Navigation aligns to the bay's actual mouth normal, checks craft dimensions, reserves an approach
+bay and holds outside when both are busy. `tools/tests/orbital-station.test.mjs` proves Atlas and
+Neptune 3 approach, land and depart a moving circular-orbit host at 100% hull, every room connects
+through passable doorways/lift, and over-size/occupied bays are handled. The full normal game test
+`tools/tests/station.html` passed around Earth on native WebGPU: target-to-dock, actual Atlas landing
+and departure, bay/control-room captures, no WebGPU errors. No artificial placement was used to
+complete touchdown. Arrival-state placement is only the finite fixture's starting condition.
 
 ## NOW: forests, shade, moonlight; Dave's queue (session 39d69fa8, 2026-10-06)
 

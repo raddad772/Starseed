@@ -1,0 +1,18 @@
+<!doctype html><meta charset="utf-8"><title>Orbital port flight validation</title>
+<style>body{margin:0;background:#10151b;color:#dae5f4;font:15px system-ui}header{padding:16px}iframe{border:0;width:1280px;height:960px}img{max-width:100%}pre{white-space:pre-wrap}</style>
+<header><b>Meridian Reach — full game landing and departure</b><button id="run">Run station flight</button><pre id="status">Ready</pre></header>
+<div id="shots"></div><iframe title="Station test game"></iframe>
+<script type="module">
+const frame=document.querySelector('iframe'),status=document.querySelector('#status'),button=document.querySelector('#run');
+button.onclick=()=>{
+ button.disabled=true;status.textContent='Starting native game…';
+ frame.onload=()=>{const script=frame.contentDocument.createElement('script');script.type='module';script.src='/tools/station-game-driver.js';frame.contentDocument.body.append(script);};
+ frame.src='/?seed=SOL&workers=2&date=2026-10-06T23:08';
+};
+window.addEventListener('message',event=>{
+ if(event.source!==frame.contentWindow||event.origin!==location.origin||event.data.type!=='station-test')return;
+ const {report,image,name}=event.data;status.textContent=JSON.stringify(report,null,2);
+ if(image){const img=new Image();img.src=image;img.alt=name;document.querySelector('#shots').append(img);fetch('/__webgpu_capture',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,image,report})});}
+ if(report.stage==='Passed'||report.stage==='Failed')button.disabled=false;
+});
+</script>

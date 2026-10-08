@@ -35,7 +35,7 @@ import * as THREE from 'three';
 import { floraOf } from './floraField.js';
 import { meadowsNear } from '../gen/flora.js';
 import { lockRadius } from './ftl.js';
-import { heatSafeSpeed, gasProperties } from './reentry.js';
+import { heatSafeSpeed, gasProperties, hullEnvelope } from './reentry.js';
 
 const G0 = 9.81;
 const A_CMD = 2.5 * G0;      // commanded acceleration, small craft (crew comfort; the engines can do far more)
@@ -157,6 +157,7 @@ export class NavComputer {
     const s = this.ship;
     if (s.dead) return false;
     if ((dest.kind === 'site' || dest.kind === 'dock') && !this.canLand) { this.say(`a ${s.type.className} can't ${dest.kind === 'site' ? 'land' : 'dock'}`, 'caution'); return false; }
+    if (dest.kind === 'dock' && !dest.v.type.zones?.some(z=>this.fitsBay(z))) { this.say(`no landing bay at ${dest.v.name} can fit ${s.name}`, 'caution'); return false; }
     if (dest.kind === 'dock' && s.parent === dest.v && s.attached) { this.say(`already aboard ${dest.v.name}`, 'caution'); return false; }
     if (s.type.ftl === false && dest.body && dest.body !== s.body) { this.say(`no FTL drive: ${s.name} can't reach ${dest.body.data.name} on its own · carry it aboard a ship that can`, 'caution'); return false; }
     if (!dest.name) dest.name = dest.body ? dest.body.data.name : (dest.v ? dest.v.name : (dest.point ? dest.point.name : ''));
@@ -812,9 +813,11 @@ export class NavComputer {
 
   // waypoints in the host's frame: around its hull, then down onto a free pad
   // or in through the hangar door
+  fitsBay(zone) { return !zone.maxCraftSize || hullEnvelope(this.ship.type).size.every((size,i)=>size<=zone.maxCraftSize[i]); }
+
   approachPlan() {
     const s = this.ship, host = this.dest.v;
-    const zones = host.type.zones;
+    const zones = host.type.zones.filter(z=>this.fitsBay(z));
     const pads = zones.filter((z) => z.kind === 'pad');
     const busy = (z) => host.children.some((c) => c !== s && c.zone === z);
     const pts = [];
@@ -824,7 +827,9 @@ export class NavComputer {
       pts.push(new THREE.Vector3(zone.pad[0], 240, zone.pad[2]), new THREE.Vector3(zone.pad[0], 34, zone.pad[2]));
     } else {
       // a flight bay: in through its mouth, to a free pad
-      const free = (z) => (z.pads || []).filter((p) => !host.children.some((c) => c !== s && c.zone === z && Math.hypot(c.lpos.x - p[0], c.lpos.z - p[2]) < 18));
+      const free = (z) => (z.pads || []).filter((p) => !host.children.some((c) => c !== s && c.zone === z && Math.hypot(c.lpos.x - p[0], c.lpos.z - p[2]) < 18)
+        && !(host.type.station && this.game.vessels.some(c=>c!==s&&c.nav?.active&&c.nav.dest?.v===host&&c.nav.appr?.zone===z)));
+      if(host.type.station&&!zones.some(z=>free(z).length))return null;
       zone = zones.find((z) => free(z).length) || zones[0];
       const pads = free(zone);
       this.pad = pads.length ? pads[0] : [(zone.min[0] + zone.max[0]) / 2, zone.min[1], (zone.min[2] + zone.max[2]) / 2];
@@ -867,6 +872,10 @@ export class NavComputer {
     if (s.parent === host) { this.go('dock'); return; }
     if (s.body !== host.body) { this.legs = this.plan(); this.go('align'); return; }
     if (!this.appr) this.appr = this.approachPlan();
+    if(!this.appr) {
+      this.say(`All bays at ${host.name} are occupied · holding outside`);
+      this.dest={kind:'hold',v:host,name:host.name};this.startStation(host);this.station(A);return;
+    }
     const pts = this.appr.pts;
     const local = host.bodyToLocal(s.pos, new THREE.Vector3());
     const tgt = pts[0];
@@ -881,7 +890,7 @@ export class NavComputer {
     const hostUp = _c.set(0, 1, 0).applyQuaternion(host.quat);
     const near = local.length() < host.type.radius + 500;
     if (near) {
-      const into = this.appr.zone.kind === 'pad' ? _d.set(0, 0, -1) : _d.set(1, 0, 0);
+      const into = this.appr.zone.kind === 'pad' ? _d.set(0, 0, -1) : _d.fromArray(this.appr.zone.mouth.normal).negate();
       this.point(A, into.applyQuaternion(host.quat), hostUp);
     } else this.point(A, vW.lengthSq() > 1 ? vW : _d.set(0, 0, -1).applyQuaternion(s.quat), hostUp);
     this.aim(host.localToWorld(tgt, new THREE.Vector3()), `${host.name.toUpperCase()} · ${this.appr.zone.name.toUpperCase()}`);
