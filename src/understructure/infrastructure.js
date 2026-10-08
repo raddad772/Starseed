@@ -28,5 +28,5 @@ export function routeFloor(route,x,z){const dx=route.b[0]-route.a[0],dz=route.b[
 }
 export function dataFragments(deck){
   const entries=[[-56,deck,40,1],[40,deck,44,3],[-16,deck,20,1],[-48,deck,-76,3],[48,deck,-76,3],[-24,deck,-100,1],[24,deck,-100,3],[-24,deck,-28,3],[48,deck+12,-174,3],[-48,deck+26,-224,3],[-72,deck+12,-174,3],[72,deck+26,-224,3],[-72,deck+42,-268,3],[-40,deck,20,1]];
-  return [{id:'entry-signal',pos:[0,deck,-12],value:1,title:'Golden Path carrier signal',automatic:true},...entries.map(([x,y,z,value],i)=>({id:'fragment-'+i,pos:[x,y,z],value,title:i<8?'Maintenance memory fragment':'Relay buffer fragment'}))];
+  return [{id:'entry-signal',pos:[0,deck,-12],value:1,title:'Damaged survey crawler signal',automatic:true},...entries.map(([x,y,z,value],i)=>({id:'fragment-'+i,pos:[x,y,z],value,title:value===1?'Maintenance crawler log':i<8?'Maintenance memory fragment':'Relay buffer fragment'}))];
 }

@@ -1,10 +1,11 @@
 import * as THREE from 'three';
 import { DECK } from './layout.js';
+import { buildDataDrone } from './dataDrones.js';
 
 // Readable, small controls stay beside the phenomenon they affect. These are
 // game mechanisms, not general physics or recursive portal rendering.
 export function buildMechanisms(plan,{root,mat,box,cylinder,label}) {
-  let cell,sweep,phaseGlow;const fragments=[];const gateVeils=[],indicators=[],pressureBars=[],echoPlates=[];
+  let cell,sweep,phaseGlow;const fragments=[],drones=[];const gateVeils=[],indicators=[],pressureBars=[],echoPlates=[];
   function mesh(w,h,d,material,pos){const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),material);m.position.set(...pos);root.add(m);return m;}
   function status(id,pos){const m=mesh(.2,.16,.12,mat.amber,pos);indicators.push({id,mesh:m});}
   for(const p of plan.puzzles){
@@ -33,12 +34,16 @@ export function buildMechanisms(plan,{root,mat,box,cylinder,label}) {
       for(const s of [-1,1])box(g.pos[0]-g.normal[0]*1.4+(g.normal[1]*s*.65),DECK+.025,g.pos[2]-g.normal[1]*1.4-(g.normal[0]*s*.65),.16,.04,.16,'amber');
     }
   }
-  for(const f of plan.fragments){const [x,y,z]=f.pos;box(x,y+.65,z+1.4,.7,1.3,.4,'metal');box(x+.33,y+.9,z+1.65,.08,.55,.04,'rust');const m=mesh(.2,.12,.045,mat.cyan,[x,y+1,z+1.63]);fragments.push({id:f.id,mesh:m});}
+  for(const [i,f] of plan.fragments.entries()){
+    if(f.value===1){drones.push(buildDataDrone(f,i,{root,mat}));continue;}
+    const [x,y,z]=f.pos;box(x,y+.65,z+1.4,.7,1.3,.4,'metal');box(x+.33,y+.9,z+1.65,.08,.55,.04,'rust');const m=mesh(.2,.12,.045,mat.cyan,[x,y+1,z+1.63]);fragments.push({id:f.id,mesh:m});
+  }
   const a=plan.finalCache.pos,y=a[1];
   box(a[0],y+.8,a[2]-1,1.4,1.6,.5,'metal');box(a[0],y+1.5,a[2]-.73,1.12,.6,.05,'dark');
   const record=mesh(.6,.22,.12,mat.amber,[a[0],y+1.5,a[2]-.68]);
   label('BACKUP / CENTRAL RECORD',a[0],y+2.4,a[2]-1,{size:.6});
   return {update(state){
+    for(const drone of drones)drone.update(state);
     for(const f of fragments)f.mesh.material=state.fragments.has(f.id)?mat.dark:mat.cyan;
     if(cell){cell.visible=!state.carryingCell&&!state.solved.has('gravity');cell.rotation.y=state.time*.35;}
     if(sweep){const p=plan.puzzles.find(p=>p.id==='time');sweep.position.x=p.pos[0]+(state.phase.value-.5)*2.8;sweep.material=state.phase.ready?mat.cyan:mat.amber;phaseGlow.visible=!state.solved.has('time');}

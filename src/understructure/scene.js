@@ -1,3 +1,5 @@
+import { buildObliqueSector } from './obliqueVisual.js';
+import { outsideSegments } from './oblique.js';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { Rng } from '../core/rng.js';
@@ -119,7 +121,11 @@ export function buildScene(plan) {
     if((t.x*3+t.z)%4===0)lamp(x,DECK+3.95,z,t.region.startsWith('room:')?'amber':'cyan');
     if(t.z%3===0&&t.x===0){box(-1.9,DECK+2,z,.18,4,.22,'metal');box(1.9,DECK+2,z,.18,4,.22,'metal');box(0,DECK+3.8,z,3.8,.2,.22,'metal');}
   }
-  for(const wall of plan.walls){if(wall.region==='access'&&wall.z>=-2)continue;box(wall.x,DECK+2,wall.z,wall.axis==='x'?4:.24,4,wall.axis==='z'?4:.24);}
+  for(const wall of plan.walls){
+    if(wall.region==='access'&&wall.z>=-2)continue;
+    const a=[wall.x-(wall.axis==='x'?2:0),wall.z-(wall.axis==='z'?2:0)],b=[wall.x+(wall.axis==='x'?2:0),wall.z+(wall.axis==='z'?2:0)];
+    for(const [u,v] of outsideSegments(a,b,plan.oblique.links.map(l=>l.polygon)))box((u[0]+v[0])/2,DECK+2,(u[1]+v[1])/2,wall.axis==='x'?v[0]-u[0]:.24,4,wall.axis==='z'?v[1]-u[1]:.24);
+  }
   for(const room of plan.rooms) {
     if(room.utility)continue;
     const x=room.x*TILE,z=room.z*TILE;
@@ -132,6 +138,7 @@ export function buildScene(plan) {
     if(room.kind==='Storm collector')for(let i=-1;i<=1;i++)cylinder([x+i*1.2,DECK+3.7,z-room.rz*4],[x+i*1.2,DECK+3.7,z+room.rz*4],.22,'rust');
   }
   dressUtilities(plan,{box,cylinder,label,lamp});
+  buildObliqueSector(plan,{addGeometry,box,cylinder,label,lamp});
   label('RETURN / 07',0,DECK+2.7,-5,{size:.5,face:Math.PI});
   label('LOWER COLLECTION',0,DECK+3.2,-117.8,{size:.7});
   // A hundred-metre generator volume, crossed on four service levels.

@@ -175,7 +175,7 @@ to inspect it. Integrated gamepad look rotates the map. It uses a Canvas2D proje
 of 3D geometry, without allocating a second GPU renderer.
 
 Standalone progress remains keyed per seed **and theme profile** under the existing v2
-storage keys; the payload is version 3. The main-game adapter preserves old saved site
+storage keys; the payload is version 4. The main-game adapter preserves old saved site
 themes when expanding the theme pool and saves explicit themes for future loads.
 Loading starts at surface access with recovered data/circuits/notes/map/beacons retained.
 Carried cells, partial plate sequences, pressure settings and bridge stages also persist.
@@ -184,6 +184,35 @@ Pause renders only a final changed frame; hidden tabs do not render. Active cap:
 No camera visibility depends on previous-frame occlusion queries or results.
 
 ## Validation — 2026-10-08
+
+Latest architecture and recovery pass: a triangular manifold, pentagonal exchange and
+hexagonal distribution well connect through a walking loop of oblique service passages.
+The well is 45 m tall (18 m below its deck and 27 m above), with two bridges crossing at
+roughly 65 degrees. Seeded polygon plans drive both collision and visible geometry;
+floor clipping removes coincident faces and wall openings follow the actual passages.
+The discovery map shows these real polygons and saves `sectorsSeen`. The earlier tiled
+basements remain as a contrasting part of the complex; this is not a conversion of every
+room to arbitrary polygons.
+
+One-unit data finds now belong to low, four-wheeled maintenance crawlers with loose
+covers, cable spools, a weak scanner and occasional actuator movement. They are solid,
+non-humanoid props; they do not roam or fight. The starter crawler still automatically
+triggers the first Golden Path scan. Other logs use E to recover; animation settles after
+recovery. Reward IDs and values are unchanged, preserving existing saves and site caps.
+
+Current verification: **47 passing CPU tests**, including the four new polygon/crawler
+tests and generator/recovery suites. The polygon tests walk the whole loop across six
+seeds, check floor overlap, ray-test visible geometry for headroom along the route, and
+check crawler collision, recovery and motion. The native gravity/light fixture passes
+**14 checks**, including the complete loop, crawler recovery, flowing groundwater,
+map and actual page reload, with no game JavaScript or WebGPU errors. Final render
+captures are in the parent task's `outputs/megastructure-oblique/` directory.
+
+```sh
+node --test tools/tests/understructure-oblique.test.mjs tools/tests/understructure-generators.test.mjs tools/tests/understructure-recovery.test.mjs tools/tests/understructure-themes.test.mjs tools/tests/understructure-integration.test.mjs tools/tests/understructure-planet-sites.test.mjs tools/tests/understructure.test.mjs tools/tests/webgpu.test.mjs
+```
+
+Earlier validation milestones:
 
 ```sh
 node --test tools/tests/understructure.test.mjs tools/tests/understructure-themes.test.mjs tools/tests/understructure-integration.test.mjs tools/tests/understructure-planet-sites.test.mjs tools/tests/webgpu.test.mjs

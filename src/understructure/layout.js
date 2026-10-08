@@ -1,3 +1,4 @@
+import { obliqueSector,obliqueFloor } from './oblique.js';
 // Seeded local infrastructure prototype. World generation and walking consume the same plan.
 import { Rng, normalizeSeed } from '../core/rng.js';
 import { addUtilityAnnex,reservoirRoutes,routeFloor,dataFragments } from './infrastructure.js';
@@ -97,7 +98,7 @@ export function generateUnderstructure(seed = 'SUMP-07',profile='auto',environme
   const pillars=[];
   for(let z=-140;z>-280;z-=24)for(const x of [-51,51])pillars.push({x,z,width:3,depth:4});
   const routes=reservoirRoutes(DECK),routeLandings=[routes[0].a,routes.at(-1).b,...routes.slice(1).filter((r,i)=>{const q=routes[i];return Math.abs((r.b[0]-r.a[0])*(q.b[2]-q.a[2])-(r.b[2]-r.a[2])*(q.b[0]-q.a[0]))>.001;}).map(r=>r.a)],fragments=dataFragments(DECK);
-  return {version:4,generator,utility,routes,routeLandings,fragments,finalCache:{pos:[56,DECK+42,-268],value:90},seed,themes,puzzles,tiles:[...tiles.values()],walls,rooms,edges,samples,
+  return {version:4,oblique:obliqueSector(seed,DECK),generator,utility,routes,routeLandings,fragments,finalCache:{pos:[56,DECK+42,-268],value:90},seed,themes,puzzles,tiles:[...tiles.values()],walls,rooms,edges,samples,
     deck:DECK,shaft:{min:[-2,-2],max:[2,2]},reservoir:{x:64,near:-122,far:-286,bottom:DECK-40,water:DECK-25,ceiling:DECK+60},
     walkways:[[-2,2,-286,-120],[-64,64,-126,-122],[-64,64,-286,-282],[-64,-60,-286,-122],[60,64,-286,-122],[-64,64,-206,-202]],
     access:{...ACCESS},megavault:{near:110,far:1710,zMin:-652,zMax:548,ceiling:-4,bottom:-904},
@@ -129,12 +130,16 @@ export function makeCollision(plan) {
     const levels=plan.routes.map(r=>routeFloor(r,x,z)).filter(h=>h!==null&&Math.abs(h-y)<.8);
     if(levels.length)return levels.sort((a,b)=>Math.abs(a-y)-Math.abs(b-y))[0];
     if(Math.abs(y-DECK)>.8)return null;
+    if(obliqueFloor(plan.oblique,x,z))return DECK;
     if(occupied.has(key(Math.floor((x+2)/TILE),Math.floor((z+2)/TILE))))return DECK;
     if(plan.walkways.some(([x0,x1,z0,z1])=>x>x0&&x<x1&&z>z0&&z<z1))return DECK;
     if(plan.chambers.some(c=>c.walkways.some(([x0,x1,z0,z1])=>x>=x0&&x<=x1&&z>=z0&&z<=z1)))return DECK;
     return null;
   }
   function canStand(x,z,state,radius=.3) {
+    if(state.y<-2)for(const f of plan.fragments)if(f.value===1&&state.y<f.pos[1]+.8&&state.y+1.9>f.pos[1]){
+      const dx=x-f.pos[0]-1.25,dz=z-f.pos[2]-1.35;if(Math.abs(dx)<.6+radius&&Math.abs(dz)<.6+radius)return false;
+    }
     if(state.y<-2)for(const o of plan.utility.equipment){const [a,b,c,d,lo,hi]=o.bounds;if(state.y+1.9>lo&&state.y<hi&&x+radius>a&&x-radius<b&&z+radius>c&&z-radius<d)return false;}
     const floor=floorAt(x,z,state); if(floor===null||Math.abs(floor-state.y)>.42)return false;
     for(let i=0;i<12;i++) {

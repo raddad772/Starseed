@@ -22,6 +22,11 @@ export function surveyMapData(plan,sim,layer='all') {
       add(r.id,'Fault inspection bridge',[-2,2,r.b[2],r.a[2],y-.4,y],'#d8c799','path');
       add('fault-lookout','Fault lookout · distant extent unsurveyed',[a,b,c,d,y-.4,y],'#d8c799','path');links.push({a:r.a,b:r.b,kind:'gallery'});
     }
+    if(layer!=='raised')for(const region of plan.oblique.regions)if(sim.sectorsSeen.has(region.id)){
+      const polygon=region.polygon,xs=polygon.map(p=>p[0]),zs=polygon.map(p=>p[1]);
+      boxes.push({id:region.id,name:region.name,polygon,bounds:[Math.min(...xs),Math.max(...xs),Math.min(...zs),Math.max(...zs),DECK-(region.inner?18:0),DECK+region.height],color:'#739da2',kind:'shell'});
+      for(const f of plan.oblique.floors.filter(f=>f.region===region.id)){const xs=f.polygon.map(p=>p[0]),zs=f.polygon.map(p=>p[1]);boxes.push({id:region.id+'-deck',name:region.name,polygon:f.polygon,bounds:[Math.min(...xs),Math.max(...xs),Math.min(...zs),Math.max(...zs),DECK-.3,DECK],color:f.bridge?'#d8c799':'#75a3ac',kind:'path'});}
+    }
     for(const room of plan.chambers)if(sim.chambersSeen.has(room.id)){
       const color=sim.chamber?.id===room.id?'#ffd391':room.color;
       add(room.id,room.name+` · ${(room.kind==='zero-g'?0:room.gravity??1).toFixed(2)} G`,[...room.bounds,DECK,room.ceiling],color,'shell');
@@ -86,7 +91,14 @@ export class SurveyMap {
     ctx.fillStyle='#071821';ctx.fillRect(0,0,c.width,c.height);ctx.strokeStyle='#15343f';ctx.lineWidth=1;for(let x=0;x<c.width;x+=32){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,c.height);ctx.stroke();}for(let y=0;y<c.height;y+=32){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(c.width,y);ctx.stroke();}
     const line=(a,b,color,dash=[])=>{ctx.strokeStyle=color;ctx.setLineDash(dash);ctx.beginPath();ctx.moveTo(...p(a).slice(0,2));ctx.lineTo(...p(b).slice(0,2));ctx.stroke();ctx.setLineDash([]);};
     const faces=[];this.hit=[];
-    for(const b of boxes){const [x0,x1,z0,z1,y0,y1]=b.bounds,v=[[x0,y0,z0],[x1,y0,z0],[x1,y0,z1],[x0,y0,z1],[x0,y1,z0],[x1,y1,z0],[x1,y1,z1],[x0,y1,z1]].map(p);this.hit.push({x:(v[0][0]+v[6][0])/2,y:(v[0][1]+v[6][1])/2,name:b.name});
+    for(const b of boxes){
+      if(b.polygon){
+        const lo=b.bounds[4],hi=b.bounds[5],bottom=b.polygon.map(v=>p([v[0],lo,v[1]])),top=b.polygon.map(v=>p([v[0],hi,v[1]])),n=top.length;
+        this.hit.push({x:top.reduce((s,v)=>s+v[0],0)/n,y:top.reduce((s,v)=>s+v[1],0)/n,name:b.name});
+        for(const verts of [bottom,top,...bottom.map((v,i)=>[v,bottom[(i+1)%n],top[(i+1)%n],top[i]])])faces.push({verts,color:b.color,kind:b.kind,depth:verts.reduce((s,v)=>s+v[2],0)/verts.length});
+        continue;
+      }
+      const [x0,x1,z0,z1,y0,y1]=b.bounds,v=[[x0,y0,z0],[x1,y0,z0],[x1,y0,z1],[x0,y0,z1],[x0,y1,z0],[x1,y1,z0],[x1,y1,z1],[x0,y1,z1]].map(p);this.hit.push({x:(v[0][0]+v[6][0])/2,y:(v[0][1]+v[6][1])/2,name:b.name});
       for(const inds of [[0,1,2,3],[4,5,6,7],[0,1,5,4],[1,2,6,5],[2,3,7,6],[3,0,4,7]])faces.push({verts:inds.map(i=>v[i]),color:b.color,kind:b.kind,depth:inds.reduce((n,i)=>n+v[i][2],0)/4});
     }
     faces.sort((a,b)=>b.depth-a.depth);for(const f of faces){ctx.beginPath();f.verts.forEach((v,i)=>i?ctx.lineTo(v[0],v[1]):ctx.moveTo(v[0],v[1]));ctx.closePath();ctx.fillStyle=f.color+(['shell','shaft','ghost'].includes(f.kind)?'0b':'45');ctx.strokeStyle=f.color+(f.kind==='tile'?'42':'a0');ctx.setLineDash(f.kind==='ghost'?[3,3]:[]);ctx.fill();ctx.stroke();}ctx.setLineDash([]);

@@ -1,3 +1,4 @@
+import { insidePolygon } from './oblique.js';
 import { DECK, TILE, LIFT_SECONDS, key, makeCollision, chamberAt } from './layout.js';
 import { creditedData } from './recovery.js';
 import { machineryClock,phaseReading } from './anomalies.js';
@@ -19,7 +20,7 @@ export class UnderstructureSimulation {
     this.fragments=new Set(list('fragments').filter(id=>plan.fragments.some(f=>f.id===id)));
     this.fragmentsSeen=new Set(list('fragmentsSeen').filter(id=>plan.fragments.some(f=>f.id===id)));
     this.campaignTotal=0;this.scanAt=-100;
-    this.lookoutSeen=!!saved.lookoutSeen;this.reservoirSeen=!!saved.reservoirSeen;this.returned=!!saved.returned&&this.exitReady;
+    this.sectorsSeen=new Set(list('sectorsSeen'));this.lookoutSeen=!!saved.lookoutSeen;this.reservoirSeen=!!saved.reservoirSeen;this.returned=!!saved.returned&&this.exitReady;
     this.chambersSeen=new Set(list('chambersSeen').filter(id=>plan.chambers.some(c=>c.id===id)));
     this.velocity=[0,0,0];this.flowPaused=false;this.flowTime=0;this.resonanceAt=-100;
     this.carryingCell=!!saved.carryingCell;this.foldActive=false;this.foldCrossed=false;this.foldCooldown=0;this.foldCount=0;
@@ -41,7 +42,7 @@ export class UnderstructureSimulation {
   get exitReady(){return this.dataRecovered;}
   get machinery(){return this.plan.themes.includes('time')?machineryClock(this.time):{time:this.time,state:'STEADY'};}
   get phase(){const p=this.plan.puzzles.find(p=>p.id==='time');return p?phaseReading(this.time,p):null;}
-  get zone(){return this.pos[1]>-2?'SURFACE ACCESS':this.moving?'ACCESS SHAFT':this.chamber?.name|| (this.pos[2]<-286?'FAULT LOOKOUT / EXTENT UNKNOWN':this.pos[2]<-122?this.plan.generator.name:`SERVICE STRATUM / −${Math.abs(DECK)}`);}
+  get zone(){return this.pos[1]>-2?'SURFACE ACCESS':this.moving?'ACCESS SHAFT':this.chamber?.name||this.plan.oblique.rooms.find(r=>insidePolygon(r.polygon,this.pos[0],this.pos[2]))?.name|| (this.pos[2]<-286?'FAULT LOOKOUT / EXTENT UNKNOWN':this.pos[2]<-122?this.plan.generator.name:`SERVICE STRATUM / −${Math.abs(DECK)}`);}
   offer(){
     const [x,y,z]=this.pos;
     if(y>-2&&Math.hypot(x,z)<4.6&&!this.hatchOpen)return {type:'hatch',text:'Open access hatch'};
@@ -49,7 +50,7 @@ export class UnderstructureSimulation {
     if(!this.moving&&Math.abs(y-DECK)<.4&&Math.hypot(x,z+3.6)<2.6&&this.liftY>-2)return {type:'call',text:'Call access lift'};
     if(this.moving)return null;
     const near=p=>Math.hypot(x-p[0],y-p[1],z-p[2])<2.5;
-    for(const f of this.plan.fragments)if(!f.automatic&&!this.fragments.has(f.id)&&near(f.pos))return {type:'fragment',id:f.id,text:`Recover memory fragment · +${f.value}%`};
+    for(const f of this.plan.fragments)if(!f.automatic&&!this.fragments.has(f.id)&&near(f.pos))return {type:'fragment',id:f.id,text:`Recover ${f.value===1?'crawler log':'memory fragment'} · +${f.value}%`};
     const archive=this.plan.finalCache;
     if(!this.dataRecovered&&near(archive.pos))return {type:'archive_data',id:'reservoir',text:this.archiveReady?'Recover central record · +90%':'Archive bus offline · restore the damaged return circuits'};
     for(const p of this.plan.puzzles) {
@@ -106,6 +107,7 @@ export class UnderstructureSimulation {
       for(const t of this.plan.tiles)if(Math.hypot(this.pos[0]-t.x*TILE,this.pos[2]-t.z*TILE)<11)this.discovered.add(key(t.x,t.z));
       if(this.pos[2]<-126)this.reservoirSeen=true;
       if(this.pos[2]<-286)this.lookoutSeen=true;
+      for(const r of this.plan.oblique.regions)if(insidePolygon(r.polygon,this.pos[0],this.pos[2]))this.sectorsSeen.add(r.id);
     }
     if(this.exitReady&&this.pos[1]>-1&&Math.hypot(this.pos[0],this.pos[2])>4)this.returned=true;
   }
@@ -173,5 +175,5 @@ export class UnderstructureSimulation {
     if(this.beacons.some(p=>Math.hypot(p[0]-this.pos[0],p[1]-this.pos[1],p[2]-this.pos[2])<2))return false;
     this.beacons.push([...this.pos]);return true;
   }
-  save(){return {version:4,lookoutSeen:this.lookoutSeen,fragments:[...this.fragments],fragmentsSeen:[...this.fragmentsSeen],themes:[...this.plan.themes],bridgeStage:this.bridgeStage,pressure:this.pressure,echoStep:this.echoStep,discovered:[...this.discovered],recorded:[...this.recorded],beacons:this.beacons,reservoirSeen:this.reservoirSeen,returned:this.returned,chambersSeen:[...this.chambersSeen],solved:[...this.solved],carryingCell:this.carryingCell,dataRecovered:this.dataRecovered};}
+  save(){return {version:4,sectorsSeen:[...this.sectorsSeen],lookoutSeen:this.lookoutSeen,fragments:[...this.fragments],fragmentsSeen:[...this.fragmentsSeen],themes:[...this.plan.themes],bridgeStage:this.bridgeStage,pressure:this.pressure,echoStep:this.echoStep,discovered:[...this.discovered],recorded:[...this.recorded],beacons:this.beacons,reservoirSeen:this.reservoirSeen,returned:this.returned,chambersSeen:[...this.chambersSeen],solved:[...this.solved],carryingCell:this.carryingCell,dataRecovered:this.dataRecovered};}
 }

@@ -48,6 +48,16 @@ export function walkRoute(sim,x,z) {
 }
 
 export function advance(sim,secs,input={}){for(let t=0;t<secs;t+=1/60)sim.step(Math.min(1/60,secs-t),input);}
+export function walkOblique(sim,x,z){
+  const start=[Math.round(sim.pos[0]),Math.round(sim.pos[2])],key=p=>p.join(','),queue=[start],parents=new Map([[key(start),null]]),target=key([x,z]);
+  for(let i=0;i<queue.length&&!parents.has(target);i++)for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){
+    const p=[queue[i][0]+dx,queue[i][1]+dz],id=key(p);if(p[0]<-190||p[0]>-49||p[1]<8||p[1]>112||parents.has(id)||!sim.collision.canStand(...p,sim.state,.42)||[.25,.5,.75].some(t=>!sim.collision.canStand(queue[i][0]+dx*t,queue[i][1]+dz*t,sim.state,.42)))continue;
+    parents.set(id,key(queue[i]));queue.push(p);
+  }
+  if(!parents.has(target))throw Error('Oblique sector disconnected: '+target);
+  const route=[];for(let id=target;id!==null;id=parents.get(id))route.push(id.split(',').map(Number));
+  route.reverse();for(const p of route)walkLine(sim,...p);return route;
+}
 export function descend(sim){walkLine(sim,0,4);sim.interact();advance(sim,1.5);walkLine(sim,0,0);sim.interact();advance(sim,LIFT_SECONDS+.1);walkLine(sim,0,-4);}
 export function solvePuzzles(sim){
   for(const p of sim.plan.puzzles){
