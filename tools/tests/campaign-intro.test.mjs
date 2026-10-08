@@ -79,9 +79,11 @@ test('new-game and story checkpoints save while paused without enabling periodic
 });
 test('assisted traversal allows bounded platform lift while standard traversal retains ballistic jumps',()=>{
  const plan=generateUnderstructure('NEW-THEMES','gravity'),a=new UnderstructureSimulation(plan),b=new UnderstructureSimulation(plan);
- a.assistedTraversal=true;a.pos=[84,DECK,-100];b.pos=[84,DECK,-100];
+ // (stand on the low-gravity gallery's first platform, wherever the layout puts it)
+ const [x0,x1,z0,z1,top]=plan.chambers.find(c=>c.kind==='platforms').platforms[0],start=[(x0+x1)/2,top,(z0+z1)/2];
+ a.assistedTraversal=true;a.pos=[...start];b.pos=[...start];
  for(let i=0;i<600;i++){a.step(.01,{vertical:1});b.step(.01,{vertical:1});}
- assert(a.pos[1]>DECK+5);assert.equal(b.pos[1],DECK);assert(a.pos[1]+1.9<=a.chamber.ceiling+.001);
+ assert(a.pos[1]>top+5);assert.equal(b.pos[1],top);assert(a.pos[1]+1.9<=a.chamber.ceiling+.001);
  a.pos=[0,DECK,-20];assert.equal(a.jetpackEnabled,false);
 });
 test('survey discoveries hide distant access markers and remain revealed across portable storage copies',()=>{
