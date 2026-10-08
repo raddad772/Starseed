@@ -37,7 +37,7 @@ export class DeferredRenderer {
   constructor(canvas, gpu, onError) {
     Object.assign(this, gpu);
     this.canvas = canvas; this.onError = onError;
-    this.geometryCache = new WeakMap(); this.geometries = new Set(); this.targets = new Map();
+    this.geometryCache = new WeakMap(); this.geometries = new Set(); this.targets = new Map(); this.sceneLights = new WeakMap();
     this.objectCapacity = 0; this.bodyCapacity = 0;
     this.viewProjection = new THREE.Matrix4(); this.projection = new THREE.Matrix4();
     this.inverse = new THREE.Matrix4(); this.frustum = new THREE.Frustum();
@@ -169,14 +169,15 @@ export class DeferredRenderer {
     this.targets.set(view, t);
     return t;
   }
-  render(engine, animate = true) {
+  render(engine, animate = true, updateShadows = animate) {
     if (this.disposed) return;
     const start = performance.now(), view = engine.view, camera = view.camera;
     this.timer.begin();resetCounters(this.device);
     const options=tuning(this.device),cpu={};let mark=start;const stage=name=>{const now=performance.now();cpu[name]=now-mark;mark=now;};
     camera.updateMatrixWorld(); engine.scene.updateMatrixWorld();
-    if(animate&&engine.sunShadows)this.shadows.update(engine.sunShadows,engine.scene);
-    if(this.shadows.state)this.opaque.uniformOverrides=this.shadows.uniforms;stage('scene and shadows');
+    if(updateShadows&&engine.sunShadows)this.shadows.update(engine.sunShadows,engine.scene);
+    // Local sectors share the device, not the preceding world's shadow bindings.
+    this.opaque.uniformOverrides=engine.sunShadows&&this.shadows.state?this.shadows.uniforms:{};stage('scene and shadows');
     this.projection.fromArray(reversedPerspective(camera.fov, camera.aspect, camera.near, camera.far));
     this.viewProjection.multiplyMatrices(this.projection, camera.matrixWorldInverse);
     this.inverse.copy(this.viewProjection).invert();
@@ -209,8 +210,15 @@ export class DeferredRenderer {
       lights.forEach((u,i) => { const r = p.distanceTo(u.uCenter.value) - (u.uRadius?.value || 0); if (r < distance) {distance=r;body=i;} });
       if (!lights.length) {
         let sun=null, ambient=null;engine.scene.traverseVisible(o=>{if(o.isDirectionalLight&&!sun)sun=o;if(o.isHemisphereLight&&!ambient)ambient=o;});
-        const dir=sun?sun.position.clone().sub(sun.target.position).normalize():new THREE.Vector3(0,1,0);
-        lights.push({uCenter:{value:new THREE.Vector3(0,-1e12,0)},uRadius:{value:1},uSunDir:{value:dir},uSunE:{value:sun?sun.color.clone().multiplyScalar(sun.intensity):new THREE.Color(1,1,1)},uAmbientFloor:{value:ambient?ambient.color.clone().multiplyScalar(ambient.intensity):new THREE.Color(0.001,0.001,0.001)}});
+        // Stable key: ProgramBindings retains GPU buffers until release. Creating
+        // a fresh uCenter here leaks one lighting buffer per non-planet frame.
+        let u=this.sceneLights.get(view);
+        if(!u){u={uCenter:{value:new THREE.Vector3(0,-1e12,0)},uRadius:{value:1},uSunDir:{value:new THREE.Vector3()},uSunE:{value:new THREE.Color()},uAmbientFloor:{value:new THREE.Color()}};this.sceneLights.set(view,u);}
+        if(sun){u.uSunDir.value.copy(sun.position).sub(sun.target.position).normalize();u.uSunE.value.copy(sun.color).multiplyScalar(sun.intensity);}
+        else {u.uSunDir.value.set(0,1,0);u.uSunE.value.setRGB(1,1,1);}
+        if(ambient)u.uAmbientFloor.value.copy(ambient.color).multiplyScalar(ambient.intensity);
+        else u.uAmbientFloor.value.setRGB(.001,.001,.001);
+        lights.push(u);
       }
       opaqueObjects.push({...entry,body});
     }
@@ -244,7 +252,7 @@ export class DeferredRenderer {
     if (draw.length) d.queue.writeBuffer(this.objectBuffer, 0, this.objectData, 0, draw.length * OBJECT_FLOATS);
     if (lights.length) d.queue.writeBuffer(this.bodyBuffer, 0, this.bodyData, 0, lights.length * 16);
     const lightGroups = lights.map((u, i) => this.lightBindings.get(u.uCenter || u, {
-      ...u, ...(this.shadows.state ? this.shadows.uniforms : this.opaque.uniformOverrides), uBodyIndex: { value: i },
+      ...u, ...this.opaque.uniformOverrides, uBodyIndex: { value: i },
       ...(!u.tCloudShadow?.value?.userData?.webgpuRecipe ? { tCloudShadow: { value: null }, uCSOn: { value: 0 } } : {}),
     }).group);
     const t = this.target(view),effects=this.materialEffects.plan(engine.scene,draw,opaque,options.enabled);t.activeGbuffer=effects.process?t.shadedGbuffer:t.gbuffer;stage('frame bindings'); let encoder = d.createCommandEncoder({ label: 'deferred frame' });
@@ -308,7 +316,7 @@ export class DeferredRenderer {
   }
   setOptimizations(enabled){tuning(this.device).enabled=!!enabled;}
   get optimizationsEnabled(){return tuning(this.device).enabled;}
-  releaseView(view){const t=this.targets.get(view);if(!t)return;this.air.release(t);this.post.release(t);this.localLights.release(t);for(const texture of t.textures)texture.destroy();this.targets.delete(view);if(view.out)this.textures.renderTargets.delete(view.out.texture);}
+  releaseView(view){const light=this.sceneLights.get(view);if(light){this.lightBindings.release(light.uCenter);this.sceneLights.delete(view);}const t=this.targets.get(view);if(!t)return;this.air.release(t);this.post.release(t);this.localLights.release(t);for(const texture of t.textures)texture.destroy();this.targets.delete(view);if(view.out)this.textures.renderTargets.delete(view.out.texture);}
   async capture(view = this.lastView) {
     const t = this.targets.get(view);
     if (!t) throw new Error('Render a WebGPU frame before capturing');

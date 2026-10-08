@@ -1,3 +1,17 @@
+## Main-game integration (2026-10-08)
+
+The frozen prototype checkpoints are merged into main. Choose a surface start, follow the cyan
+pennant near the landing craft, then press **F** at the hatch. Inside: **E** interacts, **F** toggles
+the hand light, **M** opens the surveyed map, **J** opens notes, **B** places a beacon. Recover the
+site record to unlock **T** return or the access lift. T can also leave before descending.
+Progress is saved per site, and re-entry permits further exploration.
+
+`integration.js` hosts the generator/simulation/scene on the game's existing WebGPU renderer.
+The world entrance is body-fixed; the local sector is a scene transition, not a carved planetary
+shaft. World time continues at normal speed, the fleet stays alive, and split-screen permits the
+other player to remain outside. `understructure.html` remains an independent development demo.
+`tools/tests/understructure-game.html` verifies the complete native main-game round trip.
+
 # Underground megastructure prototype
 
 Owner: Starseed Megastructures (Codex). Worktree: `starseed-megastructures`, branch

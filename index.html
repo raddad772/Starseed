@@ -244,7 +244,7 @@ select { font: 400 var(--step--1) var(--font-ui); color: var(--ink); background:
 }
 @media (prefers-reduced-motion: reduce) { .messages div { transition: none; } }
 </style>
-<script type="importmap">{ "imports": { "three": "./vendor/three.module.js" } }</script>
+<script type="importmap">{ "imports": { "three": "./vendor/three.module.js", "three/addons/": "./vendor/addons/" } }</script>
 </head>
 <body>
 <canvas id="view" tabindex="0" aria-label="Starseed Infinite view"></canvas>
@@ -278,8 +278,8 @@ select { font: 400 var(--step--1) var(--font-ui); color: var(--ink); background:
       <input id="seedInput" aria-label="System seed" spellcheck="false" autocomplete="off">
       <button id="newSeed" type="button">New seed</button>
       <button id="launch" class="primary" type="button">Launch</button>
-      <a href="./understructure.html" style="padding:12px 14px;border:1px solid #e8b77788;color:#e8b777;text-decoration:none">Explore buried structure ↗</a>
     </div>
+    <p class="tag">Surface surveys: find the cyan pennant near your landing craft and press F at the access hatch.</p>
     <div class="startPick">
       <div class="startHead"><div class="label">Where to begin</div>
         <div class="tabs startTabs"><button type="button" data-st="suggested" class="on">Suggested</button><button type="button" data-st="custom">Choose a world</button></div></div>

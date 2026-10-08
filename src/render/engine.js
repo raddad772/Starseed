@@ -539,11 +539,11 @@ export class Engine {
   // atmos: list of {material, body}, ordered far -> near. dt: real time
   // (eye adaptation); animate: false for a second view in the same frame
   // (time-driven effects advance once per frame)
-  render(dt, sky, atmos, animate = true) {
+  render(dt, sky, atmos, animate = true, advanceWorld = animate) {
     this.frameInputs = { sky, atmos, dt };
     if (this.backend === 'webgpu') {
-      if (animate) this.time += dt;
-      if (this.webgpu && !this.webgpuError) this.webgpu.render(this, animate);
+      if (advanceWorld) this.time += dt;
+      if (this.webgpu && !this.webgpuError) this.webgpu.render(this, animate, advanceWorld);
       return;
     }
 

@@ -17,7 +17,33 @@ checks and the finite GPU regression fixture pass. WEBGPU.md records same-load f
 A/B timings and pixel differences, including timestamp-overlap limitations. Public renderer APIs
 remain compatible with the megastructure worktree. Dave now explicitly authorizes coordination
 with that chat; it owns src/understructure/* and local walking/zero-g, while this chat owns renderer,
-spacecraft/re-entry, orbital stations and later integration. Megastructure integration is still pending.
+spacecraft/re-entry, orbital stations and later integration. Megastructure integration is complete; see the checkpoint below.
+
+## Integrated megastructure surveys (Codex, 2026-10-08)
+The three frozen Megastructures checkpoints (e9cfe60, bee8b8f, 8c56b3e) are imported as
+26094d4, dc493f7 and 7db5c94. Surface starts create a marked access hatch on nearby dry,
+gentle ground outside the landing craft. Find the cyan pennant and press F within 4 m.
+The access circuit enters a local exploration sector on the **existing native renderer**;
+this is a scene transition, not an excavated opening in the planetary heightfield.
+The sector owns a local camera, capsule and HUD, while the original player, vessels and
+planet remain live. The universe runs at normal speed. M/J open local map/notes, E interacts,
+F lights, B places beacons, and T returns after retrieving the record (or before descending).
+Pad: X use, LT light, B beacon, View map, D-pad right notes, RB return; in zero-g A rises,
+Y descends and R3 brakes. A completed lift ascent also returns to the world.
+Progress saves per system/body/site/profile, including circuits, notes, record and beacons.
+Returning uses the player's body-fixed entrance anchor with the current planet orientation.
+Saved returned flags do not eject subsequent visits. One player owns a site's lift at a time;
+a second player can remain outside, with independent view and HUD. Targets and owned scene
+resources are released on exit; the shared renderer is retained. World shadow bindings are
+cleared for a sector and restored for the first outdoor view, including split-screen.
+Non-planet lighting bindings now reuse one block per view; the native fixture verifies bounded
+allocation across 30 repeated frames and releases the block on exit.
+34 focused CPU tests pass. The finite `tools/tests/understructure-game.html` full-game native
+fixture passes hatch entry, gravity+space circuits/record, T return, saved re-entry, lift return,
+P2 outside, continued world rotation and zero position error, with no WebGPU validation errors.
+The kinematic walker remains separate from general spacecraft physics. three-avbd was reviewed,
+not installed: it remains a candidate for bounded cargo/contact islands with a custom renderer
+bridge, device-limit checks and an explicit CPU/GPU state-sync design.
 
 ## Re-entry and flight generations (Codex, 2026-10-08)
 Hull-bounds curvature, relative airflow and gas properties drive a Sutton–Graves screening model,

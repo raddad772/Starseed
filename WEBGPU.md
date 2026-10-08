@@ -307,3 +307,16 @@ translucency, emission.
   WebGL is retained only as an explicit test reference.
 - Antialiasing: TAA (needs motion vectors) or none.
 - Does the renderer stay JavaScript for good, or move to C with the sims for a native build later?
+
+## Shared-renderer local sectors (2026-10-08)
+
+Megastructure surveys now use a dedicated local camera/view on the main game's DeferredRenderer.
+Outdoor shadow overrides are scoped to engines with sunShadows; a local scene cannot inherit the
+preceding planet's maps. Canvas clearing is separate from advancing the first outdoor view, so
+split-screen can render a local P1 and outdoor P2 without freezing world effects or shadows.
+Leaving releases the local render target and owned scene resources, preserving the device and
+normal world view. The integrated browser fixture validates entry, record recovery, both returns,
+saved progress and split-screen without WebGPU errors. No rendering-quality setting changed.
+The non-planet scene-light block is now cached per view and released with that view. Previously
+its fresh per-frame key retained a new GPU lighting buffer each frame. The finite integration
+fixture asserts unchanged binding counts across 30 additional local frames and cleanup on exit.

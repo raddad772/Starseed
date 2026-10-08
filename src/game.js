@@ -36,6 +36,7 @@ import { ShipVisual } from './render/shipVisual.js';
 import { ReentryVisual } from './render/reentryVisual.js';
 import { OrbitalStationVisual } from './render/orbitalStation.js';
 import { hullEnvelope } from './sim/reentry.js';
+import { SurfaceSurveys } from './understructure/integration.js';
 import { BigShipVisual } from './render/bigShipVisual.js';
 import { FleetVisual } from './render/fleetVisual.js';
 import { requestAirlock, outerAirlockOpen } from './sim/airlocks.js';
@@ -87,6 +88,7 @@ export class Game {
     // simulated worlds (WORLDSIM.md step 7; ?worldsim=0 for the noise worlds, to compare)
     if (opts.worldsim) { this.worldSims = new WorldSims(this, { N: opts.simN, workers: opts.simWorkers, gpu: opts.tileGPU !== false }); this.tiles = new TerrainTiles(this); }
     this.lights = new LightRig(this.engine);
+    this.surfaceSurveys = new SurfaceSurveys(this);
     // the world's clock: everyone's (sim/worldClock.js); this client's universe time from it
     this.clock = new WorldClock();
     this.t = this.clock.now();
@@ -187,6 +189,7 @@ export class Game {
     let root = document.querySelector('.hudView'), suitEl = document.querySelector('.suitScreen');
     if (i > 0) {
       root = root.cloneNode(true);
+      root.style.visibility = ''; // player 1 may currently be inside a local sector
       root.dataset.player = String(i);
       for (const el of root.querySelectorAll('.messages, .flightData, .navData, .modeStrip, .quickMenu, .prompt')) el.innerHTML = '';
       root.querySelector('.quickMenu').hidden = root.querySelector('.prompt').hidden = true;
@@ -235,6 +238,7 @@ export class Game {
   // ship stays where it is
   leavePlayer(p) {
     if (!p || p === this.players[0]) return;
+    p.understructure?.leave();
     if (p.mode === 'seat') p.releaseControls(p.vessel);
     (this.awayPlayers || (this.awayPlayers = []))[p.index] = p;
     if (this.map.open && this.map.owner === p) this.map.toggle(p);
@@ -291,6 +295,7 @@ export class Game {
   // start; after being lost, whoever plays on), and their ship beside L's
   regroup(p, L = this.players[0]) {
     if (p === L || !L) return;
+    p.understructure?.leave(false);
     p.deathShown = false;
     p.respawnT = 0;
     if (p.mode === 'seat') p.releaseControls(p.vessel);
@@ -574,6 +579,7 @@ export class Game {
   // survey's start spot, for the arrival message)
   startOnSurface(b = this.startBody, dir = this.startDir, spot = null) {
     const s = this.ship, p = this.players[0];
+    for (const q of this.players) q.understructure?.leave(false);
     this.respawnInfo = { body: b, dir: dir.clone() };
     const here = s.landed && !s.parent && s.body === b && s.landedPosF.clone().normalize().dot(dir) > 0.99999;
     // (the time is the world's: at night it's night there, and the sun's rising time said)
@@ -608,6 +614,7 @@ export class Game {
     p.vessel = null;
     p.placeOnSurface(b, pp.normalize(), toShip);
     p.pitch = 0.04;
+    this.surfaceSurveys.addNear(p);
     p.lastSeat = { vessel: s, seat: 0 };
     if (s.type.key === 'shuttle') { s.rampTarget = 1; s.ramp = 1; }   // (the shuttle's ramp: a craft with an airlock has none)
     this.target = null;
@@ -727,6 +734,7 @@ export class Game {
   }
 
   applyStart(key) {
+    for (const p of this.players) p.understructure?.leave(false);
     this.startPending = null;
     for (const v of this.vessels) if (v.nav) v.nav.cancel(null);
     this.openingBody = null;
@@ -1450,6 +1458,10 @@ export class Game {
         i = Math.min(i, 2);
       }
     }
+    if (i > 0 && this.players.some(p => p.understructure)) {
+      i = 0;
+      this.message('Time warp held during subsurface exploration', 'nav');
+    }
     if (i !== this.warpIndex) {
       this.warpIndex = i;
       if (i > 2) for (const v of this.vessels) if (!v.dead && !v.landed && !v.parent && !v.rails) v.enterRails();
@@ -1471,7 +1483,8 @@ export class Game {
     const out = [];
     for (const v of this.vessels) if (!v.dead && v.ftl && (v.ftl.state === 'cruise' || v.ftl.state === 'spool')) out.push({ v, why: 'FTL active' });
     for (const p of this.players) {
-      if (p.mode === 'eva') out.push({ who: p, why: `EVA in progress${who(p)}` });
+      if (p.understructure) out.push({ who: p, why: `subsurface survey in progress${who(p)}` });
+      else if (p.mode === 'eva') out.push({ who: p, why: `EVA in progress${who(p)}` });
       else if (p.mode === 'surface' && !p.grounded) out.push({ who: p, why: `not on the ground${who(p)}` });
     }
     for (const v of this.vessels) {
@@ -1659,8 +1672,10 @@ export class Game {
       // (a passenger's controller works as on foot: the right stick looks around)
       const pm = p.mode;
       p.input.pollPad(pm === 'seat' ? (p.flying ? 'flight' : 'foot') : (pm === 'eva' ? 'eva' : 'foot'), dtReal);
-      p.ui.suit.update(dtReal);
-      if (!p.ui.suit.open) p.ui.quick.update(dtReal);
+      if (!p.understructure) {
+        p.ui.suit.update(dtReal);
+        if (!p.ui.suit.open) p.ui.quick.update(dtReal);
+      }
       this.handleGlobalKeys(p.input);
     }
     this.setCur(null);
@@ -1699,7 +1714,9 @@ export class Game {
   // view only.
   renderView(p, first, dtReal) {
     this.setCur(p);
-    const dtA = first ? dtReal : 0;
+    if (p.understructure) { p.understructure.render(first, dtReal); return; }
+    const firstWorld = first || this.players.slice(0, this.players.indexOf(p)).every(q => q.understructure);
+    const dtA = firstWorld ? dtReal : 0;
     this.updateCamera(dtReal);
     this.engine.camera.position.set(0, 0, 0);
     this.engine.camera.quaternion.copy(this.camQuat);
@@ -1708,16 +1725,17 @@ export class Game {
     this.updateMeter();
     for (const v of this.vessels) { v.visual.update(dtA, this.camPos, this.lighting); v.visual.entry?.update(); }
     this.itemVisuals.update(this.camPos);
+    this.surfaceSurveys.render(this.camPos);
     const atmos = this.world.update(this.camPos, dtA);
     this.updateSkyStars(dtA);
     this.updateEffects(dtReal);
     if (this.map.open && this.map.owner === p) this.map.render(dtReal, p.view.rect);
-    else this.engine.render(dtReal, this.sky, atmos, first);
+    else this.engine.render(dtReal, this.sky, atmos, first, firstWorld);
     p.ui.hud.update(dtReal);
   }
 
   handleGlobalKeys(input) {
-    if (this.debugFree || this.suit.open) return;
+    if (this.player.understructure || this.debugFree || this.suit.open) return;
     if (this.paused) {
       // (the pause screen: H its controls tab, M its map)
       if (input.hit('KeyH')) { if (this.onPausedHelp) this.onPausedHelp(); else this.screenHud.toggleHelp(); }
@@ -1913,6 +1931,8 @@ export class Game {
   // delivered once); aboard, frames are local and slow time is harmless.
   stepPlayer(p, dtReal) {
     const input = p._in || p.input, mouse = p._mouse || { dx: 0, dy: 0 };
+    if (p.understructure) { p.understructure.update(dtReal, input, mouse); return; }
+    if (this.surfaceSurveys.interact(p, input)) return;
     const quiet = p._quiet || (p._quiet = {
       down: (c) => (p._in || p.input).down(c), axis: (a, b) => (p._in || p.input).axis(a, b), hit: () => false,
       get buttons() { return 0; },
@@ -1927,6 +1947,7 @@ export class Game {
       // player is already level with the world's clock when they leave)
       p.update(Math.min(dtReal * Math.min(this.warp, 4), 0.05), input, mouse);
     } else p.update(dtReal, input, mouse);
+    this.surfaceSurveys.prompt(p);
     if (p.aboard && p.vessel.dead && !p.deathShown) this.onDeath(p.vessel.deathCause, p);
   }
 
@@ -2488,6 +2509,7 @@ export class Game {
   }
 
   dispose() {
+    this.surfaceSurveys.dispose();
     // (other players' HUD and suit copies, and their controllers)
     for (const p of this.players.slice(1)) { p.ui.root.remove(); p.ui.suitEl.remove(); if (p.input.dispose) p.input.dispose(); }
     this.pool.dispose();
