@@ -237,6 +237,7 @@ export class Game {
       this.message(`${p.label} rejoined at their saved location`, 'nav');
       return p;
     }
+    if (this.joinCampaignPlayer) { this.joinCampaignPlayer(p); this.setCur(null); return p; }
     if (!this.ship2) this.ship2 = this.addVessel('shuttle', 'Kittiwake', 'SV-28');
     p.ownShip = this.ship2;
     this.regroup(p);
@@ -1446,6 +1447,7 @@ export class Game {
   // ------------------------------------------------------------------ controls
 
   setWarp(i) {
+    if (this.intro?.active) i = 0;
     i = Math.max(0, Math.min(WARP_LEVELS.length - 1, i));
     const me = this.cur;
     if (me) {
@@ -1642,6 +1644,7 @@ export class Game {
     if (this.state === 'loading') this.updateLoading(dtReal);
     if (this.state === 'playing' && !this.paused) this.simulate(dtReal);
     else if (this.state !== 'playing') this.universe.update(this.t);
+    this.intro?.update(dtReal);
     // a player lost while others play on comes back beside player 1
     for (const p of this.players) {
       if (!(p.respawnT > 0) || this.paused || (p.respawnT -= dtReal) > 0) continue;
@@ -2141,6 +2144,7 @@ export class Game {
   // 1 m/s against it: berthed again, the hatch over its hub up to the yacht dock
   berthYachtIfHome() {
     const y = this.yacht, c = this.carrier;
+    if(!c?.type.layout?.yacht)return;
     if (!y || !c || c.dead || y.dead || y.parent || y.landed || y.body !== c.body) return;
     if (c.pos.distanceToSquared(y.pos) > Math.pow(c.type.radius + 60, 2)) return;
     const local = c.bodyToLocal(y.pos, _v1);
@@ -2445,6 +2449,7 @@ export class Game {
   // few seconds later (your shuttle parked by theirs); alone, player 1 gets
   // the restart card (and anyone else lost comes back beside them after)
   onDeath(cause, p = this.player) {
+    if(this.intro?.active){this.intro.retry();this.message('Practice craft recovered · take your time and try again','nav');return;}
     if (p.deathShown) return;
     p.deathShown = true;
     this.setWarp(0);
@@ -2463,6 +2468,7 @@ export class Game {
 
   // player 1 starts again at the landing site (or their chosen orbit)
   respawn() {
+    if(this.respawnCampaign){this.respawnCampaign();return;}
     this.setCur(null);
     this.players[0].deathShown = false;
     for (const v of this.vessels) v.nav.cancel(null);
@@ -2490,6 +2496,7 @@ export class Game {
   }
 
   dispose() {
+    this.intro?.dispose();
     window.removeEventListener('resize', this._onResize);
     this.surfaceSurveys.dispose();
     // (other players' HUD and suit copies, and their controllers)

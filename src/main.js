@@ -14,10 +14,15 @@ import { restoreFlight } from './campaign/flight.js';
 import { validateCampaign } from './campaign/save.js';
 import { CampaignSiteStorage } from './campaign/siteStorage.js';
 import { renderExpeditionPanel } from './ui/expeditionPanel.js';
+import { renderExpeditionSetup } from './ui/expeditionSetup.js';
+import { provisionExpedition } from './campaign/newGame.js';
+import { FlightIntro } from './campaign/intro.js';
+import { createCampaign } from './campaign/state.js';
 
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
 const DEFAULT_SEED = 'FSPB-8DTW';
+const explicitSandbox = !params.has('expedition') && (params.has('seed') || params.has('test') || params.has('era') || location.hash.length > 1);
 
 function readSeed() {
   const fromHash = location.hash.length > 1 ? decodeURIComponent(location.hash.slice(1)) : '';
@@ -203,7 +208,7 @@ function showBriefing(s) {
 // Launch then carries on where you were, and picking any start moves you there)
 let previewed = null;
 
-function boot(s, saved = null) {
+function boot(s, saved = null, expedition = null) {
   if (saved) validateCampaign(saved); // reject invalid imports before disposing the current game
   if (game) { game.engine.dispose(); game.dispose(); game = null; }
   try {
@@ -218,6 +223,7 @@ function boot(s, saved = null) {
       renderScale: params.get('scale') ? +params.get('scale') : settings.scale,
       reversedDepth: params.get('logdepth') ? false : undefined,
       ...(saved ? { deferStart: true, worldsim: saved.world.worldsim, simN: saved.world.simN || undefined, campaignStorage: new CampaignSiteStorage(saved.world.siteStorage) } : {}),
+      ...(expedition ? { deferStart: true, era: undefined, testSpot: undefined } : {}),
     });
   } catch (err) {
     console.error(err);
@@ -239,15 +245,48 @@ function boot(s, saved = null) {
   if (saved) {
     restoreFlight(game, saved, { inputForPlayer: i => i === 1 && p2Pad !== null ? makeP2Input(p2Pad) : null });
     game.campaign = saved;
-  } else if (startChoice) { game.requestStart(startChoice); previewed = startChoice; } // the briefing shows the chosen start live
+  } else if (expedition) { provisionExpedition(game, expedition);game.setPaused(true); }
+  else if (startChoice) { game.requestStart(startChoice); previewed = startChoice; } // the briefing shows the chosen start live
+  if(game.campaign?.story.intro.tutorial)game.intro=new FlightIntro(game,{checkpoint:()=>flightSaves.checkpoint(),openLog:()=>showPause('expedition')});
   applySettings();
   if (!saved && p2Pad !== null) game.joinPlayer(makeP2Input(p2Pad)); // (player 2 stays on in a new system)
   try {
     const q = new URLSearchParams(location.search);
     q.set('seed', s);
+    if(expedition||saved?.story.intro.tutorial)q.set('expedition','1');else q.delete('expedition');
     history.replaceState(null, '', `?${q.toString()}#${s}`); // the #SEED form survives hosts that drop query strings
   } catch (e) { /* sandboxed */ }
   return game;
+}
+
+function openNewExpedition(){
+  if(restoreInProgress)return;
+  if(pause.open)pause.hide();game?.setPaused(true);input.releaseLock();
+  $('briefing').hidden=true;$('hud').hidden=true;$('overlay').hidden=false;
+  const card=document.createElement('section');card.className='newExpeditionCard';$('overlay').replaceChildren(card);
+  renderExpeditionSetup(card,{details:true,seed,onBack:()=>{if(launched)showPause('expedition');else{ $('overlay').hidden=true;$('briefing').hidden=false;if(!game)boot(seed);}},onCreate:async(rules,options)=>{
+    const nextSeed=normalizeSeed(options.seed);if(!nextSeed)throw Error('Enter a region seed.');
+    createCampaign({seed:nextSeed,label:options.label,rules}); // validate choices before replacing the current session
+    if(game?.campaign&&game.placed&&game.state==='playing')await flightSaves.save();
+    restoreInProgress=true;
+    try{
+      seed=nextSeed;const fresh=boot(seed,null,{rules,label:options.label});if(!fresh)throw Error('Could not prepare this expedition.');
+      await fresh.engine.webgpuReady;
+      launched=true;fresh.launched=true;fresh.everLaunched=true;previewed=null;$('hud').hidden=false;
+      // Generate terrain in the background while the lesson takes place in orbit.
+      fresh.startSim(fresh.startBody);
+      fresh.setPaused(true);flightSaves.checkpoint();
+      if(options.intro==='skip')fresh.intro.vote(0);
+    }finally{restoreInProgress=false;}
+    showPause('expedition');
+  }});
+  const saved=document.createElement('button');saved.type='button';saved.textContent='Saved flights';saved.onclick=openSavedFlights;card.querySelector('footer').append(saved);
+}
+function openSavedFlights(){
+  if(game){showPause('expedition');return;}
+  const card=document.createElement('section');card.className='newExpeditionCard';$('overlay').hidden=false;$('overlay').replaceChildren(card);
+  renderExpeditionPanel(card,flightSaves);
+  const back=document.createElement('button');back.textContent='New expedition';back.onclick=openNewExpedition;card.append(back);
 }
 
 async function prepareRestoredFlight(restored, saved) {
@@ -315,7 +354,7 @@ function launchGame() {
   if (loadScreen) loadScreen.begin();
 }
 // back to the briefing from the game (the pause menu's Change system)
-function toBriefing() {
+function toBriefing(resetCampaign = true) {
   if (pause.open) pause.hide();
   const ov = $('overlay');
   ov.hidden = true; ov.innerHTML = '';
@@ -324,6 +363,7 @@ function toBriefing() {
   input.releaseLock();
   $('hud').hidden = true;
   $('briefing').hidden = false;
+  if(resetCampaign&&game?.campaign){showBriefing(seed);boot(seed);}
 }
 $('launch').addEventListener('click', launchGame);
 canvas.addEventListener('click', () => {
@@ -343,9 +383,9 @@ window.addEventListener('keydown', (e) => {
 const pause = new PauseScreen({
   el: $('overlay'), game: () => game, settings, saveSettings, applySettings, input, tests: TEST_SCENES,
   resume: () => resume(), toBriefing: () => toBriefing(),
-  expedition: root => renderExpeditionPanel(root, flightSaves),
+  expedition: root => renderExpeditionPanel(root, flightSaves,{onNew:openNewExpedition}),
   // another system's seed from the catalog: its briefing, to pick where to begin
-  travel: (s) => { toBriefing(); seed = s; showBriefing(seed); boot(seed); },
+  travel: (s) => { toBriefing(false); seed = s; showBriefing(seed); boot(seed); },
   players: {
     info: () => ({ count: game ? game.players.length : 1, pad: p2Pad, waiting: joinWait }),
     join: () => {
@@ -371,6 +411,7 @@ function resume() {
   const ov = $('overlay');
   ov.hidden = true; ov.innerHTML = '';
   if (game) game.setPaused(false);
+  game?.intro?.render();
   if (launched) input.requestLock();
   else { $('hud').hidden = true; input.releaseLock(); }
 }
@@ -400,9 +441,13 @@ function openMenu() {
 // though anyone's Start pauses and resumes
 function padRouterFor(i) {
   return (ps, dt) => {
-    if (!game) return false;
+    if (!game) { const menu=openMenu();return menu?padRouterMenu(menu,ps,dt):false; }
     const p = game.players[i];
     if (!p) return false;
+    if(game.intro?.consent.pending){
+      if(ps.hits.has('B')){game.intro.act('cancel');return true;}
+      if(ps.hits.has('A')){game.intro.vote(i);if(pause.open&&pause.tab==='expedition')pause.render();return true;}
+    }
     const menu = openMenu();
     if (!menu && p.ui.suit.open) { if (i === 0) padMenu.setCur(null); return p.ui.suit.pad(ps, dt); }
     if (!menu && !(game.map.open && game.map.owner === p)) { if (i === 0) padMenu.setCur(null); return p.ui.quick.open ? p.ui.quick.pad(ps, dt) : false; }
@@ -414,7 +459,7 @@ function padRouterFor(i) {
 }
 input.padRouter = padRouterFor(0);
 function padRouterMenu(menu, ps, dt) {
-  const hud = game.players[0].ui.hud;
+  const hud = game?.players[0].ui.hud;
   if (pause.open) {
     // R3: the controls tab; View: the map (or back from it)
     if (ps.hits.has('R3')) { pause.setTab('controls'); return true; }
@@ -426,7 +471,7 @@ function padRouterMenu(menu, ps, dt) {
     }
   }
   // R3: the controller layout (from the help card), or close it
-  if (ps.hits.has('R3') && hud.helpOn) {
+  if (ps.hits.has('R3') && hud?.helpOn) {
     hud.toggleHelp('pad');
     return true;
   }
@@ -439,14 +484,17 @@ window.addEventListener('gamepadconnected', (e) => {
 });
 
 showBriefing(seed);
-boot(seed);
+if(explicitSandbox)boot(seed);else openNewExpedition();
 const savedFlights = document.createElement('button');
 savedFlights.type = 'button'; savedFlights.textContent = 'Saved flights';
-savedFlights.onclick = () => showPause('expedition');
+savedFlights.onclick = openSavedFlights;
 $('launch').after(savedFlights);
+const newExpedition=document.createElement('button');newExpedition.textContent='New expedition';newExpedition.className='primary';newExpedition.onclick=openNewExpedition;$('launch').before(newExpedition);
+$('launch').textContent='Launch sandbox';
 
 let manual = false;
 function loop(now) {
+  if(!game){input.pollPad('foot',.016);input.endFrame();}
   if (game && !manual && !window.debugHold) { watchJoin(); game.frame(now); pause.tick(); flightSaves.tick(now); if (loadScreen && launched) loadScreen.update(); } // debugHold: tests step frames themselves
   requestAnimationFrame(loop);
 }
@@ -479,3 +527,4 @@ window.launch = () => $('launch').click();
 window.joinP2 = joinP2; window.leaveP2 = leaveP2; // (tests: a stubbed controller's index)
 window.pauseScreen = pause;
 window.flightSaves = flightSaves; // finite owned-browser fixtures
+window.openNewExpedition = openNewExpedition;

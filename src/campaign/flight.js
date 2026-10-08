@@ -100,7 +100,8 @@ export function validateFlight(c) {
     const type=VESSEL_TYPES[v.type];if(!type||v.signature!==vesselSignature(type))fail(`Vessel layout changed or is unavailable: ${v.type}.`);
     if(!str(v.name)||typeof v.registry!=='string'||!body(v.body)||![v.parent,v.cargo,v.refVessel,v.deckHost].every(reference))fail('Invalid vessel references.');
     if(!VECTORS.every(k=>vec(v[k]))||!QUATS.every(k=>quat(v[k]))||!numbers(v,NUMBERS)||!FLAGS.every(k=>typeof v[k]==='boolean')||!vec(v.railR0)||!vec(v.railV0)||!vec(v.legState,4)||!vec(v.legComp,4)||!Number.isFinite(v.heatLoad))fail('Invalid vessel motion.');
-    if(![0,1,2].includes(v.assist)||v.hull<0||v.hull>1||v.hullTemp<0||typeof v.deathCause!=='string'||!['none','surface','inertial','deck','coast'].includes(v.targetFrame))fail('Invalid vessel controls or condition.');
+    const frameValid=['none','surface','inertial','deck','coast'].includes(v.targetFrame)||(typeof v.targetFrame==='string'&&v.targetFrame.startsWith('vessel:')&&v.targetFrame.length<=207);
+    if(![0,1,2].includes(v.assist)||v.hull<0||v.hull>1||v.hullTemp<0||typeof v.deathCause!=='string'||!frameValid)fail('Invalid vessel controls or condition.');
     for(const k of ['gear','gearTarget','ramp','rampTarget'])if(v[k]<0||v[k]>1)fail('Invalid landing gear or ramp.');
     if(v.parent){if(v.landed||v.rails||v.body!==ships.get(v.parent).body||!obj(v.zone))fail('Invalid parent frame.');let p=v,seen=new Set();while(p){if(seen.has(p.id))fail('Cyclic vessel attachment.');seen.add(p.id);p=ships.get(p.parent);}}
     else if(v.attached||v.zone!==null)fail('Attachment has no host.');

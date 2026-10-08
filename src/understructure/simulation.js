@@ -32,7 +32,7 @@ export class UnderstructureSimulation {
   get onPlatform(){return Math.abs(this.pos[0])<this.plan.access.halfWidth-.44&&Math.abs(this.pos[2])<this.plan.access.halfDepth-.44&&Math.abs(this.pos[1]-this.liftY)<.5;}
   get chamber(){return this.pos[1]<-2?chamberAt(this.plan,this.pos[0],this.pos[2]):null;}
   get zeroG(){return this.chamber?.kind==='zero-g';}
-  get jetpackEnabled(){return false;}
+  get jetpackEnabled(){return !!this.assistedTraversal&&this.chamber?.kind==='platforms';}
   get gravity(){return this.zeroG?0:this.chamber?.gravity??1;}
   get tetherActive(){return this.zeroG;}
   get rawData(){return (this.dataRecovered?this.plan.finalCache.value:0)+this.plan.fragments.filter(f=>this.fragments.has(f.id)).reduce((n,f)=>n+f.value,0);}
@@ -137,7 +137,9 @@ export class UnderstructureSimulation {
     if(this.grounded){this.pos[1]=support;this.velocity[1]=0;if(this.collision.canStand(this.pos[0],this.pos[2],this.state,.7))this.safeLedge={room:room.id,pos:[...this.pos]};if(jump)this.velocity[1]=4.6;}
     let f=input.forward||0,s=input.strafe||0,n=Math.max(1,Math.hypot(f,s));f/=n;s/=n;const speed=input.fast?5.5:3.1;
     for(const [axis,delta] of [[0,(-Math.sin(this.yaw)*f+Math.cos(this.yaw)*s)*speed*dt],[2,(-Math.cos(this.yaw)*f-Math.sin(this.yaw)*s)*speed*dt]]){const p=[...this.pos];p[axis]+=delta;if(this.collision.canTraverse(...p,room)){const floor=this.collision.floorAt(p[0],p[2],{...this.state,y:room.ceiling});if(floor!==null&&floor>this.pos[1]+.35)continue;this.pos[axis]=p[axis];}}
-    const oldY=this.pos[1];this.velocity[1]-=9.81*room.gravity*dt;const nextY=oldY+this.velocity[1]*dt;
+    const oldY=this.pos[1];
+    if(this.jetpackEnabled&&(input.vertical||0)>0)this.velocity[1]=Math.min(3,this.velocity[1]+(9.81*room.gravity+6)*dt);
+    this.velocity[1]-=9.81*room.gravity*dt;const nextY=oldY+this.velocity[1]*dt;
     const floor=this.collision.floorAt(this.pos[0],this.pos[2],{...this.state,y:oldY});
     if(this.velocity[1]<=0&&floor!==null&&oldY>=floor-.04&&nextY<=floor){this.pos[1]=floor;this.velocity[1]=0;this.grounded=true;}else{this.pos[1]=nextY;this.grounded=false;}
     if(this.pos[1]+1.9>room.ceiling){this.pos[1]=room.ceiling-1.9;this.velocity[1]=Math.min(0,this.velocity[1]);}

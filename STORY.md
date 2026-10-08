@@ -30,6 +30,8 @@ You leave to follow the transmission. The investigation leads to immense structu
 
 The rescue gives the expedition a purpose, while the galaxy remains open. Players may pursue side discoveries, return to familiar worlds or take different routes through the same investigation. The black hole stays visible from much of the initial region, and the mirrored system remains a place they can revisit.
 
+Current implementation: New Expedition offers real flight practice followed by interactive survey telemetry for the incident and signal analysis, or a convergent skip. This is a playable rehearsal of the teaching/story sequence. The physical mirror surface, aperture crossing, daughter’s craft choreography and central black-hole scene described below are still planned.
+
 ## Playable introduction treatment
 
 The cockpit glass darkens as the research ship turns.

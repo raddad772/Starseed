@@ -36,8 +36,9 @@ export class FlightSaves {
     if(this.pending)return this.pending;
     const g=this.game();let snapshot;
     try{snapshot=this.snapshot();}catch(error){this.status=`Save failed: ${error.message}`;return Promise.reject(error);}
+    this.checkpointQueued=false;const liveRecord=JSON.stringify(g.campaign);
     this.status='Saving…';
-    this.pending=this.storage.save(snapshot).then(saved=>{if(this.game()===g)g.campaign=saved;this.status=`Saved ${new Date(saved.savedAt).toLocaleTimeString()}`;return saved;},error=>{this.status=`Save failed: ${error.message}`;throw error;}).finally(()=>{this.pending=null;this.nextAuto=performance.now()+30000;});
+    this.pending=this.storage.save(snapshot).then(saved=>{if(this.game()===g)g.campaign=JSON.stringify(g.campaign)===liveRecord?saved:{...g.campaign,revision:saved.revision,savedAt:saved.savedAt};this.status=`Saved ${new Date(saved.savedAt).toLocaleTimeString()}`;return saved;},error=>{this.status=`Save failed: ${error.message}`;throw error;}).finally(()=>{this.pending=null;this.nextAuto=this.checkpointQueued?0:performance.now()+30000;});
     return this.pending;
   }
   exportJSON(){return encodeCampaign(this.snapshot());}
@@ -47,10 +48,11 @@ export class FlightSaves {
       if(this.pending)await this.pending;
       const result=await this.storage.load(id,{previous});if(!result)throw Error('That save slot is unavailable.');
       if(result.campaign.saveKind!=='single-system-flight')throw Error('This slot contains a campaign record without a saved flight.');
-      await this.loadGame(result.campaign);this.status=previous?'Previous revision loaded; save to keep this restoration.':'Saved flight restored';this.nextAuto=performance.now()+30000;
+      await this.loadGame(result.campaign);this.checkpointQueued=false;this.status=previous?'Previous revision loaded; save to keep this restoration.':'Saved flight restored';this.nextAuto=performance.now()+30000;
     })().finally(()=>{this.loading=null;});
     return this.loading;
   }
   async import(json){const c=importCampaignCopy(json);if(c.saveKind!=='single-system-flight')throw Error('Import a full flight save to resume play.');const saved=await this.storage.save(c);return saved;}
-  tick(now){const g=this.game();if(g?.campaign&&g.launched&&g.state==='playing'&&!g.paused&&!this.pending&&!this.loading&&now>=this.nextAuto){this.nextAuto=now+30000;this.save().catch(()=>{});}}
+  checkpoint(){this.checkpointQueued=true;this.nextAuto=0;}
+  tick(now){const g=this.game();if(g?.campaign&&g.launched&&g.state==='playing'&&(!g.paused||this.checkpointQueued)&&!this.pending&&!this.loading&&now>=this.nextAuto){this.nextAuto=now+30000;this.save().catch(()=>{});}}
 }

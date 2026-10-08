@@ -1,6 +1,7 @@
 import { CAMPAIGN_FORMAT, SCHEMA_VERSION, CONTENT_VERSION, campaignRules, recoveryTotal } from './state.js';
 import { mysteryProgress } from '../understructure/recovery.js';
 import { validateFlight } from './flight.js';
+import { validateTutorial } from './tutorial.js';
 
 export const MAX_SAVE_BYTES = 10 * 1024 * 1024;
 const forbidden = new Set(['__proto__', 'prototype', 'constructor']);
@@ -67,6 +68,7 @@ export function validateCampaign(c) {
   if (!object(intro) || !['pending', 'complete'].includes(intro.status)) fail('Invalid intro state.');
   if (intro.status === 'pending' ? intro.presentation !== null || intro.checkpoint !== 'not-started' : !['played', 'skipped'].includes(intro.presentation) || !['incident-recorded', 'departure-ready'].includes(intro.checkpoint)) fail('Invalid intro checkpoint.');
   idArray(intro.lessonsPractised, 'tutorial lessons');
+  if(intro.tutorial!==undefined)validateTutorial(intro.tutorial,c);
   const ids = new Set(); let previous = 0;
   for (const entry of s.journal) {
     const sequence = /^event\/(\d+)$/.exec(entry?.id)?.[1];

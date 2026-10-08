@@ -11,6 +11,39 @@ maps and viewscreens are native. WebGL exists only in explicit test tooling (`?w
 no production fallback. Other browser/GPU combinations still need certification; no speedup or exact
 pixel-parity claim is made. Dave confirmed sole-agent work and no coordination messages this session.
 
+## New-game flow and tutorial (Codex, 2026-10-08)
+Normal first-run opens New Expedition before creating a sandbox fleet. The reusable setup chooses
+name/seed, flight/exploration/traversal difficulty and Play/Skip. Explicit seed/test/era sandbox links
+still work. Campaign URLs carry expedition=1 so reload goes to setup/saves. New Expedition also lives
+in Pause → Expedition. Its initial and tutorial checkpoints autosave while paused once loading ends.
+
+`campaign/newGame.js` provisions one chosen era plus its cargo and a survey reference, assigns the
+existing second craft to P2, and installs recovery without legacy carrier assumptions. `tutorial.js`
+validates saved checkpoints and canonical convergence; `intro.js` observes actual motion/scan state.
+ROT practice teaches opposite burns, not X braking (X only acts through FULL's reference frame).
+The optional nav button performs a real rendezvous. Practice accidents recover safely.
+
+The current introduction is live flight practice plus interactive telemetry/dialogue, **not** the
+full physical mirror/black-hole scene. Three probe observations or a unanimous skip record the same
+incident and destination once. P2 A agrees, B cancels; changing crew/reloading clears votes. Mid-scan
+progress resumes. The first receiver address is provisional; interstellar travel remains unavailable.
+Basic control/reference-frame explanations are retained in Story Log.
+
+Guided entrances show markers; Survey reveals them within 12 m on foot, persisted per campaign.
+Assisted traversal enables bounded jetpack lift only in broken-platform rooms, retaining collision
+and circuit requirements. Standard and standalone legacy sectors remain unchanged. Full orbital
+survey discovery, wider assistance and all-theme assisted native traversal remain future work.
+
+49 focused CPU tests pass. Native tutorial fixture passes 20 checks: actual movement/counter-thrust,
+P2 fleet assignment, interrupted scan restore, story convergence and clean split-screen WebGPU.
+A separate skip fixture passes ten checks for Horizon/Pioneer setup, initial paused saving, prior slot preservation and actual P2 controller consent.
+Both use workers=2/worldsim=0. Typical completed medium snapshot is ~47 KB. Preserve other dirty fleet
+work; only this pass's game.js hunks are staged. No Claude launches or agent notices were sent.
+
+Received frozen, unintegrated checkpoints from the active Megastructures chat: fac2842 sound/decay
+and 74d8861 landing guide. They remain pending; retain campaign storage/assistance hooks and nav
+savedOrder when integrating. Do not send status notices to inactive chats.
+
 ## Campaign foundation, plan and story treatment (Codex, 2026-10-08)
 `CAMPAIGN.md` is the implementation plan for the persistent galaxy, central spinning black hole
 and jets, separate mirrored star system, first-run difficulty/fleet setup, playable/skippable
@@ -40,8 +73,8 @@ The older campaign preview still provides its 13 isolated browser checks and fir
 
 Limits: one system, current generator versions and exact vessel signatures; no layout migrations.
 Finish moving-person rendezvous and recover crew before saving. Drop out of FTL before resuming a
-saved nav order. New Expedition/fleet provisioning, playable/skippable intro, galaxy catalogue/map,
-interstellar continuity and event-triggered autosaves remain pending. Change System still starts a
+saved nav order. The checkpoint above connects New Expedition and a playable/skip rehearsal. The physical mirror
+scene, galaxy catalogue/map and interstellar continuity remain pending. Change System still starts a
 fresh sandbox fleet. The current snapshot deliberately does not mark the story intro completed.
 
 The initial ~200 charted systems and 60-billion-solar-mass visual preset are tuning

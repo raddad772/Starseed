@@ -11,9 +11,9 @@ export const LOG_ENTRIES = Object.freeze({
 });
 
 export const BASIC_LESSONS = Object.freeze([
-  { id: 'flight', title: 'Flight and assistance', text: 'Match velocity before making a close approach. Pilot assists use the engines available on your current craft. The navigation computer can help with launch, rendezvous, orbit and landing.' },
+  { id: 'flight', title: 'Flight and assistance', text: 'W/S moves forward/back, A/D sideways and Space/C up/down. Mouse steers; Q/E rolls. Tab selects a target, N engages navigation and Z changes assistance. In ROT, use opposite burns to reduce drift. X brakes in FULL assistance’s current reference frame; selecting a small craft does not change that frame. P returns to a remembered pilot seat. On a controller, LT brakes, RB targets, right D-pad engages navigation and R3 shows the complete layout. Available engines determine how quickly your ship can stop.' },
   { id: 'time', title: 'Shared time', text: 'Both players must request faster time. Either player can cancel immediately. Burns, close encounters and surface exploration may hold the expedition at normal time.' },
-  { id: 'exploration', title: 'Exploration', text: 'Keep a record of useful locations and return routes. Guided exploration identifies sites; survey exploration uses observations to narrow the search. Take time to explore and prepare.' },
+  { id: 'exploration', title: 'Exploration', text: 'Guided exploration shows access markers immediately. Survey exploration reveals them when you approach within 12 metres on foot, retaining the discovery in your save. Assisted traversal permits jetpack lift over broken platform routes; standard traversal uses jumps. Both still require restoring the machinery. Keep a record of useful locations and take time to explore and prepare.' },
   { id: 'recovery', title: 'Recovering records', text: 'Optional fragments add to the central record. Recovering the central record enables surface return; finding every fragment is optional. Previously recovered data cannot be collected again for extra credit.' }
 ]);
 
