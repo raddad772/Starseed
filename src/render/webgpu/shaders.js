@@ -77,6 +77,15 @@ struct Varying {
   out.ext = v.ext; out.objectIndex = oi;
   return out;
 }
+// Same planet-fixed 4.5 mm grain cells and footprint filter as the land material.
+fn grainGlint(p:vec3f,N:vec3f,H:vec3f,rare:f32)->f32 {
+  let c=vec3u(vec3i(floor(p*220.0))+vec3i(1048576));
+  var h=(c.x*1597334677u)^(c.y*3812015801u)^(c.z*2798796415u);
+  h=h*747796405u+2891336453u;h^=h>>16u;h*=2246822519u;h^=h>>13u;
+  if(f32(h>>22u)/1023.0<rare){return 0.0;}
+  let rv=vec3f(f32(h&1023u),f32((h>>10u)&1023u),f32((h>>3u)&1023u))/1023.0-vec3f(0.5);
+  return pow(max(dot(normalize(N+rv*0.8),H),0.0),3000.0);
+}
 struct GBuffer { @location(0) albedoAO: vec4f, @location(1) normalMaterial: vec4f, @location(2) emission: vec4f, @location(3) surface: vec4f };
 @fragment fn fragmentMain(v: Varying) -> GBuffer {
   let o = objects[v.objectIndex];
@@ -94,12 +103,21 @@ struct GBuffer { @location(0) albedoAO: vec4f, @location(1) normalMaterial: vec4
   let surface = groundSurface(v.color, v.mat, v.ext, v.cls0, v.cls1, v.cls2,
     v.fixedPos, v.anchorPos, dx, dy, normalize(v.fixedNormal), material.toFixed * up,
     length(v.worldPos), foot, dot(up, b.sunDir.xyz), v.occShore.y);
+  let N=normalize(transpose(material.toFixed)*surface.normal);
+  var glint=0.0;
+  let gw=v.cls2.z+0.6*v.cls1.z;let gc=foot*220.0;
+  if(material.windTimeMode.w>0.5&&gw>0.05&&gc<3.0&&dot(up,b.sunDir.xyz)>0.0){
+    let H=normalize(normalize(-v.worldPos)+b.sunDir.xyz);
+    let g=grainGlint(v.fixedPos,N,H,mix(0.9,0.97,v.cls1.z/max(gw,0.001)));
+    glint=min(g*25.0/max(1.0,gc*gc),3.0)*gw*(1.0-smoothstep(1.5,3.0,gc));
+  }
   var out: GBuffer;
   out.albedoAO = vec4f(clamp(surface.albedo, vec3f(0.0), vec3f(1.0)), surface.ao);
-  out.normalMaterial = vec4f(octEncode(normalize(transpose(material.toFixed) * surface.normal)), surface.roughness, o.surface.x * 16.0);
+  out.normalMaterial = vec4f(octEncode(N), surface.roughness, o.surface.x * 16.0);
   // Separate cave occlusion from scan AO: the former attenuates both sun and sky.
   out.emission = vec4f(surface.emission, 1.0 - 0.94 * clamp(v.occShore.x, 0.0, 1.0));
-  out.surface = vec4f(0.0, v.ext.y, 0.0, 0.04 - 0.02 * v.cls2.w);
+  // Terrain has no translucency; this channel holds the bounded glint coefficient.
+  out.surface = vec4f(glint/3.0, v.ext.y, 0.0, 0.04 - 0.02 * v.cls2.w);
   return out;
 }
 `;

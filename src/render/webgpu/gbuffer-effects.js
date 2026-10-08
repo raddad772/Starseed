@@ -33,13 +33,14 @@ struct Out { @location(0) a:vec4f,@location(1) n:vec4f,@location(2) e:vec4f,@loc
  if(p.settings.x>0.5&&gd>0&&(kind==1u||kind==2u)&&out.s.x<0.01){
   let distance=length(world-position(v.uv,gd));let k=1.0-smoothstep(0.015,0.18,distance);
   let gn=textureLoad(groundNormal,pixel,0);let ga=textureLoad(groundAlbedo,pixel,0);let gs=textureLoad(groundSurface,pixel,0);
-  out.a=mix(out.a,ga,k);N=normalize(mix(N,octDecode(gn.xy),k));out.n=vec4f(octEncode(N),mix(out.n.z,gn.z,k),select(out.n.w,gn.w,k>0.99));out.s=mix(out.s,gs,k);
+  out.a=mix(out.a,ga,k);N=normalize(mix(N,octDecode(gn.xy),k));out.n=vec4f(octEncode(N),mix(out.n.z,gn.z,k),select(out.n.w,gn.w,k>0.99));out.s=mix(out.s,gs,k);out.s.x=select(0.0,gs.x,k>0.99);
  }
  for(var i=0u;i<u32(p.size.z);i++){
   let decal=decals[i];let q=(decal.inverse*vec4f(world,1)).xyz;if(any(abs(q)>vec3f(0.5))){continue;}
   let facing=smoothstep(0.15,0.6,dot(N,decal.normalEdge.xyz));
   let edge=1.0-smoothstep(0.5-decal.normalEdge.w,0.5,max(abs(q.x),abs(q.z)));
   let mask=decal.color.w*edge*facing;
+  if(u32(out.n.w)%16u==0u){out.s.x*=1.0-mask;}
   out.a=vec4f(mix(out.a.rgb,decal.color.rgb,mask),out.a.a);
   out.n.z=mix(out.n.z,decal.surface.x,mask);out.s.y=mix(out.s.y,decal.surface.y,mask);out.s.z=mix(out.s.z,decal.surface.z,mask);out.e=vec4f(mix(out.e.rgb,decal.emission.rgb,mask),out.e.a);
  }
