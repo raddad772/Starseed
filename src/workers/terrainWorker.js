@@ -5,7 +5,7 @@ import { TerrainGenerator } from '../gen/terrain.js';
 import { buildChunk, chunkTransferables } from '../gen/chunkbuilder.js';
 import { analyzeSettlements } from '../gen/settlements.js';
 import { scatterFlora, floraSpecies, FLORA_KINDS } from '../gen/flora.js';
-import { terrainPortrait } from '../gen/portrait.js';
+import { terrainPortrait, terrainGlobeMap } from '../gen/portrait.js';
 import { VolumeField, buildVolumeChunk, volumeTransferables } from '../gen/volume.js';
 import { TileSet } from '../gen/worldsim/refine.js';
 import { heightFace } from '../gen/heightmap.js';
@@ -89,6 +89,12 @@ self.onmessage = (e) => {
       if (m.terrain && !params.has(m.body)) params.set(m.body, m.terrain);
       const r = terrainPortrait(gen(m.body), m.options || {});
       self.postMessage({ type: 'portrait', job: m.job, px: r.px, size: r.size, cover: r.cover }, [r.px.buffer]);
+      return;
+    }
+    if (m.type === 'globemap') {
+      // the nav computer's globe: the whole world's colours and heights (gen/portrait.js)
+      const r = terrainGlobeMap(gen(m.body), m.w, m.h);
+      self.postMessage({ type: 'globemap', job: m.job, w: r.w, h: r.h, rgb: r.rgb, elev: r.elev }, [r.rgb.buffer, r.elev.buffer]);
       return;
     }
     if (m.type === 'stones') {

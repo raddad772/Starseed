@@ -34,9 +34,11 @@ export class SuitScreen {
     this.canvas.addEventListener('mousedown', (e) => {
       if (!this.open || this.game.input.locked) return;
       this.cursor = this.toLogical(e.clientX, e.clientY);
-      if (e.button === 0) this.ev.press = true;
+      if (e.button === 0) { this.ev.press = true; this.mouseDown = true; }
       e.preventDefault();
     });
+    // (held, for a drag: let go anywhere)
+    window.addEventListener('mouseup', (e) => { if (e.button === 0) this.mouseDown = false; });
     this.canvas.addEventListener('wheel', (e) => { if (this.open) { this.ev.scroll += Math.sign(e.deltaY); e.preventDefault(); } }, { passive: false });
   }
 
@@ -83,6 +85,7 @@ export class SuitScreen {
     if (ps.hits.has('RB')) ev.tab += 1;
     if (Math.abs(ps.ry) > 0.5) { this.scrollAcc = (this.scrollAcc || 0) + ps.ry * dt * 8; }
     if (Math.abs(this.scrollAcc || 0) >= 1) { ev.scroll += Math.trunc(this.scrollAcc); this.scrollAcc -= Math.trunc(this.scrollAcc); }
+    this.look = { x: ps.rx, y: ps.ry };   // (the right stick, for a globe to turn on)
     if (ps.hits.has('START') && this.game.input.onPadPause) { this.close(); this.game.input.onPadPause(); }
     if (d || ps.hits.size) this.cursor = null; // the pad drives the highlight, not a cursor
     return true;
@@ -122,7 +125,8 @@ export class SuitScreen {
     if (this.canvas.width !== cw || this.canvas.height !== ch) { this.canvas.width = cw; this.canvas.height = ch; }
     const g2 = this.ctx;
     g2.setTransform(cw / app.w, 0, 0, ch / app.h, 0, 0);
-    const input = { pointer: this.cursor, pointerMoved: this.moved, press: ev.press, nav: ev.nav, activate: ev.activate, back: ev.back, tab: ev.tab, scroll: ev.scroll };
+    const down = inp.locked ? !!(inp.buttons & 1) : !!this.mouseDown;
+    const input = { pointer: this.cursor, pointerMoved: this.moved, press: ev.press, down, look: inp.pad ? this.look : null, dt, nav: ev.nav, activate: ev.activate, back: ev.back, tab: ev.tab, scroll: ev.scroll };
     this.ui.begin(g2, input);
     app.draw(this.ui, dt);
     this.ui.end();

@@ -85,6 +85,27 @@ export function terrainPortrait(gen, opts = {}) {
   return { px, size, cover: terrainCover(gen) };
 }
 
+// The whole world as a map for the nav computer's globe (ui/screens/globe.js): the generator's
+// own colours (no clouds, unlit: the globe lights it by the real sun) and the height of what's on
+// top (water's surface over a sea or lake), equirectangular, w x h, north at the top row, longitude
+// from -pi at the left (directions body-fixed, y the pole: x = cos lat cos lon, z = cos lat sin lon)
+export function terrainGlobeMap(gen, w = 512, h = 256) {
+  const s = new Float64Array(S_LEN), col = [0, 0, 0], mat = new Float64Array(7), minW = gen.R / 150;
+  const rgb = new Uint8ClampedArray(w * h * 3), elev = new Float32Array(w * h);
+  for (let j = 0; j < h; j++) {
+    const lat = Math.PI / 2 - (j + 0.5) / h * Math.PI, cl = Math.cos(lat), sl = Math.sin(lat);
+    for (let i = 0; i < w; i++) {
+      const lon = -Math.PI + (i + 0.5) / w * 2 * Math.PI;
+      gen.sample(cl * Math.cos(lon), sl, cl * Math.sin(lon), minW, s);
+      gen.shade(s, 0.05, col, mat);
+      const o = j * w + i;
+      rgb[o * 3] = enc(col[0] * 1.4); rgb[o * 3 + 1] = enc(col[1] * 1.4); rgb[o * 3 + 2] = enc(col[2] * 1.4);
+      elev[o] = mat[4] > 0 ? Math.max(s[S_H], 0) : s[S_H];
+    }
+  }
+  return { w, h, rgb, elev };
+}
+
 // what covers a terrain world, as [{ name, frac }] (largest first, over 1.5%)
 export function terrainCover(gen, n = 1500) {
   const p = gen.p, R = gen.R;

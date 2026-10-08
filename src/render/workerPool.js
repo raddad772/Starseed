@@ -8,7 +8,7 @@ import { buildChunk } from '../gen/chunkbuilder.js';
 import { analyzeSettlements } from '../gen/settlements.js';
 import { scatterFlora, floraSpecies } from '../gen/flora.js';
 import { fireTile } from '../gen/life/fire.js';
-import { terrainPortrait } from '../gen/portrait.js';
+import { terrainPortrait, terrainGlobeMap } from '../gen/portrait.js';
 import { heightFace } from '../gen/heightmap.js';
 import { scatterStones } from '../gen/rocks.js';
 import { buildFloes } from '../gen/floeslabs.js';
@@ -126,6 +126,7 @@ export class WorkerPool {
       else if (m.type === 'fire') r = { type: 'fire', ...fireTile(g, m.face, m.ti, m.tj, { o2K: m.o2K, seed: m.seed }) };
       else if (m.type === 'floes') r = { type: 'floes', ...(buildFloes(g, m.dir, m.sinSun, m.L, m.reach) || { pos: null }) };
       else if (m.type === 'stones') { const sp = g._species || (g._species = floraSpecies(this.bodies.find((x) => x.id === m.body).terrain)); const st = scatterStones(g, m.face, m.level, m.ix, m.iy, m.maxLevel, sp.seed ^ 0x2545f491); r = { type: 'stones', origin: st.origin, geo: st.geo }; }
+      else if (m.type === 'globemap') { const gm = terrainGlobeMap(g, m.w, m.h); r = { type: 'globemap', ...gm }; }
       else if (m.type === 'portrait') { const p = terrainPortrait(g, m.options || {}); r = { type: 'portrait', px: p.px, size: p.size, cover: p.cover }; }
       else r = { type: 'analyze', result: analyzeSettlements(g, m.options || {}) };
       this.pending.delete(e.job);

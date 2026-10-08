@@ -188,6 +188,11 @@ export class WorldSims {
     return tile;
   }
   pyrKey(id, L, face, ti, tj) { return `${this.refKey(id)}|p${L}|${face}|${ti}|${tj}`; }
+  // anything else made from a world and kept with it (keys under its refinement's, so a new sim or
+  // refinement version leaves the old behind): read back, or null; and kept
+  async kept(id, name) { return this.noPyrCache ? null : dbGet(await this.dbP, `${this.refKey(id)}|${name}`); }
+  async keep(id, name, val) { dbPut(await this.dbP, `${this.refKey(id)}|${name}`, val); }
+
   // a tile from the cache if it's been made (not made here), or null
   async cachedPyr(id, L, face, ti, tj) {
     if (this.noPyrCache) return null;
