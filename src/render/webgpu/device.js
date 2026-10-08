@@ -68,7 +68,7 @@ export class PassTimer {
     this.resolve = device.createBuffer({ size: maxPasses * 16, usage: GPUBufferUsage.QUERY_RESOLVE | GPUBufferUsage.COPY_SRC });
     this.read = device.createBuffer({ size: maxPasses * 16, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
   }
-  begin() { this.labels = []; this.dropped = 0; this.active = this.enabled && !this.pending; }
+  begin() { this.labels = []; this.dropped = 0; this.active = this.enabled && !this.pending && !this.disposed; }
   writes(label) {
     if (!this.active) return undefined;
     if(this.labels.length >= this.maxPasses){this.dropped++;return undefined;}
@@ -87,6 +87,7 @@ export class PassTimer {
     const labels = this.sampleLabels;
     try {
       await this.read.mapAsync(GPUMapMode.READ);
+      if(this.disposed)return;
       const values = new BigUint64Array(this.read.getMappedRange());
       const out = {}, intervals = [];
       labels.forEach((label, i) => { const a=values[i*2],b=values[i*2+1];if(b>=a){out[label]=(out[label]||0)+Number(b-a)/1e6;intervals.push([a,b]);} });
@@ -100,7 +101,11 @@ export class PassTimer {
 
       this.last = out; this.coverage={passes:labels.length,dropped:this.sampleDropped,passAttributionReliable:this.passAttributionReliable,gpuIntervalUnionMs:this.gpuMs};
       this.read.unmap();
+    } catch(error) {
+      // Destroying a renderer cancels its pending telemetry readback. A failure
+      // on a live device still reaches the renderer's normal error handler.
+      if(!this.disposed)throw error;
     } finally { this.pending = false; }
   }
-  dispose() { this.active=false;timers.delete(this.device);this.query?.destroy(); this.resolve?.destroy(); this.read?.destroy(); }
+  dispose() { this.disposed=true;this.active=false;timers.delete(this.device);this.query?.destroy(); this.resolve?.destroy(); this.read?.destroy(); }
 }

@@ -1,3 +1,4 @@
+import { attachHistorySampler } from './historySampler.js';
 // A rocky world's whole history, run forward from its formation: the one model
 // for every rocky planet and moon (WORLDSIM.md U1). Its present state is what
 // the game shows (atmosphere, temperature, oceans, life, how active it is),
@@ -821,14 +822,7 @@ export function evolveWorld(ctx) {
   for (const k in series) series[k] = Float64Array.from(series[k]);
   events.sort((a, b) => a.t - b.t);
   out.summary = events.map((e) => `${fmtAgo(e.ago)}: ${e.text}`);
-  out.at = (agoMyr, key) => {
-    const tt = age - agoMyr / 1000, ts = series.t;
-    if (ts.length < 2) return ts.length ? series[key][0] : null;
-    let lo = 0, hi = ts.length - 1;
-    while (hi - lo > 1) { const m = (lo + hi) >> 1; if (ts[m] <= tt) lo = m; else hi = m; }
-    const f = Math.max(0, Math.min(1, (tt - ts[lo]) / (ts[hi] - ts[lo] || 1)));
-    return series[key][lo] * (1 - f) + series[key][hi] * f;
-  };
+  attachHistorySampler(out);
   return out;
 }
 

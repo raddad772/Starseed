@@ -1,0 +1,12 @@
+<!doctype html><meta charset="utf-8"><title>Opening entry validation</title>
+<style>body{background:#101b22;color:#dae5f4;font:14px system-ui}iframe{width:100%;height:900px;border:0}pre{white-space:pre-wrap;max-height:200px;overflow:auto}</style>
+<button id="run">Check title and Free exploration</button><pre id="status">Ready</pre><iframe title="Entry test game"></iframe>
+<script type="module">
+const frame=document.querySelector('iframe'),status=document.querySelector('#status');
+document.querySelector('#run').onclick=()=>{
+ status.textContent='Running…';
+ frame.onload=()=>{const s=frame.contentDocument.createElement('script');s.type='module';s.src='/tools/opening-entry-driver.js';frame.contentDocument.body.append(s);};
+ frame.src='/?workers=2&worldsim=0';
+};
+window.addEventListener('message',e=>{if(e.source===frame.contentWindow&&e.origin===location.origin&&e.data.type==='opening-entry')status.textContent=JSON.stringify(e.data.report,null,2);});
+</script>

@@ -16,7 +16,9 @@ import { WARP_LEVELS, requestedWarp, warpBeforeEvent } from './sim/warpConsent.j
 import { NearGround } from './sim/nearGround.js';
 import { findCliffCountry, gentleNear } from './gen/volume.js';
 import * as THREE from 'three';
-import { generateSystem } from './gen/system.js';
+import { updateMirrorView,keepOutsideMirror } from './campaign/mirrorScene.js';
+import { orbitalReadiness } from './sim/arrival.js';
+import { getSystem } from './gen/systemCache.js';
 import { S_LEN, S_H, S_WDEPTH } from './gen/terrain.js';
 import { Universe } from './sim/universe.js';
 import { Engine } from './render/engine.js';
@@ -75,7 +77,8 @@ export class Game {
     this.canvas = canvas;
     this.seed = seed;
     this.opts = opts;
-    this.system = generateSystem(seed);
+    this.system = getSystem(opts.systemDefinition || seed);
+    if(this.system.seed!==seed)throw Error('System recipe does not match the requested world');
     this.universe = new Universe(this.system);
     this.engine = new Engine(canvas, { renderScale: opts.renderScale || 1, reversedDepth: opts.reversedDepth });
     const terrainBodies = this.system.bodies.filter((b) => b.terrain).map((b) => ({ id: b.id, terrain: b.terrain }));
@@ -228,6 +231,11 @@ export class Game {
   // player 1, with a shuttle of their own parked beside player 1's
   joinPlayer(input) {
     if (this.players.length >= 2) return null;
+    if (this.campaign?.story.intro.tutorial && this.campaign.story.intro.status !== 'complete') {
+      this.joinPending=null;input?.dispose?.();
+      this.message('The introduction is single-player. Complete or skip it to unlock multiplayer.', 'nav');
+      return null;
+    }
     if (!this.placed) { this.joinPending = input; return null; } // (after the start is placed)
     const savedPlayer = this.awayPlayers?.[this.players.length];
     const p = this.addPlayer(input);
@@ -237,6 +245,7 @@ export class Game {
       this.message(`${p.label} rejoined at their saved location`, 'nav');
       return p;
     }
+    if (this.joinCampaignPlayer) { this.joinCampaignPlayer(p); this.setCur(null); return p; }
     if (!this.ship2) this.ship2 = this.addVessel('shuttle', 'Kittiwake', 'SV-28');
     p.ownShip = this.ship2;
     this.regroup(p);
@@ -472,6 +481,7 @@ export class Game {
       const was = sc.mesh.visible;
       sc.mesh.visible = false; // (not in its own picture)
       const atmos = this.world.update(this.camPos, 0);
+      updateMirrorView(this);
       this.updateSkyStars(0);
       this.updateEffects(dtReal * 2);
       e.render(dtReal * 2, this.sky, atmos, false);
@@ -484,6 +494,19 @@ export class Game {
   // ------------------------------------------------------------------ start sequence
 
   begin() {
+    const key = this.opts.startChoice || this.startPending;
+    if (!this.opts.testSpot && (key === 'carrier' || key?.startsWith('orbit:'))) {
+      // Place the orbital preview without finding a landing site. applyStart
+      // loads cached planetary history (or generates it) before flight begins.
+      const b = this.startBody;
+      this.startDir = null;
+      this.respawnInfo = { body: b, dir: new THREE.Vector3(1, 0, 0) };
+      this.spawnFleet(b);
+      this.placed = true;
+      this.startChoice = key;
+      this.applyStart(key);
+      return;
+    }
     const b = this.startBody;
     this.loadText = `Surveying ${b.data.name} for a landing site`;
     this.screenHud.setLoading(this.loadText, 0);
@@ -491,29 +514,49 @@ export class Game {
     // run now; surveyed before it, the sites were the procedural ground's, where the sim may have sea:
     // SOL Earth's start had been 667 m under it)
     this.startSim(b).then(() => this.requestSurvey(b, -50)).then((res) => {
+      if (this.disposed) return;
       // (the world as it is now, on the shared clock: of the survey's sites, the best one in daylight)
       this.t = this.clock.now();
       this.universe.update(this.t);
       const site = res && res.sites && this.daySite(b, res.sites);
       this.placeStart(b, site ? new THREE.Vector3(...site.dir) : this.fallbackSite(b), site);
     }, (err) => {
+      if (this.disposed) return;
       console.error(err);
       this.placeStart(b, this.fallbackSite(b), null);
     });
   }
 
   // the start world's sim (worldSims.js): resolves once it's in, or failed, or there are none
-  startSim(b) {
+  startSim(b, onProgress) {
     const ws = this.worldSims, id = b.data.id;
     if (!ws || !b.data.terrain || !b.solid) return Promise.resolve();
     ws.request(id);
     return new Promise((res) => {
       const poll = () => {
         const st = ws.status.get(id);
-        if (st === 'ready' || st === 'failed' || st === undefined) res();
-        else { if (st === 'running') this.screenHud.setLoading(`Simulating ${b.data.name}'s history`, 0); setTimeout(poll, 250); }
+        onProgress?.(st, ws.phase.get(id));
+        if (this.disposed || st === 'ready' || st === 'failed' || st === undefined) res();
+        else { setTimeout(poll, 250); }
       };
       poll();
+    });
+  }
+
+  waitForOrbitalHistory(b) {
+    if (!this.worldSims || !b.solid || !b.data.terrain) return;
+    const token = this.startToken;
+    this.loadHold = true;
+    this.loadText = `Loading ${b.data.name}'s planetary history`;
+    this.startSim(b, (status, phase) => {
+      if (this.disposed || token !== this.startToken) return;
+      this.loadText = status === 'running'
+        ? `Generating ${b.data.name}'s planetary history${phase ? ` · ${phase}` : ''}`
+        : `Loading ${b.data.name}'s planetary history`;
+    }).then(() => {
+      if (this.disposed || token !== this.startToken) return;
+      this.loadHold = false;
+      this.loadText = `Preparing orbit of ${b.data.name}`;
     });
   }
 
@@ -590,6 +633,23 @@ export class Game {
   // it: the home landing site, or a spot chosen on any world (spot: a
   // survey's start spot, for the arrival message)
   startOnSurface(b = this.startBody, dir = this.startDir, spot = null) {
+    if (!dir) {
+      const token = this.startToken;
+      this.beginLoading('surface', `Surveying ${b.data.name} for a landing site`);
+      this.loadHold = true;
+      this.startSim(b).then(() => this.disposed ? null : this.requestSurvey(b, -50)).then(res => {
+        if (this.disposed || token !== this.startToken) return;
+        const site = res?.sites && this.daySite(b, res.sites);
+        this.startDir = site ? new THREE.Vector3(...site.dir) : this.fallbackSite(b);
+        this.loadHold = false;
+        this.startOnSurface(b, this.startDir, site);
+      }).catch(error => {
+        if (this.disposed || token !== this.startToken) return;
+        console.error(error); this.loadHold = false;
+        this.startDir = this.fallbackSite(b); this.startOnSurface(b, this.startDir);
+      });
+      return;
+    }
     const s = this.ship, p = this.players[0];
     for (const q of this.players) q.understructure?.leave(false);
     this.respawnInfo = { body: b, dir: dir.clone() };
@@ -757,6 +817,7 @@ export class Game {
     else if (key && key.startsWith('orbit:') && this.universe.bodies[+key.slice(6)]) this.startInOrbit(this.universe.bodies[+key.slice(6)]);
     else if (key && key.startsWith('site:') && this.universe.bodies[+key.split(':')[1]]) this.startAtSpot(this.universe.bodies[+key.split(':')[1]], key.split(':')[2]);
     else this.startOnSurface();
+    if (this.loadMode === 'space') this.waitForOrbitalHistory(this.player.currentBody());
     // the simulated worlds, the one we start at first
     if (this.worldSims) {
       const id = key && key.startsWith('orbit:') ? +key.slice(6) : key && key.startsWith('site:') ? +key.split(':')[1] : (this.ship && this.ship.body && this.ship.body.data ? this.ship.body.data.id : null);
@@ -1446,6 +1507,7 @@ export class Game {
   // ------------------------------------------------------------------ controls
 
   setWarp(i) {
+    if (this.intro?.active) i = 0;
     i = Math.max(0, Math.min(WARP_LEVELS.length - 1, i));
     const me = this.cur;
     if (me) {
@@ -1642,6 +1704,7 @@ export class Game {
     if (this.state === 'loading') this.updateLoading(dtReal);
     if (this.state === 'playing' && !this.paused) this.simulate(dtReal);
     else if (this.state !== 'playing') this.universe.update(this.t);
+    this.intro?.update(dtReal);
     // a player lost while others play on comes back beside player 1
     for (const p of this.players) {
       if (!(p.respawnT > 0) || this.paused || (p.respawnT -= dtReal) > 0) continue;
@@ -1687,6 +1750,7 @@ export class Game {
     this.itemVisuals.update(this.camPos);
     this.surfaceSurveys.render(this.camPos);
     const atmos = this.world.update(this.camPos, dtA);
+    updateMirrorView(this);
     this.updateSkyStars(dtA);
     this.updateEffects(dtReal);
     if (this.map.open && this.map.owner === p) this.map.render(dtReal, p.view.rect);
@@ -1790,8 +1854,11 @@ export class Game {
       this.screenHud.setLoading(this.loadText, this.loadProgress);
       return;
     }
-    const pending = this.world.pendingNear();
     const space = this.loadMode === 'space';
+    const readiness = space ? orbitalReadiness(this) : null;
+    const pending = readiness ? readiness.pending : this.world.pendingNear();
+    if (readiness) this.loadText = readiness.failed ? `Could not prepare ${readiness.failed} · choose another world or reload`
+      : readiness.history || 'Preparing nearby planets';
     const terr = this.world.terrainOf(this.player.currentBody().id);
     // (a terrain rebuilt mid-descent, its world's sim or refinement just in, hasn't measured yet)
     const deepest = terr ? terr.deepest || 0 : 0;
@@ -1799,7 +1866,7 @@ export class Game {
     const near = space ? 1 : this.nearBuilt(terr);
     // (the terrain pyramid's tiles under the landing spot, made before the ground's drawn)
     const tilesIn = !this.tiles || this.tiles.missingCore === 0 || this.loadTimer > 30;
-    if (pending === 0 && deepEnough && near >= 1 && tilesIn) this.settleTime += dt; else this.settleTime = 0;
+    if (pending === 0 && !readiness?.unmeasured && !readiness?.failed && deepEnough && near >= 1 && tilesIn) this.settleTime += dt; else this.settleTime = 0;
     // progress: on the surface the terrain refines level by level under you
     // (later levels take longer: cubed to keep pace with the clock), then the
     // last tiles drain; in space only the tiles in view drain; then a settle
@@ -1809,7 +1876,7 @@ export class Game {
     const f = space || !terr ? 0.1 + 0.8 * drain : 0.1 + 0.4 * levels + 0.2 * drain + 0.2 * near;
     this.loadProgress = Math.max(this.loadProgress || 0, Math.min(0.99, (f || 0) + 0.1 * Math.min(1, this.settleTime / 0.4)));
     this.screenHud.setLoading(this.loadText, this.loadProgress);
-    if ((this.settleTime > 0.4 && this.loadTimer > 1) || this.loadTimer > (space ? 10 : 40)) {
+    if ((this.settleTime > 0.4 && this.loadTimer > 1) || (!space && this.loadTimer > 40)) {
       this.state = 'playing';
       this.screenHud.setLoading(null);
       this.engine.adaptReset = true;
@@ -1885,6 +1952,7 @@ export class Game {
     this.berthYachtIfHome();
     for (const v of this.vessels) if (v.pilot && !v.dead) this.chooseReference(v);
     for (const p of this.players) { this.setCur(p); this.stepPlayer(p, dtReal); }
+    keepOutsideMirror(this);
     this.setCur(null);
   }
 
@@ -2141,6 +2209,7 @@ export class Game {
   // 1 m/s against it: berthed again, the hatch over its hub up to the yacht dock
   berthYachtIfHome() {
     const y = this.yacht, c = this.carrier;
+    if(!c?.type.layout?.yacht)return;
     if (!y || !c || c.dead || y.dead || y.parent || y.landed || y.body !== c.body) return;
     if (c.pos.distanceToSquared(y.pos) > Math.pow(c.type.radius + 60, 2)) return;
     const local = c.bodyToLocal(y.pos, _v1);
@@ -2175,11 +2244,17 @@ export class Game {
     if (this.debugFree && p === this.players[0]) { this.freecam.update(dt, dt, this.input); return; }
     if (this.state === 'loading' && !this.respawnInfo) return;
     const pv = this.piloted;
+    // External views of a berthed craft must also clear its containing hull.
+    const cameraVessel = pv?.root;
+    if (cameraVessel && p._cameraVessel !== cameraVessel) {
+      p.chaseQuat.copy(cameraVessel.quat);
+      p._cameraVessel = cameraVessel;
+    }
     if (this.camMode === 'landing' && pv) {
       // locked landing view: level with the local horizon (the host's deck
       // inside a big ship), above and behind along the ship's heading, aimed
       // a little ahead of the ground under it; rigid, no lag
-      const s = pv;
+      const s = cameraVessel;
       const R = s.type.radius;
       const wp = s.getWorldPos(_v1);
       const up = s.parent ? _v2.set(0, 1, 0).applyQuaternion(s.parent.quat) : _v2.copy(s.pos).normalize();
@@ -2199,7 +2274,7 @@ export class Game {
       // above and behind, the craft low in the frame and the way ahead in
       // view; the camera lags a turn a little, catching up faster the further
       // round it falls (it must never end up out in front)
-      const s = pv;
+      const s = cameraVessel;
       const R = s.type.radius;
       const wp = s.getWorldPos(_v1);
       const lag = this.chaseQuat.angleTo(s.quat);
@@ -2212,7 +2287,7 @@ export class Game {
       return;
     }
     const s = p.aboard ? p.vessel : p.ship;
-    this.chaseQuat.copy(s.quat);
+    this.chaseQuat.copy(cameraVessel?.quat || s.quat);
     p.computeCamera(this.camPos, this.camQuat);
     // shake: thrust, re-entry, landing impact
     const shake = Math.min(1, s.heatGlow * 0.5 + (p.mode === 'seat' ? (s.limits.main > 0 ? s.thrustLocal.length() / s.limits.main : 0) * (s.big ? 0.05 : 0.15) + s.env.dynPressure / 4e5 : 0)) + (s.ftl.state === 'cruise' ? 0.05 : 0);
@@ -2445,6 +2520,7 @@ export class Game {
   // few seconds later (your shuttle parked by theirs); alone, player 1 gets
   // the restart card (and anyone else lost comes back beside them after)
   onDeath(cause, p = this.player) {
+    if(this.intro?.active){this.intro.retry();this.message('Practice craft recovered · take your time and try again','nav');return;}
     if (p.deathShown) return;
     p.deathShown = true;
     this.setWarp(0);
@@ -2463,9 +2539,14 @@ export class Game {
 
   // player 1 starts again at the landing site (or their chosen orbit)
   respawn() {
+    if(this.respawnCampaign){this.respawnCampaign();return;}
     this.setCur(null);
     this.players[0].deathShown = false;
     for (const v of this.vessels) v.nav.cancel(null);
+    if (this.startChoice?.startsWith('orbit:') || this.startChoice === 'carrier') {
+      this.applyStart(this.startChoice);
+      return;
+    }
     const ri = this.respawnInfo;
     const b = ri.body;
     for (const v of this.vessels) { v.ftl.state = 'idle'; v.ftl.speed = 0; }
@@ -2490,6 +2571,8 @@ export class Game {
   }
 
   dispose() {
+    this.disposed = true;
+    this.intro?.dispose();
     window.removeEventListener('resize', this._onResize);
     this.surfaceSurveys.dispose();
     // (other players' HUD and suit copies, and their controllers)

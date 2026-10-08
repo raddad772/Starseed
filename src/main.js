@@ -2,7 +2,9 @@
 
 import { Game } from './game.js';
 import { Input } from './input.js';
-import { generateSystem } from './gen/system.js';
+import { getSystem, prepareSystem } from './gen/systemCache.js';
+import { prepareOpeningSystems } from './campaign/systemPreparation.js';
+import { resolveSystem } from './campaign/galaxy.js';
 import { renderBriefing, startOptions } from './ui/briefing.js';
 import { randomSeedString, normalizeSeed } from './core/rng.js';
 import { TEST_SCENES } from './ui/testScenes.js';
@@ -14,10 +16,19 @@ import { restoreFlight } from './campaign/flight.js';
 import { validateCampaign } from './campaign/save.js';
 import { CampaignSiteStorage } from './campaign/siteStorage.js';
 import { renderExpeditionPanel } from './ui/expeditionPanel.js';
+import { renderExpeditionSetup } from './ui/expeditionSetup.js';
+import { provisionExpedition } from './campaign/newGame.js';
+import { FlightIntro } from './campaign/intro.js';
+import { tutorialIsActive } from './campaign/tutorial.js';
+import { createCampaign } from './campaign/state.js';
+import { JourneyConsent } from './campaign/travel.js';
+import { renderGalaxyMap } from './ui/galaxyMap.js';
+import { restoreMirror } from './campaign/mirrorScene.js';
 
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
 const DEFAULT_SEED = 'FSPB-8DTW';
+const explicitSandbox = !params.has('expedition') && (params.has('seed') || params.has('test') || params.has('era') || location.hash.length > 1);
 
 function readSeed() {
   const fromHash = location.hash.length > 1 ? decodeURIComponent(location.hash.slice(1)) : '';
@@ -42,6 +53,8 @@ window.addEventListener('unhandledrejection', (e) => reportError(e.reason && (e.
 
 let game = null;
 let restoreInProgress = false;
+let journeyInProgress = false;
+const journeyConsent = new JourneyConsent(), galaxyView = {};
 const flightSaves = new FlightSaves({ game: () => game, load: loadSavedFlight, onStatus: saveStatus });
 function saveStatus(message) {
   for (const status of document.querySelectorAll('[data-campaign-status]')) status.textContent = message;
@@ -57,6 +70,7 @@ function saveStatus(message) {
 }
 let seed = readSeed();
 let launched = false;
+let titlePreview = false;
 let loadScreen = null;     // (ui/loadScreen.js: on arriving, until the ground round you is in)
 const canvas = $('view');
 const input = new Input(canvas);
@@ -101,6 +115,7 @@ function makeP2Input(padIndex) {
 
 function joinP2(padIndex) {
   if (!game || game.players.length > 1) return;
+  if(tutorialIsActive(game.campaign)){joinWait=false;game.message('The introduction is single-player. Complete or skip it to unlock multiplayer.','nav');return;}
   p2Pad = padIndex;
   game.joinPlayer(makeP2Input(padIndex));
 }
@@ -172,8 +187,12 @@ function showWorld(id, preview) {
   wirePicks(box);
   if (preview) pickStart(`orbit:${id}`);
   if (!body || !body.solid) return;
-  game.requestSurvey(body, 90).then((res) => {
-    if (customWorld !== id) return;
+  const showingGame=game;
+  showingGame.startSim(body).then(()=> {
+    if (game!==showingGame || customWorld!==id) return null;
+    return showingGame.requestSurvey(body,90);
+  }).then((res) => {
+    if (game!==showingGame || customWorld !== id) return;
     const spots = (res && res.spots) || [];
     box.innerHTML = orbit + spots.map((sp) => pickButton(`site:${id}:${sp.key}`, sp.label,
       `${sp.biome} · ${sp.temperatureC} °C · ${sp.elevation.toLocaleString()} m`)).join('');
@@ -182,7 +201,7 @@ function showWorld(id, preview) {
 }
 
 function showBriefing(s) {
-  const sys = generateSystem(s);
+  const sys = getSystem(s);
   renderBriefing(sys, { starLine: $('starLine'), schematic: $('schematic'), table: $('planetTable') });
   $('seedInput').value = s;
   // where to begin (the first is the default; a new system starts afresh)
@@ -203,12 +222,15 @@ function showBriefing(s) {
 // Launch then carries on where you were, and picking any start moves you there)
 let previewed = null;
 
-function boot(s, saved = null) {
+function boot(s, saved = null, expedition = null) {
   if (saved) validateCampaign(saved); // reject invalid imports before disposing the current game
   if (game) { game.engine.dispose(); game.dispose(); game = null; }
+  if(expedition){p2Pad=null;joinWait=false;}
   try {
     if (!navigator.gpu) throw new Error('WebGPU is unavailable');
     game = new Game(canvas, input, s, {
+      systemDefinition: saved?.world.definition || expedition?.systemDefinition,
+      startChoice,
       workers: params.get('workers') ? +params.get('workers') : undefined,
       worldsim: params.get('worldsim') !== '0', simN: params.get('simN') ? +params.get('simN') : undefined,
       simWorkers: params.get('simWorkers') ? +params.get('simWorkers') : undefined,
@@ -218,6 +240,7 @@ function boot(s, saved = null) {
       renderScale: params.get('scale') ? +params.get('scale') : settings.scale,
       reversedDepth: params.get('logdepth') ? false : undefined,
       ...(saved ? { deferStart: true, worldsim: saved.world.worldsim, simN: saved.world.simN || undefined, campaignStorage: new CampaignSiteStorage(saved.world.siteStorage) } : {}),
+      ...(expedition ? { deferStart: true, era: undefined, testSpot: undefined } : {}),
     });
   } catch (err) {
     console.error(err);
@@ -239,15 +262,79 @@ function boot(s, saved = null) {
   if (saved) {
     restoreFlight(game, saved, { inputForPlayer: i => i === 1 && p2Pad !== null ? makeP2Input(p2Pad) : null });
     game.campaign = saved;
-  } else if (startChoice) { game.requestStart(startChoice); previewed = startChoice; } // the briefing shows the chosen start live
+  } else if (expedition) { provisionExpedition(game, expedition);game.setPaused(true); }
+  else if (startChoice) { if (!game.placed) game.requestStart(startChoice); previewed = startChoice; }
+  if(game.campaign?.story.intro.tutorial)game.intro=new FlightIntro(game,{checkpoint:()=>flightSaves.checkpoint(),openLog:()=>showPause('expedition')});
+  restoreMirror(game);
+  if(game.campaign)void prepareOpeningSystems(game.campaign);
   applySettings();
-  if (!saved && p2Pad !== null) game.joinPlayer(makeP2Input(p2Pad)); // (player 2 stays on in a new system)
+  if (!saved && p2Pad !== null && !tutorialIsActive(game.campaign)) game.joinPlayer(makeP2Input(p2Pad));
   try {
     const q = new URLSearchParams(location.search);
     q.set('seed', s);
+    if(expedition||saved?.story.intro.tutorial)q.set('expedition','1');else q.delete('expedition');
     history.replaceState(null, '', `?${q.toString()}#${s}`); // the #SEED form survives hosts that drop query strings
   } catch (e) { /* sandboxed */ }
   return game;
+}
+
+function openNewExpedition(){
+  if(restoreInProgress||journeyInProgress)return;
+  if(pause.open)pause.hide();game?.setPaused(true);input.releaseLock();
+  $('briefing').hidden=true;$('hud').hidden=true;$('overlay').hidden=false;
+  const card=document.createElement('section');card.className='newExpeditionCard';$('overlay').replaceChildren(card);
+  renderExpeditionSetup(card,{details:true,submitLabel:'Start game',seed:seed==='SOL'?DEFAULT_SEED:seed,onBack:()=>{if(launched)showPause('expedition');else showTitle();},onCreate:async(rules,options)=>{
+    const nextSeed=normalizeSeed(options.seed);if(!nextSeed)throw Error('Enter a region seed.');
+    const campaign=createCampaign({seed:nextSeed,label:options.label,rules});
+    const origin=resolveSystem(campaign,`system/${nextSeed}`);
+    if(!titlePreview&&game?.campaign&&game.placed&&game.state==='playing')await flightSaves.save();
+    restoreInProgress=true;
+    try{
+      await prepareSystem(origin.definition||origin.seed);
+      seed=origin.seed;const fresh=boot(seed,null,{rules,label:options.label,campaign,systemDefinition:origin.definition});if(!fresh)throw Error('Could not prepare this expedition.');
+      await fresh.engine.webgpuReady;
+      titlePreview=false;
+      launched=true;fresh.launched=true;fresh.everLaunched=true;previewed=null;$('hud').hidden=false;
+      fresh.setPaused(true);flightSaves.checkpoint();
+      if(options.intro==='skip')fresh.intro.act('skip');
+    }finally{restoreInProgress=false;}
+    resume();
+  }});
+  const saved=document.createElement('button');saved.type='button';saved.textContent='Saved flights';saved.onclick=openSavedFlights;card.querySelector('footer').append(saved);
+}
+function showTitle(){
+  if(restoreInProgress||journeyInProgress)return;
+  if(pause.open)pause.hide();
+  if(!titlePreview){
+    seed=DEFAULT_SEED;
+    const campaign=createCampaign({seed});
+    const origin=resolveSystem(campaign,`system/${seed}`);
+    boot(origin.seed,null,{campaign,systemDefinition:origin.definition});
+    titlePreview=true;launched=false;
+  }
+  game?.setPaused(true);input.releaseLock();
+  $('briefing').hidden=true;$('hud').hidden=true;$('overlay').hidden=false;
+  const card=document.createElement('section');card.className='card openingTitle';
+  const title=document.createElement('h1');title.textContent='Starseed Infinite';
+  const text=document.createElement('p');text.textContent='A home among the stars. An invitation to explore.';
+  const place=document.createElement('p');place.className='openingPlace';place.textContent='Outside the mirrored system · EVA beside your craft';
+  card.append(title,text,place);
+  for(const [label,fn] of [['Start game',openNewExpedition],['Saved flights',openSavedFlights],['Free exploration',openFreeExploration]]){
+    const button=document.createElement('button');button.textContent=label;button.onclick=fn;if(label==='Start game')button.className='primary';card.append(button);
+  }
+  $('overlay').replaceChildren(card);
+}
+function openFreeExploration(){
+  if(pause.open)pause.hide();
+  titlePreview=false;launched=false;startChoice=null;input.releaseLock();
+  $('overlay').hidden=true;$('briefing').hidden=false;$('hud').hidden=true;
+  showBriefing(seed);boot(seed);
+}
+function openSavedFlights(){
+  if(game&&!titlePreview){showPause('expedition');return;}
+  const card=document.createElement('section');card.className='newExpeditionCard';$('overlay').hidden=false;$('overlay').replaceChildren(card);
+  renderExpeditionPanel(card,flightSaves);
+  const back=document.createElement('button');back.textContent='Back';back.onclick=showTitle;card.append(back);
 }
 
 async function prepareRestoredFlight(restored, saved) {
@@ -258,7 +345,7 @@ async function prepareRestoredFlight(restored, saved) {
     await restored.startSim(restored.universe.bodies[id]);
     if (restored.worldSims?.status.get(id) === 'failed') throw Error('A saved world could not finish rebuilding. The saved slot is unchanged.');
   }
-  for (const site of saved.world.sites) restored.surfaceSurveys.addNear({ body: restored.universe.bodies[site.body], fPos: restored.startDir.clone().fromArray(site.position), heading: restored.startDir.clone().fromArray(site.heading) });
+  for (const site of saved.world.sites) restored.surfaceSurveys.addNear({ body: restored.universe.bodies[site.body], fPos: restored.ship.pos.clone().fromArray(site.position), heading: restored.ship.pos.clone().fromArray(site.heading) });
   launched = true; restored.launched = true; restored.everLaunched = true; previewed = null;
   $('briefing').hidden = true;
   restored.beginLoading(restored.players.some(p => p.mode === 'surface') ? 'surface' : 'space', 'Restoring the expedition');
@@ -280,6 +367,8 @@ async function loadSavedFlight(saved) {
   $('overlay').innerHTML = '<div class="card"><h2>Restoring expedition…</h2><p>Your simulation stays at its saved time while the worlds rebuild.</p></div>';
   try {
     seed = saved.world.seed;
+    titlePreview=false;
+    await prepareSystem(saved.world.definition||seed);
     const restored = boot(seed, saved);
     await prepareRestoredFlight(restored, saved);
     if (restored.siteReturnNotice) restored.message('Site progress restored · continuing at the surface entrance', 'nav');
@@ -289,8 +378,10 @@ async function loadSavedFlight(saved) {
     throw error;
   } finally {
     restoreInProgress = false;
-    if (game?.placed) showPause('expedition');
-    else { $('overlay').hidden = true; $('briefing').hidden = false; }
+    if (!journeyInProgress) {
+      if (game?.placed) showPause('expedition');
+      else { $('overlay').hidden = true; $('briefing').hidden = false; }
+    }
   }
 }
 
@@ -315,7 +406,7 @@ function launchGame() {
   if (loadScreen) loadScreen.begin();
 }
 // back to the briefing from the game (the pause menu's Change system)
-function toBriefing() {
+function toBriefing(resetCampaign = true) {
   if (pause.open) pause.hide();
   const ov = $('overlay');
   ov.hidden = true; ov.innerHTML = '';
@@ -324,6 +415,7 @@ function toBriefing() {
   input.releaseLock();
   $('hud').hidden = true;
   $('briefing').hidden = false;
+  if(resetCampaign&&game?.campaign){showBriefing(seed);boot(seed);}
 }
 $('launch').addEventListener('click', launchGame);
 canvas.addEventListener('click', () => {
@@ -343,12 +435,15 @@ window.addEventListener('keydown', (e) => {
 const pause = new PauseScreen({
   el: $('overlay'), game: () => game, settings, saveSettings, applySettings, input, tests: TEST_SCENES,
   resume: () => resume(), toBriefing: () => toBriefing(),
-  expedition: root => renderExpeditionPanel(root, flightSaves),
+  expedition: root => renderExpeditionPanel(root, flightSaves,{onNew:openNewExpedition}),
+  galaxy: root => renderGalaxyMap(root,{saves:flightSaves,state:galaxyView,consent:journeyConsent,onVote:voteJourney,onCancel:cancelJourney,onLocal:()=>pause.setTab('map')}),
+  onTab: tab => { if(tab!=='galaxy')journeyConsent.cancel(); },
   // another system's seed from the catalog: its briefing, to pick where to begin
-  travel: (s) => { toBriefing(); seed = s; showBriefing(seed); boot(seed); },
+  travel: (s) => { if(game?.campaign){showPause('galaxy');game.message('Use the expedition chart to keep your fleet when travelling between stars.','nav');return;}toBriefing(false); seed = s; showBriefing(seed); boot(seed); },
   players: {
-    info: () => ({ count: game ? game.players.length : 1, pad: p2Pad, waiting: joinWait }),
+    info: () => ({ count: game ? game.players.length : 1, pad: p2Pad, waiting: joinWait, tutorial: tutorialIsActive(game?.campaign) }),
     join: () => {
+      if(tutorialIsActive(game?.campaign))return 'Complete or skip the single-player introduction to unlock multiplayer.';
       if (!Input.padIndices().length) return 'Connect a controller for player 2 first (and press any button on it)';
       joinWait = true;
       return 'Press Start on player 2\'s controller';
@@ -358,19 +453,21 @@ const pause = new PauseScreen({
 });
 
 function showPause(tab) {
-  if (restoreInProgress) return;
+  if (restoreInProgress || journeyInProgress) return;
   if (!game) return;
   if (game.map.open && !game.map.full) game.map.toggle(game.map.owner); // (a player's own map closes)
   pause.show(tab || (pause.tab === 'map' ? 'settings' : pause.tab));
 }
 
 function resume() {
-  if (restoreInProgress) return;
+  if (restoreInProgress || journeyInProgress) return;
+  journeyConsent.cancel();
   joinWait = false;
   if (pause.open) pause.hide();
   const ov = $('overlay');
   ov.hidden = true; ov.innerHTML = '';
   if (game) game.setPaused(false);
+  game?.intro?.render();
   if (launched) input.requestLock();
   else { $('hud').hidden = true; input.releaseLock(); }
 }
@@ -400,9 +497,15 @@ function openMenu() {
 // though anyone's Start pauses and resumes
 function padRouterFor(i) {
   return (ps, dt) => {
-    if (!game) return false;
+    if (!game) { const menu=openMenu();return menu?padRouterMenu(menu,ps,dt):false; }
     const p = game.players[i];
     if (!p) return false;
+    if(journeyInProgress||restoreInProgress)return true;
+    journeyConsent.sync(game);
+    if(journeyConsent.destination){
+      if(ps.hits.has('B')){cancelJourney();return true;}
+      if(ps.hits.has('A')){voteJourney(journeyConsent.destination,i);return true;}
+    }
     const menu = openMenu();
     if (!menu && p.ui.suit.open) { if (i === 0) padMenu.setCur(null); return p.ui.suit.pad(ps, dt); }
     if (!menu && !(game.map.open && game.map.owner === p)) { if (i === 0) padMenu.setCur(null); return p.ui.quick.open ? p.ui.quick.pad(ps, dt) : false; }
@@ -413,8 +516,19 @@ function padRouterFor(i) {
   };
 }
 input.padRouter = padRouterFor(0);
+function cancelJourney(refresh=true){journeyConsent.cancel();if(refresh&&pause.open&&pause.tab==='galaxy')pause.render();}
+async function voteJourney(destination,index){
+  if(journeyInProgress||restoreInProgress)return;
+  if(!journeyConsent.vote(game,destination,index)){if(pause.open)pause.render();return;}
+  journeyConsent.cancel();journeyInProgress=true;
+  game.setPaused(true);input.releaseLock();
+  $('overlay').innerHTML='<div class="card"><h2>Preparing fleet passage…</h2><p>Saving the departure before rebuilding your destination.</p></div>';
+  try{await flightSaves.travel(destination);galaxyView.selected=game.campaign.galaxy.currentSystemId;}
+  catch(error){game?.message(error.message,'nav');}
+  finally{journeyInProgress=false;showPause('galaxy');}
+}
 function padRouterMenu(menu, ps, dt) {
-  const hud = game.players[0].ui.hud;
+  const hud = game?.players[0].ui.hud;
   if (pause.open) {
     // R3: the controls tab; View: the map (or back from it)
     if (ps.hits.has('R3')) { pause.setTab('controls'); return true; }
@@ -426,7 +540,7 @@ function padRouterMenu(menu, ps, dt) {
     }
   }
   // R3: the controller layout (from the help card), or close it
-  if (ps.hits.has('R3') && hud.helpOn) {
+  if (ps.hits.has('R3') && hud?.helpOn) {
     hud.toggleHelp('pad');
     return true;
   }
@@ -438,16 +552,21 @@ window.addEventListener('gamepadconnected', (e) => {
   if (game && game.screenHud.helpOn) game.screenHud.refreshHelp();
 });
 
+await prepareSystem(seed).catch(error=>console.warn('Opening system cache unavailable:',error.message));
 showBriefing(seed);
-boot(seed);
+if(explicitSandbox)boot(seed);else showTitle();
 const savedFlights = document.createElement('button');
 savedFlights.type = 'button'; savedFlights.textContent = 'Saved flights';
-savedFlights.onclick = () => showPause('expedition');
+savedFlights.onclick = openSavedFlights;
 $('launch').after(savedFlights);
+const newExpedition=document.createElement('button');newExpedition.textContent='Start game';newExpedition.onclick=openNewExpedition;$('launch').after(newExpedition);
+$('launch').textContent='Enter free exploration';
+const titleButton=document.createElement('button');titleButton.textContent='Main menu';titleButton.onclick=showTitle;savedFlights.after(titleButton);
 
 let manual = false;
 function loop(now) {
-  if (game && !manual && !window.debugHold) { watchJoin(); game.frame(now); pause.tick(); flightSaves.tick(now); if (loadScreen && launched) loadScreen.update(); } // debugHold: tests step frames themselves
+  if(!game){input.pollPad('foot',.016);input.endFrame();}
+  if (game && !manual && !window.debugHold) { if(!journeyInProgress&&!restoreInProgress)watchJoin();journeyConsent.sync(game); game.frame(now); pause.tick(); flightSaves.tick(now); if (loadScreen && launched) loadScreen.update(); } // debugHold: tests step frames themselves
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
@@ -479,3 +598,4 @@ window.launch = () => $('launch').click();
 window.joinP2 = joinP2; window.leaveP2 = leaveP2; // (tests: a stubbed controller's index)
 window.pauseScreen = pause;
 window.flightSaves = flightSaves; // finite owned-browser fixtures
+window.openNewExpedition = openNewExpedition;

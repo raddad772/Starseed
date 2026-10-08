@@ -152,9 +152,10 @@ export class WorldSims {
   }
 
   async request(id) {
-    if (this.status.has(id)) return;
+    if (this.disposed || this.status.has(id)) return;
     this.status.set(id, 'queued');
     const cached = await dbGet(await this.dbP, this.key(id));
+    if (this.disposed) return;
     if (cached) {
       // (one cached before its seasons were kept: worked out once, kept, and the world shown with them)
       if (cached.Nc && cached.seasonV !== SEASON_V) {
@@ -182,10 +183,11 @@ export class WorldSims {
 
   // a world's refinement: from the cache, or its six faces queued (the start world's first)
   async requestRefine(id, snap) {
-    if (this.refine.has(id)) return;
+    if (this.disposed || this.refine.has(id)) return;
     const st = { R: null, done: 0, total: 0, status: 'queued' };
     this.refine.set(id, st);
     const cached = await dbGet(await this.dbP, this.refKey(id));
+    if (this.disposed) return;
     if (cached && cached.version === TILE_VERSION) {
       st.R = fromStorable(cached);
       // (its rivers made again where they were made another way: the refinement itself kept)
@@ -220,6 +222,7 @@ export class WorldSims {
   }
 
   _next() {
+    if (this.disposed) return;
     for (const w of this.workers) {
       if (w.job || !this.queue.length) continue;
       const job = this._pick(w);
@@ -235,19 +238,19 @@ export class WorldSims {
         const sent = w.refSent || (w.refSent = new Map()), refKey = this.refKey(job.id), R = job.refine;
         const refine = sent.get(job.id) === R ? null : { version: R.version, L: R.L, n: R.n, K: R.K, h: R.h, rw: R.rw, fl: R.fl, rcv: R.rcv, done: R.done };
         sent.set(job.id, R);
-        w.worker.postMessage({ type: 'pyr', job: job.id, seed: this.seed, body: job.id, L: job.L, face: job.face, ti: job.ti, tj: job.tj, snap, refine, refKey, parents: job.parents, gpu: this.gpu });
+        w.worker.postMessage({ type: 'pyr', job: job.id, seed: this.seed, definition:this.game.system.definition, body: job.id, L: job.L, face: job.face, ti: job.ti, tj: job.tj, snap, refine, refKey, parents: job.parents, gpu: this.gpu });
         continue;
       }
       if (job.kind === 'refine') {
         this.refine.get(job.id).status = 'running';
         const has = w.hasSnap || (w.hasSnap = new Set()), snap = has.has(job.id) ? null : job.snap;
         has.add(job.id);
-        w.worker.postMessage({ type: 'refine', job: job.id, seed: this.seed, body: job.id, face: job.face, ti: job.ti, tj: job.tj, snap, gpu: this.gpu });
+        w.worker.postMessage({ type: 'refine', job: job.id, seed: this.seed, definition:this.game.system.definition, body: job.id, face: job.face, ti: job.ti, tj: job.tj, snap, gpu: this.gpu });
         continue;
       }
       this.status.set(job.id, 'running');
       this.phase.delete(job.id);
-      w.worker.postMessage({ type: 'sim', job: job.id, seed: this.seed, body: job.id, N: job.N, myr: this.myr, steps: this.steps });
+      w.worker.postMessage({ type: 'sim', job: job.id, seed: this.seed, definition:this.game.system.definition, body: job.id, N: job.N, myr: this.myr, steps: this.steps });
     }
     this._progress();
   }
@@ -300,6 +303,7 @@ export class WorldSims {
   }
 
   _apply(id, snap, fromCache) {
+    if (this.disposed) return;
     this.status.set(id, 'ready');
     const g = this.game, b = g.system.bodies[id];
     // (where to watch its aurora: read from the snapshot, so cached worlds have it too)
@@ -323,6 +327,7 @@ export class WorldSims {
   }
 
   _applyRefine(id, st, fromCache) {
+    if (this.disposed) return;
     st.status = 'ready';
     const g = this.game, b = g.system.bodies[id];
     b.terrain.refine = st.R;
@@ -335,5 +340,10 @@ export class WorldSims {
     this._progress();
   }
 
-  dispose() { for (const w of this.workers) w.worker.terminate(); if (this.el) this.el.remove(); }
+  dispose() {
+    this.disposed = true;
+    for (const w of this.workers) w.worker.terminate();
+    this.dbP.then(db => db?.close());
+    if (this.el) this.el.remove();
+  }
 }

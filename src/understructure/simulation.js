@@ -36,7 +36,7 @@ export class UnderstructureSimulation {
   get onPlatform(){return Math.abs(this.pos[0])<this.plan.access.halfWidth-.44&&Math.abs(this.pos[2])<this.plan.access.halfDepth-.44&&Math.abs(this.pos[1]-this.liftY)<.5;}
   get chamber(){return this.pos[1]<-2?chamberAt(this.plan,this.pos[0],this.pos[2],this.pos[1]):null;}
   get zeroG(){return this.chamber?.kind==='zero-g';}
-  get jetpackEnabled(){return this.pos[1]>-.6;}
+  get jetpackEnabled(){return this.pos[1]>-.6||(!!this.assistedTraversal&&this.chamber?.kind==='platforms');}
   get inBunker(){return inBunker(this.pos)&&!this.moving;}
   get gravity(){return this.zeroG?0:this.chamber?.gravity??1;}
   get tetherActive(){return this.zeroG;}
@@ -171,7 +171,7 @@ export class UnderstructureSimulation {
       const floor=platforms?this.collision.floorAt(p[0],p[2],{...this.state,y:room.ceiling}):null;
       if(allowed&&(floor===null||floor<=this.pos[1]+.35))this.pos[axis]=p[axis];else this.velocity[axis]=0;
     }
-    const oldY=this.pos[1];this.velocity[1]-=9.81*this.gravity*dt;const nextY=oldY+this.velocity[1]*dt;
+    const oldY=this.pos[1];if(this.jetpackEnabled&&this.pos[1]<-.6&&(input.vertical||0)>0)this.velocity[1]=Math.min(3,this.velocity[1]+(9.81*this.gravity+6)*dt);this.velocity[1]-=9.81*this.gravity*dt;const nextY=oldY+this.velocity[1]*dt;
     const floor=this.collision.floorBelow(this.pos[0],this.pos[2],oldY,this.state);
     if(this.velocity[1]<=0&&floor!==null&&oldY>=floor-.04&&nextY<=floor){this.pos[1]=floor;this.velocity[1]=0;this.grounded=true;}else{this.pos[1]=nextY;this.grounded=false;}
     const ceiling=this.collision.ceilingAt(...this.pos);if(this.pos[1]+1.9>ceiling){this.pos[1]=ceiling-1.9;this.velocity[1]=Math.min(0,this.velocity[1]);}

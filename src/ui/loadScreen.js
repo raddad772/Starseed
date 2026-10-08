@@ -5,7 +5,9 @@
 // the trees came in after: Dave),
 // not the wrong terrain refining before you (Dave: "there's not much point seeing all the wrong terrain").
 // Its progress: the share of the most work outstanding since it began that's done (never going back). Any
-// key or click skips it; 90 s at most. None for tests (game.debugFree, ?loadscreen=0).
+// key or click skips optional post-arrival detail; 90 s at most. Required game
+// loading (including nearby planets in orbit) cannot be skipped or timed out.
+// None for tests (game.debugFree, ?loadscreen=0).
 
 const MAX_MS = 90000, SETTLE_MS = 2500, JUMP_M = 4000, NEAR_M = 60000;
 
@@ -18,12 +20,16 @@ export class LoadScreen {
     const el = this.el = document.createElement('div');
     el.style.cssText = 'position:fixed;inset:0;z-index:50;display:none;background:#05070b;color:#c9d3e0;font:15px system-ui,sans-serif;'
       + 'align-items:center;justify-content:center;flex-direction:column;gap:14px;cursor:default;user-select:none';
-    el.innerHTML = '<div style="letter-spacing:.08em;opacity:.85">Arriving</div>'
-      + '<div style="width:min(420px,70vw);height:6px;border-radius:3px;background:#1a2230;overflow:hidden"><div data-bar style="height:100%;width:0;background:#7fa7d9;transition:width .25s"></div></div>'
+    el.id = 'arrivalLoading';
+    el.innerHTML = '<div data-title style="letter-spacing:.08em;opacity:.85">Arriving</div>'
+      + '<div data-progress role="progressbar" aria-label="Arrival readiness" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" style="width:min(420px,70vw);height:6px;border-radius:3px;background:#1a2230;overflow:hidden"><div data-bar style="height:100%;width:0;background:#7fa7d9;transition:width .25s"></div></div>'
       + '<div data-note style="font-size:12px;opacity:.5">the ground round you coming in · any key to skip</div>';
     this.bar = el.querySelector('[data-bar]');
+    this.title = el.querySelector('[data-title]');
+    this.note = el.querySelector('[data-note]');
+    this.progress = el.querySelector('[data-progress]');
     document.body.appendChild(el);
-    const skip = () => { if (this.active) this.end(); };
+    const skip = () => { if (this.active && this.game?.state !== 'loading') this.end(); };
     window.addEventListener('keydown', skip, true);
     el.addEventListener('pointerdown', skip);
   }
@@ -32,10 +38,11 @@ export class LoadScreen {
     if (this.off || (this.game && this.game.debugFree)) return;
     this.active = true; this.t0 = performance.now(); this.most = 0; this.frac = 0; this.quietAt = 0;
     this.bar.style.width = '0';
+    this.progress.setAttribute('aria-valuenow', '0');
     this.el.style.display = 'flex';
   }
 
-  end() { this.active = false; this.el.style.display = 'none'; }
+  end() { this.active = false; this.required = false; this.el.style.display = 'none'; }
 
   // the work outstanding for the ground round the camera
   outstanding() {
@@ -53,6 +60,18 @@ export class LoadScreen {
     const g = this.game;
     if (!g || this.off) return;
     if (g.debugFree) { if (this.active) this.end(); return; }
+    if (g.state === 'loading') {
+      if (!this.active) this.begin();
+      this.required = true;
+      this.title.textContent = g.loadText || 'Preparing nearby planets';
+      this.note.textContent = 'Your flight starts when the nearby worlds are ready';
+      const pct = Math.round(Math.min(.99, g.loadProgress || 0) * 100);
+      this.bar.style.width = pct + '%';
+      this.progress.setAttribute('aria-valuenow', String(pct));
+      this.last = g.camPos?.clone() || null;
+      return;
+    }
+    if (this.required) { this.required = false; this.end(); }
     // (a jump: the camera kilometres from where it was a frame ago, near a world's ground)
     const p = g.camPos;
     if (p) {
@@ -63,10 +82,13 @@ export class LoadScreen {
       this.last = this.last ? this.last.copy(p) : p.clone();
     }
     if (!this.active) return;
+    this.title.textContent = 'Arriving';
+    this.note.textContent = 'the ground round you coming in · any key to skip';
     const now = performance.now(), n = this.outstanding();
     this.most = Math.max(this.most, n);
     this.frac = Math.max(this.frac, this.most > 0 ? 1 - n / this.most : 0);
     this.bar.style.width = (this.frac * 100).toFixed(1) + '%';
+    this.progress.setAttribute('aria-valuenow', String(Math.round(this.frac * 100)));
     if (n > 0) this.quietAt = 0;
     else if (!this.quietAt) this.quietAt = now;
     if ((this.quietAt && now - this.quietAt > SETTLE_MS) || now - this.t0 > MAX_MS) this.end();

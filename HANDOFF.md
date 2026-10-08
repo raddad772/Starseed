@@ -87,6 +87,174 @@ bounded lighting bindings and rotating-world return (zero position error). No We
 errors. Render evidence: `br/outputs/megastructure-revision/`. User Chrome was not operated; owned
 finite IAB test tabs were closed. No Claude/agent coordination notices were sent.
 
+## Neptune flight fixes and orbital startup (8 October 2026)
+Latest playtest fixes: orbital loading now checks histories and all pending terrain chunks for the
+current world and nearby resolved planetary discs, including moons, across player views. The old
+3 km-only counter and ten-second orbital timeout could reveal unfinished planets. The full-screen
+bar now stays until readiness and cannot be dismissed by input while required loading is active.
+Distant point-worlds continue preparing in the background; the mirror opening excludes planets
+hidden inside its shell. No new detailed cache product was added.
+
+Neptune 2's old exterior collider export fills its garage. EVA now subtracts authored hold spaces
+from such coarse hulls and uses their interior walls, preserving closed and moving doors. Bays
+capture incoming EVA astronauts into their walking frame. Closed-door and side-hull collisions
+remain. 16 focused CPU checks and nine native loading/garage checks pass. The native fixture uses
+real orbital terrain at worldsim=0 and deliberately delays a history completion; it verifies the
+bar/readiness behavior and moving-ship entry, not world-generation timing.
+
+Nav departure now recognizes authored ejection berths instead of reading a nonexistent hangar
+mouth. Cargo holds without flight entrances are excluded from autonomous docking. External
+views use the containing vessel while berthed and return to the piloted craft on release.
+EVA sweeps the suit against the existing moving ship colliders, clips inward relative velocity,
+and slides along hulls; this is CPU kinematic contact, not an AVBD integration. Tests cover thin
+walls, rotated/moving hulls, swung doors and open passages. Surface walking remains separate.
+
+Orbit/carrier startup places the preview without a landing survey, but **planetary history must
+finish before flight begins** (Dave's latest clarification). `startSim` uses the existing IndexedDB
+snapshot first and generates on a miss. The loading text distinguishes history loading/generation
+from landing-site surveying. Terrain detail continues through existing descent streaming; no new
+detailed cache feature was added. Chrome and the in-app browser have separate caches. A generation
+version change also invalidates old snapshots. Full history-enabled descent performance is unmeasured.
+
+Normal startup now shows an EVA view beside the craft outside a physical, closed mirrored shell,
+with Start game, Saved flights and Free exploration. Start game selects the fleet/difficulties and
+starts with the daughter's boarding invitation. Free exploration retains the seed/world/start
+picker; explicit seed URLs still open it. The mirror radius encloses all planetary apocentres; its
+anchor persists in JSON and return journeys arrive outside it. The native reflection pass samples
+the sky cubemap, with double-precision altitude subtraction and reversed-depth occlusion. It does
+not yet reflect nearby ships or render the central black hole/jets. The incident still uses survey
+telemetry/dialogue: no animated aperture or daughter's NPC flight yet.
+
+47 focused CPU checks pass (45 together, then the 10-test flight/cache file including two new
+cache lifecycle cases). Finite native checks pass: Neptune 7, title/Free exploration 10, played
+tutorial 27, skip/setup 12 and fleet passage 22. Native fixtures use two workers and worldsim=0;
+they validate controls, state, saves and rendering, not terrain generation or descent performance.
+Closing/changing a game now prevents pending world-cache reads from starting disposed workers or
+rebuilding disposed terrain. Preserve the unrelated dirty fleet work.
+
+## Authored systems, fast chart and opening preparation (8 October 2026)
+
+`notes/SYSTEM_AUTHORING.md` documents recipe inputs, address/position placements, offline seed search,
+lossless opening bundles and cache limits. `generateSystem`/`summarizeSystem` accept either old seeds
+or portable recipes. Authored identity keys isolate world/survey caches. Save capture/restore,
+travel, validation and WorldSim worker messages carry authored recipes consistently. New campaigns
+copy `OPENING_PLACEMENTS`; defaults remain procedural. No in-game editor is provided.
+
+The map uses only the cheap formation head; receiver selection uses a tested offline preset pool
+instead of foreground full-system seed hunting. Four default systems ship in ~1.68 MiB of bundles;
+a single preparation worker hydrates them and persists a bounded IndexedDB cache (32 MiB estimate,
+eight entries; memory 24 MiB estimate, six entries). Full histories preserve typed arrays and their
+sampler method. Cached runtimes cannot mutate each other's templates. Compact visited body details
+and surface visits persist in campaign JSON, and the Galaxy card displays them. Former-life planets
+now qualify for megastructures via actual history.lifeEver/current-stage evidence.
+
+64 CPU checks pass, plus nine native cache checks and 22 native fleet-passage checks. Browser map
+measurements: 200-star outline 20.1 ms cold / 0.62 ms cached; opening data hydration ~300 ms;
+single-system disk hydration ~61 ms. Those are NOT terrain or journey timings. Native fleet tests
+use worldsim=0 and do not certify landing streaming. Ordinary SOL/default/receiver generator output
+hashes are unchanged. Preserve the unrelated dirty fleet work, especially the pre-existing game.js
+hunks. No agents or coordination notices were used.
+
+**Dave explicitly asked whether this already allows a smooth jump and full-detail descent without
+loading. Answer: no.** Travel still reconstructs Game/renderer, waits on startSim and uses beginLoading.
+The next performance milestone is renderer retention, ahead-of-arrival world/refinement preparation,
+GPU/terrain streaming and predicted descent, with cold/warm worldsim-enabled validation. See CAMPAIGN.
+
+STORY.md now records the founders' loneliness, biological study/seeding, temporal silver enclosure,
+roughly thousand-year communication openings, the daughter's chance crossing and later lost
+civilizations. Their FTL capability remains undecided. Plot requirements: three varied landed-body
+scans reveal the first site; one explored central record reveals three candidates; two distinct
+central records reveal black spheres above eligible stars. A tested ranking helper selects solid
+bodies, but physical scan targets/gates, Authored/Randomized site setting and black-sphere objects
+are still pending. Do not claim these are playable. Randomized must persist location/theme/layout
+per expedition; current near-first-landing entrances are not that finished policy.
+
+## Multiplayer intent correction and story-anchor audit (2026-10-08)
+Online multiplayer is the intended product. Split-screen is only a test harness before/without the
+network transport. Dave wants trusted peers in an instance: remote player data drives the existing
+other-player controller/state path, with essentially no anti-cheat. Do not design a couch-co-op
+product or heavy server-authoritative movement/security architecture. Basic parsing/version checks
+remain useful for reliability. The tutorial stays solo. Transport/replication are not yet implemented.
+
+Pause → Galaxy is implemented. The mirror host is still the chosen new-game seed at a provisional
+24 pc from the central landmark; it was not selected by physical suitability checks. Default
+FSPB-8DTW gives Brukrol (F6V). Receiver selection is implemented: default region yields Legoazeaks
+(G9V), seed RX-e60889908de3ebbf-6, body 9 Tavont (microbial mats), about 6.70 ly away. The actual
+megastructure-presence predicate passes at current 100% tuning. The site entrance still places
+lazily on surface arrival; a pinned playable entrance needs work. The physical mirrored enclosure
+is now present (see the opening checkpoint above), with the staged aperture still pending.
+Do not describe these as fully validated story locations or the online transport as implemented.
+
+## Tutorial is single-player (latest policy, 2026-10-08)
+Dave clarified that the tutorial is only playable solo. Controller/Settings join and Game.joinPlayer
+are gated while the tutorial is pending; completion or skip unlocks co-op. Starting New Expedition
+from a co-op session resets the second-controller connection. Restoring an older tutorial with two
+players retains P2 as away crew without constructing an input or dropping their ship/inventory.
+Skip no longer has shared consent. Two-player consent still applies to fleet passage and time warp.
+The first-run form and tutorial/settings copy explain this. Updated CPU and finite native fixtures
+cover solo play/reload, joining after completion/skip, and starting a new solo tutorial from co-op.
+33 focused CPU checks were rerun for this policy change. Native results: 21 played-tutorial checks,
+12 skip/setup checks and all 22 galaxy journey checks pass.
+
+## Galaxy chart and fleet passage (Codex, 2026-10-08)
+`campaign/galaxy.js` and `ui/galaxyMap.js` add Pause → Galaxy: 200 deterministic initial stars,
+cell-address lookup, neighbouring charts, a central-object landmark and the first receiver route.
+Receiver story IDs stay stable while seeds pin a verified life-bearing planet. The cell catalogue
+is a static scaffold, not the physical galactic population/sky/black-hole model yet.
+
+`campaign/travel.js` and `FlightSaves.travel` gather the whole fleet into separated circular orbits
+in a new system, preserving attachments, player craft, hull/heat and onboard items. Everyone must
+be aboard. Active P2 A agrees / B cancels; crew, route or runtime changes revoke votes. Site storage,
+entrances, dropped surface/orbit items and per-vessel landing sites persist in optional version-1
+`galaxy.systems` deltas. The active system remains in `world`. Global item IDs cannot collide.
+Departure saves before reconstruction; arrival saves afterwards; failures retain a recoverable
+departure. Existing single-system files still load. The first-receiver quest advances once.
+
+Passage is currently immediate, with no time or fuel charge. There is one resident system and all
+ships travel together. Physical interstellar flight, timed transit, independent-system multiplayer,
+calibrated stellar dynamics and black-hole/mirror sky visuals remain pending. Campaign catalogue
+seed travel redirects to Galaxy to avoid silently creating a replacement sandbox fleet.
+
+50 focused CPU tests pass, including all three fleet families' cargo/orbit safety and failure recovery.
+The finite `tools/tests/campaign-galaxy.html` native fixture passes 22 checks (medium fleet, two players,
+outward trip/reload/return, ~48 KB JSON, clean split-screen WebGPU). It uses workers=2/worldsim=0;
+full terrain regeneration at arrival is not yet browser-certified. Renderer disposal now treats a
+cancelled pending timing readback as expected; failures on live devices still surface. No Claude
+launches, subagents or coordination notices. Preserve the pre-existing dirty fleet work.
+
+## New-game flow and tutorial (Codex, 2026-10-08)
+Normal first-run opens New Expedition before creating a sandbox fleet. The reusable setup chooses
+name/seed, flight/exploration/traversal difficulty and Play/Skip. Explicit seed/test/era sandbox links
+still work. Campaign URLs carry expedition=1 so reload goes to setup/saves. New Expedition also lives
+in Pause → Expedition. Its initial and tutorial checkpoints autosave while paused once loading ends.
+
+`campaign/newGame.js` provisions one chosen era plus its cargo and a survey reference, assigns the
+existing second craft to P2, and installs recovery without legacy carrier assumptions. `tutorial.js`
+validates saved checkpoints and canonical convergence; `intro.js` observes actual motion/scan state.
+ROT practice teaches opposite burns, not X braking (X only acts through FULL's reference frame).
+The optional nav button performs a real rendezvous. Practice accidents recover safely.
+
+The current introduction is live flight practice plus interactive telemetry/dialogue, **not** the
+full physical mirror/black-hole scene. Three probe observations or a solo skip record the same
+incident and destination once. The introduction is single-player; co-op unlocks afterwards. Mid-scan
+progress resumes. The galaxy checkpoint above now pins the first receiver and enables fleet passage.
+Basic control/reference-frame explanations are retained in Story Log.
+
+Guided entrances show markers; Survey reveals them within 12 m on foot, persisted per campaign.
+Assisted traversal enables bounded jetpack lift only in broken-platform rooms, retaining collision
+and circuit requirements. Standard and standalone legacy sectors remain unchanged. Full orbital
+survey discovery, wider assistance and all-theme assisted native traversal remain future work.
+
+49 focused CPU tests pass. Native tutorial fixture passes 20 checks: actual movement/counter-thrust,
+P2 fleet assignment, interrupted scan restore, story convergence and clean split-screen WebGPU.
+A separate skip fixture passes ten checks for Horizon/Pioneer setup, initial paused saving, prior slot preservation and actual P2 controller consent.
+Both use workers=2/worldsim=0. Typical completed medium snapshot is ~47 KB. Preserve other dirty fleet
+work; only this pass's game.js hunks are staged. No Claude launches or agent notices were sent.
+
+Received frozen, unintegrated checkpoints from the active Megastructures chat: fac2842 sound/decay
+and 74d8861 landing guide. They remain pending; retain campaign storage/assistance hooks and nav
+savedOrder when integrating. Do not send status notices to inactive chats.
+
 ## Campaign foundation, plan and story treatment (Codex, 2026-10-08)
 `CAMPAIGN.md` is the implementation plan for the persistent galaxy, central spinning black hole
 and jets, separate mirrored star system, first-run difficulty/fleet setup, playable/skippable
@@ -116,8 +284,8 @@ The older campaign preview still provides its 13 isolated browser checks and fir
 
 Limits: one system, current generator versions and exact vessel signatures; no layout migrations.
 Finish moving-person rendezvous and recover crew before saving. Drop out of FTL before resuming a
-saved nav order. New Expedition/fleet provisioning, playable/skippable intro, galaxy catalogue/map,
-interstellar continuity and event-triggered autosaves remain pending. Change System still starts a
+saved nav order. The checkpoint above connects New Expedition and a playable/skip rehearsal. The physical mirror
+scene, galaxy catalogue/map and interstellar continuity remain pending. Change System still starts a
 fresh sandbox fleet. The current snapshot deliberately does not mark the story intro completed.
 
 The initial ~200 charted systems and 60-billion-solar-mass visual preset are tuning

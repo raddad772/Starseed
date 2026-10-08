@@ -17,7 +17,7 @@ import { faunaOf, realmOf } from '../sim/fauna.js';
 import { searchPlaces } from '../gen/worldsim/places.js';
 import { fireRegimeAt } from '../gen/life/fire.js';
 
-const TABS = [['map', 'Map'], ['planets', 'Planets'], ['expedition', 'Expedition'], ['settings', 'Settings'], ['controls', 'Controls']];
+const TABS = [['map', 'System'], ['galaxy', 'Galaxy'], ['planets', 'Planets'], ['expedition', 'Expedition'], ['settings', 'Settings'], ['controls', 'Controls']];
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
 const GAS = { N2: 'N₂', O2: 'O₂', CO2: 'CO₂', CH4: 'CH₄', H2: 'H₂', He: 'He', Ar: 'Ar', H2O: 'H₂O', SO2: 'SO₂', NH3: 'NH₃', Ne: 'Ne', CO: 'CO', H2S: 'H₂S' };
 const agoText = (gyr) => gyr >= 1 ? `${gyr.toFixed(1)} Gyr ago` : gyr >= 0.001 ? `${Math.round(gyr * 1000)} Myr ago` : gyr >= 1e-6 ? `${Math.round(gyr * 1e6)} kyr ago` : `${Math.max(1, Math.round(gyr * 1e9))} yr ago`;
@@ -77,6 +77,7 @@ export class PauseScreen {
 
   setTab(t) {
     if (t === this.tab && this.el.firstElementChild) return;
+    this.o.onTab?.(t);
     if (this.tab === 'map' && t !== 'map') this.closeMap();
     this.tab = t;
     this.render();
@@ -108,11 +109,13 @@ export class PauseScreen {
     else if (this.tab === 'tests') this.wireTests();
     else if (this.tab === 'controls') this.wireControls();
     else if (this.tab === 'expedition') this.o.expedition?.(this.el.querySelector('.page'));
+    else if (this.tab === 'galaxy') {this.o.galaxy?.(this.el.querySelector('.page'));this._galaxySignature=this.galaxySignature();}
   }
 
   page() {
     switch (this.tab) {
       case 'expedition': return '';
+      case 'galaxy': return '';
       case 'map': return this.mapPage();
       case 'planets': return this.planetsPage();
       case 'tests': return this.testsPage();
@@ -130,6 +133,7 @@ export class PauseScreen {
 
   // each frame while open: keep the map's card on the focused world
   tick() {
+    if(this.open&&this.tab==='galaxy') {if(this._galaxySignature!==this.galaxySignature())this.render();return;}
     if (!this.open || this.tab !== 'map') return;
     const g = this.game, panel = this.el.querySelector('#mapPanel');
     if (!g || !panel) return;
@@ -147,6 +151,8 @@ export class PauseScreen {
     this.fillPortraits(panel, g.system, true);
     this.wireCardButtons(panel);
   }
+
+  galaxySignature(){const g=this.game;return `${g?.state}/${g?.players.map(p=>p.index).join()}`;}
 
   // ---- the catalog
   catalogSystem() {
@@ -421,7 +427,7 @@ export class PauseScreen {
       <div class="label">Players</div>
       <div class="seedrow">${P.count > 1
         ? `<span class="label" style="text-transform:none; letter-spacing:0">Player 2 on controller ${P.pad + 1}</span><button id="p2Leave" type="button">Remove player 2</button><select id="setSplit" aria-label="Split screen"><option value="top-bottom" ${S.split !== 'side-by-side' ? 'selected' : ''}>Split top / bottom</option><option value="side-by-side" ${S.split === 'side-by-side' ? 'selected' : ''}>Split side by side</option></select>`
-        : `<button id="p2Join" type="button">Add player 2</button><span id="p2Hint" class="label" style="text-transform:none; letter-spacing:0">${P.waiting ? 'Press Start on player 2\'s controller' : 'or press Start on a second controller'}</span>`}</div>
+        : `<button id="p2Join" type="button" ${P.tutorial ? 'disabled' : ''}>Add player 2</button><span id="p2Hint" class="label" style="text-transform:none; letter-spacing:0">${P.tutorial ? 'Complete or skip the single-player introduction to unlock multiplayer.' : P.waiting ? 'Press Start on player 2\'s controller' : 'or press Start on a second controller'}</span>`}</div>
       <div class="label">System seed</div>
       <div class="seedrow"><input id="shareUrl" readonly value="${url}" aria-label="Share link"><button id="copyUrl" type="button">Copy link</button></div>
       <div class="seedrow"><button id="tests" type="button">Test scenes</button><button id="toBriefing" type="button">Change system</button></div>

@@ -1,0 +1,15 @@
+<!doctype html><meta charset="utf-8"><title>Neptune flight regression</title>
+<style>body{background:#0c1420;color:#deebff;font:14px system-ui}iframe{width:1200px;height:800px;border:0}pre{white-space:pre-wrap}</style>
+<button id="run">Run Neptune flight checks</button><pre id="status">Ready</pre><iframe title="Owned test flight"></iframe>
+<script type="module">
+const frame=document.querySelector('iframe'),status=document.querySelector('#status');
+document.querySelector('#run').onclick=()=>{
+ status.textContent='Running…';
+ frame.onload=()=>{const script=frame.contentDocument.createElement('script');script.type='module';script.src='/tools/neptune-flight-driver.js';frame.contentDocument.body.append(script);};
+ frame.src='/?seed=SOL&workers=2&worldsim=0';
+};
+window.addEventListener('message',event=>{
+ if(event.source!==frame.contentWindow||event.origin!==location.origin||event.data.type!=='neptune-flight')return;
+ status.textContent=JSON.stringify(event.data.report,null,2);
+});
+</script>

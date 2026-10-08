@@ -1,0 +1,8 @@
+<!doctype html><meta charset="utf-8"><title>Expedition galaxy validation</title>
+<style>body{margin:0;background:#08121c;color:#d7e8ed;font:14px system-ui}header{padding:12px}button{margin-left:12px;padding:8px}iframe{border:0;width:100%;height:calc(100vh - 94px)}pre{white-space:pre-wrap;max-height:160px;overflow:auto}</style>
+<header><b>Galaxy chart / fleet passage</b><button id="run">Run journey checks</button><details><summary id="result">Two workers · isolated database · finite checks</summary><pre id="status">Ready</pre></details></header><iframe title="Galaxy test game"></iframe>
+<script type="module">
+const frame=document.querySelector('iframe'),status=document.querySelector('#status');
+document.querySelector('#run').onclick=()=>{document.querySelector('#run').disabled=true;frame.onload=()=>{const script=frame.contentDocument.createElement('script');script.type='module';script.src='/tools/campaign-galaxy-driver.js';frame.contentDocument.body.append(script);};frame.src='/?workers=2&worldsim=0&surveyTest=1';};
+window.addEventListener('message',e=>{if(e.source===frame.contentWindow&&e.origin===location.origin&&e.data.type==='campaign-galaxy-test'){window.testReport=e.data.report;status.textContent=JSON.stringify(e.data.report,null,2);document.querySelector("#result").textContent=e.data.report.stage+" · "+e.data.report.checks.length+" journey checks";}});
+</script>

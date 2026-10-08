@@ -1,10 +1,11 @@
+import { hostedLife } from '../gen/lifeHistory.js';
 import { Rng } from '../core/rng.js';
 
 // Discovery tuning: 100% while playtesting; set to 0.01 for roughly 1 in 100
-// life-bearing planets. The roll belongs to the planet, never a landing site.
+// currently or formerly life-bearing planets. The roll belongs to the planet, never a landing site.
 export const MEGASTRUCTURE_CHANCE = 1;
 export function hasPlanetMegastructure(seed, body, chance = MEGASTRUCTURE_CHANCE) {
-  if (!body.solid || body.data.kind !== 'planet' || !body.data.life) return false;
+  if (!body.solid || body.data.kind !== 'planet' || !hostedLife(body)) return false;
   return Rng.fromString(`${seed}:megastructure-presence:${body.id}`).chance(chance);
 }
 

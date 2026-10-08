@@ -63,6 +63,11 @@ Validation and limits:
 
 ## Optimization checkpoint (Codex, 2026-10-08)
 
+- `webgpu/mirror.js` adds the campaign enclosure reflection after atmosphere and before forward
+  effects. It samples the existing sky cube, writes reversed depth and uses CPU double-precision
+  exterior altitude plus a stable ray/sphere solution at astronomical radius. Buffers are per view
+  and released with it. Native title, tutorial and returning split-screen fixtures validate cleanly.
+  Nearby craft reflection, black-hole/disk/jets and the animated opening remain later work.
 - Shader uniform layouts and vertex input schemas are decoded once. Unchanged packed uniform bytes
   retain their existing GPU buffer contents; texture bindings still update independently.
 - Instance-culling input stays in bounded GPU arenas. Upload generations invalidate it when instance

@@ -1,0 +1,10 @@
+<!doctype html><meta charset="utf-8"><title>New expedition and tutorial validation</title>
+<style>body{margin:0;background:#101b22;color:#dae5f4;font:14px system-ui}header{padding:12px}button{margin-left:12px;padding:8px}iframe{border:0;width:100%;height:900px}pre{white-space:pre-wrap;max-height:180px;overflow:auto}</style>
+<header><b>New expedition / flight tutorial</b><button id="run">Run new-game checks</button><button id="skip">Run skip checks</button><button id="setup">Show setup</button><pre id="status">Ready · two workers · isolated save database · world simulation disabled</pre></header><iframe title="New expedition test game"></iframe>
+<script type="module">
+const frame=document.querySelector('iframe'),status=document.querySelector('#status');
+function start(skip=false){document.querySelector('#run').disabled=document.querySelector('#skip').disabled=true;frame.onload=()=>{const s=frame.contentDocument.createElement('script');s.type='module';s.src=skip?'/tools/campaign-skip-driver.js':'/tools/campaign-intro-driver.js';frame.contentDocument.body.append(s);};frame.src='/?workers=2&worldsim=0&surveyTest=1';}
+document.querySelector('#run').onclick=()=>start();document.querySelector('#skip').onclick=()=>start(true);
+document.querySelector('#setup').onclick=()=>frame.contentWindow.openNewExpedition?.();
+window.addEventListener('message',e=>{if(e.source===frame.contentWindow&&e.origin===location.origin&&e.data.type==='campaign-intro-test')status.textContent=JSON.stringify(e.data.report,null,2);});
+</script>

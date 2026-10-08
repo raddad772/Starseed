@@ -94,11 +94,17 @@ export class SurfaceSurveys {
   }
   prompt(p) {
     const near=this.nearest(p);
+    if(near&&this.game.campaign?.rules.exploration==='survey'&&!this.revealed(near.site))return;
     if(near&&!p.prompt)p.prompt={key:near.distance<=4?'F':null,text:near.distance<=4?'Enter subsurface survey':'Subsurface access · '+Math.round(near.distance)+' m · cyan pennant'};
   }
   render(camPos) {
-    for(const s of this.sites){s.marker.position.copy(s.frame.position).applyQuaternion(s.body.q).add(s.body.pos).sub(camPos);s.marker.quaternion.copy(s.body.q).multiply(s.frame.rotation);}
+    for(const s of this.sites){
+      if(this.game.players.some(p=>p.mode==='surface'&&p.body===s.body&&p.fPos.distanceTo(s.frame.position)<12))this.game.campaignStorage?.setItem(`starseed.survey.reveal.${s.saveKey}`,'true');
+      s.marker.visible=this.game.campaign?.rules.exploration!=='survey'||this.revealed(s);
+      s.marker.position.copy(s.frame.position).applyQuaternion(s.body.q).add(s.body.pos).sub(camPos);s.marker.quaternion.copy(s.body.q).multiply(s.frame.rotation);
+    }
   }
+  revealed(site){return this.game.campaignStorage?.getItem(`starseed.survey.reveal.${site.saveKey}`)==='true';}
   dispose() {
     window.removeEventListener('pagehide',this.saveAll);
     for(const p of this.game.players)p.understructure?.leave(false);
@@ -115,6 +121,7 @@ export class SurveySession {
     let saved={};try{saved=JSON.parse(this.storage.getItem(site.saveKey)||'{}');}catch{}
     this.plan=generateUnderstructure(site.seed,restoredProfile(site.seed,site.profile,saved),surveyEnvironment(site.body.data));
     this.sim=new UnderstructureSimulation(this.plan,saved);this.visual=buildScene(this.plan);this.sim.collision.setGeometry(this.visual.collider);
+    this.sim.assistedTraversal=game.campaign?.rules.puzzles==='assisted';
     this.sound=new SurveySound(this.plan,{context:()=>game.audio?.ctx,destination:()=>game.audio?.master});
     for(const p of this.sim.beacons)this.visual.addBeacon(p);
     const camera=new THREE.PerspectiveCamera(73,1,.08,3200);camera.rotation.order='YXZ';

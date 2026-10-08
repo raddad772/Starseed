@@ -95,3 +95,16 @@ test('overlapping GPU timestamp ranges never inflate the displayed frame time', 
  try{await timer.harvest();assert.equal(timer.gpuMs,12);assert.equal(timer.passAttributionReliable,false);assert.deepEqual(timer.last,{shadow:6,opaque:6,post:2});}
  finally{globalThis.GPUMapMode=prior;}
 });
+
+test('renderer disposal cancels pending timing readback without hiding live-device failures',async()=>{
+ const previous=globalThis.GPUMapMode;globalThis.GPUMapMode={READ:1};
+ try{
+  for(const disposed of [true,false]){
+   const timer=new PassTimer({},false);let reject;
+   timer.read={mapAsync:()=>new Promise((resolve,no)=>{reject=no;}),destroy(){reject(Error('readback cancelled'));}};
+   timer.sampleLabels=[];timer.pending=true;
+   const result=timer.harvest();if(disposed){timer.dispose();await result;timer.begin();assert.equal(timer.active,false);}else {reject(Error('live failure'));await assert.rejects(result,/live failure/);}
+   assert.equal(timer.pending,false);
+  }
+ }finally{globalThis.GPUMapMode=previous;}
+});

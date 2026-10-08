@@ -29,7 +29,7 @@ const snaps = new Map();     // body -> its world sim's snapshot (sent once)
 self.onmessage = async (e) => {
   const m = e.data;
   try {
-    if (sysSeed !== m.seed) { sys = generateSystem(m.seed); sysSeed = m.seed; snaps.clear(); pyrGens.clear(); refGens.clear(); }
+    if (sysSeed !== m.seed) { sys = generateSystem(m.definition || m.seed); sysSeed = m.seed; snaps.clear(); pyrGens.clear(); refGens.clear(); }
     if (m.snap) snaps.set(m.body, m.snap);   // (a world's snapshot comes once: kept for its tiles)
     if (m.type === 'refine') {
       // one tile of a world's refinement (localsim.js 'refine'); the world's generator kept

@@ -1,5 +1,23 @@
 # Starseed JSON campaign saves
 
+## System recipes and surveyed detail (8 October 2026)
+
+Optional `generation.systemPlacements` maps chart addresses to compact `{definition, position?,
+label?}` inputs. A new expedition copies developer presets once. Authored `world.definition` and
+unloaded `galaxy.systems[id].definition` accompany their deterministic `D-…` identities; validators
+check chart/world agreement. Seed-only version-1 saves remain supported. Recipes, not generated
+histories or terrain arrays, travel in exported JSON.
+
+Visited `discoveries.systems[id]` may carry `details:{version:1,seed,bodies:[...]}` and `visitedBodies`.
+Body records store IDs/parent IDs, names, kind/label, solid flag, mass/radius/temperature, life status
+(present/past/none), and short interest tags. These records survive cache eviction and return travel.
+Generated system templates instead live in the bounded disposable `starseed-system-cache` database.
+The world-simulation database remains separate. Neither disposable cache is a campaign save.
+
+The latest plot's three scan targets, completed central-record count, candidate-site choices,
+randomized site policy/seeds and stellar black-sphere locations still require saved event/state
+extensions. Do not infer those gates from the existing optional-fragment 200/500-unit milestones.
+
 Proposed format version 1, 8 October 2026. JSON is the authoritative portable campaign format. The accompanying [example](campaign-save.example.json) illustrates the contract; it is not yet a file that the current game can load. This specification supports the implementation milestones in [CAMPAIGN.md](../CAMPAIGN.md).
 
 ## Implemented save kinds
@@ -10,9 +28,29 @@ The flight snapshot stores vessel/player identities, exact simulation time, moti
 
 Validation covers bounded JSON size/depth, finite numbers, ordinary data objects, supported versions, quest references, journal sequencing, consistent recovery milestones, entity references, exclusive inventory ownership, seat occupancy and acyclic attachment graphs. Flight loads require matching system/world generator versions, simulation scale, epoch and vessel definition signatures. Layout migrations and old generator retention are not implemented; incompatible saves fail before the current game is replaced. Saves during crew incapacitation or moving-person rendezvous are currently rejected with an explanation.
 
-Browser storage uses `starseed-campaigns`, storing current and previous JSON in a single transaction. Revision comparisons reject stale writes from another tab. Loading previous content is explicit; the next save compares against the current slot revision. Import creates an independent identity. Transaction completion determines success. Pause → Expedition activates saving/export for the current flight, then autosaves every 30 seconds while playing. The briefing can load existing slots. Save errors remain visible and allow manual export, including when browser storage is blocked. First activation copies only the current system's legacy progress into the expedition; originals remain untouched. Event-triggered autosaves are still pending.
+Browser storage uses `starseed-campaigns`, storing current and previous JSON in a single transaction. Revision comparisons reject stale writes from another tab. Loading previous content is explicit; the next save compares against the current slot revision. Import creates an independent identity. Transaction completion determines success. Pause → Expedition activates saving/export for the current flight, then autosaves every 30 seconds while playing. The briefing can load existing slots. Save errors remain visible and allow manual export, including when browser storage is blocked. First activation copies only the current system's legacy progress into the expedition; originals remain untouched. New-game and tutorial checkpoints now request autosaves, including while paused; other world events still use the periodic save.
 
-Validation: 44 focused CPU checks pass, including ten flight tests for nested frames, moving lifts, landed/orbital items, FTL, absent controllers, invalid imports, isolated site storage, concurrent requests and storage failures. Thirteen isolated browser checks previously verified campaign storage/UI. Nineteen new full-game WebGPU checks pass with two players, 34 vessels, 145,039-byte JSON, actual renderer reconstruction and the natural loading gate. That fixture disables world simulation to bound GPU work; full terrain-cache reconstruction and active underground restore still need dedicated native coverage. Multi-system travel, first-run fleet provisioning and the playable intro are not yet wired into this loader.
+Validation: 44 focused CPU checks pass, including ten flight tests for nested frames, moving lifts, landed/orbital items, FTL, absent controllers, invalid imports, isolated site storage, concurrent requests and storage failures. Thirteen isolated browser checks previously verified campaign storage/UI. Nineteen new full-game WebGPU checks pass with two players, 34 vessels, 145,039-byte JSON, actual renderer reconstruction and the natural loading gate. That fixture disables world simulation to bound GPU work; full terrain-cache reconstruction and active underground restore still need dedicated native coverage. Multi-system travel and the fully staged mirror scene remain pending. New Expedition provisions a selected fleet once and connects its tutorial to this loader.
+
+## Implemented galaxy extension (8 October 2026)
+
+`single-system-flight` continues to mean one resident flight snapshot. It may now include optional `galaxy` version 1 with `currentSystemId`, `nextItemId` and `systems`. Old files without this extension still load; navigation initializes it on first use. The catalogue generator version is pinned separately. No stars are stored merely because they appear on the map.
+
+`galaxy.systems` holds **unloaded** system deltas, keyed by canonical system address: `{seed, items, sites, siteStorage, navSites}`. Only surface/orbital items may be stored there; held and cabin items remain in `world.items`. The active system never has a duplicate cached record. Global item uniqueness, destination/seed identity, valid body references and the next-item high-water mark are validated on import/export. There is a bounded 512-unloaded-system limit in addition to the existing 10 MB / JSON-node limits. Encountering a limit fails the departure checkpoint rather than dropping old progress.
+
+A fleet passage writes departure first, reconstructs a copied arrival snapshot, then commits arrival. The party regroups in destination orbit, with local orders cleared and the shared clock unchanged. No in-transit state is claimed or serialized yet. A renderer failure retains the departure; an arrival-write failure leaves the arrival available in memory for retry/export. The previous revision is the departure checkpoint after a successful journey.
+
+The receiver anchor now pins a generated seed and eligible life-bearing body ID while retaining its original story address. Existing unvisited provisional receivers acquire the same pin on first navigation; already visited systems never reroll. Initial chart positions and cell summaries remain derived data, with no hundreds-of-megabytes star dump.
+
+## Tutorial checkpoint
+
+The introduction is now single-player. Older files may still contain an active P2 tutorial record; restore treats that person as away crew until completion/skip, preserving their placement and inventory. The next snapshot records them as inactive. Completed introductions restore normal multiplayer availability. No new schema version is required because the data remains losslessly representable.
+
+New expeditions add optional `story.intro.tutorial` version 1: lesson phase, stable reference-vessel ID, measured starting offset, scan progress, simulation-time incident duration and correlated probe IDs. Existing saves without this field still load. Validation checks the phase, bounded/finite values, reference craft, assigned player craft and agreement with canonical story completion. Played and skipped outcomes use the same incident/bearing events; repeated application cannot duplicate the journal or fleet.
+
+Controller bindings are transient. The solo player can skip immediately, and a missing controller retains its character through the existing away-player mechanism. New campaigns start with empty site ledgers rather than adopting sandbox progress. Survey marker discoveries use campaign-scoped string entries alongside the existing site protocol; assisted traversal derives from saved rules when entering a sector.
+
+Campaign state may advance while IndexedDB writes the prior snapshot. Completion updates revision metadata without replacing newer story state, and another checkpoint save follows. Initial creation and explicit tutorial transitions save when the game reaches its ready state even if paused; ordinary periodic autosaves still require active play. The full tutorial/skip native fixtures exercise the UI and controller paths, while CPU tests check phase validation and concurrent save semantics.
 
 ## Storage model
 
@@ -76,7 +114,7 @@ The existing `starseed.settings` remains a local preference source. Current per-
 
 Scope new ledgers and saves to campaign ID. Two campaigns using the same galaxy seed share geography but have independent fleets, story and recovery. Existing legacy records do not identify a campaign, so the import UI must name the destination campaign rather than silently attach them to every new game.
 
-One authoritative local campaign handles both players' events and saves. Both see the same story, fleet and discovered facts; each can track a different lead. Keep a departing player's character/state persistent and resume it on rejoin under a safe placement policy. Network multiplayer, if added later, needs an authority and replication protocol; portable JSON is not that protocol.
+Online shared instances are the intended multiplayer mode; split-screen is a local test harness, not the product's multiplayer requirement. Participants are trusted: remote player data updates the existing other-player controller/state path, with essentially no gameplay anti-cheat. Retain basic decoding, version and finite-value checks for reliable loading/replication. Shared story, fleet and discovery state need explicit ownership/merge rules and a save writer, without implying server-authoritative movement. Keep a departing player's character/state persistent and resume it on rejoin. The online transport and replication protocol remain to be implemented; portable JSON is the save format, not the wire protocol.
 
 ## Required validation
 

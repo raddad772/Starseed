@@ -16,6 +16,7 @@ import * as THREE from 'three';
 import { SHIP_INTERIOR, SHIP_HULL_BOXES } from '../render/shipModel.js';
 import { boxesNear, insideBox, pilotSeat } from './vesselTypes.js';
 import { floraOf } from './floraField.js';
+import { collideEva } from './evaContacts.js';
 
 const EYE = 1.68;
 const RADIUS = 0.3;
@@ -873,6 +874,7 @@ export class Player {
       this.eVel.copy(air).add(rel);
     }
     this.ePos.addScaledVector(this.eVel, dt);
+    collideEva(this, dt);
     this.jetFuel = Math.min(1, this.jetFuel + dt / 60); // suit reserve slowly recharges
     this.nearShip = near;
     // vessels: board a ramp, or get pulled onto a deck by its plating

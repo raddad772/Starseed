@@ -1,5 +1,6 @@
 // Campaign records are plain JSON. Runtime flight snapshots are a separate adapter;
 // a record alone must never be advertised as a resumable flight save.
+import { openingPlacements } from './systemPlacements.js';
 import { GENERATOR_VERSION } from '../gen/system.js';
 import { SIM_VERSION } from '../gen/worldsim/snapshot.js';
 import { LEN_SCALE } from '../core/units.js';
@@ -29,7 +30,7 @@ export function createCampaign({ id = globalThis.crypto.randomUUID(), seed, labe
   return {
     format: CAMPAIGN_FORMAT, schemaVersion: SCHEMA_VERSION, saveKind: 'campaign-record',
     campaignId: id, label: label.trim(), revision: 0, createdAt: now, savedAt: now,
-    generation: { galaxySeed: seed.trim(), versions: { galaxy: 1, system: GENERATOR_VERSION, world: SIM_VERSION, storyContent: CONTENT_VERSION }, localLengthScale: LEN_SCALE, storyAnchors: {} },
+    generation: { galaxySeed: seed.trim(), versions: { galaxy: 1, system: GENERATOR_VERSION, world: SIM_VERSION, storyContent: CONTENT_VERSION }, localLengthScale: LEN_SCALE, storyAnchors: {}, systemPlacements:openingPlacements(seed.trim()) },
     clock: { epoch: '2026-10-05T00:00:00Z', simulationSeconds, advanceWhileClosed: false },
     rules: { ...choices, startingFleetEra: FLEET_BY_DIFFICULTY[choices.flight], recoveryPolicyVersion: 1, megastructurePresence: { version: 1, eligiblePlanetChance: 1, maxPerPlanet: 1 } },
     fleet: { provisioned: false, vesselIds: [] },
