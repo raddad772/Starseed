@@ -222,6 +222,8 @@ details summary { cursor: pointer; letter-spacing: 0.12em; text-transform: upper
 #overlay .placeHits ul { grid-template-columns: repeat(auto-fill, minmax(min(380px, 100%), 1fr)); gap: 6px; }
 #overlay .placeHits li, #overlay .world .places li { display: flex; gap: 8px; align-items: start; justify-content: space-between; padding: 6px 8px; background: rgba(0,0,0,0.22); border: 1px solid var(--hair); border-radius: 2px; font-size: var(--step--1); }
 #overlay .placeHits li button, #overlay .world .places li button { font-size: var(--step--1); padding: 3px 10px; flex: none; }
+#overlay .world .lmGlobe { background: none; border: 0; padding: 0; margin: 0; font: inherit; color: inherit; text-decoration: underline dotted; text-underline-offset: 3px; cursor: pointer; }
+#overlay .world .lmGlobe:hover { color: var(--accent, #4fd6e6); }
 #overlay .pWorld { color: var(--target); letter-spacing: 0.06em; text-transform: uppercase; font-size: 0.9em; }
 #overlay .pMeta { color: var(--ink-dim); }
 #overlay .pTags { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 3px; }

@@ -241,7 +241,8 @@ export class PauseScreen {
     if (now.length) row('Now', esc(now.join(' · ')));
     // a simulated world's landmarks (worldsim/landmarks.js)
     const lm = b.terrain && b.terrain.snapshot && b.terrain.snapshot.landmarks;
-    if (lm && lm.length) row('Landmarks', lm.slice(0, 5).map((l) => `${esc(l.name)} <span style="opacity:0.65">${esc(l.text)}</span>`).join(' · '));
+    // (each name opens the nav computer's globe on it: ui/apps/fleet.js)
+    if (lm && lm.length) row('Landmarks', lm.slice(0, 5).map((l, i) => `${current && l.lat != null ? `<button type="button" class="lmGlobe" title="Show on the nav globe" data-globelm="${b.id}|${i}">${esc(l.name)}</button>` : esc(l.name)} <span style="opacity:0.65">${esc(l.text)}</span>`).join(' · '));
     if (b.moons && b.moons.length) row('Moons', `${b.moons.length}${b.rings ? ' · rings' : ''}`);
     else if (b.rings) row('Rings', 'yes');
     if (b.esi > 0.3) row('ESI', b.esi.toFixed(2));
@@ -280,7 +281,8 @@ export class PauseScreen {
     }
     const where = p.kind === 'archipelago' ? `${p.islands} islands` : p.kind;
     const size = p.areaKm2 > 0 ? `${n(p.areaKm2)} km²` : p.sizeKm ? `${n(p.sizeKm)} km` : '';
-    const go = current ? `<button type="button" data-goplace="${b.id}|${p.kind === 'archipelago' ? 'g' : 'p'}|${p.kind === 'archipelago' ? p.members[0] : p.id}${focus ? '|' + focus : ''}">Go</button>` : '';
+    const ref = `${b.id}|${p.kind === 'archipelago' ? 'g' : 'p'}|${p.kind === 'archipelago' ? p.members[0] : p.id}`;
+    const go = current ? `<button type="button" data-globe="${ref}" title="Show on the nav globe">Globe</button><button type="button" data-goplace="${ref}${focus ? '|' + focus : ''}">Go</button>` : '';
     return `<li><div><b>${esc(p.name || where)}</b> <span class="pMeta">${esc(where)}${size ? ` · ${size}` : ''} · ${lat}${p.T != null ? ` · ${Math.round(p.T)} °C` : ''}${p.peakM > 0 ? ` · to ${n(p.peakM)} m` : ''}</span>
       <div class="pTags">${show.map((t) => `<span>${esc(t)}</span>`).join('')}${fire ? `<span>${fire}</span>` : ''}</div>${fauna}</div>${go}</li>`;
   }
@@ -356,6 +358,26 @@ export class PauseScreen {
       if (g.nav) g.nav.chooseSite(body, { dirF: new V(...d), label: `${p.name}${focus === 'beach' ? ', its beach' : ''}` });
       g.message(`Nav computer: ${body.data.name}, ${p.name}${focus === 'beach' ? ' (the beach)' : ''}. N to fly there`, 'nav');
       b.textContent = 'Set';
+    };
+    // Globe: the nav computer's globe on that world, turned to it and picking it (ui/apps/fleet.js),
+    // to look round it, see if it's day there, and land
+    const toGlobe = (body, d, name) => {
+      const p = g.players[0], app = p.ui && p.ui.fleetApp;
+      if (!app) return;
+      this.hide();
+      p.ui.suit.show(app);
+      app.showSpot(body, new body.pos.constructor(d[0], d[1], d[2]), name);
+    };
+    for (const b of root.querySelectorAll('[data-globe]')) b.onclick = () => {
+      const [bid, kind, id] = b.dataset.globe.split('|'), body = g.universe.bodies[+bid], PL = body.data.terrain.snapshot.places;
+      const p = kind === 'g' ? PL.groups.find((x) => x.members[0] === +id) : PL.places.find((x) => x.id === +id);
+      if (p && p.at) toGlobe(body, p.at, p.name);
+    };
+    for (const b of root.querySelectorAll('[data-globelm]')) b.onclick = () => {
+      const [bid, i] = b.dataset.globelm.split('|'), body = g.universe.bodies[+bid], l = body.data.terrain.snapshot.landmarks[+i];
+      if (!l) return;
+      const la = l.lat * Math.PI / 180, lo = l.lon * Math.PI / 180;
+      toGlobe(body, [Math.cos(la) * Math.cos(lo), Math.sin(la), Math.cos(la) * Math.sin(lo)], l.name);
     };
     for (const b of root.querySelectorAll('[data-target]')) b.onclick = () => {
       const body = g.universe.bodies[+b.dataset.target];

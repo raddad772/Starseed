@@ -211,8 +211,8 @@ export class FleetApp {
       const marks = [];
       for (const o of opts) if (o.dest?.dirF) marks.push({ d: o.dest.dirF.toArray(), color: o.dest.label === 'the landing site' ? THEME.ok : THEME.target, ring: o.dest.label === 'the landing site' });
       if (v.body === b) marks.push({ d: v.pos.clone().applyQuaternion(b.qInv).toArray(), color: THEME.nav, ring: true });
-      const d = this.globe.draw(ui, x, y + 64, S, { map: globeMap(g, b), R: b.R, sun: [sunF.x, sunF.y, sunF.z], marks, picked: this.chosen ? this.chosen.d : null });
-      if (d) this.chosen = this.describe(b, d, sunF);
+      const pk = this.globe.draw(ui, x, y + 64, S, { map: globeMap(g, b), R: b.R, sun: [sunF.x, sunF.y, sunF.z], marks, features: this.features(b), picked: this.chosen ? this.chosen.d : null });
+      if (pk) this.chosen = this.describe(b, pk.d, sunF, pk.name);
       lx = x + S + 24; lw = w - S - 24;
     }
     const panelH = this.chosen ? 176 : 0, listH = H - y - 64 - 50 - (panelH ? panelH + 12 : 0);
@@ -230,19 +230,43 @@ export class FleetApp {
     if (c) {
       const py = y + 64 + listH + 12;
       ui.rect(lx, py, lw, panelH, THEME.panel, THEME.hair);
-      ui.text('Chosen spot', lx + 14, py + 24, { size: 16, weight: 700, color: THEME.caution });
-      ui.text(`${Math.abs(c.lat).toFixed(2)}° ${c.lat >= 0 ? 'N' : 'S'}  ${Math.abs(c.lon).toFixed(2)}° ${c.lon >= 0 ? 'E' : 'W'}`, lx + lw - 14, py + 24, { size: 12, color: THEME.dim, align: 'right', mono: true });
-      ui.text(c.water ? `water · ${c.biome || ''}` : `${c.biome || 'ground'} · ${Math.round(c.gh).toLocaleString()} m · ${c.slope.toFixed(0)}° slope`, lx + 14, py + 50, { size: 13, color: THEME.ink, maxW: lw - 28 });
-      ui.text(`${c.Tc != null ? `${Math.round(c.Tc)} °C · ` : ''}${c.day > 0.05 ? 'daylight' : c.day > -0.05 ? 'twilight' : 'night'}`, lx + 14, py + 72, { size: 13, color: THEME.dim, maxW: lw - 28 });
+      ui.text(c.name || 'Chosen spot', lx + 14, py + 24, { size: 16, weight: 700, color: THEME.caution, maxW: lw - 28 });
+      ui.text(c.water ? `water · ${c.biome || ''}` : `${c.biome || 'ground'} · ${Math.round(c.gh).toLocaleString()} m · ${c.slope.toFixed(0)}° slope`, lx + 14, py + 48, { size: 13, color: THEME.ink, maxW: lw - 28 });
+      ui.text(`${Math.abs(c.lat).toFixed(2)}° ${c.lat >= 0 ? 'N' : 'S'} ${Math.abs(c.lon).toFixed(2)}° ${c.lon >= 0 ? 'E' : 'W'}${c.Tc != null ? ` · ${Math.round(c.Tc)} °C` : ''} · ${c.day > 0.05 ? 'daylight' : c.day > -0.05 ? 'twilight' : 'night'}`, lx + 14, py + 70, { size: 12, color: c.day > -0.05 ? THEME.dim : '#8fa6ff', maxW: lw - 28 });
       if (ui.button('land-here', lx + 14, py + panelH - 62, lw - 28, 46, c.water ? 'Water: no ground to land on' : 'Land here', { primary: !c.water, tone: 'nav', disabled: c.water })) {
-        if (v.nav.order({ kind: 'site', body: b, dirF: c.dirF.clone(), label: 'the chosen spot' })) this.view = 'fleet';
+        if (v.nav.order({ kind: 'site', body: b, dirF: c.dirF.clone(), label: c.name || 'the chosen spot' })) this.view = 'fleet';
       }
     }
   }
 
+  // the world's named features, for the globe: its landmarks (worldsim/landmarks.js) and places
+  features(b) {
+    if (this._featFor === b) return this._feat;
+    const snap = b.data.terrain && b.data.terrain.snapshot, out = [];
+    for (const l of (snap && snap.landmarks) || []) {
+      if (!(l.lat != null && l.lon != null)) continue;
+      const la = l.lat * Math.PI / 180, lo = l.lon * Math.PI / 180;
+      out.push({ d: [Math.cos(la) * Math.cos(lo), Math.sin(la), Math.cos(la) * Math.sin(lo)], name: l.name, kind: 'landmark' });
+    }
+    const PL = snap && snap.places;
+    for (const p of (PL && PL.places) || []) if (p.at && p.name && p.kind !== 'islet') out.push({ d: p.at, name: p.name, kind: 'place' });
+    // (made once the world's sim is in: till then, asked again)
+    if (snap) { this._featFor = b; this._feat = out; }
+    return out;
+  }
+
+  // open on world b's globe, turned to and picking body-fixed direction dirF (named): the catalog's Globe
+  showSpot(b, dirF, name) {
+    this.pick = b; this.view = 'world';
+    if (this.globeFor !== b) { this.globeFor = b; this.globe = new GlobeView(); this.focusedOpt = null; }
+    this.globe.lookAt(dirF); this.globe.zoom = Math.max(this.globe.zoom, 3);
+    const sunF = this.game.universe.star.pos.clone().sub(b.pos).normalize().applyQuaternion(b.qInv);
+    this.chosen = this.describe(b, dirF.toArray ? dirF.toArray() : dirF, sunF, name);
+  }
+
   // what's at body-fixed direction d on world b: height, water, what grows (or doesn't), its slope,
   // and whether the sun is up there
-  describe(b, d, sunF) {
+  describe(b, d, sunF, name = null) {
     const dirF = new THREE.Vector3(d[0], d[1], d[2]).normalize();
     const gh = b.groundHeight(dirF), water = !!(b.isWaterAt && b.isWaterAt(dirF));
     let Tc = null, biome = null;
@@ -257,7 +281,7 @@ export class FleetApp {
     const e2 = dirF.clone().cross(e1).normalize(), f = 20 / b.R;
     let slope = 0;
     for (const [a, c] of [[1, 0], [0, 1], [-1, 0], [0, -1]]) slope = Math.max(slope, Math.abs(b.groundHeight(dirF.clone().addScaledVector(e1, a * f).addScaledVector(e2, c * f).normalize()) - gh) / 20);
-    return { d, dirF, gh, water, Tc, biome, slope: Math.atan(slope) * 180 / Math.PI, lat: Math.asin(dirF.y) * 180 / Math.PI, lon: (b.omega && b.omega.y < 0 ? 1 : -1) * Math.atan2(dirF.z, dirF.x) * 180 / Math.PI, day: dirF.dot(sunF) };   // (east the way it turns)
+    return { d, name, dirF, gh, water, Tc, biome, slope: Math.atan(slope) * 180 / Math.PI, lat: Math.asin(dirF.y) * 180 / Math.PI, lon: (b.omega && b.omega.y < 0 ? 1 : -1) * Math.atan2(dirF.z, dirF.x) * 180 / Math.PI, day: dirF.dot(sunF) };   // (east the way it turns)
   }
 
   // ---- a ship: dock with it, or come alongside
