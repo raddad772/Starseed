@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Megastructure plans</title>
+<style>
+  :root { color-scheme: dark; --bg: #0d1014; --fg: #d8dde3; --dim: #8a949e; --line: #26303a; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 13px/1.4 system-ui, sans-serif; }
+  #bar { position: fixed; left: 0; right: 0; top: 0; display: flex; gap: 8px; align-items: center; padding: 8px 12px; background: #0d1014e0; border-bottom: 1px solid var(--line); z-index: 2; flex-wrap: wrap; }
+  #bar input { width: 110px; background: #151a20; color: var(--fg); border: 1px solid var(--line); padding: 3px 6px; }
+  #bar button { background: #1b2229; color: var(--fg); border: 1px solid var(--line); padding: 3px 9px; cursor: pointer; }
+  #stats { color: var(--dim); font-size: 12px; }
+  #legend { position: fixed; left: 12px; bottom: 12px; color: var(--dim); font-size: 12px; z-index: 2; }
+  #legend span { display: inline-block; width: 10px; height: 10px; margin: 0 4px 0 10px; vertical-align: -1px; }
+  #plan2d { position: fixed; right: 12px; bottom: 12px; width: 340px; height: 340px; background: #0a0c0fd8; border: 1px solid var(--line); z-index: 2; }
+  canvas#gl { display: block; width: 100%; height: 100%; }
+</style>
+</head>
+<body>
+<div id="bar">
+  <b>Megastructure plan</b>
+  <input id="seed" value="SUMP-07" aria-label="Seed">
+  <button id="go">Plan</button><button id="prev">◀</button><button id="next">▶</button>
+  <label><input id="wet" type="checkbox" checked> wet</label>
+  <span id="stats"></span>
+</div>
+<canvas id="gl"></canvas>
+<canvas id="plan2d" width="680" height="680"></canvas>
+<div id="legend"><span style="background:#e05a4a"></span>break-in<span style="background:#e8c860"></span>catwalk crossing<span style="background:#5fd0e0"></span>climb (zero-g / low-g)<span style="background:#c8a878"></span>room<span style="background:#e09040"></span>dead end<span style="background:#d070e0"></span>data core / access<span style="background:#f4f4f4"></span>find</div>
+<script type="importmap">{ "imports": { "three": "../vendor/three.module.js" } }</script>
+<script type="module">
+import * as THREE from 'three';
+import { planSite, segs } from '../src/understructure/plan/sitePlan.js';
+
+const canvas = document.getElementById('gl');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(devicePixelRatio);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0d1014);
+const camera = new THREE.PerspectiveCamera(45, 1, 1, 5000);
+scene.add(new THREE.HemisphereLight(0xdde6ff, 0x302820, 1.6));
+const sun = new THREE.DirectionalLight(0xffffff, 1.4); sun.position.set(1, 2, 0.6); scene.add(sun);
+let group = new THREE.Group(); scene.add(group);
+const view = { yaw: 0.8, pitch: 0.45, dist: 260, target: new THREE.Vector3() };
+function placeCamera() {
+  const { yaw, pitch, dist, target } = view;
+  camera.position.set(target.x + dist * Math.cos(pitch) * Math.cos(yaw), target.y + dist * Math.sin(pitch), target.z + dist * Math.cos(pitch) * Math.sin(yaw));
+  camera.lookAt(target);
+}
+function resize() {
+  const w = innerWidth, h = innerHeight;
+  renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
+}
+addEventListener('resize', () => { resize(); draw(); });
+let drag = null;
+canvas.addEventListener('pointerdown', (e) => { drag = { x: e.clientX, y: e.clientY, pan: e.button === 2 || e.shiftKey }; canvas.setPointerCapture(e.pointerId); });
+canvas.addEventListener('pointerup', () => { drag = null; });
+canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+canvas.addEventListener('pointermove', (e) => {
+  if (!drag) return;
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag.x = e.clientX; drag.y = e.clientY;
+  if (drag.pan) {
+    const right = new THREE.Vector3().subVectors(camera.position, view.target).cross(camera.up).normalize();
+    view.target.addScaledVector(right, dx * view.dist * 0.0015); view.target.y += dy * view.dist * 0.0015;
+  } else { view.yaw += dx * 0.006; view.pitch = Math.max(-1.4, Math.min(1.5, view.pitch + dy * 0.006)); }
+  draw();
+});
+canvas.addEventListener('wheel', (e) => { e.preventDefault(); view.dist *= Math.exp(e.deltaY * 0.001); draw(); }, { passive: false });
+
+const mat = (c, o = 1) => new THREE.MeshLambertMaterial({ color: c, transparent: o < 1, opacity: o, depthWrite: o >= 1 });
+function prism(poly, y0, y1, material, edges = 0) {
+  const shape = new THREE.Shape(poly.map(([x, z]) => new THREE.Vector2(x, -z)));
+  const g = new THREE.ExtrudeGeometry(shape, { depth: y1 - y0, bevelEnabled: false });
+  g.rotateX(-Math.PI / 2); g.translate(0, y0, 0);
+  const m = new THREE.Mesh(g, material); group.add(m);
+  if (edges) group.add(new THREE.LineSegments(new THREE.EdgesGeometry(g), new THREE.LineBasicMaterial({ color: edges, transparent: true, opacity: 0.55 })));
+  return m;
+}
+const COL = { staging: 0xe05a4a, crossing: 0xe8c860, climb: 0x5fd0e0, room: 0xc8a878, deadend: 0xe09040, core: 0xd070e0, access: 0xd070e0 };
+
+let plan;
+function build() {
+  scene.remove(group); group = new THREE.Group(); scene.add(group);
+  const seed = document.getElementById('seed').value.trim();
+  const t0 = performance.now();
+  plan = planSite(seed, { environment: { water: document.getElementById('wet').checked } });
+  const ms = (performance.now() - t0).toFixed(1);
+  for (const L of [...plan.landmarks, plan.access]) prism(L.poly, L.y0, Math.min(L.y1, plan.surfaceY), mat(L.kind === 'access' ? 0xd070e0 : 0x8090a0, 0.07), L.kind === 'access' ? 0xd070e0 : 0x8fa3b8);
+  for (const m of plan.machines) {
+    const g = new THREE.CylinderGeometry(m.r, m.r, m.y1 - m.y0, m.kind === 'rack' ? 6 : 14);
+    const mesh = new THREE.Mesh(g, mat(0x50606e)); mesh.position.set(m.center[0], (m.y0 + m.y1) / 2, m.center[1]); group.add(mesh);
+  }
+  for (const n of plan.nodes) {
+    const c = COL[n.kind] ?? 0xffffff;
+    if (n.kind === 'crossing' || n.kind === 'access') prism(n.poly, n.y0 - 0.4, n.y0, mat(c));
+    else prism(n.poly, n.y0, n.y1, mat(c, n.kind === 'climb' ? 0.45 : 0.85), c);
+  }
+  for (const l of plan.links) for (const s of segs(l)) {
+    const a = new THREE.Vector3(s.a[0], s.a[1] + l.height / 2, s.a[2]), b = new THREE.Vector3(s.b[0], s.b[1] + l.height / 2, s.b[2]);
+    const L = a.distanceTo(b); if (L < 0.05) continue;
+    const g = new THREE.BoxGeometry(l.width * 2, l.height, L);
+    const m = new THREE.Mesh(g, mat(l.main ? 0xa89878 : 0xc08050, 0.9));
+    m.position.copy(a).add(b).multiplyScalar(0.5); m.lookAt(b); group.add(m);
+  }
+  for (const f of plan.finds) {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(f.units > 1 ? 2.2 : 0.9, 10, 8), mat(f.units > 1 ? 0xff60ff : 0xf4f4f4));
+    m.position.set(f.pos[0], f.pos[1] + 1, f.pos[2]); group.add(m);
+  }
+  // break-in tunnel up toward the surface (drawn 60 m)
+  const st = plan.nodes[0];
+  const tun = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 1.6, 60, 8), mat(0xe05a4a, 0.6));
+  tun.position.set(plan.entry.tunnel[0], st.y1 + 30, plan.entry.tunnel[1]); group.add(tun);
+  const box = new THREE.Box3().setFromObject(group);
+  box.max.y = Math.min(box.max.y, 140);
+  box.getCenter(view.target);
+  const s = plan.stats;
+  document.getElementById('stats').textContent = `${plan.landmarks.map((l) => l.kind).join(' · ')} | crossings ${s.crossings}, route rooms ${s.routeRooms}, dead ends ${s.spurs} | climbs ${s.climbs.join(', ')} | rise ${s.rise} m | corridors ${s.corridorTotal} m (longest ${s.corridorMax}) | finds ${s.finds} (${s.rawUnits} units) | attempt ${plan.attempt}, ${ms} ms`;
+  location.hash = seed;
+  draw2d();
+  draw();
+}
+function draw() { placeCamera(); renderer.render(scene, camera); }
+
+function draw2d() {
+  const cv = document.getElementById('plan2d'), g = cv.getContext('2d');
+  g.clearRect(0, 0, cv.width, cv.height);
+  let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+  for (const L of [...plan.landmarks, plan.access, ...plan.nodes]) for (const [x, z] of L.poly) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z); }
+  const sc = Math.min((cv.width - 30) / (x1 - x0), (cv.height - 30) / (z1 - z0));
+  const P = ([x, z]) => [15 + (x - x0) * sc, 15 + (z - z0) * sc];
+  const yMin = plan.nodes[0].y0, yMax = plan.nodes.find((n) => n.id === 'access').y0;
+  const hue = (y) => `hsl(${220 - 200 * Math.max(0, Math.min(1, (y - yMin) / (yMax - yMin || 1)))} 70% 60%)`;
+  const poly = (p, fill, stroke) => { g.beginPath(); p.forEach((q, i) => { const [a, b] = P(q); i ? g.lineTo(a, b) : g.moveTo(a, b); }); g.closePath(); if (fill) { g.fillStyle = fill; g.fill(); } if (stroke) { g.strokeStyle = stroke; g.stroke(); } };
+  for (const L of [...plan.landmarks, plan.access]) poly(L.poly, '#8090a022', '#8fa3b8');
+  for (const m of plan.machines) { const [a, b] = P(m.center); g.beginPath(); g.arc(a, b, m.r * sc, 0, 7); g.fillStyle = '#50606e'; g.fill(); }
+  g.lineWidth = 3;
+  for (const l of plan.links) { g.beginPath(); l.path.forEach((q, i) => { const [a, b] = P([q[0], q[2]]); i ? g.lineTo(a, b) : g.moveTo(a, b); }); g.strokeStyle = l.main ? hue(l.path[0][1]) : '#c08050'; g.stroke(); }
+  g.lineWidth = 1;
+  for (const n of plan.nodes) poly(n.poly, n.kind === 'crossing' || n.kind === 'access' ? hue(n.y0) : '#00000000', hue(n.y0));
+  for (const n of plan.nodes) if (n.kind !== 'crossing') { const c = n.center || n.poly[0]; const [a, b] = P(c); g.fillStyle = '#fff'; g.font = '11px system-ui'; g.fillText(n.kind === 'climb' ? (n.mode === 'zero-g' ? '0g' : 'lo') : n.kind === 'deadend' ? '·' : n.kind === 'staging' ? 'IN' : n.kind === 'core' ? 'CORE' : '', a - 6, b + 4); }
+}
+
+const seedInput = document.getElementById('seed');
+if (location.hash.length > 1) seedInput.value = decodeURIComponent(location.hash.slice(1));
+const step = (d) => { const m = seedInput.value.match(/^(.*?)(\d+)$/); seedInput.value = m ? m[1] + Math.max(0, +m[2] + d) : seedInput.value + '1'; build(); };
+document.getElementById('go').onclick = build;
+document.getElementById('prev').onclick = () => step(-1);
+document.getElementById('next').onclick = () => step(1);
+document.getElementById('wet').onchange = build;
+seedInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') build(); });
+resize(); build();
+window.__plan = () => plan;
+window.__view = (o) => { Object.assign(view, o); draw(); };
+</script>
+</body>
+</html>
