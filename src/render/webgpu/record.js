@@ -1,5 +1,5 @@
-// Temporary scene-producer bridge during parity testing. Records the existing
-// LUT/material producers; the WebGPU device computes its own copies from WGSL.
+// Test-only adapter for WebGL reference captures. Records LUT inputs so the
+// comparison can run identical producers on the raw WebGPU device.
 import { shaderKey, snapshotUniforms } from './uniforms.js';
 export function recordPasses(renderer, supported) {
   const render = renderer.render.bind(renderer), keys = new Set(supported);

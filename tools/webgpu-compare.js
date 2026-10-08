@@ -2,12 +2,12 @@
 // const compare = await import('/tools/webgpu-compare.js'); await compare.capture(game);
 export async function capture(game) {
   const engine = game.engine, gpu = await engine.webgpuReady;
-  if (!gpu) throw new Error('Open the game with ?renderer=webgpu&workers=2');
+  if (!gpu) throw new Error('Open the game with ?webglReference=1&workers=2');
   const { sky, atmos } = engine.frameInputs || {};
   if (!sky || !atmos) throw new Error('Render a game frame before comparing');
   if (engine.views.length !== 1 || engine.view.out) throw new Error('Parity capture currently requires one on-screen view');
   // Anchor both eyes to the same incident light. Their visible objects differ
-  // during the port, so separately metering them would hide shading differences.
+  // with ambient occlusion, so separate metering would hide shading differences.
   const saved = [engine.meterUp, engine.meterDown];
   let webgl, webgpu;
   try {
@@ -28,7 +28,7 @@ export async function capture(game) {
   cv.width = left.width + right.width; cv.height = Math.max(left.height, right.height) + 32;
   const ctx = cv.getContext('2d'); ctx.fillStyle = '#111'; ctx.fillRect(0, 0, cv.width, cv.height);
   ctx.fillStyle = '#fff'; ctx.font = '16px sans-serif';
-  ctx.fillText('WebGL reference · fixed incident-light exposure', 10, 22); ctx.fillText('WebGPU · same exposure · migration in progress', left.width + 10, 22);
+  ctx.fillText('WebGL reference · fixed incident-light exposure', 10, 22); ctx.fillText('WebGPU · same exposure', left.width + 10, 22);
   ctx.drawImage(left, 0, 32); ctx.drawImage(right, left.width, 32);
   return { exposure: 'incident-light anchor', webgl, webgpu, sideBySide: cv.toDataURL('image/png'), stats: gpu.stats };
 }
@@ -80,10 +80,10 @@ export async function measureCulling(game,frames=7){
 export async function measureReference(game,frames=5){
  const E=game.engine;if(!E._render)return null;const {sky,atmos}=E.frameInputs,gpu=await E.webgpuReady,result=[];
  for(const backend of ['webgpu','webgl','webgpu']){
-  const samples=[],half=new Uint16Array(4);
+  const samples=[],pixel=new Float32Array(4);
   for(let i=0;i<frames+3;i++){
    await gpu.device.queue.onSubmittedWorkDone();const start=performance.now();
-   if(backend==='webgl'){E._render(0,sky,atmos,true);E.renderer.readRenderTargetPixels(E.view.rtAdapt[E.view.adaptIdx],0,0,1,1,half);}
+   if(backend==='webgl'){pixel.fill(NaN);E._render(0,sky,atmos,true);E.renderer.readRenderTargetPixels(E.view.rtAdapt[E.view.adaptIdx],0,0,1,1,pixel);if(pixel.every(Number.isNaN))throw Error('Reference timing readback did not complete');}
    else{gpu.render(E);await gpu.device.queue.onSubmittedWorkDone();}
    if(i>=3)samples.push(performance.now()-start);
   }

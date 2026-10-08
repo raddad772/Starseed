@@ -1,6 +1,6 @@
 <!doctype html><meta charset="utf-8"><title>Starseed renderer comparisons</title>
 <style>body{margin:0;background:#10151b;color:#ddd;font:14px system-ui}header{padding:12px}iframe{border:0;width:1280px;height:960px}img{display:block;max-width:100%}pre{white-space:pre-wrap}button,a{margin:8px}</style>
-<header><b>Same-scene renderer comparisons</b> — finite test driver, two workers. <button id="run">Run comparison</button><label>View <select id="view"><option value="wood">Wood</option><option value="gorge">Gorge</option><option value="elevated">150 m above wood</option><option value="space">Saturn</option><option value="rings">Ringed world</option><option value="vessel">Carrier interior</option></select></label><label><input id="native" type="checkbox">Native startup only</label><pre id="status">Ready</pre></header>
+<header><b>Same-scene renderer comparisons</b> — finite test driver, two workers. <button id="run">Run comparison</button><label>View <select id="view"><option value="wood">Wood</option><option value="gorge">Gorge</option><option value="elevated">150 m above wood</option><option value="space">Saturn</option><option value="rings">Ringed world</option><option value="vessel">Carrier interior</option><option value="map">System map</option></select></label><label><input id="native" type="checkbox">Native startup only</label><pre id="status">Ready</pre></header>
 <div id="results"></div><iframe id="game" title="Test game"></iframe>
 <script type="module">
 const frame=document.querySelector('iframe'), status=document.querySelector('#status');
@@ -13,6 +13,6 @@ window.addEventListener('message',(event)=>{
  if(event.source!==frame.contentWindow || event.origin!==location.origin || event.data.type!=='webgpu-test') return;
  const d=event.data;status.textContent=JSON.stringify(d.report,null,2);
  if(d.report.stage==='Complete'||d.report.stage==='Failed')document.querySelector('#run').disabled=false;
- if(d.image){fetch('/__webgpu_capture',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:'webgpu-'+d.name,image:d.image,report:d.report})}).catch(()=>{});const a=document.createElement('a');a.href=d.image;a.download='webgpu-'+d.name+'.png';a.textContent='Save '+d.name+' comparison';const img=document.createElement('img');img.src=d.image;img.alt=d.name+' WebGL (left) and WebGPU (right)';document.querySelector('#results').append(a,img);}
+ if(d.image){fetch('/__webgpu_capture',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:'webgpu-'+d.name,image:d.image,report:d.report})}).catch(()=>{});const a=document.createElement('a');a.href=d.image;a.download='webgpu-'+d.name+'.png';a.textContent='Save '+d.name+' comparison';const img=document.createElement('img');img.src=d.image;img.alt=d.name.startsWith('native-')?d.name+' native WebGPU':d.name+' WebGL (left) and WebGPU (right)';document.querySelector('#results').append(a,img);}
 });
 </script>

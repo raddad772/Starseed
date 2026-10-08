@@ -12,6 +12,7 @@ import { DeferredRenderer } from './webgpu/renderer.js';
 import { ResourceProducers } from './webgpu/producers.js';
 // Explicit test fixture only: no GL context or fallback in production.
 const reference = typeof location !== 'undefined' && new URLSearchParams(location.search).has('webglReference') ? await import('../../tools/webgpu-reference.js') : null;
+const RenderTarget = reference ? THREE.WebGLRenderTarget : THREE.RenderTarget;
 import { FULLSCREEN_VERT, GLSL_DEPTH } from './glsl.js';
 import { renderFullscreen } from './atmosphere.js';
 import { VOLUME_COMPOSITE_FRAG } from './volume.js';
@@ -266,7 +267,7 @@ void main() {
 `;
 
 function hdrTarget(w, h, opts = {}) {
-  return new THREE.RenderTarget(w, h, {
+  return new RenderTarget(w, h, {
     type: THREE.HalfFloatType, format: THREE.RGBAFormat,
     minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
     depthBuffer: false, stencilBuffer: false, generateMipmaps: false, ...opts,
@@ -309,7 +310,7 @@ export class EngineView {
     this.bloomUp = [];
     this.fxTarget = null;
     // half-resolution volume pass output: [0] in-scattered light, [1] transmittance
-    this.rtVolume = new THREE.RenderTarget(w, h, {
+    this.rtVolume = new RenderTarget(w, h, {
       count: 2, type: THREE.HalfFloatType, format: THREE.RGBAFormat,
       minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: false, stencilBuffer: false,
     });
@@ -444,7 +445,7 @@ export class Engine {
   // the canvas's views; drawn by setting engine.view to it and rendering.
   makeOffscreenView(w, h, fov = 60) {
     const v = new EngineView(this);
-    v.out = new THREE.RenderTarget(w, h, { type: THREE.UnsignedByteType, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false });
+    v.out = new RenderTarget(w, h, { type: THREE.UnsignedByteType, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false });
     v.out.texture.colorSpace = THREE.SRGBColorSpace; // (stored encoded, read back as linear)
     v.rect = { x: 0, y: 0, w, h };
     v.setSize(w, h);

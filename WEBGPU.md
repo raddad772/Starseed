@@ -8,49 +8,58 @@ Written by session 39d69fa8 as the handoff to Astra. Read HANDOFF.md and CLAUDE.
 
 ## Implementation status (Codex, 2026-10-07)
 
-The full migration is in progress. `?renderer=webgpu` is opt-in; WebGL remains the default until parity.
+The renderer migration is implemented. **Normal startup uses raw WebGPU exclusively**, with reversed
+Z on every supported device. Three remains the scene/math/geometry/material/glTF description library.
+An unavailable or lost WebGPU device reports an error; it does not silently fall back to WebGL.
 
-- Raw WebGPU terrain/near-volume G-buffer, reversed `depth32float`, shared physical lighting,
-  scanned material arrays, seasons, frost, wetness, wind ripples and thermal emission are implemented.
-- Atmosphere LUTs, sky view, cloud shadow, aerial/cloud march and composite now run on the raw device,
-  followed by native luminance/adaptation, bloom and the existing AgX/ACES tone mapping.
-- Existing GLSL equations are translated offline with pinned Naga 0.1.0 (`tools/shaders/`); checked-in
-  WGSL runs directly in the browser. There is no runtime compiler or new browser dependency.
-- Rocks, flora and impostors, grass, floes/bergs and standard PBR objects now write the G-buffer.
-  Existing deformation, snow, alpha cutout and material equations are retained; metalness and grass
-  self-shadowing feed the common lighting pass. Six material families pass finite GPU validation,
-  including shared geometry and disposal. The wood comparison now contains matching trees and grass;
-  native shadows now render through WebGPU. Multi-material groups and interleaved tree LOD attributes
-  are supported; bespoke vessel patches remain.
-- Native forward passes now draw open liquids, river ribbons, falls sheets, spray, plumes, force fields
-  and rings with their original optics and blending. The galaxy cube and 6,000 bright stars are native;
-  stars use instanced quads. Sun and giant materials write the G-buffer. Gorge water and the space
-  background have same-camera captures; giant polar color parity remains open. Eight opaque and seven
-  forward pipeline families pass the finite GPU fixture.
-- Vessel paint masks/plate seams, interior-only materials, transparent PBR and canopy Fresnel are native.
-  Clustered local lighting assigns all fixture candidates and scene point/spot lights on the GPU, with
-  room bounds and an overflow path. The finite fixture verifies 70 overlapping lights and no light leak
-  outside their room. Native viewscreen sampling and view disposal also pass. The carrier comparison
-  has comparable fixture illumination; full vessel coverage remains part of final parity.
-- Batched compute culling compacts instance attributes and writes indirect arguments for vegetation,
-  rocks and their shadow casters. Its finite fixture rejects two of three instances while preserving
-  visible pixels. Same-load wood timings are currently neutral: ~31.9 ms enabled, ~30.5–31.4 disabled;
-  0.00065% of pixels differ by more than two byte levels (maximum four). No speedup is claimed.
-- A temporary WebGL producer bridge still supplies scene/resource descriptions and reference captures.
-  Its render-target recipes are reproduced on WebGPU, without WebGL pixel readbacks. Removing this
-  bridge follows opaque/forward/shadow parity. Decals, intersection blending, GTAO, native resource-producer replacement and final parity are still pending.
-- `tools/tests/webgpu.html` passes on the GPU: overlap/reversed depth, capture, resize and disposal.
-  `node --test tools/tests/webgpu.test.mjs`: 5 passing tests, including std140 packing and interleaved tree LOD views.
-  Generated shaders compile offline and on the browser device without validation errors.
-- `tools/tests/webgpu-scenes.html` performs finite, same-camera comparisons with two workers. The wood
-  comparison passes at 1280x960, with fixed incident-light exposure for both renderers. Terrain and
-  atmosphere and tree geometry are visually comparable. Native cascades, canopy, grass cover and trunk/rock
-  occlusion maps render without GPU validation errors; foreground grass remains darker than the reference.
-  Measured drained totals with native shadows were about 29–31 ms at 1280x960 for this incomplete scene; this is **not a parity or
-  performance claim**. Timestamp scopes may overlap on this adapter, so the tool also reports drained
-  totals and flags implausible sums. Wood-near-tree, gorge and elevated parity runs remain required.
-- Dave confirmed this is the only agent working on the computer and no coordination messages are needed.
-  The finite GPU fixtures use the test server on port 8766.
+- The raw frame draws terrain and near volumes, eight opaque families, native shadow maps, shared
+  physical lighting, clustered point/spot/fixture/hand lights, seven custom forward families and
+  transparent PBR. Vessels retain paint masks, plate seams, interiors and canopy Fresnel. All existing
+  atmosphere, clouds, liquids, falls/spray, stars/galaxy, giant/ring and post-processing paths are native.
+- Fullscreen resource producers now record descriptions directly for WebGPU. Atmosphere CPU queries
+  receive asynchronous LUT readbacks; there is no production WebGL context or pixel bridge. The map,
+  split-screen canvas rectangles and offscreen viewscreens use the native device too.
+- GLSL equations are translated offline with pinned `naga-wasi-cli@0.1.0` (`tools/shaders/`). Checked-in
+  WGSL runs without a runtime compiler. std140 scalar/vec2 arrays have explicit 16-byte stride wrappers;
+  this fixes the giant polar-color discrepancy. Scanned terrain keeps filtered snow/sand grain glints.
+- Batched compute compacts vegetation and rock instances and writes indirect draw arguments, including
+  shadow casters. Native trees select near/mid/impostor ranges on the GPU without CPU sorting/copying.
+  Resident terrain chunks are GPU-frustum-culled; deterministic quadtree streaming remains on the CPU.
+- `SurfaceDecal` (`webgpu/gbuffer-effects.js`) projects material color, roughness, wetness, metalness and
+  emission into the G-buffer. It follows the containing scene transform. This is a rendering capability;
+  generating animal trails, tyre tracks or other persistent world state remains simulation work.
+- Rock/bark contacts blend with the underlying terrain G-buffer. Native shaders omit the old forced
+  trunk-soil ring and matched-lighting band. Half-resolution GTAO with bilateral reconstruction attenuates
+  indirect illumination only. Foreground vegetation/soil is darker than the old forward reference;
+  this migration does not assert pixel-identical output.
+- WebGL rendering lives in `tools/webgpu-reference.js`, imported only by `?webglReference=1` for tests.
+  That mode gives both backends the same scene/camera and uses the old CPU tree LOD for comparison.
+  Normal startup has GPU tree LOD. `?renderer=webgpu` is no longer necessary.
+
+Validation and limits:
+
+- `node --test tools/tests/webgpu.test.mjs`: 5 passing tests (reversed projection, frustum, normalized
+  worker attributes, uniform packing, interleaved tree data).
+- `tools/tests/webgpu.html`: finite device validation covers all opaque/forward pipelines, overlapping
+  reversed depth, resize/disposal, shared geometry, cluster overflow with 70 lights and room exclusion,
+  glass/viewscreens, decals, indirect-only GTAO, scalar-array ABI, instance and terrain indirect culling,
+  tree LOD selection, map lines/meshes, and split-screen preservation.
+- `tools/tests/webgpu-scenes.html`: finite two-worker scenes at 1280x960, same-camera fixed-exposure
+  WebGL/native capture, native-only startup, whole-frame drained medians and culling on/off comparisons.
+  Scenes include the wood, 150 m above it, gorge water, Saturn, a generated ringed world and a carrier.
+  SOL's Saturn has no generated rings; the ring fixture uses existing Chinion in seed FSPB-8DTW.
+  Native-only carrier startup completed at about 9.3 ms drained; the actual system-map smoke test drew
+  its 22 bodies/orbits without a WebGL context or GPU validation error.
+- Timings are local diagnostics, not a speedup claim. Timestamp scopes may overlap on this adapter;
+  use drained totals, not sums. GL measurements drain with a correctly typed Float32 pixel readback.
+  Candidate draw/triangle counts precede GPU rejection and are not visible-triangle counts.
+- Final same-load drained medians (1280x960, native / GL / native): close tree **34.6 / 29.4 / 33.6 ms**;
+  elevated **23.7 / 23.2 / 23.1 ms**; gorge **33.6 / 36.9 / 33.9 ms**. Native includes GTAO/contact work.
+  Instance culling is approximately neutral here. At the close tree, on/off captures differ by at most
+  one byte level, with no pixels changing by more than two. The gorge has one such pixel (maximum three).
+- Coverage is on this Mac's in-app browser. Other browser/GPU combinations still require testing.
+  TAA/motion vectors, screen-space contact shadows and reflections remain later features, as planned.
+- Dave confirmed this is the only agent using the computer and no coordination messages are needed.
 
 ## Why
 
@@ -80,7 +89,7 @@ native would buy (CPU speed and threads, ray tracing, mesh shaders, bindless, to
 revisiting when there's a concrete need; the hot sim code is already moving to C for WASM (memory
 "c-for-wasm"), which builds natively unchanged, and a WebGPU renderer ports to Dawn natively.
 
-## Measured (2026-10-07, the current WebGL renderer)
+## Baseline measured before migration (2026-10-07, WebGL)
 
 In the wood at 18.66N 59.63W (`?seed=SOL&workers=2&date=2026-10-06T23:08`, the nearest tree more than
 15 m from the spawn, 3 m from it at eye level), 2048x1536, the test tab, Dave's Mac (Chrome):
@@ -107,7 +116,7 @@ drain by a sync 1x1 readback. The GPU's speed varies between loads (the same woo
 next): compare A and B inside one load. Timer queries read bogus (~150 ms a pass) in WebGL; WebGPU's
 `timestamp-query` should be tried (Chrome quantizes it).
 
-## The renderer today (what's to be replaced)
+## Pre-migration renderer reference
 
 ~12,000 lines in `src/render/` (36 modules). The largest:
 
@@ -185,20 +194,20 @@ floe/bergRender, itemVisuals, ezTrees, treeMesh, noise3d, workerPool, glsl.js.
 9. Post: exposure, bloom, tone curve. (Antialiasing: none today, `antialias: false`; TAA wants motion
    vectors from the G-buffer pass.)
 
-**G-buffer (proposal; WebGPU's default `maxColorAttachmentBytesPerSample` is 32):**
+**Implemented G-buffer (24 bytes of color per sample, plus depth):**
 
 | target | format | contents |
 |---|---|---|
-| RT0 | rgba8unorm | albedo rgb, ambient occlusion (scan AO x cave/overhang occlusion x baked) |
-| RT1 | rgba16float | normal (octahedral, 2), roughness, material flags / lighting model |
-| RT2 | rgba8unorm | translucency (leaves, grass), wetness, snow, specular F0 |
-| RT3 | rgba16float | emission (lava, thermal glow, lit windows) added straight into the lit image |
-| RT4 | rg16float | motion vectors (TAA, later) |
+| RT0 | rgba8unorm | albedo rgb, scan/baked AO |
+| RT1 | rgba16float | octahedral normal xy, roughness, body index × 16 + material family |
+| RT2 | rgba16float | emission rgb, cave visibility (negative self-shadow for grass/giants) |
+| RT3 | rgba8unorm | translucency (terrain: filtered glint / 3), wetness, metalness, specular F0 |
 | depth | depth32float | reversed-Z (`depthCompare: 'greater'`, cleared to 0) |
 
-4 + 8 + 4 + 8 + 4 = 28 bytes. Lighting models needed: rough dielectric (ground, rock, bark), foliage
-(translucent, two-sided), grass (two-sided, self-shadowed sward), snow, metal (hulls). Water stays
-forward.
+Opaque families: terrain 0, rock 1, flora 2, grass 3, standard PBR 4, interior 5, ice 6, giant 7.
+Terrain color/normal/surface/depth are copied before objects for contact processing. Decals and contact
+blending write a second G-buffer set. GTAO outputs indirect visibility separately. Motion vectors/TAA
+are deferred; water and glass remain forward.
 
 **What the lighting pass computes from position vs reads from the G-buffer:** today's terms in
 terrainMaterial's land branch: `sunT` (cloud light x terrain shadow x sun shadow map x grass cover),
@@ -208,7 +217,7 @@ terrainMaterial's land branch: `sunT` (cloud light x terrain shadow x sun shadow
 the atmosphere, the moon. Material-based (G-buffer): albedo, normal, roughness, AO (scan x overhang),
 translucency, emission.
 
-## Plan (each step leaves the game working)
+## Original implementation sequence (completed through step 5)
 
 0. **Spike.** A WebGPU canvas behind `?renderer=webgpu`, the WebGL renderer the default meanwhile. Draw
    the heightfield chunks from the same worker data with plain albedo and the sun, same camera. A
@@ -257,11 +266,8 @@ translucency, emission.
   (`resize_window` to a custom size gives it one) and timers throttle to ~1 s: yield through a
   MessageChannel in drain loops, grab frames right after `game.frame` (canvas or texture copy) and post
   them to the scratchpad's shot server (port 8799).
-- Coordinate GPU/CPU-heavy work: message the "XBox Work on Mac" session before and after browser test
-  rounds; on its timing-window request close the tab, stop the server, reply "holding", wait for "XBox
-  Work done". Codex works on an underground-megastructure mockup in its own worktree
-  (`/Users/dave/Documents/Codex/2026-10-01/br/worktrees/starseed-understructure`) and coordinates through
-  `/tmp/starseed-megastructure-coordination.md`.
+- Session override from Dave: this is the only agent doing work on the computer; do not message other
+  sessions or delegate work. Earlier coordination directions are superseded for this migration.
 - Commit good checkpoints as they land (own files only; others' uncommitted work is in the tree), push
   only when Dave asks, end commit messages with the Co-Authored-By line in CLAUDE.md.
 - Dave's preferences: physically grounded, not band-aids; build the headline part first; he play-tests
@@ -269,6 +275,7 @@ translucency, emission.
 
 ## Open questions (Dave)
 
-- Which browsers to support at launch; keep WebGL as a fallback during the port, and after?
+- Which browser/GPU combinations to certify for launch. The implemented default requires WebGPU;
+  WebGL is retained only as an explicit test reference.
 - Antialiasing: TAA (needs motion vectors) or none.
 - Does the renderer stay JavaScript for good, or move to C with the sims for a native build later?

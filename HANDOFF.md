@@ -2,9 +2,12 @@
 
 Dave is play-testing and giving feedback in short bursts.
 
-**The renderer is moving to WebGPU deferred (Dave, 2026-10-07): the plan, the measurements behind it and
-the handoff to Astra are in `WEBGPU.md`.** Rendering work belongs there; the WebGL renderer stays the
-default until the new one reaches parity.
+**The full renderer migration is implemented (2026-10-07): normal startup now uses raw WebGPU deferred.**
+`WEBGPU.md` records the architecture, validation and limits. Terrain/objects, native shadows, atmosphere,
+liquids/effects, vessels, local lights, decals/contact blending, GTAO, GPU instance/tree/chunk culling,
+maps and viewscreens are native. WebGL exists only in explicit test tooling (`?webglReference=1`), with
+no production fallback. Other browser/GPU combinations still need certification; no speedup or exact
+pixel-parity claim is made. Dave confirmed sole-agent work and no coordination messages this session.
 
 ## NOW: forests, shade, moonlight; Dave's queue (session 39d69fa8, 2026-10-06)
 
