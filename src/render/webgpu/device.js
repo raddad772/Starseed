@@ -57,18 +57,21 @@ export async function readRGBA(device, texture, width, height, format = 'rgba8un
   } finally { buffer.destroy(); }
 }
 
+const timers=new WeakMap();
+export const timestampWrites=(device,label)=>timers.get(device)?.writes(label);
 export class PassTimer {
-  constructor(device, enabled, maxPasses = 16) {
+  constructor(device, enabled, maxPasses = 128) {
     this.device = device; this.enabled = enabled; this.maxPasses = maxPasses;
-    this.last = {}; this.pending = false;
+    this.last = {}; this.pending = false; this.active = false; timers.set(device,this);
     if (!enabled) return;
     this.query = device.createQuerySet({ type: 'timestamp', count: maxPasses * 2 });
     this.resolve = device.createBuffer({ size: maxPasses * 16, usage: GPUBufferUsage.QUERY_RESOLVE | GPUBufferUsage.COPY_SRC });
     this.read = device.createBuffer({ size: maxPasses * 16, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
   }
-  begin() { this.labels = []; this.active = this.enabled && !this.pending; }
+  begin() { this.labels = []; this.dropped = 0; this.active = this.enabled && !this.pending; }
   writes(label) {
-    if (!this.active || this.labels.length >= this.maxPasses) return undefined;
+    if (!this.active) return undefined;
+    if(this.labels.length >= this.maxPasses){this.dropped++;return undefined;}
     const i = this.labels.length * 2; this.labels.push(label);
     return { querySet: this.query, beginningOfPassWriteIndex: i, endOfPassWriteIndex: i + 1 };
   }
@@ -76,19 +79,28 @@ export class PassTimer {
     if (!this.active || !this.labels.length) return false;
     encoder.resolveQuerySet(this.query, 0, this.labels.length * 2, this.resolve, 0);
     encoder.copyBufferToBuffer(this.resolve, 0, this.read, 0, this.labels.length * 16);
-    this.pending = true;
+    this.pending = true; this.active = false;
+    this.sampleLabels=[...this.labels];this.sampleDropped=this.dropped;
     return true;
   }
   async harvest() {
-    const labels = [...this.labels];
+    const labels = this.sampleLabels;
     try {
       await this.read.mapAsync(GPUMapMode.READ);
       const values = new BigUint64Array(this.read.getMappedRange());
-      const out = {};
-      labels.forEach((label, i) => { const ns=values[i*2+1]-values[i*2]; if(ns>=0n)out[label]=Number(ns)/1e6; });
-      this.last = out;
+      const out = {}, intervals = [];
+      labels.forEach((label, i) => { const a=values[i*2],b=values[i*2+1];if(b>=a){out[label]=(out[label]||0)+Number(b-a)/1e6;intervals.push([a,b]);} });
+      // Some Metal/Dawn paths report overlapping command-buffer intervals for
+      // separate passes. Their sum is not GPU frame time. Report interval union
+      // and explicitly flag that per-pass attribution is unavailable there.
+      intervals.sort((a,b)=>a[0]<b[0]?-1:a[0]>b[0]?1:0);
+      let union=0n,lo=0n,hi=0n,overlap=false;
+      for(const [a,b] of intervals){if(b===a)continue;if(hi&&a<hi){overlap=true;if(b>hi)hi=b;}else{union+=hi-lo;lo=a;hi=b;}}
+      union+=hi-lo;this.gpuMs=Number(union)/1e6;this.passAttributionReliable=!overlap&&intervals.length===labels.length&&!this.sampleDropped;
+
+      this.last = out; this.coverage={passes:labels.length,dropped:this.sampleDropped,passAttributionReliable:this.passAttributionReliable,gpuIntervalUnionMs:this.gpuMs};
       this.read.unmap();
     } finally { this.pending = false; }
   }
-  dispose() { this.query?.destroy(); this.resolve?.destroy(); this.read?.destroy(); }
+  dispose() { this.active=false;timers.delete(this.device);this.query?.destroy(); this.resolve?.destroy(); this.read?.destroy(); }
 }

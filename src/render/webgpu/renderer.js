@@ -19,6 +19,7 @@ import { MapPass } from './map.js';
 import { GTAO } from './gtao.js';
 import { GBufferEffects } from './gbuffer-effects.js';
 import { Background } from './background.js';
+import { tuning, resetCounters } from './tuning.js';
 import { layout as lightLayout } from './generated/lighting.js';
 
 const OBJECT_FLOATS = 44;
@@ -161,6 +162,7 @@ export class DeferredRenderer {
     const hdr = make('lit HDR', 'rgba16float', GPUTextureUsage.COPY_SRC);
     const output = make('presented frame', this.format, GPUTextureUsage.COPY_SRC);
     t = { width, height, gbuffer, shadedGbuffer, ground, ao, depth, hdr, output, textures: [...gbuffer, ...shadedGbuffer, ...ground, ao, depth, hdr, output] };
+    t.rawLightGroup=d.createBindGroup({layout:this.gbufferLayout,entries:[gbuffer[0],gbuffer[1],gbuffer[2],depth,gbuffer[3],ao].map((tex,binding)=>({binding,resource:tex.createView()}))});
     t.lightGroup = d.createBindGroup({ layout: this.gbufferLayout, entries: [shadedGbuffer[0], shadedGbuffer[1], shadedGbuffer[2], depth, shadedGbuffer[3], ao].map((tex, binding) => ({ binding, resource: tex.createView() })) });
     t.postGroup = d.createBindGroup({ layout: this.postLayout, entries: [{ binding: 0, resource: hdr.createView() }] });
     if(view.out)this.textures.renderTargets.set(view.out.texture,{gpuEntry:true,texture:output,view:output.createView({format:this.format+'-srgb'}),sampler:this.textures.linear});
@@ -170,9 +172,11 @@ export class DeferredRenderer {
   render(engine, animate = true) {
     if (this.disposed) return;
     const start = performance.now(), view = engine.view, camera = view.camera;
+    this.timer.begin();resetCounters(this.device);
+    const options=tuning(this.device),cpu={};let mark=start;const stage=name=>{const now=performance.now();cpu[name]=now-mark;mark=now;};
     camera.updateMatrixWorld(); engine.scene.updateMatrixWorld();
     if(animate&&engine.sunShadows)this.shadows.update(engine.sunShadows,engine.scene);
-    if(this.shadows.state)this.opaque.uniformOverrides=this.shadows.uniforms;
+    if(this.shadows.state)this.opaque.uniformOverrides=this.shadows.uniforms;stage('scene and shadows');
     this.projection.fromArray(reversedPerspective(camera.fov, camera.aspect, camera.near, camera.far));
     this.viewProjection.multiplyMatrices(this.projection, camera.matrixWorldInverse);
     this.inverse.copy(this.viewProjection).invert();
@@ -210,7 +214,9 @@ export class DeferredRenderer {
       }
       opaqueObjects.push({...entry,body});
     }
+    stage('visibility');
     const opaque = opaqueObjects.map(({object,material,body,group})=>{const draw=this.opaque.prepare(object,material,body,this.projection,camera);if(draw)draw.group=group;return draw;}).filter(Boolean);
+    stage('draw preparation');
     this.ensureCapacity(draw.length, lights.length);
     draw.forEach(({ object, u, body }, i) => {
       const k = i * OBJECT_FLOATS, data = this.objectData;
@@ -241,10 +247,9 @@ export class DeferredRenderer {
       ...u, ...(this.shadows.state ? this.shadows.uniforms : this.opaque.uniformOverrides), uBodyIndex: { value: i },
       ...(!u.tCloudShadow?.value?.userData?.webgpuRecipe ? { tCloudShadow: { value: null }, uCSOn: { value: 0 } } : {}),
     }).group);
-    const t = this.target(view); let encoder = d.createCommandEncoder({ label: 'deferred frame' });
+    const t = this.target(view),effects=this.materialEffects.plan(engine.scene,draw,opaque,options.enabled);t.activeGbuffer=effects.process?t.shadedGbuffer:t.gbuffer;stage('frame bindings'); let encoder = d.createCommandEncoder({ label: 'deferred frame' });
     this.opaque.culler.encode(encoder,opaque,this.frustum,camera);
     this.terrainCuller.encode(encoder,draw,this.frustum);
-    this.timer.begin();
     let pass = encoder.beginRenderPass({ label: 'G-buffer',
       colorAttachments: t.gbuffer.map((texture) => ({ view: texture.createView(), clearValue: [0, 0, 0, 0], loadOp: 'clear', storeOp: 'store' })),
       depthStencilAttachment: { view: t.depth.createView(), depthClearValue: 0, depthLoadOp: 'clear', depthStoreOp: 'store' },
@@ -258,17 +263,17 @@ export class DeferredRenderer {
       pass.setVertexBuffer(0,this.objectIndices,i*4,4);pass.drawIndexedIndirect(this.terrainCuller.args,i*20); triangles += g.count / 3;
     });
     pass.end();
-    this.materialEffects.captureGround(encoder,t);
+    if(effects.capture)this.materialEffects.captureGround(encoder,t);
     pass = encoder.beginRenderPass({label:'opaque G-buffer',colorAttachments:t.gbuffer.map(texture=>({view:texture.createView(),loadOp:'load',storeOp:'store'})),depthStencilAttachment:{view:t.depth.createView(),depthLoadOp:'load',depthStoreOp:'store'},timestampWrites:this.timer.writes('opaque')});
     triangles += this.opaque.draw(pass, opaque);
     pass.end();
-    this.materialEffects.render(encoder,engine,t,this.inverse);
+    if(effects.process)this.materialEffects.render(encoder,engine,t,this.inverse,effects);
     this.gtao.render(encoder,t,this.inverse,camera);
     for (const [label, texture, pipeline, group] of [
-      ['lighting', t.hdr, this.lightPipeline, t.lightGroup], ['post', t.output, this.postPipeline, t.postGroup],
+      ['lighting', t.hdr, this.lightPipeline, effects.process?t.lightGroup:t.rawLightGroup], ['post', t.output, this.postPipeline, t.postGroup],
     ]) {
       if (label === 'post') {
-        d.queue.submit([encoder.finish()]);
+        d.queue.submit([encoder.finish()]);stage('opaque encoding');
         this.localLights.render(engine,t,this.inverse,!this.flat);
         this.forward.clusterGroup=t.clusterGroup;this.forward.bodyLights=lights;
         this.forward.uniformOverrides=this.opaque.uniformOverrides;
@@ -276,7 +281,7 @@ export class DeferredRenderer {
         this.forward.stars(engine,t,this.projection);
         const hdr = this.air.render(engine, t);
         triangles+=this.forward.effects(engine,t,hdr,this.projection,this.frustum);
-        encoder = d.createCommandEncoder({ label: 'post and present' });
+        stage('lighting and atmosphere');encoder = d.createCommandEncoder({ label: 'post and present' });
         if (engine.toneMat) { this.post.render(engine, t, hdr); continue; }
         t.postGroup = d.createBindGroup({ layout: this.postLayout, entries: [{ binding: 0, resource: hdr.createView() }] });
       }
@@ -289,7 +294,7 @@ export class DeferredRenderer {
     if (!view.out) {
       const canvasTexture = this.context.getCurrentTexture();
       if (animate) {
-        pass = encoder.beginRenderPass({ colorAttachments: [{ view: canvasTexture.createView(), clearValue: [0, 0, 0, 1], loadOp: 'clear', storeOp: 'store' }] }); pass.end();
+        pass = encoder.beginRenderPass({ timestampWrites:this.timer.writes('canvas clear'),colorAttachments: [{ view: canvasTexture.createView(), clearValue: [0, 0, 0, 1], loadOp: 'clear', storeOp: 'store' }] }); pass.end();
       }
       const x = Math.floor(view.rect.x * engine.pixelRatio), y = Math.floor(view.rect.y * engine.pixelRatio);
       encoder.copyTextureToTexture({ texture: t.output }, { texture: canvasTexture, origin: [x, y] }, [Math.min(t.width, this.canvas.width - x), Math.min(t.height, this.canvas.height - y)]);
@@ -297,10 +302,12 @@ export class DeferredRenderer {
     const timed = this.timer.finish(encoder);
     d.queue.submit([encoder.finish()]);
     if (timed) this.timingReady = this.timer.harvest().catch(this.onError);
-    this.lastView = view;
-    this.stats = { calls: draw.length + opaque.length, triangles, geometries: this.geometries.size, submitMs: performance.now() - start, passes: this.timer.last };
-    engine.gpuMs = Object.values(this.timer.last).reduce((sum, n) => sum + n, 0);
+    stage('post and present');this.lastView = view;
+    this.stats = { calls: draw.length + opaque.length, triangles, geometries: this.geometries.size, submitMs: performance.now() - start, passes: this.timer.last, cpu, optimizations:{...options}, materialEffects:effects.process,groundCopy:effects.capture,timingCoverage:this.timer.coverage };
+    engine.gpuMs = this.timer.gpuMs || 0;
   }
+  setOptimizations(enabled){tuning(this.device).enabled=!!enabled;}
+  get optimizationsEnabled(){return tuning(this.device).enabled;}
   releaseView(view){const t=this.targets.get(view);if(!t)return;this.air.release(t);this.post.release(t);this.localLights.release(t);for(const texture of t.textures)texture.destroy();this.targets.delete(view);if(view.out)this.textures.renderTargets.delete(view.out.texture);}
   async capture(view = this.lastView) {
     const t = this.targets.get(view);

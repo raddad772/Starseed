@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { shaderModule } from './device.js';
-import { packUniforms } from './uniforms.js';
+import { packUniforms, packUniformsReference } from './uniforms.js';
+import { tuning } from './tuning.js';
 
 const dimension = (type) => ({ sampler2D: '2d', sampler2DArray: '2d-array', sampler3D: '3d', samplerCube: 'cube' })[type];
 export class ProgramBindings {
@@ -34,7 +35,16 @@ export class ProgramBindings {
         buffer: this.device.createBuffer({ label: 'shader parameters', size: this.descriptor.bytes, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }) };
       this.entries.set(key, e);
     }
-    this.device.queue.writeBuffer(e.buffer, 0, packUniforms(this.descriptor, uniforms, e.data));
+    const options = tuning(this.device);
+    (options.enabled ? packUniforms : packUniformsReference)(this.descriptor, uniforms, e.data);
+    const bytes = e.words || (e.words = new Uint32Array(e.data));
+    let changed = !options.enabled || !e.previous;
+    if (!changed) for (let i = 0; i < bytes.length; i++) if (bytes[i] !== e.previous[i]) { changed = true; break; }
+    if (changed) {
+      this.device.queue.writeBuffer(e.buffer, 0, e.data);
+      if (!e.previous) e.previous = new Uint32Array(bytes.length);
+      e.previous.set(bytes); options.uniformWrites++; options.uniformBytes += e.data.byteLength;
+    } else options.uniformSkips++;
     const images = this.descriptor.textures.map(t => this.image(t, t.name === 'tSkyView' && !(uniforms.uSkyView?.value?.x > 0) ? null : uniforms[t.name]?.value));
     const samplers = images.map((image, i) => ['tShadowAtlas', 'tDepth', 'tAtlas', 'tWaterDepth', 'tSceneDepth'].includes(this.descriptor.textures[i].name) ? this.textures.nearest : image.sampler);
     if (!e.group || images.some((t, i) => t !== e.images[i] || samplers[i] !== e.samplers[i])) {

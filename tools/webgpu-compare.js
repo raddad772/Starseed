@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 // Same scene/camera/world state, consecutive renders. Load in an owned test tab.
 // const compare = await import('/tools/webgpu-compare.js'); await compare.capture(game);
 export async function capture(game) {
@@ -90,4 +91,27 @@ export async function measureReference(game,frames=5){
   result.push({backend,drainedMs:samples.sort((a,b)=>a-b)[samples.length>>1]});
  }
  return {samples:result,note:'Same-load full-frame medians, including CPU submission. Native includes GTAO and material contact processing.'};
+}
+
+export async function measureOptimizations(game,frames=9,live=false){
+ const E=game.engine,gpu=await E.webgpuReady,saved=[gpu.optimizationsEnabled,E.meterUp,E.meterDown],samples=[];
+ let before,after;const look=live&&game.debugFree?game.freecam.quatF.clone():null;
+ try{
+  E.meterUp=E.meterDown=0;
+  for(const enabled of [false,true,false]){
+   gpu.setOptimizations(enabled);const elapsed=[],cpu=[],counts=[],pass=[];
+   for(let i=0;i<frames+3;i++){
+    await gpu.device.queue.onSubmittedWorkDone();E.view.adaptReset=true;
+    const start=performance.now();
+    if(live){if(look)game.freecam.quatF.copy(look).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0),0.06*Math.sin(i*0.4)));game.frame(performance.now());}else gpu.render(E);
+    const submission=performance.now()-start;await gpu.device.queue.onSubmittedWorkDone();const drained=performance.now()-start;await gpu.timingReady;
+    if(i>=3){elapsed.push(drained);cpu.push(submission);counts.push({...gpu.stats.optimizations});pass.push({...gpu.timer.last});}
+   }
+   const median=a=>a.sort((a,b)=>a-b)[a.length>>1];
+   samples.push({enabled,drainedMs:median(elapsed),submitMs:median(cpu),counters:Object.fromEntries(['uniformWrites','uniformBytes','uniformSkips','instanceCopyBytes'].map(k=>[k,median(counts.map(x=>x[k]))])),passes:Object.fromEntries([...new Set(pass.flatMap(p=>Object.keys(p)))].map(k=>[k,median(pass.map(p=>p[k]||0))])),coverage:gpu.timer.coverage,cpuStages:gpu.stats.cpu});
+   if(!live){const shot=await gpu.capture();if(enabled)after=shot.pixels;else if(!before)before=shot.pixels;}
+  }
+  let changed=0,maxDelta=0,sum=0;if(before)for(let i=0;i<before.length;i+=4){let delta=0;for(let c=0;c<3;c++){const d=Math.abs(before[i+c]-after[i+c]);delta=Math.max(delta,d);sum+=d;}if(delta>2)changed++;maxDelta=Math.max(maxDelta,delta);}
+  return {live,cameraSweep:!!look,samples,...(before?{changedPixelFraction:changed/(before.length/4),meanChannelDelta:sum/(before.length/4*3),maxDelta}:{}),note:'Same-load A/B/A, warmed medians; drained totals include transfers and CPU submission. Timestamp sums are diagnostic, not total GPU latency.'};
+ }finally{gpu.setOptimizations(saved[0]);[E.meterUp,E.meterDown]=saved.slice(1);if(look){game.freecam.quatF.copy(look);game.freecam.sync();}E.view.adaptReset=true;}
 }

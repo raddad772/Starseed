@@ -5,7 +5,7 @@ import { SunShadows, SHADOW_LIGHT_UNIFORMS, SUN_SHADOW_UNIFORMS, SKY_SHADOW_UNIF
 import { OpaquePass } from './opaque.js';
 import { shadowPrograms } from './generated/shadows.js';
 import { FULLSCREEN } from './shaders.js';
-import { shaderModule } from './device.js';
+import { shaderModule, timestampWrites } from './device.js';
 
 const CLEAR=FULLSCREEN+`
 @group(0) @binding(0) var<uniform> color:vec4f;
@@ -24,7 +24,7 @@ class ShadowGeometry extends OpaquePass {
   }
   pipeline(p,g,material){
     const additive=material.blending===THREE.CustomBlending;
-    const key=JSON.stringify(g.layout)+':'+additive;
+    const key=g.layoutKey+':'+additive;
     let pipeline=p.pipelines.get(key);
     if(!pipeline){
       pipeline=this.device.createRenderPipeline({label:p.name,
@@ -83,7 +83,7 @@ export class ShadowPass {
     if(!this.current)return;
     const e=this.map(this.current),encoder=this.device.createCommandEncoder({label:'clear atlas region'});
     this.device.queue.writeBuffer(this.clearBuffer,0,new Float32Array([this.clearColor.r,this.clearColor.g,this.clearColor.b,this.clearAlpha]));
-    const pass=encoder.beginRenderPass({colorAttachments:[{view:e.view,loadOp:'load',storeOp:'store'}],depthStencilAttachment:{view:e.depth.createView(),depthClearValue:1,depthLoadOp:'clear',depthStoreOp:'store'}});
+    const pass=encoder.beginRenderPass({timestampWrites:timestampWrites(this.device,'shadows'),colorAttachments:[{view:e.view,loadOp:'load',storeOp:'store'}],depthStencilAttachment:{view:e.depth.createView(),depthClearValue:1,depthLoadOp:'clear',depthStoreOp:'store'}});
     this.region(pass,this.current.viewport);pass.setPipeline(this.clearPipeline);pass.setBindGroup(0,this.clearGroup);pass.draw(3);pass.end();this.device.queue.submit([encoder.finish()]);
   }
   render(scene,camera){
@@ -111,12 +111,12 @@ export class ShadowPass {
     }
     const encoder=this.device.createCommandEncoder({label:'shadow casters'});
     this.geometry.culler.encode(encoder,draws,this.frustum,camera);
-    let pass=encoder.beginRenderPass({colorAttachments:[{view:output.view,loadOp:additive?'clear':'load',storeOp:'store',clearValue:[0,0,0,0]}],...(!additive?{depthStencilAttachment:{view:e.depth.createView(),depthLoadOp:'load',depthStoreOp:'store'}}:{})});
+    let pass=encoder.beginRenderPass({timestampWrites:timestampWrites(this.device,'shadows'),colorAttachments:[{view:output.view,loadOp:additive?'clear':'load',storeOp:'store',clearValue:[0,0,0,0]}],...(!additive?{depthStencilAttachment:{view:e.depth.createView(),depthLoadOp:'load',depthStoreOp:'store'}}:{})});
     if(!additive)this.region(pass,rect);
     this.geometry.draw(pass,draws);pass.end();
     if(additive){
       const group=this.device.createBindGroup({layout:this.copyPipeline.getBindGroupLayout(0),entries:[{binding:0,resource:output.view}]});
-      pass=encoder.beginRenderPass({colorAttachments:[{view:e.view,loadOp:'load',storeOp:'store'}]});this.region(pass,rect);pass.setPipeline(this.copyPipeline);pass.setBindGroup(0,group);pass.draw(3);pass.end();
+      pass=encoder.beginRenderPass({timestampWrites:timestampWrites(this.device,'shadows'),colorAttachments:[{view:e.view,loadOp:'load',storeOp:'store'}]});this.region(pass,rect);pass.setPipeline(this.copyPipeline);pass.setBindGroup(0,group);pass.draw(3);pass.end();
     }
     this.device.queue.submit([encoder.finish()]);
   }

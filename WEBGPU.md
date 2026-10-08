@@ -38,8 +38,8 @@ An unavailable or lost WebGPU device reports an error; it does not silently fall
 
 Validation and limits:
 
-- `node --test tools/tests/webgpu.test.mjs`: 5 passing tests (reversed projection, frustum, normalized
-  worker attributes, uniform packing, interleaved tree data).
+- `node --test tools/tests/webgpu.test.mjs`: 7 passing tests (reversed projection, frustum, normalized
+  worker attributes, uniform packing, interleaved tree data, cached packing equivalence and overlapping timestamps).
 - `tools/tests/webgpu.html`: finite device validation covers all opaque/forward pipelines, overlapping
   reversed depth, resize/disposal, shared geometry, cluster overflow with 70 lights and room exclusion,
   glass/viewscreens, decals, indirect-only GTAO, scalar-array ABI, instance and terrain indirect culling,
@@ -59,7 +59,35 @@ Validation and limits:
   one byte level, with no pixels changing by more than two. The gorge has one such pixel (maximum three).
 - Coverage is on this Mac's in-app browser. Other browser/GPU combinations still require testing.
   TAA/motion vectors, screen-space contact shadows and reflections remain later features, as planned.
-- Dave confirmed this is the only agent using the computer and no coordination messages are needed.
+- Dave subsequently authorized coordination with the Starseed Megastructures chat; GPU measurement windows are announced there. Its local player/underground scene remains independently owned.
+
+## Optimization checkpoint (Codex, 2026-10-08)
+
+- Shader uniform layouts and vertex input schemas are decoded once. Unchanged packed uniform bytes
+  retain their existing GPU buffer contents; texture bindings still update independently.
+- Instance-culling input stays in bounded GPU arenas. Upload generations invalidate it when instance
+  attributes, counts, layouts or source buffers change. Every view/cascade still computes its own current
+  frustum and LOD selection. No previous-frame visibility results or occlusion queries gate drawing.
+- Ground-buffer copies run only for visible terrain/rock or terrain/bark contacts. Decals without
+  contacts process directly; scenes with neither use the original G-buffer. GTAO quality/samples and
+  all atmosphere, shadow, post and material equations are unchanged.
+- Timings now cover render/compute families, including shadows, mip generation, atmosphere and bloom,
+  with CPU stage and transfer counters. Overlapping GPU ranges are detected: their interval union is
+  displayed, and per-pass attribution is explicitly marked unreliable instead of summing overlaps.
+  Drained wall time remains the performance comparison; timing ranges omit transfers outside passes.
+- `DeferredRenderer.setOptimizations(false)` is a diagnostic A/B switch, retaining the original packer
+  and unconditional uploads/copies. `measureOptimizations` runs warmed baseline/optimized/baseline
+  rounds, including advancing simulation and a small camera sweep in free-camera scenes.
+- The finite GPU fixture passes after the changes, including mutable instance input, buffer growth,
+  raw/processed material transitions with local lights and all prior regression scenarios. Seven CPU
+  tests pass. Initial 1280x960 forest and carrier A/B images were byte-identical on this Mac;
+  the final forest repeat differed at five of 1,228,800 pixels by more than two levels (maximum 12).
+- Initial same-load medians: forest 34.0 / 31.3 / 33.7 ms; carrier 9.3 / 7.5 / 9.1 ms.
+  The advancing simulation showed a noisier/smaller forest gain; carrier 9.7 / 8.3 / 9.6 ms.
+  Final arena retention repeat: forest 37.5 / 31.4 / 37.7 ms, moving-camera simulation
+  43.4 / 38.4 / 44.8 ms. Fixed-view source copies fell from 935 KB to 15 KB/frame.
+  These are local measurements, not promises for other GPUs. Fine-grained GPU pass durations on this
+  adapter remain unsuitable for attributing cost because the reported ranges overlap.
 
 ## Why
 

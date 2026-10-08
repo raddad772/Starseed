@@ -14,6 +14,7 @@ import { DeferredRenderer } from '../../src/render/webgpu/renderer.js';
 const canvas = document.getElementById('view'), result = document.getElementById('result');
 const errors = [];
 window.testResult = { status: 'running' };
+const samePixels=(a,b)=>a.pixels.every((v,i)=>Math.abs(v-b.pixels[i])<=1);
 const check = (ok, label) => { if (!ok) throw new Error(label); };
 let renderer;
 try {
@@ -105,6 +106,9 @@ try {
   let inside=true;
   engine.lightRig={nativeToRoom:new THREE.Matrix4(),forEachNativeFixture(fn){for(let i=0;i<70;i++)fn(new THREE.Vector3(0,0,0),[0.1,0.1,0.1],5,0.1,{min:new THREE.Vector3(inside?-10:10,-10,-10),max:new THREE.Vector3(20,10,10)});}};
   renderer.render(engine);const lit=(await renderer.capture()).pixels[(48*128+64)*4];
+  renderer.setOptimizations(false);renderer.render(engine);const baselineRoom=await renderer.capture();renderer.setOptimizations(true);renderer.render(engine);const optimizedRoom=await renderer.capture();
+  check(samePixels(baselineRoom,optimizedRoom),'Raw/processed material selection must preserve clustered room lighting');
+  check(!renderer.stats.materialEffects&&!renderer.stats.groundCopy,'Rooms without decals or terrain contacts must skip material processing');
   check(lit>dark+60,'All overlapping clustered fixtures must illuminate the interior');
   inside=false;renderer.render(engine);const sealed=(await renderer.capture()).pixels[(48*128+64)*4];
   check(sealed<=dark+2,'Fixture room bounds must prevent light leaks');
@@ -123,6 +127,16 @@ try {
   const instances=new THREE.InstancedMesh(instGeo,instMat,3);
   for(let i=0;i<3;i++)instances.setMatrixAt(i,new THREE.Matrix4().makeTranslation(i*100,0,-2));scene.add(instances);
   renderer.render(engine);const cullShot=await renderer.capture();
+  renderer.render(engine);await renderer.capture();
+  check(renderer.stats.optimizations.instanceCopyBytes===0,'Unchanged instance input must remain GPU-resident');
+  renderer.setOptimizations(false);renderer.render(engine);const baselineInstances=await renderer.capture();
+  renderer.setOptimizations(true);renderer.render(engine);const optimizedInstances=await renderer.capture();
+  check(samePixels(baselineInstances,optimizedInstances),'Optimizations must preserve instanced pixels');
+  instances.setMatrixAt(0,new THREE.Matrix4().makeTranslation(100,0,-2));instances.setMatrixAt(1,new THREE.Matrix4().makeTranslation(0,0,-2));instances.instanceMatrix.needsUpdate=true;
+  renderer.render(engine);const updatedInstances=await renderer.capture();
+  check(renderer.stats.optimizations.instanceCopyBytes>0&&samePixels(updatedInstances,cullShot),'Mutated instance records must refresh persistent input');
+  const second=new THREE.InstancedMesh(instGeo,instMat,3);for(let i=0;i<3;i++)second.setMatrixAt(i,new THREE.Matrix4().makeTranslation(100+i,0,-2));scene.add(second);
+  renderer.render(engine);await renderer.capture();scene.remove(second);second.dispose();renderer.render(engine);await renderer.capture();
   const culled=[...renderer.opaque.culler.entries.values()].find(e=>e.size>=3*19*4);
   check(!!culled,'Instance visibility must use the compute culler');
   const indirectRead=renderer.device.createBuffer({size:20,usage:GPUBufferUsage.COPY_DST|GPUBufferUsage.MAP_READ});
@@ -142,6 +156,7 @@ try {
   const decalGeo=new THREE.PlaneGeometry(3,3),decalMat=new THREE.MeshStandardMaterial({color:0xffffff}),decalPlane=new THREE.Mesh(decalGeo,decalMat);decalPlane.position.z=-3;scene.add(decalPlane);
   const decal=new SurfaceDecal({color:0xff0000,opacity:1,edge:0.05});decal.position.z=-3;decal.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),new THREE.Vector3(0,0,1));decal.scale.set(1,1,1);scene.add(decal);
   renderer.flat=true;renderer.render(engine);const decalPixels=(await renderer.capture()).pixels,mid=(48*128+64)*4;
+  check(renderer.stats.materialEffects&&!renderer.stats.groundCopy,'Decals without terrain contacts must process without ground copies');
   check(decalPixels[mid]>150&&decalPixels[mid+1]<10,'A surface decal must alter the lit material at its projected position');
   check(decalPixels[mid+32*4+1]>150,'A surface decal must stay inside its projector');scene.remove(decal);
   renderer.flat=false;
@@ -171,6 +186,7 @@ try {
   check(splitShot.pixels[leftMid+1]>100&&splitShot.pixels[leftMid]<10&&splitShot.pixels[rightMid]>100&&splitShot.pixels[rightMid+1]<10,'Split screen must preserve separate view rectangles');
   renderer.releaseView(leftView);renderer.releaseView(rightView);engine.view=view;camera.aspect=4/3;mapGeo.dispose();mapMat.dispose();
   roomGeo.dispose();roomMat.dispose();
+  await renderer.timingReady;check(!renderer.timer.coverage?.dropped,'GPU timing must not silently truncate pass coverage');
   const validationError = await renderer.device.popErrorScope();
   check(!validationError, validationError?.message);
   check(!errors.length, errors.join('\n'));

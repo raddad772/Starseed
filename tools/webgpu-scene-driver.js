@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import * as tk from './testkit.js';
 import { readRGBA } from '../src/render/webgpu/device.js';
 import * as S from './scenic.js';
-import { capture, measure, measureCulling, measureReference } from './webgpu-compare.js';
+import { capture, measure, measureCulling, measureReference, measureOptimizations } from './webgpu-compare.js';
 const yieldChannel=new MessageChannel();let resolveYield;yieldChannel.port1.onmessage=()=>resolveYield?.();
 const yieldNow=()=>new Promise(resolve=>{resolveYield=resolve;yieldChannel.port2.postMessage(0);});
 const report = (data, image, name) => parent.postMessage({type:'webgpu-test',report:data,image,name},location.origin);
@@ -57,12 +57,13 @@ try {
 
   }
   for(let i=0;i<10;i++){gm.frame(performance.now());await yieldNow();}
-  report({stage:'Capturing both renderers'});
+  report({stage:'Measuring renderer optimizations'});
+  const optimizationTiming=await measureOptimizations(gm,9),liveOptimizationTiming=await measureOptimizations(gm,9,true);
   const native=gm.engine.renderer.isNativeWebGPU;
   const shot=native?{sideBySide:await gm.engine.webgpu.captureURL(),stats:gm.engine.webgpu.stats}:await capture(gm),timing=await measure(gm,5),culling=await measureCulling(gm,5),referenceTiming=await measureReference(gm,5);
   const saturn=gm.universe.bodies.find(b=>name==='rings'?b.data.rings:b.data.name==='Saturn');
   const diagnostics={native:!!native,planet:(name==='space'||name==='rings')?{name:saturn.data.name,id:saturn.data.id,rings:saturn.data.rings,position:gm.camPos.distanceTo(saturn.pos)/saturn.R}:null};
-  report({stage:'Complete',world,treePlacement,diagnostics,stats:shot.stats,timing,culling,referenceTiming,error:gm.engine.webgpuError?.message},shot.sideBySide,(native?'native-':'')+name);
+  report({stage:'Complete',world,treePlacement,diagnostics,stats:shot.stats,optimizationTiming,liveOptimizationTiming,timing,culling,referenceTiming,error:gm.engine.webgpuError?.message},shot.sideBySide,(native?'native-':'')+name);
   }
 } catch(error){report({stage:'Failed',error:error.stack||String(error)});}
 finally { window.debugHold=true;yieldChannel.port1.close();yieldChannel.port2.close(); }

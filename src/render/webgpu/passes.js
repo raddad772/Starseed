@@ -1,5 +1,5 @@
 import { FULLSCREEN } from './shaders.js';
-import { shaderModule } from './device.js';
+import { shaderModule, timestampWrites } from './device.js';
 import { ProgramBindings } from './program.js';
 import { passes } from './generated/passes.js';
 import * as galaxy from './generated/galaxy.js';
@@ -25,7 +25,7 @@ export class FullscreenPasses {
     if (!program) throw new Error('Unported WebGPU fullscreen shader');
     const binding = program.bindings.get(owner, uniforms);
     const encoder = this.device.createCommandEncoder({ label: program.name });
-    const pass = encoder.beginRenderPass({ label: program.name, colorAttachments: outputs.map(output => ({ view: output.renderView || output.texture.createView({ baseMipLevel: 0, mipLevelCount: 1 }), loadOp: region ? 'load' : 'clear', storeOp: 'store' })) });
+    const pass = encoder.beginRenderPass({ label: program.name, timestampWrites:timestampWrites(this.device,program.name), colorAttachments: outputs.map(output => ({ view: output.renderView || output.texture.createView({ baseMipLevel: 0, mipLevelCount: 1 }), loadOp: region ? 'load' : 'clear', storeOp: 'store' })) });
     if(region){pass.setViewport(region.x,region.y,region.z,region.w,0,1);pass.setScissorRect(region.x,region.y,region.z,region.w);}
     pass.setPipeline(program.pipeline); pass.setBindGroup(0, binding.group); pass.draw(3); pass.end(); this.device.queue.submit([encoder.finish()]);
   }

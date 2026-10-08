@@ -1,7 +1,8 @@
 import * as THREE from 'three';
-import { shaderModule } from './device.js';
+import { shaderModule, timestampWrites } from './device.js';
+import { tuning } from './tuning.js';
 const CODE=/* wgsl */`
-struct Params { planes:array<vec4f,6>, model:mat4x4f, sphere:vec4f, packing:vec4u, matrix:vec4i, cameraRange:vec4f, lod:vec4f };
+struct Params { planes:array<vec4f,6>, model:mat4x4f, sphere:vec4f, packing:vec4u, matrix:vec4i, cameraRange:vec4f, lod:vec4f, output:vec4u };
 @group(0) @binding(0) var<storage,read> jobs:array<Params>;
 @group(0) @binding(4) var<storage,read> work:array<vec2u>;
 @group(0) @binding(1) var<storage,read> source:array<f32>;
@@ -21,38 +22,52 @@ fn v4(at:u32)->vec4f{return vec4f(source[at],source[at+1u],source[at+2u],source[
  for(var j=0u;j<6u;j++){if(dot(p.planes[j].xyz,wp)+p.planes[j].w < -radius){return;}}
  if(p.cameraRange.w>0.0&&distance(wp,p.cameraRange.xyz)>p.cameraRange.w+radius){return;}
  }
- let dst=p.packing.w+atomicAdd(&args[job.x*5u+1u],1u)*p.packing.x;
+ let dst=p.output.x+atomicAdd(&args[job.x*5u+1u],1u)*p.packing.x;
  for(var j=0u;j<p.packing.x;j++){visible[dst+j]=source[at+j];}
 }
 `;
 export class InstanceCuller {
- constructor(device){this.device=device;this.entries=new Map();this.enabled=true;this.buffers={};}
+ constructor(device){this.device=device;this.entries=new Map();this.enabled=true;this.buffers={};this.sourceSlots=new Map();this.sourceBytes=0;this.sourceBudget=0;}
  async init(){const module=await shaderModule(this.device,'instance frustum culling',CODE);this.pipeline=await this.device.createComputePipelineAsync({label:'batched instance compaction',layout:'auto',compute:{module,entryPoint:'cull'}});}
  buffer(name,size,usage){let b=this.buffers[name];if(!b||b.size<size){b?.destroy();b=this.device.createBuffer({label:'culling '+name,size:2**Math.ceil(Math.log2(Math.max(256,size))),usage});this.buffers[name]=b;}return b;}
  encode(encoder,draws,frustum,camera){
   this.entries.clear();
   const jobs=draws.filter(d=>!d.group&&d.object.instanceMatrix&&(this.enabled||d.object.userData.gpuLOD)&&d.e.count>=(d.object.userData.gpuLOD?1:2)&&d.e.instances&&d.g.layout[1]?.arrayStride);
   if(!jobs.length)return;
+  const options=tuning(this.device);
   let bytes=0,groups=0;for(const d of jobs){bytes+=d.e.count*d.g.layout[1].arrayStride;groups+=Math.ceil(d.e.count/64);}
-  const U=GPUBufferUsage,source=this.buffer('source',bytes,U.STORAGE|U.COPY_DST),output=this.buffer('visible',bytes,U.STORAGE|U.VERTEX),args=this.buffer('indirect',jobs.length*20,U.STORAGE|U.INDIRECT|U.COPY_DST|U.COPY_SRC),params=this.buffer('parameters',jobs.length*240,U.STORAGE|U.COPY_DST),work=this.buffer('work',groups*8,U.STORAGE|U.COPY_DST);
-  const data=new ArrayBuffer(jobs.length*240),f=new Float32Array(data),u=new Uint32Array(data),ints=new Int32Array(data),argumentsData=new Uint32Array(jobs.length*5),dispatch=new Uint32Array(groups*2);
+  // Stable slots keep unchanged input records resident across views/cascades.
+  // Rebuild only when holes exceed one live working set, bounding retained memory.
+  this.sourceBudget=Math.max(bytes,this.sourceBudget*0.98);
+  if(!options.enabled||this.sourceBytes>Math.max(1024*1024,this.sourceBudget*2)){this.sourceSlots.clear();this.sourceBytes=0;}
+  for(const d of jobs){const size=d.e.count*d.g.layout[1].arrayStride;let slot=this.sourceSlots.get(d.e);
+   if(!slot||slot.size<size){slot={offset:this.sourceBytes,size,uploaded:false};this.sourceSlots.set(d.e,slot);d.e.cullRelease=()=>this.sourceSlots.delete(d.e);this.sourceBytes+=size;}
+  }
+  const previousSource=this.buffers.source;
+  const U=GPUBufferUsage,source=this.buffer('source',this.sourceBytes,U.STORAGE|U.COPY_DST),output=this.buffer('visible',bytes,U.STORAGE|U.VERTEX),args=this.buffer('indirect',jobs.length*20,U.STORAGE|U.INDIRECT|U.COPY_DST|U.COPY_SRC),params=this.buffer('parameters',jobs.length*256,U.STORAGE|U.COPY_DST),work=this.buffer('work',groups*8,U.STORAGE|U.COPY_DST);
+  if(source!==previousSource)for(const slot of this.sourceSlots.values())slot.uploaded=false;
+  const data=new ArrayBuffer(jobs.length*256),f=new Float32Array(data),u=new Uint32Array(data),ints=new Int32Array(data),argumentsData=new Uint32Array(jobs.length*5),dispatch=new Uint32Array(groups*2);
   let byteOffset=0,groupIndex=0;
   jobs.forEach((draw,job)=>{
-   const {g,e,object}=draw,base=job*60,stride=g.layout[1].arrayStride;
+   const {g,e,object}=draw,base=job*64,stride=g.layout[1].arrayStride,slot=this.sourceSlots.get(e);
    for(let j=0;j<6;j++){const p=frustum.planes[j];f.set([p.normal.x,p.normal.y,p.normal.z,p.constant],base+j*4);}
    f.set(object.matrixWorld.elements,base+24);
    if(!object.geometry.boundingSphere)object.geometry.computeBoundingSphere();const sphere=object.geometry.boundingSphere;
    const margin=draw.p.name.includes('grass')?4:draw.p.name.includes('flora')?1.5:draw.p.name.includes('rock')?2:0;
    f.set([sphere.center.x,sphere.center.y,sphere.center.z,Math.max(sphere.radius,margin)+margin],base+40);
    const offset=name=>g.fields.find(a=>a.name===name&&a.inst)?.offset/4;
-   u.set([stride/4,e.count,0xffffffff,byteOffset/4],base+44);ints.set([0,1,2,3].map(n=>offset('instance'+n)??-1),base+48);
+   u.set([stride/4,e.count,0xffffffff,slot.offset/4],base+44);ints.set([0,1,2,3].map(n=>offset('instance'+n)??-1),base+48);
    const uniforms=object.material?.uniforms||object.material?.userData.webgpu?.uniforms||{};
    const far=camera.isPerspectiveCamera?(uniforms.uFadeEnd?.value||uniforms.uFadeR?.value||0):0;
    f.set([camera.position.x,camera.position.y,camera.position.z,far],base+52);
    const lod=object.userData.gpuLOD;f.set([lod?.[0]||0,lod?.[1]||0,lod?1:0,this.enabled?0:1],base+56);
    const range=object.geometry.drawRange,start=range.start||0,count=Math.max(0,Math.min(g.count,start+range.count)-start);
    argumentsData.set([count,0,start,0,0],job*5);
-   encoder.copyBufferToBuffer(e.instances,0,source,byteOffset,e.count*stride);
+   u[base+60]=byteOffset/4;
+   if(!options.enabled||!slot.uploaded||slot.buffer!==e.instances||slot.version!==e.instanceRevision){
+    encoder.copyBufferToBuffer(e.instances,0,source,slot.offset,e.count*stride);
+    slot.buffer=e.instances;slot.version=e.instanceRevision;slot.uploaded=true;options.instanceCopyBytes+=e.count*stride;
+   }
    draw.instanceBuffer=output;draw.instanceOffset=byteOffset;draw.instanceSize=e.count*stride;draw.indirect=args;draw.indirectOffset=job*20;
    this.entries.set(e,{args,offset:job*20,size:e.count*stride});
    for(let i=0;i<e.count;i+=64)dispatch.set([job,i],(groupIndex++)*2);
@@ -60,9 +75,9 @@ export class InstanceCuller {
   });
   this.device.queue.writeBuffer(params,0,data);this.device.queue.writeBuffer(args,0,argumentsData);this.device.queue.writeBuffer(work,0,dispatch);
   const group=this.device.createBindGroup({layout:this.pipeline.getBindGroupLayout(0),entries:[params,source,output,args,work].map((buffer,binding)=>({binding,resource:{buffer}}))});
-  const pass=encoder.beginComputePass({label:'batched cull and compact instances'});pass.setPipeline(this.pipeline);pass.setBindGroup(0,group);pass.dispatchWorkgroups(groups);pass.end();
+  const pass=encoder.beginComputePass({label:'batched cull and compact instances',timestampWrites:timestampWrites(this.device,'instance culling')});pass.setPipeline(this.pipeline);pass.setBindGroup(0,group);pass.dispatchWorkgroups(groups);pass.end();
  }
- dispose(){for(const b of Object.values(this.buffers))b.destroy();this.entries.clear();}
+ dispose(){for(const b of Object.values(this.buffers))b.destroy();this.entries.clear();this.sourceSlots.clear();}
 }
 
 // Chunk streaming still follows the deterministic CPU quadtree. The device
@@ -87,7 +102,7 @@ export class TerrainCuller {
   d.queue.writeBuffer(this.planes,0,new Float32Array(frustum.planes.flatMap(p=>[p.normal.x,p.normal.y,p.normal.z,p.constant])));
   const data=new ArrayBuffer(draw.length*32),f=new Float32Array(data),u=new Uint32Array(data);
   draw.forEach(({object,geometry},i)=>{const sphere=geometry.sphere.clone().applyMatrix4(object.matrixWorld);f.set([sphere.center.x,sphere.center.y,sphere.center.z,sphere.radius*1.0001+0.5],i*8);u.set([geometry.count,0,0,0],i*8+4);});d.queue.writeBuffer(this.chunks,0,data);
-  const group=d.createBindGroup({layout:this.pipeline.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:this.planes}},{binding:1,resource:{buffer:this.chunks,size:data.byteLength}},{binding:2,resource:{buffer:this.args}}]}),pass=encoder.beginComputePass({label:'terrain frustum and indirect arguments'});pass.setPipeline(this.pipeline);pass.setBindGroup(0,group);pass.dispatchWorkgroups(Math.ceil(draw.length/64));pass.end();
+  const group=d.createBindGroup({layout:this.pipeline.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:this.planes}},{binding:1,resource:{buffer:this.chunks,size:data.byteLength}},{binding:2,resource:{buffer:this.args}}]}),pass=encoder.beginComputePass({label:'terrain frustum and indirect arguments',timestampWrites:timestampWrites(this.device,'terrain culling')});pass.setPipeline(this.pipeline);pass.setBindGroup(0,group);pass.dispatchWorkgroups(Math.ceil(draw.length/64));pass.end();
  }
  dispose(){this.planes.destroy();this.chunks?.destroy();this.args?.destroy();}
 }

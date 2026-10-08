@@ -1,3 +1,4 @@
+import { timestampWrites } from './device.js';
 import * as THREE from 'three';
 import { OpaquePass } from './opaque.js';
 import { shaderKey } from './uniforms.js';
@@ -53,7 +54,7 @@ export class ForwardPass extends OpaquePass {
   }
   render(draws,t,output=t.hdr){
     if(!draws.length)return 0;
-    const encoder=this.device.createCommandEncoder({label:'forward surfaces'}),pass=encoder.beginRenderPass({colorAttachments:[{view:output.createView(),loadOp:'load',storeOp:'store'}],depthStencilAttachment:{view:t.depth.createView(),depthLoadOp:'load',depthStoreOp:'store'}});
+    const encoder=this.device.createCommandEncoder({label:'forward surfaces'}),pass=encoder.beginRenderPass({timestampWrites:timestampWrites(this.device,'forward surfaces'),colorAttachments:[{view:output.createView(),loadOp:'load',storeOp:'store'}],depthStencilAttachment:{view:t.depth.createView(),depthLoadOp:'load',depthStoreOp:'store'}});
     const triangles=this.draw(pass,draws);pass.end();this.device.queue.submit([encoder.finish()]);return triangles;
   }
   liquids(engine,t,projection,frustum,air){

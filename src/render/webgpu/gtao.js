@@ -3,7 +3,7 @@
 // Fixed spatial samples avoid temporal noise; depth/normal-aware reconstruction
 // keeps contact shading on its surface. Only indirect lighting consumes this map.
 import { FULLSCREEN } from './shaders.js';
-import { shaderModule } from './device.js';
+import { shaderModule, timestampWrites } from './device.js';
 const COMMON=/* wgsl */`
 struct Params { inverseVP:mat4x4f, view:mat4x4f, size:vec4f, settings:vec4f };
 @group(0) @binding(0) var<uniform> p:Params;
@@ -68,8 +68,8 @@ export class GTAO {
   if(!this.enabled){const pass=encoder.beginRenderPass({colorAttachments:[{view:t.ao.createView(),loadOp:'clear',storeOp:'store',clearValue:[1,1,1,1]}]});pass.end();return;}
   if(!t.aoHalf){t.aoHalf=this.device.createTexture({label:'GTAO half resolution',size:[Math.ceil(t.width/2),Math.ceil(t.height/2)],format:'r16float',usage:GPUTextureUsage.TEXTURE_BINDING|GPUTextureUsage.RENDER_ATTACHMENT});t.textures.push(t.aoHalf);}
   const values=new Float32Array(40);values.set(inverse.elements);values.set(camera.matrixWorldInverse.elements,16);values.set([t.width,t.height,0,0,this.radius,Math.tan(camera.fov*Math.PI/360),this.strength,0],32);this.device.queue.writeBuffer(this.uniforms,0,values);
-  const group=source=>this.device.createBindGroup({layout:this.layout,entries:[{binding:0,resource:{buffer:this.uniforms}},...[t.depth,t.shadedGbuffer[1],source].map((tex,i)=>({binding:i+1,resource:tex.createView()}))]});
-  for(const [pipeline,texture] of [[this.horizon,t.aoHalf],[this.filter,t.ao]]){const pass=encoder.beginRenderPass({colorAttachments:[{view:texture.createView(),loadOp:'clear',storeOp:'store'}]});pass.setPipeline(pipeline);pass.setBindGroup(0,group(texture===t.aoHalf?t.gbuffer[0]:t.aoHalf));pass.draw(3);pass.end();}
+  const group=source=>this.device.createBindGroup({layout:this.layout,entries:[{binding:0,resource:{buffer:this.uniforms}},...[t.depth,(t.activeGbuffer||t.shadedGbuffer)[1],source].map((tex,i)=>({binding:i+1,resource:tex.createView()}))]});
+  for(const [pipeline,texture] of [[this.horizon,t.aoHalf],[this.filter,t.ao]]){const pass=encoder.beginRenderPass({timestampWrites:timestampWrites(this.device,texture===t.aoHalf?'GTAO horizons':'GTAO reconstruction'),colorAttachments:[{view:texture.createView(),loadOp:'clear',storeOp:'store'}]});pass.setPipeline(pipeline);pass.setBindGroup(0,group(texture===t.aoHalf?t.gbuffer[0]:t.aoHalf));pass.draw(3);pass.end();}
  }
  dispose(){this.uniforms.destroy();}
 }

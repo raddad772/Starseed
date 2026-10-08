@@ -71,3 +71,27 @@ test('tree LOD views retain interleaved matrix offsets and instance temperatures
  assert.ok(f.every(a=>a.inst));assert.deepEqual([...pack(object,f,true,1)],[28,29,30,31,20]);
  assert.deepEqual([...data],Array.from({length:32},(_,i)=>i));
 });
+
+import { packUniformsReference } from '../../src/render/webgpu/uniforms.js';
+test('cached uniform packing matches the reference byte-for-byte after mutations',()=>{
+ const {metadata}=prepare('uniform float scalar; uniform int signed; uniform uint unsigned; uniform bool flag; uniform vec2 pair; uniform vec3 color; uniform vec4 vector; uniform mat2 m2; uniform mat3 m3; uniform mat4 m4; uniform float weights[3]; uniform vec2 offsets[2]; uniform mat3 transforms[2]; void main(){}');
+ const uniforms={scalar:{value:1.3},signed:{value:-7},unsigned:{value:0xf1234567},flag:{value:true},pair:{value:new THREE.Vector2(2,3)},color:{value:new THREE.Color(0.2,0.7,0.9)},vector:{value:new THREE.Vector4(1,2,3,4)},m2:{value:[1,2,3,4]},m3:{value:new THREE.Matrix3().set(1,2,3,4,5,6,7,8,9)},m4:{value:new THREE.Matrix4().makeTranslation(3,4,5)},weights:{value:[-0,Infinity,NaN]},offsets:{value:[[1,2],[3,4]]},transforms:{value:[new THREE.Matrix3(),[1,2,3,4,5,6,7,8,9]]}};
+ const reused=new ArrayBuffer(metadata.bytes);
+ for(let step=0;step<20;step++){
+  assert.deepEqual(new Uint8Array(packUniforms(metadata,uniforms,reused)),new Uint8Array(packUniformsReference(metadata,uniforms)));
+  uniforms.pair.value.x+=0.01;uniforms.scalar.value=step?-step:undefined;uniforms.weights.value[0]=step;uniforms.m4.value.elements[12]++;uniforms.transforms.value[1]=step%2?undefined:[1,2,3,4,5,6,7,8,9];
+ }
+ uniforms.pair.value=new THREE.Color(0.1,0.2,0.3);uniforms.vector.value=new THREE.Color(0.4,0.5,0.6);
+ assert.deepEqual(new Uint8Array(packUniforms(metadata,uniforms,reused)),new Uint8Array(packUniformsReference(metadata,uniforms)));
+ assert.deepEqual(new Uint8Array(packUniforms(metadata,{},reused)),new Uint8Array(packUniformsReference(metadata,{})));
+});
+
+import { PassTimer } from '../../src/render/webgpu/device.js';
+test('overlapping GPU timestamp ranges never inflate the displayed frame time', async () => {
+ const prior=globalThis.GPUMapMode;globalThis.GPUMapMode={READ:1};
+ const timer=new PassTimer({},false),values=new BigUint64Array([0n,6000000n,4000000n,10000000n,12000000n,14000000n]);
+ timer.sampleLabels=['shadow','opaque','post'];timer.sampleDropped=0;
+ timer.read={async mapAsync(){},getMappedRange(){return values.buffer;},unmap(){}};
+ try{await timer.harvest();assert.equal(timer.gpuMs,12);assert.equal(timer.passAttributionReliable,false);assert.deepEqual(timer.last,{shadow:6,opaque:6,post:2});}
+ finally{globalThis.GPUMapMode=prior;}
+});

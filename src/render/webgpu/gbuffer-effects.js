@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { FULLSCREEN } from './shaders.js';
 import { GBUFFER_FORMATS } from './opaque.js';
-import { shaderModule } from './device.js';
+import { shaderModule, timestampWrites } from './device.js';
 
 // A renderer-only projector. Attach it to a body's or vessel's scene group;
 // simulation-owned tracks/trails update these transforms without changing world generation.
@@ -54,15 +54,20 @@ export class GBufferEffects {
   const module=await shaderModule(d,'G-buffer decals and intersections',CODE);this.pipeline=await d.createRenderPipelineAsync({layout:d.createPipelineLayout({bindGroupLayouts:[this.layout]}),vertex:{module,entryPoint:'fullscreen'},fragment:{module,entryPoint:'material',targets:GBUFFER_FORMATS.map(format=>({format}))}});
  }
  captureGround(encoder,t){for(const [a,b] of [[t.gbuffer[0],t.ground[0]],[t.gbuffer[1],t.ground[1]],[t.gbuffer[3],t.ground[2]],[t.depth,t.ground[3]]])encoder.copyTextureToTexture({texture:a},{texture:b},[t.width,t.height]);}
- render(encoder,engine,t,inverse){
-  const decals=[];engine.scene.traverseVisible(o=>{if(o.userData.decal)decals.push(o);});
+ plan(scene,terrain,opaque,optimized){
+  const decals=[];scene.traverseVisible(o=>{if(o.userData.decal)decals.push(o);});
+  const contacts=this.intersections&&terrain.length>0&&opaque.some(d=>d.p.name==='rock'||d.p.name==='flora');
+  return {decals,contacts:optimized?contacts:this.intersections,capture:!optimized||contacts,process:!optimized||contacts||decals.length>0};
+ }
+ render(encoder,engine,t,inverse,plan){
+  const {decals,contacts}=plan;
   if(!this.decalBuffer||decals.length>this.capacity){this.decalBuffer?.destroy();this.capacity=2**Math.ceil(Math.log2(Math.max(16,decals.length)));this.decalBuffer=this.device.createBuffer({label:'surface projectors',size:this.capacity*128,usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST});}
   const values=new Float32Array(decals.length*32);
   decals.forEach((o,i)=>{const k=i*32,s=o.userData.decal,inverse=new THREE.Matrix4().copy(o.matrixWorld).invert(),up=new THREE.Vector3().setFromMatrixColumn(o.matrixWorld,1).normalize();values.set(inverse.elements,k);values.set([s.color.r,s.color.g,s.color.b,s.opacity,s.roughness,s.wetness,s.metalness,0,s.emissive.r,s.emissive.g,s.emissive.b,0,...up.toArray(),s.edge],k+16);});
   if(values.length)this.device.queue.writeBuffer(this.decalBuffer,0,values);
-  const uniforms=new Float32Array(24);uniforms.set(inverse.elements);uniforms.set([t.width,t.height,decals.length,0,this.intersections?1:0,0,0,0],16);this.device.queue.writeBuffer(this.params,0,uniforms);
+  const uniforms=new Float32Array(24);uniforms.set(inverse.elements);uniforms.set([t.width,t.height,decals.length,0,contacts?1:0,0,0,0],16);this.device.queue.writeBuffer(this.params,0,uniforms);
   const inputs=[...t.gbuffer,t.depth,...t.ground];const group=this.device.createBindGroup({layout:this.layout,entries:[{binding:0,resource:{buffer:this.params}},...inputs.map((tex,i)=>({binding:i+1,resource:tex.createView()})),{binding:10,resource:{buffer:this.decalBuffer}}]});
-  const pass=encoder.beginRenderPass({label:'surface decals and contact blend',colorAttachments:t.shadedGbuffer.map(texture=>({view:texture.createView(),loadOp:'clear',storeOp:'store'}))});pass.setPipeline(this.pipeline);pass.setBindGroup(0,group);pass.draw(3);pass.end();
+  const pass=encoder.beginRenderPass({label:'surface decals and contact blend',timestampWrites:timestampWrites(this.device,'material effects'),colorAttachments:t.shadedGbuffer.map(texture=>({view:texture.createView(),loadOp:'clear',storeOp:'store'}))});pass.setPipeline(this.pipeline);pass.setBindGroup(0,group);pass.draw(3);pass.end();
  }
  dispose(){this.params.destroy();this.decalBuffer?.destroy();}
 }

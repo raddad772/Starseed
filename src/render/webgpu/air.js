@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { FULLSCREEN } from './shaders.js';
-import { shaderModule } from './device.js';
+import { shaderModule, timestampWrites } from './device.js';
 
 // A sampled r32float copy lets translated screen-space equations use textureLoad
 // without relying on depth texture filtering or losing reversed-Z precision.
@@ -31,7 +31,7 @@ export class AirPass {
   copyDepth(t) {
     this.targets(t);
     const encoder = this.device.createCommandEncoder({ label: 'depth for atmosphere' });
-    const pass = encoder.beginRenderPass({ colorAttachments: [{ view: t.sampledDepth.view, loadOp: 'clear', storeOp: 'store' }] });
+    const pass = encoder.beginRenderPass({ timestampWrites:timestampWrites(this.device,'atmosphere depth'), colorAttachments: [{ view: t.sampledDepth.view, loadOp: 'clear', storeOp: 'store' }] });
     pass.setPipeline(this.depthPipeline); pass.setBindGroup(0, t.depthGroup); pass.draw(3); pass.end(); this.device.queue.submit([encoder.finish()]);
   }
   render(engine, t) {

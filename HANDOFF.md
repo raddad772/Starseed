@@ -9,6 +9,16 @@ maps and viewscreens are native. WebGL exists only in explicit test tooling (`?w
 no production fallback. Other browser/GPU combinations still need certification; no speedup or exact
 pixel-parity claim is made. Dave confirmed sole-agent work and no coordination messages this session.
 
+## WebGPU optimization checkpoint (Codex, 2026-10-08)
+Cached shader layouts and unchanged uniform bytes, persistent bounded instance-culling inputs,
+and conditional ground-copy/material processing are implemented. No quality settings or shader
+lighting equations changed, and no previous-frame visibility gating was introduced. Seven CPU
+checks and the finite GPU regression fixture pass. WEBGPU.md records same-load forest/interior
+A/B timings and pixel differences, including timestamp-overlap limitations. Public renderer APIs
+remain compatible with the megastructure worktree. Dave now explicitly authorizes coordination
+with that chat; it owns src/understructure/* and local walking/zero-g, while this chat owns renderer,
+spacecraft/re-entry, orbital stations and later integration. Re-entry/stations/merge are still pending.
+
 ## NOW: forests, shade, moonlight; Dave's queue (session 39d69fa8, 2026-10-06)
 
 Done and committed: EZ-Tree trees, green Earth (7821ce2); stands, sky shadow, leaf-cut sun shadows,

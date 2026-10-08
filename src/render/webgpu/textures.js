@@ -1,3 +1,4 @@
+import { timestampWrites } from './device.js';
 // Upload renderer-independent Three texture data and own its WebGPU lifetime.
 // Render targets are owned by the frame graph and do not pass through this cache.
 import * as THREE from 'three';
@@ -80,7 +81,7 @@ export class TextureCache {
     for (let layer = 0; layer < layers; layer++) for (let level = 1; level < count; level++) {
       const view = (mip) => texture.createView({ dimension: '2d', baseMipLevel: mip, mipLevelCount: 1, baseArrayLayer: layer, arrayLayerCount: 1 });
       const group = d.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: view(level - 1) }, { binding: 1, resource: this.linear }] });
-      const pass = encoder.beginRenderPass({ colorAttachments: [{ view: view(level), loadOp: 'clear', storeOp: 'store' }] });
+      const pass = encoder.beginRenderPass({ timestampWrites:timestampWrites(this.device,'texture mips'), colorAttachments: [{ view: view(level), loadOp: 'clear', storeOp: 'store' }] });
       pass.setPipeline(pipeline); pass.setBindGroup(0, group); pass.draw(3); pass.end();
     }
     d.queue.submit([encoder.finish()]);
