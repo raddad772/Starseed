@@ -19,6 +19,7 @@ import { MapPass } from './map.js';
 import { GTAO } from './gtao.js';
 import { GBufferEffects } from './gbuffer-effects.js';
 import { Background } from './background.js';
+import { CentralPass } from './central.js';
 import { MirrorPass } from './mirror.js';
 import { tuning, resetCounters } from './tuning.js';
 import { layout as lightLayout } from './generated/lighting.js';
@@ -50,6 +51,7 @@ export class DeferredRenderer {
     this.passes = new FullscreenPasses(this.device, this.textures, this.format); this.textures.passes = this.passes;
     this.background = new Background(this.device,this.textures,this.passes);
     this.mirror = new MirrorPass(this.device,this.background);
+    this.central = new CentralPass(this.device,this.background);
     this.air = new AirPass(this.device, this.passes, this.textures);
     this.post = new PostPass(this.device, this.passes, this.textures, this.air);
     this.shadows = new ShadowPass(this.device,this.textures,this.passes);
@@ -64,7 +66,8 @@ export class DeferredRenderer {
   }
   async init() {
     const d = this.device, S = GPUShaderStage;
-    await Promise.all([this.passes.init(), this.air.init(), this.opaque.init(), this.shadows.init(), this.forward.init(), this.localLights.init(), this.gtao.init(), this.materialEffects.init(), this.map.init(), this.terrainCuller.init(), this.mirror.init()]);
+    await Promise.all([this.passes.init(), this.air.init(), this.opaque.init(), this.shadows.init(), this.forward.init(), this.localLights.init(), this.gtao.init(), this.materialEffects.init(), this.map.init(), this.terrainCuller.init(), this.mirror.init(), this.central.init()]);
+    this.air.central = this.central;
     this.frameLayout = d.createBindGroupLayout({ label: 'frame and world', entries: [
       { binding: 0, visibility: S.VERTEX | S.FRAGMENT, buffer: { type: 'uniform' } },
       { binding: 1, visibility: S.VERTEX | S.FRAGMENT, buffer: { type: 'read-only-storage' } },
@@ -319,7 +322,7 @@ export class DeferredRenderer {
   }
   setOptimizations(enabled){tuning(this.device).enabled=!!enabled;}
   get optimizationsEnabled(){return tuning(this.device).enabled;}
-  releaseView(view){this.mirror.release(view);const light=this.sceneLights.get(view);if(light){this.lightBindings.release(light.uCenter);this.sceneLights.delete(view);}const t=this.targets.get(view);if(!t)return;this.air.release(t);this.post.release(t);this.localLights.release(t);for(const texture of t.textures)texture.destroy();this.targets.delete(view);if(view.out)this.textures.renderTargets.delete(view.out.texture);}
+  releaseView(view){this.mirror.release(view);const tc=this.targets.get(view);if(tc)this.central.release(tc);const light=this.sceneLights.get(view);if(light){this.lightBindings.release(light.uCenter);this.sceneLights.delete(view);}const t=this.targets.get(view);if(!t)return;this.air.release(t);this.post.release(t);this.localLights.release(t);for(const texture of t.textures)texture.destroy();this.targets.delete(view);if(view.out)this.textures.renderTargets.delete(view.out.texture);}
   async capture(view = this.lastView) {
     const t = this.targets.get(view);
     if (!t) throw new Error('Render a WebGPU frame before capturing');
@@ -335,7 +338,7 @@ export class DeferredRenderer {
     if (this.disposed) return; this.disposed = true;
     for (const geometry of [...this.geometries]) geometry.dispose();
     for (const target of this.targets.values()) { this.air.release(target); this.post.release(target); this.localLights.release(target); for (const texture of target.textures) texture.destroy(); }
-    this.targets.clear(); this.timer.dispose(); this.surfaces.dispose(); this.background.dispose(); this.shadows.dispose(); this.opaque.dispose(); this.forward.dispose(); this.localLights.dispose(); this.gtao.dispose(); this.map.dispose(); this.terrainCuller.dispose(); this.materialEffects.dispose(); this.lightBindings.dispose(); this.passes.dispose(); this.textures.dispose();
+    this.targets.clear(); this.timer.dispose(); this.surfaces.dispose(); this.background.dispose(); this.shadows.dispose(); this.opaque.dispose(); this.forward.dispose(); this.localLights.dispose(); this.gtao.dispose(); this.map.dispose(); this.terrainCuller.dispose(); this.central.dispose(); this.materialEffects.dispose(); this.lightBindings.dispose(); this.passes.dispose(); this.textures.dispose();
     this.frameBuffer?.destroy(); this.objectBuffer?.destroy(); this.objectIndices?.destroy(); this.bodyBuffer?.destroy();
     this.mirror.dispose();
     this.releaseContext(); this.device.destroy();

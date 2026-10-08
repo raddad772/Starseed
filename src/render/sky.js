@@ -151,6 +151,7 @@ export class Sky {
     const t = new THREE.Vector3(1, 0, 0).cross(galNormal).normalize();
     const galCenter = t.clone().applyAxisAngle(galNormal, rng.range(0, Math.PI * 2));
     this.galNormal = galNormal;
+    this.galCenter = galCenter;   // (the way to the galaxy's centre: where its black hole is, sim/centralObject.js)
 
     const size = 1024;
     this.cubeRT = new THREE.WebGLCubeRenderTarget(size, { type: THREE.HalfFloatType, generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter });

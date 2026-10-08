@@ -17,6 +17,7 @@ import { NearGround } from './sim/nearGround.js';
 import { findCliffCountry, gentleNear } from './gen/volume.js';
 import * as THREE from 'three';
 import { updateMirrorView,keepOutsideMirror } from './campaign/mirrorScene.js';
+import { centralView } from './sim/centralObject.js';
 import { orbitalReadiness, simFocus } from './sim/arrival.js';
 import { getSystem } from './gen/systemCache.js';
 import { S_LEN, S_H, S_WDEPTH } from './gen/terrain.js';
@@ -481,7 +482,7 @@ export class Game {
       const was = sc.mesh.visible;
       sc.mesh.visible = false; // (not in its own picture)
       const atmos = this.world.update(this.camPos, 0);
-      updateMirrorView(this);
+      updateMirrorView(this); this.engine.central = centralView(this, this._central || (this._central = {}));
       this.updateSkyStars(0);
       this.updateEffects(dtReal * 2);
       e.render(dtReal * 2, this.sky, atmos, false);
@@ -1758,7 +1759,7 @@ export class Game {
     this.itemVisuals.update(this.camPos);
     this.surfaceSurveys.render(this.camPos);
     const atmos = this.world.update(this.camPos, dtA);
-    updateMirrorView(this);
+    updateMirrorView(this); this.engine.central = centralView(this, this._central || (this._central = {}));   // (the galaxy's black hole in the sky: render/webgpu/central.js)
     this.updateSkyStars(dtA);
     this.updateEffects(dtReal);
     if (this.map.open && this.map.owner === p) this.map.render(dtReal, p.view.rect);
