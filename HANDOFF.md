@@ -12,6 +12,10 @@ no production fallback. Other browser/GPU combinations still need certification;
 pixel-parity claim is made. Dave confirmed sole-agent work and no coordination messages this session.
 
 ## Megastructure atmosphere and collision follow-up (Codex, 2026-10-08)
+Latest visual refinement: rainbow effects use soft, feathered chromatic wisps in both
+ordinary rooms and zero-g, per Dave’s Control-inspired reference. Native images and
+focused checks pass; no full-scene blur or screen-space refraction is claimed.
+
 On `codex/landing-guide`, local server 8779. `notes/UNDERSTRUCTURE.md` records the current
 implementation and verification. Added abandoned excavation/breach, repaired junction
 walls and overlapping surfaces, 120 m hand light, fixed fixture illumination with

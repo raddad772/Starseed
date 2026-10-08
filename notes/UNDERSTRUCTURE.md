@@ -1,3 +1,13 @@
+## Softer spectral haze (2026-10-08)
+
+Dave requested a Control-inspired, almost blurry appearance for rainbow particles.
+Ordinary manifestations and reactive zero-g motes now use feathered spectral wisps:
+broad translucent lobes, offset colour fringes, slower motion and overlapping haze.
+The procedural texture produces the blur locally; this is not full-scene blur or
+screen-space refraction. Ordinary dust still catches physical lighting.
+Native surface fixture passes all 12 captures with no validation errors; nine focused
+geometry/atmosphere checks pass. Images: `*-haze.png` in the revision evidence folder.
+
 ## Next exploration pass (requested 2026-10-08)
 
 Rooms or passages that change gravity direction as the player traverses them: walls
