@@ -19,6 +19,7 @@ export const INTRO_COPY = {
 export function createTutorial(referenceId) {
   return {version:1,step:'welcome',referenceId,elapsed:0,scanSeconds:0,scanning:false,origin:null,probes:[]};
 }
+export const tutorialIsActive = campaign => !!campaign?.story.intro.tutorial && campaign.story.intro.status !== 'complete';
 export function validateTutorial(t, campaign) {
   if(!t || t.version!==1 || !INTRO_STEPS.includes(t.step) || typeof t.referenceId!=='string' || !t.referenceId || !Number.isFinite(t.elapsed) || t.elapsed<0 || !Number.isFinite(t.scanSeconds) || t.scanSeconds<0 || typeof t.scanning!=='boolean' || (t.origin!==null&&(!Array.isArray(t.origin)||t.origin.length!==3||!t.origin.every(Number.isFinite))) || !Array.isArray(t.probes) || new Set(t.probes).size!==t.probes.length || t.probes.some(p=>![0,1,2].includes(p))) throw Error('Invalid tutorial checkpoint.');
   if(campaign?.world&&!campaign.world.vessels.some(v=>v.id===t.referenceId))throw Error('Tutorial reference craft is missing.');
@@ -46,16 +47,4 @@ export function finishIntroduction(campaign,presentation) {
   c=applyCampaignEvent(c,{id:'intro/bearing',type:'signal.bearingResolved',systemId:receiver.systemId});
   if(c.story.intro.tutorial)c.story.intro.tutorial={...c.story.intro.tutorial,step:'ready',scanning:false};
   return c;
-}
-
-// Consent is transient and tied to the current participants. Loading or changing crew clears it.
-export class IntroConsent {
-  constructor(){this.cancel();}
-  cancel(){this.members=[];this.votes=new Set();this.pending=false;}
-  vote(index,members){
-    if(!members.includes(index))return false;
-    if(!this.pending||this.members.join()!==members.join()){this.cancel();this.members=[...members];this.pending=true;}
-    this.votes.add(index);return this.members.every(i=>this.votes.has(i));
-  }
-  sync(members){if(this.pending&&this.members.join()!==members.join())this.cancel();}
 }

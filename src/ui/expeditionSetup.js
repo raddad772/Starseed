@@ -20,7 +20,10 @@ export function renderExpeditionSetup(container, { onCreate, submitLabel = 'Star
   form.elements.flight.onchange=explainFlight;explainFlight();
   field('exploration', 'Exploration', [['guided', 'Easy · Guided locations'], ['survey', 'Hard · Survey for sites']]);
   field('puzzles', 'Puzzles and traversal', [['assisted', 'Easy · Assisted traversal'], ['standard', 'Hard · Standard traversal']]);
-  if(details)field('intro','Introduction',[['play','Play the flight tutorial'],['skip','Skip · read the Story Log']]);
+  if(details){
+    const row=field('intro','Introduction',[['play','Play the single-player tutorial'],['skip','Skip · read the Story Log']]);
+    const hint=doc.createElement('span');hint.className='explain';hint.textContent='The introduction is single-player. Friends can join after you finish or skip it.';row.append(hint);
+  }
   const status=doc.createElement('p');status.hidden=true;status.setAttribute('role','status');form.append(status);
   const footer=doc.createElement('footer');form.append(footer);
   const button = doc.createElement('button'); button.type = 'submit';button.className='primary'; button.textContent = submitLabel; footer.append(button);

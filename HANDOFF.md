@@ -11,6 +11,17 @@ maps and viewscreens are native. WebGL exists only in explicit test tooling (`?w
 no production fallback. Other browser/GPU combinations still need certification; no speedup or exact
 pixel-parity claim is made. Dave confirmed sole-agent work and no coordination messages this session.
 
+## Tutorial is single-player (latest policy, 2026-10-08)
+Dave clarified that the tutorial is only playable solo. Controller/Settings join and Game.joinPlayer
+are gated while the tutorial is pending; completion or skip unlocks co-op. Starting New Expedition
+from a co-op session resets the second-controller connection. Restoring an older tutorial with two
+players retains P2 as away crew without constructing an input or dropping their ship/inventory.
+Skip no longer has shared consent. Two-player consent still applies to fleet passage and time warp.
+The first-run form and tutorial/settings copy explain this. Updated CPU and finite native fixtures
+cover solo play/reload, joining after completion/skip, and starting a new solo tutorial from co-op.
+33 focused CPU checks were rerun for this policy change. Native results: 21 played-tutorial checks,
+12 skip/setup checks and all 22 galaxy journey checks pass.
+
 ## Galaxy chart and fleet passage (Codex, 2026-10-08)
 `campaign/galaxy.js` and `ui/galaxyMap.js` add Pause → Galaxy: 200 deterministic initial stars,
 cell-address lookup, neighbouring charts, a central-object landmark and the first receiver route.
@@ -50,8 +61,8 @@ ROT practice teaches opposite burns, not X braking (X only acts through FULL's r
 The optional nav button performs a real rendezvous. Practice accidents recover safely.
 
 The current introduction is live flight practice plus interactive telemetry/dialogue, **not** the
-full physical mirror/black-hole scene. Three probe observations or a unanimous skip record the same
-incident and destination once. P2 A agrees, B cancels; changing crew/reloading clears votes. Mid-scan
+full physical mirror/black-hole scene. Three probe observations or a solo skip record the same
+incident and destination once. The introduction is single-player; co-op unlocks afterwards. Mid-scan
 progress resumes. The galaxy checkpoint above now pins the first receiver and enables fleet passage.
 Basic control/reference-frame explanations are retained in Story Log.
 

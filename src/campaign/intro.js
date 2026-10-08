@@ -1,11 +1,11 @@
 import * as THREE from 'three';
 import { applyCampaignEvent } from './state.js';
-import { INTRO_COPY,advanceTutorial,finishIntroduction,IntroConsent } from './tutorial.js';
+import { INTRO_COPY,advanceTutorial,finishIntroduction } from './tutorial.js';
 import { installCampaignJoin,seatExpeditionPlayer } from './newGame.js';
 
 export class FlightIntro {
   constructor(game,{checkpoint=()=>{},openLog=()=>{}}={}){
-    this.game=game;this.checkpoint=checkpoint;this.openLog=openLog;this.consent=new IntroConsent();
+    this.game=game;this.checkpoint=checkpoint;this.openLog=openLog;
     installCampaignJoin(game);
     this.hud=document.createElement('aside');this.hud.className='introHud';this.hud.setAttribute('aria-label','Flight tutorial');document.body.append(this.hud);
     this.title=document.createElement('strong');this.text=document.createElement('p');this.metrics=document.createElement('small');this.hud.append(this.title,this.text,this.metrics);
@@ -14,7 +14,6 @@ export class FlightIntro {
   get state(){return this.game.campaign.story.intro.tutorial;}
   get active(){return this.state.step!=='ready';}
   get reference(){return this.game.vessels.find(v=>v.campaignId===this.state.referenceId);}
-  get members(){return this.game.players.map(p=>p.index);}
   measurements(){
     const p=this.game.players[0],v=p.vessel,ref=this.reference;
     if(!v||v.body!==ref?.body||v.dead||p.deathShown)return {valid:false,targeted:false,range:Infinity,relativeSpeed:Infinity,offset:[0,0,0]};
@@ -22,13 +21,13 @@ export class FlightIntro {
     return {valid:true,targeted:p.target===ref.target,range:delta.length(),relativeSpeed:relative.length(),offset:delta.applyQuaternion(ref.quat.clone().invert()).toArray()};
   }
   update(dt){
-    const g=this.game;this.consent.sync(this.members);
+    const g=this.game;
     this.hud.hidden=!g.launched||g.paused||g.state!=='playing'||!this.active;
     if(!this.active)return;
     if(g.state!=='playing'||g.paused||!g.launched)return;
     const m=this.measurements();
     if(this.active){
-      for(const p of g.players)if(p.input.hit('Enter'))this.consent.pending?this.vote(p.index):p.index===0&&this.act();
+      if(g.players[0].input.hit('Enter'))this.act();
       if(m.valid&&advanceTutorial(this.state,m,dt)){
         if(this.state.step==='scan')g.campaign=applyCampaignEvent(g.campaign,{id:'tutorial/flight',type:'tutorial.practised',lessonId:'flight'});
         this.changed();
@@ -39,14 +38,13 @@ export class FlightIntro {
   }
   render(){
     const [title,text]=INTRO_COPY[this.state.step];
-    this.title.textContent=this.consent.pending?'Skip introduction?':title;
-    this.text.textContent=this.consent.pending?'Each player must agree. Player 2: press A on your controller. B cancels. Joining or leaving clears the request.':text;
+    this.title.textContent=title;
+    this.text.textContent=text;
   }
   changed(){this.revision++;this.render();this.checkpoint();}
   act(action='next'){
     const g=this.game,t=this.state;
-    if(action==='skip'){this.vote(0);return;}
-    if(action==='cancel'){this.consent.cancel();this.changed();return;}
+    if(action==='skip'){this.finish('skipped');return;}
     if(action==='retry'){this.retry();return;}
     if(action==='assist'){
       const p=g.players[0];if(!p.flying)throw Error('Return to the pilot seat first (P).');
@@ -66,11 +64,10 @@ export class FlightIntro {
     if(!this.state.probes.includes(index))this.state.probes.push(index);
     if(this.state.probes.length===3)this.finish('played');else this.changed();
   }
-  vote(index){if(this.consent.vote(index,this.members))this.finish('skipped');else this.changed();}
   finish(presentation){
     if(!this.active)return;
-    this.game.campaign=finishIntroduction(this.game.campaign,presentation);this.consent.cancel();this.changed();
-    this.game.message('First lead recorded · Pause → Expedition → Story Log','nav');
+    this.game.campaign=finishIntroduction(this.game.campaign,presentation);this.changed();
+    this.game.message('First lead recorded · multiplayer is now available · Pause → Expedition → Story Log','nav');
   }
   retry(){
     if(!this.active)return;

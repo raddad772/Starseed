@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { Game } from '../../src/game.js';
 import { game } from './campaign-fixture.mjs';
 import { provisionExpedition,seatExpeditionPlayer } from '../../src/campaign/newGame.js';
-import { advanceTutorial,finishIntroduction,IntroConsent } from '../../src/campaign/tutorial.js';
+import { advanceTutorial,finishIntroduction,tutorialIsActive } from '../../src/campaign/tutorial.js';
 import { captureFlight,restoreFlight } from '../../src/campaign/flight.js';
 import { encodeCampaign,decodeCampaign } from '../../src/campaign/save.js';
 import { FlightSaves } from '../../src/campaign/session.js';
@@ -21,9 +21,9 @@ for(const [flight,era,lead]of [['easy','horizon','neptune3'],['medium','expediti
  assert(g.vessels.every(v=>v.type.key.startsWith(era+'_')||['runabout','pod'].includes(v.type.key)));
  assert(g[era+'Fleet'].some(v=>v.cargo?.attached));const count=g.vessels.length;
  assert.throws(()=>provisionExpedition(g,{rules:{flight}}),/already/);assert.equal(g.vessels.length,count);
- const p=g.addPlayer({});seatExpeditionPlayer(g,p);assert.equal(p.vessel,g.ship2);assert.equal(g.vessels.length,count);
+ g.campaign=finishIntroduction(g.campaign,'skipped');const p=g.addPlayer({});seatExpeditionPlayer(g,p);assert.equal(p.vessel,g.ship2);assert.equal(g.vessels.length,count);
  const saved=decodeCampaign(encodeCampaign(captureFlight(g,g.campaign))),h=game();restoreFlight(h,saved,{inputForPlayer:()=>({})});
- assert.equal(h.vessels.length,count);assert.equal(h.players[1].vessel,h.ship2);assert.equal(saved.story.intro.tutorial.step,'welcome');
+ assert.equal(h.vessels.length,count);assert.equal(h.players[1].vessel,h.ship2);assert.equal(saved.story.intro.tutorial.step,'ready');
 });
 test('tutorial gates use actual targeting, relative displacement, braking and continuous stable scan time',()=>{
  const t=expedition().campaign.story.intro.tutorial;t.step='target';
@@ -45,10 +45,18 @@ test('mid-lesson saves retain scan/probe progress and reject inconsistent checkp
  const c=decodeCampaign(encodeCampaign(captureFlight(g,g.campaign)));assert.equal(c.story.intro.tutorial.scanSeconds,.75);
  for(const mutate of [s=>s.story.intro.tutorial.step='ready',s=>s.story.intro.tutorial.referenceId='missing',s=>s.story.intro.tutorial.probes=[0,0],s=>s.story.intro.tutorial.scanSeconds=-1]){const bad=structuredClone(c);mutate(bad);assert.throws(()=>encodeCampaign(bad));}
 });
-test('skip needs each current player; cancellation, joining and leaving revoke old consent',()=>{
- const c=new IntroConsent();assert.equal(c.vote(0,[0,1]),false);c.cancel();assert.equal(c.vote(1,[0,1]),false);assert.equal(c.vote(0,[0,1]),true);
- c.cancel();c.vote(0,[0,1]);c.sync([0]);assert.equal(c.pending,false);assert.equal(c.vote(0,[0]),true);
- c.sync([0,1]);assert.equal(c.pending,false);assert.equal(c.vote(0,[0,1]),false);assert.equal(c.vote(3,[0,1]),false);
+test('the tutorial blocks joining until completed and restores legacy player two as away crew',()=>{
+ const g=expedition({flight:'medium'});let disposed=false;
+ assert.equal(tutorialIsActive(g.campaign),true);
+ assert.equal(Game.prototype.joinPlayer.call(g,{dispose(){disposed=true;}}),null);assert.equal(disposed,true);assert.equal(g.players.length,1);
+ // An older tutorial snapshot can still contain an active second player.
+ const p=g.addPlayer({});seatExpeditionPlayer(g,p);const held=g.items.create('mug',p);
+ const saved=decodeCampaign(encodeCampaign(captureFlight(g,g.campaign))),h=game();let inputs=0;
+ restoreFlight(h,saved,{inputForPlayer:()=>{inputs++;return {};}});
+ assert.equal(inputs,0);assert.equal(h.players.length,1);assert.equal(h.awayPlayers[1].ownShip,h.ship2);assert.equal(h.items.list.find(i=>i.id===held.id).holder,h.awayPlayers[1]);
+ h.campaign=saved;const solo=captureFlight(h,h.campaign);assert.equal(solo.players[1].active,false);
+ h.campaign=finishIntroduction(h.campaign,'skipped');assert.equal(tutorialIsActive(h.campaign),false);
+ h.setCur=()=>{};const rejoined=Game.prototype.joinPlayer.call(h,{});assert.equal(rejoined.vessel,h.ship2);assert.equal(h.players.length,2);
 });
 test('a story checkpoint during an asynchronous save survives and schedules the next revision',async()=>{
  const g=expedition();let finish;const saves=new FlightSaves({game:()=>g,load(){},storage:{save:async c=>{await new Promise(r=>finish=r);return {...c,revision:1,savedAt:new Date().toISOString()};}}});

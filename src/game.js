@@ -228,6 +228,11 @@ export class Game {
   // player 1, with a shuttle of their own parked beside player 1's
   joinPlayer(input) {
     if (this.players.length >= 2) return null;
+    if (this.campaign?.story.intro.tutorial && this.campaign.story.intro.status !== 'complete') {
+      this.joinPending=null;input?.dispose?.();
+      this.message('The introduction is single-player. Complete or skip it to unlock multiplayer.', 'nav');
+      return null;
+    }
     if (!this.placed) { this.joinPending = input; return null; } // (after the start is placed)
     const savedPlayer = this.awayPlayers?.[this.players.length];
     const p = this.addPlayer(input);

@@ -19,7 +19,7 @@ export function renderIntroPanel(root,intro,onChange=()=>{}){
   if(intro.active){
     add('p','Resume flight to practise. Enter performs the current lesson action; all actions are also available here.');
     button('Retry flight practice safely',()=>intro.act('retry'));
-    button(intro.consent.pending?'Player 1 agrees to skip':'Skip introduction',()=>intro.act('skip'));
-    if(intro.consent.pending){add('p','Waiting for both players. Player 2: A agrees, B cancels.');button('Keep playing the introduction',()=>intro.act('cancel'));}
+    add('p','The introduction is single-player. Multiplayer unlocks when you finish or skip it.');
+    button('Skip introduction',()=>intro.act('skip'));
   }else add('p','Open Galaxy to follow the transmission or chart your own route. The flight basics below remain available. The full physical mirror scene is still being built.');
 }

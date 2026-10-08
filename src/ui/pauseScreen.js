@@ -427,7 +427,7 @@ export class PauseScreen {
       <div class="label">Players</div>
       <div class="seedrow">${P.count > 1
         ? `<span class="label" style="text-transform:none; letter-spacing:0">Player 2 on controller ${P.pad + 1}</span><button id="p2Leave" type="button">Remove player 2</button><select id="setSplit" aria-label="Split screen"><option value="top-bottom" ${S.split !== 'side-by-side' ? 'selected' : ''}>Split top / bottom</option><option value="side-by-side" ${S.split === 'side-by-side' ? 'selected' : ''}>Split side by side</option></select>`
-        : `<button id="p2Join" type="button">Add player 2</button><span id="p2Hint" class="label" style="text-transform:none; letter-spacing:0">${P.waiting ? 'Press Start on player 2\'s controller' : 'or press Start on a second controller'}</span>`}</div>
+        : `<button id="p2Join" type="button" ${P.tutorial ? 'disabled' : ''}>Add player 2</button><span id="p2Hint" class="label" style="text-transform:none; letter-spacing:0">${P.tutorial ? 'Complete or skip the single-player introduction to unlock multiplayer.' : P.waiting ? 'Press Start on player 2\'s controller' : 'or press Start on a second controller'}</span>`}</div>
       <div class="label">System seed</div>
       <div class="seedrow"><input id="shareUrl" readonly value="${url}" aria-label="Share link"><button id="copyUrl" type="button">Copy link</button></div>
       <div class="seedrow"><button id="tests" type="button">Test scenes</button><button id="toBriefing" type="button">Change system</button></div>

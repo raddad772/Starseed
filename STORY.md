@@ -118,7 +118,7 @@ Use ship positions, velocities and the established separation to stage the incid
 
 Ordinary flight mistakes before the incident get a safe retry and optional assistance. The family's disappearance is an authored event, not a judgement of the player's flying. Do not add a rescue countdown or make side exploration endanger the daughter. Later evidence should sustain hope through real discoveries, without repeated false death scares.
 
-Both players can fly their own assigned craft, or one can accompany the other where supported. Each gets relevant controls and the same evidence. Essential dialogue has subtitles and remains in the record. A player joining afterward receives the shared summary without replaying the incident. Skipping while both are present should use a shared confirmation, similar to other shared narrative transitions.
+The playable introduction is single-player, including flight practice and the incident. Multiplayer becomes available immediately after completing or skipping it. A friend then joins the expedition in an assigned craft, or accompanies the other player where supported, and receives the shared Story Log without replaying the incident. The other families can still have people aboard the survey tender; their motivation does not require a co-op tutorial. Essential dialogue has subtitles and remains in the record.
 
 ## Skipped introduction
 

@@ -17,6 +17,7 @@ import { renderExpeditionPanel } from './ui/expeditionPanel.js';
 import { renderExpeditionSetup } from './ui/expeditionSetup.js';
 import { provisionExpedition } from './campaign/newGame.js';
 import { FlightIntro } from './campaign/intro.js';
+import { tutorialIsActive } from './campaign/tutorial.js';
 import { createCampaign } from './campaign/state.js';
 import { JourneyConsent } from './campaign/travel.js';
 import { renderGalaxyMap } from './ui/galaxyMap.js';
@@ -110,6 +111,7 @@ function makeP2Input(padIndex) {
 
 function joinP2(padIndex) {
   if (!game || game.players.length > 1) return;
+  if(tutorialIsActive(game.campaign)){joinWait=false;game.message('The introduction is single-player. Complete or skip it to unlock multiplayer.','nav');return;}
   p2Pad = padIndex;
   game.joinPlayer(makeP2Input(padIndex));
 }
@@ -215,6 +217,7 @@ let previewed = null;
 function boot(s, saved = null, expedition = null) {
   if (saved) validateCampaign(saved); // reject invalid imports before disposing the current game
   if (game) { game.engine.dispose(); game.dispose(); game = null; }
+  if(expedition){p2Pad=null;joinWait=false;}
   try {
     if (!navigator.gpu) throw new Error('WebGPU is unavailable');
     game = new Game(canvas, input, s, {
@@ -253,7 +256,7 @@ function boot(s, saved = null, expedition = null) {
   else if (startChoice) { game.requestStart(startChoice); previewed = startChoice; } // the briefing shows the chosen start live
   if(game.campaign?.story.intro.tutorial)game.intro=new FlightIntro(game,{checkpoint:()=>flightSaves.checkpoint(),openLog:()=>showPause('expedition')});
   applySettings();
-  if (!saved && p2Pad !== null) game.joinPlayer(makeP2Input(p2Pad)); // (player 2 stays on in a new system)
+  if (!saved && p2Pad !== null && !tutorialIsActive(game.campaign)) game.joinPlayer(makeP2Input(p2Pad));
   try {
     const q = new URLSearchParams(location.search);
     q.set('seed', s);
@@ -280,7 +283,7 @@ function openNewExpedition(){
       // Generate terrain in the background while the lesson takes place in orbit.
       fresh.startSim(fresh.startBody);
       fresh.setPaused(true);flightSaves.checkpoint();
-      if(options.intro==='skip')fresh.intro.vote(0);
+      if(options.intro==='skip')fresh.intro.act('skip');
     }finally{restoreInProgress=false;}
     showPause('expedition');
   }});
@@ -395,8 +398,9 @@ const pause = new PauseScreen({
   // another system's seed from the catalog: its briefing, to pick where to begin
   travel: (s) => { if(game?.campaign){showPause('galaxy');game.message('Use the expedition chart to keep your fleet when travelling between stars.','nav');return;}toBriefing(false); seed = s; showBriefing(seed); boot(seed); },
   players: {
-    info: () => ({ count: game ? game.players.length : 1, pad: p2Pad, waiting: joinWait }),
+    info: () => ({ count: game ? game.players.length : 1, pad: p2Pad, waiting: joinWait, tutorial: tutorialIsActive(game?.campaign) }),
     join: () => {
+      if(tutorialIsActive(game?.campaign))return 'Complete or skip the single-player introduction to unlock multiplayer.';
       if (!Input.padIndices().length) return 'Connect a controller for player 2 first (and press any button on it)';
       joinWait = true;
       return 'Press Start on player 2\'s controller';
@@ -458,10 +462,6 @@ function padRouterFor(i) {
     if(journeyConsent.destination){
       if(ps.hits.has('B')){cancelJourney();return true;}
       if(ps.hits.has('A')){voteJourney(journeyConsent.destination,i);return true;}
-    }
-    if(game.intro?.consent.pending){
-      if(ps.hits.has('B')){game.intro.act('cancel');return true;}
-      if(ps.hits.has('A')){game.intro.vote(i);if(pause.open&&pause.tab==='expedition')pause.render();return true;}
     }
     const menu = openMenu();
     if (!menu && p.ui.suit.open) { if (i === 0) padMenu.setCur(null); return p.ui.suit.pad(ps, dt); }

@@ -7,6 +7,7 @@ import { GENERATOR_VERSION, generateSystem } from '../gen/system.js';
 import { SIM_VERSION } from '../gen/worldsim/snapshot.js';
 import { LEN_SCALE } from '../core/units.js';
 import { setLivery } from '../render/glbShip.js';
+import { tutorialIsActive } from './tutorial.js';
 
 export const FLIGHT_VERSION = 1;
 const VECTORS = ['pos','vel','angVel','landedPosF','lpos','lvel','lang','accelW','targetVel','accel'];
@@ -192,7 +193,7 @@ export function restoreFlight(game,c,{inputForPlayer}={}) {
   for(const key of ALIASES)game[key]=ref(w.aliases[key]);for(const key of GROUPS)game[key]=w.groups[key].map(ref);
   game.fleetEra=w.fleetEra;game.startDir=new THREE.Vector3(...w.startDir);game.startChoice=w.startChoice;game.respawnInfo={body:game.universe.bodies[w.respawn.body],dir:new THREE.Vector3(...w.respawn.dir)};
   const players=new Map();game.awayPlayers=[];
-  for(const saved of c.players){let p=game.players[saved.index];if(!p){const input=saved.active&&inputForPlayer?.(saved.index);p=input?game.addPlayer(input):new Player(game,saved.index);if(!input)game.awayPlayers[saved.index]=p;}players.set(saved.id,p);
+  for(const saved of c.players){let p=game.players[saved.index];if(!p){const input=saved.active&&!tutorialIsActive(c)&&inputForPlayer?.(saved.index);p=input?game.addPlayer(input):new Player(game,saved.index);if(!input)game.awayPlayers[saved.index]=p;}players.set(saved.id,p);
     Object.assign(p,pick(saved,['label','mode',...PNUMS,...PFLAGS]));for(const k of PVECS)p[k].fromArray(saved[k]);p.evaQuat.fromArray(saved.evaQuat);p.body=game.universe.bodies[saved.body];p.vessel=ref(saved.vessel);p.ownShip=ref(saved.ownShip);p.lastSeat=saved.lastSeat?{vessel:ref(saved.lastSeat.vessel),seat:saved.lastSeat.seat}:null;p.target=target(saved.target);p.warpRequestIndex=0;p.travelIndex=0;p.jetOn=false;
     if(game.players.includes(p)&&p.mode==='seat'&&pilotSeat(p.vessel.type)===p.seat)p.vessel.pilot=p;
   }

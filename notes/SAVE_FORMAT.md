@@ -26,9 +26,11 @@ The receiver anchor now pins a generated seed and eligible life-bearing body ID 
 
 ## Tutorial checkpoint
 
+The introduction is now single-player. Older files may still contain an active P2 tutorial record; restore treats that person as away crew until completion/skip, preserving their placement and inventory. The next snapshot records them as inactive. Completed introductions restore normal multiplayer availability. No new schema version is required because the data remains losslessly representable.
+
 New expeditions add optional `story.intro.tutorial` version 1: lesson phase, stable reference-vessel ID, measured starting offset, scan progress, simulation-time incident duration and correlated probe IDs. Existing saves without this field still load. Validation checks the phase, bounded/finite values, reference craft, assigned player craft and agreement with canonical story completion. Played and skipped outcomes use the same incident/bearing events; repeated application cannot duplicate the journal or fleet.
 
-The tutorial's skip votes and controller bindings are transient. Both current players must consent; reload or a changed crew clears prior votes. A missing controller retains the character through the existing away-player mechanism. New campaigns start with empty site ledgers rather than adopting sandbox progress. Survey marker discoveries use campaign-scoped string entries alongside the existing site protocol; assisted traversal derives from saved rules when entering a sector.
+Controller bindings are transient. The solo player can skip immediately, and a missing controller retains its character through the existing away-player mechanism. New campaigns start with empty site ledgers rather than adopting sandbox progress. Survey marker discoveries use campaign-scoped string entries alongside the existing site protocol; assisted traversal derives from saved rules when entering a sector.
 
 Campaign state may advance while IndexedDB writes the prior snapshot. Completion updates revision metadata without replacing newer story state, and another checkpoint save follows. Initial creation and explicit tutorial transitions save when the game reaches its ready state even if paused; ordinary periodic autosaves still require active play. The full tutorial/skip native fixtures exercise the UI and controller paths, while CPU tests check phase validation and concurrent save semantics.
 
