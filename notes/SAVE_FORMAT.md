@@ -96,7 +96,7 @@ The existing `starseed.settings` remains a local preference source. Current per-
 
 Scope new ledgers and saves to campaign ID. Two campaigns using the same galaxy seed share geography but have independent fleets, story and recovery. Existing legacy records do not identify a campaign, so the import UI must name the destination campaign rather than silently attach them to every new game.
 
-One authoritative local campaign handles both players' events and saves. Both see the same story, fleet and discovered facts; each can track a different lead. Keep a departing player's character/state persistent and resume it on rejoin under a safe placement policy. Network multiplayer, if added later, needs an authority and replication protocol; portable JSON is not that protocol.
+Online shared instances are the intended multiplayer mode; split-screen is a local test harness, not the product's multiplayer requirement. Participants are trusted: remote player data updates the existing other-player controller/state path, with essentially no gameplay anti-cheat. Retain basic decoding, version and finite-value checks for reliable loading/replication. Shared story, fleet and discovery state need explicit ownership/merge rules and a save writer, without implying server-authoritative movement. Keep a departing player's character/state persistent and resume it on rejoin. The online transport and replication protocol remain to be implemented; portable JSON is the save format, not the wire protocol.
 
 ## Required validation
 

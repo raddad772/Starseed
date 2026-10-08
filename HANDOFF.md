@@ -11,6 +11,21 @@ maps and viewscreens are native. WebGL exists only in explicit test tooling (`?w
 no production fallback. Other browser/GPU combinations still need certification; no speedup or exact
 pixel-parity claim is made. Dave confirmed sole-agent work and no coordination messages this session.
 
+## Multiplayer intent correction and story-anchor audit (2026-10-08)
+Online multiplayer is the intended product. Split-screen is only a test harness before/without the
+network transport. Dave wants trusted peers in an instance: remote player data drives the existing
+other-player controller/state path, with essentially no anti-cheat. Do not design a couch-co-op
+product or heavy server-authoritative movement/security architecture. Basic parsing/version checks
+remain useful for reliability. The tutorial stays solo. Transport/replication are not yet implemented.
+
+Pause → Galaxy is implemented. The mirror host is still the chosen new-game seed at a provisional
+24 pc from the central landmark; it was not selected by physical suitability checks. Default
+FSPB-8DTW gives Brukrol (F6V). Receiver selection is implemented: default region yields Legoazeaks
+(G9V), seed RX-e60889908de3ebbf-6, body 9 Tavont (microbial mats), about 6.70 ly away. The actual
+megastructure-presence predicate passes at current 100% tuning. The site entrance still places
+lazily on surface arrival; a pinned playable entrance and physical mirrored enclosure need work.
+Do not describe these as fully validated story locations or the online transport as implemented.
+
 ## Tutorial is single-player (latest policy, 2026-10-08)
 Dave clarified that the tutorial is only playable solo. Controller/Settings join and Game.joinPlayer
 are gated while the tutorial is pending; completion or skip unlocks co-op. Starting New Expedition
