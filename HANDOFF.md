@@ -21,8 +21,15 @@ spacecraft/re-entry, orbital stations and later integration. Megastructure integ
 
 ## Integrated megastructure surveys (Codex, 2026-10-08)
 The three frozen Megastructures checkpoints (e9cfe60, bee8b8f, 8c56b3e) are imported as
-26094d4, dc493f7 and 7db5c94. Surface starts create a marked access hatch on nearby dry,
-gentle ground outside the landing craft. Find the cyan pennant and press F within 4 m.
+26094d4, dc493f7 and 7db5c94. Each solid life-bearing planet can have at most one megastructure.
+`src/understructure/planetSites.js` sets MEGASTRUCTURE_CHANCE to 1 (100%) for playtesting;
+change it to 0.01 for roughly one in 100 eligible planets. Presence is rolled from system seed
+and planet ID, independent of landing choices; barren worlds and moons are excluded.
+The first suitable surface start places its entrance on dry, gentle ground outside the craft.
+The body-fixed entrance is saved per planet, so distant starts/reloads reuse it instead of adding
+another structure. Existing per-site progress keys and layouts are retained. Find the cyan pennant
+and press F within 4 m. Sixteen focused survey tests pass, including policy, deterministic rarity,
+one entrance across reloads, and the existing complete exploration loop.
 The access circuit enters a local exploration sector on the **existing native renderer**;
 this is a scene transition, not an excavated opening in the planetary heightfield.
 The sector owns a local camera, capsule and HUD, while the original player, vessels and

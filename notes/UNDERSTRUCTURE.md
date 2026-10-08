@@ -1,7 +1,13 @@
 ## Main-game integration (2026-10-08)
 
-The frozen prototype checkpoints are merged into main. Choose a surface start, follow the cyan
-pennant near the landing craft, then press **F** at the hatch. Inside: **E** interacts, **F** toggles
+The frozen prototype checkpoints are merged into main. Each solid life-bearing planet has at
+most one megastructure. The planet-level spawn chance is **100% for playtesting**, controlled by
+`MEGASTRUCTURE_CHANCE` in `src/understructure/planetSites.js`; use `0.01` later for roughly 1/100.
+Barren worlds and moons are excluded. Presence is deterministic per system seed and planet ID.
+
+Choose a surface start on a living planet. On its first suitable arrival, follow the cyan pennant
+near the landing craft, then press **F** at the hatch. That entrance is saved and reused across
+other landing sites and reloads; those visits do not generate another megastructure. Inside: **E** interacts, **F** toggles
 the hand light, **M** opens the surveyed map, **J** opens notes, **B** places a beacon. Recover the
 site record to unlock **T** return or the access lift. T can also leave before descending.
 Progress is saved per site, and re-entry permits further exploration.

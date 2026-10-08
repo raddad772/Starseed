@@ -3,6 +3,7 @@ import { generateUnderstructure } from './layout.js';
 import { UnderstructureSimulation } from './simulation.js';
 import { buildScene } from './scene.js';
 import { SurveyHUD } from './surveyHUD.js';
+import { PlanetSurveySites } from './planetSites.js';
 
 // A sector has a local metre-scale frame. Its world entrance remains body-fixed;
 // player/ship objects and the universe clock never belong to the sector.
@@ -47,24 +48,27 @@ function marker() {
 export class SurfaceSurveys {
   constructor(game) {
     this.game=game; this.sites=[];
+    this.planetSites=new PlanetSurveySites(game.seed);
     this.saveAll=()=>{for(const p of game.players)p.understructure?.save();};
     window.addEventListener('pagehide',this.saveAll);
   }
   addNear(player) {
     const b=player.body;
-    const old=this.sites.find(s=>s.body===b&&s.frame.position.distanceTo(player.fPos)<180);
+    const old=this.sites.find(s=>s.body.id===b.id);
     if(old)return old;
-    const up=player.fPos.clone().normalize(), away=player.heading.clone().negate();
-    const right=away.clone().cross(up).normalize();
-    // Stay outside the craft, on dry ground and within a gentle height change.
-    const height=b.groundHeight(up), candidates=[];
-    for(const distance of [14,20,28])for(const angle of [0,.7,-.7,1.4,-1.4]) {
-      const point=player.fPos.clone().addScaledVector(away,distance*Math.cos(angle)).addScaledVector(right,distance*Math.sin(angle));
-      const dir=point.clone().normalize();
-      if(!b.isWaterAt(dir)&&Math.abs(b.groundHeight(dir)-height)<2)candidates.push(point);
-    }
-    if(!candidates.length)return null;
-    const frame=accessFrame(b,candidates[0],away),dir=frame.position.clone().normalize();
+    const entrance=this.planetSites.get(b,()=>{
+      const up=player.fPos.clone().normalize(), away=player.heading.clone().negate();
+      const right=away.clone().cross(up).normalize();
+      // First discovery: outside the craft, dry, and within a gentle height change.
+      const height=b.groundHeight(up);
+      for(const distance of [14,20,28])for(const angle of [0,.7,-.7,1.4,-1.4]) {
+        const dir=player.fPos.clone().addScaledVector(away,distance*Math.cos(angle)).addScaledVector(right,distance*Math.sin(angle)).normalize();
+        if(!b.isWaterAt(dir)&&Math.abs(b.groundHeight(dir)-height)<2)return {dir:dir.toArray(),heading:away.toArray()};
+      }
+      return null;
+    });
+    if(!entrance)return null;
+    const frame=accessFrame(b,new THREE.Vector3(...entrance.dir),new THREE.Vector3(...entrance.heading)),dir=frame.position.clone().normalize();
     const saveKey=surveySaveKey(this.game.seed,b.id,dir);
     const site={body:b,frame,saveKey,seed:`${this.game.seed}-${b.id}-${dir.toArray().map(x=>Math.round(x*1e6)).join('-')}`,profile:'auto',marker:marker()};
     this.sites.push(site);this.game.engine.scene.add(site.marker);
