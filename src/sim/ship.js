@@ -45,6 +45,8 @@ import { initAirlocks, updateAirlocks } from './airlocks.js';
 import { propagate, orbitInfo } from '../core/kepler.js';
 import { SHUTTLE, boxPenetration, boxesNear, deckBelow, insideBox } from './vesselTypes.js';
 import { floraOf } from './floraField.js';
+import { entryTier, entryGeometry, gasProperties, stagnationHeat, heatSafeSpeed, integrateHullTemperature } from './reentry.js';
+import { windAt } from './wind.js';
 
 const G0 = 9.81;
 export const ASSIST_NAMES = ['OFF', 'ROT', 'FULL'];
@@ -105,6 +107,10 @@ export class Ship {
     this.hull = 1;
     this.hullTemp = 290;
     this.heatGlow = 0;
+    this.heatFlux = 0;
+    this.entryProfile = entryTier(type);
+    this.entry = { ...entryGeometry(type,{x:0,y:0,z:-1}), direction:new THREE.Vector3(0,0,-1), heatLoad:0 };
+    this._thermalT = game.t || 0;
     this.dead = false;
     this.deathCause = '';
     this.thrustLocal = new THREE.Vector3();   // applied thrust (N), ship-local
@@ -375,6 +381,9 @@ export class Ship {
     this.pos.copy(this.landedPosF).applyQuaternion(b.q);
     this.frameVel(this.vel);
     this.quat.copy(b.q).multiply(this.landedQuatF);
+    const st=b.atmosphereAt(this.pos.length()-b.R,this._atmo||(this._atmo={}));
+    Object.assign(this.env,{pressure:st.pressure,density:st.density,temperature:st.temperature,airspeed:0,mach:0,dynPressure:0});
+    this.heatFlux=0;this._lastAero=null;this.environment();
     // body spin seen in the ship frame
     this.angVel.copy(b.omega).applyQuaternion(_q1.copy(this.quat).invert());
   }
@@ -429,8 +438,8 @@ export class Ship {
     env.pressure = alt > b.atmHeight * 1.05 ? 0 : st.pressure;
     env.density = alt > b.atmHeight * 1.05 ? 0 : st.density;
     env.temperature = st.temperature;
-    env.dynPressure = 0; env.airspeed = 0;
-    this.heatGlow *= 0.9;
+    env.dynPressure = 0; env.airspeed = 0; env.mach = 0;
+    this.heatFlux = 0; this._lastAero = null; this.environment();
     const relief = b.relief;
     this.agl = alt - relief;
     this.legState.fill(0);
@@ -610,9 +619,9 @@ export class Ship {
       const prevCruise = this.cruise;
       if (c.fwd) this.cruise += c.fwd * accH * dt;
       // heat limiter: no faster than the speed whose stagnation heating the
-      // hull radiates away (Sutton-Graves at ~90 kW/m^2, ~1500 K equilibrium)
+      // protection system rejects at its generation-specific safe temperature
       const rho = this.env.density;
-      const vHeat = rho > 1e-7 ? Math.cbrt(9e4 / (1.7415e-4 * Math.sqrt(rho / 1.5))) : Infinity;
+      const vHeat = heatSafeSpeed(rho,this.entry.radius,gasProperties(b.atm),this.entryProfile,this.env.temperature);
       // releasing boost keeps the speed reached; W alone cannot exceed 900 m/s
       const cap = c.boost ? 2500 : Math.max(900, prevCruise);
       const maxCruise = Math.min(cap, Math.max(250, vHeat));
@@ -798,8 +807,9 @@ export class Ship {
   aero(alt, F, T) {
     const b = this.body;
     const env = this.env;
+    this.heatFlux=0;env.mach=0;
     if (!b.atm || alt > b.atmHeight * 1.05) {
-      env.pressure = 0; env.density = 0; env.airspeed = 0; env.dynPressure = 0; this.heatGlow *= 0.95; this._lastAero = null;
+      env.pressure = 0; env.density = 0; env.airspeed = 0; env.dynPressure = 0; this._lastAero = null; env.wind.set(0,0,0);
       env.temperature = 3;
       return;
     }
@@ -825,16 +835,28 @@ export class Ship {
         vAir.sub(env.wind);
       }
     }
+    if(!b.giant){
+      const dirF=_v4.copy(this.pos).applyQuaternion(b.qInv).normalize();
+      const rotation=Math.abs(b.data.rotation?.rate||0),day=rotation?2*Math.PI/rotation:86400;
+      const wind=windAt(b,dirF,this.game.t,b.data.insolation||1,day,this._entryWind||(this._entryWind={dir:new THREE.Vector3(),speed:0,gust:0}));
+      // The shared surface-weather field fades above the lower atmosphere;
+      // giant jets retain their existing vertical model.
+      env.wind.copy(wind.dir).applyQuaternion(b.q).multiplyScalar(wind.speed*Math.exp(-Math.max(0,alt)/12000));vAir.sub(env.wind);
+    }
     const rho = st.density;
     const vmag = vAir.length();
     env.airspeed = vmag;
     const q = 0.5 * rho * vmag * vmag;
     env.dynPressure = q;
-    env.mach = vmag / Math.sqrt(1.3 * 8.314 * st.temperature / Math.max(0.002, (b.atm.mu || 29) / 1000));
+    const gas=gasProperties(b.atm);
+    env.mach = vmag / Math.sqrt(gas.gamma * 8.314462618 * Math.max(3,st.temperature) / gas.molarMass);
     if (this.big && q > this.type.maxDynPressure) { this.destroy(`${this.name} broke up in ${b.data.name}'s atmosphere`); return; }
     if (vmag < 1e-3) { this._lastAero = null; return; }
     const qinv = _q1.copy(this.quat).invert();
     const vl = _v4.copy(vAir).applyQuaternion(qinv); // airspeed vector, ship-local
+    this.entry.direction.copy(vl).divideScalar(vmag);
+    Object.assign(this.entry,entryGeometry(this.type,this.entry.direction));
+    this.heatFlux=stagnationHeat(rho,vmag,this.entry.radius,gas,st.temperature,this.hullTemp);
     // anisotropic drag: CdA per axis (front, side, top)
     const [cdx, cdy, cdz] = this.type.aero.cd;
     const drag = _att.set(-cdx * vl.x * vmag, -cdy * vl.y * vmag, -cdz * vl.z * vmag).multiplyScalar(0.5 * rho);
@@ -858,10 +880,7 @@ export class Ship {
     T.x += kStab * (-vn.y) * 1.0 - kDamp * this.angVel.x * Math.min(1, q / 2000);
     T.y += kStab * (vn.x) * 1.0 - kDamp * this.angVel.y * Math.min(1, q / 2000);
     T.z += -kDamp * 0.5 * this.angVel.z * Math.min(1, q / 2000);
-    // Sutton-Graves stagnation heating (W/m^2), nose radius ~1.5 m
-    const qh = 1.7415e-4 * Math.sqrt(rho / 1.5) * vmag * vmag * vmag;
-    this.heatFlux = qh;
-    this.heatGlow = this.heatGlow * 0.9 + Math.min(2, qh / 1.2e6) * 0.1;
+
   }
 
   contacts(dt, F, T) {
@@ -1163,8 +1182,8 @@ export class Ship {
   zoneEnv() {
     const env = this.env, z = this.zone;
     env.pressure = z ? z.pressure : 0; env.density = 0; env.dynPressure = 0; env.airspeed = 0;
-    env.temperature = 290;
-    this.heatGlow *= 0.9;
+    env.temperature = 290; env.mach=0;
+    this.heatFlux=0;this._lastAero=null;this.environment();
   }
 
   // Flight controls in the host's deck frame: up is the host's +Y, gravity is
@@ -1420,7 +1439,12 @@ export class Ship {
   }
 
   // Environmental damage: pressure and heat
-  environment(dt) {
+  environment(dt = Math.max(0,(this.game.t||0)-this._thermalT)) {
+    // Several hierarchy/render synchronizations can inspect the environment at
+    // the same simulation time. Heat and damage advance exactly once.
+    dt=Math.max(0,Math.min(dt,(this.game.t||0)-this._thermalT));
+    if(!dt)return;
+    this._thermalT=this.game.t||0;
     const env = this.env;
     const P = env.pressure;
     const rating = this.hullRating;
@@ -1429,14 +1453,14 @@ export class Ship {
       this.hull = Math.max(0, this.hull - over * over * dt * 0.6);
       if (P > rating * 1.25 || this.hull <= 0) this.destroy(`Crushed at ${P.toFixed(0)} bar (${this.body.data.name})`);
     }
-    // hull temperature: radiative balance with ambient + aerodynamic heating
-    const Tamb = env.temperature || 3;
-    const heating = (this.heatFlux || 0) / 900; // K/s per (W/m^2 / 900)
-    this.hullTemp += (heating - (this.hullTemp - Tamb) * 0.08) * dt;
-    if (env.density === 0) this.hullTemp += (290 - this.hullTemp) * 0.02 * dt;
-    if (this.hullTemp > 1900) {
-      this.hull = Math.max(0, this.hull - (this.hullTemp - 1900) / 400 * dt * 0.1);
-      if (this.hull <= 0) this.destroy('Hull burned through');
+    const profile=this.entryProfile;
+    this.hullTemp=integrateHullTemperature(this.hullTemp,env.temperature||3,this.heatFlux,profile,dt,env.density);
+    this.entry.heatLoad+=this.heatFlux*dt;
+    const glow=Math.min(2,this.heatFlux/1.2e6)*THREE.MathUtils.smoothstep(env.mach,2,5);
+    this.heatGlow+=(glow-this.heatGlow)*(1-Math.exp(-dt/0.18));
+    if(this.hullTemp>profile.limit){
+      this.hull=Math.max(0,this.hull-(this.hullTemp-profile.limit)/400*dt*profile.damageRate);
+      if(this.hull<=0)this.destroy('Thermal protection failed');
     }
   }
 
