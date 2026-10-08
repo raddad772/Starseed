@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>AVBD smoke test</title>
+<style>:root{color-scheme:dark}body{background:#0d1014;color:#d8dde3;font:13px/1.5 ui-monospace,monospace;margin:16px}</style>
+<script type="importmap">{ "imports": { "three": "../vendor/three.module.js", "three/webgpu": "../vendor/three-avbd/three-webgpu-stub.js" } }</script>
+</head>
+<body>
+<pre id="out">running…</pre>
+<script type="module">
+// three-avbd on a bare WebGPU device: world gravity off, our own gravity as a
+// standing force per body (as Starseed will do for planets, ships and zero-g rooms).
+import { World, recommendedLimits } from '../vendor/three-avbd/build/lib/world.js';
+const out = document.getElementById('out');
+const log = (s) => { out.textContent += '\n' + s; };
+try {
+  const adapter = await navigator.gpu.requestAdapter();
+  const device = await adapter.requestDevice({ requiredLimits: await recommendedLimits(adapter) });
+  const world = await World.create({ device, maxBodies: 256 });
+  world.gravity = [0, 0, 0];
+  log(`world: gravity ${world.gravity}, hulls ${world.hullsEnabled}`);
+  world.addBox({ size: [20, 1, 20], position: [0, -0.5, 0], fixed: true });
+  const crate = world.addBox({ size: [1, 1, 1], position: [0, 5, 0], density: 100 });
+  const floater = world.addBox({ size: [1, 1, 1], position: [3, 5, 0], density: 100 });
+  const mass = 100;
+  crate.applyForce([0, -9.81 * mass, 0]); // planet gravity on the crate; the floater is in a zero-g zone
+  const t0 = performance.now();
+  for (let i = 0; i < 180; i++) world.step();
+  await world.read();
+  log(`180 steps in ${(performance.now() - t0).toFixed(1)} ms`);
+  log(`crate   y ${crate.position[1].toFixed(3)} (rests at 0.5)`);
+  log(`floater y ${floater.position[1].toFixed(3)} (stays at 5)`);
+  window.__avbd = { ok: Math.abs(crate.position[1] - 0.5) < 0.05 && Math.abs(floater.position[1] - 5) < 0.01, crate: crate.position, floater: floater.position };
+  log(window.__avbd.ok ? 'OK' : 'FAIL');
+} catch (e) { log('ERROR ' + (e.stack || e)); window.__avbd = { ok: false, error: String(e) }; }
+</script>
+</body>
+</html>

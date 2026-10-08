@@ -1,0 +1,5 @@
+three-avbd 0.3.0 (MIT, Steven Bobyn), from https://registry.npmjs.org/three-avbd/-/three-avbd-0.3.0.tgz
+sha256 c310a976a6b7c67bf26e49e8b9316cb9349c1563c238bcf0b66fa5ba06a21118
+Vendored 2026-10-08: build/**/*.js and *.d.ts, unchanged. Import build/lib/world.js
+directly (not index.js, which pulls BodyMesh and three/tsl), with the import map entry
+"three/webgpu": "./vendor/three-avbd/three-webgpu-stub.js".
