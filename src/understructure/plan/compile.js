@@ -30,6 +30,18 @@ function beam(a, b, hw, hh, mat, sides = 4) {
   const poly = sides === 4 ? [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]] : G.regularPoly(0, 0, hw, hh, sides, 0);
   return { o: a, u, v, w, poly, w0: 0, w1: L, mat };
 }
+// An upright many-sided drum centred on (x, z), its top scaled by taper.
+function drum(x, z, r, y0, y1, mat, sides = 16, taper = 1, rot = 0, aspect = 1) {
+  return { o: [x, 0, z], u: X, v: Z, w: Y, poly: G.regularPoly(0, 0, r, r * aspect, sides, rot), w0: y0, w1: y1, mat, taper };
+}
+// An irregular tapering shard from a along dir for length L, radius r.
+function shard(rng, a, dir, L, r, mat) {
+  const w = norm3(dir);
+  let u = Math.abs(w[1]) > 0.9 ? [1, 0, 0] : cross3([0, 1, 0], w); u = norm3(u); const v = cross3(w, u);
+  const k = rng.int(5, 8), poly = [];
+  for (let i = 0; i < k; i++) { const t = (i + rng.range(-0.25, 0.25)) / k * Math.PI * 2, rr = r * rng.range(0.7, 1.15); poly.push([Math.cos(t) * rr, Math.sin(t) * rr]); }
+  return { o: a, u, v, w, poly: G.convexHull(poly), w0: 0, w1: L, mat, taper: rng.range(0.08, 0.35) };
+}
 const cross3 = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 const norm3 = (a) => { const l = Math.hypot(...a) || 1; return a.map((x) => x / l); };
 
@@ -244,9 +256,14 @@ export function compileSite(plan) {
         const p = G.add(G.lerp(a, b, s / len), G.mul(nIn, 0.6));
         const doorClear = (doorsOf.get(L.id) || []).every((d) => d.edge !== i || s / len < d.inner[0] - 0.08 || s / len > d.inner[1] + 0.08);
         const walkClear = plan.nodes.every((q) => !q.walk || q.landmark !== L.id || G.sdPoly(p, q.poly) > 2.2);
-        if (doorClear && walkClear) solids.push(vprism(G.orientedRect(p, e, 0.5, 0.6), L.y0, top, 'metal'));
+        if (doorClear && walkClear) {
+          solids.push(vprism(G.orientedRect(p, e, 0.5, 0.6), L.y0, top, 'metal'));
+          // a glowing strip up some ribs: from any catwalk you can see how far the hall goes
+          if (rng.chance(0.35)) solids.push(vprism(G.orientedRect(G.add(p, G.mul(nIn, 0.62)), e, 0.07, 0.03), L.y0 + 2, top - 2, rng.chance(0.5) ? 'amber' : 'cyan', { glow: true }));
+        }
       }
     }
+    if (L.kind !== 'access') dressHall(solids, lamps, L, top, doorsOf.get(L.id) || [], plan.nodes.filter((q) => q.walk && q.landmark === L.id), rng.fork(L.id));
   }
   // crossings: catwalks with rails, hung from the volume
   for (const n of plan.nodes.filter((q) => q.kind === 'crossing' || q.kind === 'access')) {
@@ -276,14 +293,18 @@ export function compileSite(plan) {
     }
     for (let s = 5; s < len - 2; s += 12) { const p = G.add(a, G.mul(d, s)); lamps.push({ pos: [p[0], y + 2.6, p[1]], color: 'amber', power: 75 }); }
   }
-  for (const m of plan.machines) machine(solids, lamps, m, vols.get(m.landmark), rng);
+  const live = new Map(); // one surviving generator per generator hall
+  for (const L of plan.landmarks) { const ms = plan.machines.filter((m) => m.landmark === L.id && m.kind === 'reactor'); if (ms.length) live.set(rng.pick(ms).id, true); }
+  for (const m of plan.machines) machine(solids, lamps, m, vols.get(m.landmark), rng, live.has(m.id));
+  conduits(solids, plan, rng.fork('conduits'));
+  const intr = intrusions(solids, lamps, plan, doorsOf, rng.fork('intrusions'));
   for (const L of plan.landmarks) if (L.kind === 'cistern') water.push({ poly: L.poly, y: L.y0 + (Math.min(...plan.nodes.filter((n) => n.landmark === L.id).map((n) => n.y0)) - L.y0) * 0.45 });
 
   for (const f of plan.finds) markers.push({ ...f });
   const s0 = byId.get('staging'), first = plan.links.find((l) => l.a === 'staging');
   const look = first ? [first.path[1][0], first.path[1][2]] : G.add(s0.center, [0, -1]);
   return {
-    solids, lamps, zones, markers, water, stats, doors: doorsOf,
+    solids, lamps, zones, markers, water, stats, doors: doorsOf, seeps: intr.seeps,
     spawn: { pos: [s0.center[0], s0.y0, s0.center[1]], yaw: Math.atan2(-(look[0] - s0.center[0]), -(look[1] - s0.center[1])) },
     spaces: [...plan.nodes.filter((n) => n.kind !== 'crossing' && n.kind !== 'access').map((n) => ({ id: n.id, name: n.name, poly: n.poly, y0: n.y0, y1: n.y1 })),
       ...[...plan.landmarks, plan.access].map((L) => ({ id: L.id, name: L.name, poly: L.poly, y0: L.y0, y1: L.y1 }))],
@@ -337,30 +358,153 @@ function lowGDecks(out, n, rng, doors) {
   }
 }
 
-// Machines: no boxes. Stacked many-sided drums, collars and struts.
-function machine(out, lamps, m, L, rng) {
-  const [x, z] = m.center, r = m.r, y0 = m.y0, y1 = m.y1;
-  const drum = (rr, a, b, mat, sides = 16) => out.push(vprism(G.regularPoly(x, z, rr, rr, sides, rng.range(0, 1)), a, b, mat));
+// Machines: no boxes. Drums that step in and out, tapering domes and cones,
+// collars, and glowing index strips you can see across the hall.
+function machine(out, lamps, m, L, rng, alive) {
+  const [x, z] = m.center, r = m.r, y0 = m.y0, y1 = m.y1, rot = rng.range(0, 1);
+  const strip = (rr, a, b, mat) => { const t = rng.range(0, Math.PI * 2), p = [x + Math.cos(t) * (rr + 0.05), z + Math.sin(t) * (rr + 0.05)]; out.push(vprism(G.orientedRect(p, [-Math.sin(t), Math.cos(t)], 0.08, 0.05), a, b, mat, { glow: true })); };
   if (m.kind === 'rack') {
-    // archive stacks: tall hexagonal towers banded with shelving collars
-    drum(r, y0, y1, 'concrete', 6);
-    for (let y = y0 + 6; y < y1 - 2; y += rng.range(5, 8)) drum(r + 0.45, y, y + 0.5, 'metal', 6);
-    lamps.push({ pos: [x + r + 0.6, Math.min(y1 - 3, y0 + (y1 - y0) * 0.6), z], color: 'cyan', power: 40, wall: true });
+    // archive stacks: tall six-sided towers, banded, capped by a tapering crown
+    const crown = y1 - r * 1.2;
+    out.push(drum(x, z, r, y0, crown, 'concrete', 6, 1, rot));
+    out.push(drum(x, z, r, crown, y1, 'metal', 6, 0.45, rot));
+    for (let y = y0 + 6; y < crown - 2; y += rng.range(5, 8)) out.push(drum(x, z, r + 0.45, y, y + 0.5, 'metal', 6, 1, rot));
+    for (let k = 0; k < 3; k++) strip(r, y0 + 3, crown - 1, 'cyan');
   } else if (m.kind === 'reactor') {
-    drum(r, y0, y1 - r * 0.6, 'concrete', 20);
-    drum(r * 0.8, y1 - r * 0.6, y1 - r * 0.25, 'metal', 20);
-    drum(r * 0.45, y1 - r * 0.25, y1, 'metal', 16);
-    for (let y = y0 + 5; y < y1 - r; y += rng.range(7, 11)) drum(r + 0.6, y, y + 0.9, 'rust', 20);
+    // generators: a drum on a wider plinth, collars, a stepped dome; one still runs
+    out.push(drum(x, z, r * 1.25, y0, y0 + 3, 'concrete', 20, 0.8, rot));
+    out.push(drum(x, z, r, y0 + 3, y1 - r * 0.9, 'concrete', 20, 1, rot));
+    out.push(drum(x, z, r, y1 - r * 0.9, y1 - r * 0.35, 'metal', 20, 0.62, rot));
+    out.push(drum(x, z, r * 0.62, y1 - r * 0.35, y1, 'metal', 16, 0.35, rot));
+    for (let y = y0 + 6; y < y1 - r; y += rng.range(7, 11)) out.push(drum(x, z, r + 0.6, y, y + 0.9, 'rust', 20, 1, rot));
+    if (alive) {
+      out.push(drum(x, z, r + 0.15, y0 + (y1 - y0) * 0.45, y0 + (y1 - y0) * 0.45 + 1.4, 'record', 20, 1, rot, 1));
+      lamps.push({ pos: [x + r + 2, y0 + (y1 - y0) * 0.45, z], color: 'core', power: 260, wall: true, range: 60 });
+    } else if (rng.chance(0.5)) strip(r, y0 + 4, y1 - r, 'amber');
   } else if (m.kind === 'column') {
-    drum(r, y0, y1, 'metal', 24);
-    for (let y = y0 + 4; y < y1 - 2; y += 9) drum(r + 1.2, y, y + 1.6, 'rust', 24);
+    out.push(drum(x, z, r * 1.4, y0, y0 + 6, 'concrete', 24, 0.72, rot));
+    out.push(drum(x, z, r, y0 + 6, y1 - 4, 'metal', 24, 1, rot));
+    out.push(drum(x, z, r, y1 - 4, y1, 'metal', 24, 0.5, rot));
+    for (let y = y0 + 10; y < y1 - 6; y += 9) out.push(drum(x, z, r + 1.2, y, y + 1.6, 'rust', 24, 1, rot));
+    for (let k = 0; k < 4; k++) strip(r, y0 + 6, y1 - 4, 'cyan');
   } else if (m.kind === 'tank') {
-    drum(r, y0, y1 - 6, 'rust', 18); drum(r * 0.6, y1 - 6, y1 - 4, 'metal', 18);
+    out.push(drum(x, z, r * 0.5, y0, y0 + r * 0.7, 'rust', 18, 2, rot)); // a cone widening up to the tank
+    out.push(drum(x, z, r, y0 + r * 0.7, y1 - 6, 'rust', 18, 1, rot));
+    out.push(drum(x, z, r, y1 - 6, y1 - 4, 'metal', 18, 0.6, rot));
   } else {
-    // heat exchangers: banks of leaning tubes
-    for (let k = 0; k < 5; k++) {
-      const a = k / 5 * Math.PI * 2, p = [x + Math.cos(a) * r * 0.6, z + Math.sin(a) * r * 0.6];
-      out.push(beam([p[0], y0, p[1]], [x + Math.cos(a + 0.6) * r * 0.3, y1, z + Math.sin(a + 0.6) * r * 0.3], r * 0.22, r * 0.22, 'metal', 12));
+    // heat exchangers: banks of leaning tubes round a core
+    out.push(drum(x, z, r * 0.3, y0, y1, 'metal', 12, 1, rot));
+    for (let k = 0; k < 6; k++) {
+      const a = k / 6 * Math.PI * 2 + rot, p = [x + Math.cos(a) * r * 0.65, z + Math.sin(a) * r * 0.65];
+      out.push(beam([p[0], y0, p[1]], [x + Math.cos(a + 0.5) * r * 0.32, y1, z + Math.sin(a + 0.5) * r * 0.32], r * 0.16, r * 0.16, 'metal', 12));
     }
   }
+}
+
+// Storeys round a hall: ledges with rows of small lamps, roof beams to a
+// central hub, and a glow far down in the pit. Scale you can read.
+function dressHall(out, lamps, L, top, doors, walks, rng) {
+  const P = L.poly, n = P.length, c = L.center;
+  const clearOfWalks = (p, y) => walks.every((q) => Math.abs(q.y0 - y) > 3.5 || G.sdPoly(p, q.poly) > 2.5);
+  for (let y = L.y0 + rng.range(7, 10); y < top - 5; y += rng.range(10, 14)) {
+    for (let i = 0; i < n; i++) {
+      const a = P[i], b = P[(i + 1) % n], e = G.sub(b, a), len = G.len(e), nIn = G.norm(G.perp(e));
+      // break the ledge at doorways on this face near this height
+      const gaps = doors.filter((d) => d.edge === i && d.y0 < y + 4 && d.y1 > y - 4).map((d) => [d.inner[0] - 0.06, d.inner[1] + 0.06]);
+      let s0 = 0.02;
+      const run = (t0, t1) => {
+        if ((t1 - t0) * len < 2) return;
+        const p0 = G.lerp(a, b, t0), p1 = G.lerp(a, b, t1);
+        const foot = G.ccw([p0, p1, G.add(p1, G.mul(nIn, 0.9)), G.add(p0, G.mul(nIn, 0.9))]);
+        if (!clearOfWalks(G.lerp(p0, p1, 0.5), y)) return;
+        out.push(vprism(foot, y - 0.45, y, 'concrete'));
+        for (let t = 0.5; t < (t1 - t0) * len - 0.5; t += rng.range(5, 8)) {
+          const q = G.add(G.lerp(p0, p1, t / ((t1 - t0) * len)), G.mul(nIn, 0.75));
+          out.push(vprism(G.orientedRect(q, e, 0.18, 0.08), y + 0.02, y + 0.2, rng.chance(0.8) ? 'amber' : 'cyan', { glow: true }));
+        }
+      };
+      for (const [g0, g1] of gaps.sort((p, q) => p[0] - q[0])) { run(s0, g0); s0 = Math.max(s0, g1); }
+      run(s0, 0.98);
+    }
+    // a couple of real lights per storey, washing the walls
+    for (let k = 0; k < 2; k++) {
+      const i = rng.int(0, n - 1), a = P[i], b = P[(i + 1) % n], q = G.add(G.lerp(a, b, rng.range(0.3, 0.7)), G.mul(G.norm(G.perp(G.sub(b, a))), 1.2));
+      lamps.push({ pos: [q[0], y + 0.3, q[1]], color: 'amber', power: 140, wall: true, range: 45 });
+    }
+  }
+  // roof beams from each corner to a hanging hub
+  const hub = G.regularPoly(c[0], c[1], L.r * 0.16, L.r * 0.16, 8, 0);
+  out.push(drum(c[0], c[1], L.r * 0.16, top - 9, top - 3, 'metal', 8, 0.6));
+  for (let i = 0; i < n; i++) out.push(beam([P[i][0], top - 1.4, P[i][1]], [c[0], top - 3.5, c[1]], 0.5, 0.8, 'metal', 4));
+  // far down: a dim glow in the pit, and the hub's own light
+  for (let k = 0; k < 3; k++) {
+    const t = rng.range(0, Math.PI * 2), rr = L.r * rng.range(0.2, 0.6), p = [c[0] + Math.cos(t) * rr, c[1] + Math.sin(t) * rr * L.aspect];
+    lamps.push({ pos: [p[0], L.y0 + 1.5, p[1]], color: 'deep', power: 120, wall: true, range: 40 });
+    out.push(vprism(G.regularPoly(p[0], p[1], 0.6, 0.6, 6, t), L.y0, L.y0 + 0.2, 'deep', { glow: true }));
+  }
+  lamps.push({ pos: [c[0], top - 9.5, c[1]], color: 'cyan', power: 200, range: 70 });
+  void hub;
+}
+
+// Pipes slung between machines across a hall, clear of the catwalks.
+function conduits(out, plan, rng) {
+  for (const L of plan.landmarks) {
+    const ms = plan.machines.filter((m) => m.landmark === L.id);
+    const walks = plan.nodes.filter((q) => q.walk && q.landmark === L.id);
+    for (let k = 0; k < Math.min(6, ms.length * 2); k++) {
+      const a = rng.pick(ms), b = rng.pick(ms);
+      if (a === b) continue;
+      const y = rng.range(L.y0 + 4, L.y1 - 6), r = rng.range(0.35, 0.9);
+      const pa = G.add(a.center, G.mul(G.norm(G.sub(b.center, a.center)), a.r)), pb = G.add(b.center, G.mul(G.norm(G.sub(a.center, b.center)), b.r));
+      const hits = walks.some((w) => Math.abs(w.y0 - y) < r + 2.6 && (G.segHitsPoly(pa, pb, G.inflate(w.poly, r + 0.4)) || G.sdPoly(pa, w.poly) < r + 0.5));
+      if (hits) continue;
+      out.push(beam([pa[0], y, pa[1]], [pb[0], y + rng.range(-2, 2), pb[1]], r, r, rng.chance(0.5) ? 'rust' : 'metal', 12));
+    }
+  }
+}
+
+// Geological wounds: rock bursting through a hall's wall (always one in the
+// first hall you reach, on the way in), rubble below, water seeping on wet worlds.
+function intrusions(out, lamps, plan, doorsOf, rng) {
+  const seeps = [];
+  const first = plan.nodes.find((n) => n.kind === 'crossing');
+  const halls = [plan.landmarks.find((L) => L.id === first.landmark), ...rng.shuffle(plan.landmarks.filter((L) => L.id !== first.landmark)).slice(0, 1)];
+  const wet = plan.environment?.water !== false;
+  for (const L of halls) {
+    const walks = plan.nodes.filter((q) => q.walk && q.landmark === L.id);
+    const doors = doorsOf.get(L.id) || [];
+    // a face without doorways near the first crossing's height
+    const y0 = L === halls[0] ? first.y0 : rng.range(L.y0 + 8, L.y1 - 10);
+    const faces = L.poly.map((a, i) => ({ i, a, b: L.poly[(i + 1) % L.poly.length] })).filter((f) => !doors.some((d) => d.edge === f.i && Math.abs(d.y0 - y0) < 12));
+    if (!faces.length) continue;
+    const f = L === halls[0] ? faces.sort((p, q) => G.sdPoly(G.lerp(p.a, p.b, 0.5), first.poly) - G.sdPoly(G.lerp(q.a, q.b, 0.5), first.poly))[0] : rng.pick(faces);
+    const nIn = G.norm(G.perp(G.sub(f.b, f.a)));
+    const yc = y0 + rng.range(2, 6);
+    let placed = 0;
+    // one break in the wall: a jagged cluster of shards from a common centre,
+    // big ones and many small ones, splayed like a burst
+    const tWall = rng.range(0.3, 0.7), heart = G.add(G.lerp(f.a, f.b, tWall), G.mul(nIn, -1.2));
+    for (let k = 0; k < 26 && placed < 14; k++) {
+      const big = placed < 4;
+      const base = G.add(heart, G.mul(G.norm(G.sub(f.b, f.a)), rng.range(-4, 4)));
+      const y = yc + rng.range(-4, 4), len = big ? rng.range(5, 9) : rng.range(2, 5), r = big ? rng.range(2.2, 3.6) : rng.range(0.7, 1.8);
+      const dir = [nIn[0] + rng.range(-0.7, 0.7), rng.range(-0.7, 0.35), nIn[1] + rng.range(-0.7, 0.7)];
+      const s = shard(rng, [base[0], y, base[1]], dir, len, r, 'rock');
+      // keep every catwalk clear (sampled along the shard's axis)
+      const w = norm3(dir);
+      let ok = true;
+      for (let t = 0; t <= len && ok; t += 1) {
+        const p = [base[0] + w[0] * t, y + w[1] * t, base[1] + w[2] * t], rr = r * (1 - t / len * 0.7) + 2.2;
+        ok = walks.every((q) => Math.abs(q.y0 + 1 - p[1]) > rr || G.sdPoly([p[0], p[2]], q.poly) > rr);
+      }
+      if (!ok) continue;
+      out.push(s); placed++;
+      // rubble on the pit floor below
+      const tip = [base[0] + w[0] * len * 0.6, base[1] + w[2] * len * 0.6];
+      if (big) for (let j = 0; j < 4; j++) out.push(shard(rng, [tip[0] + rng.range(-4, 4), L.y0 - 0.3, tip[1] + rng.range(-4, 4)], [rng.range(-0.5, 0.5), 1, rng.range(-0.5, 0.5)], rng.range(0.8, 2.6), rng.range(0.5, 1.8), 'rock'));
+      if (wet && placed <= 2) seeps.push({ x: tip[0], z: tip[1], y0: L.y0, y1: y, w: rng.range(0.6, 1.4), yaw: Math.atan2(nIn[1], nIn[0]) });
+    }
+    if (placed) lamps.push({ pos: [G.lerp(f.a, f.b, 0.5)[0] + nIn[0] * 6, yc + 4, G.lerp(f.a, f.b, 0.5)[1] + nIn[1] * 6], color: 'work', power: 90, range: 30 });
+  }
+  return { seeps };
 }

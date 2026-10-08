@@ -5,7 +5,7 @@ import { decayMaps } from '../decayVisual.js';
 import { solidGeometries } from '../plan/solidMesh.js';
 import { SiteCollision } from './siteCollision.js';
 
-const LAMP = { amber: 0xffcb8e, cyan: 0xb9e0d4, work: 0xf2f6ff };
+const LAMP = { amber: 0xffcb8e, cyan: 0xb9e0d4, work: 0xf2f6ff, deep: 0xff7a48, core: 0xc9a2ff };
 
 export function buildSiteScene(plan, site) {
   const scene = new THREE.Scene();
@@ -25,6 +25,8 @@ export function buildSiteScene(plan, site) {
     cyan: new THREE.MeshStandardMaterial({ color: '#9dbab1', emissive: '#b9efe0', emissiveIntensity: 1.2 }),
     work: new THREE.MeshStandardMaterial({ color: '#e8eef8', emissive: '#f2f6ff', emissiveIntensity: 1.4 }),
     record: new THREE.MeshStandardMaterial({ color: '#c7a6ff', emissive: '#b98cff', emissiveIntensity: 1.6 }),
+    deep: new THREE.MeshStandardMaterial({ color: '#ff9a6a', emissive: '#ff6a30', emissiveIntensity: 1.5 }),
+    seep: new THREE.MeshStandardMaterial({ color: '#7fb4c0', emissive: '#16343a', emissiveIntensity: 0.6, metalness: 0.4, roughness: 0.15, transparent: true, opacity: 0.45, depthWrite: false, side: THREE.DoubleSide }),
     water: new THREE.MeshStandardMaterial({ color: '#1b3e3a', metalness: 0.55, roughness: 0.23 }),
   };
   for (const name of ['concrete', 'floor', 'metal', 'rust', 'rock']) mat[name].userData.webgpu = { kind: 'survey' };
@@ -44,13 +46,18 @@ export function buildSiteScene(plan, site) {
     const color = LAMP[f.color] ?? LAMP.amber;
     const g = new THREE.BoxGeometry(0.9, 0.12, 0.36); g.translate(f.pos[0], f.pos[1] + 0.1, f.pos[2]);
     fixture.push([g, f.color]);
-    const l = new THREE.SpotLight(color, f.power ?? 80, 34, f.wall ? 1.45 : 1.15, 0.45, 2);
+    const l = new THREE.SpotLight(color, f.power ?? 80, f.range ?? 34, f.wall ? 1.45 : 1.15, 0.45, 2);
     l.position.set(f.pos[0], f.pos[1], f.pos[2]);
     l.target.position.set(f.pos[0], f.pos[1] - 1, f.pos[2]);
     l.castShadow = true; l.userData.rectAspect = 2.4; l.userData.cells = []; l.userData.power = f.power ?? 80;
     scene.add(l, l.target); lights.push(l);
   }
   for (const [g, c] of fixture) root.add(new THREE.Mesh(g, mat[c] || mat.amber));
+  // water seeping from rock wounds down into the pit
+  for (const sp of site.seeps || []) {
+    const g = new THREE.PlaneGeometry(sp.w, sp.y1 - sp.y0, 1, 8); g.rotateY(-sp.yaw); g.translate(sp.x, (sp.y0 + sp.y1) / 2, sp.z);
+    root.add(new THREE.Mesh(g, mat.seep));
+  }
   for (const w of site.water) {
     const shape = new THREE.Shape(w.poly.map(([x, z]) => new THREE.Vector2(x, -z)));
     const g = new THREE.ShapeGeometry(shape); g.rotateX(-Math.PI / 2); g.translate(0, w.y, 0);

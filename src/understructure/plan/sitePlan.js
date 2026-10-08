@@ -179,7 +179,7 @@ function tryPlan(seed, rng, themes, environment) {
   const finds = placeFinds(rng.fork('finds'), nodes, spurs, crossings, links);
 
   const plan = {
-    ok: true, version: PLAN_VERSION, seed, themes, surfaceY: SURFACE_Y,
+    ok: true, version: PLAN_VERSION, seed, themes, environment, surfaceY: SURFACE_Y,
     landmarks, access, nodes, links, route, machines, finds,
     entry: { node: 'staging', tunnel: G.lerp(staging.center, G.add(staging.center, G.norm(G.sub(staging.center, cl))), 4) },
     exit: { node: 'access' },

@@ -4,8 +4,10 @@ import * as THREE from 'three';
 
 // The corners of an oriented prism, bottom ring then top ring.
 export function solidCorners(s) {
+  // (a tapered prism scales its top ring by s.taper about the local origin)
   const out = [];
-  for (const w of [s.w0, s.w1]) for (const [a, b] of s.poly) {
+  for (const [w, k] of [[s.w0, 1], [s.w1, s.taper ?? 1]]) for (const [a0, b0] of s.poly) {
+    const a = a0 * k, b = b0 * k;
     out.push([s.o[0] + s.u[0] * a + s.v[0] * b + s.w[0] * w, s.o[1] + s.u[1] * a + s.v[1] * b + s.w[1] * w, s.o[2] + s.u[2] * a + s.v[2] * b + s.w[2] * w]);
   }
   return out;
