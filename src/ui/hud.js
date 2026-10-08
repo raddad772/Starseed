@@ -182,7 +182,7 @@ export class Hud {
       <kbd>P</kbd><span>Back to your last pilot seat</span>
       <kbd>Tab</kbd><span>Next target, nearest first · aboard a big ship: route to the bridge, your ship, the hangar</span>
       <kbd>T</kbd><span>Target what's under the reticle</span><kbd>V</kbd><span>Cockpit · chase · landing view</span>
-      <kbd>G / R / L</kbd><span>Gear · ramp · floodlights</span><kbd>J</kbd><span>FTL drive</span>
+      <kbd>G / R / L</kbd><span>Gear · ramp · landing lights (automatic at night)</span><kbd>J</kbd><span>FTL drive</span>
       <kbd>, / .</kbd><span>Time warp</span><kbd>M</kbd><span>System map (pause screen) · Esc: pause screen</span>
       <kbd>N</kbd><span>Nav computer: fly to the target, door to door (N again to take the controls)</span>
       <kbd>U</kbd><span>Suit computer: Fleet, your ships and their orders</span>
@@ -396,7 +396,7 @@ export class Hud {
       if (s.type.legs) chip(s.gear > 0.99 ? 'GEAR DN' : (s.gear < 0.01 ? 'GEAR UP' : 'GEAR ···'), s.gear > 0.99 ? 'on' : (s.gear < 0.01 ? '' : 'caution'));
       if (s.ramp > 0.01) chip(s.ramp > 0.99 ? 'RAMP OPEN' : 'RAMP ···', 'caution');
       if (rampDoor) { const o = s.doors[rampDoor.id].open; if (o > 0.01) chip(o > 0.99 ? 'RAMP OPEN' : 'RAMP ···', 'caution'); }
-      if (s.type.key === 'shuttle' && s.visual.floodOn) chip('LIGHTS', 'on');
+      if (s.visual.landing?.on) chip('LIGHTS', 'on');
       if (s.parent) chip(s.attached ? `DOCKED · ${s.parent.name.toUpperCase()}` : `${s.zone.name.toUpperCase()} · ${s.parent.name.toUpperCase()}`, s.attached ? 'on' : 'nav');
       else if (s.refVessel && s.assist === 2) chip(`REF ${s.refVessel.name.toUpperCase()}`, 'nav');
       const f = g.ftl;

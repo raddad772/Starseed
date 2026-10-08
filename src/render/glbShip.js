@@ -10,6 +10,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from '../../vendor/addons/loaders/GLTFLoader.js';
 import { interiorMaterial, fixtureLit } from './lightRig.js';
 import { makeForceField } from './bigShips.js';
+import { LandingLights, hasLandingLights } from './landingLights.js';
 
 export const DEFAULT_LIVERY = { main: '#737a82', second: '#3b4046', stripe: '#8c2418' };
 
@@ -241,6 +242,7 @@ export class GlbCraftVisual {
     const hull = liveryMaterial(vessel.livery || t.livery || { main: '#b9bec4', second: '#41464c', stripe: '#8c2418' });
     this.hull = hull; // (the Paint app sets its colours)
     this.parts = [];
+    if (hasLandingLights(t)) this.landing = new LandingLights(vessel, root);
     const cache = {};
     this.ready = loadShipModel(t.model).then((gltf) => {
       let src = null;
@@ -272,6 +274,7 @@ export class GlbCraftVisual {
     root.quaternion.copy(v.quat);
     root.visible = !v.dead && root.position.length() < 300000;
     v.gear += THREE.MathUtils.clamp(v.gearTarget-v.gear,-dt/3,dt/3);
+    this.landing?.update(dt);
     for (const P of this.parts) {
       if(P.pt.channel==='gearRotate'){P.node.quaternion.setFromAxisAngle(_pa.fromArray(P.pt.axis),-v.gear*P.pt.angle).multiply(P.q0);continue;}
       if(P.pt.channel==='homeHatch'){P.node.position.copy(P.p0).addScaledVector(_pa.fromArray(P.pt.slide),v.attached&&v.home?.host===v.parent?1:0);continue;}

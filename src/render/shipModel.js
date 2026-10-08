@@ -379,11 +379,7 @@ export function buildShip(name = 'SS-01') {
   dish.position.set(0, 4.15, 4.0);
   dish.rotation.x = -0.6;
   exterior.add(dish);
-  // floodlights under the nose
-  const flood = new THREE.SpotLight(0xfff0dc, 0, 160, 0.6, 0.5, 2);
-  flood.position.set(0, -0.6, -11.5);
-  flood.target.position.set(0, -6, -22);
-  exterior.add(flood, flood.target);
+  // (its landing lights: render/landingLights.js, from ShipVisual)
 
   // ---- landing gear: strut + shock + foot; animated
   const legs = [];
@@ -486,7 +482,7 @@ export function buildShip(name = 'SS-01') {
   return {
     root, exterior, interior,
     legs, rampPivot, rampLength: rampLen,
-    engines, engineGlow, bellyThrusters, rcs, flood,
+    engines, engineGlow, bellyThrusters, rcs,
     seats, screens: { mfdL, mfdR, wall: panelScreen },
     lights: [cabinLight1, cabinLight2, cockpitLight],
     navLights: exterior.children.filter((c) => c.userData.nav),

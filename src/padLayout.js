@@ -20,7 +20,7 @@ export const PAD_LAYOUT = {
       A: ['KeyG', 'Landing gear'], B: ['KeyR', 'Ramp'], X: ['KeyF', 'Stand up'], Y: ['KeyZ', 'Flight assist'],
       RB: ['KeyT', 'Target under reticle'], RT: ['ShiftLeft', 'Boost'], LT: ['KeyX', 'Brake'],
       L3: ['KeyV', 'Camera view'], R3: ['KeyH', 'This layout'],
-      UP: ['KeyJ', 'FTL drive'], DOWN: ['KeyL', 'Floodlights'], LEFT: ['Backquote', 'Quick menu'], RIGHT: ['KeyN', 'Nav computer'],
+      UP: ['KeyJ', 'FTL drive'], DOWN: ['KeyL', 'Landing lights'], LEFT: ['Backquote', 'Quick menu'], RIGHT: ['KeyN', 'Nav computer'],
       VIEW: ['KeyM', 'System map'],
     },
   },

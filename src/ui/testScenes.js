@@ -12,7 +12,7 @@ import { boardPioneer } from '../sim/pioneerFleet.js';
 function sunSpot(g, elevDeg, azOffDeg = 0) {
   const b = g.startBody;
   const sunF = g.universe.star.pos.clone().sub(b.pos).normalize().applyQuaternion(b.qInv);
-  const site = g.startDir.clone().normalize();
+  const site = (g.startDir || g.fallbackSite(b)).clone().normalize();   // (before any start: a spot of its own)
   const axis = sunF.clone().cross(site);
   if (axis.lengthSq() < 1e-8) axis.set(0, 1, 0).cross(sunF);
   axis.normalize();
@@ -131,6 +131,31 @@ export const TEST_SCENES = [
       s.targetVel.copy(s.vel); s.targetFrame = 'inertial';
       p.placeAboard(s, new THREE.Vector3(0, 0, 5.2), new THREE.Vector3(0, 0, 1));
       p.lastSeat = { vessel: s, seat: 0 };
+      loadAt(g, b, dirF);
+    },
+  },
+  {
+    label: 'Night descent, 400 m up',
+    note: 'Seated in your ship, the sun 30° down, gear down, holding: the landing lights are on (L flips them); come down to see the pool',
+    run: (g) => {
+      const { b, dirF, toSun } = sunSpot(g, -30, 0);
+      const s = g.ship, p = g.player;
+      if (s.parent) s.leaveParent();
+      leaveVessel(g);
+      s.body = b; s.dead = false; s.hull = 1; s.landed = false; s.rails = false;
+      const gh = Math.max(0, b.groundHeight(dirF));
+      const pos = dirF.clone().multiplyScalar(b.R + gh + 400).applyQuaternion(b.q);
+      const up = pos.clone().normalize(), nose = toSun.clone().applyQuaternion(b.q);
+      s.pos.copy(pos);
+      s.vel.copy(b.omega).cross(pos); // (turning with the ground)
+      s.quat.setFromRotationMatrix(new THREE.Matrix4().makeBasis(nose.clone().cross(up).normalize(), up, nose.clone().negate()));
+      s.angVel.copy(b.omega).applyQuaternion(s.quat.clone().invert());
+      s.assist = 2;
+      s.gearTarget = 1; s.gear = 1; s.rampTarget = 0; s.ramp = 0;
+      s.targetVel.set(0, 0, 0); s.targetFrame = 'surface';
+      s.cruise = s.slip = s.climb = 0;
+      p.sitDown(null, s);
+      p.body = b;
       loadAt(g, b, dirF);
     },
   },

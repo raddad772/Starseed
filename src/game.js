@@ -1804,7 +1804,7 @@ export class Game {
       if (input.hit('KeyY')) this.toggleClamp(v.type.key === 'runabout' && v.parent?.type.clamp ? v.parent : v);
       if (input.hit('KeyG') && v.type.legs && !v.type.ground) { v.gearTarget = v.gearTarget > 0.5 ? 0 : 1; this.message(v.gearTarget ? 'Gear down' : 'Gear up'); this.audio.clunk(); }
       if (input.hit('KeyR')) this.toggleRamp(v.type.key === 'runabout' && v.parent?.type.clamp ? v.parent : v);
-      if (input.hit('KeyL') && v.type.key === 'shuttle') { v.visual.floodOn = !v.visual.floodOn; }
+      if (input.hit('KeyL') && v.visual.landing) this.message(v.visual.landing.toggle() ? 'Landing lights on' : 'Landing lights off'); // (render/landingLights.js: automatic until flipped)
       if (input.hit('KeyJ')) v.ftl.toggle();
       if (input.hit('KeyV')) {
         this.camMode = { first: 'chase', chase: 'landing', landing: 'first' }[this.camMode] || 'first';

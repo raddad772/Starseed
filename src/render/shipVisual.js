@@ -3,6 +3,7 @@
 
 import * as THREE from 'three';
 import { buildShip, SHIP_INTERIOR } from './shipModel.js';
+import { LandingLights } from './landingLights.js';
 
 const PLUME_VERT = /* glsl */`
 varying vec3 vLocal;
@@ -104,9 +105,11 @@ export class ShipVisual {
       mesh.userData.kind = 'belly';
       this.fx.add(mesh); this.plumes.push(mesh);
     }
+    // (landing lights clear of its legs and the lowered ramp)
+    const I = SHIP_INTERIOR;
+    this.landing = new LandingLights(ship, m.exterior, { legs: ship.legAttach, ramps: [{ width: 3.3, hinge: [I.rampHinge.y, I.rampHinge.z], length: I.rampLength }] });
     this.time = 0;
     this.navBlink = 0;
-    this.floodOn = false;
     this.screenTimer = 0;
   }
 
@@ -162,7 +165,7 @@ export class ShipVisual {
     // nav lights blink
     this.navBlink = (this.navBlink + dt) % 1.6;
     for (const n of m.navLights) n.visible = this.navBlink < 0.12;
-    m.flood.intensity = this.floodOn ? 3.0 : 0;
+    this.landing.update(dt);
   }
 
   // cockpit multi-function displays

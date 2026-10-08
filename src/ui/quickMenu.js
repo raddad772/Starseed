@@ -56,7 +56,7 @@ export class QuickMenu {
           items.push({ label: `Climb into ${c.name}`, value: c.type.className.toLowerCase(), run: () => { if (p.sitDown(0, c)) { p.fade = 1; g.message(`${c.name} · ${c.type.className}${c.type.help ? ' · ' + c.type.help : ''}`, 'nav'); } } });
         }
       }
-      if (v.type.key === 'shuttle') items.push({ label: 'Floodlights', value: v.visual.floodOn ? 'on' : 'off', key: 'KeyL' });
+      if (v.visual.landing) items.push({ label: 'Landing lights', value: (v.visual.landing.on ? 'on' : 'off') + (v.lightsForce == null ? ' · auto' : ''), key: 'KeyL' });
       items.push({ label: 'Flight assist', value: ASSIST_NAMES[v.assist], key: 'KeyZ', stay: true });
       items.push({ label: 'Camera', value: { first: 'cockpit', chase: 'chase', landing: 'landing' }[g.camMode] || 'cockpit', key: 'KeyV', stay: true });
       items.push({ label: 'FTL drive', value: this.ftlText(v), key: 'KeyJ' });

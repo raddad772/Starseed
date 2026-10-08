@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { loadShipModel, liveryMaterial, visibleRooms } from './glbShip.js';
 import { fixtureLit, interiorMaterial } from './lightRig.js';
 import { plumeMaterial } from './shipVisual.js';
+import { LandingLights, hasLandingLights } from './landingLights.js';
 
 export class FleetVisual {
   constructor(engine, vessel) {
@@ -11,6 +12,7 @@ export class FleetVisual {
     this.model = { root, loaded: false }; this.parts = []; this.nodes = [];
     this.hull = liveryMaterial(vessel.livery || vessel.type.livery);
     this.wheelAngle = 0; this.fanAngle = 0; this.time = 0;
+    if (hasLandingLights(vessel.type)) this.landing = new LandingLights(vessel, root);
     this.fx = new THREE.Group(); engine.transparentScene.add(this.fx);
     const cone = new THREE.ConeGeometry(1, 1, 16, 1, true); cone.rotateX(Math.PI); cone.translate(0, -.5, 0);
     this.plumes = (vessel.type.engines || []).map((e, i) => {
@@ -61,6 +63,7 @@ export class FleetVisual {
     root.position.copy(v.getWorldPos(new THREE.Vector3())).sub(camWorld); root.quaternion.copy(v.quat);
     root.visible = this.fx.visible = !v.dead && root.position.length() < v.type.radius * 1400;
     this.fx.position.copy(root.position); this.fx.quaternion.copy(root.quaternion);
+    this.landing?.update(dt);
     if (!root.visible) return;
     if (v.type.gearFixed) v.gear = v.gearTarget = 1;
     else v.gear += THREE.MathUtils.clamp(v.gearTarget - v.gear, -dt / 3, dt / 3);
