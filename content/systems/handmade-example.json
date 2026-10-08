@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "seed": "GARDEN-EXAMPLE",
+  "star": {"name": "Hearthlight", "mass": 0.92, "age": 5.4, "metallicity": 0.1},
+  "planets": [
+    {"name": "Cinder", "aAU": 0.3, "massEarth": 0.45, "comp": {"iron": 0.35, "rock": 0.65, "water": 0, "envelope": 0}, "moons": []},
+    {"name": "Haven", "aAU": 0.85, "massEarth": 1.1, "comp": {"iron": 0.3, "rock": 0.69, "water": 0.01, "envelope": 0}, "spin": {"hours": 26, "tiltDegrees": 21}, "moons": []},
+    {"name": "Keepsake", "aAU": 1.8, "massEarth": 0.3, "comp": {"iron": 0.2, "rock": 0.6, "water": 0.2, "envelope": 0}, "moons": []}
+  ],
+  "startPlanet": 1
+}

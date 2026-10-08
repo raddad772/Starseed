@@ -1,3 +1,4 @@
+import { systemCacheStatus } from '../gen/systemCache.js';
 import { chart, resolveSystem, ensureGalaxy, parseAddress, distancePc, CENTRAL_OBJECT, CELL_PC } from '../campaign/galaxy.js';
 import { travelBlocker } from '../campaign/travel.js';
 
@@ -70,14 +71,19 @@ export function renderGalaxyMap(root,{saves,state,consent,onVote,onCancel,onLoca
   el('p',here?'Your fleet is here':`${dist.toFixed(2)} pc · ${(dist*3.26156).toFixed(2)} light-years from your fleet`,side,'galaxyDistance');
   el('p',`Address ${selected.address} · height ${selected.position[1].toFixed(2)} pc`,side);
   el('p',c.discoveries.systems[selected.id]?.visited?'Visited · local discoveries retained':'Charted · surface survey available on arrival',side);
-  if(selected.bodyId!==undefined)el('p','A life-bearing world lies at the transmission bearing.',side);
+  const survey=c.discoveries.systems[selected.id];
+  if(survey?.details){
+    const known=el('details',undefined,side);el('summary',`Survey record · ${survey.details.bodies.length} bodies`,known);
+    for(const b of survey.details.bodies)el('p',`${b.name} · ${b.kind} · ${b.label}${b.life==='present'?' · life detected':b.life==='past'?' · former life':''}${survey.visitedBodies?.includes(b.id)?' · landed':''}`,known);
+  }else el('p',`Life potential: ${{promising:'promising', 'possible-moons':'possible on moons',low:'low'}[selected.summary.lifePotential]} · formation estimate, awaiting survey`,side);
+  if(systemCacheStatus(selected.definition||selected.seed).ready)el('small','System data prepared · terrain loads separately',side);
   let blocked;try{blocked=travelBlocker(saves.snapshot());}catch(e){blocked=e.message;}
   const pending=consent.game===g&&consent.destination===selected.id;
   const travel=button(pending?'Player 1 agrees':'Gather fleet & travel',()=>onVote(selected.id,0),side);travel.className='primary';travel.disabled=here||!!blocked||!!saves.loading;
   if(blocked)el('p',blocked,side,'note');
   if(pending){el('p','Waiting for the crew. Player 2: A agrees, B cancels. Either player can cancel before departure.',side);button('Cancel departure',()=>onCancel(),side);}
   el('p','This early fleet-passage mode gathers every vessel into orbit at the destination. Everyone must be aboard. Supplies aboard travel with you; items left on worlds stay there. Local flight orders are cleared.',side,'note');
-  el('p','Passage is currently immediate, with no elapsed travel time or fuel cost. It does not use shared time warp.',side,'note');
+  el('p','The simulation clock stays fixed during passage, with no fuel cost. Preparing the destination can still take time.',side,'note');
   const status=el('p',saves.status,side);status.dataset.campaignStatus='';status.setAttribute('role','status');
   const browse=el('div',undefined,root,'galaxyBrowse');
   const label=el('label','Find a charted star',browse),search=el('input',undefined,label);search.placeholder='Name or address';search.type='search';search.value=state.filter||'';

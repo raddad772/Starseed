@@ -1,5 +1,57 @@
 # Starseed campaign implementation plan
 
+## Latest requirements and checkpoint (8 October 2026)
+
+See `notes/SYSTEM_AUTHORING.md` for implemented recipe formats, seed search, opening bundles and
+cache limits. Galactic charts use only the cheap formation head. A 200-star chart measured 20.1 ms
+cold and 0.62 ms cached in the owned browser fixture. Actual life/past-life history belongs to the
+visited detail layer, not an invented certainty in the initial chart. Saves carry compact survey
+records and authored inputs; full history arrays are disposable cache data.
+
+Four default opening systems are shipped in gzip bundles totalling about 1.7 MiB. A serial worker
+hydrates the opening systems and persists a bounded cache. Existing world-simulation snapshots
+still have their own cache. This is **not seamless travel**: main.js still reconstructs Game and
+the renderer and awaits startSim; the game still uses a loading cover while terrain/refinement
+and visible resources become ready. Do not present system metadata readiness as terrain readiness.
+
+For invisible jump/descent loading, the next performance milestone must:
+
+- Retain the renderer/device and reusable fleet resources across system changes.
+- Prepare whole-world snapshots, refinement/rivers and coarse render coverage for the destination
+  before arrival, within one shared memory/worker budget. Prioritize the three story landing bodies.
+- Keep distance-appropriate terrain resident in orbit, predict descent and prepare finer tiles,
+  vegetation and landing collision ahead of the craft. Retain coarse coverage while finer tiles
+  upload; do not block the frame on cache decoding, generation or GPU uploads.
+- Persist expensive reusable products or ship selected compressed opening-world products after
+  measuring their size. Do not eagerly simulate every planet in all 200 charted systems.
+- Certify a jump, orbital approach and continuous surface descent with worldsim enabled, cold and
+  warm caches, every fleet family, visible-detail captures and frame-time/streaming measurements.
+  The current worldsim=0 fleet regression does not establish this result.
+
+The latest plot in `STORY.md` is the source of truth for subsequent playable progression: three
+interesting landed-body scans unlock the first site, one explored site's central record offers
+three more candidates, two distinct recovered central records reveal out-of-plane black-sphere
+leads. Present and former life both qualify. Later civilizations are a future branch. The founders'
+FTL capability remains undecided; daughter safety and the absence of a rescue countdown remain fixed.
+
+Add independent Authored/Randomized site variation. Randomized means persisted per-expedition
+location, theme and layout; authored means versioned chosen inputs. It must not be tied to flight
+or jetpack assistance. Guided markers appear after the required story evidence, while survey mode
+uses narrowing instrument guidance. Both share the same canonical progression. Preserve old saves'
+existing entrances/layouts; do not retroactively move explored sites when introducing this policy.
+
+Implement the scan and site gates as idempotent saved events, with target IDs and measurements in
+compact records. Distinguish a plotted candidate, observed evidence, a located entrance and a
+recovered central record. Test repeated scans, reloads, multiplayer joins, two players scanning the
+same body, optional fragment collection and alternate candidate visit order. Represent each black
+sphere in star-relative three-dimensional coordinates (AU, with a defined system north), plus a
+later local-flight target. An overhead map must show height and selection without requiring a
+fly-through galaxy interface.
+
+The authored/procedural foundation does not yet add those physical scan sites, gates, randomized
+site settings or black-sphere objects. The helper `surveyTargets` currently ranks three solid
+bodies for variety; terrain-safe scan locations still require world-simulation results.
+
 Status: implementation started, 8 October 2026. Campaign records, event handling, JSON storage and single-system flight save/restore are implemented. The live game now exposes saves and the Story Log in the pause menu. First-run fleet setup and a playable flight tutorial with an interactive telemetry introduction are connected. The overhead cell catalogue, two-player fleet passage and return-state persistence are now connected. The fully staged mirror encounter remains pending. The existing renderer, flight guidance and megastructure prototype remain the foundation. Story treatment: [STORY.md](STORY.md). Save contract: [notes/SAVE_FORMAT.md](notes/SAVE_FORMAT.md).
 
 The campaign follows an expedition studying an enormous spinning black hole. A nearby star system is enclosed by a perfect mirror that blocks entry. After years of investigation, a survey craft carrying the player characters' family members enters a temporary opening and disappears. An outgoing transmission provides the first lead. Players explore the surrounding systems to understand the opening and recover the missing people.
@@ -130,7 +182,7 @@ Flight difficulty selects the starting fleet family and initial assists. Pilots 
 
 Guided exploration reveals the eligible site's entrance from the planet's survey view as soon as that planet is selected/loaded. Survey exploration provides an orbital anomaly, then a narrowing surface search with readable instrument feedback. Avoid requiring a search of an entire unmarked globe. Both use the same saved entrance. Move new-site placement out of the current first-landing-near-player rule so orbital discovery can refer to a location that already exists; preserve legacy entrances exactly.
 
-Keep one megastructure per eligible solid life-bearing planet, at 100 percent presence while playtesting. Preserve the configurable roughly 1 percent future policy and record its campaign version. Any guaranteed story site remains an explicit exception, with no duplicate site on its planet.
+Keep one megastructure per eligible solid currently or formerly life-bearing planet, at 100 percent presence while playtesting. Preserve the configurable roughly 1 percent future policy and record its campaign version. Any guaranteed story site remains an explicit exception, with no duplicate site on its planet.
 
 Assisted puzzles offer clearer hints, broader timing windows and jetpack traversal where compatible. Standard uses the intended gravity and equipment constraints. Separate movement gates from circuit gates: flying across a gap may be allowed, but it does not set a solved flag. Audit every room and exit under both modes, including ceiling escape, carrying objects, inaccessible objectives and recovery after falls. Keep fair recovery and avoid softlocks in either mode.
 

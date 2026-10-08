@@ -16,7 +16,7 @@ import { WARP_LEVELS, requestedWarp, warpBeforeEvent } from './sim/warpConsent.j
 import { NearGround } from './sim/nearGround.js';
 import { findCliffCountry, gentleNear } from './gen/volume.js';
 import * as THREE from 'three';
-import { generateSystem } from './gen/system.js';
+import { getSystem } from './gen/systemCache.js';
 import { S_LEN, S_H, S_WDEPTH } from './gen/terrain.js';
 import { Universe } from './sim/universe.js';
 import { Engine } from './render/engine.js';
@@ -75,7 +75,8 @@ export class Game {
     this.canvas = canvas;
     this.seed = seed;
     this.opts = opts;
-    this.system = generateSystem(seed);
+    this.system = getSystem(opts.systemDefinition || seed);
+    if(this.system.seed!==seed)throw Error('System recipe does not match the requested world');
     this.universe = new Universe(this.system);
     this.engine = new Engine(canvas, { renderScale: opts.renderScale || 1, reversedDepth: opts.reversedDepth });
     const terrainBodies = this.system.bodies.filter((b) => b.terrain).map((b) => ({ id: b.id, terrain: b.terrain }));

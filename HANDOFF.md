@@ -11,6 +11,43 @@ maps and viewscreens are native. WebGL exists only in explicit test tooling (`?w
 no production fallback. Other browser/GPU combinations still need certification; no speedup or exact
 pixel-parity claim is made. Dave confirmed sole-agent work and no coordination messages this session.
 
+## Authored systems, fast chart and opening preparation (8 October 2026)
+
+`notes/SYSTEM_AUTHORING.md` documents recipe inputs, address/position placements, offline seed search,
+lossless opening bundles and cache limits. `generateSystem`/`summarizeSystem` accept either old seeds
+or portable recipes. Authored identity keys isolate world/survey caches. Save capture/restore,
+travel, validation and WorldSim worker messages carry authored recipes consistently. New campaigns
+copy `OPENING_PLACEMENTS`; defaults remain procedural. No in-game editor is provided.
+
+The map uses only the cheap formation head; receiver selection uses a tested offline preset pool
+instead of foreground full-system seed hunting. Four default systems ship in ~1.68 MiB of bundles;
+a single preparation worker hydrates them and persists a bounded IndexedDB cache (32 MiB estimate,
+eight entries; memory 24 MiB estimate, six entries). Full histories preserve typed arrays and their
+sampler method. Cached runtimes cannot mutate each other's templates. Compact visited body details
+and surface visits persist in campaign JSON, and the Galaxy card displays them. Former-life planets
+now qualify for megastructures via actual history.lifeEver/current-stage evidence.
+
+64 CPU checks pass, plus nine native cache checks and 22 native fleet-passage checks. Browser map
+measurements: 200-star outline 20.1 ms cold / 0.62 ms cached; opening data hydration ~300 ms;
+single-system disk hydration ~61 ms. Those are NOT terrain or journey timings. Native fleet tests
+use worldsim=0 and do not certify landing streaming. Ordinary SOL/default/receiver generator output
+hashes are unchanged. Preserve the unrelated dirty fleet work, especially the pre-existing game.js
+hunks. No agents or coordination notices were used.
+
+**Dave explicitly asked whether this already allows a smooth jump and full-detail descent without
+loading. Answer: no.** Travel still reconstructs Game/renderer, waits on startSim and uses beginLoading.
+The next performance milestone is renderer retention, ahead-of-arrival world/refinement preparation,
+GPU/terrain streaming and predicted descent, with cold/warm worldsim-enabled validation. See CAMPAIGN.
+
+STORY.md now records the founders' loneliness, biological study/seeding, temporal silver enclosure,
+roughly thousand-year communication openings, the daughter's chance crossing and later lost
+civilizations. Their FTL capability remains undecided. Plot requirements: three varied landed-body
+scans reveal the first site; one explored central record reveals three candidates; two distinct
+central records reveal black spheres above eligible stars. A tested ranking helper selects solid
+bodies, but physical scan targets/gates, Authored/Randomized site setting and black-sphere objects
+are still pending. Do not claim these are playable. Randomized must persist location/theme/layout
+per expedition; current near-first-landing entrances are not that finished policy.
+
 ## Multiplayer intent correction and story-anchor audit (2026-10-08)
 Online multiplayer is the intended product. Split-screen is only a test harness before/without the
 network transport. Dave wants trusted peers in an instance: remote player data drives the existing

@@ -8,6 +8,71 @@ The emotional centre is a home you bring along. The fleet offers familiar rooms,
 
 Names, ages, exact family relationships, dialogue and the length of the introduction remain adjustable. The shared survey craft carrying other expedition family members is the proposed multiplayer version; their safe recovery follows the same hopeful direction. The interior of the sphere and the means of reunion remain to be written.
 
+## Underlying history (author knowledge, not the opening Story Log)
+
+The first intelligent species in this galaxy found itself alone. Its people travelled to worlds
+where life existed, or had existed, hoping to meet another mind. Their observatories, biological
+archives, experiments and long-lived outposts account for the megastructures and smaller remnants
+in these systems. Some destinations are now barren; a vanished biosphere is as relevant to the
+investigation as a living forest. Mere habitability is not proof that a world hosted life.
+
+Across immense spans of time they studied evolution, seeded life and experimented with genetic
+engineering. None of it brought them another intelligent species with which to share the galaxy.
+Eventually they built a temporal refuge around their home system: the silver mirror sphere.
+Between brief maintenance and communication intervals, no subjective time passes inside. They
+hoped to wait for intelligence to evolve naturally elsewhere.
+
+Roughly every thousand external years, the shield opens small apertures to exchange messages
+with outposts. The daughter is extraordinarily lucky to be investigating one of those places as
+an opening appears. She chooses to enter; she did not trigger it and was not selected by it.
+The outgoing transmission and her crossing coincide because both use that communication interval.
+Her time inside need not match the expedition's time outside. She will be fine.
+
+Some of the ancient machinery has failed. Other civilizations have risen and disappeared while
+the founders waited, unable to enter the sphere or awaken its inhabitants. Evidence of those
+civilizations is a later story branch, not a required early exposition dump.
+
+Whether the founders lacked FTL or developed only slow, limited FTL remains undecided. Both
+support a geographically limited outpost network and communications constrained by travel time.
+Do not imply they had instantaneous galaxy-wide contact or silently choose one explanation yet.
+
+The central black hole, the silver temporal enclosure, and the smaller black spheres above
+individual stars are three different classes of object. The smaller spheres' exact role is still
+open; the first two sites reveal that they exist, not the whole solution to the mystery.
+
+## Opening investigation and map reveals
+
+1. Follow the recorded transmission to the receiver system.
+2. Land on three distinct, interesting planetary bodies and scan a specific phenomenon or trace
+   on each. Moons can count; gas giants cannot satisfy a landing requirement. Choose variety
+   (living ecosystem, former biosphere, volcanism, ice, tidal activity, unusual geology), with
+   safe, reachable landing/scan locations for every fleet difficulty. Persist the selected targets
+   and each scan; revisiting one body cannot count as three observations.
+3. Combining all three scans resolves the first megastructure's location. Guided exploration
+   can supply clear target markers but does not skip the story's three observations.
+4. Exploring the first megastructure reveals approximately three more candidate megastructures,
+   preferably offering a choice among nearby systems. The chart shows what the records establish
+   and any remaining uncertainty. All three are leads, not a demand to clear every location.
+5. Exploring two distinct megastructures in total reveals evidence for a black sphere a number of
+   AU above the star in systems that have, or once had, life. The local system map supplies its
+   three-dimensional position and a navigation target; the overhead galaxy chart marks the lead
+   and its height rather than hiding it in a flat projection. Visit several as the next branch.
+
+For progression, 'explored' means recovering a site's central record, not stepping through its
+entrance or accumulating an arbitrary number of optional fragments. The current 200/500-unit
+Golden Path hints are separate from these new one-site/two-site gates.
+
+A separate site-variation setting will offer **Authored sites** and **Randomized sites**. The
+randomized mode chooses entrance location, theme and layout afresh for each expedition, then
+saves those choices. Loading, returning, joining multiplayer or importing a save must not reroll
+anything. Flight difficulty, navigation assistance and jetpack assistance remain independent.
+The story facts and solvable discovery sequence are shared by both modes.
+
+Implementation status: the map/recipe/cache foundation and former-life eligibility are implemented.
+Three-body selection currently exists as a tested ranking helper. Physical scan targets, their
+quest gates, the site-variation setting and the smaller black spheres are the next playable work;
+they are not yet present in the game.
+
 ## Story summary
 
 Your expedition came to this region to study a black hole of extraordinary size. Its luminous disk is visible from nearby star systems. Jets rise out of the galactic centre and continue far beyond the patch of space your instruments have charted. From different worlds, the same structure appears as a narrow blade, a bright knot or a long luminous thread. It becomes a familiar reference during an unfamiliar journey.
@@ -26,7 +91,7 @@ The mirror seals behind the craft. Its telemetry and communications stop. Repeat
 
 The expedition's monitoring network recorded a brief electromagnetic transmission during the event. Reconstructing its direction identifies another star system as a likely destination. The team suspects that the opening served a communication function and that the tender happened to enter during that interval. If the receiver is part of the same system, it might contain a way to contact the sphere or make it open again.
 
-You leave to follow the transmission. The investigation leads to immense structures beneath living worlds: damaged machinery, abandoned service spaces, surviving power and fragments of a distributed record. The recovered data begins to describe a network called the Golden Path. Learning enough to understand its access rules offers a possible route back to the missing people.
+You leave to follow the transmission. The investigation leads to immense structures beneath worlds with present or past life: damaged machinery, abandoned service spaces, surviving power and fragments of a distributed record. The recovered data begins to describe a network called the Golden Path. Learning enough to understand its access rules offers a possible route back to the missing people.
 
 The rescue gives the expedition a purpose, while the galaxy remains open. Players may pursue side discoveries, return to familiar worlds or take different routes through the same investigation. The black hole stays visible from much of the initial region, and the mirrored system remains a place they can revisit.
 

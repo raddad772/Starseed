@@ -1,0 +1,38 @@
+<!doctype html><meta charset="utf-8"><title>System preparation checks</title>
+<style>body{background:#101b25;color:#d8eef4;font:16px system-ui;margin:32px}button{padding:12px}pre{white-space:pre-wrap}</style>
+<h1>System recipes and opening cache</h1><button id="run">Run finite checks</button><pre id="result">Ready · one worker · no terrain simulation</pre>
+<script type="module">
+import {prepareSystem,getSystem,clearSystemMemory,systemCacheKey} from '../../src/gen/systemCache.js';
+import {summarizeSystem} from '../../src/gen/system.js';
+import {createCampaign} from '../../src/campaign/state.js';
+import {chart,ensureGalaxy,resolveSystem} from '../../src/campaign/galaxy.js';
+import {prepareOpeningSystems} from '../../src/campaign/systemPreparation.js';
+import {openSystemCache,readSystemCache} from '../../src/gen/systemDiskCache.js';
+const report={stage:'Ready',checks:[],timings:{}},draw=()=>{window.testReport=report;document.querySelector('#result').textContent=JSON.stringify(report,null,2);};
+const check=(ok,label)=>{if(!ok)throw Error(label);report.checks.push(label);draw();};
+document.querySelector('#run').onclick=async()=>{
+ document.querySelector('#run').disabled=true;report.stage='Running';draw();
+ let db;
+ try{
+  const c=ensureGalaxy(createCampaign({seed:'FSPB-8DTW'}));let t=performance.now();const entries=chart(c);report.timings.coldChartMs=performance.now()-t;
+  t=performance.now();chart(c);report.timings.cachedChartMs=performance.now()-t;
+  check(entries.length===200,'Chart resolves 200 summaries without full system preparation');
+  t=performance.now();const prepared=await prepareOpeningSystems(c);report.timings.openingPreparationMs=performance.now()-t;
+  check(prepared.every(p=>p.status==='fulfilled'&&p.value.ready),'Four opening systems prepared successfully');
+  const target=resolveSystem(c,c.generation.storyAnchors.receiver.systemId);
+  const a=getSystem(target.seed);check(a.star.name===target.summary.name&&typeof a.bodies[target.bodyId].history.at==='function','Worker data restores the matching star and history sampler');
+  check(a.bodies[target.bodyId].history.series.t instanceof Float64Array,'Typed history arrays survive worker and bundle transport');
+  a.bodies[target.bodyId].terrain.snapshot={test:true};check(!getSystem(target.seed).bodies[target.bodyId].terrain.snapshot,'Runtime terrain attachments do not mutate cached templates');
+  clearSystemMemory();t=performance.now();const disk=await prepareSystem(target.seed);report.timings.diskPreparationMs=performance.now()-t;
+  check(disk.source==='disk','A fresh memory cache reuses the persistent disk cache');
+  db=await openSystemCache();const key=systemCacheKey(target.seed),record=await readSystemCache(db,key);record.system.star.name='corrupt fixture';
+  await new Promise((resolve,reject)=>{const tx=db.transaction('systems','readwrite');tx.objectStore('systems').put(record,key);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});
+  clearSystemMemory();const repaired=await prepareSystem(target.seed);check(repaired.source==='bundle'&&getSystem(target.seed).star.name===target.summary.name,'Corrupt disposable cache falls back to a verified shipped bundle');
+  const recipe={version:1,seed:'SOL',star:{name:'Fixture sun'},planetOverrides:{2:{name:'Fixture Earth'}}};
+  await prepareSystem(recipe);const authored=getSystem(recipe);
+  check(authored.star.name==='Fixture sun'&&authored.bodies[3].name==='Fixture Earth'&&authored.seed!==recipe.seed,'Authored overrides reach worker generation with a distinct cache identity');
+  check(summarizeSystem(recipe).name===authored.star.name,'Cheap authored summary agrees with detailed generation');
+  report.stage='Passed';
+ }catch(error){report.stage='Failed';report.error=error.stack||String(error);}finally{db?.close();draw();}
+};
+</script>

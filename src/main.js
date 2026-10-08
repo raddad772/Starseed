@@ -2,7 +2,9 @@
 
 import { Game } from './game.js';
 import { Input } from './input.js';
-import { generateSystem } from './gen/system.js';
+import { getSystem, prepareSystem } from './gen/systemCache.js';
+import { prepareOpeningSystems } from './campaign/systemPreparation.js';
+import { resolveSystem } from './campaign/galaxy.js';
 import { renderBriefing, startOptions } from './ui/briefing.js';
 import { randomSeedString, normalizeSeed } from './core/rng.js';
 import { TEST_SCENES } from './ui/testScenes.js';
@@ -193,7 +195,7 @@ function showWorld(id, preview) {
 }
 
 function showBriefing(s) {
-  const sys = generateSystem(s);
+  const sys = getSystem(s);
   renderBriefing(sys, { starLine: $('starLine'), schematic: $('schematic'), table: $('planetTable') });
   $('seedInput').value = s;
   // where to begin (the first is the default; a new system starts afresh)
@@ -221,6 +223,7 @@ function boot(s, saved = null, expedition = null) {
   try {
     if (!navigator.gpu) throw new Error('WebGPU is unavailable');
     game = new Game(canvas, input, s, {
+      systemDefinition: saved?.world.definition || expedition?.systemDefinition,
       workers: params.get('workers') ? +params.get('workers') : undefined,
       worldsim: params.get('worldsim') !== '0', simN: params.get('simN') ? +params.get('simN') : undefined,
       simWorkers: params.get('simWorkers') ? +params.get('simWorkers') : undefined,
@@ -255,6 +258,7 @@ function boot(s, saved = null, expedition = null) {
   } else if (expedition) { provisionExpedition(game, expedition);game.setPaused(true); }
   else if (startChoice) { game.requestStart(startChoice); previewed = startChoice; } // the briefing shows the chosen start live
   if(game.campaign?.story.intro.tutorial)game.intro=new FlightIntro(game,{checkpoint:()=>flightSaves.checkpoint(),openLog:()=>showPause('expedition')});
+  if(game.campaign)void prepareOpeningSystems(game.campaign);
   applySettings();
   if (!saved && p2Pad !== null && !tutorialIsActive(game.campaign)) game.joinPlayer(makeP2Input(p2Pad));
   try {
@@ -273,11 +277,13 @@ function openNewExpedition(){
   const card=document.createElement('section');card.className='newExpeditionCard';$('overlay').replaceChildren(card);
   renderExpeditionSetup(card,{details:true,seed,onBack:()=>{if(launched)showPause('expedition');else{ $('overlay').hidden=true;$('briefing').hidden=false;if(!game)boot(seed);}},onCreate:async(rules,options)=>{
     const nextSeed=normalizeSeed(options.seed);if(!nextSeed)throw Error('Enter a region seed.');
-    createCampaign({seed:nextSeed,label:options.label,rules}); // validate choices before replacing the current session
+    const campaign=createCampaign({seed:nextSeed,label:options.label,rules});
+    const origin=resolveSystem(campaign,`system/${nextSeed}`);
     if(game?.campaign&&game.placed&&game.state==='playing')await flightSaves.save();
     restoreInProgress=true;
     try{
-      seed=nextSeed;const fresh=boot(seed,null,{rules,label:options.label});if(!fresh)throw Error('Could not prepare this expedition.');
+      await prepareSystem(origin.definition||origin.seed);
+      seed=origin.seed;const fresh=boot(seed,null,{rules,label:options.label,campaign,systemDefinition:origin.definition});if(!fresh)throw Error('Could not prepare this expedition.');
       await fresh.engine.webgpuReady;
       launched=true;fresh.launched=true;fresh.everLaunched=true;previewed=null;$('hud').hidden=false;
       // Generate terrain in the background while the lesson takes place in orbit.
@@ -326,6 +332,7 @@ async function loadSavedFlight(saved) {
   $('overlay').innerHTML = '<div class="card"><h2>Restoring expedition…</h2><p>Your simulation stays at its saved time while the worlds rebuild.</p></div>';
   try {
     seed = saved.world.seed;
+    await prepareSystem(saved.world.definition||seed);
     const restored = boot(seed, saved);
     await prepareRestoredFlight(restored, saved);
     if (restored.siteReturnNotice) restored.message('Site progress restored · continuing at the surface entrance', 'nav');
@@ -509,6 +516,7 @@ window.addEventListener('gamepadconnected', (e) => {
   if (game && game.screenHud.helpOn) game.screenHud.refreshHelp();
 });
 
+await prepareSystem(seed).catch(error=>console.warn('Opening system cache unavailable:',error.message));
 showBriefing(seed);
 if(explicitSandbox)boot(seed);else openNewExpedition();
 const savedFlights = document.createElement('button');

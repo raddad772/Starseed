@@ -1,5 +1,23 @@
 # Starseed JSON campaign saves
 
+## System recipes and surveyed detail (8 October 2026)
+
+Optional `generation.systemPlacements` maps chart addresses to compact `{definition, position?,
+label?}` inputs. A new expedition copies developer presets once. Authored `world.definition` and
+unloaded `galaxy.systems[id].definition` accompany their deterministic `D-…` identities; validators
+check chart/world agreement. Seed-only version-1 saves remain supported. Recipes, not generated
+histories or terrain arrays, travel in exported JSON.
+
+Visited `discoveries.systems[id]` may carry `details:{version:1,seed,bodies:[...]}` and `visitedBodies`.
+Body records store IDs/parent IDs, names, kind/label, solid flag, mass/radius/temperature, life status
+(present/past/none), and short interest tags. These records survive cache eviction and return travel.
+Generated system templates instead live in the bounded disposable `starseed-system-cache` database.
+The world-simulation database remains separate. Neither disposable cache is a campaign save.
+
+The latest plot's three scan targets, completed central-record count, candidate-site choices,
+randomized site policy/seeds and stellar black-sphere locations still require saved event/state
+extensions. Do not infer those gates from the existing optional-fragment 200/500-unit milestones.
+
 Proposed format version 1, 8 October 2026. JSON is the authoritative portable campaign format. The accompanying [example](campaign-save.example.json) illustrates the contract; it is not yet a file that the current game can load. This specification supports the implementation milestones in [CAMPAIGN.md](../CAMPAIGN.md).
 
 ## Implemented save kinds

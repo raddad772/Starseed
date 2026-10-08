@@ -16,6 +16,7 @@
 //     planet mass, Canup & Ward 2006), giant-impact moons and captured
 //     moonlets around rocky planets. Rings inside the Roche limit.
 
+import { systemRecipe, systemIdentity, isAuthored } from './systemRecipe.js';
 import { Rng } from '../core/rng.js';
 import * as dm from '../core/dmath.js';
 import * as U from '../core/units.js';
@@ -393,17 +394,39 @@ function solProtos(disk) {
 }
 
 function systemHead(seedInput) {
-  const seed = String(seedInput);
-  const root = Rng.fromString(`starseed/v${GENERATOR_VERSION}/${seed}`);
-  const sol = seed === 'SOL';
-  const star = generateStar(root.fork('star'), sol ? SOL.star : null);
+  const recipe = systemRecipe(seedInput), seed = systemIdentity(recipe), authored=isAuthored(recipe);
+  const root = Rng.fromString(`starseed/v${GENERATOR_VERSION}/${recipe.seed}`);
+  const sol = recipe.seed === 'SOL';
+  let star = generateStar(root.fork('star'), sol ? SOL.star : null);
+  if (recipe.star) {
+    if (['mass','age','metallicity'].some(k => recipe.star[k] !== undefined)) {
+      const fix = {...star, ...recipe.star};
+      if (fix.age > .9 * 10 * dm.pow(fix.mass, -2.5)) throw Error('System recipe: star is older than this main-sequence model supports');
+      star = generateStar(root.fork('star'), fix);
+    }
+    for (const key of ['name','catalog']) if(recipe.star[key]!==undefined)star[key]=recipe.star[key];
+  }
   const disk = makeDisk(root.fork('disk'), star);
-  const protos = sol ? solProtos(disk) : formPlanets(root.fork('formation'), star, disk);
-  const exception = sol ? null : pickException(root.fork('exception'), protos, star);
+  let protos = sol ? solProtos(disk) : formPlanets(root.fork('formation'), star, disk);
+  const exception = sol || recipe.planets ? null : pickException(root.fork('exception'), protos, star);
   const planetRng = root.fork('planets');
-  const names = sol ? SOL.planets.map((p) => p.name) : protos.map((proto) => makeName(planetRng.fork('p' + proto.slot).fork('name'), 2, 3));
+  let names = sol ? SOL.planets.map((p) => p.name) : protos.map((proto) => makeName(planetRng.fork('p' + proto.slot).fork('name'), 2, 3));
+  if (recipe.planets) {
+    protos=recipe.planets.map((p,i)=>({...p,slot:i,formedBeyond:p.aAU>disk.snow}));
+    names=protos.map(p=>p.name || makeName(planetRng.fork('p'+p.slot).fork('name'),2,3));
+  }
+  for (const [index,patch] of Object.entries(recipe.planetOverrides||{})) {
+    if(!protos[index])throw Error(`System recipe: no planet at index ${index}`);
+    protos[index]={...protos[index],...patch};
+  }
+  protos.forEach((p,i)=>{
+    if(p.name)names[i]=p.name;
+    if(p.spin)p.known={...p.known,rotH:p.spin.hours,obliquityDeg:p.spin.tiltDegrees,retro:!!p.spin.retrograde};
+    if(authored && (p.aAU*(1-(p.orbit?.e||0))*U.AU<=star.radiusM || (i && protos[i-1].aAU>=p.aAU)))throw Error('System recipe: planets must orbit outside the star in increasing distance order');
+  });
+  if(recipe.startPlanet!==undefined&&!protos[recipe.startPlanet])throw Error('System recipe: startPlanet is absent');
   const debris = systemDebris(root.fork('debris'), protos, disk, sol);
-  return { seed, root, star, disk, protos, exception, planetRng, names, debris };
+  return { seed, recipe, root, star, disk, protos, exception, planetRng, names, debris };
 }
 
 // How cluttered a system is with leftover rock and ice (it scales every
@@ -442,6 +465,7 @@ export function summarizeSystem(seedInput) {
     hzRocky: planets.filter((p) => p.rockyInHZ).map((p) => p.name),
     exceptional: H.exception ? { kind: H.exception.kind, planet: planets.find((p) => p.exceptional).name, text: H.exception.text } : null,
     debris: { level: H.debris.level, name: H.debris.name, lateBombardment: !!H.debris.spike },
+    lifePotential: planets.some(p=>p.rockyInHZ) ? 'promising' : planets.some(p=>p.kind==='gas giant'||p.kind==='ice giant') ? 'possible-moons' : 'low',
   };
 }
 
@@ -471,7 +495,7 @@ export function generateSystem(seedInput) {
     body.index = idx;
     body.designation = `${star.name} ${PLANET_LETTERS[idx]}`;
     body.name = H.names[idx];
-    const el = orbitalElements(pr.fork('orbit'), proto, protos.length, nGiants);
+    const el = { ...orbitalElements(pr.fork('orbit'), proto, protos.length, nGiants), ...proto.orbit };
     body.orbitE = el.e;
     body.aAU = proto.aAU;
     body.orbit = makeOrbit({ a: proto.aAU * U.GAME_AU, ...el }, star.GM);
@@ -489,7 +513,9 @@ export function generateSystem(seedInput) {
   const planets = bodies.filter((b) => b.kind === 'planet');
   for (const planet of planets) {
     const mr = root.fork('moons').fork('p' + planet._proto.slot);
-    const mprotos = seed === 'SOL' ? solMoons(planet) : makeMoons(mr, planet, planet._proto, star, disk);
+    const mprotos = planet._proto.moons?.map(m=>({kind:'moon',name:m.name,aReal:m.aKm*1000,massEarth:m.massEarth,comp:m.comp,e:m.e??.002,i:m.i??.003,tidalHeating:m.tidalHeating??0,captured:false}))
+      ?? (H.recipe.seed === 'SOL' && !H.recipe.planets ? solMoons({name:SOL.planets[planet.index].name}) : makeMoons(mr, planet, planet._proto, star, disk));
+    if(planet._proto.moons)for(const m of mprotos)if(m.massEarth>=planet.massEarth || m.aReal*(1-m.e)<planet.radiusM*2.6 || m.aReal*(1+m.e)*U.LEN_SCALE>planet.hill*.38)throw Error('System recipe: authored moon lies outside its safe orbital region');
     mprotos.forEach((mp, k) => {
       const r = mr.fork('m' + k);
       mp.aStarAU = planet.aAU;
@@ -565,7 +591,8 @@ export function generateSystem(seedInput) {
     star, disk: { snowLine: disk.snow, outer: disk.outer, metallicity: star.metallicity },
     hz: star.hz,
     bodies, belts,
-    startBodyId: start ? start.id : 1,
+    startBodyId: H.recipe.startPlanet!==undefined ? planets[H.recipe.startPlanet].id : start ? start.id : 1,
+    ...(isAuthored(H.recipe)?{definition:H.recipe}:{}),
   };
 }
 

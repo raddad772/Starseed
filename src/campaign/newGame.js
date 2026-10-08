@@ -8,9 +8,9 @@ import { createTutorial } from './tutorial.js';
 const LEADS={horizon:'horizon_neptune3',expedition:'expedition_hearth',pioneer:'pioneer_nomad'};
 const SECOND={horizon:'horizon_shorebird',expedition:'expedition_kestrel',pioneer:'pioneer_hopper'};
 
-export function provisionExpedition(g,{rules,label='Our expedition'}){
+export function provisionExpedition(g,{rules,label='Our expedition',campaign}){
   if(g.campaign?.fleet.provisioned)throw Error('This expedition already has its fleet.');
-  const c=createCampaign({seed:g.seed,label,rules,simulationSeconds:g.t});
+  const c=campaign||createCampaign({seed:g.seed,label,rules,simulationSeconds:g.t});
   g.campaign=c;bindSiteStorage(g,new CampaignSiteStorage());
   g.startDir=new THREE.Vector3(1,0,0);g.respawnInfo={body:g.startBody,dir:g.startDir.clone()};
   g.fleetEra=c.rules.startingFleetEra;
@@ -30,7 +30,7 @@ export function provisionExpedition(g,{rules,label='Our expedition'}){
   placeTrainingCraft(g,g.ship2,reference,forward,-1200,200);
   c.story.intro.tutorial=createTutorial(reference.campaignId);
   c.fleet={provisioned:true,vesselIds:g.vessels.map(v=>v.campaignId)};
-  c.generation.storyAnchors.mirror={systemId:`system/${g.seed}`,label:'Mirrored enclosure — survey telemetry'};
+  c.generation.storyAnchors.mirror={systemId:`system/${c.generation.galaxySeed}`,label:'Mirrored enclosure — survey telemetry'};
   g.placed=true;g.startChoice='expedition';g.startPending=null;
   installCampaignJoin(g);
   seatExpeditionPlayer(g,g.players[0]);

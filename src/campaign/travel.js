@@ -1,5 +1,7 @@
+import { recordSystemDetails } from './surveyCatalogue.js';
 import * as THREE from 'three';
-import { generateSystem } from '../gen/system.js';
+import { getSystem } from '../gen/systemCache.js';
+import { canonical, systemRecipe } from '../gen/systemRecipe.js';
 import { Universe } from '../sim/universe.js';
 import { lockRadius } from '../sim/ftl.js';
 import { VESSEL_TYPES } from '../sim/vesselTypes.js';
@@ -13,17 +15,19 @@ export function validateGalaxy(c) {
   const g=c.galaxy;if(g===undefined)return;
   if(!object(g)||g.version!==GALAXY_VERSION||c.generation.versions.galaxy!==GALAXY_VERSION||!object(g.systems)||!Number.isSafeInteger(g.nextItemId)||g.nextItemId<1||Object.keys(g.systems).length>512)fail('Invalid galaxy state.');
   const receiver=c.generation.storyAnchors.receiver;
-  if(!object(receiver)||typeof receiver.systemId!=='string'||receiver.systemId.length>200||typeof receiver.seed!=='string'||!receiver.seed||receiver.seed.length>200||receiver.systemId===`system/${c.generation.galaxySeed}`||receiver.seed===c.generation.galaxySeed||(receiver.bodyId!==undefined&&!bodyCatalogue(receiver.seed).has(receiver.bodyId)))fail('Invalid receiver anchor.');
+  if(!object(receiver)||typeof receiver.systemId!=='string'||receiver.systemId.length>200||typeof receiver.seed!=='string'||!receiver.seed||receiver.seed.length>200||receiver.systemId===`system/${c.generation.galaxySeed}`||receiver.seed===c.generation.galaxySeed||(receiver.bodyId!==undefined&&(!Number.isInteger(receiver.bodyId)||receiver.bodyId<1||receiver.bodyId>512)))fail('Invalid receiver anchor.');
   const current=resolveSystem(c,g.currentSystemId);
   if(!c.world||current.id!==g.currentSystemId||current.seed!==c.world.seed)fail('The current flight does not match its galactic address.');
+  if(canonical(systemRecipe(current.definition||current.seed))!==canonical(systemRecipe(c.world.definition||c.world.seed)))fail('The flight recipe does not match its chart');
   const ids=new Set(c.world.items.map(i=>i.id));
   for(const [id,memory] of Object.entries(g.systems)) {
     const system=resolveSystem(c,id);
     if(id===g.currentSystemId||system.id!==id||!object(memory)||memory.seed!==system.seed||!object(memory.navSites))fail('Invalid stored system.');
+    if(canonical(systemRecipe(system.definition||system.seed))!==canonical(systemRecipe(memory.definition||memory.seed)))fail('Stored system recipe differs from its chart');
     validateLocalState(memory);
     for(const sites of Object.values(memory.navSites)) {
       if(!Array.isArray(sites))fail('Invalid remembered landing sites.');
-      for(const pair of sites)if(!Array.isArray(pair)||pair.length!==2||!bodyCatalogue(memory.seed).has(pair[0])||(pair[1]!=='orbit'&&(!object(pair[1])||typeof pair[1].label!=='string'||!Array.isArray(pair[1].dirF)||pair[1].dirF.length!==3||!pair[1].dirF.every(Number.isFinite))))fail('Invalid remembered landing site.');
+      for(const pair of sites)if(!Array.isArray(pair)||pair.length!==2||!bodyCatalogue(memory.definition||memory.seed).has(pair[0])||(pair[1]!=='orbit'&&(!object(pair[1])||typeof pair[1].label!=='string'||!Array.isArray(pair[1].dirF)||pair[1].dirF.length!==3||!pair[1].dirF.every(Number.isFinite))))fail('Invalid remembered landing site.');
     }
     for(const item of memory.items) { if(ids.has(item.id))fail('An item appears in more than one system.');ids.add(item.id); }
   }
@@ -50,11 +54,12 @@ export function prepareJourney(source,destinationId) {
   const destination=resolveSystem(c,destinationId),g=c.galaxy,w=c.world;
   if(destination.id===g.currentSystemId)fail('The fleet is already in that system.');
   const memory=g.systems[destination.id]||{seed:destination.seed,items:[],sites:[],siteStorage:{},navSites:{}};
-  g.systems[g.currentSystemId]={seed:w.seed,items:w.items.filter(i=>i.frame==='surface'||i.frame==='orbit'),sites:w.sites,siteStorage:w.siteStorage,navSites:Object.fromEntries(w.vessels.map(v=>[v.id,v.nav.sites]))};
+  g.systems[g.currentSystemId]={seed:w.seed,...(w.definition?{definition:w.definition}:{}),items:w.items.filter(i=>i.frame==='surface'||i.frame==='orbit'),sites:w.sites,siteStorage:w.siteStorage,navSites:Object.fromEntries(w.vessels.map(v=>[v.id,v.nav.sites]))};
   delete g.systems[destination.id];g.currentSystemId=destination.id;
+  if(destination.definition)w.definition=destination.definition;else delete w.definition;
   w.seed=destination.seed;w.items=[...w.items.filter(i=>i.holder!==null||i.frame==='vessel'),...memory.items];
   w.sites=memory.sites;w.siteStorage=memory.siteStorage;
-  const system=generateSystem(w.seed),universe=new Universe(system);universe.update(c.clock.simulationSeconds);
+  const system=getSystem(w.definition||w.seed),universe=new Universe(system);universe.update(c.clock.simulationSeconds);
   const roots=w.vessels.filter(v=>!v.parent),ships=new Map(w.vessels.map(v=>[v.id,v]));
   function extent(v){return Math.max(VESSEL_TYPES[v.type].radius||1,...w.vessels.filter(child=>child.parent===v.id).map(child=>Math.hypot(...child.lpos)+extent(child)));}
   const clearance=Math.max(...roots.map(extent))*3;
@@ -95,6 +100,7 @@ export function prepareJourney(source,destinationId) {
   for(const v of w.vessels)place(v);
   for(const p of c.players){p.body=body.id;p.target=null;p.siteReturn=false;p.grounded=false;p.swimming=false;}
   c=applyCampaignEvent(c,{id:`arrival/${destination.id}`,type:'system.arrived',systemId:destination.id});
+  recordSystemDetails(c,system);
   validateFlight(c);validateGalaxy(c);return c;
 }
 

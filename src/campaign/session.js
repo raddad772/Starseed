@@ -4,7 +4,8 @@ import { encodeCampaign,importCampaignCopy } from './save.js';
 import { CampaignStorage } from './storage.js';
 import { CampaignSiteStorage,bindSiteStorage } from './siteStorage.js';
 import { prepareJourney } from './travel.js';
-import { ensureGalaxy } from './galaxy.js';
+import { prepareSystem } from '../gen/systemCache.js';
+import { ensureGalaxy, resolveSystem } from './galaxy.js';
 
 function siteId(key){let hash=2166136261;for(const ch of key)hash=Math.imul(hash^ch.charCodeAt(0),16777619);let h2=0;for(const ch of key)h2=Math.imul(h2^ch.charCodeAt(0),65599);return `site/${(hash>>>0).toString(16)}-${(h2>>>0).toString(16)}`;}
 export class FlightSaves {
@@ -50,6 +51,8 @@ export class FlightSaves {
       if(this.pending)await this.pending;
       const game=this.game(),departure=ensureGalaxy(this.snapshot());
       // Check the entire operation before touching storage or the current runtime.
+      const destination=resolveSystem(departure,destinationId);
+      this.status='Preparing destination…';await prepareSystem(destination.definition||destination.seed);
       const arrival=prepareJourney(departure,destinationId);
       this.status='Saving departure…';
       const saved=await this.storage.save(departure);game.campaign=saved;

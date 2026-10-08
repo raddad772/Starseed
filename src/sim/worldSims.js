@@ -235,19 +235,19 @@ export class WorldSims {
         const sent = w.refSent || (w.refSent = new Map()), refKey = this.refKey(job.id), R = job.refine;
         const refine = sent.get(job.id) === R ? null : { version: R.version, L: R.L, n: R.n, K: R.K, h: R.h, rw: R.rw, fl: R.fl, rcv: R.rcv, done: R.done };
         sent.set(job.id, R);
-        w.worker.postMessage({ type: 'pyr', job: job.id, seed: this.seed, body: job.id, L: job.L, face: job.face, ti: job.ti, tj: job.tj, snap, refine, refKey, parents: job.parents, gpu: this.gpu });
+        w.worker.postMessage({ type: 'pyr', job: job.id, seed: this.seed, definition:this.game.system.definition, body: job.id, L: job.L, face: job.face, ti: job.ti, tj: job.tj, snap, refine, refKey, parents: job.parents, gpu: this.gpu });
         continue;
       }
       if (job.kind === 'refine') {
         this.refine.get(job.id).status = 'running';
         const has = w.hasSnap || (w.hasSnap = new Set()), snap = has.has(job.id) ? null : job.snap;
         has.add(job.id);
-        w.worker.postMessage({ type: 'refine', job: job.id, seed: this.seed, body: job.id, face: job.face, ti: job.ti, tj: job.tj, snap, gpu: this.gpu });
+        w.worker.postMessage({ type: 'refine', job: job.id, seed: this.seed, definition:this.game.system.definition, body: job.id, face: job.face, ti: job.ti, tj: job.tj, snap, gpu: this.gpu });
         continue;
       }
       this.status.set(job.id, 'running');
       this.phase.delete(job.id);
-      w.worker.postMessage({ type: 'sim', job: job.id, seed: this.seed, body: job.id, N: job.N, myr: this.myr, steps: this.steps });
+      w.worker.postMessage({ type: 'sim', job: job.id, seed: this.seed, definition:this.game.system.definition, body: job.id, N: job.N, myr: this.myr, steps: this.steps });
     }
     this._progress();
   }

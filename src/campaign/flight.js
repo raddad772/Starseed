@@ -1,9 +1,12 @@
 // Portable single-system flight state. No renderer objects or controls cross this boundary.
+import { recordSystemDetails } from './surveyCatalogue.js';
+import { getSystem, systemCacheKey } from '../gen/systemCache.js';
+import { systemIdentity } from '../gen/systemRecipe.js';
 import * as THREE from 'three';
 import { VESSEL_TYPES, pilotSeat } from '../sim/vesselTypes.js';
 import { ITEM_TYPES } from '../sim/items.js';
 import { Player } from '../sim/player.js';
-import { GENERATOR_VERSION, generateSystem } from '../gen/system.js';
+import { GENERATOR_VERSION } from '../gen/system.js';
 import { SIM_VERSION } from '../gen/worldsim/snapshot.js';
 import { LEN_SCALE } from '../core/units.js';
 import { setLivery } from '../render/glbShip.js';
@@ -31,8 +34,9 @@ const unique = list => new Set(list).size===list.length;
 
 // A changed hull layout/physics definition must not silently move saved passengers.
 const signatures=new WeakMap(),bodyCatalogues=new Map();
-export function bodyCatalogue(seed) {
-  if(!bodyCatalogues.has(seed)){if(bodyCatalogues.size>=512)bodyCatalogues.delete(bodyCatalogues.keys().next().value);bodyCatalogues.set(seed,new Set(generateSystem(seed).bodies.map(b=>b.id)));}
+export function bodyCatalogue(source) {
+  const seed=systemCacheKey(source);
+  if(!bodyCatalogues.has(seed)){if(bodyCatalogues.size>=512)bodyCatalogues.delete(bodyCatalogues.keys().next().value);bodyCatalogues.set(seed,new Set(getSystem(source).bodies.map(b=>b.id)));}
   return bodyCatalogues.get(seed);
 }
 export function vesselSignature(type) {
@@ -71,7 +75,7 @@ export function captureFlight(game, campaign) {
   c.saveKind='single-system-flight'; c.clock.simulationSeconds=game.t;
   c.fleet={provisioned:true,vesselIds:[...ids.values()]};
   c.players=persons.map(p=>({id:playerIds.get(p),index:p.index,active:game.players.includes(p),label:p.label,mode:p.mode,body:p.body.id,vessel:ref(p.vessel),ownShip:ref(p.ownShip),lastSeat:p.lastSeat?{vessel:ref(p.lastSeat.vessel),seat:p.lastSeat.seat}:null,target:targetRef(p.target,ids),...vectors(p,PVECS),evaQuat:p.evaQuat.toArray(),...pick(p,PNUMS,0),...pick(p,PFLAGS,false),siteReturn:!!p.understructure}));
-  c.world={version:FLIGHT_VERSION,seed:game.seed,systemVersion:GENERATOR_VERSION,worldVersion:SIM_VERSION,lengthScale:LEN_SCALE,worldsim:!!game.worldSims,simN:game.worldSims?.N??null,
+  c.world={version:FLIGHT_VERSION,seed:game.seed,...(game.system.definition?{definition:structuredClone(game.system.definition)}:{}),systemVersion:GENERATOR_VERSION,worldVersion:SIM_VERSION,lengthScale:LEN_SCALE,worldsim:!!game.worldSims,simN:game.worldSims?.N??null,
     fleetEra:game.fleetEra??null,startDir:game.startDir?.toArray()??[1,0,0],startChoice:game.startChoice??'surface',respawn:{body:game.respawnInfo?.body.id??game.startBody.id,dir:game.respawnInfo?.dir.toArray()??[1,0,0]},
     aliases:Object.fromEntries(ALIASES.map(k=>[k,ref(game[k])])),groups:Object.fromEntries(GROUPS.map(k=>[k,(game[k]||[]).map(ref)])),
     vessels:game.vessels.map(v=>({id:ref(v),type:v.type.key,signature:vesselSignature(v.type),name:v.name,registry:v.registry||'',body:v.body.id,parent:ref(v.parent),zone:v.zone?clone(v.zone):null,cargo:v.cargo?.parent===v&&v.cargo.attached?ref(v.cargo):null,refVessel:ref(v.refVessel),home:v.home?{host:ref(v.home.host),hatch:clone(v.home.hatch)}:null,hatchKey:v.hatchKey??null,
@@ -81,6 +85,7 @@ export function captureFlight(game, campaign) {
     items:game.items.list.map(it=>({id:it.id,kind:it.kind,holder:it.holder?playerIds.get(it.holder):null,frame:it.frame,vessel:ref(it.vessel),body:it.body?.id??null,pos:it.pos.toArray(),quat:it.quat.toArray(),r0:it.r0&&[...it.r0],v0:it.v0&&[...it.v0],t0:it.t0})),
     siteStorage:game.campaignStorage?.snapshot()??{},sites:game.surfaceSurveys.sites.map(s=>({body:s.body.id,position:s.frame.position.toArray(),heading:new THREE.Vector3(0,0,-1).applyQuaternion(s.frame.rotation).toArray()}))};
   if(c.galaxy)c.galaxy.nextItemId=Math.max(c.galaxy.nextItemId,game.items.nextId);
+  recordSystemDetails(c,game.system,game.players.filter(p=>p.mode==='surface'||p.vessel?.landed).map(p=>p.body.id));
   validateFlight(c);return c;
 }
 
@@ -91,7 +96,8 @@ export function validateFlight(c) {
   if(c.generation.versions.system!==w.systemVersion||c.generation.versions.world!==w.worldVersion||c.generation.localLengthScale!==w.lengthScale)fail('Conflicting generation metadata.');
   if(c.clock.epoch!=='2026-10-05T00:00:00Z'||!Number.isFinite(c.clock.simulationSeconds)||Math.abs(c.clock.simulationSeconds)>1e12)fail('Unsupported flight epoch or time.');
   if(typeof w.worldsim!=='boolean'||(w.simN!==null&&(!Number.isInteger(w.simN)||w.simN<8||w.simN>1024)))fail('Invalid terrain settings.');
-  const bodies=bodyCatalogue(w.seed);
+  validateSystemSource(w);
+  const bodies=bodyCatalogue(w.definition||w.seed);
   if(!Array.isArray(w.vessels)||!w.vessels.length||w.vessels.length>512||!w.vessels.every(v=>obj(v)&&str(v.id))||!unique(w.vessels.map(v=>v.id)))fail('Invalid or duplicate vessels.');
   const ships=new Map(w.vessels.map(v=>[v.id,v])), reference=id=>id===null||ships.has(id), body=id=>bodies.has(id);
   const target=t=>t===null||(obj(t)&&((Object.keys(t).length===1&&ships.has(t.vessel))||(Object.keys(t).length===1&&body(t.body))));
@@ -141,7 +147,8 @@ export function validateFlight(c) {
 
 // Also checks unloaded systems, where every retained item must have a local frame.
 export function validateLocalState(w,ships=new Map(),people=new Set()) {
-  const body=id=>bodyCatalogue(w.seed).has(id);
+  validateSystemSource(w);
+  const body=id=>bodyCatalogue(w.definition||w.seed).has(id);
   if(!Array.isArray(w.items)||w.items.length>10000||!unique(w.items.map(i=>i.id)))fail('Invalid item registry.');
   for(const i of w.items){
     if(!Number.isSafeInteger(i.id)||i.id<1||!Object.hasOwn(ITEM_TYPES,i.kind)||!vec(i.pos)||!quat(i.quat)||!Number.isFinite(i.t0))fail('Invalid inventory item.');
@@ -208,4 +215,8 @@ export function restoreFlight(game,c,{inputForPlayer}={}) {
   game.placed=true;game.startPending=null;game.joinPending=null;game.arrival=null;game.state='playing';game.paused=true;
   game.siteReturnNotice=c.players.some(p=>p.siteReturn);game.savedNavigationNotice=w.vessels.some(v=>v.nav.order);
   return game;
+}
+
+export function validateSystemSource(w) {
+  if(w.definition!==undefined ? systemIdentity(w.definition)!==w.seed : /^D-[0-9a-f]{16}$/.test(w.seed))throw Error('Missing or mismatched system recipe');
 }
