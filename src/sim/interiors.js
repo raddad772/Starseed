@@ -449,10 +449,10 @@ export class RoomInterior {
     }
   }
 
-  // a drifting spacewalker inside a capture room is pulled onto its floor
+  // A drifting spacewalker inside a capture room or garage joins its walking frame.
   capture(p) {
     for (const r of this.rooms) {
-      if (!r.capture) continue;
+      if (!r.capture && r.type !== 'bay') continue;
       // (a metre below an open top, so hovering at the rim cannot flicker in and out)
       const top = r.open && r.open.includes('+y') ? r.max[1] - 1 : r.max[1];
       if (p.x > r.min[0] && p.x < r.max[0] && p.z > r.min[2] && p.z < r.max[2] && p.y > r.min[1] - 0.3 && p.y < top) return r;

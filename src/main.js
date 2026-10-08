@@ -403,7 +403,7 @@ function launchGame() {
   previewed = null;
   if (game) game.launch();
   // (behind a loading screen until the ground round the start is in: ui/loadScreen.js)
-  if (loadScreen && (game?.player.mode === 'surface' || game?.player.vessel?.landed)) loadScreen.begin();
+  if (loadScreen) loadScreen.begin();
 }
 // back to the briefing from the game (the pause menu's Change system)
 function toBriefing(resetCampaign = true) {

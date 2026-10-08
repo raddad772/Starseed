@@ -4,7 +4,8 @@ import * as THREE from 'three';
 import { Game } from '../../src/game.js';
 import { Player } from '../../src/sim/player.js';
 import { WorldSims } from '../../src/sim/worldSims.js';
-import { sweepSuit, collideEva } from '../../src/sim/evaContacts.js';
+import { sweepSuit, collideEva, evaColliders } from '../../src/sim/evaContacts.js';
+import { makeInterior } from '../../src/sim/interiors.js';
 import { orbitalFlight } from '../orbital-flight-fixture.js';
 
 const V=(...p)=>new THREE.Vector3(...p);
@@ -84,6 +85,7 @@ test('swept EVA suit stops at thin hulls and slides along them without tunnellin
 test('EVA collides with a rotated, moving hull in its own frame',()=>{
   const {game:g,ship:s}=orbitalFlight('yacht');frozen(s);
   s.quat.setFromAxisAngle(V(0,1,0),Math.PI/3);s.vel.set(900,20,400);
+  s.type={...s.type,inner:null}; // This fixture replaces the entire hull with one moving wall.
   s.colliders=()=>[{min:[0,-10,-10],max:[.05,10,10]}];
   const p=new Player(g);p.body=s.body;p.mode='eva';p.evaQuat.copy(s.quat);
   p.ePos.copy(V(2,2,0).applyQuaternion(s.quat).add(s.pos));
@@ -100,4 +102,19 @@ test('EVA respects a swung door and an open doorway',()=>{
   assert.ok(hit.normals.some(n=>n.y>.99));
   const opening=[{min:[-4,-4,-.05],max:[-1,4,.05]},{min:[1,-4,-.05],max:[4,4,.05]}];
   assert.equal(sweepSuit(V(0,2,-2),V(0,2,2),V(0,1,0),opening).normals.length,0);
+});
+test('Neptune garage accepts EVA through its open ramp while its closed door and side hull stop suits',()=>{
+  const {ship:s}=orbitalFlight('yacht');
+  const sweep=(x=0)=>sweepSuit(V(x,.8,30),V(x,.8,22),V(0,1,0),evaColliders(s));
+  assert.ok(sweep().pos.z>25);
+  s.doors.ramp.open=1;assert.equal(sweep().pos.z,22);assert.equal(sweep(2.5).pos.z,22);
+  assert.ok(sweep(4).pos.z>25);
+});
+test('an EVA astronaut floating into Neptune’s open garage joins the walking frame',()=>{
+  const {game:g,ship:s}=orbitalFlight('yacht');s.interior=makeInterior(s);s.doors.ramp.open=1;
+  s.pos.set(1030000,0,0);s.vel.set(0,0,0);s.body.GM=0;
+  const p=new Player(g);p.mode='eva';p.body=s.body;p.ePos.copy(s.pos).add(V(2.5,.8,30));p.eVel.set(0,0,-4);
+  const input={axis:()=>0,down:()=>false,hit:()=>false};
+  for(let i=0;i<200&&p.mode==='eva';i++)p.updateEva(.01,input,{dx:0,dy:0});
+  assert.equal(p.mode,'ship');assert.equal(p.vessel===s,true);assert.ok(p.sPos.z<25.05);
 });

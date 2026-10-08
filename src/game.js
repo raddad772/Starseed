@@ -17,6 +17,7 @@ import { NearGround } from './sim/nearGround.js';
 import { findCliffCountry, gentleNear } from './gen/volume.js';
 import * as THREE from 'three';
 import { updateMirrorView,keepOutsideMirror } from './campaign/mirrorScene.js';
+import { orbitalReadiness } from './sim/arrival.js';
 import { getSystem } from './gen/systemCache.js';
 import { S_LEN, S_H, S_WDEPTH } from './gen/terrain.js';
 import { Universe } from './sim/universe.js';
@@ -1853,8 +1854,11 @@ export class Game {
       this.screenHud.setLoading(this.loadText, this.loadProgress);
       return;
     }
-    const pending = this.world.pendingNear();
     const space = this.loadMode === 'space';
+    const readiness = space ? orbitalReadiness(this) : null;
+    const pending = readiness ? readiness.pending : this.world.pendingNear();
+    if (readiness) this.loadText = readiness.failed ? `Could not prepare ${readiness.failed} · choose another world or reload`
+      : readiness.history || 'Preparing nearby planets';
     const terr = this.world.terrainOf(this.player.currentBody().id);
     // (a terrain rebuilt mid-descent, its world's sim or refinement just in, hasn't measured yet)
     const deepest = terr ? terr.deepest || 0 : 0;
@@ -1862,7 +1866,7 @@ export class Game {
     const near = space ? 1 : this.nearBuilt(terr);
     // (the terrain pyramid's tiles under the landing spot, made before the ground's drawn)
     const tilesIn = !this.tiles || this.tiles.missingCore === 0 || this.loadTimer > 30;
-    if (pending === 0 && deepEnough && near >= 1 && tilesIn) this.settleTime += dt; else this.settleTime = 0;
+    if (pending === 0 && !readiness?.unmeasured && !readiness?.failed && deepEnough && near >= 1 && tilesIn) this.settleTime += dt; else this.settleTime = 0;
     // progress: on the surface the terrain refines level by level under you
     // (later levels take longer: cubed to keep pace with the clock), then the
     // last tiles drain; in space only the tiles in view drain; then a settle
@@ -1872,7 +1876,7 @@ export class Game {
     const f = space || !terr ? 0.1 + 0.8 * drain : 0.1 + 0.4 * levels + 0.2 * drain + 0.2 * near;
     this.loadProgress = Math.max(this.loadProgress || 0, Math.min(0.99, (f || 0) + 0.1 * Math.min(1, this.settleTime / 0.4)));
     this.screenHud.setLoading(this.loadText, this.loadProgress);
-    if ((this.settleTime > 0.4 && this.loadTimer > 1) || this.loadTimer > (space ? 10 : 40)) {
+    if ((this.settleTime > 0.4 && this.loadTimer > 1) || (!space && this.loadTimer > 40)) {
       this.state = 'playing';
       this.screenHud.setLoading(null);
       this.engine.adaptReset = true;

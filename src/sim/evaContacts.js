@@ -3,6 +3,35 @@ import * as THREE from 'three';
 const RADIUS = 0.3, SKIN = 0.002;
 // EVA position is the eye. Four overlapping balls cover the suit below it.
 const PROBES = [-1.38, -0.94, -0.5, -0.06];
+const hollowHulls = new WeakMap();
+
+// Some older exterior hulls are filled boxes. Where an authored hold has its
+// own interior walls, cut that empty space out before using the hull for EVA.
+// Keep the moving door slabs: opening a ramp must never remove a closed door.
+export function evaColliders(v) {
+  const t = v.type, all = v.colliders();
+  if (!t.inner || !t.zones?.some(z => z.kind === 'hold')) return all;
+  let hull = hollowHulls.get(t);
+  if (!hull) {
+    hull = t.colliders;
+    for (const cut of t.zones.filter(z => z.kind === 'hold')) hull = hull.flatMap(box => {
+      if (box.min.some((x, i) => x >= cut.max[i] || box.max[i] <= cut.min[i])) return [box];
+      const core = {min:[...box.min], max:[...box.max]}, pieces = [];
+      for (let i = 0; i < 3; i++) {
+        if (core.min[i] < cut.min[i]) {
+          const piece = {min:[...core.min], max:[...core.max]};piece.max[i] = cut.min[i];pieces.push(piece);core.min[i] = cut.min[i];
+        }
+        if (core.max[i] > cut.max[i]) {
+          const piece = {min:[...core.min], max:[...core.max]};piece.min[i] = cut.max[i];pieces.push(piece);core.max[i] = cut.max[i];
+        }
+      }
+      return pieces;
+    });
+    hull = [...hull, ...t.inner];
+    hollowHulls.set(t, hull);
+  }
+  return [...hull, ...all.slice(t.colliders.length)];
+}
 
 // Sweep against the same authored boxes used by spacecraft contacts. Sweeping
 // prevents a fast astronaut from tunnelling through a thin hull between frames.
@@ -58,7 +87,7 @@ export function collideEva(player, dt) {
     const surfaceVelocity=v.pointVelocity(end,new THREE.Vector3());
     const relative=player.eVel.clone().sub(surfaceVelocity).applyQuaternion(qi);
     if (end.length() > v.type.radius+2+relative.length()*dt) continue;
-    const boxes=v.colliders();
+    const boxes=evaColliders(v);
     if (!boxes.length) continue;
     const start=end.clone().addScaledVector(relative,-dt);
     const up=new THREE.Vector3(0,1,0).applyQuaternion(player.evaQuat).applyQuaternion(qi);

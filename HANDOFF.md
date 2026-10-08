@@ -12,6 +12,20 @@ no production fallback. Other browser/GPU combinations still need certification;
 pixel-parity claim is made. Dave confirmed sole-agent work and no coordination messages this session.
 
 ## Neptune flight fixes and orbital startup (8 October 2026)
+Latest playtest fixes: orbital loading now checks histories and all pending terrain chunks for the
+current world and nearby resolved planetary discs, including moons, across player views. The old
+3 km-only counter and ten-second orbital timeout could reveal unfinished planets. The full-screen
+bar now stays until readiness and cannot be dismissed by input while required loading is active.
+Distant point-worlds continue preparing in the background; the mirror opening excludes planets
+hidden inside its shell. No new detailed cache product was added.
+
+Neptune 2's old exterior collider export fills its garage. EVA now subtracts authored hold spaces
+from such coarse hulls and uses their interior walls, preserving closed and moving doors. Bays
+capture incoming EVA astronauts into their walking frame. Closed-door and side-hull collisions
+remain. 16 focused CPU checks and nine native loading/garage checks pass. The native fixture uses
+real orbital terrain at worldsim=0 and deliberately delays a history completion; it verifies the
+bar/readiness behavior and moving-ship entry, not world-generation timing.
+
 Nav departure now recognizes authored ejection berths instead of reading a nonexistent hangar
 mouth. Cargo holds without flight entrances are excluded from autonomous docking. External
 views use the containing vessel while berthed and return to the piloted craft on release.
