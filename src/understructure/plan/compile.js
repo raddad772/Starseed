@@ -175,10 +175,19 @@ function exitPoint(pts, poly) {
 
 export function compileSite(plan) {
   const rng = Rng.fromString(`megasite:${plan.seed}`);
-  const solids = [], lamps = [], zones = [], markers = [], water = [], seeps = [], stats = { doorFails: 0 };
+  const solids = [], lamps = [], zones = [], markers = [], water = [], seeps = [], stats = { doorFails: 0, bent: 0, breaks: 0, roofs: 0 };
   // (water gets in on a wet world: more of it deep down, by the cistern, and through the visitors' rock)
   const wet = plan.environment?.water !== false;
   const ys = plan.nodes.map((q) => q.y0), yLo = Math.min(...ys), yHi = Math.max(...ys), cistern = plan.landmarks.find((L) => L.kind === 'cistern');
+  const drips = [];
+  const faults = siteFaults(plan, new Map(plan.nodes.map((n) => [n.id, n])));
+  // (what's above a patch of ceiling: nothing within `need` m, or it stays whole)
+  const occupied = [
+    ...plan.nodes.filter((q) => q.poly && q.kind !== 'crossing').map((q) => ({ poly: q.poly, y0: q.y0, y1: q.y1 })),
+    ...[...plan.landmarks, plan.access].map((L) => ({ poly: L.poly, y0: L.y0, y1: L.y1 })),
+    ...plan.links.flatMap((l) => l.path.slice(1).map((b, i) => { const a = l.path[i]; return { poly: G.segRect([a[0], a[2]], [b[0], b[2]], l.width + WALL), y0: Math.min(a[1], b[1]), y1: Math.max(a[1], b[1]) + l.height }; })),
+  ];
+  const clearAbove = (poly, yBase, need) => occupied.every((o) => o.y1 <= yBase + 0.05 || o.y0 > yBase + need || !G.polysOverlap(poly, o.poly, 0));
   const wetness = (n) => {
     const c = n.center || G.centroid(n.poly);
     let p = 0.12 + 0.4 * (1 - (n.y0 - yLo) / Math.max(1, yHi - yLo));
@@ -225,15 +234,18 @@ export function compileSite(plan) {
       if (end === 'a') { pts = trimmed; capA = d.ends; } else { pts = trimmed.reverse(); capB = d.ends; }
     }
     if (pts.length < 2) continue;
-    const tunnel = l.a === 'staging' || l.b === 'staging';
-    passage(solids, pts, y, w, h, capA, capB, tunnel ? { floor: 'rock', ceiling: 'rock', wall: 'rock' } : { floor: 'floor', ceiling: 'concrete', wall: 'concrete' });
+    const tunnel = l.a === 'staging' || l.b === 'staging', mats = tunnel ? { floor: 'rock', ceiling: 'rock', wall: 'rock' } : { floor: 'floor', ceiling: 'concrete', wall: 'concrete' };
+    const def = l.kind === 'collapse' ? null : passageDeform(pts, faults, wet && y < yLo + (yHi - yLo) * 0.35, Rng.fromString(`megasite-bend:${plan.seed}:${l.id}`));
+    if (def) { stats.bent++; if (def.fault) stats.faultBends = (stats.faultBends || 0) + 1; if (def.gap) stats.gaps = (stats.gaps || 0) + 1; if (bentPassage(solids, drips, water, pts, y, w, h, capA, capB, mats, def, wet, clearAbove, Rng.fromString(`megasite-break:${plan.seed}:${l.id}`))) stats.breaks++; else if (def.gap) def.gap = null; }
+    else passage(solids, pts, y, w, h, capA, capB, mats);
     if (l.kind === 'collapse') { collapseEnd(solids, pts, y, w, h, rng); if (wet && rng.chance(0.6)) trickle(seeps, water, G.add(pts.at(-1), G.mul(G.norm(G.sub(pts.at(-2), pts.at(-1))), 0.25)), G.norm(G.sub(pts.at(-2), pts.at(-1))), y, y + h - 0.3, rng); continue; }   // (dark: nobody lit a way that ends)
-    sideDoors(solids, seeps, water, pts, y, w, h, tunnel, wet, rng);
-    // lamps along the way
+    sideDoors(solids, seeps, water, pts, y, w, h, tunnel, wet, rng, def);
+    // lamps along the way (down with a sagging ceiling; none where it's broken open)
     const len = G.polylineLength(pts);
     for (let s = 6; s < len - 3; s += rng.range(9, 14)) {
-      const at = G.along(pts, s);
-      lamps.push({ pos: [at.p[0], y + h - 0.2, at.p[1]], color: tunnel ? 'work' : 'amber', power: tunnel ? 60 : 70, mount: 'ceiling', top: y + h });
+      if (def?.gap && s > def.gap[0] - 1.2 && s < def.gap[1] + 1.2) continue;
+      const at = G.along(pts, s), dy = def ? def.dy(s) : 0;
+      lamps.push({ pos: [at.p[0], y + h + dy - 0.2, at.p[1]], color: tunnel ? 'work' : 'amber', power: tunnel ? 60 : 70, mount: 'ceiling', top: y + h + dy });
     }
   }
 
@@ -242,9 +254,14 @@ export function compileSite(plan) {
     if (n.kind === 'crossing' || n.kind === 'access') continue;
     const T = WALL, outer = n.poly.map((_, i) => offsetVertex(n.poly, i, T));
     const rock = n.kind === 'staging';
+    let roomHole = null;
     solids.push(vprism(outer, n.y0 - SLAB, n.y0, rock ? 'rock' : 'floor', { floor: true }));
     if (rock) ceilingWithHole(solids, outer, breakInShaft(n), n.y1, n.y1 + SLAB, 'rock');
-    else solids.push(vprism(outer, n.y1, n.y1 + SLAB, rock ? 'rock' : 'concrete'));
+    else {
+      const brk = n.kind !== 'climb' && n.kind !== 'core' && roomBreak(n, faults, clearAbove, Rng.fromString(`megasite-break:${plan.seed}:${n.id}`), wet ? Math.max(0, wetness(n) - 0.3) : 0);
+      if (brk) { ceilingWithHole(solids, outer, brk.hole, n.y1, n.y1 + SLAB, 'concrete'); brokenRoof(solids, drips, water, brk.hole, n.y1, n.y1 + SLAB, n.y0, wet, Rng.fromString(`megasite-roof:${plan.seed}:${n.id}`), plan.finds.filter((f) => f.node === n.id).map((f) => [f.pos[0], f.pos[2]])); roomHole = brk.hole; stats.roofs++; }
+      else solids.push(vprism(outer, n.y1, n.y1 + SLAB, 'concrete'));
+    }
     roomWalls(solids, n.poly, T, n.y0, n.y1, doorsOf.get(n.id) || [], rock ? 'rock' : 'concrete');
     const c = n.center || G.centroid(n.poly);
     if (n.kind === 'climb') {
@@ -252,7 +269,11 @@ export function compileSite(plan) {
       if (n.mode === 'low-g') lowGDecks(solids, n, rng, doorsOf.get(n.id) || []);
       else exitLedge(solids, n, doorsOf.get(n.id) || []);
       wellLamps(lamps, n, doorsOf.get(n.id) || []);
-    } else lamps.push({ pos: [c[0], n.y1 - 0.2, c[1]], color: n.kind === 'core' ? 'cyan' : 'amber', power: n.kind === 'core' ? 110 : 80, mount: 'ceiling', top: n.y1 });
+    } else {
+      let q = c;
+      if (roomHole) { const hc = G.centroid(roomHole), away = G.sub(c, hc), dd = G.dist(c, hc); if (dd < 3) q = G.add(hc, G.mul(dd > 0.01 ? G.norm(away) : [1, 0], 3)); if (!G.inside(q, G.inflate(n.poly, -0.8))) q = c; }
+      lamps.push({ pos: [q[0], n.y1 - 0.2, q[1]], color: n.kind === 'core' ? 'cyan' : 'amber', power: n.kind === 'core' ? 110 : 80, mount: 'ceiling', top: n.y1 });
+    }
     // doorways that no longer open, on walls with none of their own (the place goes on past
     // them); water in, here and there
     const used = falseDoors(solids, n, doorsOf.get(n.id) || [], rng);
@@ -345,7 +366,7 @@ export function compileSite(plan) {
   const s0 = byId.get('staging'), first = plan.links.find((l) => l.a === 'staging');
   const look = first ? [first.path[1][0], first.path[1][2]] : G.add(s0.center, [0, -1]);
   return {
-    solids, lamps, zones, markers, water, stats, doors: doorsOf, seeps: [...seeps, ...intr.seeps], gates,
+    solids, lamps, zones, markers, water, stats, doors: doorsOf, seeps: [...seeps, ...intr.seeps], drips, faults, gates,
     machinesLive: plan.machines.filter((m) => live.has(m.id)).map((m) => [m.center[0], (m.y0 + m.y1) / 2, m.center[1]]),
     spawn: { pos: [s0.center[0], s0.y0, s0.center[1]], yaw: Math.atan2(-(look[0] - s0.center[0]), -(look[1] - s0.center[1])) },
     spaces: [...plan.nodes.filter((n) => n.kind !== 'crossing' && n.kind !== 'access').map((n) => ({ id: n.id, name: n.name, poly: n.poly, y0: n.y0, y1: n.y1 })),
@@ -485,12 +506,12 @@ function roomWater(seeps, water, n, doors, used, rng, p) {
   }
 }
 // Along a longer passage: a doorway or two that no longer open, and now and then water down a wall
-function sideDoors(out, seeps, water, pts, y, w, h, tunnel, wet, rng) {
+function sideDoors(out, seeps, water, pts, y, w, h, tunnel, wet, rng, def = null) {
   const len = G.polylineLength(pts);
   if (!tunnel && len > 12) for (let s = rng.range(4, 8); s < len - 4; s += rng.range(9, 18)) {
     if (!rng.chance(0.55)) continue;
     const a = G.along(pts, s - 1.9), b = G.along(pts, s + 1.9), at = G.along(pts, s);
-    if (a.seg !== b.seg) continue;   // (not round a bend)
+    if (a.seg !== b.seg || (def && s > def.a - 2.5 && s < def.b + 2.5)) continue;   // (not round a bend, nor on walls that have moved)
     const k = rng.chance(0.5) ? 1 : -1, nrm = G.perp(at.dir);
     sealedDoor(out, G.add(at.p, G.mul(nrm, k * w)), G.mul(nrm, -k), y, Math.min(h - 0.4, rng.range(2.6, 3.4)), rng);
   }
@@ -513,6 +534,159 @@ function collapseEnd(out, pts, y, w, h, rng) {
   // and a slab of the ceiling down across it
   const s0 = G.add(G.add(e, G.mul(d, -1.2)), G.mul(side, -w * 0.95)), s1 = G.add(G.add(e, G.mul(d, -0.4)), G.mul(side, w * 0.95));
   out.push(beam([s0[0], y + h * 0.35, s0[1]], [s1[0], y + h * 0.75, s1[1]], 0.5, 0.18, 'concrete'));
+}
+// The ground's own history in the place: a fault or two across it, the first through the breach (the
+// visitors came down where the wound had cracked the shell). What crosses one has moved with it: a
+// passage sagged and rolled, a ceiling broken open where it runs, water getting in
+function siteFaults(plan, byId) {
+  const fr = Rng.fromString(`megasite-faults:${plan.seed}`), st = byId.get('staging');
+  const one = (p, k) => { const a = fr.range(0, Math.PI); return { p, d: [Math.cos(a), Math.sin(a)], n: [-Math.sin(a), Math.cos(a)], sag: fr.range(0.35, 0.8) * k, roll: fr.range(4, 9) * (fr.chance(0.5) ? 1 : -1) * Math.PI / 180 * k, zone: fr.range(6, 10), broken: fr.range(0.7, 0.95) }; };
+  const out = [one(st.center, 1)];
+  if (fr.chance(0.75)) out.push(one(fr.pick(plan.landmarks).center, 0.75));
+  const rooms = plan.nodes.filter((n) => n.kind === 'room');
+  if (rooms.length && fr.chance(0.5)) out.push(one(fr.pick(rooms).center, 0.6));   // (and a lesser one)
+  return out;
+}
+// How a passage has moved, within one straight run of it and clear of its ends (so its doorways
+// still meet): sagged and rolled where a fault crosses, a stretch of ceiling broken there; deep
+// down on a wet world, settled a little in the middle of its longest run
+function passageDeform(pts, faults, deep, rng) {
+  const len = G.polylineLength(pts);
+  const bump = (a, b) => (s) => (s <= a || s >= b ? 0 : 0.5 - 0.5 * Math.cos(2 * Math.PI * (s - a) / (b - a)));
+  let s0 = 0;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const A = pts[i], B = pts[i + 1], L = G.dist(A, B);
+    for (const f of faults) {
+      const da = G.dot(G.sub(A, f.p), f.n), db = G.dot(G.sub(B, f.p), f.n);
+      if (da * db > 0 || da === db) continue;
+      const sc = s0 + L * da / (da - db), a = Math.max(sc - f.zone, s0 + 0.5, 2.5), b = Math.min(sc + f.zone, s0 + L - 0.5, len - 2.5);
+      if (b - a < 3) continue;
+      const k = bump(a, b), g = Math.min(rng.range(1.2, 2.2), b - a - 1), m = Math.min(Math.max(sc, a + g / 2 + 0.4), b - g / 2 - 0.4);
+      const gap = g > 0.9 && rng.chance(f.broken) ? [m - g / 2, m + g / 2] : null;
+      // (no steeper than ~10 degrees at its steepest: a short stretch can't sag far)
+      const sag = Math.min(f.sag, (b - a) * 0.055);
+      return { a, b, sc, dy: (s) => -sag * k(s), roll: (s) => f.roll * k(s), gap, fault: true };
+    }
+    s0 += L;
+  }
+  if (deep && rng.chance(0.45)) {
+    let bl = 0, bs = 0; s0 = 0;
+    for (let i = 0; i < pts.length - 1; i++) { const L = G.dist(pts[i], pts[i + 1]); if (L > bl) { bl = L; bs = s0; } s0 += L; }
+    const a = Math.max(bs + 0.5, 2.5), b = Math.min(bs + bl - 0.5, len - 2.5);
+    if (b - a >= 6) {
+      // (settling under the load, its ceiling cracked through at the lowest point now and then)
+      const k = bump(a, b), sag = rng.range(0.15, 0.35), roll = rng.range(1, 2.5) * (rng.chance(0.5) ? 1 : -1) * Math.PI / 180, m = (a + b) / 2, g = rng.range(1.0, 1.8);
+      return { a, b, sc: m, dy: (s) => -sag * k(s), roll: (s) => roll * k(s), gap: rng.chance(0.35) ? [m - g / 2, m + g / 2] : null };
+    }
+  }
+  return null;
+}
+// a polyline from arc length s0 to s1
+function cutPolyline(pts, s0, s1) {
+  const out = [G.along(pts, s0).p];
+  let s = 0;
+  for (let i = 1; i < pts.length; i++) { s += G.dist(pts[i - 1], pts[i]); if (s > s0 + 1e-6 && s < s1 - 1e-6) out.push(pts[i]); }
+  out.push(G.along(pts, s1).p);
+  return out;
+}
+// A passage that has moved (passageDeform): built as usual up to the stretch, which is laid in short
+// pieces each tipped and rolled as the ground took it; where its ceiling broke, the walls go up to
+// rock, with water through it on a wet world
+function bentPassage(out, drips, water, pts, y, w, h, capA, capB, mats, D, wet, clearAbove, rng) {
+  const len = G.polylineLength(pts);
+  passage(out, cutPolyline(pts, 0, D.a), y, w, h, capA, null, mats);
+  passage(out, cutPolyline(pts, D.b, len), y, w, h, null, capB, mats);
+  const d = G.along(pts, (D.a + D.b) / 2).dir, side = G.perp(d);
+  let gap = D.gap;
+  if (gap && !clearAbove(G.segRect(G.along(pts, gap[0]).p, G.along(pts, gap[1]).p, w + WALL + 0.3), y + h, 4)) gap = null;
+  const frame = (s0, s1) => {
+    const dy0 = D.dy(s0), dy1 = D.dy(s1), r = D.roll((s0 + s1) / 2), c = G.along(pts, (s0 + s1) / 2).p;
+    const u = norm3([d[0] * (s1 - s0), dy1 - dy0, d[1] * (s1 - s0)]);
+    let v = [side[0] * Math.cos(r), Math.sin(r), side[1] * Math.cos(r)];
+    const k = u[0] * v[0] + u[1] * v[1] + u[2] * v[2]; v = norm3([v[0] - u[0] * k, v[1] - u[1] * k, v[2] - u[2] * k]);
+    let wv = cross3(v, u); if (wv[1] < 0) wv = wv.map((x) => -x);
+    return { o: [c[0], y + (dy0 + dy1) / 2, c[1]], u, v, w: wv, half: (s1 - s0) / 2 };
+  };
+  const R = (a0, a1, b0, b1) => [[a0, b0], [a1, b0], [a1, b1], [a0, b1]];
+  const n = Math.ceil((D.b - D.a) / 1.1), step = (D.b - D.a) / n, W = w + WALL;
+  for (let k = 0; k < n; k++) {
+    const s0 = D.a + k * step, s1 = s0 + step, F = frame(s0, s1), hl = F.half + 0.04, open = gap && (s0 + s1) / 2 > gap[0] && (s0 + s1) / 2 < gap[1];
+    const piece = (poly, w0, w1, mat, extra) => out.push({ o: F.o, u: F.u, v: F.v, w: F.w, poly, w0, w1, mat, ...extra });
+    piece(R(-hl, hl, -W, W), -SLAB, 0, mats.floor, { floor: true });
+    piece(R(-hl, hl, w, W), 0, open ? h + 1.1 : h, mats.wall, { wall: true });
+    piece(R(-hl, hl, -W, -w), 0, open ? h + 1.1 : h, mats.wall, { wall: true });
+    if (!open) piece(R(-hl, hl, -W, W), h, h + SLAB * 0.75, mats.ceiling);
+  }
+  if (!gap) return false;
+  // the break: its ends closed up to the rock, the rock over it, the ceiling's broken edges hanging,
+  // what fell under it, and the water through it
+  const g0 = D.a + Math.round((gap[0] - D.a) / step) * step, g1 = D.a + Math.round((gap[1] - D.a) / step) * step;
+  const F = frame(g0, g1), gl = F.half + 0.04;
+  const piece = (poly, w0, w1, mat) => out.push({ o: F.o, u: F.u, v: F.v, w: F.w, poly, w0, w1, mat });
+  piece(R(-gl - 0.2, gl + 0.2, -W, W), h + 1.1, h + 2.3, 'rock');
+  piece(R(-gl - 0.25, -gl + 0.05, -W, W), h, h + 1.1, mats.ceiling); piece(R(gl - 0.05, gl + 0.25, -W, W), h, h + 1.1, mats.ceiling);
+  const at = (a, b, hh) => [F.o[0] + F.u[0] * a + F.v[0] * b + F.w[0] * hh, F.o[1] + F.u[1] * a + F.v[1] * b + F.w[1] * hh, F.o[2] + F.u[2] * a + F.v[2] * b + F.w[2] * hh];
+  for (const e of [-gl, gl]) for (let k = 0; k < 3; k++) {
+    const p = at(e, rng.range(-w * 0.85, w * 0.85), h + 0.05);
+    out.push(shard(rng, p, [rng.range(-0.3, 0.3), -1, rng.range(-0.3, 0.3)], rng.range(0.35, 1.1), rng.range(0.1, 0.24), 'concrete'));
+    if (rng.chance(0.5)) out.push(beam(p, [p[0] + rng.range(-0.4, 0.4), p[1] - rng.range(0.5, 1.4), p[2] + rng.range(-0.4, 0.4)], 0.025, 0.025, 'rust'));
+  }
+  for (let k = 0; k < 7; k++) {
+    // (fallen to the sides, or kicked there: the middle of the way clear)
+    const p = at(rng.range(-gl, gl), (rng.chance(0.5) ? 1 : -1) * rng.range(w * 0.5, w * 0.85), 0), a = rng.range(0, Math.PI), sz = rng.range(0.2, 0.6);
+    out.push({ o: [p[0], 0, p[2]], u: X, v: Z, w: Y, poly: G.orientedRect([0, 0], [Math.cos(a), Math.sin(a)], sz, sz * rng.range(0.5, 0.9)), w0: p[1] - 0.15, w1: p[1] + Math.min(0.3, sz * rng.range(0.4, 0.7)), mat: rng.chance(0.6) ? 'concrete' : 'rock', taper: rng.range(0.55, 0.9) });   // (low enough to walk over)
+  }
+  if (wet) for (let k = rng.int(1, 3); k > 0; k--) {
+    const b = rng.range(-w * 0.7, w * 0.7), top = at(rng.range(-gl * 0.7, gl * 0.7), b, h + 1.1), foot = at(0, b, 0);
+    drips.push({ x: top[0], z: top[2], top: top[1], floor: foot[1] + 0.02, period: rng.range(0.7, 2.2), phase: rng.range(0, 3) });
+    puddle(water, [top[0], top[2]], foot[1] + 0.012, rng);
+  }
+  return true;
+}
+// A room's broken ceiling, where a fault runs under it with nothing close above: a ragged hole
+// along the fault, inside the room
+function roomBreak(n, faults, clearAbove, rng, settled = 0) {
+  const c = n.center || G.centroid(n.poly), a = rng.range(0, Math.PI);
+  const tries = faults.map((f) => ({ f, off: G.dot(G.sub(c, f.p), f.n) })).filter(({ f, off }) => Math.abs(off) < G.dist(c, n.poly[0]) * 0.55 && rng.chance(f.broken));
+  // (or settled: cracked anywhere)
+  if (!tries.length && rng.chance(settled)) tries.push({ f: { d: [Math.cos(a), Math.sin(a)], n: [-Math.sin(a), Math.cos(a)], p: G.add(c, [rng.range(-1.5, 1.5), rng.range(-1.5, 1.5)]) }, off: 0 });
+  for (const { f } of tries) {
+    const off = G.dot(G.sub(c, f.p), f.n);
+    const hc = G.add(G.sub(c, G.mul(f.n, off)), G.mul(f.d, rng.range(-1.5, 1.5))), pts = [];
+    for (let k = 0; k < 8; k++) { const a = (k / 8) * Math.PI * 2 + rng.range(-0.3, 0.3), r = rng.range(0.9, 1.8); pts.push(G.add(hc, G.add(G.mul(f.d, Math.cos(a) * r * 1.4), G.mul(f.n, Math.sin(a) * r)))); }
+    const hole = G.ccw(G.convexHull(pts));
+    if (hole.some((p) => G.sdPoly(p, n.poly) > -1)) continue;
+    if (!clearAbove(G.inflate(hole, 1.2), n.y1 + SLAB, 3.5)) continue;
+    return { hole };
+  }
+  return null;
+}
+// Over a broken ceiling: rock a little above the hole, broken rock round its sides, the slab's edge
+// hanging in, what fell on the floor below, and the water through it
+function brokenRoof(out, drips, water, hole, y0, y1, floor, wet, rng, avoid = []) {
+  const c = G.centroid(hole);
+  out.push(vprism(G.inflate(hole, 0.6), y1 + 0.7, y1 + 2.2, 'rock'));
+  for (let i = 0; i < hole.length; i++) {
+    const a = hole[i], b = hole[(i + 1) % hole.length], m = G.lerp(a, b, 0.5), o = G.norm(G.sub(m, c));
+    out.push(shard(rng, [m[0] + o[0] * 0.25, y1 - 0.05, m[1] + o[1] * 0.25], [rng.range(-0.2, 0.2), 1, rng.range(-0.2, 0.2)], 1.0, rng.range(0.35, 0.6), 'rock'));
+    if (rng.chance(0.6)) out.push(shard(rng, [m[0] - o[0] * 0.1, y0 + 0.02, m[1] - o[1] * 0.1], [rng.range(-0.3, 0.3), -1, rng.range(-0.3, 0.3)], rng.range(0.3, 0.9), rng.range(0.08, 0.2), 'concrete'));
+    if (rng.chance(0.35)) out.push(beam([m[0], y0 + 0.1, m[1]], [m[0] + rng.range(-0.4, 0.4), y0 - rng.range(0.4, 1.2), m[1] + rng.range(-0.4, 0.4)], 0.025, 0.025, 'rust'));
+  }
+  for (let k = 0; k < 6; k++) {
+    const p = G.add(c, [rng.range(-1.6, 1.6), rng.range(-1.6, 1.6)]), a = rng.range(0, Math.PI), sz = rng.range(0.2, 0.55);
+    if (avoid.some((q) => G.dist(q, p) < sz + 1.0)) continue;
+    out.push({ o: [p[0], 0, p[1]], u: X, v: Z, w: Y, poly: G.orientedRect([0, 0], [Math.cos(a), Math.sin(a)], sz, sz * rng.range(0.5, 0.9)), w0: floor - 0.15, w1: floor + Math.min(0.2, sz * rng.range(0.3, 0.6)), mat: rng.chance(0.5) ? 'concrete' : 'rock', taper: rng.range(0.55, 0.9) });   // (low: walked over)
+  }
+  if (wet) for (let k = rng.int(1, 3); k > 0; k--) {
+    const p = G.add(c, [rng.range(-0.7, 0.7), rng.range(-0.7, 0.7)]);
+    drips.push({ x: p[0], z: p[1], top: y1 + 0.7, floor: floor + 0.02, period: rng.range(0.6, 2.0), phase: rng.range(0, 3) });
+    puddle(water, p, floor + 0.012, rng);
+  }
+}
+function puddle(water, p, y, rng) {
+  const R = rng.range(0.45, 0.95), k = rng.int(9, 13), a0 = rng.range(0, Math.PI * 2), poly = [];
+  for (let i = 0; i < k; i++) { const a = a0 + (i / k) * Math.PI * 2, r = R * rng.range(0.55, 1); poly.push([p[0] + Math.cos(a) * r, p[1] + Math.sin(a) * r * 0.8]); }
+  water.push({ poly, y, puddle: true });
 }
 // A well's lights: on brackets on its walls every ~7 m of rise, going round it, never in a doorway
 function wellLamps(lamps, n, doors) {

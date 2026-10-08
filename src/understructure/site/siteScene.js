@@ -30,6 +30,7 @@ export function buildSiteScene(plan, site) {
     water: new THREE.MeshStandardMaterial({ color: '#1b3e3a', metalness: 0.55, roughness: 0.23 }),
     wet: new THREE.MeshStandardMaterial({ color: '#10140f', metalness: 0.25, roughness: 0.2, transparent: true, opacity: 0.42, depthWrite: false, side: THREE.DoubleSide }),
     trickle: new THREE.MeshStandardMaterial({ color: '#8fa7a4', metalness: 0.6, roughness: 0.06, transparent: true, opacity: 0.38, depthWrite: false, side: THREE.DoubleSide }),
+    drop: new THREE.MeshStandardMaterial({ color: '#d8ebe8', emissive: '#2c3e3c', emissiveIntensity: 0.6, metalness: 0.3, roughness: 0.05 }),
     puddle: new THREE.MeshStandardMaterial({ color: '#141c1a', metalness: 0.7, roughness: 0.04, transparent: true, opacity: 0.62, depthWrite: false }),
   };
   for (const name of ['concrete', 'floor', 'metal', 'rust', 'rock']) mat[name].userData.webgpu = { kind: 'survey' };
@@ -122,7 +123,29 @@ export function buildSiteScene(plan, site) {
   const flashlight = new THREE.SpotLight(0xe2efe0, 120, 120, Math.PI / 7, 0.65, 1.15);
   flashlight.castShadow = true; flashlight.userData.shadowPriority = 1; scene.add(flashlight, flashlight.target);
 
+  // water dripping through broken ceilings: a drop or two falling from each, under gravity
+  const drips = site.drips || [], DROPS = 2;
+  const dropMesh = drips.length ? new THREE.InstancedMesh(new THREE.SphereGeometry(0.022, 6, 4), mat.drop, drips.length * DROPS) : null;
+  if (dropMesh) { dropMesh.frustumCulled = false; root.add(dropMesh); }
+  const _m = new THREE.Matrix4(), _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vector3();
+  function updateDrops(time) {
+    if (!dropMesh) return;
+    let i = 0;
+    for (const d of drips) {
+      const fall = Math.sqrt(2 * Math.max(0.2, d.top - d.floor) / 9.81);
+      for (let k = 0; k < DROPS; k++) {
+        const t = (time + d.phase + k * d.period * 0.5) % (d.period + fall);
+        // (a drop gathers under the rock, then falls: stretched as it speeds up)
+        const fallT = Math.max(0, t - d.period), y = fallT > 0 ? d.top - 0.5 * 9.81 * fallT * fallT : d.top - 0.02, v = 9.81 * fallT;
+        _p.set(d.x, Math.max(d.floor, y), d.z); _s.set(1, 1 + Math.min(4, v * 0.6), 1).multiplyScalar(fallT > 0 || t > d.period * 0.6 ? 1 : 0.6);
+        _m.compose(_p, _q, _s); dropMesh.setMatrixAt(i++, _m);
+      }
+    }
+    dropMesh.instanceMatrix.needsUpdate = true;
+  }
+
   function update(camera, time, state) {
+    updateDrops(time);
     flashlight.position.copy(camera.position);
     flashlight.target.position.set(0, -0.03, -1).applyQuaternion(camera.quaternion).add(camera.position);
     flashlight.intensity = state.flashlight ? 120 : 0;

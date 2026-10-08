@@ -50,10 +50,28 @@ stacked doorways on one hall face all stay open. Halls get storey ledges with la
 strips, roof hubs, a pit glow, machinery (drums with domes, cones, crowns), conduits, and rock
 intrusions (always one in the first hall you reach).
 
+## Decay, from the site's history (`plan/compile.js`)
+
+- Passages are 4.4 m wide by 4.2 m high (spurs 3.5 x 3.6); rooms 5.5-8.5 m across and high.
+- One to three faults cross the site, the first through the breach (the visitors came down where
+  the wound had cracked the shell). A passage crossing one sags and rolls with it over a stretch
+  of one straight run (never near its doorways), built in short tipped pieces; its ceiling is
+  often broken open there, rock above, edges and rebar hanging, rubble below. Deep passages on a
+  wet world settle a little and crack now and then; rooms on a fault, or deep and wet, can have a
+  broken roof. Breaks only where nothing lies within a few metres above.
+- Collapsed passages (planned like spurs) end at a rock plug, tumbled blocks and a fallen slab.
+- Sealed doors (rusted, welded, jammed open on darkness) on free walls of rooms, up zero-g wells
+  and along passages: more of the place than you can reach.
+- On wet worlds: trickles down walls (more deep down, by the cistern, in the visitors' rock),
+  ragged puddles, drops falling through broken ceilings; the sound picks them up.
+- Every lamp is mounted (ceiling, wall bracket, rail post, ledge floodlight, cable, or a glow), and
+  every find stands on something (tested).
+
 ## Playing (`src/understructure/site/`)
 
 `SiteCollision` (capsule BVH, floor ray, gravity zones, plus gate blockers, floors and fold
-portals), `SiteWalker` (momentum, jumps that keep their speed, low-g ballistics, zero-g floating,
+portals), controller support through the game's `Input` (on-foot layout; spacewalk's in zero-g),
+`SiteWalker` (momentum, jumps that keep their speed, low-g ballistics, zero-g floating,
 gravity alerts, recovery after a fall of 6 m or more), `SiteMechanisms` (gates), `SiteGuide` +
 `SiteCompass` (3D arrow in a glass sphere toward the next place or key), `SiteMap` (Metroid-style
 outlines; corner map, M for the full one), `SiteSound` (room echo, hum, water, footsteps, suit
