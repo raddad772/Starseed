@@ -128,3 +128,15 @@ test('passages stay short: no corridor run over 36 m', () => {
   }
   assert.ok(long.length === 0, `${long.length} long corridors, e.g. ${long.slice(0, 6).join(', ')}`);
 });
+
+test('every doorway compiles: no door failures, no degenerate room outlines', async () => {
+  const { compileSite } = await import('../../src/understructure/plan/compile.js');
+  const bad = [];
+  for (const s of SEEDS) {
+    const plan = planSite(s);
+    for (const n of plan.nodes) if (n.poly) for (let i = 0; i < n.poly.length; i++) if (G.dist(n.poly[i], n.poly[(i + 1) % n.poly.length]) < 0.05) bad.push(`${s}:${n.id} short edge`);
+    const site = compileSite(plan);
+    if (site.stats.doorFails) bad.push(`${s}: ${site.stats.doorFails} door failures`);
+  }
+  assert.deepEqual(bad, []);
+});

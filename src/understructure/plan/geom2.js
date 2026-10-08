@@ -166,6 +166,24 @@ export function shortestPath(s, t, obstacles) {
   return path.reverse();
 }
 
+// Keep the part of convex poly where dot(p, n) <= d (Sutherland-Hodgman).
+export function clipHalf(poly, n, d) {
+  const out = [];
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i], b = poly[(i + 1) % poly.length], da = dot(a, n) - d, db = dot(b, n) - d;
+    if (da <= 0) out.push(a);
+    if ((da < 0 && db > 0) || (da > 0 && db < 0)) out.push(lerp(a, b, da / (da - db)));
+  }
+  return dedupe(out);
+}
+// Drop repeated corners (and the closing repeat).
+export function dedupe(poly, eps = 1e-3) {
+  const out = [];
+  for (const p of poly) if (!out.length || dist(p, out.at(-1)) > eps) out.push(p);
+  while (out.length > 1 && dist(out[0], out.at(-1)) <= eps) out.pop();
+  return out;
+}
+
 // Do segments a-b and c-d cross (properly, not merely touching at an end)?
 export function segsCross(a, b, c, d) {
   const d1 = cross(sub(b, a), sub(c, a)), d2 = cross(sub(b, a), sub(d, a));

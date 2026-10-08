@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Starseed — Founders' outpost</title>
+<link rel="stylesheet" href="./src/understructure/style.css">
+<style>#credit{font:10px monospace;letter-spacing:.12em;color:var(--amber)}#kinds{font:10px monospace;color:var(--muted);text-transform:uppercase;letter-spacing:.12em}</style>
+<script type="importmap">{"imports":{"three":"./vendor/three.module.js","three/addons/":"./vendor/addons/","three/webgpu":"./vendor/three-avbd/three-webgpu-stub.js"}}</script>
+</head><body>
+<canvas id="view" tabindex="0" aria-label="First person exploration of a founders' outpost"></canvas>
+<div class="vignette"></div>
+<header><div class="wordmark">STARSEED <span>/ FOUNDERS' OUTPOST</span></div><div id="site">SUMP-07</div></header>
+<div id="telemetry"><span id="zone">BREACH STAGING</span><strong id="depth">−240.0 <small>M</small></strong><div id="gravity">LOCAL FIELD 1.00 G</div><div id="floatHelp" hidden>Zero gravity · WASD push along your view<br>Space rise · C descend · R brake</div></div>
+<div id="intro" class="panel"><div class="eyebrow">GRAPH-PLANNED SITE · PROTOTYPE</div><h1>Someone came<br>before us.</h1><p>They tunnelled down and broke in. The founders' own way out is sealed from outside, and opens only from within.</p><div id="kinds"></div><button id="start" class="primary" disabled>Preparing…</button><div class="keys">WASD move · Mouse / arrows look · Shift faster<br>Space jump · E interact · F hand light · Esc pause<br>Zero-g: Space rise · C descend · R brake</div><div class="seedrow"><label for="seed">Site seed</label><input id="seed" value="SUMP-07" maxlength="48"><button id="generate">Generate</button></div></div>
+<div id="crosshair">·</div><div id="prompt" hidden></div><div id="toast" role="status" aria-live="polite" hidden></div>
+<footer><div><span class="eyebrow">FIELD OBJECTIVE</span><div id="objective"></div></div><div class="progress"><b id="count">000%</b><span id="credit">CREDIT 0 / 170</span></div></footer>
+<div id="fatal" hidden></div>
+<script type="module" src="./src/understructure/site/siteMain.js"></script>
+</body></html>

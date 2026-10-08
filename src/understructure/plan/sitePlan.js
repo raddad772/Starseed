@@ -41,7 +41,7 @@ export function planSite(seed = 'SUMP-07', { themes = [], environment = {} } = {
   seed = normalizeSeed(seed) || 'SUMP-07';
   const root = Rng.fromString(`megaplan-v${PLAN_VERSION}:${seed}`);
   let last = null;
-  for (let attempt = 0; attempt < 40; attempt++) {
+  for (let attempt = 0; attempt < 80; attempt++) {
     const plan = tryPlan(seed, root.fork(attempt), themes, environment);
     if (plan.ok) { plan.attempt = attempt; return plan; }
     last = plan;
@@ -81,10 +81,24 @@ function tryPlan(seed, rng, themes, environment) {
   const access = { id: 'ACCESS', kind: 'access', name: 'FOUNDERS ACCESS', r: lr.range(8, 11), sides: 8, aspect: 1, rot: lr.range(0, 1), y0: r2(hTop - 8), y1: SURFACE_Y };
   if (!placeBeside(lr, access, lastL, landmarks, cl, [10, 20])) return fail('access placement');
   const vols = [...landmarks, access];
+  // the data core: beside the founders' shaft, facing the way the route arrives
+  const core = { id: 'core', kind: 'core', name: 'DATA CORE', y0: hTop, y1: r2(hTop + lr.range(5, 6.5)), gravity: 1 };
+  {
+    const toward = G.norm(G.sub(lastL.center, access.center)), a0 = Math.atan2(toward[1], toward[0]);
+    let ok = false;
+    for (let t = 0; t < 80 && !ok; t++) {
+      const a = a0 + (t % 2 ? 1 : -1) * Math.floor((t + 1) / 2) * 0.22, rr = lr.range(5, 6.5);
+      const d = access.r + rr + lr.range(6, 9), c = G.add(access.center, [Math.cos(a) * d, Math.sin(a) * d]);
+      core.poly = G.regularPoly(c[0], c[1], rr, rr * lr.range(0.8, 1), lr.pick([6, 7, 8]), lr.range(0, Math.PI));
+      core.center = c;
+      ok = vols.every((v) => !G.polysOverlap(core.poly, v.poly, v === access ? 5 : 7));
+    }
+    if (!ok) return fail('core placement');
+  }
 
   // --- 2. The break-in: a rough staging room outside the first volume --------
   const firstL = landmarks[order[0]];
-  const staging = { id: 'staging', kind: 'staging', name: 'BREACH STAGING', y0: heights[0] - 0.4, y1: heights[0] + 4.2, gravity: 1 };
+  const staging = { id: 'staging', kind: 'staging', name: 'BREACH STAGING', y0: heights[0], y1: heights[0] + 4.4, gravity: 1 };
   {
     let ok = false;
     for (let t = 0; t < 60 && !ok; t++) {
@@ -93,7 +107,7 @@ function tryPlan(seed, rng, themes, environment) {
       const d = firstL.r + lr.range(16, 26);
       const c = G.add(firstL.center, [Math.cos(a) * d, Math.sin(a) * d]);
       staging.poly = G.regularPoly(c[0], c[1], lr.range(6, 8), lr.range(4.5, 6), 6, lr.range(0, Math.PI));
-      ok = vols.every((v) => !G.polysOverlap(staging.poly, v.poly, 6));
+      ok = [...vols, core].every((v) => !G.polysOverlap(staging.poly, v.poly, 6));
     }
     if (!ok) return fail('staging placement');
     staging.center = G.centroid(staging.poly);
@@ -103,42 +117,58 @@ function tryPlan(seed, rng, themes, environment) {
   const S = new Space();
   for (const v of vols) S.addSolid(v.poly, v.y0, v.y1, v.id);
   S.addSolid(staging.poly, staging.y0, staging.y1, staging.id);
+  S.addSolid(core.poly, core.y0, core.y1, core.id);
   const nodes = [staging], links = [], route = [staging.id];
   const pr = rng.fork('portals'), cr = rng.fork('chains');
   let prevOut = { p: staging.center, y: heights[0], node: staging, ownPoly: staging.poly };
   const crossings = [];
   for (let i = 0; i <= order.length; i++) {
     const final = i === order.length;
-    const L = final ? access : landmarks[order[i]];
+    const L = final ? core : landmarks[order[i]];
     const y = final ? hTop : heights[i];
-    const nextC = final ? null : (i + 1 < order.length ? landmarks[order[i + 1]].center : access.center);
+    const nextC = final ? null : (i + 1 < order.length ? landmarks[order[i + 1]].center : core.center);
     const entry = portalOn(pr, L, prevOut.p, y, null);
     const exit = final ? null : portalOn(pr, L, nextC, y, entry.face);
-    const chain = buildChain(cr.fork(i), S, prevOut, entry, L, i, final);
+    const chain = buildChain(cr.fork(i), S, prevOut, entry, L, i, final ? core.id : `X${i}`);
     if (!chain) return fail(`chain ${i}`);
     for (const n of chain.nodes) { nodes.push(n); route.push(n.id); }
     links.push(...chain.links);
-    const cross = {
-      id: final ? 'access' : `X${i}`, kind: final ? 'access' : 'crossing', landmark: L.id, visit: i,
-      name: final ? 'FOUNDERS ACCESS' : L.name, y0: y, y1: y + 3.2, gravity: 1, entry, exit,
-    };
-    if (final) {
-      cross.walk = [entry.at, G.lerp(entry.at, L.center, 0.85)];
-    } else {
-      cross.walk = [entry.at, exit.at];
-      for (const c of crossings) if (c.landmark === L.id && Math.abs(c.y0 - y) < 6) return fail('stacked crossings');
-    }
+    if (final) break;
+    const cross = { id: `X${i}`, kind: 'crossing', landmark: L.id, visit: i, name: L.name, y0: y, y1: y + 3.2, gravity: 1, entry, exit, walk: [entry.at, exit.at] };
+    for (const c of crossings) if (c.landmark === L.id && Math.abs(c.y0 - y) < 6) return fail('stacked crossings');
     cross.poly = G.segRect(cross.walk[0], cross.walk[1], 1.4, 0.4);
     nodes.push(cross); route.push(cross.id); crossings.push(cross);
-    if (!final) prevOut = { p: exit.out, y, node: cross, portal: exit };
+    prevOut = { p: exit.out, y, node: cross, portal: exit };
   }
-  // the data core is the last room before the access shaft
-  const core = nodes[route.indexOf('access') - 1];
-  if (!core || core.kind !== 'room') return fail('core');
-  core.kind = 'core'; core.name = 'DATA CORE';
+  nodes.push(core); route.push(core.id);
+  // a short passage from the core into the founders' shaft, onto its lift deck
+  {
+    const ae = portalOn(pr, access, core.center, hTop, null);
+    const lk = { id: 'kcore', a: core.id, b: 'access', kind: 'corridor', main: true, path: [core.center, ae.out, ae.at].map(([x, z]) => [r2(x), hTop, r2(z)]), width: CORRIDOR_W, height: 3 };
+    const blocked = S.inBand(hTop - 1, hTop + 4, [core.id, access.id]).some((o) => segs(lk).some((sg) => G.polysOverlap(sg.poly, o.poly, 0.3)));
+    if (blocked) return fail('core to access');
+    links.push(lk); for (const sg of segs(lk)) S.addSolid(sg.poly, sg.y0, sg.y1, lk.id);
+    const acc = { id: 'access', kind: 'access', landmark: access.id, name: 'FOUNDERS ACCESS', y0: hTop, y1: hTop + 3.2, gravity: 1, entry: ae, walk: [ae.at, G.lerp(ae.at, access.center, 0.85)] };
+    acc.poly = G.segRect(acc.walk[0], acc.walk[1], 1.4, 0.4);
+    nodes.push(acc); route.push(acc.id); crossings.push(acc);
+  }
 
   // --- 4. Spurs: short dead ends off the route -------------------------------
   const spurs = addSpurs(rng.fork('spurs'), S, nodes, links);
+
+  // every doorway needs a facet of its own: drop spurs that would not leave room
+  // for one, and re-plan if a doorway on the route cannot have one
+  for (let guard = 0; guard < 12; guard++) {
+    const bad = facetDoors(nodes, links, true);
+    if (!bad.length) break;
+    const spur = bad.find((l) => !l.main);
+    if (!spur) return fail('door facets');
+    const dead = spur.a.startsWith('D') ? spur.a : spur.b;
+    links.splice(links.indexOf(spur), 1);
+    nodes.splice(nodes.findIndex((n) => n.id === dead), 1);
+    spurs.splice(spurs.findIndex((n) => n.id === dead), 1);
+  }
+  facetDoors(nodes, links, false);
 
   // --- 5. Machinery inside the big volumes -----------------------------------
   const machines = [];
@@ -243,7 +273,17 @@ function clearance(p, obs) {
 // Rooms from prev.p (outside the previous space) to the target portal: the
 // shortest way around everything in the height band, a climb room where the
 // gap is widest, and one or two ordinary rooms spaced along the way.
-function buildChain(rng, S, prev, entry, L, idx, final) {
+// Down the middle of the gaps when they are wide enough (rooms then fit on
+// the line), hugging the hulls when they are not.
+function buildChain(rng, S, prev, entry, L, idx, targetId) {
+  for (const clear of [7.5, 6, ROUTE_CLEAR]) {
+    const got = buildChainAt(rng.fork(clear), S, prev, entry, L, idx, targetId, clear);
+    if (got) return got;
+  }
+  return null;
+}
+
+function buildChainAt(rng, S, prev, entry, L, idx, targetId, clearance) {
   const ya = prev.y, yb = entry.y, dy = yb - ya;
   const band = [Math.min(ya, yb) - 1, Math.max(ya, yb) + 6];
   const obsAll = S.inBand(band[0], band[1]);
@@ -252,7 +292,7 @@ function buildChain(rng, S, prev, entry, L, idx, final) {
   const inflated = obsRaw.map((o) => {
     // never let the endpoints sit inside an inflated obstacle
     const lim = Math.min(G.sdPoly(start, o.poly), G.sdPoly(goal, o.poly)) - 0.3;
-    return G.inflate(o.poly, Math.max(0.5, Math.min(ROUTE_CLEAR, lim)));
+    return G.inflate(o.poly, Math.max(0.5, Math.min(clearance, lim)));
   });
   const core = G.shortestPath(start, goal, inflated);
   if (!core) return null;
@@ -285,6 +325,14 @@ function buildChain(rng, S, prev, entry, L, idx, final) {
         tangled = G.segsCross(v0.p, c, a, b) || G.segsCross(c, v1.p, a, b);
       }
       if (tangled) continue;
+      // the two passages at a room must not touch just outside its wall
+      // (a climb room's ways in and out are a storey or more apart: they cannot)
+      if (room.kind !== 'climb' && stubsTouch(room.poly, c, v0.p, v1.p)) continue;
+      if (!facetsOk(room.poly, c, [G.sub(v0.p, c), G.sub(v1.p, c)])) continue;
+      if (v0.room && i > 0 && !facetsOk(v0.room.poly, v0.p, [G.sub(path[i - 1].p, v0.p), G.sub(c, v0.p)])) continue;
+      if (v1.room && i + 2 < path.length && !facetsOk(v1.room.poly, v1.p, [G.sub(c, v1.p), G.sub(path[i + 2].p, v1.p)])) continue;
+      if (v0.room && v0.room.kind !== 'climb' && i > 0 && stubsTouch(v0.room.poly, v0.p, path[i - 1].p, c)) continue;
+      if (v1.room && v1.room.kind !== 'climb' && i + 2 < path.length && stubsTouch(v1.room.poly, v1.p, c, path[i + 2].p)) continue;
       // no other stretch of the route may pass through the new room
       const fat = G.inflate(room.poly, CORRIDOR_W + 0.3);
       let crosses = false;
@@ -307,11 +355,15 @@ function buildChain(rng, S, prev, entry, L, idx, final) {
 
   const climb = Math.abs(dy) > 3.5;
   if (climb) {
-    const mode = Math.abs(dy) >= 11 ? 'zero-g' : 'low-g';
-    const r0 = mode === 'zero-g' ? rng.range(4.5, 6.5) : rng.range(6.5, 9);
+    const mode0 = Math.abs(dy) >= 11 ? 'zero-g' : 'low-g';
+    const r0 = mode0 === 'zero-g' ? rng.range(4.5, 6.5) : rng.range(6.5, 9);
+    // a low-gravity room needs space for its decks to spiral without stacking
+    // overhead; where there is not, the climb is a zero-g well instead
+    const sizes = mode0 === 'zero-g' ? [[r0, 'zero-g'], [r0 * 0.8, 'zero-g'], [4.2, 'zero-g']] : [[r0, 'low-g'], [Math.max(6.2, r0 * 0.85), 'low-g'], [5.2, 'zero-g'], [4.2, 'zero-g']];
     let got = null;
-    for (const r of [r0, r0 * 0.8, 4.2]) {
+    for (const [r, mode] of sizes) {
       const room = roomMaker(`C${idx}`, 'climb', r, mode);
+      room.name = mode === 'zero-g' ? 'NULL WELL' : 'BROKEN DECKS'; room.mode = mode;
       const L0 = G.polylineLength(pts());
       for (const f of [0.5, 0.35, 0.65, 0.2, 0.8, 0.1, 0.9]) if ((got = tryRoom(L0 * f, r, room))) break;
       if (got) break;
@@ -321,7 +373,7 @@ function buildChain(rng, S, prev, entry, L, idx, final) {
   // ordinary rooms: one per ~26 m of route, at least one
   const want = Math.max(1, Math.min(3, Math.round(G.polylineLength(pts()) / 26)));
   for (let k = 0; k < want; k++) {
-    const r = rng.range(3.4, 6), room = roomMaker(`R${idx}.${k}`, 'room', r);
+    const r = rng.range(4, 6.4), room = roomMaker(`R${idx}.${k}`, 'room', r);
     const f = (k + 1) / (want + 1) + rng.range(-0.08, 0.08);
     for (const df of [0, 0.12, -0.12, 0.24, -0.24]) if (tryRoom(G.polylineLength(pts()) * Math.max(0.05, Math.min(0.95, f + df)), r, room)) break;
   }
@@ -333,6 +385,7 @@ function buildChain(rng, S, prev, entry, L, idx, final) {
     let worst = 0, at = 0;
     for (let i = 1; i < stops.length; i++) if (stops[i] - stops[i - 1] > worst) { worst = stops[i] - stops[i - 1]; at = (stops[i] + stops[i - 1]) / 2; }
     if (worst <= 28) break;
+    if (t === 9 && worst > 34) return null; // still a long bare passage: plan this stretch another way
     const long = Math.min(11, worst / 3.2);
     const tries = [roomMaker(`G${idx}.${extra}`, 'gallery', long, null, rng.range(0.28, 0.4)), roomMaker(`J${idx}.${extra}`, 'room', 3.2)];
     let ok = false;
@@ -343,7 +396,7 @@ function buildChain(rng, S, prev, entry, L, idx, final) {
     }
     if (ok) extra++;
   }
-  if (!placed.some((r) => r.kind === 'room')) return null;
+  if (!placed.length && Math.abs(dy) > 0.5) return null;
   // heights: rooms before the climb at ya, after it at yb
   let y = ya;
   for (const v of path) {
@@ -367,12 +420,28 @@ function buildChain(rng, S, prev, entry, L, idx, final) {
       run = [[...v.p, level]];
     } else run.push([...v.p, null]);
   }
-  links.push(corridor(`k${idx}.${links.length}`, from, final ? 'access' : `X${idx}`, run.map(([x, z, yy]) => [x, z, yy ?? level]).concat([])));
+  links.push(corridor(`k${idx}.${links.length}`, from, targetId, run.map(([x, z, yy]) => [x, z, yy ?? level])));
   // the last corridor must arrive at the portal's height
   for (const q of links.at(-1).path) q[1] = r2(yb);
   for (const n of nodes) { S.addSolid(n.poly, n.y0, n.y1, n.id); delete n.place; delete n.fat; }
   for (const l of links) for (const seg of segs(l)) S.addSolid(seg.poly, seg.y0, seg.y1, l.id);
-  return { nodes, links, lastId: nodes.at(-1).id };
+  return { nodes, links, lastId: nodes.at(-1)?.id ?? prev.node.id };
+}
+
+// Do the passages from room centre c toward a and toward b overlap in the
+// first stretch outside the room (each with its walls and a margin)?
+function stubsTouch(poly, c, a, b) {
+  const fat = G.inflate(poly, WALL_GAP * 0.5);
+  const stub = (to) => {
+    const d = G.norm(G.sub(to, c)), L = G.dist(c, to);
+    let lo = 0, hi = L;
+    for (let k = 0; k < 24; k++) { const m = (lo + hi) / 2; if (G.inside(G.add(c, G.mul(d, m)), fat)) lo = m; else hi = m; }
+    const s0 = Math.min(hi, L), s1 = Math.min(L, s0 + 5);
+    if (s1 - s0 < 0.2) return null;
+    return G.segRect(G.add(c, G.mul(d, s0)), G.add(c, G.mul(d, s1)), CORRIDOR_W + 0.5 + 0.2);
+  };
+  const p = stub(a), q = stub(b);
+  return !!(p && q && G.polysOverlap(p, q, 0));
 }
 
 function arcOf(path, p) {
@@ -446,7 +515,8 @@ function addSpurs(rng, S, nodes, links) {
       if (G.polysOverlap(room.poly, h.poly, WALL_GAP + 2)) continue;
       const attached = links.filter((l) => l.a === h.id || l.b === h.id), linked = attached.map((l) => l.id);
       const outDirs = attached.map((l) => { const q = l.a === h.id ? l.path[1] : l.path.at(-2); return G.norm(G.sub([q[0], q[2]], c)); });
-      if (outDirs.some((o) => G.dot(o, d) > Math.cos(0.8))) continue;
+      if (outDirs.some((o) => G.dot(o, d) > Math.cos(80 * Math.PI / 180))) continue;
+      if (!facetsOk(h.poly, c, [...outDirs, d])) continue;
       if (obs.some((o) => G.polysOverlap(room.poly, o.poly, WALL_GAP))) continue;
       if (obs.some((o) => !linked.includes(o.id) && G.polysOverlap(corr.poly, o.poly, 0.4) && !G.polysOverlap(o.poly, h.poly, 0))) continue;
       S.addSolid(room.poly, room.y0, room.y1, room.id);
@@ -458,6 +528,58 @@ function addSpurs(rng, S, nodes, links) {
     }
   }
   return spurs;
+}
+
+// Can a room (poly, centre c) give each of its doorways (directions dirs, from
+// the centre) a facet wide enough, with no facet slicing into another's span?
+function facetsOk(poly, c, dirs, half = CORRIDOR_W + 0.6) {
+  const fs = [];
+  for (const u0 of dirs) {
+    const u = G.norm(u0), side = G.perp(u);
+    const fits = (s) => [1, -1].every((k) => G.inside(G.add(G.add(c, G.mul(u, s)), G.mul(side, k * half)), poly, 1e-6));
+    if (!fits(0)) return false;
+    let lo = 0, hi = Math.max(...poly.map((p) => G.dot(G.sub(p, c), u)));
+    for (let k = 0; k < 24; k++) { const m = (lo + hi) / 2; if (fits(m)) lo = m; else hi = m; }
+    if (lo < 0.8) return false;
+    fs.push({ u, side, s: lo });
+  }
+  for (const f of fs) for (const g of fs) {
+    if (f === g) continue;
+    for (const k of [1, -1]) { const e = G.add(G.mul(f.u, f.s), G.mul(f.side, k * half)); if (G.dot(e, g.u) > g.s + 0.02) return false; }
+  }
+  return true;
+}
+
+// Every doorway gets a flat facet of its own: the room's polygon is cut
+// square to the passage where it arrives, wide enough for the door and its
+// jambs, so no doorway straddles a corner.
+function facetDoors(nodes, links, dryRun) {
+  const bad = [];
+  for (const n of nodes) {
+    if (n.kind === 'crossing' || n.kind === 'access') continue;
+    const c = n.center || G.centroid(n.poly), orig = n.poly;
+    // each doorway's facet, measured against the room's own outline...
+    const doors = [];
+    for (const l of links.filter((q) => q.a === n.id || q.b === n.id)) {
+      const q = l.a === n.id ? l.path[1] : l.path.at(-2);
+      const u = G.norm(G.sub([q[0], q[2]], c)), side = G.perp(u), half = l.width + 0.6;
+      const fits = (s) => [1, -1].every((k) => G.inside(G.add(G.add(c, G.mul(u, s)), G.mul(side, k * half)), orig, 1e-6));
+      let lo = 0, hi = Math.max(...orig.map((p) => G.dot(G.sub(p, c), u)));
+      if (!fits(lo)) { bad.push(l); continue; }
+      for (let k = 0; k < 30; k++) { const m = (lo + hi) / 2; if (fits(m)) lo = m; else hi = m; }
+      if (lo < 0.8) { bad.push(l); continue; }
+      doors.push({ l, u, side, half, s: lo, d: G.dot(c, u) + lo, at: G.add(c, G.mul(u, lo)) });
+    }
+    // ...all cut at once; a doorway fails only if another facet slices its span
+    let poly = orig;
+    for (const d of doors) poly = G.clipHalf(poly, d.u, d.d);
+    for (const d of doors) {
+      const ends = [G.add(d.at, G.mul(d.side, d.half)), G.add(d.at, G.mul(d.side, -d.half))];
+      if (doors.some((o) => o !== d && ends.some((e) => G.dot(e, o.u) > o.d + 0.02))) bad.push(d.l);
+    }
+    if (!dryRun) n.poly = G.dedupe(poly.map((p) => [r2(p[0]), r2(p[1])]), 0.15);
+  }
+  return bad;
 }
 
 // Giant forms inside a volume: kept clear of its catwalks.

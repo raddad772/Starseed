@@ -23,6 +23,8 @@
   <input id="seed" value="SUMP-07" aria-label="Seed">
   <button id="go">Plan</button><button id="prev">◀</button><button id="next">▶</button>
   <label><input id="wet" type="checkbox" checked> wet</label>
+  <label><input id="built" type="checkbox"> built</label>
+  <label>cut <input id="cut" type="range" min="-40" max="140" value="140" style="width:120px"></label>
   <span id="stats"></span>
 </div>
 <canvas id="gl"></canvas>
@@ -32,10 +34,14 @@
 <script type="module">
 import * as THREE from 'three';
 import { planSite, segs } from '../src/understructure/plan/sitePlan.js';
+import { compileSite } from '../src/understructure/plan/compile.js';
+import { solidGeometries } from '../src/understructure/plan/solidMesh.js';
 
 const canvas = document.getElementById('gl');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(devicePixelRatio);
+renderer.localClippingEnabled = true;
+const cutPlane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 140);
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x0d1014);
 const camera = new THREE.PerspectiveCamera(45, 1, 1, 5000);
@@ -68,7 +74,8 @@ canvas.addEventListener('pointermove', (e) => {
 });
 canvas.addEventListener('wheel', (e) => { e.preventDefault(); view.dist *= Math.exp(e.deltaY * 0.001); draw(); }, { passive: false });
 
-const mat = (c, o = 1) => new THREE.MeshLambertMaterial({ color: c, transparent: o < 1, opacity: o, depthWrite: o >= 1 });
+const mat = (c, o = 1) => new THREE.MeshLambertMaterial({ color: c, transparent: o < 1, opacity: o, depthWrite: o >= 1, clippingPlanes: [cutPlane] });
+const SOLID = { concrete: 0x9a9c94, floor: 0x7d7a70, metal: 0x8a949c, rust: 0x8a5a3a, rock: 0x6a5a4a, dark: 0x30363a };
 function prism(poly, y0, y1, material, edges = 0) {
   const shape = new THREE.Shape(poly.map(([x, z]) => new THREE.Vector2(x, -z)));
   const g = new THREE.ExtrudeGeometry(shape, { depth: y1 - y0, bevelEnabled: false });
@@ -86,6 +93,7 @@ function build() {
   const t0 = performance.now();
   plan = planSite(seed, { environment: { water: document.getElementById('wet').checked } });
   const ms = (performance.now() - t0).toFixed(1);
+  if (document.getElementById('built').checked) { buildSolids(); return finish(seed, ms); }
   for (const L of [...plan.landmarks, plan.access]) prism(L.poly, L.y0, Math.min(L.y1, plan.surfaceY), mat(L.kind === 'access' ? 0xd070e0 : 0x8090a0, 0.07), L.kind === 'access' ? 0xd070e0 : 0x8fa3b8);
   for (const m of plan.machines) {
     const g = new THREE.CylinderGeometry(m.r, m.r, m.y1 - m.y0, m.kind === 'rack' ? 6 : 14);
@@ -111,10 +119,24 @@ function build() {
   const st = plan.nodes[0];
   const tun = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 1.6, 60, 8), mat(0xe05a4a, 0.6));
   tun.position.set(plan.entry.tunnel[0], st.y1 + 30, plan.entry.tunnel[1]); group.add(tun);
+  finish(seed, ms);
+}
+let site;
+function buildSolids() {
+  const t0 = performance.now();
+  site = compileSite(plan);
+  for (const [m, g] of solidGeometries(site.solids)) group.add(new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color: SOLID[m] ?? 0xff00ff, clippingPlanes: [cutPlane], side: THREE.FrontSide })));
+  for (const z of site.zones) prism(z.poly, z.y0, z.y1, mat(z.gravity === 0 ? 0x5fd0e0 : 0x9fd0ff, 0.12));
+  for (const f of plan.finds) { const m = new THREE.Mesh(new THREE.SphereGeometry(f.units > 1 ? 1.2 : 0.4, 10, 8), mat(f.units > 1 ? 0xff60ff : 0xffffff)); m.position.set(f.pos[0], f.pos[1] + 0.8, f.pos[2]); group.add(m); }
+  for (const w of site.water) prism(w.poly, w.y - 0.2, w.y, mat(0x2a6070, 0.7));
+  window.__site = site; window.__compileMs = performance.now() - t0;
+}
+function finish(seed, ms) {
   const box = new THREE.Box3().setFromObject(group);
   box.max.y = Math.min(box.max.y, 140);
   box.getCenter(view.target);
   const s = plan.stats;
+  if (site && document.getElementById('built').checked) { document.getElementById('stats').textContent = `${site.solids.length} solids, ${site.lamps.length} lamps, ${site.zones.length} gravity zones, door failures ${site.stats.doorFails}, compile ${window.__compileMs.toFixed(1)} ms`; location.hash = seed; draw2d(); draw(); return; }
   document.getElementById('stats').textContent = `${plan.landmarks.map((l) => l.kind).join(' · ')} | crossings ${s.crossings}, route rooms ${s.routeRooms}, dead ends ${s.spurs} | climbs ${s.climbs.join(', ')} | rise ${s.rise} m | corridors ${s.corridorTotal} m (longest ${s.corridorMax}) | finds ${s.finds} (${s.rawUnits} units) | attempt ${plan.attempt}, ${ms} ms`;
   location.hash = seed;
   draw2d();
@@ -148,6 +170,8 @@ document.getElementById('go').onclick = build;
 document.getElementById('prev').onclick = () => step(-1);
 document.getElementById('next').onclick = () => step(1);
 document.getElementById('wet').onchange = build;
+document.getElementById('built').onchange = build;
+document.getElementById('cut').oninput = (e) => { cutPlane.constant = +e.target.value; draw(); };
 seedInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') build(); });
 resize(); build();
 window.__plan = () => plan;
