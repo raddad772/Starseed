@@ -3,6 +3,8 @@ import * as THREE from 'three';
 import { thrustAvailability } from './propulsion.js';
 import { heatSafeSpeed,gasProperties } from './reentry.js';
 const clamp=THREE.MathUtils.clamp;
+const FINAL_DECEL=3;   // m/s2: the gentlest braking the final descent plans on
+
 export function maneuverAuthority(s) {
   const belly=s.limits.belly>s.limits.main;
   return {belly, acceleration:.92*Math.max(s.limits.belly,s.limits.main)*thrustAvailability(s)/s.effMass,
@@ -15,8 +17,17 @@ export function surfaceTargets(s,{up,range,height,targetHeight,verticalFeed=0}) 
     const g=b.GM/r**2,net=Math.max(.05,a-g);
     const air=s.env.density>1e-7,aero=air&&s._lastAero?s._lastAero.clone().divideScalar(s.effMass):new THREE.Vector3();
     const brake=Math.max(.05,Math.sqrt(Math.max(0,a*a-g*g))*.35);
-    let vh=Math.min(2500,Math.sqrt(2*brake*range)*.7,range/(authority.turn*2+30));
-    let vv=clamp(verticalFeed+Math.sign(targetHeight-height)*Math.min(180,Math.sqrt(2*net*.3*Math.abs(targetHeight-height)),Math.abs(targetHeight-height)/(authority.turn*2+35)),-180,180);
+    // (closing on the site no slower than it can stop in: a level craft brakes by tipping its
+    // lifters back, a few seconds' turn, not by turning round)
+    let vh=Math.min(2500,Math.sqrt(2*brake*range)*.7,range/16);
+    // Under orbital speed at this height: faster, the ground falls away beneath
+    // the craft and holding it down takes thrust toward the ground.
+    vh=Math.min(vh,.8*Math.sqrt(b.GM/r));
+    // (the lifters push straight up from a level craft: down as fast as it can stop in, easing
+    // in only over the last few metres, not over the last kilometre)
+    let vv=clamp(verticalFeed+Math.sign(targetHeight-height)*Math.min(300,Math.sqrt(2*net*.3*Math.abs(targetHeight-height)),Math.abs(targetHeight-height)/1.8),-300,300);
+    // (the last couple of kilometres down at a pace a crew rides easily: stopping in them at FINAL_DECEL)
+    if(height<2000&&vv<0)vv=Math.max(vv,-Math.sqrt(2*FINAL_DECEL*Math.max(0,height-targetHeight))-2);
     const ahead=b.atm?b.atmosphereAt(Math.max(0,s.altitude+Math.min(0,vv)*20)):null;
     const heat=ahead?heatSafeSpeed(ahead.density,s.entry.radius,gasProperties(b.atm),s.entryProfile,ahead.temperature)*.8:Infinity;
     vh=Math.min(vh,heat);vv=clamp(vv,-Math.sqrt(Math.max(0,heat*heat-vh*vh)),Math.sqrt(Math.max(0,heat*heat-vh*vh)));

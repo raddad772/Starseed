@@ -38,6 +38,7 @@ const _wd = new THREE.Vector3(), _ww = new THREE.Vector3();
 const STONE_DIST = 120, STONE_DROP = 200;   // (the small stones near the camera: gen/rocks.js scatterStones)
 
 const SPLIT_K = 2.2;
+const NEAR_COL_MS = 4;   // ms a frame the near field's new footprints may take (each samples the generator here)
 const MORPH_START = 0.62;
 
 let sharedIndex = null;
@@ -123,6 +124,9 @@ export class PlanetTerrain {
     this.visibleList.length = 0;
     this.deepest = 0; // finest level shown right under the camera
     for (const r of this.roots) this.select(r);
+    // where the craft's coming down (set by the game once that ground's tiles are in): its ground
+    // made ahead, as finely as it'll be seen from there, before the rest; not drawn till wanted
+    if (this.focus) for (const r of this.roots) this.prefetch(r, this.focus);
     // (stones of nodes no longer near: dropped)
     if (this.stoneNodes) for (const node of this.stoneNodes) if (node.stoneFrame !== this.frame) this.dropStones(node);
     // hide everything not selected this frame, recycle stale meshes
@@ -196,6 +200,28 @@ export class PlanetTerrain {
     const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
     const rad = node.arc * 0.75 + (node.maxH - node.minH) * 0.5;
     return Math.max(0, d - rad);
+  }
+
+  // the ground round body-fixed point P (a few metres over a landing spot) at the levels a camera
+  // there would show: each node asked for once its parent's in, ahead of what the real camera wants
+  // (not of the column under it), kept while the spot is
+  prefetch(node, P) {
+    const midH = (node.minH + node.maxH) * 0.5, R = this.R + midH;
+    const dx = P.x - node.dir.x * R, dy = P.y - node.dir.y * R, dz = P.z - node.dir.z * R;
+    const dist = Math.max(0, Math.sqrt(dx * dx + dy * dy + dz * dz) - (node.arc * 0.75 + (node.maxH - node.minH) * 0.5));
+    if (node.level > 0 && dist > SPLIT_K * node.arc * 2) return;
+    node.lastSeen = this.frame;
+    if (node.state === 0) this.request(node, dist);
+    if (node.state === 1 && node.job) this.pool.reprioritize(node.job, this.priority(node, dist) - 30);
+    if (node.state !== 2 || node.level >= this.maxLevel || dist >= SPLIT_K * node.arc) return;
+    if (!node.children) {
+      const L = node.level + 1, x = node.ix * 2, y = node.iy * 2;
+      node.children = [
+        new Node(node.face, L, x, y, node, this.R), new Node(node.face, L, x + 1, y, node, this.R),
+        new Node(node.face, L, x, y + 1, node, this.R), new Node(node.face, L, x + 1, y + 1, node, this.R),
+      ];
+    }
+    for (const c of node.children) this.prefetch(c, P);
   }
 
   overHorizon(node) {
@@ -556,18 +582,19 @@ export class PlanetTerrain {
   // 2.5 km once you're up off the ground), nearest first. A ring is drawn once it has all been
   // meshed (each mesh only inside its ring's band); the heightfield gives way out to the last
   // ring drawn (terrainMaterial.js)
-  nearUpdate() {
-    const ng = this.body.near, on = !!(ng && ng.active && ng.field);
-    const u = this.shared.uNear.value;
-    if (!on) { u.set(0, 0); for (const ch of this.near.values()) if (ch.mesh) ch.mesh.visible = false; return; }
+  // the near field's rings round its centre, out to maxRing: chunks asked for, the set wanted returned
+  nearRings(ng, maxRing) {
     if (ng.anchor !== this.nearAnchor || ng.field.gen !== this.nearGen) {
       this.disposeNear(); this.nearAnchor = ng.anchor; this.nearGen = ng.field.gen; this.ringShown = NEAR_RINGS.map(() => false);
+      this.nearCols = new Map();
     }
+    this.nearCols = this.nearCols || new Map();
+    this._colUntil = performance.now() + NEAR_COL_MS;
     const F = ng.field, c = ng.centre, L = F.toLocal(c[0], c[1], c[2], this._nl);
     const want = new Set();
     // (the outermost ring only up off the ground, with some hysteresis)
     this.highRing = ng.alt > 150 || (this.highRing && ng.alt > 100);
-    for (let ri = 0; ri < NEAR_RINGS.length; ri++) {
+    for (let ri = 0; ri < Math.min(maxRing, NEAR_RINGS.length); ri++) {
       const ring = NEAR_RINGS[ri];
       if (ring.high && !this.highRing) continue;
       const lv = ring.level, S = 1 << lv, size = VCHUNK * S;
@@ -581,13 +608,22 @@ export class PlanetTerrain {
         if (dmin > ring.r1 || dmax < ring.r0) continue;
         // the footprint's surface from a few of its columns' heights, to the lattice's y (the
         // tangent plane drops away from the anchor by rho^2 / 2R); room above for overhangs,
-        // below for caves (deep near the player)
-        let hmin = Infinity, hmax = -Infinity;
-        for (let a = 0; a <= 2; a++) for (let b2 = 0; b2 <= 2; b2++) {
-          const col = F.colAt(Math.round(x0 + a * size / 2), Math.round(z0 + b2 * size / 2), false);
-          if (col.Hc < hmin) hmin = col.Hc;
-          if (col.Hc > hmax) hmax = col.Hc;
+        // below for caves (deep near the player). Each footprint's once, and only NEAR_COL_MS of
+        // new ones a frame (each is the generator sampled on this thread: the rings' first sight of
+        // a few hundred held a frame for seconds), the inner rings first
+        const ck2 = lv + ':' + ci + ',' + ck;
+        let hh = this.nearCols.get(ck2);
+        if (!hh) {
+          if (performance.now() > this._colUntil) { pending++; continue; }
+          let lo = Infinity, hi = -Infinity;
+          for (let a = 0; a <= 2; a++) for (let b2 = 0; b2 <= 2; b2++) {
+            const col = F.colAt(Math.round(x0 + a * size / 2), Math.round(z0 + b2 * size / 2), false);
+            if (col.Hc < lo) lo = col.Hc;
+            if (col.Hc > hi) hi = col.Hc;
+          }
+          hh = [lo, hi]; this.nearCols.set(ck2, hh);
         }
+        const hmin = hh[0], hmax = hh[1];
         const sag = (((x0 + x1) / 2) ** 2 + ((z0 + z1) / 2) ** 2) / (2 * this.R);
         const pad = 16 + size * 0.25;
         const y0 = hmin - sag - (lv === 0 && dmin < 48 ? 60 : pad), y1 = hmax - sag + pad;
@@ -606,9 +642,23 @@ export class PlanetTerrain {
       }
       if (pending === 0) this.ringShown[ri] = true;
     }
+    return want;
+  }
+
+  nearUpdate() {
+    const ng = this.body.near, on = !!(ng && ng.active && ng.field);
+    const u = this.shared.uNear.value;
+    if (!on) {
+      u.set(0, 0); for (const ch of this.near.values()) if (ch.mesh) ch.mesh.visible = false;
+      // (made ahead where the craft's coming down, its two finest rings: not drawn till it's there)
+      if (ng && ng.prefetch && ng.field) this.nearRings(ng, 2);
+      return;
+    }
+    const want = this.nearRings(ng, NEAR_RINGS.length);
+    const F = ng.field, c = ng.centre, L = F.toLocal(c[0], c[1], c[2], this._nl);
     // the volume takes over (drawn, and walked on) once the first ring is meshed; the heightfield
     // gives way out to the last ring drawn in an unbroken run from the centre
-    if (this.ringShown[0]) ng.ready = true;
+    if (this.ringShown[0] && !ng.ready) { ng.ready = true; this.body.groundEpoch = (this.body.groundEpoch || 0) + 1; }
     let cover = 0;
     for (let ri = 0; ri < NEAR_RINGS.length; ri++) {
       if (!this.ringShown[ri] || (NEAR_RINGS[ri].high && !this.highRing)) break;

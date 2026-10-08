@@ -34,12 +34,36 @@ export class NearGround {
     this._g = [0, 0, 0];
   }
 
-  // pos: the player's body-fixed position (THREE.Vector3)
-  update(pos) {
+  // pos: the player's body-fixed position (THREE.Vector3); spot: where the craft's coming down
+  // (body-fixed unit direction, sim/landingFocus.js), or null
+  update(pos, spot = null) {
     const b = this.body, gen = b.terrain;
-    if (!gen || !b.solid) { this.active = false; return; }
+    if (!gen || !b.solid) { this.active = false; this.prefetch = false; return; }
     const r = pos.length();
     this.alt = r - b.R - Math.max(0, b.groundHeight(pos));
+    // coming down to a known spot: the lattice is anchored there from the first and its finest
+    // rings made ahead (render/planetTerrain.js), so nothing's made again on the way in; the
+    // field is the player's own once they're within reach of it
+    this.prefetch = false;
+    if (spot) {
+      const s = this._s || (this._s = pos.clone());
+      s.copy(spot).multiplyScalar(b.R + Math.max(0, b.groundHeight(spot)));
+      const a = this.anchor;
+      // (moved: by direction over the ground; the anchor's origin is on the datum, not the ground)
+      const moved = a ? Math.acos(Math.max(-1, Math.min(1, (spot.x * a.u[0] + spot.y * a.u[1] + spot.z * a.u[2]) / spot.length()))) * b.R : Infinity;
+      if (!this.field || this.field.gen !== gen || moved > 200) {
+        this.anchor = anchorAt([s.x, s.y, s.z], b.R);
+        this.field = new VolumeField(gen, this.anchor);
+        this.anchorId++;
+        this.ready = false;
+        b.groundEpoch = (b.groundEpoch || 0) + 1;
+      }
+      const up = s.clone().normalize(), d = pos.clone().sub(s), across = d.addScaledVector(up, -d.dot(up)).length();
+      this.active = this.alt < NEAR_ALT && across < ANCHOR_RANGE;
+      if (this.active) { this.centre[0] = pos.x; this.centre[1] = pos.y; this.centre[2] = pos.z; }
+      else { this.prefetch = true; this.ready = false; this.centre[0] = s.x; this.centre[1] = s.y; this.centre[2] = s.z; }
+      return;
+    }
     this.active = this.alt < NEAR_ALT;
     if (!this.active) return;
     const a = this.anchor;
@@ -49,6 +73,7 @@ export class NearGround {
       this.field = new VolumeField(gen, this.anchor);
       this.anchorId++;
       this.ready = false;
+      b.groundEpoch = (b.groundEpoch || 0) + 1;   // (the heightfield's ground under it till it's meshed)
     }
     this.centre[0] = pos.x; this.centre[1] = pos.y; this.centre[2] = pos.z;
   }

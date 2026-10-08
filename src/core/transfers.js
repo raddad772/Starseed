@@ -50,7 +50,9 @@ export function clearArc(r,v,dt,mu,minimumRadius) {
 }
 // Search a finite family of launch times and flight durations against the
 // target's future state. Lower cost favours delta-v; waiting is shown explicitly.
-export function rendezvousWindow({r,v,mu,target,epoch=0,maxWait,flightTimes,clearance=0,acceleration=1,samples=24}) {
+// timeWeight: m/s of delta-v a second of waiting and flying is worth (by default next to nothing:
+// the cheapest arc; a landing, with fuel to spare, weighs time)
+export function rendezvousWindow({r,v,mu,target,epoch=0,maxWait,flightTimes,clearance=0,acceleration=1,samples=24,timeWeight}) {
  const o=orbitInfo(r,v,mu),period=o.bound?o.period:TAU*Math.sqrt(norm(r)**3/mu);
  maxWait=maxWait??period;
  flightTimes=flightTimes||[.18,.28,.4,.55,.75,1,1.4].map(f=>period*f);
@@ -67,7 +69,7 @@ export function rendezvousWindow({r,v,mu,target,epoch=0,maxWait,flightTimes,clea
     const burnSeconds=deltaV/Math.max(.001,acceleration);
     // An impulsive seed is not a usable plan when the burns occupy most of it.
     if(burnSeconds>tof*.45)continue;
-    const score=deltaV+.0005*(wait+tof)*Math.sqrt(mu/norm(r))/period;
+    const score=deltaV+(timeWeight??.0005*Math.sqrt(mu/norm(r))/period)*(wait+tof);
     if(!best||score<best.score)best={epoch:epoch+wait,arrival:epoch+wait+tof,wait,seconds:tof,r:start.pos,vBefore:start.vel,vDeparture:sol.v1,vArrival:sol.v2,targetPosition:end.pos,targetVelocity:end.vel,dv1,dv2,deltaV,burnSeconds,score};
    }
   }

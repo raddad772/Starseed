@@ -8,6 +8,10 @@ import { bodyState, commonPrimary, branchUnder, planetaryWindow } from './orbita
 import { heatSafeSpeed, gasProperties } from './reentry.js';
 const V=a=>new THREE.Vector3(...a), clamp=THREE.MathUtils.clamp;
 import { maneuverAuthority, surfaceTargets } from './surfaceGuidance.js';
+
+const MAX_TILT=30*Math.PI/180;   // near a world: the most the belly tips off straight down
+const TURN_RATE=6*Math.PI/180;    // and the fastest the craft's turned there, rad/s
+const ENTRY_TIME=5;               // m/s of delta-v a second saved on the way down to a site is worth
 export { maneuverAuthority } from './surfaceGuidance.js';
 export class OrbitalFlight {
   constructor(nav,kind,then) {
@@ -20,19 +24,50 @@ export class OrbitalFlight {
   get safeRadius(){const b=this.s.body;return b.R+Math.max((b.atmHeight||0)*1.03,(b.relief||0)*1.6+1500);}
   finish(){this.nav.flight=null;this.nav.nextEventAt=Infinity;this.then();}
   fail(why){this.nav.cancel(why,'caution');}
-  thrust(A,accel,urgent=false) {
+  thrust(A,accel,urgent=false,preferBelly=false) {
     const s=this.s,{belly,acceleration}=this.authority;
     const mag=accel.length();A.coast=false;A.orbital=true;
     if(!(mag>1e-8&&acceleration>0)){A.coast=true;return;}
     const dir=accel.clone().normalize(),up=s.pos.clone().normalize();
-    if(belly){
-      const nose=s.vel.clone().addScaledVector(dir,-s.vel.dot(dir));
-      if(nose.lengthSq()<1)nose.set(0,0,-1).applyQuaternion(s.quat).addScaledVector(dir,-nose.dot(dir));
-      if(nose.lengthSq()<1e-6)nose.set(1,0,0).addScaledVector(dir,-dir.x);
-      if(nose.lengthSq()<1e-6)nose.set(0,0,1);
-      this.nav.point(A,nose.normalize(),dir);
-    }else this.nav.point(A,dir,up);
-    const axis=new THREE.Vector3(0,belly?1:0,belly?0:-1).applyQuaternion(s.quat);
+    const dt=Math.min(.25,Math.max(0,this.now-(this._attT??this.now)));this._attT=this.now;
+    this._onBelly=preferBelly;
+    if(preferBelly){
+      // Near a world the crew stays upright: the craft level, its belly tipped
+      // toward where the push is going by no more than MAX_TILT (back into a
+      // flare to brake), its nose along the ground track, turned no faster than
+      // TURN_RATE. What the tipped lifters don't give, the retro, main and side
+      // thrusters do as they stand (ship.js resolves the push on its axes).
+      const h=dir.clone().addScaledVector(up,-dir.dot(up)),hl=h.length();
+      const tilt=Math.min(MAX_TILT,Math.atan2(hl,Math.max(1e-3,dir.dot(up))));
+      const wantUp=up.clone().multiplyScalar(Math.cos(tilt));if(hl>1e-6)wantUp.addScaledVector(h,Math.sin(tilt)/hl);
+      const sv=s.surfaceVel(new THREE.Vector3());sv.addScaledVector(up,-sv.dot(up));
+      const wantNose=sv.lengthSq()>25?sv.normalize():(this._attNose?this._attNose.clone():new THREE.Vector3(0,0,-1).applyQuaternion(s.quat));
+      wantNose.addScaledVector(wantUp,-wantNose.dot(wantUp));
+      if(wantNose.lengthSq()<1e-8)wantNose.set(0,0,-1).applyQuaternion(s.quat).addScaledVector(wantUp,-wantUp.dot(new THREE.Vector3(0,0,-1).applyQuaternion(s.quat)));
+      wantNose.normalize();
+      // (from where the craft points now, the first time: no swing to the first target)
+      if(!this._attUp){this._attUp=new THREE.Vector3(0,1,0).applyQuaternion(s.quat);this._attNose=new THREE.Vector3(0,0,-1).applyQuaternion(s.quat);}
+      const turn=(cur,want)=>{
+        if(!(dt>0))return cur;
+        const a=cur.angleTo(want),mx=TURN_RATE*dt;
+        if(a<=mx)return cur.copy(want);
+        const ax=cur.clone().cross(want);
+        if(ax.lengthSq()<1e-12)return cur;   // (exactly opposite: held this step)
+        return cur.applyAxisAngle(ax.normalize(),mx).normalize();
+      };
+      this._attUp=turn(this._attUp,wantUp);this._attNose=turn(this._attNose,wantNose);
+      this.nav.point(A,this._attNose.clone().addScaledVector(this._attUp,-this._attNose.dot(this._attUp)).normalize(),this._attUp);
+    }else{
+      this._attUp=this._attNose=null;
+      if(belly){
+        const nose=s.vel.clone().addScaledVector(dir,-s.vel.dot(dir));
+        if(nose.lengthSq()<1)nose.set(0,0,-1).applyQuaternion(s.quat).addScaledVector(dir,-nose.dot(dir));
+        if(nose.lengthSq()<1e-6)nose.set(1,0,0).addScaledVector(dir,-dir.x);
+        if(nose.lengthSq()<1e-6)nose.set(0,0,1);
+        this.nav.point(A,nose.normalize(),dir);
+      }else this.nav.point(A,dir,up);
+    }
+    const axis=new THREE.Vector3(0,belly||preferBelly?1:0,belly||preferBelly?0:-1).applyQuaternion(s.quat);
     // Turn before firing in space; atmospheric lift remains available while
     // banking. Turning holds high warp even when the main engine is idle.
     this.command.copy(accel).multiplyScalar(Math.min(1,acceleration/mag));
@@ -170,11 +205,16 @@ export class OrbitalFlight {
     // Never fire toward the ground merely to maintain a descent rate while
     // aerodynamic drag is already supporting us. This also avoids a late
     // 180-degree engine reversal just before the landing flare.
-    const ar=clamp(g-inertialH.lengthSq()/r+(vv-vr)/15-aero.dot(up),0,a*.99);
+    // (high up, pulled down too when over the profile: a fast arrival or an
+    // overshoot climbs away otherwise, with only gravity to bring it back)
+    // (and holding to the descent profile more tightly as the ground nears: a loose hold falls
+    // behind it and arrives hot, to a hard brake at the end)
+    const tau=clamp(height/150,2,15);
+    const ar=clamp(g-inertialH.lengthSq()/r+(vv-vr)/tau-aero.dot(up),height>3000?-a*.6:0,a*.99);
     const along=heading.clone().multiplyScalar(vh).sub(horizontal).divideScalar(12).addScaledVector(horizontal,vr/r);
     along.sub(aero.clone().addScaledVector(up,-aero.dot(up)));
     along.clampLength(0,Math.sqrt(Math.max(0,a*a-ar*ar)));
-    this.thrust(A,along.addScaledVector(up,ar),true);
+    this.thrust(A,along.addScaledVector(up,ar),true,true);
   }
   rendezvous(A) {
     if(this.arc){this.flyArc(A);return;}
@@ -202,14 +242,17 @@ export class OrbitalFlight {
       const q=new THREE.Quaternion();if(b.orientationAt)b.orientationAt(t,q);else q.copy(b.q);
       const site=d.dirF.clone().applyQuaternion(q),tangent=new THREE.Vector3().crossVectors(normal,site).normalize();
       // Arrive up-range, with room for a shallow, powered entry corridor.
-      const angle=Math.min(.65,Math.max(.025,high/.12/b.R));
+      const angle=Math.min(.3,Math.max(.025,high/.25/b.R));
       const up=site.clone().multiplyScalar(Math.cos(angle)).addScaledVector(tangent,-Math.sin(angle)).normalize();
       const track=new THREE.Vector3().crossVectors(normal,up).normalize();
       const pos=up.multiplyScalar(radius),vel=new THREE.Vector3().crossVectors(b.omega,pos).addScaledVector(track,Math.min(350,Math.sqrt(b.GM/radius)*.3));
       const acc=new THREE.Vector3().crossVectors(b.omega,new THREE.Vector3().crossVectors(b.omega,pos));
       return {pos:pos.toArray(),vel:vel.toArray(),acc:acc.toArray()};
     };
-    const plan=rendezvousWindow({r:s.pos.toArray(),v:s.vel.toArray(),mu:b.GM,target:gate,epoch:this.now,clearance:this.safeRadius,acceleration:this.authority.acceleration});
+    // (down soon rather than cheaply: short steep arcs offered, time weighed at ENTRY_TIME m/s a second)
+    const period=2*Math.PI*Math.sqrt(s.pos.length()**3/b.GM);
+    const plan=rendezvousWindow({r:s.pos.toArray(),v:s.vel.toArray(),mu:b.GM,target:gate,epoch:this.now,clearance:this.safeRadius,acceleration:this.authority.acceleration,
+      flightTimes:[.05,.08,.12,.18,.28,.4,.55].map((f)=>period*f),maxWait:period*.5,timeWeight:ENTRY_TIME});
     if(this.setArc(plan,gate,()=>this.finish())){this.arc.gate=true;this.flyArc(A);}
   }
   journey(A) {

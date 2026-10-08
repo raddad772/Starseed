@@ -171,14 +171,28 @@ export class WorldSims {
   }
 
   // a tile of a world's terrain pyramid (gen/terrainTiles.js) on a free worker, ahead of the
-  // sims and refinements queued: resolves to { h, rw } (or rejects)
-  requestPyr(id, L, face, ti, tj, parents) {
+  // sims and refinements queued: resolves to { h, rw } (or rejects). Each made once: kept in the
+  // cache as it comes, so the ground near where you've been is read back, not made again (the same
+  // tile on every client and run)
+  async requestPyr(id, L, face, ti, tj, parents) {
     const snap = this.game.system.bodies[id].terrain.snapshot, refine = this.refine.get(id) && this.refine.get(id).R;
-    if (!snap || !refine) return Promise.reject(new Error('no refinement yet'));
-    return new Promise((resolve, reject) => {
+    if (!snap || !refine) throw new Error('no refinement yet');
+    const db = await this.dbP, key = this.pyrKey(id, L, face, ti, tj);
+    const kept = this.noPyrCache ? null : await dbGet(db, key);
+    if (kept && kept.h) return kept;
+    const tile = await new Promise((resolve, reject) => {
       this.queue.unshift({ kind: 'pyr', id, L, face, ti, tj, parents, snap, refine, resolve, reject, t0: performance.now() });
       this._next();
     });
+    dbPut(db, key, tile);
+    return tile;
+  }
+  pyrKey(id, L, face, ti, tj) { return `${this.refKey(id)}|p${L}|${face}|${ti}|${tj}`; }
+  // a tile from the cache if it's been made (not made here), or null
+  async cachedPyr(id, L, face, ti, tj) {
+    if (this.noPyrCache) return null;
+    const kept = await dbGet(await this.dbP, this.pyrKey(id, L, face, ti, tj));
+    return kept && kept.h ? kept : null;
   }
 
   // a world's refinement: from the cache, or its six faces queued (the start world's first)

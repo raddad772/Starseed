@@ -775,6 +775,7 @@ export class Ship {
     if (this.dead) return;
     applyPropulsion(this, ctrlForce, ctrlTorque, dt);
     const b = this.body;
+    if (b.groundEpoch !== this._groundEpoch) { if (this._groundEpoch !== undefined) this.reseat(); this._groundEpoch = b.groundEpoch; }
     if (this.landed) {
       const lifting = ctrlForce.y > this.mass * 0.4 * G0 || ctrlForce.z < -this.mass * 0.5 * G0 || ctrlForce.lengthSq() > Math.pow(this.mass * 1.2 * G0, 2) || (this.type.ground && this.wantsMove());
       if (!lifting) { this.syncLanded(); this.thrustLocal.set(0, 0, 0); this.accelW.copy(this.pos).multiplyScalar(-b.GM / Math.pow(this.pos.length(), 3)); return; }
@@ -952,6 +953,7 @@ export class Ship {
       const pv = pointVel(localPt, _att);
       const sv = surfaceVel(pw, this._sv || (this._sv = new THREE.Vector3()));
       pv.sub(sv); // velocity relative to the ground
+      this._closing = -pv.dot(_gn);
       const force = this.contactForce(pv, _gn, depth, kSpring, cDamp, mu, isLeg, idx);
       F.add(force);
       // torque in ship frame: r_local x (q^-1 force)
@@ -983,7 +985,10 @@ export class Ship {
         foot.copy(this.legAttach[i]); foot.y -= gearLen;
         const d = probe(foot, k, c, 0.9, true, i);
         this.legState[i] = d > 0 ? 1 : 0;
-        if (d > gearLen * 0.85) this.impact(2 + d * 10); // bottomed out
+        // bottomed out: the hull meets the ground at the speed the foot still closes on it (not
+        // at a speed made up from how deep the foot is: ground made again under a craft at rest
+        // isn't a blow, see reseat)
+        if (d > gearLen * 0.85) this.impact(Math.max(0, this._closing));
       }
     } else for (let i = 0; i < 4; i++) { this.legState[i] = 0; this.legComp[i] = 0; }
     // hull probes
@@ -1493,6 +1498,26 @@ export class Ship {
   // unsettled creeps downhill.)
   restsOn(legs) {
     return legs >= 3 || ((this.type.cargo || this.type.ground) && (legs >= 1 || this.groundContact));
+  }
+
+  // The ground under the craft made again (a finer tile of it in, the near field's volume taking
+  // over from the heightfield: the body's groundEpoch): the same ground, known better, not a blow.
+  // Set on it as it sat on the old, no foot deeper in than it was
+  reseat() {
+    const b = this.body;
+    if (!b.solid || !this.legAttach || this.type.ground?.kind === 'hover') return;
+    const gearLen = this.legLength * this.gear, foot = _v3;
+    let shift = -Infinity;
+    for (let i = 0; i < 4; i++) {
+      if (!this.landed && !(this.legComp[i] > 0)) continue;
+      foot.copy(this.legAttach[i]); foot.y -= gearLen;
+      foot.applyQuaternion(this.quat).add(this.pos).applyQuaternion(b.qInv);
+      const depth = b.R + b.floorAt(foot, 1.5) - foot.length();
+      shift = Math.max(shift, depth - (this.legComp[i] || 0));
+    }
+    if (!isFinite(shift) || Math.abs(shift) < 0.02) return;
+    this.pos.addScaledVector(_v4.copy(this.pos).normalize(), shift);
+    if (this.landed) this.landedPosF.copy(this.pos).applyQuaternion(b.qInv);
   }
 
   // Whether the ship can rest landed (all legs planted, nearly stationary)

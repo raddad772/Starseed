@@ -32,7 +32,8 @@ for(const key of generations){
   const f=orbitalFlight(key,[earth()]);f.orbit(f.ship,130000);
   f.ship.nav.setTravelMode('conventional');f.ship.nav.order({kind:'site',body:f.ship.body,dirF:new THREE.Vector3(Math.cos(1),0,-Math.sin(1)),label:'test site'});
   const result=run(f,180000,30);
-  assert.ok(result.phases.has('Waiting for launch window'));assert.ok(result.phases.has('Departure burn'));assert.ok(result.coasts>0);
+  // (a wait for the window only if the quickest way down needs one: a landing weighs time)
+  assert.ok(result.phases.has('Departure burn'));assert.ok(result.coasts>0);
   assert.ok(f.ship.landed);assert.ok(f.ship.nav.hopDistance()<20);assert.ok(result.maxHeat<f.ship.entryProfile.limit);
  });
 }

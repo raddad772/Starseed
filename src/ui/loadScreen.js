@@ -68,18 +68,19 @@ export class LoadScreen {
       const pct = Math.round(Math.min(.99, g.loadProgress || 0) * 100);
       this.bar.style.width = pct + '%';
       this.progress.setAttribute('aria-valuenow', String(pct));
-      this.last = g.camPos?.clone() || null;
+      this.last = null; this.lastBody = null; // (no jump to see on the first frame after)
       return;
     }
     if (this.required) { this.required = false; this.end(); }
-    // (a jump: the camera kilometres from where it was a frame ago, near a world's ground)
-    const p = g.camPos;
-    if (p) {
-      if (this.last && !this.active && this.last.distanceTo(p) > JUMP_M) {
-        const b = g.universe.dominantBody(p);
-        if (b && b.solid && p.distanceTo(b.pos) - b.R < NEAR_M) this.begin();
-      }
-      this.last = this.last ? this.last.copy(p) : p.clone();
+    // (a jump: the camera kilometres from where it was a frame ago, near a world's ground;
+    // measured from that world, so time warp carrying the world along its orbit isn't one)
+    const p = g.camPos, b = p && g.universe.dominantBody(p);
+    if (p && b) {
+      const rel = this._rel || (this._rel = p.clone());
+      rel.copy(p).sub(b.pos);
+      if (this.last && this.lastBody === b && !this.active && this.last.distanceTo(rel) > JUMP_M && b.solid && rel.length() - b.R < NEAR_M) this.begin();
+      this.last = this.last ? this.last.copy(rel) : rel.clone();
+      this.lastBody = b;
     }
     if (!this.active) return;
     this.title.textContent = 'Arriving';

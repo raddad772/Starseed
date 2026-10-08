@@ -1723,6 +1723,14 @@ export class Game {
     }
     this.setCur(null);
     if (this.tiles) this.tiles.update(dtReal);   // (the terrain pyramid round the camera: sim/terrainTiles.js)
+    // (and the ground where the craft's coming down, made ahead once its tiles are in: render/planetTerrain.js prefetch)
+    if (this.tiles) {
+      const f = this.tiles.focus, ok = f && f.settled && this.tiles.missingSite === 0;
+      for (const it of this.world.items) if (it.terrain) {
+        if (ok && f.body === it.body) { const P = it.terrain._focusP || (it.terrain._focusP = new THREE.Vector3()); P.copy(f.dir).multiplyScalar(it.body.R + Math.max(0, it.body.groundHeight(f.dir)) + 20); it.terrain.focus = P; }
+        else it.terrain.focus = null;
+      }
+    }
     this.pool.pump();
     this.setCur(this.players[0]); // (the sound is player 1's)
     this.audio.update(dtReal);
@@ -1825,7 +1833,9 @@ export class Game {
     if (!(pos.lengthSq() > 1)) return;
     const ng = b.near || (b.near = new NearGround(b));
     const was = ng.ready;
-    ng.update(pos);
+    // (anchored where the craft's coming down, once that ground's own tiles are in: sim/terrainTiles.js)
+    const f = this.tiles && this.tiles.focus;
+    ng.update(pos, f && f.body === b && f.settled && this.tiles.missingSite === 0 ? f.dir : null);
     for (const o of this.universe.bodies) if (o !== b && o.near) o.near.active = false;
     // the volume just took over: craft landed in it set down again on its ground (they landed
     // on the heightfield, which can be metres off it)

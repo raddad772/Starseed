@@ -760,7 +760,9 @@ export class NavComputer {
     this._entryPilot.surface(A, {up:up.clone(), heading:hdir.clone(), range:sH, height:hRel, targetHeight:altT});
     s.gearTarget = hRel < 2000 ? 1 : 0;
     this.aim(_d.copy(site).multiplyScalar(b.R + gh).add(b.pos), (d.label || 'site').toUpperCase());
-    if (sH < 40 && hRel < 150) this.go('land');
+    // (down to the hover over the site on the descent's own profile, near still there, before the
+    // landing's slow settle takes over)
+    if (sH < 40 && hRel < H_HOVER + 30) this.go('land');
   }
 
   // The most level spot within ~300 m of a site (body-fixed direction): the
@@ -793,12 +795,15 @@ export class NavComputer {
     // set down on a tilt slides)
     const cargo = !!(s.cargo && !s.cargo.dead);
     const slopeK = cargo ? 2.5 : 1;
-    let best = dirF.clone(), bestSlope = slope(dirF), bestScore = bestSlope * slopeK + blocked(dirF) * 0.5, moved = 0;
+    // (and never water: a lake's the flattest thing for miles, and no ground)
+    const wet = (dir) => !!(b.isWaterAt && b.isWaterAt(dir));
+    let best = dirF.clone(), bestSlope = slope(dirF), bestScore = wet(dirF) ? Infinity : bestSlope * slopeK + blocked(dirF) * 0.5, moved = 0;
     // the world's meadows nearby (open flat ground the forest leaves alone: see gen/flora.js)
     if (field && field.species && b.terrain) {
       for (const m of meadowsNear(b.terrain, field.species, [dirF.x, dirF.y, dirF.z], cargo ? 900 : 450)) {
         c.set(m.dir[0], m.dir[1], m.dir[2]);
         const rr = c.distanceTo(dirF) * b.R;
+        if (wet(c)) continue;
         const sl = slope(c);
         const score = sl * slopeK + blocked(c) * 0.5 + rr / 3000;
         if (score < bestScore) { bestScore = score; bestSlope = sl; best = c.clone(); moved = rr; }
@@ -808,6 +813,7 @@ export class NavComputer {
       for (let i = 0; i < 12; i++) {
         const a = (i / 12) * Math.PI * 2 + rr * 0.01;
         at(dirF, Math.cos(a) * rr, Math.sin(a) * rr, c);
+        if (wet(c)) continue;
         const sl = slope(c);
         const score = sl * slopeK + blocked(c) * 0.5 + rr / 3000; // (a gentler slope is worth a short walk)
         if (score < bestScore) { bestScore = score; bestSlope = sl; best = c.clone(); moved = rr; }
@@ -827,7 +833,13 @@ export class NavComputer {
     hoff.addScaledVector(up, -hoff.dot(up));
     const hd = hoff.length();
     const agl = isFinite(s.agl) ? s.agl : r - b.R - gh;
-    const vRel = _d.copy(hoff).setLength(Math.min(3, hd * 0.3)).addScaledVector(up, -THREE.MathUtils.clamp(agl * 0.3, 1.0, 6));
+    // (the landing area's finest ground still being made (sim/terrainTiles.js): held off it, so the
+    // craft isn't set down on ground that's then made again under it)
+    const tiles = this.game.tiles, surveying = !d.surveyed && tiles && tiles.focus && tiles.missingSite > 0;
+    if (!surveying) d.surveyed = true;
+    else if (!d.surveySaid) { d.surveySaid = true; this.say('holding over the site: its ground is still being surveyed'); }
+    const sink = surveying && agl < 35 ? 0 : THREE.MathUtils.clamp(agl * 0.3, 1.0, 6);
+    const vRel = _d.copy(hoff).setLength(Math.min(3, hd * 0.3)).addScaledVector(up, -sink);
     this.slew(A, vRel.add(s.frameVel(new THREE.Vector3())));
     this.level(A, null);
     s.gearTarget = 1;
