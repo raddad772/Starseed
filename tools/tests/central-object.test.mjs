@@ -84,3 +84,36 @@ test('one sky: each system sees the hole, its spin and its charted neighbours wh
   // (the charted stars are in the sky: the background's 6000 points and the chart's neighbours)
   assert.ok(views[0].sky.points.geometry.attributes.position.count > 6000 + 150);
 });
+
+test('the sky star table holds every bright star where a look its way finds it, across face seams too', async () => {
+  const { Sky, starFace, STAR_TABLE } = await import('../../src/render/sky.js');
+  const sky = new Sky({ isNativeWebGPU: true, autoClear: true }, 'STAR-TABLE');
+  const { a, size: N } = sky.starTable, bg = sky.background;
+  assert.equal(N, STAR_TABLE);
+  assert.equal(sky.points.visible, false);
+  // (the shader's search: d's cell on its face and the eight round it)
+  const near = (x, y, z) => {
+    const [f, px, py] = starFace(x, y, z), found = [];
+    const tx = Math.min(N - 1, Math.max(0, Math.floor((px + 1) / 2 * N))), ty = Math.min(N - 1, Math.max(0, Math.floor((py + 1) / 2 * N)));
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const X = tx + dx, Y = ty + dy;
+      if (X < 0 || Y < 0 || X >= N || Y >= N) continue;
+      const k = ((f * N + Y) * N + X) * 4;
+      if (a[k + 3] > 0) found.push([a[k], a[k + 1], a[k + 2]]);
+    }
+    return found;
+  };
+  let missing = 0, total = 0;
+  for (let i = 0; i < bg.size.length; i++) {
+    const r = Math.hypot(bg.pos[i * 3], bg.pos[i * 3 + 1], bg.pos[i * 3 + 2]);
+    const d = [bg.pos[i * 3] / r, bg.pos[i * 3 + 1] / r, bg.pos[i * 3 + 2] / r];
+    // (looked for from a little way off it, every way, as a pixel beside it would)
+    for (const [ox, oy, oz] of [[0, 0, 0], [2e-3, 0, 0], [0, -2e-3, 0], [0, 0, 2e-3]]) {
+      total++;
+      const q = [d[0] + ox, d[1] + oy, d[2] + oz], l = Math.hypot(...q);
+      if (!near(q[0] / l, q[1] / l, q[2] / l).some(s => Math.hypot(s[0] - d[0], s[1] - d[1], s[2] - d[2]) < 1e-6)) missing++;
+    }
+  }
+  // (a few lose their cell to a brighter star sharing it; none to a seam)
+  assert.ok(missing / total < 0.02, `${missing} of ${total} looks missed their star`);
+});

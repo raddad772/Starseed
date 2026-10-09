@@ -205,6 +205,7 @@ export class Sky {
       size2[i] = starPoint(m, T, col, i);
     }
     this.background = { pos, col, size: size2 };
+    this.isNative = !!renderer.isNativeWebGPU;
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     g.setAttribute('color', new THREE.BufferAttribute(col, 3));
@@ -218,6 +219,10 @@ export class Sky {
     this.points = new THREE.Points(g, this.starMat);
     this.points.frustumCulled = false;
     this.points.renderOrder = -10;
+    // (on the native renderer the stars are read from their table wherever the sky is: in it, bent
+    // round the central black hole, reflected in the mirror; the points draw them only on the old one)
+    this.points.visible = !this.isNative;
+    this.buildStarTable(pos, col, size2);
   }
 }
 
@@ -314,6 +319,62 @@ Sky.prototype.placeInGalaxy = function (p, stars = []) {
   const old = this.points.geometry;
   this.points.geometry = g;
   old.dispose();
+  this.buildStarTable(pos, col, size);
+};
+
+// The sky's stars, baked at a system's load into a table the renderer reads them from wherever it
+// looks (webgpu/central.js cStars): a cube of STAR_TABLE^2 cells a face (the galaxy bake's faces), each
+// holding at most one star (the brightest falling in it) by its exact way, colour and size, so it's
+// drawn sharp at any zoom, bent or reflected; one within two cells of a face's edge is copied into
+// the next face's edge too, so a look across the seam finds it. pos: ways (any length), col: colours
+// (scaled by brightness, as the points have them), size: the points' sizes (css px)
+export const STAR_TABLE = 256;
+// a way's face and place on it: [face, px, py], px and py in -1..1 (the bake's cubeDirection inverted)
+export function starFace(x, y, z) {
+  const ax = Math.abs(x), ay = Math.abs(y), az = Math.abs(z);
+  if (ax >= ay && ax >= az) return x > 0 ? [0, -z / ax, -y / ax] : [1, z / ax, -y / ax];
+  if (ay >= az) return y > 0 ? [2, x / ay, z / ay] : [3, x / ay, -z / ay];
+  return z > 0 ? [4, x / az, -y / az] : [5, -x / az, -y / az];
+}
+// the same way's place on a given face, if it's in front of it: [px, py] or null
+function onFace(f, x, y, z) {
+  switch (f) {
+    case 0: return x > 0 ? [-z / x, -y / x] : null;
+    case 1: return x < 0 ? [z / -x, -y / -x] : null;
+    case 2: return y > 0 ? [x / y, z / y] : null;
+    case 3: return y < 0 ? [x / -y, -z / -y] : null;
+    case 4: return z > 0 ? [x / z, -y / z] : null;
+    default: return z < 0 ? [-x / -z, -y / -z] : null;
+  }
+}
+Sky.prototype.buildStarTable = function (pos, col, size) {
+  const N = STAR_TABLE, a = new Float32Array(N * N * 6 * 4), b = new Float32Array(N * N * 6 * 4);
+  const lum = new Float32Array(N * N * 6);
+  const put = (f, px, py, i, x, y, z, l) => {
+    const tx = Math.min(N - 1, Math.max(0, Math.floor((px + 1) / 2 * N))), ty = Math.min(N - 1, Math.max(0, Math.floor((py + 1) / 2 * N)));
+    const k = (f * N + ty) * N + tx;
+    if (lum[k] >= l) return;
+    lum[k] = l;
+    a.set([x, y, z, size[i]], k * 4);
+    // (and a number of its own for its twinkle)
+    b.set([col[i * 3], col[i * 3 + 1], col[i * 3 + 2], ((i * 0.6180339887) % 1)], k * 4);
+  };
+  const edge = 1 + 4 / N;
+  for (let i = 0; i < size.length; i++) {
+    let x = pos[i * 3], y = pos[i * 3 + 1], z = pos[i * 3 + 2];
+    const r = Math.hypot(x, y, z);
+    if (!(r > 0)) continue;
+    x /= r; y /= r; z /= r;
+    const l = col[i * 3] * 0.2126 + col[i * 3 + 1] * 0.7152 + col[i * 3 + 2] * 0.0722;
+    const [f, px, py] = starFace(x, y, z);
+    put(f, px, py, i, x, y, z, l);
+    for (let g = 0; g < 6; g++) {
+      if (g === f) continue;
+      const q = onFace(g, x, y, z);
+      if (q && Math.abs(q[0]) <= edge && Math.abs(q[1]) <= edge) put(g, q[0], q[1], i, x, y, z, l);
+    }
+  }
+  this.starTable = { size: N, a, b, version: (this.starTable?.version || 0) + 1 };
 };
 
 export function makeStarMesh(starData) {

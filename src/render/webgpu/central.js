@@ -33,6 +33,9 @@ struct Central {
   misc: vec4f,       // x: sky gain, y: tan half fov x, z: tan half fov y, w: on (> 0.5)
   lens: vec4f,       // the sky's lens low over a world (sky.js SKY_LENS): xyz the camera's up, w on
   lens2: vec4f,      // x, y: the drawn and true horizons' dips; z, w: the view's size (px)
+  stars: vec4f,      // the sky's stars (sky.js starMat): x: the exposure they're brightened toward in space, y: twinkle (in air), z: time (s), w: extinction
+  stars2: vec4f,     // x: exposure key, y, z: least and most exposure, w: the star table's cells a face (0: none)
+  stars3: vec4f,     // x: radians a css pixel at the view's centre
 };
 struct Lens { color: vec3f, trans: f32, dir: vec3f };
 
@@ -64,6 +67,51 @@ fn cBend(v: vec3f, toward: vec3f, ang: f32) -> vec3f {
   let l = length(p);
   if (l < 1e-7) { return v; }
   return normalize(v * cos(ang) + (p / l) * sin(ang));
+}
+
+// the star table (sky.js buildStarTable): a way's face and place on it, (face, px, py), px and py in -1..1
+fn cStarFace(d: vec3f) -> vec3f {
+  let a = abs(d);
+  if (a.x >= a.y && a.x >= a.z) {
+    if (d.x > 0.0) { return vec3f(0.0, -d.z / a.x, -d.y / a.x); }
+    return vec3f(1.0, d.z / a.x, -d.y / a.x);
+  }
+  if (a.y >= a.z) {
+    if (d.y > 0.0) { return vec3f(2.0, d.x / a.y, d.z / a.y); }
+    return vec3f(3.0, d.x / a.y, -d.z / a.y);
+  }
+  if (d.z > 0.0) { return vec3f(4.0, d.x / a.z, -d.y / a.z); }
+  return vec3f(5.0, -d.x / a.z, -d.y / a.z);
+}
+// the sky's stars seen the way d (true, world), each as the points drew them: a soft round dot its
+// size in css pixels (pixAng radians each), twinkling in air, brightened in space toward the exposure
+// they're seen at (adapt: the eye's last exposure); the nine cells round d's hold every star near it
+fn cStars(C: Central, tA: texture_2d_array<f32>, tB: texture_2d_array<f32>, adapt: texture_2d<f32>, d: vec3f, pixAng: f32) -> vec3f {
+  let N = i32(C.stars2.w);
+  if (N < 1) { return vec3f(0.0); }
+  let fp = cStarFace(d);
+  let face = i32(fp.x);
+  let tx = clamp(i32(floor((fp.y + 1.0) * 0.5 * f32(N))), 0, N - 1);
+  let ty = clamp(i32(floor((fp.z + 1.0) * 0.5 * f32(N))), 0, N - 1);
+  var acc = vec3f(0.0);
+  for (var dy = -1; dy <= 1; dy++) {
+    for (var dx = -1; dx <= 1; dx++) {
+      let x = tx + dx;
+      let y = ty + dy;
+      if (x < 0 || y < 0 || x >= N || y >= N) { continue; }
+      let A = textureLoad(tA, vec2i(x, y), face, 0);
+      if (A.w <= 0.0) { continue; }
+      let B = textureLoad(tB, vec2i(x, y), face, 0);
+      // (its distance from d in css pixels, by the chord: acos can't see a pixel in f32)
+      let r = length(A.xyz - d) / pixAng / (0.5 * A.w);
+      if (r > 1.6) { continue; }
+      let tw = 1.0 + C.stars.y * 0.45 * sin(C.stars.z * (7.0 + B.w * 9.0) + B.w * 40.0);
+      acc += B.rgb * exp(-r * r * 4.0) * tw;
+    }
+  }
+  let expo = clamp(C.stars2.x / exp2(textureLoad(adapt, vec2i(0, 0), 0).r), C.stars2.y, C.stars2.z);
+  let boost = mix(clamp(C.stars.x / expo, 1.0, 12.0), 1.0, clamp(C.stars.y * 2.0, 0.0, 1.0));
+  return acc * boost * C.stars.w;
 }
 
 // the disk's optical depth straight through at r: thick where it's hot, thinning fast outside (a
@@ -303,24 +351,12 @@ const CODE = FULLSCREEN + CENTRAL_WGSL + /* wgsl */`
 @group(0) @binding(1) var depth: texture_2d<f32>;
 @group(0) @binding(2) var sky: texture_cube<f32>;
 @group(0) @binding(3) var skySampler: sampler;
-@group(0) @binding(4) var scene: texture_2d<f32>;
-@group(0) @binding(5) var sceneSampler: sampler;
-// the sky the way d (true, world) looks: the galaxy's light, and the bright stars already drawn on
-// the screen where they show (their points, read from where the lens has moved them)
+@group(0) @binding(4) var starA: texture_2d_array<f32>;
+@group(0) @binding(5) var starB: texture_2d_array<f32>;
+@group(0) @binding(6) var adapt: texture_2d<f32>;
+// the sky the way d (true, world) looks: the galaxy's light and its stars
 fn skyAt(d: vec3f) -> vec3f {
-  var c = textureSampleLevel(sky, skySampler, d, 0.0).rgb * C.misc.x;
-  let drawn = cLensDir(C, d, true);
-  let rot = mat3x3f(C.camRot[0].xyz, C.camRot[1].xyz, C.camRot[2].xyz);
-  let vv = transpose(rot) * drawn;
-  if (vv.z < -1e-4) {
-    let ndc = vec2f(vv.x / (-vv.z) / C.misc.y, vv.y / (-vv.z) / C.misc.z);
-    if (abs(ndc.x) < 1.0 && abs(ndc.y) < 1.0) {
-      let uv = vec2f(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
-      let px = vec2i(uv * C.lens2.zw);
-      if (textureLoad(depth, px, 0).r <= 0.0) { c += textureSampleLevel(scene, sceneSampler, uv, 0.0).rgb; }
-    }
-  }
-  return c;
+  return textureSampleLevel(sky, skySampler, d, 0.0).rgb * C.misc.x + cStars(C, starA, starB, adapt, d, C.stars3.x);
 }
 @fragment fn central(v: Fullscreen) -> @location(0) vec4f {
   let d = textureLoad(depth, vec2i(v.position.xy), 0).r;
@@ -337,7 +373,7 @@ fn skyAt(d: vec3f) -> vec3f {
 `;
 
 // the uniforms (shared with the mirror's pass): engine.central from the game (sim/centralObject.js)
-export const CENTRAL_FLOATS = 52;
+export const CENTRAL_FLOATS = 64;
 export function centralUniforms(engine, camRot, tanHalf, size, out = new Float32Array(CENTRAL_FLOATS)) {
   const c = engine.central;
   out.fill(0);
@@ -353,6 +389,14 @@ export function centralUniforms(engine, camRot, tanHalf, size, out = new Float32
   const lu = engine.bgMat?.uniforms.uLensUp?.value, lk = engine.bgMat?.uniforms.uLensK?.value;
   out.set([lu ? lu.x : 0, lu ? lu.y : 1, lu ? lu.z : 0, lu ? lu.w : 0], 44);
   out.set([lk ? lk.x : 0, lk ? lk.y : 0, size ? size[0] : 1, size ? size[1] : 1], 48);
+  const sky = engine.frameInputs?.sky, su = sky?.starMat?.uniforms;
+  if (su) {
+    out.set([su.uStarExp.value, su.uTwinkle.value, su.uTime.value, su.uExtinction.value], 52);
+    out.set([su.uKey.value, su.uMinExp.value, su.uMaxExp.value, sky.starTable && sky.isNative ? sky.starTable.size : 0], 56);
+  }
+  // (a css pixel's angle at the centre: the stars' sizes are the points' own, in css pixels)
+  const th = engine.tanHalf, css = engine.cssH || (size ? size[1] : 1);
+  out.set([2 * th.y / Math.max(1, (engine.view?.rect?.h || css)), 0, 0, 0], 60);
   return out;
 }
 
@@ -363,12 +407,11 @@ export class CentralPass {
     this.pipeline = await this.device.createRenderPipelineAsync({ label: 'central black hole', layout: 'auto',
       vertex: { module, entryPoint: 'fullscreen' }, fragment: { module, entryPoint: 'central', targets: [{ format: 'rgba16float' }] } });
   }
-  // in place of the sky drawn into target (an air ping/pong entry), where the depth says it's sky;
-  // scene: the lit frame before the sky went in (its bright stars' points)
-  render(engine, t, target, scene) {
-    const source = engine.frameInputs?.sky?.cubeRT.texture;
+  // in place of the sky drawn into target (an air ping/pong entry), where the depth says it's sky
+  render(engine, t, target) {
+    const sky = engine.frameInputs?.sky, source = sky?.cubeRT.texture;
     if (!this.pipeline || !engine.central || !source) return;
-    const cube = this.background.cube(source);
+    const cube = this.background.cube(source), stars = this.background.stars(sky), adapt = t.post?.adapt[t.post.idx] || this.background.blank;
     const camera = engine.view.camera, m = camera.matrixWorld.elements;
     // (the camera's rotation, as a mat4 with the 3x3 in its top left)
     const rot = [m[0], m[1], m[2], 0, m[4], m[5], m[6], 0, m[8], m[9], m[10], 0, 0, 0, 0, 1];
@@ -377,7 +420,7 @@ export class CentralPass {
     this.device.queue.writeBuffer(buffer, 0, centralUniforms(engine, rot, engine.tanHalf, [t.width, t.height], this.data));
     const group = this.device.createBindGroup({ layout: this.pipeline.getBindGroupLayout(0), entries: [
       { binding: 0, resource: { buffer } }, { binding: 1, resource: t.sampledDepth.view }, { binding: 2, resource: cube.view }, { binding: 3, resource: cube.sampler },
-      { binding: 4, resource: scene.view }, { binding: 5, resource: scene.sampler }] });
+      { binding: 4, resource: stars.a }, { binding: 5, resource: stars.b }, { binding: 6, resource: adapt.view }] });
     const encoder = this.device.createCommandEncoder({ label: 'central black hole' });
     const pass = encoder.beginRenderPass({ colorAttachments: [{ view: target.view, loadOp: 'load', storeOp: 'store' }] });
     pass.setPipeline(this.pipeline); pass.setBindGroup(0, group); pass.draw(3); pass.end();

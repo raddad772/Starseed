@@ -1,7 +1,11 @@
 import { FULLSCREEN } from './shaders.js';
 import { shaderModule } from './device.js';
+import { CENTRAL_WGSL, CENTRAL_FLOATS, centralUniforms } from './central.js';
 
-const CODE=FULLSCREEN+/* wgsl */`
+// The mirrored enclosure's outer surface: each pixel's ray met with the shell and reflected, and what
+// lies that way seen in it: the central black hole, its disk and jets and the sky bent round it
+// (webgpu/central.js, the same light the sky shows), or the plain sky without one.
+const CODE=FULLSCREEN+CENTRAL_WGSL+/* wgsl */`
 struct Mirror {
   inverse: mat4x4f,
   projection: mat4x4f,
@@ -11,6 +15,10 @@ struct Mirror {
 @group(0) @binding(0) var<uniform> u: Mirror;
 @group(0) @binding(1) var sky: texture_cube<f32>;
 @group(0) @binding(2) var skySampler: sampler;
+@group(0) @binding(3) var<uniform> C: Central;
+@group(0) @binding(4) var starA: texture_2d_array<f32>;
+@group(0) @binding(5) var starB: texture_2d_array<f32>;
+@group(0) @binding(6) var adapt: texture_2d<f32>;
 struct Reflection { @location(0) color: vec4f, @builtin(frag_depth) depth: f32 };
 @fragment fn mirror(v: Fullscreen) -> Reflection {
   let p=u.inverse*vec4f(v.uv.x*2.0-1.0,1.0-v.uv.y*2.0,1.0,1.0);
@@ -29,13 +37,16 @@ struct Reflection { @location(0) color: vec4f, @builtin(frag_depth) depth: f32 }
   let clip=u.projection*vec4f(ray*distance,1.0);
   var out: Reflection;
   out.depth=clamp(clip.z/clip.w,0.0,1.0);
-  out.color=vec4f(textureSampleLevel(sky,skySampler,reflected,0.0).rgb*u.shape.y,1.0);
+  let L=cLens(C,reflected);
+  var col=L.color;
+  if (L.trans>0.0) { col+=L.trans*(textureSampleLevel(sky,skySampler,L.dir,0.0).rgb*u.shape.y+cStars(C,starA,starB,adapt,L.dir,C.stars3.x)); }
+  out.color=vec4f(col,1.0);
   return out;
 }
 `;
 
 export class MirrorPass {
-  constructor(device,background){this.device=device;this.background=background;this.buffers=new Map();}
+  constructor(device,background){this.device=device;this.background=background;this.buffers=new Map();this.centralData=new Float32Array(CENTRAL_FLOATS);}
   async init(){
     const module=await shaderModule(this.device,'mirror enclosure',CODE);
     this.pipeline=await this.device.createRenderPipelineAsync({label:'mirror enclosure',layout:'auto',
@@ -43,23 +54,27 @@ export class MirrorPass {
       depthStencil:{format:'depth32float',depthWriteEnabled:true,depthCompare:'greater'}});
   }
   render(engine,t,hdr,inverse,projection){
-    const shell=engine.mirrorShell,source=engine.frameInputs?.sky?.cubeRT.texture;
+    const shell=engine.mirrorShell,sky=engine.frameInputs?.sky,source=sky?.cubeRT.texture;
     if(!shell||!source)return;
-    const cube=this.background.cube(source);
+    const cube=this.background.cube(source),stars=this.background.stars(sky),adapt=t.post?.adapt[t.post.idx]||this.background.blank;
     let buffer=this.buffers.get(engine.view);
-    if(!buffer){buffer=this.device.createBuffer({label:'mirror view',size:160,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST});this.buffers.set(engine.view,buffer);}
+    if(!buffer){buffer={view:this.device.createBuffer({label:'mirror view',size:160,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST}),
+      central:this.device.createBuffer({label:'mirror central black hole',size:CENTRAL_FLOATS*4,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST})};this.buffers.set(engine.view,buffer);}
     const data=new Float32Array(40);
     data.set(inverse.elements);data.set(projection.elements,16);
     data.set([...shell.normal.toArray(),shell.height],32);
     data.set([shell.radius,engine.bgMat?.uniforms.uSkyGain?.value||1,0,0],36);
-    this.device.queue.writeBuffer(buffer,0,data);
+    this.device.queue.writeBuffer(buffer.view,0,data);
+    // (the hole's uniforms as the sky's own pass has them; its camera parts unused here)
+    this.device.queue.writeBuffer(buffer.central,0,centralUniforms(engine,null,engine.tanHalf,[t.width,t.height],this.centralData));
     const group=this.device.createBindGroup({layout:this.pipeline.getBindGroupLayout(0),entries:[
-      {binding:0,resource:{buffer}},{binding:1,resource:cube.view},{binding:2,resource:cube.sampler}]});
+      {binding:0,resource:{buffer:buffer.view}},{binding:1,resource:cube.view},{binding:2,resource:cube.sampler},{binding:3,resource:{buffer:buffer.central}},
+      {binding:4,resource:stars.a},{binding:5,resource:stars.b},{binding:6,resource:adapt.view}]});
     const encoder=this.device.createCommandEncoder({label:'mirror enclosure'});
     const pass=encoder.beginRenderPass({colorAttachments:[{view:hdr.createView(),loadOp:'load',storeOp:'store'}],
       depthStencilAttachment:{view:t.depth.createView(),depthLoadOp:'load',depthStoreOp:'store'}});
     pass.setPipeline(this.pipeline);pass.setBindGroup(0,group);pass.draw(3);pass.end();this.device.queue.submit([encoder.finish()]);
   }
-  release(view){this.buffers.get(view)?.destroy();this.buffers.delete(view);}
-  dispose(){for(const buffer of this.buffers.values())buffer.destroy();this.buffers.clear();}
+  release(view){const b=this.buffers.get(view);if(b){b.view.destroy();b.central.destroy();}this.buffers.delete(view);}
+  dispose(){for(const b of this.buffers.values()){b.view.destroy();b.central.destroy();}this.buffers.clear();}
 }

@@ -46,7 +46,7 @@ export class AirPass {
     if(engine.bgMat&&engine.frameInputs?.sky){
       this.passes.draw('background',t,{...engine.bgMat.uniforms,...common,tColor:{value:src},tSky:{value:engine.frameInputs.sky.cubeRT.texture}},[t.air[0]]);
       // (the central black hole and the sky bent round it, in its place: webgpu/central.js)
-      this.central?.render(engine, t, t.air[0], src);
+      this.central?.render(engine, t, t.air[0]);
       src=t.air[0];index=1;
     }
     for (const a of atmos || []) {
