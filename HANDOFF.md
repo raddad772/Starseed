@@ -176,8 +176,8 @@ other-player controller/state path, with essentially no anti-cheat. Do not desig
 product or heavy server-authoritative movement/security architecture. Basic parsing/version checks
 remain useful for reliability. The tutorial stays solo. Transport/replication are not yet implemented.
 
-Pause → Galaxy is implemented. The mirror host is still the chosen new-game seed at a provisional
-24 pc from the central landmark; it was not selected by physical suitability checks. Default
+Pause → Galaxy is implemented. The mirror host is still the chosen new-game seed, now 3 pc from the
+central landmark (was 24 pc; tides and the disk's light set it, src/sim/centralObject.js). Default
 FSPB-8DTW gives Brukrol (F6V). Receiver selection is implemented: default region yields Legoazeaks
 (G9V), seed RX-e60889908de3ebbf-6, body 9 Tavont (microbial mats), about 6.70 ly away. The actual
 megastructure-presence predicate passes at current 100% tuning. The site entrance still places

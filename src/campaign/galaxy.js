@@ -10,7 +10,19 @@ export const GALAXY_VERSION = 1;
 export const CELL_PC = 4;
 export const STARS_PER_CELL = 8;
 export const CENTRAL_OBJECT = { name: 'Central black hole', position: [0, 0, 0] };
-const origin = [24, 0, 0];
+// the mirror survey system, 3 pc from the hole (sim/centralObject.js: a sun-like star there keeps
+// planets out past 30 AU, and the hole's disk gives it a quarter of Earth's sunlight)
+const origin = [3, 0, 0];
+// no charted star nearer the hole than 1.5 pc, where its tides would strip a star's planets beyond
+// ~18 AU: one that falls nearer is set out along its way from the hole, into 1.5-2.25 pc
+const CLEAR_PC = 1.5;
+function clearOfHole(p) {
+  const r = Math.hypot(...p);
+  if (r >= CLEAR_PC) return p;
+  if (r < 1e-6) return [CLEAR_PC * 1.25, p[1], p[2]];
+  const k = (CLEAR_PC + (CLEAR_PC - r) * 0.5) / r;
+  return p.map(n => n * k);
+}
 const receiverOffset = [1.7, .35, 1.1];
 const summaries = new Map();
 function summary(source) {
@@ -67,7 +79,7 @@ export function resolveSystem(c, id) {
     const [,xs,zs,ns]=match,x=+xs,z=+zs,n=+ns;
     const rng=Rng.fromString(`galaxy/v${GALAXY_VERSION}/${seed}/${id}`);
     const key=hashStr(`galaxy/v${GALAXY_VERSION}/${seed}/${id}`).map(n=>n.toString(16).padStart(8,'0')).join('');
-    entry={id,seed:`G-${key.toUpperCase()}`,address:`${x}:${z}:${n}`,position:[origin[0]+(x+rng.range(-.45,.45))*CELL_PC,rng.range(-1.5,1.5),origin[2]+(z+rng.range(-.45,.45))*CELL_PC],role:null};
+    entry={id,seed:`G-${key.toUpperCase()}`,address:`${x}:${z}:${n}`,position:clearOfHole([origin[0]+(x+rng.range(-.45,.45))*CELL_PC,rng.range(-1.5,1.5),origin[2]+(z+rng.range(-.45,.45))*CELL_PC]),role:null};
   }
   const placement=c.generation.systemPlacements?.[entry.address];
   if(placement)entry={...entry,...(placement.position?{position:[...placement.position]}:{}),...(placement.label?{label:placement.label}:{}),seed:systemIdentity(placement.definition),definition:systemRecipe(placement.definition)};

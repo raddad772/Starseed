@@ -33,3 +33,17 @@ test('the shader declares one name per let (WGSL has no comma lists; one took th
   for (const ch of CENTRAL_WGSL) { if (ch === '{') depth++; else if (ch === '}') depth--; assert.ok(depth >= 0); }
   assert.equal(depth, 0);
 });
+
+test('the chart keeps its stars clear of the hole, the survey system 3 pc out', async () => {
+  const { game } = await import('./campaign-fixture.mjs');
+  const { finishIntroduction } = await import('../../src/campaign/tutorial.js');
+  const { captureFlight } = await import('../../src/campaign/flight.js');
+  const { ensureGalaxy, chart, resolveSystem, CENTRAL_OBJECT } = await import('../../src/campaign/galaxy.js');
+  const g = game(); g.players[0].mode = 'ship'; g.players[0].vessel = g.ship; g.campaign = finishIntroduction(g.campaign, 'skipped');
+  const c = ensureGalaxy(captureFlight(g, g.campaign));
+  const fromHole = s => Math.hypot(...s.position.map((n, i) => n - CENTRAL_OBJECT.position[i]));
+  assert.ok(Math.abs(fromHole(resolveSystem(c, c.galaxy.currentSystemId)) - CENTRAL.distancePc) < 1e-9);
+  const stars = chart(c);
+  for (let x = -3; x <= 3; x++) for (let z = -3; z <= 3; z++) for (let n = 0; n < 8; n++) stars.push(resolveSystem(c, `star/${x}/${z}/${n}`));
+  for (const s of stars) assert.ok(fromHole(s) >= 1.5, `${s.id} ${fromHole(s).toFixed(2)} pc from the hole`);
+});
