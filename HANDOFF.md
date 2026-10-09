@@ -37,7 +37,10 @@ Queue (tick as done):
    aft cap). Wider pressure doors (1.8x2.5 on the carriers, 1.6x2.4 small craft, 1.4x2.2 Drift), panels
    beside them, lockers moved clear. EVA collision has a grid broadphase (evaContacts.js). Ramp prompts
    from outside were already generic. tools/tests/horizon-eva-hull.test.mjs sweeps every ship.
-3. [ ] Walking on a planet bumps into landed ships (hullColliders on the surface, not shuttle-only).
+3. [x] Walking on a planet bumps into landed ships (player.js collideCraft): every landed craft, not only
+   shuttles, by its outside collision (hull, parts, doors as they stand; evaContacts ballInBox for hinged
+   slabs), low parts stepped onto, roofs stood on; a lowered ramp still walks you aboard.
+   tools/tests/landed-craft-walk.test.mjs; checked in game (Lark stops you, Neptune 3's ramp boards).
 4. [ ] Expedition and Pioneer fleets: run the sweep test on their fairings; close gaps.
 5. [ ] Near-ground frame cost (engine.render CPU 20-23 ms near the ground): profile and fix the worst.
 

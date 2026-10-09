@@ -66,6 +66,28 @@ function nearBoxes(g, near) {
   return out;
 }
 
+// A ball (centre c, radius r, the ship's frame) against one box, a hinged door's slab swung as it
+// stands: how deep it's in and which way out ({depth, normal}), or null. For walkers on the ground.
+export function ballInBox(c, r, box) {
+  let x = c.x, y = c.y, z = c.z;
+  const angle = box.angle || 0, cs = Math.cos(angle), sn = Math.sin(angle);
+  if (angle) { const yy = y - box.hinge[0], zz = z - box.hinge[1]; y = box.hinge[0] + yy*cs + zz*sn; z = box.hinge[1] - yy*sn + zz*cs; }
+  const qx = Math.max(box.min[0], Math.min(box.max[0], x)), qy = Math.max(box.min[1], Math.min(box.max[1], y)), qz = Math.max(box.min[2], Math.min(box.max[2], z));
+  let dx = x - qx, dy = y - qy, dz = z - qz, d = Math.hypot(dx, dy, dz), depth;
+  if (d > 1e-6) { if (d >= r) return null; depth = r - d; dx /= d; dy /= d; dz /= d; }
+  else {
+    // (centre inside: out through the nearest face)
+    const f = [x - box.min[0], box.max[0] - x, y - box.min[1], box.max[1] - y, z - box.min[2], box.max[2] - z];
+    let m = 0; for (let i = 1; i < 6; i++) if (f[i] < f[m]) m = i;
+    dx = dy = dz = 0; const sg = m & 1 ? 1 : -1;
+    if (m < 2) dx = sg; else if (m < 4) dy = sg; else dz = sg;
+    depth = f[m] + r;
+  }
+  const normal = new THREE.Vector3(dx, dy, dz);
+  if (angle) { const ny = normal.y, nz = normal.z; normal.y = ny*cs - nz*sn; normal.z = ny*sn + nz*cs; }
+  return { depth, normal };
+}
+
 // Sweep against the same authored boxes used by spacecraft contacts. Sweeping
 // prevents a fast astronaut from tunnelling through a thin hull between frames.
 function hitBox(start, delta, box, offset) {

@@ -16,7 +16,7 @@ import * as THREE from 'three';
 import { SHIP_INTERIOR, SHIP_HULL_BOXES } from '../render/shipModel.js';
 import { boxesNear, insideBox, pilotSeat } from './vesselTypes.js';
 import { floraOf } from './floraField.js';
-import { collideEva } from './evaContacts.js';
+import { collideEva, evaColliders, ballInBox } from './evaContacts.js';
 
 // what a held view reads as input: nothing pressed, no axis moved
 const HELD_INPUT = new Proxy({ padAxes: {} }, { get: (t, k) => (k in t ? t[k] : () => 0) });
@@ -784,9 +784,58 @@ export class Player {
     }
   }
 
-  // parked shuttles' hulls (anyone's) are solid
+  // landed craft (anyone's) are solid: a shuttle by its hull boxes, any other by its outside
+  // collision (its hull, its parts, its doors as they stand: evaContacts.js), stepped up onto where
+  // a step's low enough, stood on where it's under you
   collideShipExterior() {
-    for (const ship of this.shuttlesOn(this.body)) if (ship.landed) this.collideShuttle(ship);
+    for (const v of this.game.vessels) {
+      if (v.dead || v.parent || v.body !== this.body || !v.landed || v.type.frameOnly) continue;
+      if (v.type.key === 'shuttle') this.collideShuttle(v);
+      else this.collideCraft(v);
+    }
+  }
+
+  collideCraft(v) {
+    const sp = _v2, sq = _q1;
+    this.shipFixedPose(sp, sq, v);
+    const sqi = _q2.copy(sq).invert();
+    const local = _v3.copy(this.fPos).sub(sp).applyQuaternion(sqi);
+    const reach = v.type.radius + 3;
+    if (local.lengthSq() > reach * reach) return;
+    // (the body's up in the craft's frame: a landed craft may lean on uneven ground)
+    const up = _v4.copy(this.fPos).normalize().applyQuaternion(sqi);
+    const near = { min: [local.x - 2.5, local.y - 2.5, local.z - 2.5], max: [local.x + 2.5, local.y + 2.5, local.z + 2.5] };
+    const boxes = evaColliders(v, near);
+    if (!boxes.length) return;
+    const vel = _v1.copy(this.fVel).applyQuaternion(sqi);
+    let pushed = false;
+    for (let pass = 0; pass < 2; pass++) {
+      for (const bx of boxes) {
+        // (a step: a fixed box whose top is within a step of the feet, and that the feet are over; or
+        // just under them, stood on)
+        if (!bx.angle && local.x > bx.min[0] - RADIUS - 0.05 && local.x < bx.max[0] + RADIUS + 0.05 && local.z > bx.min[2] - RADIUS - 0.05 && local.z < bx.max[2] + RADIUS + 0.05) {
+          const lift = bx.max[1] - local.y;
+          if (lift > -0.2 && lift < STEP_UP && local.y > bx.min[1] - 0.2) {
+            local.addScaledVector(up, lift / Math.max(0.5, up.y)); const vd = vel.dot(up); if (vd < 0) vel.addScaledVector(up, -vd);
+            this.grounded = true; pushed = true; continue;
+          }
+        }
+        for (const t of BOX_PROBES) {
+          const c = _fl1.copy(local).addScaledVector(up, t);
+          const hit = ballInBox(c, RADIUS, bx);
+          if (!hit) continue;
+          local.addScaledVector(hit.normal, hit.depth);
+          const vn = vel.dot(hit.normal);
+          if (vn < 0) vel.addScaledVector(hit.normal, -vn);
+          if (hit.normal.dot(up) > 0.6) this.grounded = true; // (stood on it)
+          pushed = true;
+        }
+      }
+    }
+    if (pushed) {
+      this.fPos.copy(local).applyQuaternion(sq).add(sp);
+      this.fVel.copy(vel).applyQuaternion(sq);
+    }
   }
 
   collideShuttle(ship) {
