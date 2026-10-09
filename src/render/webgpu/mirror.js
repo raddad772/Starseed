@@ -23,6 +23,19 @@ struct Mirror {
 @group(0) @binding(5) var starB: texture_2d_array<f32>;
 @group(0) @binding(6) var adapt: texture_2d<f32>;
 struct Reflection { @location(0) color: vec4f, @builtin(frag_depth) depth: f32 };
+// a grid of seams (one a cell, a its width as a share of the cell) averaged over a footprint w
+// (cells) round (x, y): the share of it that's seam
+fn cSeamCum(x: f32, a: f32) -> f32 { return floor(x) * a + min(fract(x), a); }
+fn cSeam1(x: f32, w: f32, a: f32) -> f32 {
+  let hw = max(w, 1e-4) * 0.5;
+  // (centred on each cell's edge: shift so the seam runs from -a/2 to a/2)
+  return clamp((cSeamCum(x + a * 0.5 + hw, a) - cSeamCum(x + a * 0.5 - hw, a)) / (2.0 * hw), 0.0, 1.0);
+}
+fn cSeams(x: f32, y: f32, w: f32, a: f32) -> f32 {
+  let cx = cSeam1(x, w, a);
+  let cy = cSeam1(y, w, a);
+  return 1.0 - (1.0 - cx) * (1.0 - cy);
+}
 @fragment fn mirror(v: Fullscreen) -> Reflection {
   let p=u.inverse*vec4f(v.uv.x*2.0-1.0,1.0-v.uv.y*2.0,1.0,1.0);
   let ray=normalize(p.xyz/p.w);
@@ -68,14 +81,14 @@ struct Reflection { @location(0) color: vec4f, @builtin(frag_depth) depth: f32 }
   let fp=distance*C.stars3.x/max(cosI,0.05);
   let cell=u.grid.x;
   let major=cell*u.grid.y;
-  let dm=min(abs(fract(gx/cell+0.5)-0.5),abs(fract(gy/cell+0.5)-0.5))*cell;
-  let dM=min(abs(fract(gx/major+0.5)-0.5),abs(fract(gy/major+0.5)-0.5))*major;
-  // (seams drawn a pixel or so wide whatever their true width, a minor one fainter, as an eye picks
-  // out a seam it couldn't resolve; gone where the plates shrink below a dozen pixels)
-  let lineMinor=(1.0-smoothstep(0.5,1.3,dm/fp))*smoothstep(8.0,20.0,cell/fp);
-  let lineMajor=(1.0-smoothstep(0.7,1.8,dM/fp))*smoothstep(6.0,16.0,major/fp);
+  // (seams at least a pixel wide, box-filtered over the pixel's footprint: near, crisp lines; far,
+  // where plates shrink to a few pixels, they average into an even sheen of seams to the horizon
+  // rather than vanishing or shimmering)
+  // (the seams between plates where they're big enough to see; the major ones all the way out)
+  let lineMinor=cSeams(gx/cell,gy/cell,fp/cell,clamp(1.1*fp/cell,u.grid.z/cell,0.5))*smoothstep(8.0,20.0,cell/fp);
+  let lineMajor=cSeams(gx/major,gy/major,fp/major,clamp(1.5*fp/major,2.0*u.grid.z/major,0.5));
   let plate=fract(sin(dot(floor(vec2f(gx,gy)/cell),vec2f(12.9898,78.233)))*43758.5453);
-  silver*=(1.0+0.035*(plate-0.5)*smoothstep(8.0,20.0,cell/fp))*(1.0-u.grid.w*max(0.55*lineMinor,lineMajor));
+  silver*=(1.0+0.035*(plate-0.5)*smoothstep(2.0,6.0,cell/fp))*(1.0-u.grid.w*max(0.55*lineMinor,lineMajor));
   out.color=vec4f(silver,1.0);
   return out;
 }
