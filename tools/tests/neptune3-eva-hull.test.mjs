@@ -30,7 +30,8 @@ test('a suit flown at the hull stops outside it, from above, below, the bow and 
 
 test("the airlocks' outer doors are reachable from outside", () => {
   for (const e of t.entries.filter(e => e.airlock)) {
-    const out = new THREE.Vector3(...e.outside).add(new THREE.Vector3(0, 1.5, 0));
+    // (drifting in at a comfortable height: eye 1.8 m over the floor, feet clear of the passage's sill)
+    const out = new THREE.Vector3(...e.outside).add(new THREE.Vector3(0, 1.8, 0));
     const away = out.clone().add(new THREE.Vector3(...e.heading).multiplyScalar(-8));
     assert.ok(fly(away.toArray(), out.toArray()).distanceTo(out) < 0.25, e.label);
   }

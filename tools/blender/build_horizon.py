@@ -190,9 +190,9 @@ class Ship:
   for side in [-1,1]:
    c=[0,f+height/2,0];sz=[0,height,0];c[ax]=plane-.14;c[ua]=u+side*width/4;sz[ax]=.09;sz[ua]=width/2-.015
    m=self.mesh('door_'+id+'_'+str(side),room=a);m.box(c,sz,'Hull',1);m.box([c[0],f+1.3,c[2]],[.12,.06,max(.07,sz[2]*.6)] if axis=='x' else [sz[0]*.6,.06,.12],'Screen');slide=[0,0,0];slide[ua]=side*(width/2+.04);self.t['parts'].append({'node':m.name,'door':id,'slide':slide});m.finish()
- def airlock(self,host,lo,hi,innerAxis,innerPlane,outerPlane,u,id='eva'):
+ def airlock(self,host,lo,hi,innerAxis,innerPlane,outerPlane,u,id='eva',door=(1.1,2.15)):
   r=self.room(id,'EVA airlock',lo,hi,'airlock',airlock=id);ax=0 if innerAxis=='x' else 2;sign=1 if outerPlane>innerPlane else -1
-  self.door(id+'-inner',host,id,innerAxis,innerPlane,u,1.1,2.15,id);self.door(id+'-outer',id,None,innerAxis,outerPlane,u,1.1,2.15,id)
+  self.door(id+'-inner',host,id,innerAxis,innerPlane,u,door[0],door[1],id);self.door(id+'-outer',id,None,innerAxis,outerPlane,u,door[0],door[1],id)
   r['open']=[('+' if sign>0 else '-')+innerAxis];r['gate']={r['open'][0]:id+'-outer'}
   inside=[(lo[i]+hi[i])/2 for i in range(3)];inside[1]=lo[1];outside=inside.copy();outside[ax]=outerPlane+sign*.85
   panels=[]
@@ -716,6 +716,9 @@ def n3_window(s,room,side,z,width=2.7):
 
 """Neptune 3 develops the approved Neptune 2 radial interior, using its saved mesh basis."""
 
+# the bow rooms' outer walls (x, inside the hull's 13.7 m there) and the airlocks' doors (width, height)
+N3_BOW_X=13.25
+N3_LOCK_DOOR=(1.8,2.5)
 # the flight deck moved forward into the nose (m), and how far aft its canopy reaches (z)
 N3_COCKPIT_FORWARD=-2.45
 N3_CANOPY_AFT=-22.6
@@ -732,7 +735,7 @@ def n3_lineage_rooms(s):
     n3_room(s,'commons','Circular family lounge',[-5.928,0,-19.28],[5.928,3.25,-2.378],'lounge',diningPlaces=8)
     n3_room(s,'galley','Bow kitchen and pantry',[-8.7,0,-16.6],[-5.928,3.25,-10.802],'galley')
     n3_room(s,'guest','Guest bedroom',[-12.1,0,-16.6],[-8.7,3.25,-10.802],'quarters',berths=1)
-    n3_room(s,'dining','Bow dining alcove',[5.928,0,-19.28],[15.0,3.25,-10.802],'lounge')
+    n3_room(s,'dining','Bow dining alcove',[5.928,0,-19.28],[N3_BOW_X,3.25,-10.802],'lounge')
     n3_room(s,'parents','Parents suite',[-15.8,0,-10.802],[-5.928,3.25,-2.378],'quarters',berths=2)
     n3_room(s,'kids-a','Three-person cabin',[5.928,0,-10.802],[15.8,3.25,-6.62],'quarters',berths=3)
     n3_room(s,'kids-b','Two-person cabin',[5.928,0,-6.62],[15.8,3.25,-2.378],'quarters',berths=2)
@@ -756,10 +759,10 @@ def n3_lineage_rooms(s):
         ('door-engine-port','garage','engine-port','x',-5.38,15.604,1.512),
         ('door-engine-starboard','garage','engine-starboard','x',5.38,15.604,1.512),
     ]:s.door(id,a,b,axis,plane,u,w,2.3)
-    s.airlock('commons',[-15.55,0,-19.28],[-5.928,3.25,-16.6],'x',-5.928,-15.55,-17.85,'bridge-eva')
-    s.airlock('suits',[-15.05,0,5.128],[-9.348,3.25,8.8],'x',-9.348,-15.05,7.018,'suit-eva')
+    s.airlock('commons',[-N3_BOW_X,0,-19.28],[-5.928,3.25,-16.6],'x',-5.928,-N3_BOW_X,-17.85,'bridge-eva',door=N3_LOCK_DOOR)
+    s.airlock('suits',[-15.05,0,5.128],[-9.348,3.25,8.8],'x',-9.348,-15.05,7.018,'suit-eva',door=N3_LOCK_DOOR)
     for d in s.t['slideDoors']:
-        if d['id'] in ['bridge-eva-outer','suit-eva-outer']:s.cuts.append(([-22,0,d['u0']],[d['plane']+.2,2.3,d['u1']]))
+        if d['id'] in ['bridge-eva-outer','suit-eva-outer']:s.cuts.append(([-22,0,d['u0']],[d['plane']+.2,d['y1']+.15,d['u1']]))
     garage_lock(s,'passage','garage',8.284,11.284,half_width=1.938)
     cargo_ramp(s,'garage',25,9.7,4.8)
     s.t['zones'].append({'name':'Runabout garage','kind':'hold','min':[-4.9,.01,11.384],'max':[4.9,4.7,25],'gravity':9.81,'pressure':0,'door':'ramp','snug':True,'exitMargin':1,'groundSpeedLimit':3})
@@ -891,9 +894,10 @@ def n3_accommodation_geometry(s):
     m=s.mesh('lounge_low_table',room='commons');m.box((0,.45,-10.64),(1.35,.10,1.1),'Wood');m.box((0,.21,-10.64),(.55,.42,.55),'Metal');m.finish()
     # A real outboard collar surrounds the working forward pressure lock.
     m=s.mesh('forward_docking_collar')
-    for z in [-18.5,-17.2]:m.box((-15.57,1.1,z),(.30,2.6,.20),'Metal')
-    for y in [-.1,2.3]:m.box((-15.57,y,-17.85),(.30,.20,1.5),'Metal')
-    for z in [-18.48,-17.22]:m.box((-15.745,1.1,z),(.035,2.3,.07),'Hazard')
+    cx=-N3_BOW_X-.02;dw,dh=N3_LOCK_DOOR
+    for z in [-17.85-dw/2-.12,-17.85+dw/2+.12]:m.box((cx,dh/2-.05,z),(.30,dh+.3,.20),'Metal')
+    for y in [-.1,dh+.12]:m.box((cx,y,-17.85),(.30,.20,dw+.4),'Metal')
+    for z in [-17.85-dw/2-.1,-17.85+dw/2+.1]:m.box((cx-.175,dh/2-.05,z),(.035,dh,.07),'Hazard')
     m.finish()
     m=s.mesh('forward_docking_fittings',room='bridge-eva')
     m.box((-12.8,.48,-16.96),(1.3,.18,.55),'Fabric');m.box((-12.8,.22,-16.96),(.9,.40,.4),'Metal')
@@ -902,8 +906,14 @@ def n3_accommodation_geometry(s):
     s.rs['bridge-eva']['r']['name']='Forward docking / EVA vestibule'
     for e in s.t['entries']:
         if e.get('airlock')=='bridge-eva':e['label']='Forward docking / EVA collar'
-    s.t['ports']=[{'id':'forward-dock','label':'Forward docking collar','room':'bridge-eva','pos':[-15.72,1.1,-17.85],'normal':[-1,0,0],'up':[0,1,0],'aperture':[1.1,2.15],'airlock':'bridge-eva','innerDoor':'bridge-eva-inner','outerDoor':'bridge-eva-outer','role':'Pressure transfer interface; berth partner supplied by host'}]
+    s.t['ports']=[{'id':'forward-dock','label':'Forward docking collar','room':'bridge-eva','pos':[-N3_BOW_X-.17,1.25,-17.85],'normal':[-1,0,0],'up':[0,1,0],'aperture':list(N3_LOCK_DOOR),'airlock':'bridge-eva','innerDoor':'bridge-eva-inner','outerDoor':'bridge-eva-outer','role':'Pressure transfer interface; berth partner supplied by host'}]
     s.t['accommodation']={'family':7,'guests':1,'bedrooms':4,'enlargedCabinWidth':9.872,'dockingRoom':'bridge-eva','loungeCore':'open'}
+
+def n3_hull_half(stations,z):
+    st=sorted(stations)
+    for a,b in zip(st,st[1:]):
+        if a[0]<=z<=b[0]:t=(z-a[0])/max(b[0]-a[0],1e-9);return a[1]+(b[1]-a[1])*t
+    return st[0][1] if z<st[0][0] else st[-1][1]
 
 def n3_hull_colliders(s,stations,cuts,step=.6,q=.2):
     # The hull's own collision for anyone outside it (EVA): solid columns under the lofted skin
@@ -979,7 +989,7 @@ def finish_neptune3(s):
                 for lo,hi in r.get('windows',[]):m.cut(lo,hi)
         if name in ['partitions','ceilings']:
             for id in ['bridge-eva-inner','bridge-eva-outer','door-kids-b']:
-                door=next(d for d in s.t['slideDoors'] if d['id']==id);ax=0 if door['axis']=='x' else 2;ua=2 if ax==0 else 0;lo=[-50,0,-50];hi=[50,2.3,50];lo[ax]=door['plane']-.25;hi[ax]=door['plane']+.25;lo[ua]=door['u0'];hi[ua]=door['u1'];m.cut(lo,hi)
+                door=next(d for d in s.t['slideDoors'] if d['id']==id);ax=0 if door['axis']=='x' else 2;ua=2 if ax==0 else 0;lo=[-50,0,-50];hi=[50,door['y1']+.15,50];lo[ax]=door['plane']-.25;hi[ax]=door['plane']+.25;lo[ua]=door['u0'];hi[ua]=door['u1'];m.cut(lo,hi)
         if name=='deck':
             for id in ['bridge-eva','suit-eva','parents','kids-a','kids-b']:
                 r=s.rs[id]['r'];m.cut([r['min'][0],-.5,r['min'][2]],[r['max'][0],.1,r['max'][2]])
@@ -1000,6 +1010,20 @@ def finish_neptune3(s):
                 cuts=s.rs[id]['holes'].get(side,[]);edges=sorted(set([lo[ua],hi[ua]]+[u for a,b,h in cuts for u in [a,b]]))
                 for a,b in zip(edges,edges[1:]):
                     low=max([h for aa,bb,h in cuts if aa<(a+b)/2<bb]or[0]);c=[0,(low+hi[1])/2,0];sz=[0,hi[1]-low,0];c[axis]=plane;c[ua]=(a+b)/2;sz[axis]=.1;sz[ua]=b-a;m.box(c,sz,'Wall')
+    m.finish()
+    # The suit airlock's outer bulkhead, round its door; and both outer doors' passages out through
+    # the skin, lined (the hull's void showed through them)
+    m=s.mesh('n3_lock_passages',room='suit-eva')
+    for d in s.t['slideDoors']:
+        if d['id'] not in ['bridge-eva-outer','suit-eva-outer']:continue
+        r=s.rs[d['rooms'][0]]['r'];x=d['plane'];u0,u1,y1=d['u0'],d['u1'],d['y1']
+        if d['id']=='suit-eva-outer':
+            for a,b in [(r['min'][2],u0),(u1,r['max'][2])]:m.box((x,r['max'][1]/2,(a+b)/2),(.1,r['max'][1],b-a),'Wall')
+            m.box((x,(y1+r['max'][1])/2,(u0+u1)/2),(.1,r['max'][1]-y1,u1-u0),'Wall')
+        skin_x=-n3_hull_half(s.hab[0].stations,(u0+u1)/2)-.2
+        depth=x-skin_x;cx=(x+skin_x)/2
+        for z in [u0-.05,u1+.05]:m.box((cx,(y1+.15)/2,z),(depth,y1+.15,.1),'Wall')
+        m.box((cx,y1+.2,(u0+u1)/2),(depth,.1,u1-u0+.2),'Ceiling');m.box((cx,-.05,(u0+u1)/2),(depth,.1,u1-u0+.2),'Floor')
     m.finish()
     # Replace the old stacked bunks with five full-size single beds, in two cabins.
     for room,spots in [('parents',[(-9.0,-6.6,1.9)]),('kids-a',[(7.2,-9.45,1.05),(9.4,-9.45,1.05),(11.6,-9.45,1.05)]),('kids-b',[(7.6,-3.8,1.1),(10.7,-3.8,1.1)])]:
@@ -1074,14 +1098,14 @@ def finish_neptune3(s):
         for lo,hi in r.get('windows',[]):liner.cut(lo,hi)
     liner.cut(*canopy)
     for d in s.t['slideDoors']:
-        if d['id'] in ['bridge-eva-outer','suit-eva-outer']:liner.cut([-22,0,d['u0']],[d['plane']+.2,2.3,d['u1']])
+        if d['id'] in ['bridge-eva-outer','suit-eva-outer']:liner.cut([-22,0,d['u0']],[d['plane']+.2,d['y1']+.15,d['u1']])
     exit_cut=([-4.85,-.04,24.8],[4.85,4.85,30]);s.cuts.append(exit_cut);liner.cut(*exit_cut)
     liner.finish(interior=True,ceiling=True)
     # EVA's hull: solid but for the garage behind its ramp and the airlocks' outer recesses
     garage=s.rs['garage']['r'];open_parts=[exit_cut,([garage['min'][0],garage['min'][1],garage['min'][2]],[garage['max'][0],garage['max'][1],30])]
     for d in s.t['slideDoors']:
         if d['id'] in ['bridge-eva-outer','suit-eva-outer']:
-            open_parts.append(([-22,-.05,d['u0']-.15],[d['plane']+.3,2.45,d['u1']+.15]))
+            open_parts.append(([-22,-.4,d['u0']-.15],[d['plane']+.3,d['y1']+.3,d['u1']+.15]))
     s.t['hullColliders']=n3_hull_colliders(s,s.hab[0].stations,open_parts)
     # These shared architectural meshes span several rooms; do not cull them as a single room's furniture.
     for suffix in ['neptune2_deck','neptune2_partitions','neptune2_ceilings','lineage_new_bulkheads','lineage_exploration_stations','accommodation_floors','accommodation_ceilings','expanded_cabin_storage']:
