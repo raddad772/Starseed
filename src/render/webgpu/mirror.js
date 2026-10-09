@@ -11,6 +11,9 @@ struct Mirror {
   projection: mat4x4f,
   normalHeight: vec4f,
   shape: vec4f,
+  gridEast: vec4f,   // its plates' grid: xyz the way east on it below the camera; w the camera's place east on the grid (mod a major cell)
+  gridNorth: vec4f,  // xyz north; w the camera's place north
+  grid: vec4f,       // x: a plate's width, y: plates to a major seam, z: a seam's half width, w: how dark a seam is
 };
 @group(0) @binding(0) var<uniform> u: Mirror;
 @group(0) @binding(1) var sky: texture_cube<f32>;
@@ -53,10 +56,34 @@ struct Reflection { @location(0) color: vec4f, @builtin(frag_depth) depth: f32 }
   let th=acos(clamp(dot(reflected,C.hole.xyz),-1.0,1.0));
   let lobe=select(0.0,C.disk.z*(0.006*exp(-th*th/0.004)+0.0006*exp(-th*th/0.09)),C.misc.w>0.5);
   let haze=u.shape.z;
-  out.color=vec4f(F*(col*(1.0-haze)+haze*(blur*1.6+lobe*vec3f(1.0,0.74,0.5))),1.0);
+  var silver=F*(col*(1.0-haze)+haze*(blur*1.6+lobe*vec3f(1.0,0.74,0.5)));
+  // Its plates: a big, faint grid of seams, minor ones between plates and major ones every few, and
+  // each plate a shade off its neighbours, as laid separately. Where the ray met the shell, from the
+  // camera's foot on it (east and north on the grid there, in CPU doubles: f32 can't hold a seam's
+  // place on a shell this size); seams thinner than a pixel fade by their share of it, and a grid
+  // finer than a few pixels fades out before it shimmers
+  let off=ray*distance+u.normalHeight.xyz*u.normalHeight.w;
+  let gx=u.gridEast.w+dot(off,u.gridEast.xyz);
+  let gy=u.gridNorth.w+dot(off,u.gridNorth.xyz);
+  let fp=distance*C.stars3.x/max(cosI,0.05);
+  let cell=u.grid.x;
+  let major=cell*u.grid.y;
+  let dm=min(abs(fract(gx/cell+0.5)-0.5),abs(fract(gy/cell+0.5)-0.5))*cell;
+  let dM=min(abs(fract(gx/major+0.5)-0.5),abs(fract(gy/major+0.5)-0.5))*major;
+  // (seams drawn a pixel or so wide whatever their true width, a minor one fainter, as an eye picks
+  // out a seam it couldn't resolve; gone where the plates shrink below a dozen pixels)
+  let lineMinor=(1.0-smoothstep(0.5,1.3,dm/fp))*smoothstep(8.0,20.0,cell/fp);
+  let lineMajor=(1.0-smoothstep(0.7,1.8,dM/fp))*smoothstep(6.0,16.0,major/fp);
+  let plate=fract(sin(dot(floor(vec2f(gx,gy)/cell),vec2f(12.9898,78.233)))*43758.5453);
+  silver*=(1.0+0.035*(plate-0.5)*smoothstep(8.0,20.0,cell/fp))*(1.0-u.grid.w*max(0.55*lineMinor,lineMajor));
+  out.color=vec4f(silver,1.0);
   return out;
 }
 `;
+
+// the shell's plates: a plate's width and a seam's half width (world units, the camera's height
+// above it ~30000 at the opening), and plates to a major seam
+const PLATE=3000,PLATES_TO_SEAM=5,SEAM=6;
 
 export class MirrorPass {
   constructor(device,background){this.device=device;this.background=background;this.buffers=new Map();this.centralData=new Float32Array(CENTRAL_FLOATS);}
@@ -71,12 +98,22 @@ export class MirrorPass {
     if(!shell||!source)return;
     const cube=this.background.cube(source),stars=this.background.stars(sky),adapt=t.post?.adapt[t.post.idx]||this.background.blank;
     let buffer=this.buffers.get(engine.view);
-    if(!buffer){buffer={view:this.device.createBuffer({label:'mirror view',size:160,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST}),
+    if(!buffer){buffer={view:this.device.createBuffer({label:'mirror view',size:208,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST}),
       central:this.device.createBuffer({label:'mirror central black hole',size:CENTRAL_FLOATS*4,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST})};this.buffers.set(engine.view,buffer);}
-    const data=new Float32Array(40);
+    const data=new Float32Array(52);
     data.set(inverse.elements);data.set(projection.elements,16);
     data.set([...shell.normal.toArray(),shell.height],32);
     data.set([shell.radius,engine.bgMat?.uniforms.uSkyGain?.value||1,shell.haze??0.22,0],36);
+    // (its plates' grid, in latitude and longitude on the shell round its own y axis: the camera's
+    // foot on it, east and north there, its place on the grid in doubles, modulo a major cell)
+    const n=shell.normal,cell=PLATE,major=PLATE*PLATES_TO_SEAM;
+    let ex=n.z,ez=-n.x,el=Math.hypot(ex,ez);if(el<1e-9){ex=1;ez=0;el=1;}ex/=el;ez/=el;
+    const north=[n.y*ez,n.z*ex-n.x*ez,-n.y*ex];
+    const lat=Math.asin(Math.max(-1,Math.min(1,n.y))),lon=Math.atan2(n.x,n.z);
+    const mod=(a,m)=>((a%m)+m)%m;
+    data.set([ex,0,ez,mod(shell.radius*Math.cos(lat)*lon,major)],40);
+    data.set([...north,mod(shell.radius*lat,major)],44);
+    data.set([cell,PLATES_TO_SEAM,SEAM,0.28],48);
     this.device.queue.writeBuffer(buffer.view,0,data);
     // (the hole's uniforms as the sky's own pass has them; its camera parts unused here)
     this.device.queue.writeBuffer(buffer.central,0,centralUniforms(engine,null,engine.tanHalf,[t.width,t.height],this.centralData));
