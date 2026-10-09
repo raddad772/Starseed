@@ -25,7 +25,8 @@ export function packUniformsReference(layout, uniforms, data = new ArrayBuffer(l
 // Decode immutable shader layouts once, rather than running type regexes for
 // every field of every object in every shadow/main pass.
 const packingLayouts = new WeakMap(), packingViews = new WeakMap();
-export function packUniforms(layout, uniforms, data = new ArrayBuffer(layout.bytes)) {
+// (base: where in data the block starts, in 4-byte words: a page's slot)
+export function packUniforms(layout, uniforms, data = new ArrayBuffer(layout.bytes), base = 0) {
   let fields = packingLayouts.get(layout);
   if (!fields) {
     fields = layout.uniforms.map(field => ({ ...field, offset: field.offset / 4, stride: field.stride / 4,
@@ -36,12 +37,12 @@ export function packUniforms(layout, uniforms, data = new ArrayBuffer(layout.byt
   }
   let views = packingViews.get(data);
   if (!views) { views = [new Float32Array(data), new Int32Array(data), new Uint32Array(data)]; packingViews.set(data, views); }
-  const f = views[0]; f.fill(0);
+  const f = views[0]; f.fill(0, base, base + (layout.bytes >> 2));
   for (const field of fields) {
     const values = uniforms[field.name]?.value, dst = views[field.storage];
     for (let index = 0; index < (field.count || 1); index++) {
       const value = field.count ? values?.[index] : values;
-      const offset = field.offset + (field.count ? index * field.stride : 0);
+      const offset = base + field.offset + (field.count ? index * field.stride : 0);
       if (field.matrix) {
         const n = field.matrix, array = value?.elements || value;
         for (let c = 0; c < n; c++) for (let r = 0; r < n; r++) f[offset + c * 4 + r] = array?.[c * n + r] ?? (c === r ? 1 : 0);

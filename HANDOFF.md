@@ -48,7 +48,16 @@ Queue (tick as done):
    Pioneer inspection panels cut at openings (Gantry's). fleet-eva-hull.test.mjs sweeps all 21 craft
    (an airlock may be reached along the hull: the Porter's rocket pod stands off its door). Expedition
    and Pioneer airlock doors left at 1.1 m (older eras, cramped on purpose).
-5. [ ] Near-ground frame cost (engine.render CPU 20-23 ms near the ground): profile and fix the worst.
+5. [x] Near-ground frame cost: in the wood at SOL 18.66N 59.63W (on foot, ~1200 draws, 6 shadow maps a frame)
+   engine.render's CPU went 66 -> 35 ms median (p90 83 -> 39) on this machine, by the JS sampling profiler
+   (Profiler, served with js-profiling) and timers wrapped round the passes. Fixed: the scene's matrices
+   updated once a frame, not per shadow map (1.8 ms each); instances re-packed only when they or their layout
+   change, and packed from float arrays directly (the creatures' change every frame); a material's uniforms
+   made once a pass, fragment bindings shared where they read nothing of the object's; vectors packed by
+   field, binding checks without allocation, the forward pipeline key without JSON; uniform blocks packed
+   into shared pages and written once before each submit (was ~2600 writeBuffers a frame). GPU work is
+   unchanged. Left: the shadow casters' prepare (~1800 a frame, each its own vertex block, as the planet's
+   turn moves every object against the camera), the water's 226 chunk materials, scene walks for shadows.
 
 Parked for Dave: voices (Higgs v2 in ~/tools/higgs needs the July-2025 model revisions; v3 is
 non-commercial and SGLang/NVIDIA-served), the prologue strings take (tools/voice-audition, ignored by git),
