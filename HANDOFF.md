@@ -16,7 +16,8 @@ pixel-parity claim is made. Dave confirmed sole-agent work and no coordination m
 Queue (tick as done; one report at the end):
 1. [ ] Frame cost, round two: the CPU left near the ground (shadow casters' prepare, the water's chunk
    materials, scene walks for shadows), then the GPU near the ground measured (drain method) and the worst fixed.
-2. [ ] The 404 on every page load: find which file and fix it.
+2. [x] The 404: assets/music/prologue-strings.m4a, asked for at every opening though no strings take is chosen
+   yet (intro.js PROLOGUE_MUSIC is null until one is; the takes are in tools/voice-audition/music).
 3. [ ] The opening starts ~1.5 km over the mirror (was parked; taken as approved with this queue).
 4. [ ] From 25 km up the land streaks and the coasts saw-tooth (see "Seen, open" under Measuring frame cost):
    read a far coastal chunk's positions back, find the cause, fix.

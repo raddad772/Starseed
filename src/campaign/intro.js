@@ -5,8 +5,9 @@ import { installCampaignJoin,seatExpeditionPlayer } from './newGame.js';
 import { Dialogue } from './dialogue.js';
 import { LINES,WELCOME_NUDGE,PROLOGUE } from './lines.js';
 
-// the music under the prologue (assets/music; nothing if it isn't there)
-const PROLOGUE_MUSIC = 'assets/music/prologue-strings.m4a';
+// the music under the prologue (assets/music): none until a take is chosen (the auditions are in
+// tools/voice-audition/music); asked for when it wasn't there, every opening logged a missing file
+const PROLOGUE_MUSIC = null;
 function playMusic(url, level = 0.55, fadeIn = 4) {
   const a = new Audio(url);
   a.volume = 0; a.loop = false;
@@ -90,7 +91,7 @@ export class FlightIntro {
       p.heldView=pr.shot.clone();document.body.classList.add('cinematic');
       for(const line of PROLOGUE)this.dialogue.say(line);
       // (strings under your thoughts, fading in; out again as she talks)
-      this.music=playMusic(PROLOGUE_MUSIC);
+      this.music=PROLOGUE_MUSIC?playMusic(PROLOGUE_MUSIC):null;
       pr.phase='voice';return true;
     }
     // (Enter: on to her line)
