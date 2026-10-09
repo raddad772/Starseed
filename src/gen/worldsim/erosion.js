@@ -25,6 +25,7 @@
 import * as dm from '../../core/dmath.js';
 import { hashInts } from '../../core/rng.js';
 import { routeNative } from './native.js';
+import { kth } from './select.js';
 
 // a binary min-heap of (key, cell), ties broken by cell index (deterministic)
 export class Heap {
@@ -138,8 +139,7 @@ export class Erosion {
       }
       return;
     }
-    const sorted = Float64Array.from(h).sort();
-    const cut = sorted[Math.floor(n * 0.005)];
+    const cut = kth(Float64Array.from(h), Math.floor(n * 0.005));
     for (let c = 0; c < n; c++) base[c] = h[c] <= cut ? 1 : 0;
   }
 

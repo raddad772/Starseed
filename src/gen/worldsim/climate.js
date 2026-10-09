@@ -392,28 +392,34 @@ function rainMonth(G, geo, h, sea, T, Tair, stab, wind, itcz, lat, out, locked, 
   // back at most 60% of what rained on it (plants and soil: a desert has nothing to give)
   let q = new Float64Array(n), q2 = new Float64Array(n);
   const prev = new Float64Array(n);
+  // (what's the same every sweep, worked out once: how much of each upwind neighbour's air the wind
+  // brings in (0 from those it blows away from) and their sum; the most the air over each cell can
+  // hold; what each cell's land hands back. The sweeps' sums the same, in the same order)
+  const nS = G.nStart, nb = G.nbr, wl = new Float64Array(nb.length), wsumC = new Float64Array(n), capC = new Float64Array(n), backC = new Float64Array(n);
+  for (let c = 0; c < n; c++) {
+    let wsum = 0;
+    for (let k = nS[c]; k < nS[c + 1]; k++) { const o = nb[k], along = geo.inE[k] * wind.u[o] + geo.inN[k] * wind.v[o]; if (along > 0) { wl[k] = along; wsum += along; } }
+    wsumC[c] = wsum;
+    // (too much for the air to hold (cold): it comes out. The air over this cell, its band's tempered
+    // half way to the ground under it (a winter continent chills the air crossing it: what it brings
+    // in snows out near the coast and the interior stays dry, Siberia's winter; a summer one warms
+    // it and it holds its water until it rises. Held to the band's alone, a continent's interior had
+    // most of its rain from this, through the winter, and none in the month before its convection
+    // began: a fifth of SOL Earth's land Dsa)
+    capC[c] = qs(0.5 * Tair[c] + 0.5 * T[c]) * 1.2;
+    // (land hands back what rained on it: bare ground ~20%, plant cover up to ~70%: forests carry
+    // the rain far inland, the Amazon's way)
+    backC[c] = cover ? 0.2 + 0.5 * cover[c] : 0.6;
+  }
   for (let it = 0; it < 80; it++) {
     for (let c = 0; c < n; c++) {
       // what arrives: from the upwind neighbours
-      let inflow = 0, wsum = 0;
-      for (let k = G.nStart[c]; k < G.nStart[c + 1]; k++) {
-        const o = G.nbr[k];
-        const along = geo.inE[k] * wind.u[o] + geo.inN[k] * wind.v[o];
-        if (along > 0) { inflow += along * q[o]; wsum += along; }
-      }
-      // (land hands back what rained on it: bare ground ~20%, plant cover up to ~70%:
-      // forests carry the rain far inland, the Amazon's way)
-      const back = cover ? 0.2 + 0.5 * cover[c] : 0.6;
+      let inflow = 0;
+      for (let k = nS[c]; k < nS[c + 1]; k++) { const w = wl[k]; if (w > 0) inflow += w * q[nb[k]]; }
+      const wsum = wsumC[c], back = backC[c];
       const E = sea[c] ? Es[c] : Math.min(back * Es[c], back * prev[c]);
       const held = E + (wsum > 0 ? inflow / wsum * 0.99 : 0);
-      // too much for the air to hold (cold): it comes out. The air over this cell, its band's tempered
-      // half way to the ground under it (a winter continent chills the air crossing it: what it brings
-      // in snows out near the coast and the interior stays dry, Siberia's winter; a summer one warms
-      // it and it holds its water until it rises. Held to the band's alone, a continent's interior had
-      // most of its rain from this, through the winter, and none in the month before its convection
-      // began: a fifth of SOL Earth's land Dsa)
-      const cap = qs(0.5 * Tair[c] + 0.5 * T[c]) * 1.2;
-      const over = Math.max(0, held - cap);
+      const over = Math.max(0, held - capC[c]);
       q2[c] = held - over;
       out[c] = r[c] * q2[c] + over;
       q2[c] *= 1 - r[c];

@@ -19,6 +19,7 @@ import { resurface, relaxShell, pave } from './barren.js';
 import { Erosion, Heap } from './erosion.js';
 import { smoothField } from './tectonics.js';
 import { foldAt, ridgeWidth } from '../craters.js';
+import { kth } from './select.js';
 
 const DT_MYR = 10;
 const VEXAG = 2.5;
@@ -98,7 +99,13 @@ export function stagnantWorld(G, opts) {
     // the rise swells, the shields build, while the interior is hot
     if (rise && t < volcEnd * 0.7) {
       const k = DT_MYR / 1000 / (volcEnd * 0.7);
-      for (let c = 0; c < n; c++) { const a = dm.acos(Math.min(1, dot(c, rise.at))); if (a < rise.R * 1.5) { const u = a / rise.R; h[c] += rise.H * k * dm.exp(-u * u * 1.5); } }
+      // (its shape the same every step: its cells and their share, worked out once)
+      if (!rise.cells) {
+        const cells = [], w = [];
+        for (let c = 0; c < n; c++) { const a = dm.acos(Math.min(1, dot(c, rise.at))); if (a < rise.R * 1.5) { const u = a / rise.R; cells.push(c); w.push(dm.exp(-u * u * 1.5)); } }
+        rise.cells = Int32Array.from(cells); rise.w = Float64Array.from(w);
+      }
+      for (let i = 0; i < rise.cells.length; i++) h[rise.cells[i]] += rise.H * k * rise.w[i];
     }
     for (const S of shields) {
       if (t < S.t0 || t > S.t1) continue;
@@ -375,6 +382,8 @@ function carveCanyon(G, h, C) {
 
 function quantile(a, q) {
   if (q <= 0) return -Infinity;
-  const s = Float64Array.from(a).sort();
-  return s[Math.min(s.length - 1, Math.floor(s.length * q))];
+  // (the k-th smallest, as sort()[k] gives it, by selection: a sort of every height each step was
+  // most of the wet era's time)
+  return kth(Float64Array.from(a), Math.min(a.length - 1, Math.floor(a.length * q)));
 }
+

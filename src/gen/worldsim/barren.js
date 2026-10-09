@@ -20,6 +20,7 @@ import { Impacts, craterFloor, worldCell, WORLD_CELLS, VEXAG } from './impacts.j
 import { RIDGE, ridgeWidth, ridgeAt } from '../craters.js';
 import { smoothField, blur } from './tectonics.js';
 import { Heap } from './erosion.js';
+import { kth } from './select.js';
 
 const DT_MYR = 5;
 const WEATHER_MYR = 450;     // space weathering darkens fresh material
@@ -215,8 +216,7 @@ function floodBasin(G, h, mare, fresh, B, since, t, mareLv) {
 // a resurfacing: everything below the share's height floods (lava, or slush on an icy
 // world) to a near-level plain, keeping a little of the old slope; marks the plains
 export function resurface(G, h, share, marks, fresh) {
-  const sorted = Float64Array.from(h).sort();
-  const level = sorted[Math.min(G.n - 1, Math.floor(G.n * share))];
+  const level = kth(Float64Array.from(h), Math.min(G.n - 1, Math.floor(G.n * share)));
   for (let c = 0; c < G.n; c++) if (h[c] < level) { h[c] = level - (level - h[c]) * 0.12; marks[c] = 1; if (fresh) fresh[c] = 0; }
   return level;
 }
