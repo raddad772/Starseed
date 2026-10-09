@@ -42,6 +42,18 @@ fn cBlackbody(T: f32) -> vec3f {
   let c = vec3f(cPlanck(0.61, T), cPlanck(0.55, T), cPlanck(0.465, T));
   return c / max(dot(c, vec3f(0.2126, 0.7152, 0.0722)), 1e-30);
 }
+fn cHash(p: vec3f) -> f32 { return fract(sin(dot(p, vec3f(127.1, 311.7, 74.7))) * 43758.5453); }
+// value noise, 0..1
+fn cNoise(p: vec3f) -> f32 {
+  let i = floor(p);
+  let f = fract(p);
+  let u = f * f * (3.0 - 2.0 * f);
+  let x00 = mix(cHash(i), cHash(i + vec3f(1.0, 0.0, 0.0)), u.x);
+  let x10 = mix(cHash(i + vec3f(0.0, 1.0, 0.0)), cHash(i + vec3f(1.0, 1.0, 0.0)), u.x);
+  let x01 = mix(cHash(i + vec3f(0.0, 0.0, 1.0)), cHash(i + vec3f(1.0, 0.0, 1.0)), u.x);
+  let x11 = mix(cHash(i + vec3f(0.0, 1.0, 1.0)), cHash(i + vec3f(1.0, 1.0, 1.0)), u.x);
+  return mix(mix(x00, x10, u.y), mix(x01, x11, u.y), u.z);
+}
 fn cPerp(n: vec3f) -> vec3f { return normalize(cross(n, select(vec3f(1.0, 0.0, 0.0), vec3f(0.0, 1.0, 0.0), abs(n.x) > 0.9))); }
 
 // the disk where the light crossed it, at Boyer-Lindquist radius r and angle phi (about the spin
@@ -57,11 +69,13 @@ fn cDisk(C: Central, r: f32, phi: f32, lam: f32) -> vec3f {
   let Om = 1.0 / (r15 + a);
   let ut = (r15 + a) / (pow(r, 0.75) * sqrt(max(r15 - 3.0 * sqrt(r) + 2.0 * a, 1e-6)));
   let g = 1.0 / (ut * (1.0 - Om * lam));
-  // (and a little structure: denser and thinner gas, in rings that don't repeat and streaks drawn
-  // out along the orbits, sheared as the inner gas laps the outer)
+  // (and its clumps of denser and thinner gas, drawn out along the orbits into streaks and wound
+  // into spirals as the inner gas laps the outer: noise round each circle, many times finer across
+  // than along)
   let lr = log(r);
-  let sh = phi + 4.0 * lr;
-  let tex = 0.86 + 0.06 * sin(lr * 23.0 + 1.7 * sin(lr * 7.3)) + 0.05 * sin(lr * 61.0 + 0.8 * sin(sh * 2.0)) + 0.03 * sin(sh * 5.0 + lr * 37.0);
+  let ps = phi + 5.0 * lr;
+  let q = vec3f(lr * 18.0, 2.2 * cos(ps), 2.2 * sin(ps));
+  let tex = 0.55 + 0.9 * (0.5 * cNoise(q) + 0.3 * cNoise(q * 2.03 + 7.1) + 0.2 * cNoise(q * 4.1 + 3.7));
   return cBlackbody(max(g * T, 800.0)) * C.disk.z * pow(max(g, 0.0), 4.0) * pow(T / C.disk.w, 4.0) * tex;
 }
 
@@ -181,10 +195,15 @@ fn cLens(C: Central, ray: vec3f) -> Lens {
     let z0 = cos(th);
     let z1 = cos(thn);
     if (z0 * z1 <= 0.0) {
-      let f = z0 / (z0 - z1 + 1e-12);
-      let rc = mix(r, rn, f);
+      // (where the chord between the two steps meets the plane: the ray's nearly straight over a
+      // step, and far out a step's long, tens of M; interpolating r and phi themselves there
+      // put the disk's far edge in steps)
+      let q0 = r * vec3f(sin(th) * cos(ph), sin(th) * sin(ph), z0);
+      let q1 = rn * vec3f(sin(thn) * cos(phn), sin(thn) * sin(phn), z1);
+      let qc = mix(q0, q1, z0 * r / (z0 * r - z1 * rn + 1e-12));
+      let rc = length(qc.xy);
       if (rc >= C.misc2.z && rc <= C.disk.y) {
-        L.color += cDisk(C, rc, mix(ph, phn, f), lam);
+        L.color += cDisk(C, rc, atan2(qc.y, qc.x), lam);
         L.captured = 1.0;
         return L;
       }

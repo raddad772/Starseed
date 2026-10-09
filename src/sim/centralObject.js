@@ -10,7 +10,7 @@ import { resolveSystem, CENTRAL_OBJECT } from '../campaign/galaxy.js';
 export const CENTRAL = {
   massSun: 6e10,            // a fictional sixty billion suns
   distancePc: 3,            // from here when the chart doesn't say: as near as a star keeps planets out to ~35 AU (its Hill sphere ~110 AU)
-  inclinationDeg: 58,       // the spin axis from the line of sight (the nearer jet coming toward us)
+  inclinationDeg: 83,       // the spin axis from the line of sight: near edge-on, the disk's far side lensed into a halo over and under the hole
   spin: 0.94,               // a = J c / G M^2 (0: Schwarzschild's; 0.998 about the most gas can spin one up to)
   // a starving hole's thin disk, its hottest a cool star's 4000 K: ~1e11 suns in all, a quarter of
   // Earth's sunlight at 3 pc (at 26000 K it'd be ~1e14 suns, hundreds of times Earth's, at 3 pc)
