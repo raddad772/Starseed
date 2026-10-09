@@ -95,6 +95,8 @@ export function heatPipe(H) {
 // x Earth's 87 mW/m^2) and surface temperature, and the smoothing that takes out relief wider
 // than twice it (cells of G: a blur's passes, ~1.2 cells^2 of spread each) -- or null if the
 // lid is deeper than the world is wide (a cold dead shell: nothing flows)
+// the share of its old relief an icy shell's overturn leaves (Titan's, as its methane outgassed)
+const OVERTURN_KEEP = 0.15;
 export function shellRelax(H, G, scale) {
   const q = 0.087 * Math.max(H.heatNow || 0, 1e-4), Ts = H.T || 100;
   if (Ts >= 210) return null;
@@ -174,7 +176,7 @@ export function worldSim(body, star, opts = {}) {
     // at the poles from its hydrocarbon seas (liquids.js)
     // (the rain its history had through time: a cold world's brief warm spells cut less than a
     // warm one's lasting rain; the mean over each sim step's span)
-    let rainK0 = 1, rainAt = null, recordAt = null;
+    let rainK0 = 1, rainAt = null, recordAt = null, overturn = null;
     if (wet && H.series && H.series.rain && H.series.t.length) {
       const st = H.series.t, sr = H.series.rain;
       rainAt = (tg) => { let s = 0, k = 0; for (let i = 0; i < st.length; i++) if (st[i] >= tg - 0.005 && st[i] < tg + 0.01) { s += sr[i]; k++; } return k ? s / k : 0; };
@@ -186,6 +188,8 @@ export function worldSim(body, star, opts = {}) {
       // The methane rains from then on)
       const tOut = Math.max(0, age - rng.fork('outgas').range(0.3, 1.0));
       wet = [tOut, age]; rainK0 = 0.005; recordAt = tOut; seaFrac = Math.min(0.05, (H.mainLiquidDepth || 0) / ((H.mainLiquidDepth || 0) + 100));
+      // (the overturn resurfaced it: a share of the old relief left)
+      overturn = OVERTURN_KEEP;
       log(`methane outgassed ${Math.round((age - tOut) * 1000)} Myr ago: channels and polar lakes`);
     }
     // (too hot for a lid: a heat pipe, as on the barren path)
@@ -193,7 +197,7 @@ export function worldSim(body, star, opts = {}) {
     if (stagPipe) log(`too hot for a lid: its heat piped out through volcanoes (${Math.round(stagPipe(age))} m of lava a Myr now)`);
     // (a Titan's haze: its photochemistry by the sunlight it has, Titan's ~80 m a Gyr at 1% of Earth's)
     const haze = H.titanish ? 80 * dm.clamp((body.insolation || 0.011) / 0.011, 0.2, 5) : 0;
-    const S = stagnantWorld(G, { rng: rng.fork('stagnant'), body, age, scale, wet, seaFrac, rainK0, tier: H.tier, volcEnd: 1 + 15 * dm.pow(body.massEarth, 0.6), rate, spike, resurfaceAt, resurfaceShare, rainAt: rainK0 === 1 ? rainAt : null, haze, relax, recordAt, pipe: stagPipe });
+    const S = stagnantWorld(G, { rng: rng.fork('stagnant'), body, age, scale, wet, seaFrac, rainK0, tier: H.tier, volcEnd: 1 + 15 * dm.pow(body.massEarth, 0.6), rate, spike, resurfaceAt, resurfaceShare, rainAt: rainK0 === 1 ? rainAt : null, haze, relax, recordAt, overturn, pipe: stagPipe });
     const volcanoes = S.shields.map((v) => ({ ...latLonOf(v.at), heightM: v.H }));
     const melt = stampFresh(G, S.h, H, body, scale);
     const crater = { crat: S.crat, g: body.gravity, scale, Dw: S.dMin * 1000, Dair: airCut(body.atmosphere ? body.atmosphere.pressure : 0, body.gravity) * 1000 * scale, Drel: relax ? 2 * relax.lidKm * 1000 * scale : 0 };

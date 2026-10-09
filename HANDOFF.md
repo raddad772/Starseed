@@ -22,7 +22,11 @@ Queue (tick as done; one report at the end):
 4. [ ] From 25 km up the land streaks and the coasts saw-tooth (see "Seen, open" under Measuring frame cost):
    read a far coastal chunk's positions back, find the cause, fix.
 5. [ ] Mars from afar: a chaos raft's apron (talus) missing off the near field.
-6. [ ] Titan keeps far too many big craters: cumulative methane-rain erosion / warm-ice relaxation.
+6. [x] Titan's craters (SIM 70): its outgassing overturn reset only the crater record's bookkeeping, so all
+   865 grid-scale basins (>200 km, every one older than the overturn) stayed in its heights, 128 still over
+   300 m deep. Now the overturn resurfaces it: 15% of the old relief left (world.js OVERTURN_KEEP,
+   stagnant.js opts.overturn); 0 basins over 300 m deep, relief sd 660 -> 294 m, faint ghost rings under the
+   haze. Every world re-sims once (the version); the shipped opening bundles rebuilt for it.
 7. [ ] Richer emission nebulae in the galaxy's background bake (last, its own commit, for Dave's eye).
 Not in it (Dave's call): Expedition/Pioneer airlock widths, voices, the strings take, deleting old worktrees,
 the stale entries in .claude/launch.json.

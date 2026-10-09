@@ -162,7 +162,13 @@ export function stagnantWorld(G, opts) {
     // world's brief warm spells cut a little, now and then
     const rk = opts.rainAt ? opts.rainAt(t) : (opts.rainK0 ?? 1);
     // (a crater record that starts again at a moment: a Titan's outgassing overturn)
-    if (opts.recordAt != null && !stats.recordReset && t >= opts.recordAt) { since.fill(t); stats.recordReset = true; }
+    if (opts.recordAt != null && !stats.recordReset && t >= opts.recordAt) {
+      since.fill(t); stats.recordReset = true;
+      // (and its old relief with it: the old surface foundered as new ice welled up, a little of what
+      // stood left (opts.overturn: the share), the basins of four Gyr all but gone: Titan keeps one big
+      // basin, Menrva, where Callisto keeps hundreds)
+      if (opts.overturn) { let m = 0; for (let c = 0; c < n; c++) m += h[c]; m /= n; for (let c = 0; c < n; c++) h[c] = m + opts.overturn * (h[c] - m); }
+    }
     if (wet && t >= wet[0] && t < wet[1] && rk > 2e-3) {
       // (any sea is its rivers' base level: without one the whole world is a closed basin, and
       // its lakes fill it level (a Titan's polar seas, a few % of it, are its base)
