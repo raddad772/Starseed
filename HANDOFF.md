@@ -11,6 +11,32 @@ maps and viewscreens are native. WebGL exists only in explicit test tooling (`?w
 no production fallback. Other browser/GPU combinations still need certification; no speedup or exact
 pixel-parity claim is made. Dave confirmed sole-agent work and no coordination messages this session.
 
+## NOW: overnight queue (session 39d69fa8, 2026-10-08 night)
+
+All worktrees are merged into main and work happens in main (Dave, 2026-10-08). Done today and committed:
+the central black hole traced in the Kerr metric (render/webgpu/central.js), one sky across systems
+(sim/centralObject.js, Sky.placeInGalaxy), the survey system 3 pc from the hole, the mirror reflecting it
+(silvered, plate grid with anisotropic seams), one star table for sky/lens/mirror, the opening prologue and
+Eleanor's radio lines (campaign/dialogue.js, lines.js, intro.js; Kokoro placeholder voices), two ships only
+at the opening, nothing marked inside the mirror, fading top panels (O pins), Neptune 3's EVA hull,
+outside ramp prompt, canopy cockpit and bigger airlocks.
+
+Queue (tick as done):
+1. [ ] The nebula falling toward the hole: a gas cloud on its first plunge, its parcels on two-body orbits
+   (history, not noise), torn into a hooked streamer; deposited into a 3D density, ray-marched in the
+   central pass (and the mirror) as ionized emission (H-alpha red, [O III] teal) lit by the disk, with dust.
+   Richer emission nebulae in the background bake too.
+2. [ ] Every Horizon ship physically real outside: EVA hull collision from its skins (generalise
+   n3_hull_colliders), the same sweep test per ship; ramp prompts for every ramp door; bigger airlock doors
+   where they fit.
+3. [ ] Walking on a planet bumps into landed ships (hullColliders on the surface, not shuttle-only).
+4. [ ] Expedition and Pioneer fleets: run the sweep test on their fairings; close gaps.
+5. [ ] Near-ground frame cost (engine.render CPU 20-23 ms near the ground): profile and fix the worst.
+
+Parked for Dave: voices (Higgs v2 in ~/tools/higgs needs the July-2025 model revisions; v3 is
+non-commercial and SGLang/NVIDIA-served), the prologue strings take (tools/voice-audition, ignored by git),
+starting the opening ~1.5 km over the mirror, deleting the old worktrees.
+
 ## Megastructure vertical-route checkpoint (Codex, 2026-10-08)
 On `codex/landing-guide`, server 8779. Gravity sites now use a visit graph for a zero-g
 ascent, elevated low-gravity broken gallery, return through the same intake volume
