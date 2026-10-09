@@ -234,7 +234,8 @@ export class WorldRenderer {
       it.mesh = makeGiantMesh(b, it.shared);
       it.group.add(it.mesh);
     }
-    if (b.data.rings) {
+    // (a giant's rings, a mesh; a rocky world's, from a moon torn apart, the air pass draws per pixel: webgpu/rings.js)
+    if (b.data.rings && b.data.rings.kind !== 'debris') {
       it.rings = makeRingMesh(b, it.shared);
       it.ringGroup = new THREE.Group();
       it.ringGroup.add(it.rings);

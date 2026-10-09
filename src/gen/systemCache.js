@@ -2,6 +2,7 @@
 import { attachHistorySampler } from './worldsim/historySampler.js';
 import { openSystemCache, writeSystemCache } from './systemDiskCache.js';
 import { generateSystem, GENERATOR_VERSION } from './system.js';
+import { addRockyRings } from './rings.js';
 import { systemRecipe, systemIdentity, fingerprint } from './systemRecipe.js';
 import { LEN_SCALE, HEIGHT_SCALE } from '../core/units.js';
 import { SIM_VERSION } from './worldsim/snapshot.js';
@@ -63,4 +64,5 @@ export function prepareSystem(input) {
 }
 export function clearSystemMemory(){memory.clear();memoryBytes=0;}
 
-function revive(system){for(const b of system.bodies)if(b.history)attachHistorySampler(b.history);return system;}
+// (and a system cached or bundled before rocky worlds had rings gets them: rings.js, deterministic)
+function revive(system){for(const b of system.bodies)if(b.history)attachHistorySampler(b.history);return addRockyRings(system);}

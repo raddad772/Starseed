@@ -27,6 +27,7 @@ import { makeOrbit, orbitState } from '../core/kepler.js';
 import { makeName, roman, PLANET_LETTERS } from './names.js';
 import { qFromTo, qAxisAngle, qMul, qRotate, qConj, norm, cross, perp, dot } from '../core/vec.js';
 import { hexToLinear, jitterColor } from './color.js';
+import { addRockyRings } from './rings.js';
 
 export const GENERATOR_VERSION = 1;
 const M_SUN_IN_EARTH = U.M_SUN / U.M_EARTH;
@@ -586,14 +587,15 @@ export function generateSystem(seedInput) {
     if (sc > bestScore + 1e-9) { bestScore = sc; start = b; }
   }
 
-  return {
+  // (rings round rocky worlds, from moons torn apart: rings.js; after the moons, changing none)
+  return addRockyRings({
     seed, version: GENERATOR_VERSION,
     star, disk: { snowLine: disk.snow, outer: disk.outer, metallicity: star.metallicity },
     hz: star.hz,
     bodies, belts,
     startBodyId: H.recipe.startPlanet!==undefined ? planets[H.recipe.startPlanet].id : start ? start.id : 1,
     ...(isAuthored(H.recipe)?{definition:H.recipe}:{}),
-  };
+  });
 }
 
 // Compact description of a system for UIs and tests
