@@ -894,8 +894,12 @@ export class Player {
         this.enterVessel(v, local, vLocal, hLocal);
         return;
       }
-      if (v.type.ramp && local.length() < 30 && v.ramp < 0.5) {
-        this.prompt = { key: 'F', text: `Open ${v.name}'s ramp` };
+      // (a ramp to open from outside: a shuttle's, or a ship's hinged ramp door near you)
+      const rd = !v.type.ramp && (v.type.doors || []).find((d) => d.ramp && d.hinge);
+      const nearRamp = rd ? Math.hypot(local.x, local.y - rd.hinge[0], local.z - rd.hinge[1]) < 18 && v.doors[rd.id].open < 0.5
+        : v.type.ramp && local.length() < 30 && v.ramp < 0.5;
+      if (nearRamp) {
+        this.prompt = { key: 'F', text: `Open ${v.name}'s ${rd ? (rd.label || 'ramp').toLowerCase() : 'ramp'}` };
         if (input.hit('KeyF')) this.game.toggleRamp(v);
       }
     }

@@ -516,7 +516,7 @@ def add_transit(s,stations,edges):
 SHIPS=[]
 
 def skin(s,name,stations,x=0,paint=0):
- m=s.mesh(name);m.loft(stations,'Hull',paint,n=24)
+ m=s.mesh(name);m.loft(stations,'Hull',paint,n=24);m.stations=stations
  if x:m.polys=[([(p[0]+x,p[1],p[2]) for p in ps],mat,idx) for ps,mat,idx in m.polys]
  s.hab.append(m);return m
 
@@ -716,6 +716,10 @@ def n3_window(s,room,side,z,width=2.7):
 
 """Neptune 3 develops the approved Neptune 2 radial interior, using its saved mesh basis."""
 
+# the flight deck moved forward into the nose (m), and how far aft its canopy reaches (z)
+N3_COCKPIT_FORWARD=-2.45
+N3_CANOPY_AFT=-22.6
+
 def n3_from2(p):
     x,y,z=p;sx=1.14-.11*max(0,min(1,(z-12.3)/12.7))
     return (x*sx,y+1.1,z*1.08-2)
@@ -724,7 +728,7 @@ def n3_room(s,id,name,lo,hi,kind='cabin',**kw):
     return s.room(id,name,lo,hi,kind,**kw)
 
 def n3_lineage_rooms(s):
-    n3_room(s,'bridge','Raised flight deck',[-2.964,.6,-23.6],[2.964,3.25,-19.28],'bridge')
+    n3_room(s,'bridge','Raised flight deck',[-2.964,.6,-26.0],[2.964,3.25,-19.28],'bridge')
     n3_room(s,'commons','Circular family lounge',[-5.928,0,-19.28],[5.928,3.25,-2.378],'lounge',diningPlaces=8)
     n3_room(s,'galley','Bow kitchen and pantry',[-8.7,0,-16.6],[-5.928,3.25,-10.802],'galley')
     n3_room(s,'guest','Guest bedroom',[-12.1,0,-16.6],[-8.7,3.25,-10.802],'quarters',berths=1)
@@ -791,7 +795,7 @@ def n3_lineage_collision(s):
             if mat.get('semantic')=='Floor' and p.normal.z>.7:
                 j=len(floorverts);floorverts.extend(o.matrix_world@o.data.vertices[i].co for i in p.vertices);floorfaces.append(list(range(j,len(floorverts))))
     tree=BVHTree.FromPolygons(verts,faces);floor=BVHTree.FromPolygons(floorverts,floorfaces)
-    cell=.15;x0=-17.1;z0=-24;nx=228;nz=327;blocked=set();physical=set();levels={};walk=set()
+    cell=.15;x0=-17.1;z0=-26.55;nx=228;nz=344;blocked=set();physical=set();levels={};walk=set()
     for i in range(nx):
         for k in range(nz):
             x=x0+(i+.5)*cell;z=z0+(k+.5)*cell
@@ -901,6 +905,46 @@ def n3_accommodation_geometry(s):
     s.t['ports']=[{'id':'forward-dock','label':'Forward docking collar','room':'bridge-eva','pos':[-15.72,1.1,-17.85],'normal':[-1,0,0],'up':[0,1,0],'aperture':[1.1,2.15],'airlock':'bridge-eva','innerDoor':'bridge-eva-inner','outerDoor':'bridge-eva-outer','role':'Pressure transfer interface; berth partner supplied by host'}]
     s.t['accommodation']={'family':7,'guests':1,'bedrooms':4,'enlargedCabinWidth':9.872,'dockingRoom':'bridge-eva','loungeCore':'open'}
 
+def n3_hull_colliders(s,stations,cuts,step=.6,q=.2):
+    # The hull's own collision for anyone outside it (EVA): solid columns under the lofted skin
+    # (its sections are squircles, (x/w)^4 + ((y-mid)/half)^4 = 1, linear between stations), hollow
+    # where the ship is open to the outside (the garage behind its ramp opening, the airlock
+    # recesses), merged into boxes. Vessel frame: x starboard, y up, z aft.
+    st=sorted(stations)
+    def section(z):
+        if z<st[0][0] or z>st[-1][0]:return None
+        for a,b in zip(st,st[1:]):
+            if a[0]<=z<=b[0]:
+                t=(z-a[0])/max(b[0]-a[0],1e-9);return tuple(a[i]+(b[i]-a[i])*t for i in (1,2,3))
+    z0=st[0][0];z1=st[-1][0];wmax=max(w for _,w,_,_ in st)
+    nx=int(math.ceil(2*wmax/step));nz=int(math.ceil((z1-z0)/step))
+    spans={}
+    for i in range(nx):
+        x=-wmax+(i+.5)*step
+        for k in range(nz):
+            z=z0+(k+.5)*step;sec=section(z)
+            if not sec:continue
+            w,low,high=sec;u=abs(x)/w
+            if u>=1:continue
+            mid=(low+high)/2;half=(high-low)/2*(1-u**4)**.25
+            col=[(round((mid-half)/q)*q,round((mid+half)/q)*q)]
+            # (the open parts cut out of the column)
+            for lo,hi in cuts:
+                if not(lo[0]<=x<=hi[0] and lo[2]<=z<=hi[2]):continue
+                out=[]
+                for a,b in col:
+                    if b<=lo[1] or a>=hi[1]:out.append((a,b));continue
+                    if a<lo[1]:out.append((a,lo[1]))
+                    if b>hi[1]:out.append((hi[1],b))
+                col=out
+            for a,b in col:
+                if b-a>1e-3:spans.setdefault((a,b),set()).add((i,k))
+    boxes=[]
+    for (a,b),cells in spans.items():
+        for ia,ka,ib,kb in n3_merge(cells,nx,nz):
+            boxes.append({'min':[round(-wmax+ia*step,3),round(a,3),round(z0+ka*step,3)],'max':[round(-wmax+(ib+1)*step,3),round(b,3),round(z0+(kb+1)*step,3)]})
+    return boxes
+
 def finish_neptune3(s):
     s.finish_serial=0;s.t['fixtures']=[];s.t['stations']=[];s.t['walkTargets']=[]
     def target(id,room,pos):s.t['walkTargets'].append({'id':id,'room':room,'pos':list(pos)})
@@ -926,6 +970,9 @@ def finish_neptune3(s):
             if name=='washrooms' and max(p[1] for p in pts)<.111 and min(p[1] for p in pts)>=0:mat='Floor'
             if name=='garage_fittings' and sum(p[2] for p in pts)/len(pts)>20 and max(abs(p[0]) for p in pts)>3:
                 pts=[((1 if old[0]>0 else -1)*4.65+(old[0]-(3.8 if old[0]>0 else -3.8))*.62,q[1],q[2]) for old,q in zip([record['vertices'][i] for i in face['vertices']],pts)]
+            # The flight deck sits forward in the nose, under the canopy.
+            # (its steps down to the lounge stay where they were; the deck between is filled below)
+            if name=='cockpit' and sum(p[2] for p in pts)/len(pts)<-19.0:pts=[(x,y,z+N3_COCKPIT_FORWARD) for x,y,z in pts]
             m.face(pts,mat)
         if name=='partitions':
             for r in s.rs.values():
@@ -982,7 +1029,9 @@ def finish_neptune3(s):
     n3_chair(s,'commons',5.13,-17.55,[0,0,1],'Guest dining seat')
     # Existing cockpit geometry, correctly placed at its raised floor.
     for side in [-1,1]:
-        x=side*1.425;z=-21.764;s.t['seats'].insert(0 if side<0 else 1,{'pilot':side<0,'pos':[x,.6,z],'eye':[x,1.86,z-.15],'stand':[x,.6,z+1.05],'heading':[0,0,-1],'label':'Pilot seat' if side<0 else 'Co-pilot seat','room':'bridge'})
+        x=side*1.425;z=-21.764+N3_COCKPIT_FORWARD;s.t['seats'].insert(0 if side<0 else 1,{'pilot':side<0,'pos':[x,.6,z],'eye':[x,1.86,z-.15],'stand':[x,.6,z+1.05],'heading':[0,0,-1],'label':'Pilot seat' if side<0 else 'Co-pilot seat','room':'bridge'})
+    # (the deck's floor carried back to the lounge where the cockpit moved forward)
+    m=s.mesh('n3_flight_deck_floor',room='bridge');m.box((0,.525,-21.1),(5.928,.15,4.4),'Floor');m.finish()
     # Family planning table, sample analysis and garage controls keep the playable refit.
     m=s.mesh('lineage_exploration_stations',room='commons')
     for x,z,room in [(0,-5.1,'commons'),(3.65,2.6,'mechanical'),(4.2,12.6,'garage'),(2.05,-19.95,'bridge')]:
@@ -1005,17 +1054,35 @@ def finish_neptune3(s):
     s.t['interiorFinish']='neptune2-accommodation-v2';s.t['interiorFeatures']=['neptune2-radial-plan','open-circular-lounge','curved-lounge','eight-berths-four-bedrooms','five-single-child-beds','seven-dining-seats','survey-stations','three-airlocks','forward-docking-vestibule','runabout-bay-controls']
     s.t['help']='Neptune 3 · Neptune 2 family layout · F seats / airlocks / exploration consoles · R ramp · Y runabout restraint'
     s.root['interior_finish']='Neptune 2 layout / enlarged family cabins, guest bedroom, forward docking / 2026-10-06'
+    # A wraparound canopy: the hull over the flight deck's front in glass, following the skin, from
+    # just over the consoles up and round the nose (the old letterbox window sat 6 m ahead of the pilot)
+    canopy=([-10,1.35,-28.2],[10,7,N3_CANOPY_AFT])
+    glass=s.mesh('n3_canopy',room='bridge')
+    for poly,mat,paint in s.hab[0].polys:
+        inside=poly
+        for a in range(3):
+            if inside:inside=half(inside,a,canopy[0][a],True)
+            if inside:inside=half(inside,a,canopy[1][a],False)
+        if inside:glass.face(inside,'Glass')
+    glass.finish()
+    s.rs['bridge'].setdefault('windows',[]).append(canopy);s.cuts.append(canopy)
     # Continuous inner pressure-shell lining: the exterior is deliberately single-sided.
     liner=s.mesh('lineage_inner_shell')
     for poly,mat,paint in s.hab[0].polys:
         liner.face(list(reversed([(x*.995,y-.10 if y>0 else y+.10,z*.998) for x,y,z in poly])),'Ceiling')
     for r in s.rs.values():
         for lo,hi in r.get('windows',[]):liner.cut(lo,hi)
-    liner.cut([-3.5,1.25,-30],[3.5,3.05,-23])
+    liner.cut(*canopy)
     for d in s.t['slideDoors']:
         if d['id'] in ['bridge-eva-outer','suit-eva-outer']:liner.cut([-22,0,d['u0']],[d['plane']+.2,2.3,d['u1']])
     exit_cut=([-4.85,-.04,24.8],[4.85,4.85,30]);s.cuts.append(exit_cut);liner.cut(*exit_cut)
     liner.finish(interior=True,ceiling=True)
+    # EVA's hull: solid but for the garage behind its ramp and the airlocks' outer recesses
+    garage=s.rs['garage']['r'];open_parts=[exit_cut,([garage['min'][0],garage['min'][1],garage['min'][2]],[garage['max'][0],garage['max'][1],30])]
+    for d in s.t['slideDoors']:
+        if d['id'] in ['bridge-eva-outer','suit-eva-outer']:
+            open_parts.append(([-22,-.05,d['u0']-.15],[d['plane']+.3,2.45,d['u1']+.15]))
+    s.t['hullColliders']=n3_hull_colliders(s,s.hab[0].stations,open_parts)
     # These shared architectural meshes span several rooms; do not cull them as a single room's furniture.
     for suffix in ['neptune2_deck','neptune2_partitions','neptune2_ceilings','lineage_new_bulkheads','lineage_exploration_stations','accommodation_floors','accommodation_ceilings','expanded_cabin_storage']:
         ob=s.scene.objects.get(s.key+':'+suffix)
@@ -1026,7 +1093,6 @@ def finish_neptune3(s):
 s=Ship('neptune3','Neptune 3',145_000,8,56)
 skin(s,'oval_family_hull',[(-28,4,-1,3.6),(-24,9,-1.6,5),(-18,15,-2.2,6.3),(-8,17,-2.5,6.5),(12,16,-2,6.3),(23,12,-1.5,5.4),(27,8,-1,4.8)])
 n3_lineage_rooms(s)
-s.front_window(-28.02,-3.5,3.5,1.25,1.8,room='bridge')
 pad(s,'Dorsal scout terrace',0,-1,15,18,6.8)
 for side in [-1,1]:pod(s,side*12,1.4,15,28,1.8)
 s.legs([(-10,-.4,-19),(10,-.4,-19),(-10,-.4,20),(10,-.4,20)],2.35)

@@ -10,6 +10,8 @@ const hollowHulls = new WeakMap();
 // Keep the moving door slabs: opening a ramp must never remove a closed door.
 export function evaColliders(v) {
   const t = v.type, all = v.colliders();
+  // (a hull built with its own outside collision, solid but where it's open: that and the rest)
+  if (t.hullColliders) return t.hullColliders.concat(all);
   if (!t.inner || !t.zones?.some(z => z.kind === 'hold')) return all;
   let hull = hollowHulls.get(t);
   if (!hull) {
