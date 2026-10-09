@@ -23,8 +23,17 @@ Queue (tick as done; one report at the end):
    (8.7M of the frame's 8.73M triangles, 1287 draws, 13k patches), sun shadows -1.6, trees ~0; at half
    resolution the whole frame 16.5 ms and the grass 0.3. Tried and reverted: a depth pre-pass for the grass
    (its blades' depth first, then shaded with an equal test): no better (46 -> 48-51), so not overdraw but
-   rasterising that many thin triangles (2x2 quads over slivers). The lever is the grass's triangle count
-   past the near patches (fewer, wider blades beyond ~20 m, grassRender.js LOD), a visual call for Dave.
+   rasterising that many thin triangles (2x2 quads over slivers). CORRECTION (the next measurement): the
+   "grass" hidden there was terrain.grassSet.group, which is the terrain's own group (trees, stones, water,
+   grass): the grass's three rings cost ~2 ms between them, stones 0.8, trees ~0. Passes stubbed one at a
+   time in one load instead: the air pass 18 ms of 51 (its 'volume' draw 16; the black hole's 0.3, the
+   background 0.7, composite 1), GTAO 2.9, the mirror pass 1.3 (on Earth, no mirror), material effects
+   1.2, local lights 0.7. The volume pass by view: looking down 2.7 ms, level 17, up 48 of a 60 ms frame:
+   the clouds' march over sky pixels (half res already, 40 steps, each deck's coverage and density for both
+   wind generations, a 3-step light march in cloud). Skipping the noise where a deck's cover is 0: no
+   gain (reverted). What's left trades looks: fewer steps where the slab is thin (straight up), clouds at
+   quarter res with a depth-aware upsample, or a checkerboard/temporal reuse of last frame's clouds
+   (the usual 2-4x): Dave's call.
 2. [x] The 404: assets/music/prologue-strings.m4a, asked for at every opening though no strings take is chosen
    yet (intro.js PROLOGUE_MUSIC is null until one is; the takes are in tools/voice-audition/music).
 3. [x] The opening starts 1.5 km over the mirror (mirrorScene.js OPENING_HEIGHT; was 30 km), the plates big
