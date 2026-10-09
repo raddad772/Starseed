@@ -11,6 +11,40 @@ maps and viewscreens are native. WebGL exists only in explicit test tooling (`?w
 no production fallback. Other browser/GPU combinations still need certification; no speedup or exact
 pixel-parity claim is made. Dave confirmed sole-agent work and no coordination messages this session.
 
+## QUEUE (Dave, 2026-10-09; not started)
+
+1. Convincing waves on shorelines: breaking surf, run-up and backwash on beaches, by the sea's fetch and the
+   wind (the sim's coasts know where the beaches, cliffs and reefs are).
+2. Expand the megastructures' thematic elements (gravity, time, distance, light, pressure, resonance): more
+   of each theme's glitches and set pieces through a site, not one gate each.
+3. Brainstorm (then propose) vertically oriented megastructures: going down a crack between buildings,
+   "suuuuper deep": you start out deep and go REALLY deep, deep enough that gravity changes on the way
+   down (a shell's or a hollow world's own gravity: less the deeper you go?). Ideas first, for Dave to pick.
+
+## NOW: the air as it is (session 39d69fa8, 2026-10-09, 59df5e3; Dave: "correctness here ... not bandaids")
+
+- Was: thin dusty Mars-like worlds' ground black (RING-56 Oulvoclox): sulfate tau ~23,600 (SO2 all made into
+  acid, no water to make it from), dust tau ~65 (no limit). Now: sulfate by the water column (none dry),
+  dust shading the ground that lifts it (steady state; Mars tau 0.51 kept): Oulvoclox tau ~6, a dusty sky,
+  its ground lit (seen in a test tab).
+- Water vapour in the present air (evolve.js vapourOf; Mars ~220 ppm, Earth ~1%); atmosphere.pressure and
+  comp are every gas in the air; atmosphere.dry {pressure, comp, mu} the history's dry air, which the world
+  sim's climate and bodies.js's climate parameters (transport, damping, lapse, the seas' boiling) read.
+  A world with no N2 no longer gets a phantom 19% of it. Left: a just-struck world's steam sky's make-up
+  (bodies.js, 'just-boiled') sums to ~0.93-0.96.
+- Impacts screened by the air of their own time (history P + vap; Impacts.air; a stopped-plates world's
+  craters in 100 Myr spans, still at today's rate: stamped unworn, the early flux would over-crater them).
+  The sim's own craters are all far above what air screens: no world's heights changed (13 worlds
+  bit-identical heights; my earlier claim it would redraw continents was wrong). The finer levels' craters
+  each by the air when made (K.airF/airD, craters.js airThen; K.Dlo the floor): Mars' 16-32 m craters 59%
+  of before, Venus' old ground loses most sub-km ones (its runaway's steam air). On screen at 150 m the
+  difference is hard to see.
+- SIM_VERSION 72, SYSTEM_CACHE_VERSION 2, bundles regenerated, the pinned generator hashes updated.
+- Found, not fixed: Mars' CO2 frost (season.js seasonFrost) paints steep pole-facing crater walls white at
+  21 N at mid-morning: the shader reads the seasonal (day-mean) cap at the latitude a slope faces, on
+  walls drawn 2.5x steep, so a north wall reads ~65 N inside the spring cap. Real low-latitude CO2 frost is
+  a night thing (gone after sunrise); slopes keep the seasonal frost only at mid/high latitudes.
+
 ## NOW: planet generation faster (session 39d69fa8, 2026-10-09; Dave: "do the free wins", coastlines
 moving a little fine with before/after shots)
 
