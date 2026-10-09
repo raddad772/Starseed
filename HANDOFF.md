@@ -17,8 +17,14 @@ Queue (tick as done; one report at the end):
 1. [x] Frame cost, round two (CPU): in the wood again (this load 1024x768 css, 2048x1536 px) engine.render
    27 -> 24.6 ms median: the G-buffer pass's uniforms made once per material and frame (draw preparation
    4.8 -> 2.7 ms), mat4s packed whole, the sun's shadow layers found in one scene walk a frame (was one a
-   layer), draw state set only where it changes. GPU NOT measured: with the browser pane hidden the drain
-   (onSubmittedWorkDone after a frame) read ~370 ms a frame, not credible; measure with the pane shown.
+   layer), draw state set only where it changes. GPU (with the pane hidden, frames driven by hand: g.frame()
+   then queue.onSubmittedWorkDone(), credible; the rAF-paced drain read ~370 ms): in the wood at 2048x1536
+   ~44-46 ms after the CPU's submit, the GPU the bottleneck. Switched off in one load: the grass -15..18 ms
+   (8.7M of the frame's 8.73M triangles, 1287 draws, 13k patches), sun shadows -1.6, trees ~0; at half
+   resolution the whole frame 16.5 ms and the grass 0.3. Tried and reverted: a depth pre-pass for the grass
+   (its blades' depth first, then shaded with an equal test): no better (46 -> 48-51), so not overdraw but
+   rasterising that many thin triangles (2x2 quads over slivers). The lever is the grass's triangle count
+   past the near patches (fewer, wider blades beyond ~20 m, grassRender.js LOD), a visual call for Dave.
 2. [x] The 404: assets/music/prologue-strings.m4a, asked for at every opening though no strings take is chosen
    yet (intro.js PROLOGUE_MUSIC is null until one is; the takes are in tools/voice-audition/music).
 3. [x] The opening starts 1.5 km over the mirror (mirrorScene.js OPENING_HEIGHT; was 30 km), the plates big
