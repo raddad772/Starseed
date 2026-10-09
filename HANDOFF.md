@@ -11,6 +11,32 @@ maps and viewscreens are native. WebGL exists only in explicit test tooling (`?w
 no production fallback. Other browser/GPU combinations still need certification; no speedup or exact
 pixel-parity claim is made. Dave confirmed sole-agent work and no coordination messages this session.
 
+## NOW: ship pass and the suit's anomaly warning (session 39d69fa8, 2026-10-09)
+
+Dave: "Did you do improvement passes in all the ships yet? And when you get near themed glitches in
+megastructures your suit should say something like 'temporal anomaly detected'". Both done and committed:
+- Suit warning (ecfd70d): coming near a time span or a door flickering between wrecked and whole, the suit
+  says "Warning: temporal anomaly detected." (toast + voice, via the same path as the gravity warnings);
+  a distance gate's fold is "spatial anomaly". Once per approach, again only after 22 m+ away; not
+  through a floor (6 m level band); two within 6 s are one. Per player (site/siteMechanisms.js
+  AnomalySense; the anomalies' places are the site's). tools/tests/megasite-anomaly.test.mjs; seen on
+  megasite.html (MS-5). Light, pressure and resonance gates aren't glitches, so they say nothing.
+- Ship pass (42a58f8): pilot views measured from each pilot's eye through the GLBs (headless:
+  `blender -b --factory-startup --python tools/blender/pilot_views.py -- <outdir> [keys]`, maps + scores;
+  tools/tests/pilot-view.test.mjs checks +-30 deg ahead on all 21 craft, failed 9 of them before).
+  Meridian/Confluence flight decks moved to the bow (they looked at their own hull through a slot, 0.4%
+  and 3% of the view out; now 72%); Longreach/Crosscurrent cabins reach the nose; small craft whose pilot
+  sat by a wall got side glazing (exterior.py bridge_side_glazing: the corner opened, the skin glazed in
+  its own plane round the nose; decks wider than 5 m and sides with an airlock beside are left).
+  Hopper's cabin widened 3 -> 4 m. Expedition/Pioneer airlock doors sized to the room like Horizon's
+  (1.8 carriers, 1.6 mid, 1.2-1.3 scouts, Firefly/Trail stay 1.1: their locks are 1.8-2 m deep).
+  Checked in game from the seats (orbit over a moon) and from outside (Lark's glass band, Meridian's bow
+  window). Left as is: Cradle's far-left view crosses its nose skin past the slot; Porter and Kestrel keep
+  an airlock wall on the pilot's left; Neptune 3's console fills the lower view (its own canopy pass).
+  Rebuild all three fleets in parallel (~1 min): EXPEDITION_OUT=<dir> for build_horizon.py and
+  build_expedition.py, PIONEER_OUT=<dir> for build_pioneer.py, then copy <dir>/*.glb to
+  assets/models/<fleet>/ and <dir>/<fleet>.data.js to src/sim/layouts/.
+
 ## NOW: second queue (session 39d69fa8, 2026-10-09; Dave: "Do queue")
 
 Queue (tick as done; one report at the end):
