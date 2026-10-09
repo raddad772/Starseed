@@ -13,6 +13,7 @@ export const CENTRAL_OBJECT = { name: 'Central black hole', position: [0, 0, 0] 
 // the mirror survey system, 3 pc from the hole (sim/centralObject.js: a sun-like star there keeps
 // planets out past 30 AU, and the hole's disk gives it a quarter of Earth's sunlight)
 const origin = [3, 0, 0];
+export const CHART_ORIGIN = origin;
 // no charted star nearer the hole than 1.5 pc, where its tides would strip a star's planets beyond
 // ~18 AU: one that falls nearer is set out along its way from the hole, into 1.5-2.25 pc
 const CLEAR_PC = 1.5;

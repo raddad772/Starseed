@@ -47,3 +47,40 @@ test('the chart keeps its stars clear of the hole, the survey system 3 pc out', 
   for (let x = -3; x <= 3; x++) for (let z = -3; z <= 3; z++) for (let n = 0; n < 8; n++) stars.push(resolveSystem(c, `star/${x}/${z}/${n}`));
   for (const s of stars) assert.ok(fromHole(s) >= 1.5, `${s.id} ${fromHole(s).toFixed(2)} pc from the hole`);
 });
+
+test('one sky: each system sees the hole, its spin and its charted neighbours where the chart has them', async () => {
+  const THREE = await import('three');
+  const { game } = await import('./campaign-fixture.mjs');
+  const { finishIntroduction } = await import('../../src/campaign/tutorial.js');
+  const { captureFlight } = await import('../../src/campaign/flight.js');
+  const { ensureGalaxy, resolveSystem } = await import('../../src/campaign/galaxy.js');
+  const { Sky } = await import('../../src/render/sky.js');
+  const { centralView, spinAxisChart } = await import('../../src/sim/centralObject.js');
+  const g = game(); g.players[0].mode = 'ship'; g.players[0].vessel = g.ship; g.campaign = finishIntroduction(g.campaign, 'skipped');
+  const c = ensureGalaxy(captureFlight(g, g.campaign));
+  const renderer = { isNativeWebGPU: true, autoClear: true };
+  const here = resolveSystem(c, c.galaxy.currentSystemId), rx = resolveSystem(c, c.generation.storyAnchors.receiver.systemId);
+  const views = [];
+  for (const [sys, seed] of [[here, 'SKY-A'], [rx, 'SKY-B']]) {
+    const sky = new Sky(renderer, seed);
+    const view = centralView({ sky, campaign: { ...c, galaxy: { ...c.galaxy, currentSystemId: sys.id } } }, {});
+    views.push({ sys, sky, view });
+    const p = sys.position, d = Math.hypot(...p);
+    // (the hole straight down the chart's line, the sky's glow centred on it)
+    assert.ok(Math.abs(view.distancePc - d) < 1e-9);
+    assert.ok(view.dir.distanceTo(sky.galCenter) < 1e-9);
+    // (angles kept: the hole to the spin axis, and the hole to a charted neighbour, as on the chart)
+    const S = spinAxisChart(), toHole = p.map(n => -n / d);
+    const cosChart = S[0] * toHole[0] + S[1] * toHole[1] + S[2] * toHole[2];
+    assert.ok(Math.abs(view.spin.dot(view.dir) - cosChart) < 1e-9);
+    const other = sys === here ? rx : here, v = other.position.map((n, i) => n - p[i]), dv = Math.hypot(...v);
+    const cosStar = v.reduce((a, n, i) => a + n / dv * toHole[i], 0);
+    assert.ok(Math.abs(sky.chartToWorld(p, v.map(n => n / dv), new THREE.Vector3()).dot(view.dir) - cosStar) < 1e-9);
+  }
+  // (from the survey system, near edge-on: the axis 83 degrees from the line of sight; from the receiver, its own angle)
+  const inc = v => Math.acos(-v.view.spin.dot(v.view.dir)) * 180 / Math.PI;
+  assert.ok(Math.abs(inc(views[0]) - 83) < 1e-6);
+  assert.ok(Math.abs(inc(views[1]) - 83) > 2);
+  // (the charted stars are in the sky: the background's 6000 points and the chart's neighbours)
+  assert.ok(views[0].sky.points.geometry.attributes.position.count > 6000 + 150);
+});

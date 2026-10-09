@@ -52,7 +52,9 @@ void main() {
   float toward = dot(d, uGalCenter) * 0.5 + 0.5; // 1 toward the bulge
   float band = exp(-b * b / 0.012);
   float wide = exp(-b * b / 0.08);
-  float bulge = exp(-pow(1.0 - toward, 2.0) / 0.025) * exp(-b * b / 0.05);
+  // (the bulge round the centre's own latitude: from above or below the plane it lies off the band)
+  float bc = b - dot(uGalCenter, uGalNormal);
+  float bulge = exp(-pow(1.0 - toward, 2.0) / 0.025) * exp(-bc * bc / 0.05);
   float n1 = fbm3(d * 6.0, 6) * 0.5 + 0.5;
   float n2 = fbm3(d * 22.0 + 3.0, 5) * 0.5 + 0.5;
   float glow = (band * (0.55 + 0.45 * n1) * (0.6 + 0.6 * toward) + wide * 0.18 + bulge * 1.4) * (0.7 + 0.6 * n2);
@@ -149,9 +151,15 @@ export class Sky {
     const gn = rng.unitVector();
     const galNormal = new THREE.Vector3(gn[0], gn[1], gn[2]);
     const t = new THREE.Vector3(1, 0, 0).cross(galNormal).normalize();
-    const galCenter = t.clone().applyAxisAngle(galNormal, rng.range(0, Math.PI * 2));
+    const galCenterPlane = t.clone().applyAxisAngle(galNormal, rng.range(0, Math.PI * 2));
+    // this system's turn against the galaxy: its north (galNormal) and, in the galaxy's plane, the way
+    // to the centre (galCenterPlane); the galaxy chart's frame turns into the world by them
+    // (chartToWorld). galCenter: the true way to the centre, where its black hole is
+    // (sim/centralObject.js), off the plane when the system is (placeInGalaxy)
     this.galNormal = galNormal;
-    this.galCenter = galCenter;   // (the way to the galaxy's centre: where its black hole is, sim/centralObject.js)
+    this.galCenterPlane = galCenterPlane;
+    const galCenter = galCenterPlane.clone();
+    this.galCenter = galCenter;
 
     const size = 1024;
     this.cubeRT = new THREE.WebGLCubeRenderTarget(size, { type: THREE.HalfFloatType, generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter });
@@ -163,14 +171,18 @@ export class Sky {
       },
       vertexShader: BAKE_VERT, fragmentShader: BAKE_FRAG, side: THREE.BackSide, depthWrite: false, depthTest: false,
     });
-    this.cubeRT.texture.userData.webgpuSky = { uniforms: mat.uniforms };
+    // (version: bumped when the galaxy moves round it, and the native bake redone: webgpu/background.js)
+    this.cubeRT.texture.userData.webgpuSky = { uniforms: mat.uniforms, version: 0 };
     bakeScene.add(new THREE.Mesh(new THREE.SphereGeometry(10, 32, 16), mat));
     const cc = new THREE.CubeCamera(1, 100, this.cubeRT);
-    const prevAuto = renderer.autoClear;
-    renderer.autoClear = true;
-    if (!renderer.isNativeWebGPU) cc.update(renderer, bakeScene);
-    renderer.autoClear = prevAuto;
-    mat.dispose();
+    this.bake = () => {
+      if (renderer.isNativeWebGPU) return;
+      const prevAuto = renderer.autoClear;
+      renderer.autoClear = true;
+      cc.update(renderer, bakeScene);
+      renderer.autoClear = prevAuto;
+    };
+    this.bake();
 
     // bright stars as points
     const N = 6000;
@@ -189,13 +201,10 @@ export class Sky {
       pos[i * 3] = d.x * D; pos[i * 3 + 1] = d.y * D; pos[i * 3 + 2] = d.z * D;
       // magnitude distribution: N(<m) ~ 10^(0.5 m)
       const m = Math.log10(Math.pow(10, 0.5 * -1.5) + rng.next() * (Math.pow(10, 0.5 * 6.5) - Math.pow(10, 0.5 * -1.5))) / 0.5;
-      const flux = Math.pow(10, -0.4 * m);
       const T = rng.weighted([[3, rng.range(3000, 4200)], [4, rng.range(4200, 6000)], [2.5, rng.range(6000, 9000)], [1, rng.range(9000, 25000)]]);
-      const c = blackbodyRGB(T);
-      const k = 0.012 * Math.min(flux, 3) + 0.0012;
-      col[i * 3] = c[0] * k; col[i * 3 + 1] = c[1] * k; col[i * 3 + 2] = c[2] * k;
-      size2[i] = 1.6 + Math.min(2.6, Math.sqrt(flux) * 1.5);
+      size2[i] = starPoint(m, T, col, i);
     }
+    this.background = { pos, col, size: size2 };
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     g.setAttribute('color', new THREE.BufferAttribute(col, 3));
@@ -252,6 +261,60 @@ void main() {
   gl_FragColor = vec4(c, 1.0);
 }
 `;
+
+// a sky star's point: its colour (scaled by brightness) into col at i, its size returned; m its
+// apparent magnitude, T its surface temperature (K)
+function starPoint(m, T, col, i) {
+  const flux = Math.pow(10, -0.4 * m);
+  const c = blackbodyRGB(T);
+  const k = 0.012 * Math.min(flux, 3) + 0.0012;
+  col[i * 3] = c[0] * k; col[i * 3 + 1] = c[1] * k; col[i * 3 + 2] = c[2] * k;
+  return 1.6 + Math.min(2.6, Math.sqrt(flux) * 1.5);
+}
+
+Sky.prototype.chartToWorld = function (p, v, w = new THREE.Vector3()) {
+  // the galaxy chart's frame (pc; x, z its plane, y its north) turned into this system's world, for a
+  // system at p from the hole: the chart's north to the sky's galactic north, and the chart's way to
+  // the centre within the plane to the sky's (galCenterPlane)
+  const N = this.galNormal, Cw = this.galCenterPlane;
+  const E = new THREE.Vector3().crossVectors(Cw, N);
+  let cx = -p[0], cz = -p[2];
+  const l = Math.hypot(cx, cz);
+  if (l < 1e-9) { cx = -1; cz = 0; } else { cx /= l; cz /= l; }
+  // (along: on (cx, 0, cz); across: on its cross with north, (-cz, 0, cx))
+  const along = v[0] * cx + v[2] * cz, across = -v[0] * cz + v[2] * cx;
+  return w.copy(Cw).multiplyScalar(along).addScaledVector(N, v[1]).addScaledVector(E, across);
+};
+
+// where this system sits in the galaxy: p from the hole on the chart (pc). The centre's glow is baked
+// again round the true way to it; stars: the charted systems round it ({position (chart, pc),
+// luminosity (suns), teff (K)}), drawn as sky stars where they lie and as bright as they are from here
+Sky.prototype.placeInGalaxy = function (p, stars = []) {
+  const r = Math.hypot(...p);
+  const was = this.galCenter.clone();
+  this.chartToWorld(p, [-p[0] / r, -p[1] / r, -p[2] / r], this.galCenter).normalize();
+  if (was.distanceToSquared(this.galCenter) > 1e-12) { this.cubeRT.texture.userData.webgpuSky.version++; this.bake(); }
+  const bg = this.background, n = bg.size.length, m = stars.length;
+  const pos = new Float32Array((n + m) * 3), col = new Float32Array((n + m) * 3), size = new Float32Array(n + m);
+  pos.set(bg.pos); col.set(bg.col); size.set(bg.size);
+  const w = new THREE.Vector3();
+  for (let j = 0; j < m; j++) {
+    const s = stars[j], v = s.position.map((x, k) => x - p[k]), d = Math.hypot(...v);
+    if (!(d > 1e-6)) continue;
+    this.chartToWorld(p, v.map(x => x / d), w).normalize().multiplyScalar(1e12);
+    pos.set([w.x, w.y, w.z], (n + j) * 3);
+    // (its apparent magnitude: bolometric, the Sun's absolute 4.74 at 10 pc)
+    const mag = 4.74 - 2.5 * Math.log10(Math.max(s.luminosity, 1e-6)) + 5 * Math.log10(d / 10);
+    size[n + j] = starPoint(mag, s.teff, col, n + j);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  g.setAttribute('size', new THREE.BufferAttribute(size, 1));
+  const old = this.points.geometry;
+  this.points.geometry = g;
+  old.dispose();
+};
 
 export function makeStarMesh(starData) {
   const mat = new THREE.ShaderMaterial({

@@ -1,5 +1,6 @@
 import { systemCacheStatus } from '../gen/systemCache.js';
-import { chart, resolveSystem, ensureGalaxy, parseAddress, distancePc, CENTRAL_OBJECT, CELL_PC } from '../campaign/galaxy.js';
+import { chart, resolveSystem, ensureGalaxy, parseAddress, distancePc, CENTRAL_OBJECT, CELL_PC, CHART_ORIGIN } from '../campaign/galaxy.js';
+import { spinAxisChart } from '../sim/centralObject.js';
 import { travelBlocker } from '../campaign/travel.js';
 
 export function renderGalaxyMap(root,{saves,state,consent,onVote,onCancel,onLocal}) {
@@ -34,14 +35,23 @@ export function renderGalaxyMap(root,{saves,state,consent,onVote,onCancel,onLoca
   const svg=doc.createElementNS(ns,'svg');svg.setAttribute('viewBox','0 0 900 600');svg.setAttribute('role','img');svg.setAttribute('aria-label','Overhead star chart. Select systems in the destination list.');mapBox.append(svg);
   const draw=(tag,attrs,text)=>{const e=doc.createElementNS(ns,tag);for(const[k,v]of Object.entries(attrs))e.setAttribute(k,v);if(text)e.textContent=text;svg.append(e);return e;};
   const wide=state.center[0]===0&&state.center[1]===0;
-  const span=(wide?42:24)/state.zoom,cx=wide?17:24+state.center[0]*CELL_PC,cz=state.center[1]*CELL_PC;
+  const span=(wide?42:24)/state.zoom,cx=CHART_ORIGIN[0]+state.center[0]*CELL_PC,cz=CHART_ORIGIN[2]+state.center[1]*CELL_PC;
   const project=p=>[450+(p[0]-cx)*820/span,300-(p[2]-cz)*820/span];
   const visible=p=>p[0]>24&&p[0]<876&&p[1]>26&&p[1]<574;
   for(let x=Math.floor((cx-span/2)/5)*5;x<cx+span/2;x+=5){const [px]=project([x,0,0]);draw('line',{x1:px,x2:px,y1:22,y2:578,class:'galaxyGrid'});draw('text',{x:px+4,y:590,class:'galaxyAxis'},`${x} pc`);}
   for(let z=Math.floor((cz-span/2)/5)*5;z<cz+span/2;z+=5){const [,py]=project([0,0,z]);if(py>20&&py<575){draw('line',{x1:22,x2:878,y1:py,y2:py,class:'galaxyGrid'});draw('text',{x:25,y:py-4,class:'galaxyAxis'},`${z} pc`);}}
   const bh=project(CENTRAL_OBJECT.position);
+  // (its jets along its spin axis, fixed in the chart's frame: seen from above, each runs out along
+  // the axis's lean, the northern one solid, the southern dashed; both reach far past the chart)
+  const axis=spinAxisChart(),lean=Math.hypot(axis[0],axis[2]);
+  if(lean>1e-6){
+    const ux=axis[0]/lean,uy=-axis[2]/lean,reach=1400*lean;
+    draw('line',{x1:bh[0],y1:bh[1],x2:bh[0]+ux*reach,y2:bh[1]+uy*reach,class:'galaxyJet'});
+    draw('line',{x1:bh[0],y1:bh[1],x2:bh[0]-ux*reach,y2:bh[1]-uy*reach,class:'galaxyJet','stroke-dasharray':'7 6'});
+  }
   if(visible(bh)){
-    draw('line',{x1:bh[0],x2:bh[0],y1:bh[1]-96,y2:bh[1]+96,class:'galaxyJet'});
+    const tilt=Math.asin(Math.min(1,Math.abs(axis[1])))*180/Math.PI;
+    draw('text',{x:bh[0]+(lean>1e-6?axis[0]/lean:0)*70+8,y:bh[1]-(lean>1e-6?axis[2]/lean:1)*70,class:'galaxyAxis'},`Jet axis · ${tilt.toFixed(0)}° out of the plane`);
     draw('ellipse',{cx:bh[0],cy:bh[1],rx:31,ry:9,class:'galaxyCoreRing'});
     draw('circle',{cx:bh[0],cy:bh[1],r:14,class:'galaxyCore'});
     draw('text',{x:bh[0],y:bh[1]+35,'text-anchor':'middle',class:'galaxyLabel'},'Central black hole');
