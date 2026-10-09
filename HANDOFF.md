@@ -11,6 +11,37 @@ maps and viewscreens are native. WebGL exists only in explicit test tooling (`?w
 no production fallback. Other browser/GPU combinations still need certification; no speedup or exact
 pixel-parity claim is made. Dave confirmed sole-agent work and no coordination messages this session.
 
+## NOW: immersive pilot view, rings round rocky worlds (session 39d69fa8, 2026-10-09)
+
+- Immersive pilot view (40203fd; Dave: "pilot seats that have immersive vr interfaces that allow full
+  wraparound views with a small wireframe to represent the ship outline"): Horizon and Expedition pilot
+  seats; V from the cockpit view (L3). The pilot's own ship off the camera's layer for their view only
+  (split screen safe; it keeps its shadow), its hull outline drawn faint on their HUD from the exported
+  skins (sections and lines along them, fading with distance), the gear's feet marked when down.
+  ui/immersiveView.js, tools/tests/immersive-view.test.mjs. Pioneer and the older craft: windows only.
+- Rings round rocky worlds (Dave: "rings around some rocky planets. And to render them from the ground
+  and inside them in space properly"): 719c473 generation, cb301f8 drawing + boulders.
+  - gen/rings.js: ~1 rocky world in 8; a moonlet inside the synchronous orbit (or captured retrograde)
+    torn apart near the Roche limit; age, size, ice/rock (by Teq < 150 K) set density, colour,
+    smoothness; gaps at the surviving moons' resonances; decided after the moons, inside the innermost,
+    so no moon/world changed; applied on revive too (cached and bundled systems get them, no re-sim).
+  - webgpu/rings.js: per pixel in the air pass, before the atmospheres where the ray goes through the
+    planet's air first, after where it meets the ring first; plane formula far, slab march near/in;
+    planet shadow on it; fine ringlets and wakes near to. Its shadow on the ground: ringShadow inside
+    the shared cloudLight (WGSL regenerated: lighting, water, ribbon, standard forward).
+  - sim/ringField.js + render/ringBoulders.js: boulders round the camera (40 m cells, each band at its
+    Kepler rate), solid to the suit and to ships (Ship.impact; a ship >300x a boulder's mass ploughs
+    on); a ship in a ring's slab comes off rails. tools/tests/rings.test.mjs.
+  - Test seeds (systems keyed RING-n): RING-45 Moudraist (start world, icy ring, 58-bar haze: no sky
+    from the ground), RING-10 Prouskiath (Venus-like, dark ring near equinox), RING-468 Zheanear
+    (temperate, 0.65 bar: the ring across a clear blue sky at 23 deg N, 0.45 rad east of noon's
+    meridian, between cumulus elsewhere; from 41 deg S, in its shadow, the sun shining through it),
+    RING-56 Oulvoclox (thin Mars-like air: its ground renders black, a separate atmosphere bug: its
+    transmittance table ~75% zeros, so the light gain goes to NIGHT_GAIN; flagged as its own task).
+  - Left: the giants still use their old ring mesh (noise profile, drawn over their air); boulders on a
+    coasting unpiloted ship on rails aren't met (it's only taken off rails when it's in the slab and
+    stepped); ringshine on the night side and the ring's shadow in the sky's light are not modelled.
+
 ## NOW: ship pass and the suit's anomaly warning (session 39d69fa8, 2026-10-09)
 
 Dave: "Did you do improvement passes in all the ships yet? And when you get near themed glitches in
