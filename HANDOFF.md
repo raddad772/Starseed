@@ -34,6 +34,16 @@ Queue (tick as done; one report at the end):
    gain (reverted). What's left trades looks: fewer steps where the slab is thin (straight up), clouds at
    quarter res with a depth-aware upsample, or a checkerboard/temporal reuse of last frame's clouds
    (the usual 2-4x): Dave's call.
+   RE-MEASURED properly (with the pane hidden the canvas was 0x0 and frames threw "Invalid perspective
+   frustum" inside the pump: resize_window to a custom size and dispatch a resize first; some numbers
+   above, the ~260 ms ones and maybe the 48, came from that state): in the wood at 2048x1536 the GPU
+   ~51 ms a frame, and at a quarter of the pixels (renderScale 0.5) 19.6: fill-bound. Stubbed one at a
+   time, looking level: air 12 (its volume draw 3 looking down, 10 level, 22 up; 40 -> 20 cloud steps
+   saves only ~5 up), GTAO 4.5, sun shadows 2.7, material effects 2.2, post 1.8, local lights 0.8,
+   liquids 0.5. The CPU outside the renderer is ~2% of a frame's samples. The pause menu already has a
+   Resolution slider (0.5-1, default 1, at a device pixel ratio up to 2): the biggest lever. Options for
+   Dave: an automatic resolution that holds a frame time, GTAO at half resolution, the clouds' options
+   above.
 2. [x] The 404: assets/music/prologue-strings.m4a, asked for at every opening though no strings take is chosen
    yet (intro.js PROLOGUE_MUSIC is null until one is; the takes are in tools/voice-audition/music).
 3. [x] The opening starts 1.5 km over the mirror (mirrorScene.js OPENING_HEIGHT; was 30 km), the plates big
