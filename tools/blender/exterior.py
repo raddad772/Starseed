@@ -197,6 +197,8 @@ def exterior_physics(s,skins=None):
     if 'bridge' in s.rs:
         r=s.rs['bridge']['r'];open_parts.append(([r['min'][0]+.25,r['min'][1]+.9,r['min'][2]-far],[r['max'][0]-.25,r['min'][1]+2.6,r['min'][2]-.1]))
     def solid(p):return inside_skins(skins,p) and not any(all(lo[i]<=p[i]<=hi[i] for i in range(3)) for lo,hi in open_parts)
+    span=max(b[3] for b in bounds)-min(b[2] for b in bounds)
+    step=min(3,max(.4,span/90))
     lining=s.mesh('lock_passages');passages=[]
     for e in s.t['entries']:
         if not e.get('airlock') or e.get('internal'):continue
@@ -210,7 +212,9 @@ def exterior_physics(s,skins=None):
             if any(solid(at(t,u,y)) for u in (u0,(u0+u1)/2,u1) for y in (y0+.05,(y0+y1)/2,y1+.1)):depth=t
             elif t>depth+1:break
         lo=[0,y0-.4,0];hi=[0,y1+.3,0];lo[ua]=u0-.15;hi[ua]=u1+.15
-        a,b=sorted([d['plane']-out*.3,d['plane']+out*(depth+.6)]);lo[ax]=a;hi[ax]=b;passages.append((lo,hi))
+        # (open a grid step past the skin: the hull's boxes are a step wide, and one standing across
+        # the mouth where the skin flares behind it stood off it in empty space)
+        a,b=sorted([d['plane']-out*.3,d['plane']+out*(depth+.6+(step if depth>=.35 else 0))]);lo[ax]=a;hi[ax]=b;passages.append((lo,hi))
         s.t.setdefault('lockPassages',[]).append({'airlock':e['airlock'],'depth':round(depth,2)})
         if depth<.35:continue
         # (the passage: walls, floor and ceiling from the door out through the skin, lit, its skin
@@ -225,8 +229,6 @@ def exterior_physics(s,skins=None):
             cc=[0,y1+.14,0];cc[ax]=a+(i+.5)*L/n;cc[ua]=(u0+u1)/2;sz=[0,.03,0];sz[ax]=min(1.2,L/n*.6);sz[ua]=.24;lining.box(cc,sz,'LightPanel')
         clo=[0,y0-.05,0];chi=[0,y1+.2,0];clo[ua]=u0-.05;chi[ua]=u1+.05;a2,b2=sorted([d['plane']-out*.05,d['plane']+out*(depth+.4)]);clo[ax]=a2;chi[ax]=b2;s.cuts.append((clo,chi))
     if lining.polys:lining.finish()
-    span=max(b[3] for b in bounds)-min(b[2] for b in bounds)
-    step=min(3,max(.4,span/90))
     s.t['hullColliders']=hull_colliders(s,skins,open_parts+passages,step,min(step/3,.25),exact=True,tol=min(1,step*.3))
     # (the skins and what's open in them, for the hull's tests: a lofted one's x offset and stations
     # (z, half-width, low, high); another's section rings, where it has them ([z, [[x, y], ...]]))
@@ -236,3 +238,57 @@ def exterior_physics(s,skins=None):
 
 # (what the GLB's own copy of the manifest leaves out: the hull's thousands of boxes are in the layout)
 MANIFEST_SKIP=('hullColliders','hullOpen','skins','hullStep','lockPassages')
+
+def bridge_side_glazing(s,half,y0,y1,reach=2.0):
+    # Side windows for a flight deck whose walls stand close inside the skin (the pilot, sat by one,
+    # saw a blank wall over a third of the view): each side's opening runs from the front glass (the
+    # walls' corner taken out between) back past the seats as far as the skin stays near (no tunnel
+    # to look down), and the skin outside it is glazed flush, on forward round the nose as far as
+    # it's seen through the opening at a slant. Not where anything else (another room, a doorway)
+    # lies between, nor where the deck has side glass already. Before exterior_physics and export,
+    # so its cuts reach the room's walls and the skin.
+    if 'bridge' not in s.rs or len(s.rs['bridge'].get('windows',[]))>1:return []
+    r=s.rs['bridge']['r'];lo,hi=r['min'],r['max']
+    # (a deck wide enough that its walls stand well clear of the seats sees ahead through its front)
+    if hi[0]-lo[0]>5.01:return []
+    skins=[m for m in s.hab if m.polys]
+    za=lo[2];zmax=lo[2]+min(3.2,(hi[2]-lo[2])*.6);made=[]
+    glass=s.mesh('bridge_side_glazing')
+    for side in (-1,1):
+        x=hi[0] if side>0 else lo[0]
+        # (how far out the skin is beside the pane, along it: the most over its height)
+        def depth(z):
+            most=0
+            for y in (y0+.05,(y0+y1)/2,y1-.05):
+                d=0
+                while d<=reach and inside_skins(skins,[x+side*(d+.02),y,z]):d+=.05
+                most=max(most,d)
+            return most
+        zb=za;far=0
+        while zb+.25<=zmax+1e-6:
+            d=depth(zb+.25)
+            if d>reach:break
+            zb+=.25;far=max(far,d)
+        if zb-za<.7:print('GLAZING',s.key,side,'none: the skin',round(depth(za+.25),2),'m out');continue
+        far=max(far,depth(za))
+        pane=([min(x-side*.1,x+side*.3),y0,za],[max(x-side*.1,x+side*.3),y1,zb])
+        a,b=sorted([x-side*.32,x+side*(far+.4)]);outer=([a,y0,lo[2]-far-1.4],[b,y1,zb+.2])
+        def meets(q,box):return all(q['min'][i]<box[1][i] and q['max'][i]>box[0][i] for i in range(3))
+        by=[q['id'] for q in s.t['rooms'] if q['id']!='bridge' and q['type']!='exterior' and meets(q,([a,y0,za],[b,y1,zb]))]
+        if by:print('GLAZING',s.key,side,'none: beside',by);continue
+        print('GLAZING',s.key,side,round(zb-za,2),'m, skin',round(far,2),'m out')
+        # (the corner: the front glass carried out to the wall to meet the pane)
+        c0,c1=sorted([x-side*.32,x+side*.3])
+        s.rs['bridge']['windows']+=[pane,([c0,y0,lo[2]-.3],[c1,y1,lo[2]+.3])];s.cuts.append(outer)
+        # (one glass, the skin's: a pane in the wall too doubled the tint and banded the corner)
+        for m in skins:
+            for poly,mat,idx in m.polys:
+                q=poly
+                for ax in range(3):
+                    if q:q=half(q,ax,outer[0][ax],True)
+                    if q:q=half(q,ax,outer[1][ax],False)
+                # (in the skin's own plane, cut from it: stood off it, its edges left a hairline)
+                if q and len(q)>2:glass.face(q,'Glass')
+        made.append(side)
+    if made:glass.finish()
+    return made

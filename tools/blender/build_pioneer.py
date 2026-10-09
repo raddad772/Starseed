@@ -6,7 +6,7 @@ import bpy, math, json, os, hashlib, sys
 from pathlib import Path
 from mathutils import Vector, Matrix
 sys.path.insert(0,str(Path(globals().get('__file__','/Users/dave/dev/starseed/tools/blender/build_pioneer.py')).parent))
-from exterior import exterior_physics, MANIFEST_SKIP
+from exterior import exterior_physics, bridge_side_glazing, MANIFEST_SKIP
 
 OUT=Path(os.environ.get('PIONEER_OUT','/tmp/starseed-pioneer'));OUT.mkdir(parents=True,exist_ok=True)
 G=lambda p:Vector((p[0],-p[2],p[1]))
@@ -134,23 +134,32 @@ class Ship:
   for side in [-1,1]:
    c=[0,f+height/2,0];sz=[0,height,0];c[ax]=plane-.14;c[ua]=u+side*width/4;sz[ax]=.09;sz[ua]=width/2-.015
    m=self.mesh('door_'+id+'_'+str(side),room=a);m.box(c,sz,'Hull',1);m.box([c[0],f+1.3,c[2]],[.12,.06,max(.07,sz[2]*.6)] if axis=='x' else [sz[0]*.6,.06,.12],'Screen');slide=[0,0,0];slide[ua]=side*(width/2+.04);self.t['parts'].append({'node':m.name,'door':id,'slide':slide});m.finish()
- def airlock(self,host,lo,hi,innerAxis,innerPlane,outerPlane,u,id='eva'):
+ def airlock(self,host,lo,hi,innerAxis,innerPlane,outerPlane,u,id='eva',door=None):
   r=self.room(id,'EVA airlock',lo,hi,'airlock',airlock=id);ax=0 if innerAxis=='x' else 2;sign=1 if outerPlane>innerPlane else -1
-  self.door(id+'-inner',host,id,innerAxis,innerPlane,u,1.1,2.15,id);self.door(id+'-outer',id,None,innerAxis,outerPlane,u,1.1,2.15,id)
+  # (its pressure doors as wide as the room allows, to a suited 1.6 m (1.8 m on a carrier), never
+  # narrower than the old 1.1 m; within the host's wall too)
+  if door is None:
+   ua=2 if ax==0 else 0;h=self.rs[host]['r'];room=min(hi[ua]-lo[ua],2*min(u-h['min'][ua],h['max'][ua]-u)-.2)
+   door=(max(1.1,min(1.8 if self.t['big'] else 1.6,math.floor((room-.9)*10+1e-6)/10)),2.4 if hi[1]-lo[1]>=2.7 else 2.15)
+  self.door(id+'-inner',host,id,innerAxis,innerPlane,u,door[0],door[1],id);self.door(id+'-outer',id,None,innerAxis,outerPlane,u,door[0],door[1],id)
   r['open']=[('+' if sign>0 else '-')+innerAxis];r['gate']={r['open'][0]:id+'-outer'}
   inside=[(lo[i]+hi[i])/2 for i in range(3)];inside[1]=lo[1];outside=inside.copy();outside[ax]=outerPlane+sign*.85
-  panels=[]
+  # (its panels beside the doorway, clear of a wide door's opening)
+  panels=[];po=max(.70,door[0]/2+.15)
   for role,plane,off in [('inner',innerPlane,-sign*.45),('outer',outerPlane,sign*.45)]:
-   p=inside.copy();p[ax]=plane+off;p[1]+=1.2;p[2 if ax==0 else 0]=u+.70;panels.append({'side':role,'pos':p})
-  mid=inside.copy();mid[1]+=1.2;mid[2 if ax==0 else 0]=u+.70
+   p=inside.copy();p[ax]=plane+off;p[1]+=1.2;p[2 if ax==0 else 0]=u+po;panels.append({'side':role,'pos':p})
+  mid=inside.copy();mid[1]+=1.2;mid[2 if ax==0 else 0]=u+po
   panels.extend([{'side':'inner','pos':mid},{'side':'outer','pos':[mid[0],mid[1]+.32,mid[2]]}])
   self.t['airlocks'].append({'id':id,'inner':id+'-inner','outer':id+'-outer','room':id,'cycleSeconds':5,'panels':panels})
   self.t['entries'].append({'label':'EVA airlock','outside':outside,'inside':inside,'heading':[-sign,0,0] if ax==0 else [0,0,-sign],'airlock':id})
   m=self.mesh('lock_fittings_'+id,room=id);cx=(lo[0]+hi[0])/2;cz=(lo[2]+hi[2])/2
   for p in panels:m.box(p['pos'],[.15,.20,.12],'Screen')
-  # shallow equipment lockers kept against the long side, clear of the door-to-door line
-  if ax==0:m.box((cx,lo[1]+1.02,hi[2]-.22),(.62,2.04,.35),'Hull',1,solid=True)
-  else:m.box((hi[0]-.23,lo[1]+1.02,cz),(.35,2.04,.62),'Hull',1,solid=True)
+  # shallow equipment lockers kept against the long side, clear of the door-to-door line (and of
+  # the panels: across the room from them where they'd meet, or none where neither side has room)
+  ua=2 if ax==0 else 0;inset=.22 if ax==0 else .23
+  at=hi[ua]-inset if hi[ua]-inset-.175>u+po+.06 else lo[ua]+inset if lo[ua]+inset+.175<u-door[0]/2-.02 else None
+  if at is not None and ax==0:m.box((cx,lo[1]+1.02,at),(.62,2.04,.35),'Hull',1,solid=True)
+  elif at is not None:m.box((at,lo[1]+1.02,cz),(.35,2.04,.62),'Hull',1,solid=True)
   m.finish()
   mn=lo.copy();mx=hi.copy();mn[ax]=min(innerPlane,outerPlane)-.3;mx[ax]=max(innerPlane,outerPlane)+.3;mn[1]-=.02;mx[1]=lo[1]+2.2;self.cuts.append((mn,mx))
  def seat(self,room,x,f,z,pilot=False):
@@ -209,7 +218,8 @@ class Ship:
    hand=self.mesh('handholds_'+id,room=id,lod=1)
    for zz in [lo[2]+.65+i*1.0 for i in range(max(1,int(hi[2]-lo[2]-1)))]:
     for xx,side in [(lo[0]+.13,'-x'),(hi[0]-.13,'+x')]:
-     if not any(a-.2<zz<b+.2 for a,b,h in item['holes'].get(side,[])):hand.box((xx,lo[1]+1.25,zz),(.065,.065,.38),'Hazard')
+     # (none in a doorway, nor hanging in a window where the wall's been taken out)
+     if not any(a-.2<zz<b+.2 for a,b,h in item['holes'].get(side,[])) and not any(mn[0]-.1<=xx<=mx[0]+.1 and mn[1]<=lo[1]+1.25<=mx[1] and mn[2]-.3<zz<mx[2]+.3 for mn,mx in item.get('windows',[])):hand.box((xx,lo[1]+1.25,zz),(.065,.065,.38),'Hazard')
    hand.finish()
    for mn,mx in item.get('windows',[]):
     m.cut(mn,mx)
@@ -504,7 +514,8 @@ SHIPS.append(s)
 
 s=Ship('hopper','Hopper',24_000,4,13)
 s.habitat([(-3.4,1.7,-1,5.5),(-2.5,3.6,-1,6.2),(2.5,3.6,-1,6.2),(3.4,1.8,-1,5.5)])
-bridge(s,-3.2,.4,1.5);s.room('cabin','Passenger / stores cabin',[-1.5,0,.4],[1.5,2.7,2.5]);s.door('cabin-door','bridge','cabin','z',.4,0)
+# (its flight cabin as wide as the body's nose allows: 3 m across, the pilot sat by the wall saw it)
+bridge(s,-3.2,.4,2.0);s.room('cabin','Passenger / stores cabin',[-1.5,0,.4],[1.5,2.7,2.5]);s.door('cabin-door','bridge','cabin','z',.4,0)
 s.seat('cabin',-.7,0,1.3);s.seat('cabin',.7,0,1.3);s.airlock('cabin',[-1.1,0,2.5],[1.1,2.7,5.1],'z',2.5,5.1,0)
 m=s.mesh('upper_tanks');m.cyl((0,4.1,0),(0,8.2,0),2.4,'Hull',n=16,collision=True);m.cyl((0,8.2,0),(0,9.0,0),2.4,'Hull',r1=.8,n=16);m.finish()
 s.legs([(-4,-.5,-2.5),(4,-.5,-2.5),(-4,-.5,2.5),(4,-.5,2.5)],1.7)
@@ -541,7 +552,8 @@ s.t['parts']=[p for p in s.t['parts'] if p.get('channel')!='gear'];s.t['thrust']
 SHIPS.append(s)
 
 # Solid from outside, open where it's open (exterior.py).
-for s in SHIPS:exterior_physics(s)
+# Side windows where a pilot sat by a blank wall; solid from outside, open where it's open (exterior.py)
+for s in SHIPS:bridge_side_glazing(s,half,.95,2.2);exterior_physics(s)
 
 # External inspection covers, painted pressure-vessel bands and registration plates.
 for s in SHIPS:

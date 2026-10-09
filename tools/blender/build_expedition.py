@@ -6,7 +6,7 @@ import bpy, math, json, os, hashlib, sys
 from pathlib import Path
 from mathutils import Vector, Matrix
 sys.path.insert(0,str(Path(globals().get('__file__','/Users/dave/dev/starseed/tools/blender/build_expedition.py')).parent))
-from exterior import exterior_physics, MANIFEST_SKIP
+from exterior import exterior_physics, bridge_side_glazing, MANIFEST_SKIP
 
 OUT=Path(os.environ.get('EXPEDITION_OUT','/tmp/starseed-expedition'));OUT.mkdir(parents=True,exist_ok=True)
 G=lambda p:Vector((p[0],-p[2],p[1]))
@@ -134,23 +134,32 @@ class Ship:
   for side in [-1,1]:
    c=[0,f+height/2,0];sz=[0,height,0];c[ax]=plane-.14;c[ua]=u+side*width/4;sz[ax]=.09;sz[ua]=width/2-.015
    m=self.mesh('door_'+id+'_'+str(side),room=a);m.box(c,sz,'Hull',1);m.box([c[0],f+1.3,c[2]],[.12,.06,max(.07,sz[2]*.6)] if axis=='x' else [sz[0]*.6,.06,.12],'Screen');slide=[0,0,0];slide[ua]=side*(width/2+.04);self.t['parts'].append({'node':m.name,'door':id,'slide':slide});m.finish()
- def airlock(self,host,lo,hi,innerAxis,innerPlane,outerPlane,u,id='eva'):
+ def airlock(self,host,lo,hi,innerAxis,innerPlane,outerPlane,u,id='eva',door=None):
   r=self.room(id,'EVA airlock',lo,hi,'airlock',airlock=id);ax=0 if innerAxis=='x' else 2;sign=1 if outerPlane>innerPlane else -1
-  self.door(id+'-inner',host,id,innerAxis,innerPlane,u,1.1,2.15,id);self.door(id+'-outer',id,None,innerAxis,outerPlane,u,1.1,2.15,id)
+  # (its pressure doors as wide as the room allows, to a suited 1.6 m (1.8 m on a carrier), never
+  # narrower than the old 1.1 m; within the host's wall too)
+  if door is None:
+   ua=2 if ax==0 else 0;h=self.rs[host]['r'];room=min(hi[ua]-lo[ua],2*min(u-h['min'][ua],h['max'][ua]-u)-.2)
+   door=(max(1.1,min(1.8 if self.t['big'] else 1.6,math.floor((room-.9)*10+1e-6)/10)),2.4 if hi[1]-lo[1]>=2.7 else 2.15)
+  self.door(id+'-inner',host,id,innerAxis,innerPlane,u,door[0],door[1],id);self.door(id+'-outer',id,None,innerAxis,outerPlane,u,door[0],door[1],id)
   r['open']=[('+' if sign>0 else '-')+innerAxis];r['gate']={r['open'][0]:id+'-outer'}
   inside=[(lo[i]+hi[i])/2 for i in range(3)];inside[1]=lo[1];outside=inside.copy();outside[ax]=outerPlane+sign*.85
-  panels=[]
+  # (its panels beside the doorway, clear of a wide door's opening)
+  panels=[];po=max(.70,door[0]/2+.15)
   for role,plane,off in [('inner',innerPlane,-sign*.45),('outer',outerPlane,sign*.45)]:
-   p=inside.copy();p[ax]=plane+off;p[1]+=1.2;p[2 if ax==0 else 0]=u+.70;panels.append({'side':role,'pos':p})
-  mid=inside.copy();mid[1]+=1.2;mid[2 if ax==0 else 0]=u+.70
+   p=inside.copy();p[ax]=plane+off;p[1]+=1.2;p[2 if ax==0 else 0]=u+po;panels.append({'side':role,'pos':p})
+  mid=inside.copy();mid[1]+=1.2;mid[2 if ax==0 else 0]=u+po
   panels.extend([{'side':'inner','pos':mid},{'side':'outer','pos':[mid[0],mid[1]+.32,mid[2]]}])
   self.t['airlocks'].append({'id':id,'inner':id+'-inner','outer':id+'-outer','room':id,'cycleSeconds':5,'panels':panels})
   self.t['entries'].append({'label':'EVA airlock','outside':outside,'inside':inside,'heading':[-sign,0,0] if ax==0 else [0,0,-sign],'airlock':id})
   m=self.mesh('lock_fittings_'+id,room=id);cx=(lo[0]+hi[0])/2;cz=(lo[2]+hi[2])/2
   for p in panels:m.box(p['pos'],[.15,.20,.12],'Screen')
-  # shallow equipment lockers kept against the long side, clear of the door-to-door line
-  if ax==0:m.box((cx,lo[1]+1.02,hi[2]-.22),(.62,2.04,.35),'Hull',1,solid=True)
-  else:m.box((hi[0]-.23,lo[1]+1.02,cz),(.35,2.04,.62),'Hull',1,solid=True)
+  # shallow equipment lockers kept against the long side, clear of the door-to-door line (and of
+  # the panels: across the room from them where they'd meet, or none where neither side has room)
+  ua=2 if ax==0 else 0;inset=.22 if ax==0 else .23
+  at=hi[ua]-inset if hi[ua]-inset-.175>u+po+.06 else lo[ua]+inset if lo[ua]+inset+.175<u-door[0]/2-.02 else None
+  if at is not None and ax==0:m.box((cx,lo[1]+1.02,at),(.62,2.04,.35),'Hull',1,solid=True)
+  elif at is not None:m.box((at,lo[1]+1.02,cz),(.35,2.04,.62),'Hull',1,solid=True)
   m.finish()
   mn=lo.copy();mx=hi.copy();mn[ax]=min(innerPlane,outerPlane)-.3;mx[ax]=max(innerPlane,outerPlane)+.3;mn[1]-=.02;mx[1]=lo[1]+2.2;self.cuts.append((mn,mx))
  def seat(self,room,x,f,z,pilot=False):
@@ -209,7 +218,8 @@ class Ship:
    hand=self.mesh('handholds_'+id,room=id,lod=1)
    for zz in [lo[2]+.65+i*1.0 for i in range(max(1,int(hi[2]-lo[2]-1)))]:
     for xx,side in [(lo[0]+.13,'-x'),(hi[0]-.13,'+x')]:
-     if not any(a-.2<zz<b+.2 for a,b,h in item['holes'].get(side,[])):hand.box((xx,lo[1]+1.25,zz),(.065,.065,.38),'Hazard')
+     # (none in a doorway, nor hanging in a window where the wall's been taken out)
+     if not any(a-.2<zz<b+.2 for a,b,h in item['holes'].get(side,[])) and not any(mn[0]-.1<=xx<=mx[0]+.1 and mn[1]<=lo[1]+1.25<=mx[1] and mn[2]-.3<zz<mx[2]+.3 for mn,mx in item.get('windows',[])):hand.box((xx,lo[1]+1.25,zz),(.065,.065,.38),'Hazard')
    hand.finish()
    for mn,mx in item.get('windows',[]):
     m.cut(mn,mx)
@@ -452,8 +462,10 @@ def sleeping(s,id,n):
   m.box((x,y,z),(.95,.18,2.1),'Fabric',solid=True);m.box((x,y+.12,z-.77),(.7,.12,.43),'Wall');m.box((x,y+.65,z-.92),(.1,.13,.1),'LightPanel');m.box((x,y+.15,z),(.95,.03,.07),'Hazard')
  m.box(((lo[0]+hi[0])/2,lo[1]+1.1,hi[2]-.25),(max(.6,hi[0]-lo[0]-2.8),2.2,.36),'Hull',1,solid=True);m.finish();r['berths']=n
 
-def living(s,z0,z1,w,crew):
- bridge(s,z0,z0+5,3.2)
+def living(s,z0,z1,w,crew,bow=None):
+ # (the flight cabin reaching forward to the bow, where its window is the ship's front: short of
+ # it, the pilot looked through the glass at the inside of the nose)
+ bridge(s,z0 if bow is None else bow+.05,z0+5,3.2)
  s.room('passage','Axial freefall passage',[-1,0,z0+5],[1,2.8,z1],'corridor');s.door('bridge-passage','bridge','passage','z',z0+5,0,1.4)
  depth=(z1-z0-5)/4
  specs=[('port_berths','Port sleeping cabins','sleep',(crew+1)//2),('stbd_berths','Starboard sleeping cabins','sleep',crew//2),('mess','Galley / shared dining','galley',0),('wash','Washroom / laundry','hygiene',0),('lab','Survey laboratory','lab',0),('med','Medical / isolation','medical',0),('lounge','Reading / exercise / VR','lounge',0),('stores','Expedition support','engineering',0)]
@@ -505,12 +517,12 @@ def ramp(s,room,z,w,f=0,h=3.4,id='ramp'):
 def garage_lock(s,host,garage,z0,z1):
  s.airlock(host,[-1.25,0,z0],[1.25,2.8,z1],'z',z0,z1,0,'garage-lock')
  a=s.t['airlocks'][-1];a['outerRoom']=garage;s.t['entries'][-1]['internal']=True
- d=s.t['slideDoors'][-1];d['rooms']=['garage-lock',garage];s.hole(garage,'-z',0,1.1,2.15)
- s.t['rooms'].append({'id':'garage-lock-link','name':'Garage pressure doorway','type':'door','min':[-.55,0,z1-.5],'max':[.55,2.15,z1+.5]})
+ d=s.t['slideDoors'][-1];d['rooms']=['garage-lock',garage];w=d['u1']-d['u0'];h=d['y1']-d['y0'];s.hole(garage,'-z',0,w,h)
+ s.t['rooms'].append({'id':'garage-lock-link','name':'Garage pressure doorway','type':'door','min':[-w/2,0,z1-.5],'max':[w/2,h,z1+.5]})
 
 # LONGREACH: a continuous dorsal keel, clustered bow pressure modules, four cradles.
 s=Ship('longreach','Longreach',5_400_000,32,280,True)
-living(s,-137,-79,11,32)
+living(s,-137,-79,11,32,bow=-140)
 capsule(s,'central_pressure_bow',[(-140,4.2,-1.6,4.7),(-135,9,-3,7),(-123,10.2,-4.4,10),(-109,10.2,-4.8,12),(-95,9.7,-3.8,9),(-80,9,-3,7),(-73,6,-2,5)])
 for x in [-8,8]:capsule(s,'bow_capsule_'+str(x),[(-132,5.5,-2.3,6),(-126,7,-3.6,7.2),(-117,7.6,-5.6,10.2),(-102,7.2,-4.1,8.2),(-93,7.4,-5,9.1),(-85,7,-3.6,7.2),(-78,4.5,-2,5)],x)
 s.room('service','Dorsal service passage',[-1.2,0,-79],[1.2,2.8,100],'corridor');s.door('service-link','passage','service','z',-79,0,1.4)
@@ -532,7 +544,7 @@ SHIPS.append(s)
 
 # CROSSCURRENT: two walkable pressure spines surrounding a genuinely empty center.
 s=Ship('crosscurrent','Crosscurrent',1_300_000,16,140,True)
-living(s,-68.8,-40,8.5,16)
+living(s,-68.8,-40,8.5,16,bow=-70)
 capsule(s,'forward_pressure_cluster',[(-70,3.8,-1.5,4.5),(-66,11,-3,6),(-48,11,-3,6),(-40,22,-2,5),(-34,22,-2,5)])
 s.room('forecross','Forward cross passage',[-19.2,0,-40],[19.2,2.8,-34],'corridor');s.door('forecross-link','passage','forecross','z',-40,0,1.4)
 s.room('engineering','Aft engineering cross passage',[-19.2,0,43],[19.2,2.8,51],'engineering');capsule(s,'aft_engine_module',[(42,22,-4,7),(54,22,-4,7),(60,17,-3,6)])
@@ -621,9 +633,7 @@ s.t['thrust'].update(main=.55,belly=1.7,lateral=.12,retro=.15);s.t['aero'].updat
 s=Ship('moth','Moth',8_800,2,11)
 lifting_hull(s,[(-5.5,2.6,-.4,3.05),(-4.1,3.2,-.7,3.85),(-2.5,3.6,-.9,4.3),(-.4,3.3,-.85,3.75),(1.4,3.2,-.75,3.55),(2.6,3.1,-.65,3.9),(3.7,2.5,-.35,3.3)])
 bridge(s,-5.3,.7,1.65);s.airlock('bridge',[-1.1,0,.7],[1.1,2.8,3.6],'z',.7,3.6,0)
-# Side panes, separated by structural mullions, continue the front glazing.
-for side in [-1,1]:
- lo,hi=sorted([side*1.45,side*3.5]);s.cuts.append(([lo,1.05,-4.2],[hi,2.45,-1.1]));s.rs['bridge'].setdefault('windows',[]).append(([lo,1.05,-4.2],[hi,2.45,-1.1]));m=s.mesh('side_glass_'+str(side));m.box((side*1.69,1.75,-2.65),(.025,1.4,3.1),'Glass');m.finish()
+# (its side panes, continuing the front glazing round to the sides: bridge_side_glazing, below)
 axial_pods(s,2.7,.75,2.5,5.5,.64);jets(s,[(x,-.5,z) for x in [-2.2,2.2] for z in [-2.7,2.8]],.24)
 s.legs([(-2.3,-.4,-2.8),(2.3,-.4,-2.8),(-2.3,-.4,2.6),(2.3,-.4,2.6)],.8);sensors(s,2.4,3.0,-.4);s.t['thrust'].update(main=.35,belly=1.4,lateral=.1,retro=.12);s.t['aero'].update(cd=[6,16,5],wing=13);s.t['cargo']={'offset':[0,-1.3,0]};SHIPS.append(s)
 
@@ -688,23 +698,10 @@ for s in SHIPS:
    fairing(s,'lower_skid_cheek_'+str(side),[(-2.7,.15,-.4,-.15),(-1.0,.33,-.68,-.3),(1.2,.34,-.65,-.3),(2.7,.15,-.4,-.15)],side*1.55,1)
 
 # Glazing follows the sculpted scout skin, with the inner cabin pane retained.
-for s in SHIPS:
- if s.name!='Moth':continue
- glass=s.mesh('flush_outer_side_glazing')
- for side in [-1,1]:
-  a,b=sorted([side*1.44,side*3.8]);lo=[a,1.05,-4.2];hi=[b,2.45,-1.1]
-  for hull in s.hab:
-   for poly,mat,idx in hull.polys:
-    q=poly
-    for axis in range(3):
-     if q:q=half(q,axis,lo[axis],True)
-     if q:q=half(q,axis,hi[axis],False)
-    if q:
-     normal=(Vector(poly[1])-Vector(poly[0])).cross(Vector(poly[2])-Vector(poly[0])).normalized();glass.face([Vector(p)+normal*.02 for p in q],'Glass')
- glass.finish()
 
-# Solid from outside, open where it's open (exterior.py); its passages' cuts reach the panels below.
-for s in SHIPS:exterior_physics(s)
+# Side windows where a pilot sat by a blank wall; solid from outside, open where it's open (exterior.py);
+# their cuts reach the panels below.
+for s in SHIPS:bridge_side_glazing(s,half,1.0,2.35);exterior_physics(s)
 
 # Sparse service panels follow the actual skin rather than floating above the ship.
 for s in SHIPS:

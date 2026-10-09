@@ -6,7 +6,7 @@ import bpy, math, json, os, hashlib, sys
 from pathlib import Path
 from mathutils import Vector, Matrix
 sys.path.insert(0,str(Path(globals().get('__file__','/Users/dave/dev/starseed/tools/blender/build_horizon.py')).parent))
-from exterior import exterior_physics, hull_colliders, MANIFEST_SKIP
+from exterior import exterior_physics, hull_colliders, bridge_side_glazing, MANIFEST_SKIP
 
 OUT=Path(os.environ.get('EXPEDITION_OUT','/tmp/starseed-complete/horizon'));OUT.mkdir(parents=True,exist_ok=True)
 G=lambda p:Vector((p[0],-p[2],p[1]))
@@ -278,7 +278,8 @@ class Ship:
    hand=self.mesh('handholds_'+id,room=id,lod=1)
    for zz in [lo[2]+.65+i*1.0 for i in range(max(1,int(hi[2]-lo[2]-1)))]:
     for xx,side in [(lo[0]+.13,'-x'),(hi[0]-.13,'+x')]:
-     if not any(a-.2<zz<b+.2 for a,b,h in item['holes'].get(side,[])):hand.box((xx,lo[1]+1.25,zz),(.065,.065,.38),'Hazard')
+     # (none in a doorway, nor hanging in a window where the wall's been taken out)
+     if not any(a-.2<zz<b+.2 for a,b,h in item['holes'].get(side,[])) and not any(mn[0]-.1<=xx<=mx[0]+.1 and mn[1]<=lo[1]+1.25<=mx[1] and mn[2]-.3<zz<mx[2]+.3 for mn,mx in item.get('windows',[])):hand.box((xx,lo[1]+1.25,zz),(.065,.065,.38),'Hazard')
    hand.finish()
    for mn,mx in item.get('windows',[]):
     m.cut(mn,mx)
@@ -582,9 +583,12 @@ def galley(s,room):
     x=cx+side*.95;m.box((x,lo[1]+.42,zz),(.52,.55,.53),'Fabric',solid=True);n+=1
  m.finish();s.rs[room]['r']['diningPlaces']=n+2
 
-def spine_living(s,z0,z1,w,crew):
- bridge(s,z0,z0+8,5)
- cabin(s,'passage','Residential promenade',[-2,0,z0+8],[2,3.2,z1],'corridor');s.door('bridge-link','bridge','passage','z',z0+8,0,2)
+def spine_living(s,z0,z1,w,crew,bow=None):
+ # (the flight deck at the bow, where its window is the ship's front, and the promenade run forward
+ # to it: from the old deck, 40 m back in Meridian's nose, the pilot saw a slot through the hull)
+ b=z0 if bow is None else bow+.05
+ bridge(s,b,b+8,5)
+ cabin(s,'passage','Residential promenade',[-2,0,b+8],[2,3.2,z1],'corridor');s.door('bridge-link','bridge','passage','z',b+8,0,2)
  rows=crew//4;depth=9
  for i in range(rows):
   za=z0+8+i*depth
@@ -605,7 +609,7 @@ def spine_living(s,z0,z1,w,crew):
     m.box(((xa+xb)/2,.5,z),(3.5,1,1.0),'Fabric',solid=True)
    m.box((xa+.35,1.4,za+dep/2),(.1,1.0,2),'Screen');m.finish()
   else:s.furniture(id,kind)
- s.airlock('bridge',[-10,0,z0+1],[-5,3.2,z0+5],'x',-5,-10,z0+3,'bridge-eva',door=WIDE_LOCK)
+ s.airlock('bridge',[-10,0,b+1],[-5,3.2,b+5],'x',-5,-10,b+3,'bridge-eva',door=WIDE_LOCK)
 
 def pad(s,id,x,z,w,d,y=0):
  m=s.mesh('pad_'+id);m.box((x,y-.20,z),(w,.4,d),'Metal',collision=True)
@@ -628,7 +632,7 @@ def garage_lock(s,host,garage,z0,z1,half_width=1.3,door=(1.1,2.15)):
 
 # MERIDIAN: inhabited crescent bow, twin service keels, sheltered lateral hangars.
 s=Ship('meridian','Meridian',380_000_000,48,1500,True)
-spine_living(s,-710,-530,14,48)
+spine_living(s,-710,-530,14,48,bow=-750)
 skin(s,'inhabited_crescent',[(-750,24,-9,8),(-715,72,-14,15),(-670,135,-18,22),(-610,166,-16,21),(-555,135,-12,16),(-520,42,-7,9)])
 for side in [-1,1]:skin(s,'crescent_tip_'+str(side),[(-650,30,-10,12),(-580,58,-12,16),(-465,53,-10,18),(-390,18,-5,9)],side*126,1)
 cabin(s,'service','Central exploration spine',[-3,0,-530],[3,3.2,590],'corridor');s.door('spine-link','passage','service','z',-530,0,2)
@@ -666,7 +670,7 @@ s.t['thrust'].update(main=.40,belly=.15,lateral=.10,retro=.12);SHIPS.append(s)
 
 # CONFLUENCE: horseshoe service tender with an unobstructed visiting-craft court.
 s=Ship('confluence','Confluence',18_000_000,24,420,True)
-spine_living(s,-199,-88,13,24)
+spine_living(s,-199,-88,13,24,bow=-210)
 skin(s,'forward_habitat',[(-210,15,-5,9),(-195,40,-10,14),(-157,62,-13,18),(-110,65,-10,14),(-80,58,-7,10)])
 cabin(s,'forecross','Forward visitor gallery',[-50,0,-88],[50,3.2,-80],'corridor');s.door('forecross-link','passage','forecross','z',-88,0,2)
 cabin(s,'engineering','Aft service center',[-50,0,150],[50,3.2,175],'engineering');skin(s,'aft_service',[(145,58,-7,10),(175,65,-10,14),(200,45,-5,8)])
@@ -1159,7 +1163,7 @@ for s in SHIPS:
  for room in s.t['rooms']:
   if room['type'] not in ['door','exterior']:s.cuts.append(([v-.015 for v in room['min']],[v+.015 for v in room['max']]))
  if s.key=='horizon_neptune3':finish_neptune3(s)
- else:finish_dress(s)
+ else:bridge_side_glazing(s,half,r['min'][1]+.9,r['min'][1]+2.6);finish_dress(s)
  # (the lofted skins, taken exactly; not the transit lobbies' small fairings inside them)
  exterior_physics(s,[m for m in s.hab if hasattr(m,'stations')])
 TYPES={s.key:s.export() for s in SHIPS}
