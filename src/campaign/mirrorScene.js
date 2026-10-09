@@ -6,6 +6,8 @@ import { centralView } from '../sim/centralObject.js';
 // the opening's place over the mirror: where the central black hole stands this high over its horizon
 // (radians), so it and its reflection frame the scene
 export const OPENING_HOLE_ELEVATION = 20 * Math.PI / 180;
+// and its height over the mirror (m): low, the plates running out to the horizon under you
+export const OPENING_HEIGHT = 1500;
 
 export function mirrorRadius(system){
   const outer=Math.max(0,...system.bodies.filter(b=>b.kind==='planet').map(b=>(b.orbit?.a||0)*(1+(b.orbit?.e||0))));
@@ -20,12 +22,15 @@ export function placeMirrorFleet(g,reference){
   const radius=mirrorRadius(g.system),star=g.universe.star;
   g.campaign.generation.storyAnchors.mirror={version:1,seed:g.seed,systemId:`system/${g.campaign.generation.galaxySeed}`,radius,label:'Mirrored enclosure'};
   restoreMirror(g);
-  g.placeInOrbit(reference,star,radius+30000-star.R,0);
+  g.placeInOrbit(reference,star,radius+OPENING_HEIGHT-star.R,0);
   faceTheHole(g,reference);
   const roots=g.vessels.filter(v=>!v.parent&&v!==reference);
+  // (the others along the mirror from it, a little higher: its own axes could have put them under it)
+  const up=reference.pos.clone().normalize();
   roots.forEach((v,i)=>{
     v.nav.cancel(null);v.body=star;v.landed=false;v.rails=false;
-    v.pos.copy(reference.pos).add(new THREE.Vector3((i+1)*8000,1000,5000).applyQuaternion(reference.quat));
+    const off=new THREE.Vector3((i+1)*8000,1000,5000).applyQuaternion(reference.quat);off.addScaledVector(up,-off.dot(up)).addScaledVector(up,150*(i+1));
+    v.pos.copy(reference.pos).add(off);
     v.vel.copy(reference.vel);v.quat.copy(reference.quat);v.angVel.set(0,0,0);v.assist=1;v.targetFrame='none';
   });
   for(const root of roots)syncChildren(root);

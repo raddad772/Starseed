@@ -4,7 +4,7 @@ import { pilotSeat } from '../sim/vesselTypes.js';
 import { createCampaign } from './state.js';
 import { CampaignSiteStorage,bindSiteStorage } from './siteStorage.js';
 import { createTutorial } from './tutorial.js';
-import { placeMirrorFleet,placeOutsideCraft,syncChildren,parkAtBase } from './mirrorScene.js';
+import { placeMirrorFleet,placeOutsideCraft,syncChildren,parkAtBase,OPENING_HEIGHT } from './mirrorScene.js';
 import { CAST } from './lines.js';
 
 const LEADS={horizon:'horizon_neptune3',expedition:'expedition_hearth',pioneer:'pioneer_nomad'};
@@ -66,7 +66,7 @@ export function installCampaignJoin(g){
     for(const p of g.players){const v=p.ownShip||g.ship;
       if(v.dead){
         v.nav.cancel(null);v.ftl.state='idle';v.ftl.speed=0;v.hullTemp=290;v.entry.heatLoad=0;
-        const shellAltitude=g.mirrorShell?.body===v.body?g.mirrorShell.radius+30000-v.body.R:0;
+        const shellAltitude=g.mirrorShell?.body===v.body?g.mirrorShell.radius+OPENING_HEIGHT-v.body.R:0;
         g.placeInOrbit(v,v.body,Math.max(v.body.atmHeight*2,80000,shellAltitude),.4+p.index*.003);v.assist=1;
       }
       seatExpeditionPlayer(g,p);

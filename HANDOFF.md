@@ -21,7 +21,10 @@ Queue (tick as done; one report at the end):
    (onSubmittedWorkDone after a frame) read ~370 ms a frame, not credible; measure with the pane shown.
 2. [x] The 404: assets/music/prologue-strings.m4a, asked for at every opening though no strings take is chosen
    yet (intro.js PROLOGUE_MUSIC is null until one is; the takes are in tools/voice-audition/music).
-3. [ ] The opening starts ~1.5 km over the mirror (was parked; taken as approved with this queue).
+3. [x] The opening starts 1.5 km over the mirror (mirrorScene.js OPENING_HEIGHT; was 30 km), the plates big
+   under you; the others kept level along the mirror (their offsets in the ship's axes could have put them
+   under it); a respawn at the mirror at the same height. Checked: prologue shot, then Neptune 3 and Eleanor's
+   line.
 4. [ ] From 25 km up the land streaks and the coasts saw-tooth (see "Seen, open" under Measuring frame cost):
    read a far coastal chunk's positions back, find the cause, fix.
 5. [ ] Mars from afar: a chaos raft's apron (talus) missing off the near field.
