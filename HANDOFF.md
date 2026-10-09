@@ -43,7 +43,15 @@ Queue (tick as done; one report at the end):
    liquids 0.5. The CPU outside the renderer is ~2% of a frame's samples. The pause menu already has a
    Resolution slider (0.5-1, default 1, at a device pixel ratio up to 2): the biggest lever. Options for
    Dave: an automatic resolution that holds a frame time, GTAO at half resolution, the clouds' options
-   above.
+   above. Dave chose the first two, as settings on by default: DONE. Automatic resolution (engine.js
+   autoResolution; pause menu "Automatic resolution", settings.autoRes): the GPU's time to finish each
+   frame's work read back as it lands; over 22 ms the scale steps down a tenth (to 0.5), under 13 ms with
+   room back up toward the Resolution setting, slow to rise and never back within 30 s to a scale it had
+   to leave (it see-sawed); ?scale= or ?autores=0 in the address holds the resolution (tests and
+   measurements: use ?autores=0). GTAO already searched at half resolution; its depth-to-view-space
+   transform folded into one matrix on the CPU (one multiply a sample, not two): ~4.5 -> ~2.5 ms, the
+   picture the same. A quarter-resolution search with a 5-tap filter saved ~1 ms more but notched the
+   occlusion along depth edges in 4x4 steps (a rock's silhouette), so not shipped, and no setting.
 2. [x] The 404: assets/music/prologue-strings.m4a, asked for at every opening though no strings take is chosen
    yet (intro.js PROLOGUE_MUSIC is null until one is; the takes are in tools/voice-audition/music).
 3. [x] The opening starts 1.5 km over the mirror (mirrorScene.js OPENING_HEIGHT; was 30 km), the plates big

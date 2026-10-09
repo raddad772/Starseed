@@ -442,6 +442,7 @@ export class PauseScreen {
         <label class="label" for="setSens">Mouse</label><input id="setSens" type="range" min="0.2" max="6" step="0.05" value="${S.sensitivity}">
         <label class="label" for="setFov">Field of view</label><input id="setFov" type="range" min="55" max="100" step="1" value="${S.fov}">
         <label class="label" for="setScale">Resolution</label><input id="setScale" type="range" min="0.5" max="1" step="0.05" value="${S.scale}">
+        <label class="label" for="setAutoRes">Automatic resolution</label><input id="setAutoRes" type="checkbox" ${S.autoRes !== false ? 'checked' : ''}>
         <label class="label" for="setInv">Invert Y</label><input id="setInv" type="checkbox" ${S.invertY ? 'checked' : ''}>
         <label class="label" for="setTone">Highlights</label><select id="setTone"><option value="agx" ${S.tone !== 'aces' ? 'selected' : ''}>Wide range (AgX)</option><option value="aces" ${S.tone === 'aces' ? 'selected' : ''}>Punchy (ACES)</option></select>
       </div>
@@ -462,6 +463,7 @@ export class PauseScreen {
     $('setSens').oninput = (e) => { S.sensitivity = +e.target.value; save(); };
     $('setFov').oninput = (e) => { S.fov = +e.target.value; save(); };
     $('setScale').onchange = (e) => { S.scale = +e.target.value; save(); const g = this.game; if (g) { g.engine.renderScale = S.scale; g.layout(); } };
+    $('setAutoRes').onchange = (e) => { S.autoRes = e.target.checked; save(); const g = this.game; if (g) { g.engine.autoRes = S.autoRes; if (!S.autoRes) g.layout(); } };
     $('setInv').onchange = (e) => { S.invertY = e.target.checked; save(); };
     $('setTone').onchange = (e) => { S.tone = e.target.value; save(); };
     $('copyUrl').onclick = () => {

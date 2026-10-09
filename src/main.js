@@ -78,7 +78,7 @@ const settings = loadSettings();
 applySettings();
 
 function loadSettings() {
-  const def = { sensitivity: 1, invertY: false, fov: 72, scale: 1, tone: 'agx', split: 'top-bottom' };
+  const def = { sensitivity: 1, invertY: false, fov: 72, scale: 1, autoRes: true, tone: 'agx', split: 'top-bottom' };
   try { return Object.assign(def, JSON.parse(localStorage.getItem('starseed.settings') || '{}')); } catch (e) { return def; }
 }
 function saveSettings() { try { localStorage.setItem('starseed.settings', JSON.stringify(settings)); } catch (e) { /* optional */ } }
@@ -88,6 +88,8 @@ function applySettings() {
   if (game) {
     game.engine.toneCurve = settings.tone;
     game.engine.fovBase = settings.fov;
+    // (a scale or ?autores=0 in the address holds the resolution: tests and measurements)
+    game.engine.autoRes = settings.autoRes && !params.has('scale') && params.get('autores') !== '0';
     if (game.engine.layout !== settings.split) { game.engine.layout = settings.split; game.layout(); }
     else game.engine.setFov(settings.fov);
     for (const p of game.players.slice(1)) { p.input.sensitivity = settings.sensitivity; p.input.invertY = settings.invertY; }

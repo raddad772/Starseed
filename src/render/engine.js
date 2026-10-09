@@ -350,6 +350,8 @@ export class Engine {
     this.renderer = reference ? reference.create(this,opts) : new ResourceProducers(this);
     this.sunShadows = new SunShadows();
     this.renderScale = opts.renderScale || 1;
+    // (the settings' automatic resolution: main.js applySettings)
+    this.autoRes = opts.autoRes ?? false; this.dynScale = null;
     this.near = 0.05;
     this.far = 1e13;
     this.scene = new THREE.Scene();
@@ -498,10 +500,39 @@ export class Engine {
     return i === 0 ? { x: 0, y: 0, w, h: half - 1 } : { x: 0, y: half + 1, w, h: h - half - 1 };
   }
 
+  // Automatic resolution (the settings', on by default): the GPU's time to finish a frame's work, read back
+  // as it lands (one at a time, smoothed over 30 or more since the last step); held over 22 ms (under ~45
+  // frames a second) the render scale steps down a tenth, to half, 2 s or more after the last step; under
+  // 13 ms, with room for the larger frame, back up a tenth toward the Resolution setting, 6 s or more after
+  // (slow to rise, so a passing load doesn't see-saw it); its targets made anew at the new size. Near the
+  // ground at 2048x1536 the GPU's ~51 ms a frame was nearly all per pixel (a quarter of the pixels: ~20)
+  autoResolution() {
+    if (!this.autoRes) { if (this.dynScale != null) { this.dynScale = null; this.resize(); } return; }
+    const now = performance.now();
+    if (!this._gpuWait) {
+      this._gpuWait = true;
+      this.webgpu.device.queue.onSubmittedWorkDone().then(() => {
+        const ms = performance.now() - now;
+        this.gpuMs = this.gpuMs == null ? ms : this.gpuMs * 0.85 + ms * 0.15; this.gpuN = (this.gpuN || 0) + 1;
+      }).finally(() => { this._gpuWait = false; });
+    }
+    const since = now - (this._resAt || 0);
+    if (this.gpuMs == null || this.gpuN < 30 || since < 2000) return;
+    const cap = this.renderScale, s = Math.min(cap, this.dynScale ?? cap);
+    let next = s;
+    if (this.gpuMs > 22 && s > 0.5 + 1e-6) { next = Math.max(0.5, Math.round((s - 0.1) * 20) / 20); this._downFrom = s; this._downAt = now; }
+    else if (since > 6000 && this.gpuMs < 13 && s < cap - 1e-6 && this.gpuMs * ((s + 0.1) / s) ** 2 < 16) {
+      next = Math.min(cap, Math.round((s + 0.1) * 20) / 20);
+      // (not back up to a scale it had to leave in the last 30 s: it see-sawed a tenth up and down)
+      if (next >= (this._downFrom ?? Infinity) - 1e-6 && now - this._downAt < 30000) next = s;
+    }
+    if (next !== s) { this.dynScale = next; this._resAt = now; this.gpuMs = null; this.gpuN = 0; this.resize(); }
+  }
+
   resize() {
     const c = this.canvas;
     const w = c.clientWidth || window.innerWidth, h = c.clientHeight || window.innerHeight;
-    const pr = Math.min(window.devicePixelRatio || 1, 2) * this.renderScale;
+    const pr = Math.min(window.devicePixelRatio || 1, 2) * (this.autoRes && this.dynScale != null ? Math.min(this.renderScale, this.dynScale) : this.renderScale);
     this.renderer.setPixelRatio(pr);
     this.renderer.setSize(w, h, false);
     if (this.backend === 'webgpu') {
@@ -543,7 +574,7 @@ export class Engine {
     this.frameInputs = { sky, atmos, dt };
     if (this.backend === 'webgpu') {
       if (advanceWorld) this.time += dt;
-      if (this.webgpu && !this.webgpuError) this.webgpu.render(this, animate, advanceWorld);
+      if (this.webgpu && !this.webgpuError) { this.webgpu.render(this, animate, advanceWorld); this.autoResolution(); }
       return;
     }
 
