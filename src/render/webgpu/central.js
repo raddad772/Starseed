@@ -25,16 +25,19 @@ export const CENTRAL_WGSL = /* wgsl */`
 struct Central {
   camRot: mat4x4f,   // view direction -> world (the 3x3 in the top left)
   hole: vec4f,       // xyz: unit direction to the hole (world); w: its distance (M)
-  spin: vec4f,       // xyz: unit spin axis (the jets'); w: the lens region's reach (impact parameter, M)
+  spin: vec4f,       // xyz: unit spin axis (the jets'); w: the traced region's reach (impact parameter, M)
   disk: vec4f,       // x: inner edge (M; the innermost stable orbit), y: outer edge (M), z: brightness, w: peak temperature (K)
+  disk2: vec4f,      // x: the radius it's opaque within (M), y: its optical depth there (straight through), z: spin a (0..0.998)
   jet: vec4f,        // x: length (M), y: half opening angle (rad), z: brightness, w: Lorentz factor
+  jet2: vec4f,       // x: knots (per ln z), y: its light's cutoff at the base (jet's frame, x green's frequency), z: spectral index, w: cooling length (M)
   misc: vec4f,       // x: sky gain, y: tan half fov x, z: tan half fov y, w: on (> 0.5)
-  misc2: vec4f,      // x: knot spacing (per ln z), y: spin a (0..0.998), z: innermost stable orbit (M), w: unused
+  lens: vec4f,       // the sky's lens low over a world (sky.js SKY_LENS): xyz the camera's up, w on
+  lens2: vec4f,      // x, y: the drawn and true horizons' dips; z, w: the view's size (px)
 };
-struct Lens { color: vec3f, replace: f32, dir: vec3f, captured: f32 };
+struct Lens { color: vec3f, trans: f32, dir: vec3f };
 
 fn cPlanck(lambdaUm: f32, T: f32) -> f32 {
-  let x = 14387.77 / (lambdaUm * T);
+  let x = 14387.77 / (lambdaUm * max(T, 1.0));
   return 1.0 / (pow(lambdaUm, 5.0) * (exp(min(x, 80.0)) - 1.0));
 }
 // a blackbody's colour at T, at unit luminance
@@ -55,20 +58,33 @@ fn cNoise(p: vec3f) -> f32 {
   return mix(mix(x00, x10, u.y), mix(x01, x11, u.y), u.z);
 }
 fn cPerp(n: vec3f) -> vec3f { return normalize(cross(n, select(vec3f(1.0, 0.0, 0.0), vec3f(0.0, 1.0, 0.0), abs(n.x) > 0.9))); }
+// v (unit) turned by ang toward the way 'toward' lies from it
+fn cBend(v: vec3f, toward: vec3f, ang: f32) -> vec3f {
+  let p = toward - v * dot(toward, v);
+  let l = length(p);
+  if (l < 1e-7) { return v; }
+  return normalize(v * cos(ang) + (p / l) * sin(ang));
+}
 
-// the disk where the light crossed it, at Boyer-Lindquist radius r and angle phi (about the spin
-// axis); lam the photon's angular momentum about the axis (E = 1)
+// the disk's optical depth straight through at r: thick where it's hot, thinning fast outside (a
+// starving hole's gas is sparse: its cool outer disk is nearly clear, not a black plate)
+fn cTau(C: Central, r: f32) -> f32 { return C.disk2.y * pow(min(1.0, C.disk2.x / r), 4.0); }
+
+// the disk's own light where the ray crossed it, at Boyer-Lindquist radius r and angle phi (about
+// the spin axis); lam the photon's angular momentum about the axis (E = 1). Its gas on a prograde
+// circular orbit, the light's shift from there g = 1 / (u^t (1 - Omega lambda)): its colour a
+// blackbody's at g T, its brightness its whole light's, g^4 T^4 (the visible band's alone runs far
+// steeper, the side coming at you dozens of times the rest: past what a screen can hold)
 fn cDisk(C: Central, r: f32, phi: f32, lam: f32) -> vec3f {
-  let a = C.misc2.y;
-  let x = C.misc2.z / r;
+  let a = C.disk2.z;
+  let x = C.disk.x / r;
   let f = pow(x, 0.75) * pow(max(0.0, 1.0 - sqrt(x)), 0.25);
   let fmax = pow(36.0 / 49.0, 0.75) * pow(1.0 - sqrt(36.0 / 49.0), 0.25);
   let T = C.disk.w * f / fmax;
-  // (its gas on a prograde circular orbit; the photon's shift from there to the camera)
   let r15 = r * sqrt(r);
   let Om = 1.0 / (r15 + a);
   let ut = (r15 + a) / (pow(r, 0.75) * sqrt(max(r15 - 3.0 * sqrt(r) + 2.0 * a, 1e-6)));
-  let g = 1.0 / (ut * (1.0 - Om * lam));
+  let g = max(1.0 / (ut * (1.0 - Om * lam)), 0.0);
   // (and its clumps of denser and thinner gas, drawn out along the orbits into streaks and wound
   // into spirals as the inner gas laps the outer: noise round each circle, many times finer across
   // than along)
@@ -76,7 +92,7 @@ fn cDisk(C: Central, r: f32, phi: f32, lam: f32) -> vec3f {
   let ps = phi + 5.0 * lr;
   let q = vec3f(lr * 18.0, 2.2 * cos(ps), 2.2 * sin(ps));
   let tex = 0.55 + 0.9 * (0.5 * cNoise(q) + 0.3 * cNoise(q * 2.03 + 7.1) + 0.2 * cNoise(q * 4.1 + 3.7));
-  return cBlackbody(max(g * T, 800.0)) * C.disk.z * pow(max(g, 0.0), 4.0) * pow(T / C.disk.w, 4.0) * tex;
+  return cBlackbody(max(g * T, 800.0)) * C.disk.z * pow(g, 4.0) * pow(T / C.disk.w, 4.0) * tex;
 }
 
 // Kerr in Mino time (M = 1, E = 1): R'(r)/2, Theta'(theta)/2, and dphi/dtau for the photon going forward
@@ -94,20 +110,31 @@ fn kP(r: f32, th: f32, a: f32, lam: f32) -> f32 {
 }
 
 // the jets' light along a ray from the camera: for each jet, the point on its axis the ray passes
-// closest to; there, the glow of a thin cone of that width (its surface brightness: what the ray
-// crosses, dimmer as the jet widens), boosted toward the camera, knotted along its length
+// closest to; there, the glow of a thin jet of that width (its surface brightness: what the ray
+// crosses, dimmer as it widens), knotted along its length. Its light is synchrotron, a power law
+// I_nu ~ nu^-alpha cut off where its electrons' energies end, the cutoff falling along the jet as
+// they cool; flowing at Lorentz factor Gamma, it's seen shifted by delta = 1 / (Gamma (1 - beta
+// cos)): a continuous jet's I_nu(nu) = delta^(2+alpha) nu^-alpha exp(-nu / (delta nu_c)), brighter
+// and bluer where it comes toward the camera, dimmer and redder where it goes away. Hidden behind
+// the inner disk (its optical depth where the ray meets the disk's plane in front of it) and
+// behind the hole's shadow.
 fn cJets(C: Central, ray: vec3f) -> vec3f {
   if (C.jet.z <= 0.0) { return vec3f(0.0); }
   let H = C.hole.xyz * C.hole.w;
   let G = max(C.jet.w, 1.01);
   let beta = sqrt(1.0 - 1.0 / (G * G));
+  let al = C.jet2.z;
+  let nu = vec3f(0.55 / 0.61, 1.0, 0.55 / 0.465);
+  let zs = C.spin.xyz;
+  let rz = dot(ray, zs);
+  let hr = dot(H, ray);
+  let bh = length(H - ray * hr);
   var acc = vec3f(0.0);
   for (var j = 0; j < 2; j++) {
-    let a = C.spin.xyz * select(-1.0, 1.0, j == 0);
+    let a = zs * select(-1.0, 1.0, j == 0);
     // (the closest approach of the ray t*ray, t > 0, and the axis H + z a, 0 < z < length)
     let ra = dot(ray, a);
     let den = max(1.0 - ra * ra, 1e-6);
-    let hr = dot(H, ray);
     let ha = dot(H, a);
     var z = (hr * ra - ha) / den;
     z = clamp(z, 4.0, C.jet.x);
@@ -118,31 +145,49 @@ fn cJets(C: Central, ray: vec3f) -> vec3f {
     let w = max(C.jet.y * z, 0.8 * pow(z, 0.58));
     let prof = exp(-(dperp * dperp) / (w * w));
     if (prof < 1e-4 || t <= 0.0) { continue; }
+    // (behind the hole, or through the disk's plane on the way to it)
+    var occ = 1.0;
+    if (t > hr && bh < 5.5) { continue; }
+    if (abs(rz) > 1e-5) {
+      let td = dot(H, zs) / rz;
+      if (td > 0.0 && td < t) {
+        let rc = length(ray * td - H);
+        if (rc >= C.disk.x && rc <= C.disk.y) { occ = exp(-cTau(C, rc) / max(abs(rz), 0.03)); }
+      }
+    }
     let dirP = normalize(P);
     let delta = 1.0 / (G * (1.0 - beta * dot(a, -dirP)));
-    let knot = 0.55 + 0.45 * pow(0.5 + 0.5 * sin(log(z) * C.misc2.x + f32(j) * 2.1), 3.0);
-    let along = sqrt(z / C.jet.x);
-    let col = mix(vec3f(0.78, 0.88, 1.0), vec3f(0.62, 0.58, 1.0), along);
+    let nuc = C.jet2.y / (1.0 + z / C.jet2.w);
+    // (I_lambda in each channel: I_nu nu^2, at green's frequency 1 with delta 1 and no cutoff)
+    let spec = pow(delta, 2.0 + al) * pow(nu, vec3f(2.0 - al)) * exp(-nu / (delta * nuc));
+    let knot = 0.55 + 0.45 * pow(0.5 + 0.5 * sin(log(z) * C.jet2.x + f32(j) * 2.1), 3.0);
     let sinT = sqrt(den);
-    acc += col * C.jet.z * pow(delta, 2.5) * knot * prof * (60.0 / (w + 60.0)) / max(sinT, 0.08) / (1.0 + z / (C.jet.x * 0.15));
+    acc += spec * occ * C.jet.z * knot * prof * (60.0 / (w + 60.0)) / max(sinT, 0.08) / (1.0 + z / (C.jet.x * 0.15));
   }
   return acc;
 }
 
-// what a ray from the camera sees of the hole: added light, and, inside the lens region, the
-// direction the sky's to be read from in its place (or nothing, into the hole or onto the disk)
+// what a ray from the camera (its true way, world) sees of the hole: light added along it (the jets,
+// the disk), how much of what's behind comes through, and the way the sky's to be read from. Near
+// the hole, within the traced region's reach, the ray is followed exactly; outside it, where the
+// field is weak, the sky's simply bent toward the hole by Einstein's angle for a camera at the
+// hole's distance, 2 M (1 + cos psi) / b, which the traced rays meet at the reach without a seam.
 fn cLens(C: Central, ray: vec3f) -> Lens {
   var L: Lens;
-  L.color = vec3f(0.0); L.replace = 0.0; L.dir = ray; L.captured = 0.0;
+  L.color = vec3f(0.0); L.trans = 1.0; L.dir = ray;
   if (C.misc.w < 0.5) { return L; }
   L.color = cJets(C, ray);
   let n = C.hole.xyz;
   let D = C.hole.w;
   let cp = dot(ray, n);
-  if (cp <= 0.0) { return L; }
-  if (D * sqrt(max(0.0, 1.0 - cp * cp)) > C.spin.w) { return L; }
-  L.replace = 1.0;
-  let a = C.misc2.y;
+  let sp = sqrt(max(0.0, 1.0 - cp * cp));
+  if (cp <= 0.0 || D * sp > C.spin.w) {
+    // ((1 + cos) / sin written so neither end divides by nothing)
+    let k = select(sp / max(1.0 - cp, 1e-7), (1.0 + cp) / max(sp, 1e-7), cp > 0.0);
+    L.dir = cBend(ray, n, 2.0 * k / D);
+    return L;
+  }
+  let a = C.disk2.z;
   // the hole's frame: z its spin axis, the camera at phi = 0
   let zh = C.spin.xyz;
   let toCam = -n;
@@ -191,7 +236,8 @@ fn cLens(C: Central, ray: vec3f) -> Lens {
     let thn = th + h / 6.0 * (k1t + 2.0 * k2t + 2.0 * k3t + k4t);
     let pthn = pth + h / 6.0 * (k1q + 2.0 * k2q + 2.0 * k3q + k4q);
     let phn = ph + h / 6.0 * (k1f + 2.0 * k2f + 2.0 * k3f + k4f);
-    // through the equatorial plane: the disk, if it's there
+    // through the equatorial plane: the disk's light there, and what of the light behind it gets
+    // through (its depth longer the more slanting the crossing; far out the slant's sqrt(Q) / r)
     let z0 = cos(th);
     let z1 = cos(thn);
     if (z0 * z1 <= 0.0) {
@@ -202,10 +248,12 @@ fn cLens(C: Central, ray: vec3f) -> Lens {
       let q1 = rn * vec3f(sin(thn) * cos(phn), sin(thn) * sin(phn), z1);
       let qc = mix(q0, q1, z0 * r / (z0 * r - z1 * rn + 1e-12));
       let rc = length(qc.xy);
-      if (rc >= C.misc2.z && rc <= C.disk.y) {
-        L.color += cDisk(C, rc, atan2(qc.y, qc.x), lam);
-        L.captured = 1.0;
-        return L;
+      if (rc >= C.disk.x && rc <= C.disk.y) {
+        let tau = cTau(C, rc) / clamp(sq / rc, 0.03, 1.0);
+        let k = exp(-tau);
+        L.color += L.trans * (1.0 - k) * cDisk(C, rc, atan2(qc.y, qc.x), lam);
+        L.trans *= k;
+        if (L.trans < 0.004) { L.trans = 0.0; return L; }
       }
     }
     r = rn; pr = prn; th = thn; pth = pthn; ph = phn;
@@ -213,18 +261,40 @@ fn cLens(C: Central, ray: vec3f) -> Lens {
     // second-order r'' drifts by parts of r^4, enough to turn a ray round far out)
     let Rs = 1.0 + c2 / (r * r) + 2.0 * K / (r * r * r) + c4 / (r * r * r * r);
     if (Rs > 0.25) { pr = sign(pr) * r * r * sqrt(Rs); }
-    if (r <= rh * 1.01) { L.captured = 1.0; return L; }
-    if (pr > 0.0 && r > D * 1.02) { break; }
+    if (r <= rh * 1.01) { L.trans = 0.0; return L; }
+    // (out past the disk and the reach, on its way out: the rest of its bending's weak)
+    if (pr > 0.0 && r > max(C.spin.w, C.disk.y * 1.05)) { break; }
   }
-  // where it's headed, far out (its motion there, flat space; the sky's that way)
+  // where it's headed (its motion there, nearly flat space), and the bending still to come on its
+  // way out to the sky: a straight line's, 2 M (1 - cos chi) / b with chi its angle from the radius
   let st = sin(th);
   let ct = cos(th);
   let rho = cos(ph) * xh + sin(ph) * yh;
   let rhat = st * rho + ct * zh;
   let that = ct * rho - st * zh;
   let phat = -sin(ph) * xh + cos(ph) * yh;
-  L.dir = normalize(pr * rhat + r * pth * that - r * st * kP(r, th, a, lam) * phat);
+  let v = normalize(pr * rhat + r * pth * that - r * st * kP(r, th, a, lam) * phat);
+  let cx = clamp(dot(v, rhat), -1.0, 1.0);
+  let sx = sqrt(1.0 - cx * cx);
+  L.dir = cBend(v, -rhat, 2.0 * sx / (r * max(1.0 + cx, 1e-6)));
   return L;
+}
+
+// the sky's lens low over a world (sky.js GLSL_LENS_DIR): from the drawn way to the true one, or back
+fn cLensDir(C: Central, d: vec3f, toDrawn: bool) -> vec3f {
+  if (C.lens.w < 0.5 || C.lens2.x <= C.lens2.y) { return d; }
+  let up = C.lens.xyz;
+  let c = clamp(dot(d, up), -1.0, 1.0);
+  let z = acos(c);
+  let hD = 1.5707963 + C.lens2.x;
+  let hT = 1.5707963 + C.lens2.y;
+  var z2: f32;
+  if (toDrawn) { z2 = select(hD + (z - hT) * (3.14159265 - hD) / (3.14159265 - hT), z * hD / hT, z <= hT); }
+  else { z2 = select(hT + (z - hD) * (3.14159265 - hT) / (3.14159265 - hD), z * hT / hD, z <= hD); }
+  let hv = d - up * c;
+  let hl = length(hv);
+  if (hl < 1e-6) { return d; }
+  return up * cos(z2) + (hv / hl) * sin(z2);
 }
 `;
 
@@ -233,26 +303,42 @@ const CODE = FULLSCREEN + CENTRAL_WGSL + /* wgsl */`
 @group(0) @binding(1) var depth: texture_2d<f32>;
 @group(0) @binding(2) var sky: texture_cube<f32>;
 @group(0) @binding(3) var skySampler: sampler;
+@group(0) @binding(4) var scene: texture_2d<f32>;
+@group(0) @binding(5) var sceneSampler: sampler;
+// the sky the way d (true, world) looks: the galaxy's light, and the bright stars already drawn on
+// the screen where they show (their points, read from where the lens has moved them)
+fn skyAt(d: vec3f) -> vec3f {
+  var c = textureSampleLevel(sky, skySampler, d, 0.0).rgb * C.misc.x;
+  let drawn = cLensDir(C, d, true);
+  let rot = mat3x3f(C.camRot[0].xyz, C.camRot[1].xyz, C.camRot[2].xyz);
+  let vv = transpose(rot) * drawn;
+  if (vv.z < -1e-4) {
+    let ndc = vec2f(vv.x / (-vv.z) / C.misc.y, vv.y / (-vv.z) / C.misc.z);
+    if (abs(ndc.x) < 1.0 && abs(ndc.y) < 1.0) {
+      let uv = vec2f(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
+      let px = vec2i(uv * C.lens2.zw);
+      if (textureLoad(depth, px, 0).r <= 0.0) { c += textureSampleLevel(scene, sceneSampler, uv, 0.0).rgb; }
+    }
+  }
+  return c;
+}
 @fragment fn central(v: Fullscreen) -> @location(0) vec4f {
   let d = textureLoad(depth, vec2i(v.position.xy), 0).r;
   if (d > 0.0) { discard; }      // (not sky: something's in front of it)
   let ndc = vec2f(v.uv.x * 2.0 - 1.0, 1.0 - v.uv.y * 2.0);
   let dv = normalize(vec3f(ndc.x * C.misc.y, ndc.y * C.misc.z, -1.0));
-  let ray = normalize((C.camRot * vec4f(dv, 0.0)).xyz);
+  let ray = cLensDir(C, normalize((C.camRot * vec4f(dv, 0.0)).xyz), false);
   let L = cLens(C, ray);
-  if (L.replace < 0.5) {
-    if (dot(L.color, vec3f(1.0)) <= 0.0) { discard; }
-    return vec4f(L.color, 0.0);   // (added over the sky)
-  }
-  // the sky in its place: read where the light came from (none from the hole, or from behind the disk)
+  // (in place of the sky drawn here: the hole's light, and the sky bent round it through what of it comes through)
   var c = L.color;
-  if (L.captured < 0.5) { c += textureSampleLevel(sky, skySampler, L.dir, 0.0).rgb * C.misc.x; }
+  if (L.trans > 0.0) { c += L.trans * skyAt(L.dir); }
   return vec4f(c, 1.0);
 }
 `;
 
 // the uniforms (shared with the mirror's pass): engine.central from the game (sim/centralObject.js)
-export function centralUniforms(engine, camRot, tanHalf, out = new Float32Array(44)) {
+export const CENTRAL_FLOATS = 52;
+export function centralUniforms(engine, camRot, tanHalf, size, out = new Float32Array(CENTRAL_FLOATS)) {
   const c = engine.central;
   out.fill(0);
   if (camRot) out.set(camRot, 0);
@@ -260,22 +346,26 @@ export function centralUniforms(engine, camRot, tanHalf, out = new Float32Array(
   out.set([c.dir.x, c.dir.y, c.dir.z, c.distance], 16);
   out.set([c.spin.x, c.spin.y, c.spin.z, c.reach], 20);
   out.set([c.isco || 6, c.disk.outer, c.disk.brightness, c.disk.temperature], 24);
-  out.set([c.jet.length, c.jet.angle, c.jet.brightness, c.jet.gamma], 28);
-  out.set([engine.bgMat?.uniforms.uSkyGain?.value || 1, tanHalf ? tanHalf.x : 1, tanHalf ? tanHalf.y : 1, 1], 32);
-  out.set([c.jet.knots, c.spinA || 0, c.isco || 6, 0], 36);
+  out.set([c.disk.opaqueTo, c.disk.tau, c.spinA || 0, 0], 28);
+  out.set([c.jet.length, c.jet.angle, c.jet.brightness, c.jet.gamma], 32);
+  out.set([c.jet.knots, c.jet.cutoff, c.jet.index, c.jet.cooling], 36);
+  out.set([engine.bgMat?.uniforms.uSkyGain?.value || 1, tanHalf ? tanHalf.x : 1, tanHalf ? tanHalf.y : 1, 1], 40);
+  const lu = engine.bgMat?.uniforms.uLensUp?.value, lk = engine.bgMat?.uniforms.uLensK?.value;
+  out.set([lu ? lu.x : 0, lu ? lu.y : 1, lu ? lu.z : 0, lu ? lu.w : 0], 44);
+  out.set([lk ? lk.x : 0, lk ? lk.y : 0, size ? size[0] : 1, size ? size[1] : 1], 48);
   return out;
 }
 
 export class CentralPass {
-  constructor(device, background) { this.device = device; this.background = background; this.buffers = new Map(); this.data = new Float32Array(44); }
+  constructor(device, background) { this.device = device; this.background = background; this.buffers = new Map(); this.data = new Float32Array(CENTRAL_FLOATS); }
   async init() {
     const module = await shaderModule(this.device, 'central black hole', CODE);
-    const blend = { color: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' }, alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' } };
     this.pipeline = await this.device.createRenderPipelineAsync({ label: 'central black hole', layout: 'auto',
-      vertex: { module, entryPoint: 'fullscreen' }, fragment: { module, entryPoint: 'central', targets: [{ format: 'rgba16float', blend }] } });
+      vertex: { module, entryPoint: 'fullscreen' }, fragment: { module, entryPoint: 'central', targets: [{ format: 'rgba16float' }] } });
   }
-  // over the sky already drawn into target (an air ping/pong entry), where the depth says it's sky
-  render(engine, t, target) {
+  // in place of the sky drawn into target (an air ping/pong entry), where the depth says it's sky;
+  // scene: the lit frame before the sky went in (its bright stars' points)
+  render(engine, t, target, scene) {
     const source = engine.frameInputs?.sky?.cubeRT.texture;
     if (!this.pipeline || !engine.central || !source) return;
     const cube = this.background.cube(source);
@@ -283,10 +373,11 @@ export class CentralPass {
     // (the camera's rotation, as a mat4 with the 3x3 in its top left)
     const rot = [m[0], m[1], m[2], 0, m[4], m[5], m[6], 0, m[8], m[9], m[10], 0, 0, 0, 0, 1];
     let buffer = this.buffers.get(t);
-    if (!buffer) { buffer = this.device.createBuffer({ label: 'central black hole', size: 44 * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }); this.buffers.set(t, buffer); }
-    this.device.queue.writeBuffer(buffer, 0, centralUniforms(engine, rot, engine.tanHalf, this.data));
+    if (!buffer) { buffer = this.device.createBuffer({ label: 'central black hole', size: CENTRAL_FLOATS * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }); this.buffers.set(t, buffer); }
+    this.device.queue.writeBuffer(buffer, 0, centralUniforms(engine, rot, engine.tanHalf, [t.width, t.height], this.data));
     const group = this.device.createBindGroup({ layout: this.pipeline.getBindGroupLayout(0), entries: [
-      { binding: 0, resource: { buffer } }, { binding: 1, resource: t.sampledDepth.view }, { binding: 2, resource: cube.view }, { binding: 3, resource: cube.sampler }] });
+      { binding: 0, resource: { buffer } }, { binding: 1, resource: t.sampledDepth.view }, { binding: 2, resource: cube.view }, { binding: 3, resource: cube.sampler },
+      { binding: 4, resource: scene.view }, { binding: 5, resource: scene.sampler }] });
     const encoder = this.device.createCommandEncoder({ label: 'central black hole' });
     const pass = encoder.beginRenderPass({ colorAttachments: [{ view: target.view, loadOp: 'load', storeOp: 'store' }] });
     pass.setPipeline(this.pipeline); pass.setBindGroup(0, group); pass.draw(3); pass.end();

@@ -13,9 +13,13 @@ export const CENTRAL = {
   inclinationDeg: 83,       // the spin axis from the line of sight: near edge-on, the disk's far side lensed into a halo over and under the hole
   spin: 0.94,               // a = J c / G M^2 (0: Schwarzschild's; 0.998 about the most gas can spin one up to)
   // a starving hole's thin disk, its hottest a cool star's 4000 K: ~1e11 suns in all, a quarter of
-  // Earth's sunlight at 3 pc (at 26000 K it'd be ~1e14 suns, hundreds of times Earth's, at 3 pc)
-  disk: { outer: 600, brightness: 4, temperature: 4000 },   // outer edge in M (the inner's the spin's innermost stable orbit); temperature at its hottest (K)
-  jet: { lengthPc: 3000, angleDeg: 1.6, brightness: 0.6, gamma: 6, knots: 2.4 },
+  // Earth's sunlight at 3 pc (at 26000 K it'd be ~1e14 suns, hundreds of times Earth's, at 3 pc).
+  // Its gas sparse: opaque only where it's hot, within ~20 M, and clear by ~60 M, where it's too
+  // cool to glow anyway; past 200 M (where a disk round so big a hole breaks up into stars) none
+  disk: { outer: 200, brightness: 4, temperature: 4000, opaqueTo: 20, tau: 6 },   // outer edge in M (the inner's the spin's innermost stable orbit); temperature at its hottest (K); optical depth straight through within opaqueTo (M), falling as r^-4 beyond
+  // jets: synchrotron light, spectral index 0.6, cut off near the ultraviolet (3x green's frequency
+  // in the jet's frame) at the base, the cutoff falling along it as its electrons cool (halved by 150 pc)
+  jet: { lengthPc: 3000, angleDeg: 1.6, brightness: 0.6, gamma: 6, knots: 2.4, cutoff: 3, index: 0.6, coolingPc: 150 },
 };
 
 const G = 6.674e-11, C = 2.998e8, MSUN = 1.989e30, PC = 3.0857e16;
@@ -61,6 +65,7 @@ export function centralView(game, out = {}) {
   out.spinA = CENTRAL.spin;
   out.isco = iscoRadius(CENTRAL.spin);
   out.disk = CENTRAL.disk;
-  out.jet = { length: CENTRAL.jet.lengthPc * PC / M, angle: CENTRAL.jet.angleDeg * Math.PI / 180, brightness: CENTRAL.jet.brightness, gamma: CENTRAL.jet.gamma, knots: CENTRAL.jet.knots };
+  const J = CENTRAL.jet;
+  out.jet = { length: J.lengthPc * PC / M, angle: J.angleDeg * Math.PI / 180, brightness: J.brightness, gamma: J.gamma, knots: J.knots, cutoff: J.cutoff, index: J.index, cooling: J.coolingPc * PC / M };
   return out;
 }
