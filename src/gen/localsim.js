@@ -496,7 +496,7 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
   // ones the sampler draws, where the ground is seen: no tile edges among them)
   if (refine && S && S.s.crat && S.s.crater) {
     const K = S.s.crater, cellL = chunkArcSize(L, R) / MT;
-    const Dhi = K.Dw, Dlo = Math.max(craterFloor(cellL, TILE_CELLS), K.Dair);
+    const Dhi = K.Dw, Dlo = Math.max(craterFloor(cellL, TILE_CELLS), K.Dlo);
     if (Dlo < Dhi) stampCraters(B, G, face, S, Dlo, Dhi, K, (gen.p.seed && gen.p.seed[0]) | 0, R, hs);
   }
   // (an icy shell's ridges: as wide as they are, or as this level's cells hold, less the level above's)

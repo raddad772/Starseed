@@ -14,7 +14,7 @@
 
 import * as dm from '../../core/dmath.js';
 import { hashInts } from '../../core/rng.js';
-import { Impacts, craterFloor, worldCell, WORLD_CELLS } from './impacts.js';
+import { Impacts, airRecord, craterFloor, worldCell, WORLD_CELLS } from './impacts.js';
 import { resurface, relaxShell, pave } from './barren.js';
 import { Erosion, Heap } from './erosion.js';
 import { smoothField } from './tectonics.js';
@@ -57,6 +57,8 @@ export function stagnantWorld(G, opts) {
   const canyon = rise && rng.next() < 0.6 ? makeCanyon(rng, rise, scale) : null;
   // ---- the bombardment, the volcanoes, the wet era, through time
   const imp = new Impacts(G, { rng: rng.fork('impacts'), g, pressure: body.atmosphere ? body.atmosphere.pressure : 0, scale, rate: opts.rate ?? 1, spike: opts.spike });
+  // (the air of each step's time, opts.airAt(agoMyr) (bar): the smallest it let through each step)
+  const airAt = opts.airAt || null, dAirs = [];
   // (smaller ones are the finer levels' (craters.js): the grid draws only what it draws round)
   const dMin = craterFloor(worldCell(G.R, G.N), WORLD_CELLS) / 1000;
   // the crater record each place keeps (barren.js): since its ground last kept them (a wet era
@@ -94,6 +96,8 @@ export function stagnantWorld(G, opts) {
   let pulses = 0;
   let wetEvery = 0;
   for (let t = 0; t < age; t += DT_MYR / 1000, step++) {
+    if (airAt) imp.air(airAt((age - t) * 1000 - DT_MYR / 2));
+    dAirs.push(imp.dAir);
     stats.craters += imp.step(DT_MYR, dMin, (c, dh) => { h[c] += dh; }, t * 1000, t, h).length;
     if (icyLid && pulses < 2 && t >= age * (pulses === 0 ? 0.35 : 0.7)) { const a = contractionRidges(G, h, crng, scale, 0.5, rugged); folds.push(...a); stats.ridges = folds.length; pulses++; }
     cum.push(cum[cum.length - 1] + imp.density(DT_MYR, t));
@@ -219,7 +223,7 @@ export function stagnantWorld(G, opts) {
   const crat = new Float32Array(n), all = cum[cum.length - 1], dtG = DT_MYR / 1000;
   for (let c = 0; c < n; c++) crat[c] = all - cum[since[c] > 0 ? Math.min(cum.length - 1, Math.round(since[c] / dtG) + 1) : 0];
   stats.shieldFields = shieldFields.length;
-  return { h, volc, river, impacts: imp, stats, seaLevelWet: sl, rise, shields, dich, crat, dMin, shieldFields, rugged, sed, folds };
+  return { h, volc, river, impacts: imp, stats, seaLevelWet: sl, rise, shields, dich, crat, air: airRecord(cum, dAirs), dMin, shieldFields, rugged, sed, folds };
 }
 
 // an icy lid squeezed as its world's interior cools and its shell thickens (Titan's mountains:

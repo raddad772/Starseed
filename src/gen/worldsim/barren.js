@@ -16,7 +16,7 @@
 
 import * as dm from '../../core/dmath.js';
 import { hashInts } from '../../core/rng.js';
-import { Impacts, craterFloor, worldCell, WORLD_CELLS, VEXAG } from './impacts.js';
+import { Impacts, airRecord, craterFloor, worldCell, WORLD_CELLS, VEXAG } from './impacts.js';
 import { RIDGE, ridgeWidth, ridgeAt } from '../craters.js';
 import { smoothField, blur } from './tectonics.js';
 import { Heap } from './erosion.js';
@@ -42,6 +42,8 @@ export function barrenWorld(G, opts) {
     if (lop) h[c] += lopAmp * (G.dir[c * 3] * lop[0] + G.dir[c * 3 + 1] * lop[1] + G.dir[c * 3 + 2] * lop[2]);
   }
   const imp = new Impacts(G, { rng: rng.fork('impacts'), g: body.gravity, pressure: body.atmosphere ? body.atmosphere.pressure : 0, rate: opts.rate ?? 1, scale: opts.scale, spike: opts.spike });
+  // (the air of each step's time, opts.airAt(agoMyr) (bar): the smallest it let through each step)
+  const airAt = opts.airAt || null, dAirs = [];
   // (smaller ones are the finer levels' (craters.js): the grid draws only what it draws round)
   const dMin = opts.dMin ?? craterFloor(worldCell(G.R, G.N), WORLD_CELLS) / 1000;
   // the crater record each place keeps: since when its ground has kept them (it was flooded
@@ -60,6 +62,8 @@ export function barrenWorld(G, opts) {
   let relaxN = 0;
   const prng = rng.fork('pipe');
   for (let t = 0; t < age; t += DT_MYR / 1000) {
+    if (airAt) imp.air(airAt((age - t) * 1000 - DT_MYR / 2));
+    dAirs.push(imp.dAir);
     const made = imp.step(DT_MYR, dMin, apply, t * 1000, t, h);
     cum.push(cum[cum.length - 1] + imp.density(DT_MYR, t));
     for (const e of made) {
@@ -119,7 +123,7 @@ export function barrenWorld(G, opts) {
   // (a flood at a step's time buries that step's craters too)
   for (let c = 0; c < n; c++) crat[c] = all - cum[since[c] > 0 ? Math.min(cum.length - 1, Math.round(since[c] / dtG) + 1) : 0];
   const folds = wrinkleRidges(G, rng.fork('wrinkles'), mare, imp.scale);
-  return { h, fresh, mare, plains, impacts: imp, stats, crat, dMin, lineae: cracks ? cracks.arcs : null, chaos: cracks ? cracks.chaos : null, mareLv: stats.flooded ? mareLv : null, shieldFields, folds };
+  return { h, fresh, mare, plains, impacts: imp, stats, crat, air: airRecord(cum, dAirs), dMin, lineae: cracks ? cracks.arcs : null, chaos: cracks ? cracks.chaos : null, mareLv: stats.flooded ? mareLv : null, shieldFields, folds };
 }
 
 // lava plains settle and shrink as they cool and load the ground under them: wrinkle ridges

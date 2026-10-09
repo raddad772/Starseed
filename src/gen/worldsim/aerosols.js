@@ -291,8 +291,9 @@ const US_K = 0.4 / dm.log(10 / Z0_LAND) * F_EFF;
 // (dust devils: the sun-warmed ground's convection, its vortices lifting dust where the wind can't (most of
 // Mars' between its storms). The work of a convective heat engine (Renno et al. 1998): the sensible heat the
 // ground gives the air times its efficiency (the boundary layer's depth over the air's scale height x R/cp),
-// ALPHA_DD kg lifted per J (Newman et al. 2002; Kahre et al. 2006: fitted to Mars' background dust))
-const ALPHA_DD = 1e-9, GAMMA_TH = 3e-3, C_H = 4e-3, SIGMA = 5.670374419e-8;
+// ALPHA_DD kg lifted per J (Newman et al. 2002; Kahre et al. 2006: fitted to Mars' background dust,
+// ~0.5, with the dust's shading of the ground it's lifted from: aerosolsOf))
+const ALPHA_DD = 1.44e-9, GAMMA_TH = 3e-3, C_H = 4e-3, SIGMA = 5.670374419e-8;
 const CP_R = { N2: 3.5, O2: 3.5, H2: 3.5, CO: 3.5, CO2: 4.4, CH4: 4.3, H2O: 4.0, Ar: 2.5, He: 2.5, NH3: 4.3, SO2: 4.8 };
 function cpOf(comp) {
   let s = 0, w = 0;
@@ -301,6 +302,16 @@ function cpOf(comp) {
 }
 function mineralDust(air, src, Um, Fsurf, day, fines, idx, tauWet, out) {
   if (!(src > 0)) return null;
+  const { F, Fsalt, Fdd, ut, Fs, pbl, alpha } = dustFlux(air, src, Um, Fsurf, day, fines);
+  out.dust = { saltation: Fsalt * src * ERODIBLE, devils: Fdd * src * ERODIBLE, ut, Um, Fs, pbl };
+  // (the weather's: what a place lifts in a wind U per unit of loose ground, against the world's mean)
+  out.dustEmit = { ut, rho: air.rho, g: air.g, alpha, Fdd, Fmean: Fsalt + Fdd };
+  if (!(F > 1e-22)) return null;
+  return dustAloft(air, F, idx, tauWet, out);
+}
+// what the world's dry ground lifts, kg/m^2/s over the globe (the saltation in its winds, the dust devils
+// of the sun-warmed ground's convection): F, and its parts
+function dustFlux(air, src, Um, Fsurf, day, fines) {
   // (the sand's threshold: the least over its sizes, ~100 um grains)
   let ut = 1e9;
   for (let D = 2e-5; D < 1e-3; D *= 1.1) ut = Math.min(ut, uStarT(air, D));
@@ -323,11 +334,11 @@ function mineralDust(air, src, Um, Fsurf, day, fines, idx, tauWet, out) {
   const Fdd = ALPHA_DD * eta * Fs;
   const Fsalt = alpha * Q;
   const F = (Fsalt + Fdd) * src * ERODIBLE;   // kg/m^2/s over the globe
-  out.dust = { saltation: Fsalt * src * ERODIBLE, devils: Fdd * src * ERODIBLE, ut, Um, Fs, pbl };
-  // (the weather's: what a place lifts in a wind U per unit of loose ground, against the world's mean)
-  out.dustEmit = { ut, rho: air.rho, g: air.g, alpha, Fdd, Fmean: Fsalt + Fdd };
-  if (!(F > 1e-22)) return null;
-  // (in sizes: each up for as long as it settles out of its mixed layer or is rained out)
+  return { F, Fsalt, Fdd, ut, Fs, pbl, alpha };
+}
+// the dust aloft from a flux F: in sizes, each up for as long as it settles out of its mixed layer or is
+// rained out (its optics and mass in proportion to F)
+function dustAloft(air, F, idx, tauWet, out) {
   const bins = 28, lo = dm.log(0.1e-6), hi = dm.log(40e-6), dl = (hi - lo) / bins;
   let wsum = 0;
   const wts = [];
@@ -483,7 +494,23 @@ export function aerosolsOf(w) {
   const land = 1 - (w.seaFrac || 0);
   const dIdx = dustIndex(w.regolithRGB || [0.3, 0.25, 0.2], w.regolithN || 1.55);
   const du = mineralDust(air, land * arid, Um, Fsurf, w.day || 86400, w.fines ?? 15, dIdx, tauWet, diag);
-  if (du) pops.push(du);
+  if (du) {
+    // (the dust shades the ground that lifts it: what its column takes of the sunlight and scatters
+    // back (two-stream, as the haze's above) the ground's convection and the winds don't get, so less is
+    // lifted; the two settled together, as Mars' global storms end, at optical depths of a few. Its
+    // optics and mass go as the flux)
+    const lift = (k) => dustFlux(air, land * arid, beltWind(w.P, w.mu, w.T, w.tauIR, w.sunE * tSurf * k), Fsurf * k, w.day || 86400, w.fines ?? 15);
+    const F0 = lift(1).F, tau0 = du.o.ext[1], ssa = du.o.sca[1] / Math.max(tau0, 1e-30);
+    let k = 1, r = 1;
+    for (let i = 0; i < 40; i++) {
+      const tau = tau0 * r, kk = dm.exp(-1.66 * tau * (1 - ssa)) / (1 + 0.75 * tau * ssa * 0.3);
+      k = dm.sqrt(k * kk); r = lift(k).F / F0;
+    }
+    for (let c = 0; c < 3; c++) { du.o.ext[c] *= r; du.o.sca[c] *= r; const ph = du.o.ph[c]; for (let a = 0; a < ph.length; a++) ph[a] *= r; }
+    diag.dust.column *= r; diag.dust.shade = k;
+    const e = lift(k); diag.dustEmit.Fdd = e.Fdd; diag.dustEmit.Fmean = e.Fsalt + e.Fdd;
+    pops.push(du);
+  }
   // sea salt
   if (w.liquid === 'water' && w.seaFrac > 0) { const ss = seaSalt(air, w.seaFrac, Um, tauWet, diag); if (ss) pops.push(ss); }
   // sulfate: SO2 oxidised (a week where there's water and its OH), a flood-basalt eruption's on top;
@@ -494,7 +521,10 @@ export function aerosolsOf(w) {
     let prod = 0.5 * colSO2 / tauOx * (98 / 64) * 1.7;
     if (w.eruption) prod += 3e10 / 3.156e7 / (4 * dm.PI * w.Rm * w.Rm) * (98 / 64) * 1.7;
     const life = 1 / ((tauWet > 0 ? 1 / Math.min(tauWet, 30 * 86400) : 0) + 1 / 3.156e7);
-    const M = prod * life;
+    // (no more than the air's water makes: each droplet's acid is SO3 + H2O, and it holds water besides,
+    // ~75% acid by mass: ~0.39 kg of water a kg of droplets. Where the water's gone the sulfur stays a gas)
+    const colH2O = (w.h2o || 0) * 1e5 / w.g * (18 / w.mu);
+    const M = Math.min(prod * life, colH2O / 0.39);
     if (M > 1e-9 && !w.acidDeck) {
       const o = lognormal(M, 0.07e-6, 2.0, 1700, INDEX.sulfate);
       pops.push({ name: 'sulfate', o, H: Math.min(air.H, 6000 * 9.81 / w.g) });

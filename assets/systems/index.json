@@ -2,9 +2,9 @@
   "version": 1,
   "region": "FSPB-8DTW",
   "systems": {
-    "system/1/1/71/0.015625/0.125/1c8f026f4137f10c": "eb6408924f43152c.json.gz",
-    "system/1/1/71/0.015625/0.125/84afd1e86099f9c7": "9e53d0736d6e3d51.json.gz",
-    "system/1/1/71/0.015625/0.125/ff7b91f8aee87c24": "307f17e89848bb7b.json.gz",
-    "system/1/1/71/0.015625/0.125/c8429b2cd93d62b1": "314e9629bb983505.json.gz"
+    "system/2/1/72/0.015625/0.125/1c8f026f4137f10c": "9378b0989c8a75d9.json.gz",
+    "system/2/1/72/0.015625/0.125/84afd1e86099f9c7": "1b4b79833d6111ab.json.gz",
+    "system/2/1/72/0.015625/0.125/ff7b91f8aee87c24": "14d1e73af834d855.json.gz",
+    "system/2/1/72/0.015625/0.125/c8429b2cd93d62b1": "e0c20233f8cb3eb5.json.gz"
   }
 }

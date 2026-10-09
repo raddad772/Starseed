@@ -194,6 +194,10 @@ function atmosphereNow(rng, h, S) {
     const draw = dm.clamp(rng.lognormal(1.4, 0.55), 0.2, 6), p = h.P > 0.05 ? h.P : draw;
     const a = { type: 'titan', pressure: p, comp: { N2: 0.95, CH4: 0.05 }, albedo: 0.22, tauK: 0.7, life: false, snowball: false };
     a.tau = a.tauK * dm.pow(p, 0.9); a.mu = meanMolar(a.comp);
+    // (dry, all of it; drawn: its history kept too little air to tell, so it's taken as it is
+    // throughout, its craters' screening too)
+    a.dry = { pressure: p, comp: a.comp, mu: a.mu };
+    if (!(h.P > 0.05)) a.drawn = true;
     return a;
   }
   // just struck (exceptional.js): a sky of steam from the boiled seas (rock vapour in the
@@ -204,19 +208,30 @@ function atmosphereNow(rng, h, S) {
     return { type: 'venus', pressure: P, comp, albedo: 0.6, tau: 20, life: false, snowball: false, mu: meanMolar(comp) };
   }
   if (h.P < 0.003) return null;
-  const P = h.P, co2 = h.pCO2 / P, o2 = h.pO2 / P;
+  // the air at the ground: the history's dry air (evolve.js: h.P, and its gases) and what its seas
+  // add (their water's vapour; a Titan's methane). pressure and comp are the air's as it is, every
+  // gas in it (what a barometer reads; fractions of it); dry the dry air's alone, its own fractions:
+  // what the history ran on, and the world sim's climate and air with it (its water its own: the
+  // climate's humidity and rain)
+  let Pall = 0; for (const k in h.air) Pall += h.air[k];
+  const Pd = h.P, P = h.air ? Pall : Pd, co2 = h.pCO2 / Pd, o2 = h.pO2 / Pd;
   // the history's air by gas (evolve.js): fractions, the traces dropped
-  const comp = {};
-  for (const k in h.air) { const x = h.air[k] / P; if (x > 1e-6 && k !== 'H2O') comp[k] = x; }
-  if (!comp.N2) comp.N2 = Math.max(0, 1 - co2 - o2) / 1.01;
+  const comp = {}, dryComp = {};
+  for (const k in h.air) {
+    const x = h.air[k] / P; if (x > 1e-6) comp[k] = x;
+    const xd = h.air[k] / Pd; if (xd > 1e-6 && k !== 'H2O') dryComp[k] = xd;
+  }
+  // (a history without its air by gas: the rest nitrogen; one with it may have none)
+  if (!h.air) { dryComp.N2 = Math.max(0, 1 - co2 - o2) / 1.01; comp.N2 = dryComp.N2 * Pd / P; }
+  // (its kind by its dry air)
   let type;
-  if (h.runaway || (h.T > 400 && co2 > 0.5 && P > 3)) type = 'venus';
-  else if (co2 > 0.5 && (h.oceans <= 0.001 || h.T < 255)) type = P < 0.1 ? 'mars' : 'coldco2';
+  if (h.runaway || (h.T > 400 && co2 > 0.5 && Pd > 3)) type = 'venus';
+  else if (co2 > 0.5 && (h.oceans <= 0.001 || h.T < 255)) type = Pd < 0.1 ? 'mars' : 'coldco2';
   else type = 'temperate';
   const albedo = dm.clamp(h.albedo, 0.05, 0.8);
   const Teq = equilibriumTemp(S, albedo);
   const tau = Math.max(0, (dm.pow(h.T / Teq, 4) - 1) / 0.75);
-  return { type, pressure: P, comp, albedo, tau, life: h.lifeLevel !== 'none', snowball: h.snowball, mu: meanMolar(comp) };
+  return { type, pressure: P, comp, dry: { pressure: Pd, comp: dryComp, mu: meanMolar(dryComp) }, albedo, tau, life: h.lifeLevel !== 'none', snowball: h.snowball, mu: meanMolar(comp) };
 }
 
 // Optical parameters for the scattering shader (game units = metres)
@@ -260,7 +275,7 @@ function atmosphereRender(rng, b, atm, Tsurf, dustColor, ctx = {}) {
   const aer = aerosolsOf({
     P, T: Tsurf, mu: atm.mu || 29, g, comp: atm.comp || {}, tauIR: atm.tau || 0, sunE: ctx.S ?? b.insolation ?? 1, uv: xuv,
     albedo: atm.albedo ?? b.albedo ?? 0.3, seaFrac: seas, liquid: b.hydrosphere ? b.hydrosphere.liquid : null,
-    regolithRGB: dustColor, regolithN: 1.55, fines: 15, so2: (air.SO2 || 0) + (air.H2S || 0) * 0.5, eruption: !!h.eruption,
+    regolithRGB: dustColor, regolithN: 1.55, fines: 15, so2: (air.SO2 || 0) + (air.H2S || 0) * 0.5, h2o: air.H2O || 0, eruption: !!h.eruption,
     Rm: b.radiusM || b.R, sootTau: h.fresh && h.fresh.kind === 'impact-winter' ? h.fresh.sootTau || 0 : 0,
     acidDeck: !!(h.runaway && P > 3), deckT: h.runaway && P > 3 ? 0.025 : 1,
     day: (rot.periodRealH || (ctx.dayH || 24)) * 3600, lifeStage: h.lifeStage, floraStage: h.floraStage,
@@ -570,7 +585,8 @@ export function buildBody(rng, proto, star, host) {
   const waterNow = hist.oceans * 2.3e-4;
   const logW = LOG10(Math.max(waterNow, 1e-9));
   const coverage = dm.smoothstep(0, 1, dm.clamp((logW + 5.5) / 3.2, 0, 1));
-  const pBar = atm ? atm.pressure : 0;
+  // (the dry air's: the history's, as its seas boiled or kept by it)
+  const pBar = atm ? (atm.dry || atm).pressure : 0;
   // a surface liquid other than water (liquids.js: methane and ethane, nitrogen, CO2,
   // ammonia-water, SO2, sulfur), spread by its depth as a global layer
   const other = hist.mainLiquid && hist.mainLiquid !== 'water' ? hist.mainLiquid : null;
@@ -610,7 +626,7 @@ export function buildBody(rng, proto, star, host) {
   }
   b.albedo = albedo; b.Teq = Teq; b.Tsurf = Tsurf;
   // Day-night / latitude swings: damped by thick atmospheres and oceans
-  const damp = atm ? 1 / (1 + 1.2 * dm.pow(atm.pressure, 0.6)) : 1;
+  const damp = atm ? 1 / (1 + 1.2 * dm.pow((atm.dry || atm).pressure, 0.6)) : 1;
   const swing = (locked ? 1.6 : 0.6) * damp * Tsurf * (hydro.water === 'liquid' ? 0.45 : 1) + 6;
   b.Tmin = Math.max(Tsurf - swing * 1.3, 20);
   b.Tmax = Tsurf + swing * 0.8;
@@ -661,7 +677,8 @@ export function buildBody(rng, proto, star, host) {
 function terrainParams(rng, b, star, minerals, tidalHeating, proto) {
   const atm = b.atmosphere;
   const hydro = b.hydrosphere;
-  const P = atm ? atm.pressure : 0;
+  // (the dry air's, with its make-up: the climate's water its own, as in the world sim's climate)
+  const P = atm ? (atm.dry || atm).pressure : 0;
   const icy = b.comp.water > ICY_WATER && b.Tsurf < 200;
   const airless = !atm || P < 0.01;
   const liquidWater = hydro.water === 'liquid';
@@ -691,7 +708,7 @@ function terrainParams(rng, b, star, minerals, tidalHeating, proto) {
   const P2cos = (3 * dm.cos(obl) * dm.cos(obl) - 1) / 2;
   const s2 = -0.625 * P2cos; // annual-mean insolation P2 coefficient (Ward 1974)
   const transport = atm ? 1 / (1 + 0.9 * dm.pow(P, 0.7)) : 1; // heat transport flattens gradients
-  const cpEff = atm ? (atm.mu > 30 ? 850 : 1004) : 1004;
+  const cpEff = atm ? ((atm.dry || atm).mu > 30 ? 850 : 1004) : 1004;
   const lapse = atm ? (g / cpEff) * (liquidWater ? 0.62 : 0.9) : 0;
   const rotH = b.rotation.locked ? 1e9 : Math.abs(b.rotation.periodRealH);
   const hadley = dm.clamp(Math.round(3 * dm.sqrt(24 / rotH)), 1, 5);

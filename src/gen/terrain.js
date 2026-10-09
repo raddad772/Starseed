@@ -971,7 +971,7 @@ export class TerrainGenerator {
         this._bare = false;
         return hb * this.hScale;
       }));
-      cf.setTop(S.ref ? Math.max(craterFloor(S.refCell, TILE_CELLS), S.s.crater.Dair) : S.s.crater.Dw);
+      cf.setTop(S.ref ? Math.max(craterFloor(S.refCell, TILE_CELLS), S.s.crater.Dlo) : S.s.crater.Dw);
       h = cf.heightAt(x, y, z, minWavelength, h * this.hScale) / this.hScale;
       out[S_RAY] = cf.ray;
     }

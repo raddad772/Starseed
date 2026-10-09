@@ -77,8 +77,9 @@ export function planetHistory(body, star, opts = {}) {
   let tPlatesStop = mobileNow ? Infinity : (massE > 0.05 && (body.comp.water > 1e-5 || type !== 'none') ? Math.min(age * 0.8, 0.3 + 1.5 * massE * rng.range(0.5, 1.5)) : 0);
 
   // ---- present state
-  const P_now = atm ? atm.pressure : 0;
-  const comp = atm ? atm.comp : {};
+  // (its dry air, as evolve.js's history runs on)
+  const P_now = atm ? (atm.dry || atm).pressure : 0;
+  const comp = atm ? (atm.dry || atm).comp : {};
   const pCO2_now = P_now * (comp.CO2 || 0), pO2_now = P_now * (comp.O2 || 0);
   const pBg_now = P_now - pCO2_now;
   const T_now = body.Tsurf, A_now = body.albedo;

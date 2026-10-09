@@ -263,7 +263,7 @@ export function evolveWorld(ctx) {
     if (years > 0.02) darken(t, years, 'impact', `a ${Math.round(D)} km impact darkens the sky for ${years >= 1 ? years.toFixed(1) + ' years' : Math.round(years * 12) + ' months'}`);
   };
   let T = 0, A = 0.3, ice = 0;
-  const series = { t: [], T: [], P: [], pCO2: [], pO2: [], oceans: [], ice: [], heat: [], snowball: [], mobile: [], rain: [], stage: [], div: [], light: [], pH2: [], pCH4: [], seaRoom: [], landRoom: [], dose: [], plantGrade: [] };
+  const series = { t: [], T: [], P: [], vap: [], pCO2: [], pO2: [], oceans: [], ice: [], heat: [], snowball: [], mobile: [], rain: [], stage: [], div: [], light: [], pH2: [], pCH4: [], seaRoom: [], landRoom: [], dose: [], plantGrade: [] };
   // (the last step's room and the land's radiation, for the series: the biosphere's replay, life/biosphere.js)
   let roomSea = 0, roomLand = 0, doseNow = 0;
   const events = [];
@@ -714,7 +714,7 @@ export function evolveWorld(ctx) {
     } else if (pO2 > 0) pO2 *= dm.exp(-dt / 0.05);
     if (t - lastOut >= 0.005 || dt === steps[steps.length - 1]) {
       lastOut = t;
-      series.t.push(t); series.T.push(T); series.P.push(Ptot()); series.pH2.push(pH2); series.pCH4.push(pCH4); series.pCO2.push(pCO2); series.pO2.push(pO2);
+      series.t.push(t); series.T.push(T); series.P.push(Ptot()); series.vap.push(vapourOf(oceans, runaway, T, Ptot())); series.pH2.push(pH2); series.pCH4.push(pCH4); series.pCO2.push(pCO2); series.pO2.push(pO2);
       series.oceans.push(oceans); series.ice.push(ice); series.heat.push(H); series.snowball.push(snow ? 1 : 0); series.mobile.push(regime === 'mobile' ? 1 : 0);
       // (and a cold world's warm spells: spellsOf)
       series.rain.push(liquid ? dm.exp(0.07 * (T - 288)) : spellsOf(T, Ptot()));
@@ -772,10 +772,9 @@ export function evolveWorld(ctx) {
   const maxTreeM = plantGrade >= 2 ? Math.min(250, (30 + 80 * dm.clamp(sinceMyr(2) / 150, 0, 1)) * gK)
     : plantGrade === 1 ? Math.min(250, (2 + 28 * dm.clamp(sinceMyr(1) / 40, 0, 1)) * gK) : plantGrade === 0 ? 0.3 : 0;
   const plantGrades = plantT.map((tt) => (tt != null ? age - tt : null));   // (Gyr ago each arose, null: not now)
-  // the air now, by gas (bar): water vapour at half saturation over seas
-  // (a runaway's seas are in the air: an Earth ocean is ~270 bar of steam; a Titan keeps
-  // a few % methane from its seas and ices)
-  const vap = oceans <= 0.001 ? 0 : runaway || T > boilingPoint(P) ? oceans * 270 : Math.min(0.5 * 6.11e-3 * dm.exp(17.27 * (T - 273.15) / Math.max(T - 35.9, 1)), 0.5 * P);
+  // the air now, by gas (bar): its water vapour over its seas and ices (vapourOf); a Titan keeps
+  // a few % methane from its seas and ices
+  const vap = vapourOf(oceans, runaway, T, P);
   if (titanish) pCH4 = Math.max(pCH4, 0.04 * P);
   const air = { N2, Ar: 0.01 * N2, CO2: pCO2, O2: pO2, H2: pH2, CH4: pCH4, CO: pCO, NH3: pNH3, SO2: pSO2, H2S: pH2S, H2O: vap };
   // what pools and freezes on the ground (liquids.js), from all the world has of each:
@@ -842,6 +841,18 @@ export function airTypeOf(air, P, h) {
   if (f('SO2') + f('H2S') > 1e-4) return 'sulfurous';
   if (f('H2') > 0.01 || f('CH4') > 1e-3) return 'reducing nitrogen';
   return 'nitrogen';
+}
+// the water vapour in the air (bar) over a world's seas and ices (oceans: Earth oceans' worth) at T
+// under P bar of dry air: half saturation, over ice below freezing (Mars' ~200 ppm from its caps);
+// a runaway's seas, or seas past their boiling, all in the air (an Earth ocean is ~270 bar of steam)
+function vapourOf(oceans, runaway, T, P) {
+  return oceans <= 0.001 ? 0 : runaway || T > boilingPoint(P) ? oceans * 270 : Math.min(0.5 * satVapour(T), 0.5 * P);
+}
+// water's saturation vapour pressure (bar) at T: over liquid water above freezing, over ice below
+// (Magnus, Alduchov and Eskridge 1996's coefficients)
+function satVapour(T) {
+  const c = T - 273.15;
+  return c >= 0 ? 6.1094e-3 * dm.exp(17.625 * c / (c + 243.04)) : 6.1121e-3 * dm.exp(22.587 * c / (c + 273.86));
 }
 // water's boiling point (K) at P bar (Clausius-Clapeyron, L = 40.7 kJ/mol)
 function boilingPoint(P) { return 1 / (1 / 373.15 - 8.314 / 40700 * dm.log(Math.max(P, 1e-4) / 1.013)); }

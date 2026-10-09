@@ -34,12 +34,23 @@ export const WORLD_CELLS = 16, TILE_CELLS = 10;
 // metre (its pressure over gravity: Titan's 1.5 bar on its weak gravity is ten Earths' worth),
 // ~30 m under Earth's (craters.js airKeep: the share let through above it)
 export function airCut(pressure, g) { return 0.03 * (pressure || 0) * 9.81 / (g || 9.81); }
+// The crater record's air (craters.js airThen): the smallest crater the air let through (km, real)
+// by the bombardment since (in the record's units: cum, the record after each step of a sim's
+// bombardment; dAir, each step's), about every `every` steps and the present: for the finer
+// levels' craters, each kept by the air when it was made
+export function airRecord(cum, dAir, every = 10) {
+  const all = cum[cum.length - 1], F = [], D = [];
+  for (let i = dAir.length - 1; i >= 0; i -= every) { F.push(all - cum[i + 1]); D.push(dAir[i]); }
+  if (F.length && dAir.length) { F.push(all); D.push(dAir[0]); }
+  return { F, D };
+}
 export function craterFloor(cellM, k) { let D = 1; while (D < k * cellM) D *= 2; return D; }
 // (the world sim's cells, nominally: its faces' arc over N)
 export const worldCell = (R, N) => dm.PI / 2 * R / N;
 
 export class Impacts {
-  // G: SimGrid; opts: { rng, g (m/s^2), pressure (bar), rate: multiplier (1 = realistic:
+  // G: SimGrid; opts: { rng, g (m/s^2), pressure (bar: the air's, until air() gives the air of a
+  //   step's own time), rate: multiplier (1 = realistic:
   //   the system's debris level x local focusing), scale: game size / real size (default 0.1),
   //   spike: a late bombardment { atGyr, widthGyr, strength } (system.js systemDebris) }
   constructor(G, opts) {
@@ -56,6 +67,11 @@ export class Impacts {
     this.events = [];
     this._rejects = 0;
   }
+
+  // the air over the ground (bar) for the steps from here on: the impactors it breaks up are those
+  // of its own time (a world's air thickens and thins over its history: Mars' early one screened
+  // out craters its thin one now lets through)
+  air(pressure) { this.dAir = airCut(pressure, this.g); return this; }
 
   // the bombardment through time (Neukum's lunar chronology): craters >= 1 km
   // per km^2 per Gyr at t Gyr after the world formed: a heavy, fading early

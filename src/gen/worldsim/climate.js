@@ -493,7 +493,8 @@ export function climateOpts(body, star, host) {
     ecc: yr.orbitE || 0, perihelion: yr.orbit && yr.orbit.P && r.axis ? periLongitude(r.axis, yr.orbit) : 0,
     // (a moon locked to its planet still sees its star rise and set: its day is its orbit)
     locked: !!cl.locked && body.kind !== 'moon', substellar: cl.substellar, rotH: r.locked ? (body.kind === 'moon' && host && body.orbit && body.orbit.aReal ? 2 * Math.PI * Math.sqrt(body.orbit.aReal * body.orbit.aReal * body.orbit.aReal / (6.674e-11 * host.massEarth * 5.972e24)) / 3600 : 1e4) : Math.abs(r.periodRealH || 24), retro: !!r.retrograde, hadley: cl.hadley,
-    pressure: body.atmosphere ? body.atmosphere.pressure : 0, Tmean: body.Tsurf, albedo: body.albedo, lapse: cl.lapse,
+    // (the dry air's, as the history's pressures through time are: the climate's water its own)
+    pressure: body.atmosphere ? (body.atmosphere.dry || body.atmosphere).pressure : 0, Tmean: body.Tsurf, albedo: body.albedo, lapse: cl.lapse,
     yearDays: 365.25 * Math.sqrt(body.aAU * body.aAU * body.aAU / star.mass),
   };
 }

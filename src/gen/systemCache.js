@@ -7,7 +7,7 @@ import { systemRecipe, systemIdentity, fingerprint } from './systemRecipe.js';
 import { LEN_SCALE, HEIGHT_SCALE } from '../core/units.js';
 import { SIM_VERSION } from './worldsim/snapshot.js';
 
-export const SYSTEM_CACHE_VERSION = 1;
+export const SYSTEM_CACHE_VERSION = 2;
 export const systemCacheKey = input => `system/${SYSTEM_CACHE_VERSION}/${GENERATOR_VERSION}/${SIM_VERSION}/${LEN_SCALE}/${HEIGHT_SCALE}/${fingerprint(systemRecipe(input))}`;
 const memory=new Map(), pending=new Map();
 const MAX_MEMORY_BYTES=24*1024*1024, MAX_RECORD_BYTES=8*1024*1024;
