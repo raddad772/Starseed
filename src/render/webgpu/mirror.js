@@ -40,7 +40,18 @@ struct Reflection { @location(0) color: vec4f, @builtin(frag_depth) depth: f32 }
   let L=cLens(C,reflected);
   var col=L.color;
   if (L.trans>0.0) { col+=L.trans*(textureSampleLevel(sky,skySampler,L.dir,0.0).rgb*u.shape.y+cStars(C,starA,starB,adapt,L.dir,C.stars3.x)); }
-  out.color=vec4f(col,1.0);
+  // Silvered: a metal's reflectance, a little under one and warmer than it is blue, rising to one
+  // at grazing (Schlick), so the surface darkens a touch looking straight down on it and is whole
+  // at its horizon; and a faint haze (u.shape.z of the light scattered a few degrees), the sky's
+  // glow blurred and the hole's light spread in a soft lobe round its reflection
+  let cosI=clamp(-dot(ray,normal),0.0,1.0);
+  let R0=vec3f(0.92,0.90,0.86);
+  let F=R0+(vec3f(1.0)-R0)*pow(1.0-cosI,5.0);
+  let blur=textureSampleLevel(sky,skySampler,reflected,6.0).rgb*u.shape.y;
+  let th=acos(clamp(dot(reflected,C.hole.xyz),-1.0,1.0));
+  let lobe=select(0.0,C.disk.z*0.01*exp(-th*th/0.0016),C.misc.w>0.5);
+  let haze=u.shape.z;
+  out.color=vec4f(F*(col*(1.0-haze)+haze*(blur+lobe*vec3f(1.0,0.72,0.45))),1.0);
   return out;
 }
 `;
@@ -63,7 +74,7 @@ export class MirrorPass {
     const data=new Float32Array(40);
     data.set(inverse.elements);data.set(projection.elements,16);
     data.set([...shell.normal.toArray(),shell.height],32);
-    data.set([shell.radius,engine.bgMat?.uniforms.uSkyGain?.value||1,0,0],36);
+    data.set([shell.radius,engine.bgMat?.uniforms.uSkyGain?.value||1,shell.haze??0.04,0],36);
     this.device.queue.writeBuffer(buffer.view,0,data);
     // (the hole's uniforms as the sky's own pass has them; its camera parts unused here)
     this.device.queue.writeBuffer(buffer.central,0,centralUniforms(engine,null,engine.tanHalf,[t.width,t.height],this.centralData));
