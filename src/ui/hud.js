@@ -11,6 +11,7 @@ import { lockRadius } from '../sim/ftl.js';
 import { PAD_LAYOUT, padDiagram, padButtonFor, padButtonText, padGlyph } from '../padLayout.js';
 import { markerVelocity, drawVelocityMarkers } from './velMarkers.js';
 import { drawLandingGuide } from './landingHUD.js';
+import { immersiveFor, drawImmersive } from './immersiveView.js';
 
 const $ = (id) => document.getElementById(id);
 const _v = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3();
@@ -433,6 +434,7 @@ export class Hud {
       else { const obs = f.pathObstruction(); chip(obs ? `FTL PATH ✕ ${obs.data.name.toUpperCase()}` : 'FTL READY', obs ? 'caution' : 'on'); }
       if (s.landed) chip('LANDED', 'on');
       if (g.camMode === 'chase') chip('CHASE CAM');
+      if (immersiveFor(p)) chip('IMMERSIVE', 'on');
       if (g.camMode === 'landing') chip('LANDING CAM', 'on');
       if (g.camMode === 'free') chip('FREE VIEW', 'on');
     } else {
@@ -480,6 +482,8 @@ export class Hud {
     ctx.textBaseline = 'middle';
     const cx = this.w / 2, cy = this.h / 2;
     const piloting = p.mode === 'seat';
+    // the immersive pilot's hull outline, under the rest
+    if (immersiveFor(p)) drawImmersive(this, p.vessel);
     // reticle
     ctx.strokeStyle = 'rgba(230,239,243,0.55)';
     ctx.beginPath();

@@ -58,7 +58,7 @@ export class QuickMenu {
       }
       if (v.visual.landing) items.push({ label: 'Landing lights', value: (v.visual.landing.on ? 'on' : 'off') + (v.lightsForce == null ? ' · auto' : ''), key: 'KeyL' });
       items.push({ label: 'Flight assist', value: ASSIST_NAMES[v.assist], key: 'KeyZ', stay: true });
-      items.push({ label: 'Camera', value: { first: 'cockpit', chase: 'chase', landing: 'landing' }[g.camMode] || 'cockpit', key: 'KeyV', stay: true });
+      items.push({ label: 'Camera', value: { first: 'cockpit', immersive: 'immersive', chase: 'chase', landing: 'landing', free: 'free' }[g.camMode] || 'cockpit', key: 'KeyV', stay: true });
       items.push({ label: 'FTL drive', value: this.ftlText(v), key: 'KeyJ' });
       items.push({ label: 'Leave the seat', key: 'KeyF' });
       rows.push({ id: 'ship', label: v.name, items });

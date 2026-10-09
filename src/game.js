@@ -61,6 +61,7 @@ import { MapView } from './ui/map.js';
 import { AudioEngine } from './audio.js';
 import * as U from './core/units.js';
 import { TerrainTiles } from './sim/terrainTiles.js';
+import { hasImmersiveView, immersiveFor, hideFromView, restoreView } from './ui/immersiveView.js';
 
 export { WARP_LEVELS } from './sim/warpConsent.js';
 // (the big ships' orbits above the FTL lock were laid out in km at the old tenth-size worlds: the
@@ -1764,8 +1765,11 @@ export class Game {
     updateMirrorView(this); this.engine.central = centralView(this, this._central || (this._central = {}));   // (the galaxy's black hole in the sky: render/webgpu/central.js)
     this.updateSkyStars(dtA);
     this.updateEffects(dtReal);
+    // (the immersive pilot's own ship hidden from their view only, for this render)
+    const hidden = immersiveFor(p) ? hideFromView(p.vessel) : null;
     if (this.map.open && this.map.owner === p) this.map.render(dtReal, p.view.rect);
     else this.engine.render(dtReal, this.sky, atmos, first, firstWorld);
+    if (hidden) restoreView(hidden);
     p.ui.hud.update(dtReal);
   }
 
@@ -1811,9 +1815,10 @@ export class Game {
       if (input.hit('KeyL') && v.visual.landing) this.message(v.visual.landing.toggle() ? 'Landing lights on' : 'Landing lights off'); // (render/landingLights.js: automatic until flipped)
       if (input.hit('KeyJ')) v.ftl.toggle();
       if (input.hit('KeyV')) {
-        this.camMode = { first: 'chase', chase: 'landing', landing: 'free', free: 'first' }[this.camMode] || 'first';
+        // (a Horizon or Expedition pilot seat's immersive view after the cockpit's: ui/immersiveView.js)
+        this.camMode = { first: hasImmersiveView(v.type) ? 'immersive' : 'chase', immersive: 'chase', chase: 'landing', landing: 'free', free: 'first' }[this.camMode] || 'first';
         if (this.camMode === 'free') this.player.orbitCam = null;   // (taken up from where the camera is)
-        this.message({ first: 'Cockpit view', chase: 'Chase view', landing: 'Landing view: level, above and behind', free: 'Free view: the mouse or right stick looks round, the wheel zooms' }[this.camMode], 'nav');
+        this.message({ first: 'Cockpit view', immersive: 'Immersive view: your ship out of sight, its outline drawn', chase: 'Chase view', landing: 'Landing view: level, above and behind', free: 'Free view: the mouse or right stick looks round, the wheel zooms' }[this.camMode], 'nav');
       }
     } else if (input.hit('KeyL')) {
       // (a hand light, out of a ship: render/world.js handLight)
