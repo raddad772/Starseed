@@ -5,7 +5,8 @@ import { CENTRAL_WGSL, CENTRAL_FLOATS, centralUniforms } from './central.js';
 // The mirrored enclosure's outer surface: each pixel's ray met with the shell and reflected, and what
 // lies that way seen in it: the central black hole, its disk and jets and the sky bent round it
 // (webgpu/central.js, the same light the sky shows), or the plain sky without one.
-const CODE=FULLSCREEN+CENTRAL_WGSL+/* wgsl */`
+// (the seams' filtering reads screen derivatives after the shell's discard: allowed here)
+const CODE='diagnostic(off, derivative_uniformity);\n'+FULLSCREEN+CENTRAL_WGSL+/* wgsl */`
 struct Mirror {
   inverse: mat4x4f,
   projection: mat4x4f,
@@ -23,17 +24,21 @@ struct Mirror {
 @group(0) @binding(5) var starB: texture_2d_array<f32>;
 @group(0) @binding(6) var adapt: texture_2d<f32>;
 struct Reflection { @location(0) color: vec4f, @builtin(frag_depth) depth: f32 };
-// a grid of seams (one a cell, a its width as a share of the cell) averaged over a footprint w
-// (cells) round (x, y): the share of it that's seam
+// a row of seams (one each cell, a its width as a share of the cell) averaged over a footprint w
+// (cells) round x: the share of it that's seam. Each way of the grid is filtered by its own
+// footprint, the pixel's extent across those seams (anisotropic): seams running away from the eye
+// stay sharp while the ones across the view thin out with distance
 fn cSeamCum(x: f32, a: f32) -> f32 { return floor(x) * a + min(fract(x), a); }
 fn cSeam1(x: f32, w: f32, a: f32) -> f32 {
   let hw = max(w, 1e-4) * 0.5;
   // (centred on each cell's edge: shift so the seam runs from -a/2 to a/2)
   return clamp((cSeamCum(x + a * 0.5 + hw, a) - cSeamCum(x + a * 0.5 - hw, a)) / (2.0 * hw), 0.0, 1.0);
 }
-fn cSeams(x: f32, y: f32, w: f32, a: f32) -> f32 {
-  let cx = cSeam1(x, w, a);
-  let cy = cSeam1(y, w, a);
+// both ways: x and y in cells, their footprints wx and wy, seams a pixel wide at least (px: a pixel
+// in cells along each way) but never more than a fifth of a cell
+fn cSeams(x: f32, y: f32, wx: f32, wy: f32, a: f32) -> f32 {
+  let cx = cSeam1(x, wx, clamp(max(a, wx), a, 0.2));
+  let cy = cSeam1(y, wy, clamp(max(a, wy), a, 0.2));
   return 1.0 - (1.0 - cx) * (1.0 - cy);
 }
 @fragment fn mirror(v: Fullscreen) -> Reflection {
@@ -69,7 +74,13 @@ fn cSeams(x: f32, y: f32, w: f32, a: f32) -> f32 {
   let th=acos(clamp(dot(reflected,C.hole.xyz),-1.0,1.0));
   let lobe=select(0.0,C.disk.z*(0.006*exp(-th*th/0.004)+0.0006*exp(-th*th/0.09)),C.misc.w>0.5);
   let haze=u.shape.z;
-  var silver=F*(col*(1.0-haze)+haze*(blur*1.6+lobe*vec3f(1.0,0.74,0.5)));
+  // (and an even sheen everywhere it's seen: the whole sky's light, averaged, scattered off it, so the
+  // silver and its seams show over dark sky as well as bright)
+  let ambient=textureSampleLevel(sky,skySampler,normal,9.0).rgb*u.shape.y;
+  // (and the hole's own light on it, faintly, scattered by its satin finish wherever the hole stands
+  // over the horizon there: enough that the silver and its seams carry across the whole of it)
+  let holeLight=select(0.0,0.0009*max(dot(normal,C.hole.xyz),0.0),C.misc.w>0.5);
+  var silver=F*(col*(1.0-haze)+haze*(blur*1.6+lobe*vec3f(1.0,0.74,0.5)))+F*(ambient*0.4+haze*holeLight*vec3f(1.0,0.8,0.6));
   // Its plates: a big, faint grid of seams, minor ones between plates and major ones every few, and
   // each plate a shade off its neighbours, as laid separately. Where the ray met the shell, from the
   // camera's foot on it (east and north on the grid there, in CPU doubles: f32 can't hold a seam's
@@ -81,14 +92,14 @@ fn cSeams(x: f32, y: f32, w: f32, a: f32) -> f32 {
   let fp=distance*C.stars3.x/max(cosI,0.05);
   let cell=u.grid.x;
   let major=cell*u.grid.y;
-  // (seams at least a pixel wide, box-filtered over the pixel's footprint: near, crisp lines; far,
-  // where plates shrink to a few pixels, they average into an even sheen of seams to the horizon
-  // rather than vanishing or shimmering)
+  // (each way's footprint from the screen derivatives of where the ray met the grid)
+  let fx=max(fwidth(gx),1e-3);
+  let fy=max(fwidth(gy),1e-3);
   // (the seams between plates where they're big enough to see; the major ones all the way out)
-  let lineMinor=cSeams(gx/cell,gy/cell,fp/cell,clamp(1.1*fp/cell,u.grid.z/cell,0.5))*smoothstep(8.0,20.0,cell/fp);
-  let lineMajor=cSeams(gx/major,gy/major,fp/major,clamp(1.5*fp/major,2.0*u.grid.z/major,0.5));
+  let lineMinor=cSeams(gx/cell,gy/cell,fx/cell,fy/cell,u.grid.z/cell)*smoothstep(8.0,20.0,cell/min(fx,fy));
+  let lineMajor=cSeams(gx/major,gy/major,fx/major,fy/major,2.0*u.grid.z/major);
   let plate=fract(sin(dot(floor(vec2f(gx,gy)/cell),vec2f(12.9898,78.233)))*43758.5453);
-  silver*=(1.0+0.035*(plate-0.5)*smoothstep(2.0,6.0,cell/fp))*(1.0-u.grid.w*max(0.55*lineMinor,lineMajor));
+  silver*=(1.0+0.035*(plate-0.5)*smoothstep(2.0,6.0,cell/max(fx,fy)))*(1.0-u.grid.w*max(0.55*lineMinor,lineMajor));
   out.color=vec4f(silver,1.0);
   return out;
 }
