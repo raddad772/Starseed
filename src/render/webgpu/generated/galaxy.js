@@ -364,10 +364,161 @@ fn starfield(d: vec3<f32>, cells: f32, density: f32, bright: f32) -> vec3<f32> {
     return _e155;
 }
 
+fn starForming(d_2: vec3<f32>, b: f32, toward: f32, edge: f32) -> vec3<f32> {
+    var d_3: vec3<f32>;
+    var b_1: f32;
+    var toward_1: f32;
+    var edge_1: f32;
+    var thin: f32;
+    var p_8: vec3<f32>;
+    var ip_1: vec3<f32>;
+    var acc_1: vec3<f32> = vec3(0f);
+    var pc: f32;
+    var x_1: i32 = -1i;
+    var y_1: i32;
+    var z_1: i32;
+    var c_1: vec3<f32>;
+    var sd_1: vec3<f32>;
+    var size: f32;
+    var r: f32;
+    var tex: f32;
+    var core: f32;
+    var halo: f32;
+    var k: f32;
+    var off: vec3<f32>;
+    var rb: f32;
+
+    d_3 = d_2;
+    b_1 = b;
+    toward_1 = toward;
+    edge_1 = edge;
+    let _e23 = b_1;
+    let _e25 = b_1;
+    thin = exp(((-(_e23) * _e25) / 0.0016f));
+    let _e31 = thin;
+    if (_e31 < 0.02f) {
+        return vec3(0f);
+    }
+    let _e36 = d_3;
+    p_8 = (_e36 * 70f);
+    let _e40 = p_8;
+    ip_1 = floor(_e40);
+    let _e46 = thin;
+    let _e49 = toward_1;
+    let _e55 = edge_1;
+    pc = ((_e46 * (0.03f + (0.09f * _e49))) * (0.5f + (1f * _e55)));
+    loop {
+        let _e63 = x_1;
+        if !((_e63 <= 1i)) {
+            break;
+        }
+        y_1 = -1i;
+        loop {
+            let _e73 = y_1;
+            if !((_e73 <= 1i)) {
+                break;
+            }
+            z_1 = -1i;
+            loop {
+                let _e83 = z_1;
+                if !((_e83 <= 1i)) {
+                    break;
+                }
+                {
+                    let _e90 = ip_1;
+                    let _e91 = x_1;
+                    let _e92 = y_1;
+                    let _e93 = z_1;
+                    c_1 = (_e90 + vec3<f32>(f32(_e91), f32(_e92), f32(_e93)));
+                    let _e100 = c_1;
+                    let _e104 = h31_((_e100 + vec3(21.7f)));
+                    let _e105 = pc;
+                    if (_e104 > _e105) {
+                        continue;
+                    }
+                    let _e107 = c_1;
+                    let _e108 = c_1;
+                    let _e112 = h31_((_e108 + vec3(2.1f)));
+                    let _e113 = c_1;
+                    let _e117 = h31_((_e113 + vec3(5.3f)));
+                    let _e118 = c_1;
+                    let _e122 = h31_((_e118 + vec3(8.9f)));
+                    sd_1 = normalize((_e107 + vec3<f32>(_e112, _e117, _e122)));
+                    let _e129 = c_1;
+                    let _e133 = h31_((_e129 + vec3(3.3f)));
+                    size = (0.003f + (0.02f * pow(_e133, 3f)));
+                    let _e139 = d_3;
+                    let _e140 = sd_1;
+                    let _e143 = size;
+                    r = (length((_e139 - _e140)) / _e143);
+                    let _e146 = r;
+                    if (_e146 > 3f) {
+                        continue;
+                    }
+                    let _e151 = d_3;
+                    let _e154 = c_1;
+                    let _e157 = fbm3_(((_e151 * 400f) + _e154), 4i);
+                    tex = clamp((0.55f + (0.9f * _e157)), 0f, 1.5f);
+                    let _e164 = r;
+                    let _e166 = r;
+                    core = exp(((-(_e164) * _e166) * 3f));
+                    let _e172 = r;
+                    let _e174 = r;
+                    halo = exp(((-(_e172) * _e174) * 0.8f));
+                    let _e180 = halo;
+                    let _e181 = tex;
+                    let _e185 = core;
+                    let _e191 = c_1;
+                    let _e195 = h31_((_e191 + vec3(6.6f)));
+                    k = ((((_e180 * _e181) * 0.8f) + (_e185 * 0.6f)) * (0.2f + (2.5f * pow(_e195, 3f))));
+                    let _e202 = acc_1;
+                    let _e211 = core;
+                    let _e214 = k;
+                    acc_1 = (_e202 + (mix(vec3<f32>(1f, 0.22f, 0.28f), vec3<f32>(1f, 0.55f, 0.62f), vec3(_e211)) * _e214));
+                    let _e217 = c_1;
+                    let _e221 = h31_((_e217 + vec3(4.2f)));
+                    if (_e221 < 0.33f) {
+                        {
+                            let _e224 = sd_1;
+                            let _e225 = global.uGalNormal;
+                            let _e228 = size;
+                            off = ((normalize(cross(_e224, _e225)) * _e228) * 1.3f);
+                            let _e233 = d_3;
+                            let _e234 = sd_1;
+                            let _e236 = off;
+                            let _e239 = size;
+                            rb = (length(((_e233 - _e234) - _e236)) / (_e239 * 1.2f));
+                            let _e244 = acc_1;
+                            let _e254 = rb;
+                            let _e256 = rb;
+                            let _e260 = tex;
+                            acc_1 = (_e244 + ((vec3<f32>(0.14f, 0.2f, 0.4f) * exp((-(_e254) * _e256))) * _e260));
+                        }
+                    }
+                }
+                continuing {
+                    let _e87 = z_1;
+                    z_1 = (_e87 + 1i);
+                }
+            }
+            continuing {
+                let _e77 = y_1;
+                y_1 = (_e77 + 1i);
+            }
+        }
+        continuing {
+            let _e67 = x_1;
+            x_1 = (_e67 + 1i);
+        }
+    }
+    let _e263 = acc_1;
+    return _e263;
+}
+
 fn main_1() {
-    var d_2: vec3<f32>;
-    var b: f32;
-    var toward: f32;
+    var d_4: vec3<f32>;
+    var b_2: f32;
+    var toward_2: f32;
     var band: f32;
     var wide: f32;
     var bc: f32;
@@ -375,6 +526,7 @@ fn main_1() {
     var n1_: f32;
     var n2_: f32;
     var glow: f32;
+    var lf: f32;
     var lane: f32;
     var mw: vec3<f32>;
     var col_1: vec3<f32>;
@@ -384,87 +536,97 @@ fn main_1() {
 
     let _e15 = vUv_1;
     let _e16 = cubeDirection(_e15);
-    d_2 = normalize(_e16);
-    let _e19 = d_2;
+    d_4 = normalize(_e16);
+    let _e19 = d_4;
     let _e20 = global.uGalNormal;
-    b = dot(_e19, _e20);
-    let _e23 = d_2;
+    b_2 = dot(_e19, _e20);
+    let _e23 = d_4;
     let _e24 = global.uGalCenter;
-    toward = ((dot(_e23, _e24) * 0.5f) + 0.5f);
-    let _e31 = b;
-    let _e33 = b;
+    toward_2 = ((dot(_e23, _e24) * 0.5f) + 0.5f);
+    let _e31 = b_2;
+    let _e33 = b_2;
     band = exp(((-(_e31) * _e33) / 0.012f));
-    let _e39 = b;
-    let _e41 = b;
+    let _e39 = b_2;
+    let _e41 = b_2;
     wide = exp(((-(_e39) * _e41) / 0.08f));
-    let _e47 = b;
+    let _e47 = b_2;
     let _e48 = global.uGalCenter;
     let _e49 = global.uGalNormal;
     bc = (_e47 - dot(_e48, _e49));
-    let _e54 = toward;
+    let _e54 = toward_2;
     let _e62 = bc;
     let _e64 = bc;
     bulge = (exp((-(pow((1f - _e54), 2f)) / 0.025f)) * exp(((-(_e62) * _e64) / 0.05f)));
-    let _e71 = d_2;
+    let _e71 = d_4;
     let _e75 = fbm3_((_e71 * 6f), 6i);
     n1_ = ((_e75 * 0.5f) + 0.5f);
-    let _e81 = d_2;
+    let _e81 = d_4;
     let _e88 = fbm3_(((_e81 * 22f) + vec3(3f)), 5i);
     n2_ = ((_e88 * 0.5f) + 0.5f);
     let _e94 = band;
     let _e97 = n1_;
-    let _e103 = toward;
+    let _e103 = toward_2;
     let _e107 = wide;
     let _e111 = bulge;
     let _e117 = n2_;
     glow = (((((_e94 * (0.55f + (0.45f * _e97))) * (0.6f + (0.6f * _e103))) + (_e107 * 0.18f)) + (_e111 * 1.4f)) * (0.7f + (0.6f * _e117)));
-    let _e124 = d_2;
-    let _e131 = fbm3_(((_e124 * 9f) + vec3(11f)), 6i);
-    let _e137 = b;
-    let _e139 = b;
-    lane = (smoothstep(0.52f, 0.72f, ((_e131 * 0.5f) + 0.5f)) * exp(((-(_e137) * _e139) / 0.004f)));
-    let _e146 = glow;
-    let _e149 = lane;
-    glow = (_e146 * (1f - (0.85f * _e149)));
-    let _e161 = bulge;
-    let _e163 = toward;
-    let _e168 = glow;
-    mw = (mix(vec3<f32>(0.55f, 0.62f, 0.85f), vec3<f32>(1f, 0.86f, 0.62f), vec3((_e161 + (0.3f * _e163)))) * _e168);
-    let _e171 = mw;
-    col_1 = (_e171 * 0.00022f);
-    let _e175 = col_1;
-    let _e176 = d_2;
-    let _e180 = band;
-    let _e184 = starfield(_e176, 420f, (0.03f + (0.2f * _e180)), 0.0003f);
-    col_1 = (_e175 + _e184);
-    let _e186 = col_1;
-    let _e187 = d_2;
-    let _e191 = band;
-    let _e195 = starfield(_e187, 160f, (0.025f + (0.08f * _e191)), 0.0006f);
-    col_1 = (_e186 + _e195);
-    let _e199 = d_2;
-    let _e206 = fbm3_(((_e199 * 3f) + vec3(5f)), 6i);
-    let _e212 = b;
-    let _e214 = b;
-    neb = (smoothstep(0.55f, 0.85f, ((_e206 * 0.5f) + 0.5f)) * exp(((-(_e212) * _e214) / 0.03f)));
-    let _e221 = neb;
-    let _e224 = d_2;
-    let _e228 = fbm3_((_e224 * 13f), 4i);
-    nebA = (_e221 * smoothstep(0.4f, 0.8f, ((_e228 * 0.5f) + 0.5f)));
-    let _e238 = d_2;
-    let _e245 = fbm3_(((_e238 * 4f) - vec3(7f)), 6i);
-    let _e251 = b;
-    let _e253 = b;
-    let _e260 = nebA;
-    nebB = ((smoothstep(0.62f, 0.9f, ((_e245 * 0.5f) + 0.5f)) * exp(((-(_e251) * _e253) / 0.06f))) * (1f - _e260));
-    let _e264 = col_1;
-    let _e265 = global.uNebulaA;
-    let _e266 = nebA;
-    let _e270 = global.uNebulaB;
-    let _e271 = nebB;
-    col_1 = (_e264 + (((_e265 * _e266) * 0.00016f) + ((_e270 * _e271) * 0.0001f)));
-    let _e277 = col_1;
-    fragmentColor = vec4<f32>(_e277.x, _e277.y, _e277.z, 1f);
+    let _e122 = d_4;
+    let _e129 = fbm3_(((_e122 * 9f) + vec3(11f)), 6i);
+    lf = ((_e129 * 0.5f) + 0.5f);
+    let _e137 = lf;
+    let _e139 = b_2;
+    let _e141 = b_2;
+    lane = (smoothstep(0.52f, 0.72f, _e137) * exp(((-(_e139) * _e141) / 0.004f)));
+    let _e148 = glow;
+    let _e151 = lane;
+    glow = (_e148 * (1f - (0.85f * _e151)));
+    let _e163 = bulge;
+    let _e165 = toward_2;
+    let _e170 = glow;
+    mw = (mix(vec3<f32>(0.55f, 0.62f, 0.85f), vec3<f32>(1f, 0.86f, 0.62f), vec3((_e163 + (0.3f * _e165)))) * _e170);
+    let _e173 = mw;
+    col_1 = (_e173 * 0.00022f);
+    let _e177 = col_1;
+    let _e178 = d_4;
+    let _e182 = band;
+    let _e186 = starfield(_e178, 420f, (0.03f + (0.2f * _e182)), 0.0003f);
+    col_1 = (_e177 + _e186);
+    let _e188 = col_1;
+    let _e189 = d_4;
+    let _e193 = band;
+    let _e197 = starfield(_e189, 160f, (0.025f + (0.08f * _e193)), 0.0006f);
+    col_1 = (_e188 + _e197);
+    let _e201 = d_4;
+    let _e208 = fbm3_(((_e201 * 3f) + vec3(5f)), 6i);
+    let _e214 = b_2;
+    let _e216 = b_2;
+    neb = (smoothstep(0.55f, 0.85f, ((_e208 * 0.5f) + 0.5f)) * exp(((-(_e214) * _e216) / 0.03f)));
+    let _e223 = neb;
+    let _e226 = d_4;
+    let _e230 = fbm3_((_e226 * 13f), 4i);
+    nebA = (_e223 * smoothstep(0.4f, 0.8f, ((_e230 * 0.5f) + 0.5f)));
+    let _e240 = d_4;
+    let _e247 = fbm3_(((_e240 * 4f) - vec3(7f)), 6i);
+    let _e253 = b_2;
+    let _e255 = b_2;
+    let _e262 = nebA;
+    nebB = ((smoothstep(0.62f, 0.9f, ((_e247 * 0.5f) + 0.5f)) * exp(((-(_e253) * _e255) / 0.06f))) * (1f - _e262));
+    let _e266 = col_1;
+    let _e267 = global.uNebulaA;
+    let _e268 = nebA;
+    let _e272 = global.uNebulaB;
+    let _e273 = nebB;
+    col_1 = (_e266 + (((_e267 * _e268) * 0.00016f) + ((_e272 * _e273) * 0.0001f)));
+    let _e279 = col_1;
+    let _e280 = d_4;
+    let _e281 = b_2;
+    let _e282 = toward_2;
+    let _e283 = lf;
+    let _e292 = starForming(_e280, _e281, _e282, exp(-(pow(((_e283 - 0.55f) / 0.06f), 2f))));
+    let _e295 = lane;
+    col_1 = (_e279 + ((_e292 * (1f - (0.6f * _e295))) * 0.0002f));
+    let _e302 = col_1;
+    fragmentColor = vec4<f32>(_e302.x, _e302.y, _e302.z, 1f);
     return;
 }
 

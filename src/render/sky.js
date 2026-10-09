@@ -46,6 +46,38 @@ vec3 starfield(vec3 d, float cells, float density, float bright) {
   return acc;
 }
 
+// star-forming regions: compact clouds of hydrogen lit red by the young stars in them (H II regions,
+// tenths of a degree to a degree across from here), strung along the thin disk where its gas lies,
+// thickest toward the inner galaxy and against the dust lanes' edges (the dark clouds they're born
+// from); a third with a reflection nebula beside, dust lit blue by the same stars. edge: how near a
+// dust lane's edge this is
+vec3 starForming(vec3 d, float b, float toward, float edge) {
+  float thin = exp(-b * b / 0.0016);
+  if (thin < 0.02) return vec3(0.0);
+  vec3 p = d * 70.0, ip = floor(p), acc = vec3(0.0);
+  float pc = thin * (0.03 + 0.09 * toward) * (0.5 + 1.0 * edge);
+  for (int x = -1; x <= 1; x++) for (int y = -1; y <= 1; y++) for (int z = -1; z <= 1; z++) {
+    vec3 c = ip + vec3(x, y, z);
+    if (h31(c + 21.7) > pc) continue;
+    vec3 sd = normalize(c + vec3(h31(c + 2.1), h31(c + 5.3), h31(c + 8.9)));
+    // (sizes and brightnesses steep: most small and faint, a few great complexes)
+    float size = 0.003 + 0.02 * pow(h31(c + 3.3), 3.0);
+    float r = length(d - sd) / size;
+    if (r > 3.0) continue;
+    // (its filaments and knots, ionization fronts eating into the cloud)
+    float tex = clamp(0.55 + 0.9 * fbm3(d * 400.0 + c, 4), 0.0, 1.5);
+    float core = exp(-r * r * 3.0), halo = exp(-r * r * 0.8);
+    float k = (halo * tex * 0.8 + core * 0.6) * (0.2 + 2.5 * pow(h31(c + 6.6), 3.0));
+    acc += mix(vec3(1.0, 0.22, 0.28), vec3(1.0, 0.55, 0.62), core) * k;
+    if (h31(c + 4.2) < 0.33) {
+      vec3 off = normalize(cross(sd, uGalNormal)) * size * 1.3;
+      float rb = length(d - sd - off) / (size * 1.2);
+      acc += vec3(0.35, 0.5, 1.0) * 0.4 * exp(-rb * rb) * tex;
+    }
+  }
+  return acc;
+}
+
 void main() {
   vec3 d = normalize(vDir);
   float b = dot(d, uGalNormal);                 // sin(galactic latitude)
@@ -59,7 +91,8 @@ void main() {
   float n2 = fbm3(d * 22.0 + 3.0, 5) * 0.5 + 0.5;
   float glow = (band * (0.55 + 0.45 * n1) * (0.6 + 0.6 * toward) + wide * 0.18 + bulge * 1.4) * (0.7 + 0.6 * n2);
   // dust lanes: dark filaments hugging the plane
-  float lane = smoothstep(0.52, 0.72, fbm3(d * 9.0 + 11.0, 6) * 0.5 + 0.5) * exp(-b * b / 0.004);
+  float lf = fbm3(d * 9.0 + 11.0, 6) * 0.5 + 0.5;
+  float lane = smoothstep(0.52, 0.72, lf) * exp(-b * b / 0.004);
   glow *= 1.0 - 0.85 * lane;
   vec3 mw = mix(vec3(0.55, 0.62, 0.85), vec3(1.0, 0.86, 0.62), bulge + 0.3 * toward) * glow;
   // faint star haze + resolved faint stars, denser in the band
@@ -71,6 +104,8 @@ void main() {
   float nebA = neb * smoothstep(0.4, 0.8, fbm3(d * 13.0, 4) * 0.5 + 0.5);
   float nebB = smoothstep(0.62, 0.9, fbm3(d * 4.0 - 7.0, 6) * 0.5 + 0.5) * exp(-b * b / 0.06) * (1.0 - nebA);
   col += uNebulaA * nebA * 1.6e-4 + uNebulaB * nebB * 1.0e-4;
+  // (the star-forming regions, behind the lanes' dust where a lane lies over them)
+  col += starForming(d, b, toward, exp(-pow((lf - 0.55) / 0.06, 2.0))) * (1.0 - 0.6 * lane) * 2.0e-4;
   gl_FragColor = vec4(col, 1.0);
 }
 `;
