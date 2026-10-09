@@ -13,6 +13,11 @@ try{
  walkLine(t.sim,0,10);t.sim.pitch=-.85;await capture('closed-hatch-clearance');enterBunker(t.sim);t.sim.pitch=-.1;await capture('recognizable-lift');
  walkLine(t.sim,0,0);t.sim.interact();advance(t.sim,4.3);walkLine(t.sim,0,-26);t.sim.yaw=-.36;t.sim.pitch=.2;
  const m=t.plan.manifestations[0];t.sim.time=m.period-m.phase+m.duration/2;await capture('room-wide-haze');const before=t.visual.manifestations.effects[0].mesh.instanceMatrix.array.slice();advance(t.sim,2);await capture('room-wide-haze-moving');const after=t.visual.manifestations.effects[0].mesh.instanceMatrix.array;let moved=0;for(let i=12;i<after.length;i+=16)if(Math.hypot(...[0,1,2].map(j=>after[i+j]-before[i+j]))>.1)moved++;check(moved>20,'Wisps visibly move in two seconds');
+ if(new URLSearchParams(location.search).has('hazeOnly')){
+  const e=t.visual.manifestations.effects[0],bounds=[0,2].map(axis=>{const values=Array.from({length:e.mesh.count},(_,i)=>e.mesh.instanceMatrix.array[i*16+12+axis]);return Math.max(...values)-Math.min(...values);});
+  check(e.mesh.count>500,'Room coverage uses more small wisps');check(e.parts.every(p=>p.size*2.2<1),'Wisps stay below one metre wide');check(bounds[0]>35&&bounds[1]>25,'Wisps fill the room footprint');
+  const error=await t.renderer.device.popErrorScope();check(!error,error?.message);check(!t.errors.length,t.errors.join('\n'));out.textContent=JSON.stringify({status:'passed',wisps:e.mesh.count,maxWidth:Math.max(...e.parts.map(p=>p.size*2.2)),span:bounds,movedWisps:moved,errors:[]});
+ }else{
  const doc=frame.contentDocument;doc.getElementById('intro').hidden=true;t.render();const mini=doc.querySelector('[aria-label="Expand survey map"] canvas');check(mini&&!mini.parentElement.hidden,'Persistent corner map visible');const miniImg=new Image();miniImg.alt='corner-survey-map';miniImg.src=mini.toDataURL();shots.append(miniImg);
  walkRoute(t.sim,-50,-72);walkLine(t.sim,-46.65,-72);walkLine(t.sim,-46.65,-73.5);check(t.sim.offer()?.type==='fragment','Terminal can be used from its lit front');await capture('data-terminal-front');const id=t.sim.offer().id;t.sim.interact();check(t.sim.fragments.has(id),'Front pickup succeeds');check(!surveyMapData(t.plan,t.sim).markers.some(m=>m.pos===t.plan.fragments.find(f=>f.id===id).pos),'Downloaded terminal removed from survey');
  walkRoute(t.sim,-76,-28);walkLine(t.sim,-81,-28);walkLine(t.sim,-96,-28);t.sim.yaw=Math.PI/2;t.sim.pitch=.08;await capture('cistern-enclosed-water');advance(t.sim,1);await capture('cistern-water-moving');
@@ -33,5 +38,6 @@ try{
  // fixture stubs the browser permission itself; trusted capture is browser-owned.
  const doc2=frame.contentDocument,canvas=doc2.getElementById('view'),original=canvas.requestPointerLock;let requests=0;canvas.requestPointerLock=()=>{requests++;return Promise.resolve();};t.start();const sendM=()=>doc2.defaultView.dispatchEvent(new KeyboardEvent('keydown',{code:'KeyM',key:'m',bubbles:true}));sendM();const beforeClose=requests;sendM();check(requests===beforeClose+1&&doc2.getElementById('mapPanel').hidden,'M-close requests mouse recapture');t.pause();canvas.requestPointerLock=original;
  out.textContent=JSON.stringify({status:'passed',movedWisps:moved,captures:shots.children.length,verticalRoute:true,bankedPassage:true,fieldCollision:true,recordAndReload:true,mapRecaptureRequested:true,errors:[]});
+ }
 }catch(e){out.textContent=JSON.stringify({status:'failed',error:e.stack});t?.pause();}
 </script>
