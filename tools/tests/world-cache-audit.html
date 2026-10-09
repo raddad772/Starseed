@@ -1,0 +1,10 @@
+<!doctype html><meta charset="utf-8"><title>Arrival and descent cache audit</title>
+<style>body{background:#101a25;color:#dceaf0;font:15px system-ui;margin:28px}button,select{padding:10px;margin-right:12px}pre{white-space:pre-wrap;max-height:70vh;overflow:auto}table{border-collapse:collapse;margin:20px 0}td,th{padding:7px 16px;text-align:right;border-bottom:1px solid #345}td:first-child,th:first-child{text-align:left}.note{color:#a8c1d2}</style>
+<h1>Arrival and descent cache audit</h1>
+<p>Default receiver · production world-simulation resolution · one simulation worker · GPU tile refinement</p>
+<select id="mode" aria-label="Scope"><option value="all">All 15 solid bodies + three landing patches</option><option value="survey">Three survey bodies and landing patches</option></select>
+<button id="land">Measure dry-land approach</button><button id="inspect">Inspect cached compression</button><button id="run">Measure cache</button><button id="stop" disabled>Stop after this body</button>
+<p id="status" role="status">Ready</p><p class="note">Measures actual generated payloads and compression. This does not certify frame times or seamless flight.</p>
+<table><thead><tr><th>Body</th><th>Snapshot MiB</th><th>Refinement MiB</th><th>Landing patch MiB</th><th>Total gzip MiB</th></tr></thead><tbody id="rows"></tbody></table>
+<details><summary>Measurements</summary><pre id="report"></pre></details>
+<script type="module" src="../world-cache-audit.js"></script>

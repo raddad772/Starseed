@@ -1,0 +1,1805 @@
+{
+  "version": 1,
+  "seed": "RX-e60889908de3ebbf-6",
+  "star": "Legoazeaks",
+  "simVersion": 69,
+  "tileVersion": 640058,
+  "lengthScale": 0.015625,
+  "started": "2026-10-08T16:20:36.829Z",
+  "stage": "Complete",
+  "bodies": [
+    {
+      "id": 8,
+      "name": "Drealalis",
+      "N": 288,
+      "L": 1,
+      "phases": {
+        "simMs": 26275.289999961853,
+        "refineMs": 24968.739999890327,
+        "riverIndexMs": 66.77499997615814,
+        "descentMs": 33214.51999998093
+      },
+      "reusedSnapshot": false,
+      "snapshot": {
+        "rawBytes": 16065280,
+        "metadataBytes": 2349,
+        "packedBytes": 16067629,
+        "gzipBytes": 2376784,
+        "compressMs": 79.09499990940094,
+        "decodeMs": 16.580000042915344,
+        "idbReadMs": 0.6399999856948853
+      },
+      "reusedRefinement": false,
+      "refinement": {
+        "rawBytes": 39622660,
+        "metadataBytes": 707,
+        "packedBytes": 39623367,
+        "gzipBytes": 5382341,
+        "compressMs": 264.77499997615814,
+        "decodeMs": 36.43999993801117,
+        "idbReadMs": 1.0500000715255737
+      },
+      "rivers": 1990660,
+      "landing": {
+        "place": "Equatorial sample",
+        "dir": [
+          1,
+          0,
+          0
+        ],
+        "face": 0,
+        "levels": [
+          {
+            "level": 3,
+            "tiles": 9,
+            "approxCellM": 63.58561603031582
+          },
+          {
+            "level": 5,
+            "tiles": 9,
+            "approxCellM": 15.896404007578955
+          },
+          {
+            "level": 7,
+            "tiles": 9,
+            "approxCellM": 3.9741010018947387
+          }
+        ],
+        "tiles": 27
+      },
+      "descent": {
+        "rawBytes": 59270400,
+        "metadataBytes": 6789,
+        "packedBytes": 59277189,
+        "gzipBytes": 23998246,
+        "compressMs": 566.2250000238419,
+        "decodeMs": 109.90499997138977,
+        "idbReadMs": 8.504999995231628
+      },
+      "meshes": [
+        {
+          "level": 0,
+          "buildMs": 91.93500006198883,
+          "rawBytes": 87912,
+          "attributes": {
+            "position": 14652,
+            "morph": 14652,
+            "nrm": 4884,
+            "mnrm": 4884,
+            "col": 4884,
+            "mcol": 4884,
+            "mat": 4884,
+            "ext": 4884,
+            "liq": 9768,
+            "flw": 4884,
+            "cls": 14652
+          }
+        },
+        {
+          "level": 4,
+          "buildMs": 9.014999985694885,
+          "rawBytes": 87912,
+          "attributes": {
+            "position": 14652,
+            "morph": 14652,
+            "nrm": 4884,
+            "mnrm": 4884,
+            "col": 4884,
+            "mcol": 4884,
+            "mat": 4884,
+            "ext": 4884,
+            "liq": 9768,
+            "flw": 4884,
+            "cls": 14652
+          }
+        },
+        {
+          "level": 8,
+          "buildMs": 16.100000023841858,
+          "rawBytes": 176739,
+          "attributes": {
+            "position": 14652,
+            "morph": 14652,
+            "nrm": 4884,
+            "mnrm": 4884,
+            "col": 4884,
+            "mcol": 4884,
+            "mat": 4884,
+            "ext": 4884,
+            "liq": 9768,
+            "flw": 4884,
+            "cls": 14652
+          }
+        },
+        {
+          "level": 14,
+          "buildMs": 15.414999961853027,
+          "rawBytes": 176739,
+          "attributes": {
+            "position": 14652,
+            "morph": 14652,
+            "nrm": 4884,
+            "mnrm": 4884,
+            "col": 4884,
+            "mcol": 4884,
+            "mat": 4884,
+            "ext": 4884,
+            "liq": 9768,
+            "flw": 4884,
+            "cls": 14652
+          }
+        }
+      ],
+      "totalMs": 85822.34000003338
+    },
+    {
+      "id": 9,
+      "name": "Tavont",
+      "N": 288,
+      "L": 1,
+      "phases": {
+        "simMs": 25614.759999990463,
+        "refineMs": 25188.62000000477,
+        "riverIndexMs": 68.125,
+        "descentMs": 33226.25499999523
+      },
+      "reusedSnapshot": false,
+      "snapshot": {
+        "rawBytes": 16065280,
+        "metadataBytes": 2357,
+        "packedBytes": 16067637,
+        "gzipBytes": 2290287,
+        "compressMs": 79.16000008583069,
+        "decodeMs": 13.419999957084656,
+        "idbReadMs": 0.5600000619888306
+      },
+      "reusedRefinement": false,
+      "refinement": {
+        "rawBytes": 39622660,
+        "metadataBytes": 707,
+        "packedBytes": 39623367,
+        "gzipBytes": 4817985,
+        "compressMs": 258.039999961853,
+        "decodeMs": 33.0349999666214,
+        "idbReadMs": 2.0800000429153442
+      },
+      "rivers": 1990660,
+      "landing": {
+        "place": "Equatorial sample",
+        "dir": [
+          1,
+          0,
+          0
+        ],
+        "face": 0,
+        "levels": [
+          {
+            "level": 3,
+            "tiles": 9,
+            "approxCellM": 56.56618293732736
+          },
+          {
+            "level": 5,
+            "tiles": 9,
+            "approxCellM": 14.14154573433184
+          },
+          {
+            "level": 7,
+            "tiles": 9,
+            "approxCellM": 3.53538643358296
+          }
+        ],
+        "tiles": 27
+      },
+      "descent": {
+        "rawBytes": 59270400,
+        "metadataBytes": 6789,
+        "packedBytes": 59277189,
+        "gzipBytes": 24779494,
+        "compressMs": 578.335000038147,
+        "decodeMs": 108.46999990940094,
+        "idbReadMs": 10.56499993801117
+      },
+      "meshes": [
+        {
+          "level": 0,
+          "buildMs": 93.39999997615814,
+          "rawBytes": 87912,
+          "attributes": {
+            "position": 14652,
+            "morph": 14652,
+            "nrm": 4884,
+            "mnrm": 4884,
+            "col": 4884,
+            "mcol": 4884,
+            "mat": 4884,
+            "ext": 4884,
+            "liq": 9768,
+            "flw": 4884,
+            "cls": 14652
+          }
+        },
+        {
+          "level": 4,
+          "buildMs": 8.570000052452087,
+          "rawBytes": 87912,
+          "attributes": {
+            "position": 14652,
+            "morph": 14652,
+            "nrm": 4884,
+            "mnrm": 4884,
+            "col": 4884,
+            "mcol": 4884,
+            "mat": 4884,
+            "ext": 4884,
+            "liq": 9768,
+            "flw": 4884,
+            "cls": 14652
+          }
+        },
+        {
+          "level": 8,
+          "buildMs": 16.8400000333786,
+          "rawBytes": 176739,
+          "attributes": {
+            "position": 14652,
+            "morph": 14652,
+            "nrm": 4884,
+            "mnrm": 4884,
+            "col": 4884,
+            "mcol": 4884,
+            "mat": 4884,
+            "ext": 4884,
+            "liq": 9768,
+            "flw": 4884,
+            "cls": 14652
+          }
+        },
+        {
+          "level": 14,
+          "buildMs": 14.710000038146973,
+          "rawBytes": 176739,
+          "attributes": {
+            "position": 14652,
+            "morph": 14652,
+            "nrm": 4884,
+            "mnrm": 4884,
+            "col": 4884,
+            "mcol": 4884,
+            "mat": 4884,
+            "ext": 4884,
+            "liq": 9768,
+            "flw": 4884,
+            "cls": 14652
+          }
+        }
+      ],
+      "totalMs": 85386.52999997139
+    },
+    {
+      "id": 11,
+      "name": "Cluhugre",
+      "N": 128,
+      "L": 0,
+      "phases": {
+        "simMs": 535.8200000524521,
+        "refineMs": 6110.705000042915,
+        "riverIndexMs": 39.449999928474426,
+        "descentMs": 18315.235000014305
+      },
+      "reusedSnapshot": false,
+      "snapshot": {
+        "rawBytes": 1671168,
+        "metadataBytes": 33660,
+        "packedBytes": 1704828,
+        "gzipBytes": 420082,
+        "compressMs": 12.504999995231628,
+        "decodeMs": 2.5449999570846558,
+        "idbReadMs": 0.2900000810623169
+      },
+      "reusedRefinement": false,
+      "refinement": {
+        "rawBytes": 9801220,
+        "metadataBytes": 705,
+        "packedBytes": 9801925,
+        "gzipBytes": 1229472,
+        "compressMs": 103.52999997138977,
+        "decodeMs": 8.72000002861023,
+        "idbReadMs": 0.44999992847442627
+      },
+      "rivers": 393220,
+      "landing": {
+        "place": "Gokrol Basin",
+        "dir": [
+          0.513852,
+          0.165957,
+          0.841673
+        ],
+        "face": 4,
+        "levels": [
+          {
+            "level": 2,
+            "tiles": 6,
+            "approxCellM": 14.516597487281055
+          },
+          {
+            "level": 4,
+            "tiles": 9,
+            "approxCellM": 3.629149371820264
+          },
+          {
+            "level": 6,
+            "tiles": 9,
+            "approxCellM": 0.907287342955066
+          }
+        ],
+        "tiles": 24
+      },
+      "descent": {
+        "rawBytes": 52684800,
+        "metadataBytes": 6025,
+        "packedBytes": 52690825,
+        "gzipBytes": 20194071,
+        "compressMs": 524.4950000047684,
+        "decodeMs": 95.75999999046326,
+        "idbReadMs": 6.194999933242798
+      },
+      "meshes": [
+        {
+          "level": 0,
+          "buildMs": 77.17999994754791,
+          "rawBytes": 87912,
+          "attributes": {
+            "position": 14652,
+            "morph": 14652,
+            "nrm": 4884,
+            "mnrm": 4884,
+            "col": 4884,
+            "mcol": 4884,
+            "mat": 4884,
+            "ext": 4884,
+            "liq": 9768,
+            "flw": 4884,
+            "cls": 14652
+          }
+        },
+        {
+          "level": 4,
+          "buildMs": 13.490000009536743,
+          "rawBytes": 87912,
+          "attributes": {
+            "position": 14652,
+            "morph": 14652,
+            "nrm": 4884,
+            "mnrm": 4884,
+            "col": 4884,
+            "mcol": 4884,
+            "mat": 4884,
+            "ext": 4884,
+            "liq": 9768,
+            "flw": 4884,
+            "cls": 14652
+          }
+        },
+        {
+          "level": 8,
+          "buildMs": 17.87999999523163,
+          "rawBytes": 87912,
+          "attributes": {
+            "position": 14652,
+            "morph": 14652,
+            "nrm": 4884,
+            "mnrm": 4884,
+            "col": 4884,
+            "mcol": 4884,
+            "mat": 4884,
+            "ext": 4884,
+            "liq": 9768,
+            "flw": 4884,
+            "cls": 14652
+          }
+        },
+        {
+          "level": 11,
+          "buildMs": 16.240000009536743,
+          "rawBytes": 87912,
+          "attributes": {
+            "position": 14652,
+            "morph": 14652,
+            "nrm": 4884,
+            "mnrm": 4884,
+            "col": 4884,
+            "mcol": 4884,
+            "mat": 4884,
+            "ext": 4884,
+            "liq": 9768,
+            "flw": 4884,
+            "cls": 14652
+          }
+        }
+      ],
+      "totalMs": 25939.375
+    },
+    {
+      "id": 1,
+      "name": "Glarossxoam",
+      "N": 224,
+      "L": 1,
+      "phases": {
+        "simMs": 1298.695000052452,
+        "refineMs": 41754.52999997139,
+        "riverIndexMs": 65.82000005245209
+      },
+      "reusedSnapshot": false,
+      "snapshot": {
+        "rawBytes": 5720064,
+        "metadataBytes": 1748690,
+        "packedBytes": 7468754,
+        "gzipBytes": 1176710,
+        "compressMs": 49.40499997138977,
+        "decodeMs": 21.97000002861023,
+        "idbReadMs": 0.4249999523162842
+      },
+      "reusedRefinement": false,
+      "refinement": {
+        "rawBytes": 38836228,
+        "metadataBytes": 707,
+        "packedBytes": 38836935,
+        "gzipBytes": 6492752,
+        "compressMs": 435.125,
+        "decodeMs": 41.12999999523163,
+        "idbReadMs": 1.1150000095367432
+      },
+      "rivers": 1204228,
+      "totalMs": 43699.98000001907
+    },
+    {
+      "id": 2,
+      "name": "Vreazis",
+      "N": 240,
+      "L": 1,
+      "phases": {
+        "simMs": 3034.899999976158,
+        "refineMs": 17010.55999994278,
+        "riverIndexMs": 66.93999993801117
+      },
+      "reusedSnapshot": false,
+      "snapshot": {
+        "rawBytes": 5875200,
+        "metadataBytes": 5097,
+        "packedBytes": 5880297,
+        "gzipBytes": 483383,
+        "compressMs": 21.22000002861023,
+        "decodeMs": 4.809999942779541,
+        "idbReadMs": 0.31000006198883057
+      },
+      "reusedRefinement": false,
+      "refinement": {
+        "rawBytes": 39014404,
+        "metadataBytes": 707,
+        "packedBytes": 39015111,
+        "gzipBytes": 3746132,
+        "compressMs": 367.1100000143051,
+        "decodeMs": 29.305000066757202,
+        "idbReadMs": 1.7000000476837158
+      },
+      "rivers": 1382404,
+      "totalMs": 20565.56499993801
+    },
+    {
+      "id": 3,
+      "name": "Bocoastza",
+      "N": 256,
+      "L": 1,
+      "phases": {
+        "simMs": 3060.295000076294,
+        "refineMs": 17271.430000066757,
+        "riverIndexMs": 68.13999998569489
+      },
+      "reusedSnapshot": false,
+      "snapshot": {
+        "rawBytes": 6684672,
+        "metadataBytes": 8640,
+        "packedBytes": 6693312,
+        "gzipBytes": 1684618,
+        "compressMs": 47.174999952316284,
+        "decodeMs": 7.789999961853027,
+        "idbReadMs": 0.684999942779541
+      },
+      "reusedRefinement": false,
+      "refinement": {
+        "rawBytes": 39204868,
+        "metadataBytes": 707,
+        "packedBytes": 39205575,
+        "gzipBytes": 4536994,
+        "compressMs": 408.40499997138977,
+        "decodeMs": 32.549999952316284,
+        "idbReadMs": 0.8799999952316284
+      },
+      "rivers": 1572868,
+      "totalMs": 20923.74500000477
+    },
+    {
+      "id": 4,
+      "name": "Opan",
+      "N": 224,
+      "L": 1,
+      "phases": {
+        "simMs": 800.9250000715256,
+        "refineMs": 18594.949999928474,
+        "riverIndexMs": 74.22000002861023
+      },
+      "reusedSnapshot": false,
+      "snapshot": {
+        "rawBytes": 5117952,
+        "metadataBytes": 4003,
+        "packedBytes": 5121955,
+        "gzipBytes": 1372124,
+        "compressMs": 33,
+        "decodeMs": 6.360000014305115,
+        "idbReadMs": 0.4500000476837158
+      },
+      "reusedRefinement": false,
+      "refinement": {
+        "rawBytes": 38836228,
+        "metadataBytes": 707,
+        "packedBytes": 38836935,
+        "gzipBytes": 7934936,
+        "compressMs": 465.4249999523163,
+        "decodeMs": 49.11500000953674,
+        "idbReadMs": 1.5350000858306885
+      },
+      "rivers": 1204228,
+      "totalMs": 20052.055000066757
+    },
+    {
+      "id": 5,
+      "name": "Gekuvram",
+      "N": 232,
+      "L": 1,
+      "phases": {
+        "simMs": 27781.875,
+        "refineMs": 30429.24499988556,
+        "riverIndexMs": 91.64999997615814
+      },
+      "reusedSnapshot": false,
+      "snapshot": {
+        "rawBytes": 10823680,
+        "metadataBytes": 51931,
+        "packedBytes": 10875611,
+        "gzipBytes": 2667475,
+        "compressMs": 79.24500000476837,
+        "decodeMs": 13.394999980926514,
+        "idbReadMs": 0.565000057220459
+      },
+      "reusedRefinement": false,
+      "refinement": {
+        "rawBytes": 39058074,
+        "metadataBytes": 729,
+        "packedBytes": 39058803,
+        "gzipBytes": 10324377,
+        "compressMs": 418.2699999809265,
+        "decodeMs": 53.4650000333786,
+        "idbReadMs": 4.495000004768372
+      },
+      "rivers": 1426074,
+      "totalMs": 58901.90499997139
+    },
+    {
+      "id": 6,
+      "name": "Grauciold",
+      "N": 264,
+      "L": 1,
+      "phases": {
+        "simMs": 32684.975000023842,
+        "refineMs": 34404.52499997616,
+        "riverIndexMs": 103.92500007152557
+      },
+      "reusedSnapshot": false,
+      "snapshot": {
+        "rawBytes": 13680640,
+        "metadataBytes": 40928,
+        "packedBytes": 13721568,
+        "gzipBytes": 4669779,
+        "compressMs": 122.5550000667572,
+        "decodeMs": 22.1599999666214,
+        "idbReadMs": 3.7350000143051147
+      },
+      "reusedRefinement": false,
+      "refinement": {
+        "rawBytes": 40109936,
+        "metadataBytes": 736,
+        "packedBytes": 40110672,
+        "gzipBytes": 13918089,
+        "compressMs": 560.2200000286102,
+        "decodeMs": 68.11000001430511,
+        "idbReadMs": 2.09499990940094
+      },
+      "rivers": 2477936,
+      "totalMs": 68005.47500002384
+    },
+    {
+      "id": 10,
+      "name": "Eacliand",
+      "N": 144,
+      "L": 0,
+      "phases": {
+        "simMs": 472.97000002861023,
+        "refineMs": 6030.774999976158,
+        "riverIndexMs": 40.5349999666214
+      },
+      "reusedSnapshot": false,
+      "snapshot": {
+        "rawBytes": 2363904,
+        "metadataBytes": 51854,
+        "packedBytes": 2415758,
+        "gzipBytes": 602581,
+        "compressMs": 14.264999985694885,
+        "decodeMs": 3.3550000190734863,
+        "idbReadMs": 0.3400000333786011
+      },
+      "reusedRefinement": false,
+      "refinement": {
+        "rawBytes": 9905668,
+        "metadataBytes": 705,
+        "packedBytes": 9906373,
+        "gzipBytes": 2493460,
+        "compressMs": 113.73500001430511,
+        "decodeMs": 13.519999980926514,
+        "idbReadMs": 1.7300000190734863
+      },
+      "rivers": 497668,
+      "totalMs": 6706.460000038147
+    },
+    {
+      "id": 12,
+      "name": "Gogrossxint",
+      "N": 168,
+      "L": 0,
+      "phases": {
+        "simMs": 920.1350001096725,
+        "refineMs": 5358.259999990463,
+        "riverIndexMs": 39.86500000953674
+      },
+      "reusedSnapshot": false,
+      "snapshot": {
+        "rawBytes": 2878848,
+        "metadataBytes": 17561,
+        "packedBytes": 2896409,
+        "gzipBytes": 669084,
+        "compressMs": 21.27999997138977,
+        "decodeMs": 3.475000023841858,
+        "idbReadMs": 0.5149999856948853
+      },
+      "reusedRefinement": false,
+      "refinement": {
+        "rawBytes": 10085380,
+        "metadataBytes": 705,
+        "packedBytes": 10086085,
+        "gzipBytes": 883422,
+        "compressMs": 88.13999998569489,
+        "decodeMs": 6.495000004768372,
+        "idbReadMs": 1.4899998903274536
+      },
+      "rivers": 677380,
+      "totalMs": 6455.435000061989
+    },
+    {
+      "id": 13,
+      "name": "Ruxea",
+      "N": 168,
+      "L": 0,
+      "phases": {
+        "simMs": 779.8399999141693,
+        "refineMs": 5871.115000009537,
+        "riverIndexMs": 40.04000008106232
+      },
+      "reusedSnapshot": false,
+      "snapshot": {
+        "rawBytes": 2878848,
+        "metadataBytes": 1937,
+        "packedBytes": 2880785,
+        "gzipBytes": 695801,
+        "compressMs": 18.75499999523163,
+        "decodeMs": 3.3600000143051147,
+        "idbReadMs": 3.375
+      },
+      "reusedRefinement": false,
+      "refinement": {
+        "rawBytes": 10085380,
+        "metadataBytes": 705,
+        "packedBytes": 10086085,
+        "gzipBytes": 1446196,
+        "compressMs": 124.65499997138977,
+        "decodeMs": 8.774999976158142,
+        "idbReadMs": 0.6150000095367432
+      },
+      "rivers": 677380,
+      "totalMs": 6864.7699999809265
+    },
+    {
+      "id": 14,
+      "name": "Brufae",
+      "N": 168,
+      "L": 0,
+      "phases": {
+        "simMs": 704.9400000572205,
+        "refineMs": 6001.15499997139,
+        "riverIndexMs": 40.769999980926514
+      },
+      "reusedSnapshot": false,
+      "snapshot": {
+        "rawBytes": 2878848,
+        "metadataBytes": 2133,
+        "packedBytes": 2880981,
+        "gzipBytes": 689169,
+        "compressMs": 18.855000019073486,
+        "decodeMs": 3.509999990463257,
+        "idbReadMs": 0.3049999475479126
+      },
+      "reusedRefinement": false,
+      "refinement": {
+        "rawBytes": 10085380,
+        "metadataBytes": 705,
+        "packedBytes": 10086085,
+        "gzipBytes": 1477878,
+        "compressMs": 124.07000005245209,
+        "decodeMs": 8.894999980926514,
+        "idbReadMs": 1.5500000715255737
+      },
+      "rivers": 677380,
+      "totalMs": 6918.460000038147
+    },
+    {
+      "id": 15,
+      "name": "Kioshreind",
+      "N": 168,
+      "L": 0,
+      "phases": {
+        "simMs": 895.75,
+        "refineMs": 6604.429999947548,
+        "riverIndexMs": 38.980000019073486
+      },
+      "reusedSnapshot": false,
+      "snapshot": {
+        "rawBytes": 2878848,
+        "metadataBytes": 1940,
+        "packedBytes": 2880788,
+        "gzipBytes": 760753,
+        "compressMs": 17.920000076293945,
+        "decodeMs": 3.6549999713897705,
+        "idbReadMs": 0.5949999094009399
+      },
+      "reusedRefinement": false,
+      "refinement": {
+        "rawBytes": 10085380,
+        "metadataBytes": 705,
+        "packedBytes": 10086085,
+        "gzipBytes": 1575516,
+        "compressMs": 128.21999990940094,
+        "decodeMs": 9.570000052452087,
+        "idbReadMs": 0.5800000429153442
+      },
+      "rivers": 677380,
+      "totalMs": 7711.860000014305
+    },
+    {
+      "id": 16,
+      "name": "Dravreakio",
+      "N": 64,
+      "L": 0,
+      "phases": {
+        "simMs": 273.3600000143051,
+        "refineMs": 7551.8550000190735,
+        "riverIndexMs": 42.11500000953674
+      },
+      "reusedSnapshot": false,
+      "snapshot": {
+        "rawBytes": 417792,
+        "metadataBytes": 2976,
+        "packedBytes": 420768,
+        "gzipBytes": 114725,
+        "compressMs": 2.6399999856948853,
+        "decodeMs": 0.7150000333786011,
+        "idbReadMs": 0.24499988555908203
+      },
+      "reusedRefinement": false,
+      "refinement": {
+        "rawBytes": 9506308,
+        "metadataBytes": 704,
+        "packedBytes": 9507012,
+        "gzipBytes": 801333,
+        "compressMs": 91.59500002861023,
+        "decodeMs": 5.960000038146973,
+        "idbReadMs": 0.41499996185302734
+      },
+      "rivers": 98308,
+      "totalMs": 7984.669999957085
+    }
+  ],
+  "manifest": [
+    {
+      "id": 1,
+      "name": "Glarossxoam",
+      "kind": "planet",
+      "N": 224,
+      "refineL": 1,
+      "survey": false,
+      "renderedRadiusM": 62141.73142427255,
+      "radiusM": 3977070.811153443,
+      "refinementArrayBytes": 37632000,
+      "globalFinestPyramidBytes": 215796940800,
+      "maxMeshLevel": 13
+    },
+    {
+      "id": 2,
+      "name": "Vreazis",
+      "kind": "planet",
+      "N": 240,
+      "refineL": 1,
+      "survey": false,
+      "renderedRadiusM": 69365.52456584293,
+      "radiusM": 4439393.572213948,
+      "refinementArrayBytes": 37632000,
+      "globalFinestPyramidBytes": 215796940800,
+      "maxMeshLevel": 13
+    },
+    {
+      "id": 3,
+      "name": "Bocoastza",
+      "kind": "planet",
+      "N": 256,
+      "refineL": 1,
+      "survey": false,
+      "renderedRadiusM": 76612.12759093125,
+      "radiusM": 4903176.1658196,
+      "refinementArrayBytes": 37632000,
+      "globalFinestPyramidBytes": 215796940800,
+      "maxMeshLevel": 13
+    },
+    {
+      "id": 4,
+      "name": "Opan",
+      "kind": "planet",
+      "N": 224,
+      "refineL": 1,
+      "survey": false,
+      "renderedRadiusM": 61591.27676422805,
+      "radiusM": 3941841.7129105953,
+      "refinementArrayBytes": 37632000,
+      "globalFinestPyramidBytes": 215796940800,
+      "maxMeshLevel": 13
+    },
+    {
+      "id": 5,
+      "name": "Gekuvram",
+      "kind": "planet",
+      "N": 232,
+      "refineL": 1,
+      "survey": false,
+      "renderedRadiusM": 65149.229586809175,
+      "radiusM": 4169550.693555787,
+      "refinementArrayBytes": 37632000,
+      "globalFinestPyramidBytes": 215796940800,
+      "maxMeshLevel": 13
+    },
+    {
+      "id": 6,
+      "name": "Grauciold",
+      "kind": "planet",
+      "N": 264,
+      "refineL": 1,
+      "survey": false,
+      "renderedRadiusM": 83739.10106078652,
+      "radiusM": 5359302.467890337,
+      "refinementArrayBytes": 37632000,
+      "globalFinestPyramidBytes": 215796940800,
+      "maxMeshLevel": 13
+    },
+    {
+      "id": 8,
+      "name": "Drealalis",
+      "kind": "planet",
+      "N": 288,
+      "refineL": 1,
+      "survey": true,
+      "renderedRadiusM": 165805.50821098327,
+      "radiusM": 10611552.52550293,
+      "refinementArrayBytes": 37632000,
+      "globalFinestPyramidBytes": 215796940800,
+      "maxMeshLevel": 14
+    },
+    {
+      "id": 9,
+      "name": "Tavont",
+      "kind": "planet",
+      "N": 288,
+      "refineL": 1,
+      "survey": true,
+      "renderedRadiusM": 147501.67246956262,
+      "radiusM": 9440107.038052008,
+      "refinementArrayBytes": 37632000,
+      "globalFinestPyramidBytes": 215796940800,
+      "maxMeshLevel": 14
+    },
+    {
+      "id": 10,
+      "name": "Eacliand",
+      "kind": "moon",
+      "N": 144,
+      "refineL": 0,
+      "survey": false,
+      "renderedRadiusM": 24895.012799321044,
+      "radiusM": 1593280.8191565468,
+      "refinementArrayBytes": 9408000,
+      "globalFinestPyramidBytes": 53949235200,
+      "maxMeshLevel": 11
+    },
+    {
+      "id": 11,
+      "name": "Cluhugre",
+      "kind": "moon",
+      "N": 128,
+      "refineL": 0,
+      "survey": true,
+      "renderedRadiusM": 18926.70051922876,
+      "radiusM": 1211308.8332306407,
+      "refinementArrayBytes": 9408000,
+      "globalFinestPyramidBytes": 53949235200,
+      "maxMeshLevel": 11
+    },
+    {
+      "id": 12,
+      "name": "Gogrossxint",
+      "kind": "moon",
+      "N": 168,
+      "refineL": 0,
+      "survey": false,
+      "renderedRadiusM": 33048.387889368096,
+      "radiusM": 2115096.824919558,
+      "refinementArrayBytes": 9408000,
+      "globalFinestPyramidBytes": 53949235200,
+      "maxMeshLevel": 12
+    },
+    {
+      "id": 13,
+      "name": "Ruxea",
+      "kind": "moon",
+      "N": 168,
+      "refineL": 0,
+      "survey": false,
+      "renderedRadiusM": 35477.06868930036,
+      "radiusM": 2270532.396115223,
+      "refinementArrayBytes": 9408000,
+      "globalFinestPyramidBytes": 53949235200,
+      "maxMeshLevel": 12
+    },
+    {
+      "id": 14,
+      "name": "Brufae",
+      "kind": "moon",
+      "N": 168,
+      "refineL": 0,
+      "survey": false,
+      "renderedRadiusM": 34657.659789518824,
+      "radiusM": 2218090.2265292048,
+      "refinementArrayBytes": 9408000,
+      "globalFinestPyramidBytes": 53949235200,
+      "maxMeshLevel": 12
+    },
+    {
+      "id": 15,
+      "name": "Kioshreind",
+      "kind": "moon",
+      "N": 168,
+      "refineL": 0,
+      "survey": false,
+      "renderedRadiusM": 33020.31434065774,
+      "radiusM": 2113300.117802095,
+      "refinementArrayBytes": 9408000,
+      "globalFinestPyramidBytes": 53949235200,
+      "maxMeshLevel": 12
+    },
+    {
+      "id": 16,
+      "name": "Dravreakio",
+      "kind": "moon",
+      "N": 64,
+      "refineL": 0,
+      "survey": false,
+      "renderedRadiusM": 153.8081871119092,
+      "radiusM": 9843.72397516219,
+      "refinementArrayBytes": 9408000,
+      "globalFinestPyramidBytes": 53949235200,
+      "maxMeshLevel": 4
+    }
+  ],
+  "progress": "Complete: 15 bodies, compression variants verified",
+  "finished": "2026-10-08T16:28:28.806Z",
+  "inspection": [
+    {
+      "id": 8,
+      "name": "Drealalis",
+      "variants": {
+        "snapshot": {
+          "rawBytes": 16065280,
+          "metadataBytes": 2829,
+          "packedBytes": 16068109,
+          "gzipBytes": 1842139,
+          "compressMs": 74.1800000667572,
+          "decodeMs": 24.509999990463257,
+          "losslessVerified": true
+        },
+        "refine": {
+          "rawBytes": 39622660,
+          "metadataBytes": 887,
+          "packedBytes": 39623547,
+          "gzipBytes": 4507540,
+          "compressMs": 308.72499990463257,
+          "decodeMs": 53.81000006198883,
+          "losslessVerified": true
+        },
+        "descent": {
+          "rawBytes": 59270400,
+          "metadataBytes": 8409,
+          "packedBytes": 59278809,
+          "gzipBytes": 12944762,
+          "compressMs": 438.4500000476837,
+          "decodeMs": 82.74500000476837,
+          "losslessVerified": true
+        }
+      },
+      "snapshotFields": {
+        "h": 1990656,
+        "water": 1990656,
+        "rock": 497664,
+        "ice": 995328,
+        "river": 497664,
+        "melt": 497664,
+        "relief": 995328,
+        "rcv": 497664,
+        "ocean": 497664,
+        "soil": 497664,
+        "wtd": 497664,
+        "wetland": 497664,
+        "gLr": 995328,
+        "gVsp": 995328,
+        "gYouth": 497664,
+        "gGx": 497664,
+        "gGy": 497664,
+        "gGlac": 497664,
+        "Tsea": 38400,
+        "P": 38400,
+        "cover": 38400,
+        "forest": 38400,
+        "open": 38400,
+        "realm": 19200,
+        "cloud": 38400,
+        "cloudPx": 131072,
+        "season": 115200,
+        "seasonPx": 131072,
+        "seasonIce": 115200,
+        "seasonIcePx": 131072,
+        "cloudYearPx": 262144,
+        "riverYear": 995328
+      },
+      "surface": {
+        "aboveDatumFraction": 0,
+        "minHeightM": -20282.091796875,
+        "maxHeightM": -0.000017740725525072776,
+        "places": 0,
+        "hasSea": true
+      }
+    },
+    {
+      "id": 9,
+      "name": "Tavont",
+      "variants": {
+        "snapshot": {
+          "rawBytes": 16065280,
+          "metadataBytes": 2837,
+          "packedBytes": 16068117,
+          "gzipBytes": 1748376,
+          "compressMs": 71.26499998569489,
+          "decodeMs": 20.384999990463257,
+          "losslessVerified": true
+        },
+        "refine": {
+          "rawBytes": 39622660,
+          "metadataBytes": 887,
+          "packedBytes": 39623547,
+          "gzipBytes": 4035770,
+          "compressMs": 284.88499999046326,
+          "decodeMs": 50.84500002861023,
+          "losslessVerified": true
+        },
+        "descent": {
+          "rawBytes": 59270400,
+          "metadataBytes": 8409,
+          "packedBytes": 59278809,
+          "gzipBytes": 12762868,
+          "compressMs": 439.9449999332428,
+          "decodeMs": 85.97000002861023,
+          "losslessVerified": true
+        }
+      },
+      "snapshotFields": {
+        "h": 1990656,
+        "water": 1990656,
+        "rock": 497664,
+        "ice": 995328,
+        "river": 497664,
+        "melt": 497664,
+        "relief": 995328,
+        "rcv": 497664,
+        "ocean": 497664,
+        "soil": 497664,
+        "wtd": 497664,
+        "wetland": 497664,
+        "gLr": 995328,
+        "gVsp": 995328,
+        "gYouth": 497664,
+        "gGx": 497664,
+        "gGy": 497664,
+        "gGlac": 497664,
+        "Tsea": 38400,
+        "P": 38400,
+        "cover": 38400,
+        "forest": 38400,
+        "open": 38400,
+        "realm": 19200,
+        "cloud": 38400,
+        "cloudPx": 131072,
+        "season": 115200,
+        "seasonPx": 131072,
+        "seasonIce": 115200,
+        "seasonIcePx": 131072,
+        "cloudYearPx": 262144,
+        "riverYear": 995328
+      },
+      "surface": {
+        "aboveDatumFraction": 0.0000020093878600823047,
+        "minHeightM": -19876.1015625,
+        "maxHeightM": 0.000021623789507430047,
+        "places": 0,
+        "hasSea": true
+      }
+    },
+    {
+      "id": 11,
+      "name": "Cluhugre",
+      "variants": {
+        "snapshot": {
+          "rawBytes": 1671168,
+          "metadataBytes": 33795,
+          "packedBytes": 1704963,
+          "gzipBytes": 344418,
+          "compressMs": 9.985000014305115,
+          "decodeMs": 3.6449999809265137,
+          "losslessVerified": true
+        },
+        "refine": {
+          "rawBytes": 9801220,
+          "metadataBytes": 885,
+          "packedBytes": 9802105,
+          "gzipBytes": 1139396,
+          "compressMs": 90.15500009059906,
+          "decodeMs": 13.989999890327454,
+          "losslessVerified": true
+        },
+        "descent": {
+          "rawBytes": 52684800,
+          "metadataBytes": 7465,
+          "packedBytes": 52692265,
+          "gzipBytes": 12111499,
+          "compressMs": 673.6399999856949,
+          "decodeMs": 86.76999998092651,
+          "losslessVerified": true
+        }
+      },
+      "snapshotFields": {
+        "h": 393216,
+        "water": 393216,
+        "rock": 98304,
+        "ice": 196608,
+        "river": 98304,
+        "melt": 98304,
+        "relief": 196608,
+        "rcv": 98304,
+        "crat": 98304
+      },
+      "surface": {
+        "aboveDatumFraction": 0,
+        "minHeightM": -555.018798828125,
+        "maxHeightM": -24.201934814453125,
+        "places": 5,
+        "hasSea": true
+      }
+    },
+    {
+      "id": 1,
+      "name": "Glarossxoam",
+      "variants": {
+        "snapshot": {
+          "rawBytes": 5720064,
+          "metadataBytes": 1748840,
+          "packedBytes": 7468904,
+          "gzipBytes": 1046580,
+          "compressMs": 48.24500000476837,
+          "decodeMs": 25.929999947547913,
+          "losslessVerified": true
+        },
+        "refine": {
+          "rawBytes": 38836228,
+          "metadataBytes": 887,
+          "packedBytes": 38837115,
+          "gzipBytes": 5905384,
+          "compressMs": 418.72500002384186,
+          "decodeMs": 56.519999980926514,
+          "losslessVerified": true
+        }
+      },
+      "snapshotFields": {
+        "h": 1204224,
+        "water": 1204224,
+        "rock": 301056,
+        "ice": 602112,
+        "river": 301056,
+        "melt": 301056,
+        "relief": 602112,
+        "rcv": 301056,
+        "crat": 301056,
+        "mareLv": 602112
+      },
+      "surface": {
+        "aboveDatumFraction": 1,
+        "minHeightM": 116942.3828125,
+        "maxHeightM": 119502.4296875,
+        "places": 15,
+        "hasSea": false
+      }
+    },
+    {
+      "id": 2,
+      "name": "Vreazis",
+      "variants": {
+        "snapshot": {
+          "rawBytes": 5875200,
+          "metadataBytes": 5232,
+          "packedBytes": 5880432,
+          "gzipBytes": 319412,
+          "compressMs": 17.480000019073486,
+          "decodeMs": 9.049999952316284,
+          "losslessVerified": true
+        },
+        "refine": {
+          "rawBytes": 39014404,
+          "metadataBytes": 887,
+          "packedBytes": 39015291,
+          "gzipBytes": 3574374,
+          "compressMs": 359.7000000476837,
+          "decodeMs": 48.9449999332428,
+          "losslessVerified": true
+        }
+      },
+      "snapshotFields": {
+        "h": 1382400,
+        "water": 1382400,
+        "rock": 345600,
+        "ice": 691200,
+        "river": 345600,
+        "melt": 345600,
+        "relief": 691200,
+        "rcv": 345600,
+        "crat": 345600
+      },
+      "surface": {
+        "aboveDatumFraction": 1,
+        "minHeightM": 148960.359375,
+        "maxHeightM": 151444.6875,
+        "places": 20,
+        "hasSea": false
+      }
+    },
+    {
+      "id": 3,
+      "name": "Bocoastza",
+      "variants": {
+        "snapshot": {
+          "rawBytes": 6684672,
+          "metadataBytes": 8775,
+          "packedBytes": 6693447,
+          "gzipBytes": 1402354,
+          "compressMs": 41.625,
+          "decodeMs": 11.735000014305115,
+          "losslessVerified": true
+        },
+        "refine": {
+          "rawBytes": 39204868,
+          "metadataBytes": 887,
+          "packedBytes": 39205755,
+          "gzipBytes": 4335295,
+          "compressMs": 413.05999994277954,
+          "decodeMs": 59.235000014305115,
+          "losslessVerified": true
+        }
+      },
+      "snapshotFields": {
+        "h": 1572864,
+        "water": 1572864,
+        "rock": 393216,
+        "ice": 786432,
+        "river": 393216,
+        "melt": 393216,
+        "relief": 786432,
+        "rcv": 393216,
+        "crat": 393216
+      },
+      "surface": {
+        "aboveDatumFraction": 0.44935353597005206,
+        "minHeightM": -260.7342224121094,
+        "maxHeightM": 1152.9267578125,
+        "places": 17,
+        "hasSea": false
+      }
+    },
+    {
+      "id": 4,
+      "name": "Opan",
+      "variants": {
+        "snapshot": {
+          "rawBytes": 5117952,
+          "metadataBytes": 4138,
+          "packedBytes": 5122090,
+          "gzipBytes": 1123891,
+          "compressMs": 33.19500005245209,
+          "decodeMs": 9.125,
+          "losslessVerified": true
+        },
+        "refine": {
+          "rawBytes": 38836228,
+          "metadataBytes": 887,
+          "packedBytes": 38837115,
+          "gzipBytes": 7308125,
+          "compressMs": 480.1050000190735,
+          "decodeMs": 62.389999985694885,
+          "losslessVerified": true
+        }
+      },
+      "snapshotFields": {
+        "h": 1204224,
+        "water": 1204224,
+        "rock": 301056,
+        "ice": 602112,
+        "river": 301056,
+        "melt": 301056,
+        "relief": 602112,
+        "rcv": 301056,
+        "crat": 301056
+      },
+      "surface": {
+        "aboveDatumFraction": 0.286219175170068,
+        "minHeightM": -4260.02734375,
+        "maxHeightM": 2009.600830078125,
+        "places": 14,
+        "hasSea": false
+      }
+    },
+    {
+      "id": 5,
+      "name": "Gekuvram",
+      "variants": {
+        "snapshot": {
+          "rawBytes": 10823680,
+          "metadataBytes": 52411,
+          "packedBytes": 10876091,
+          "gzipBytes": 2368652,
+          "compressMs": 80.25999999046326,
+          "decodeMs": 18.040000081062317,
+          "losslessVerified": true
+        },
+        "refine": {
+          "rawBytes": 39058074,
+          "metadataBytes": 909,
+          "packedBytes": 39058983,
+          "gzipBytes": 9038696,
+          "compressMs": 419.5750000476837,
+          "decodeMs": 67.95000004768372,
+          "losslessVerified": true
+        }
+      },
+      "snapshotFields": {
+        "h": 1291776,
+        "water": 1291776,
+        "rock": 322944,
+        "ice": 645888,
+        "river": 322944,
+        "melt": 322944,
+        "relief": 645888,
+        "rcv": 322944,
+        "ocean": 322944,
+        "soil": 322944,
+        "wtd": 322944,
+        "wetland": 322944,
+        "gLr": 645888,
+        "gVsp": 645888,
+        "gYouth": 322944,
+        "gGx": 322944,
+        "gGy": 322944,
+        "gGlac": 322944,
+        "Tsea": 38400,
+        "P": 38400,
+        "cover": 38400,
+        "forest": 38400,
+        "open": 38400,
+        "realm": 19200,
+        "cloud": 38400,
+        "cloudPx": 131072,
+        "season": 115200,
+        "seasonPx": 131072,
+        "seasonIce": 115200,
+        "seasonIcePx": 131072,
+        "cloudYearPx": 262144,
+        "riverYear": 645888
+      },
+      "surface": {
+        "aboveDatumFraction": 0.14155705013872374,
+        "minHeightM": -7829.4716796875,
+        "maxHeightM": 12152.6572265625,
+        "places": 94,
+        "hasSea": true
+      }
+    },
+    {
+      "id": 6,
+      "name": "Grauciold",
+      "variants": {
+        "snapshot": {
+          "rawBytes": 13680640,
+          "metadataBytes": 41408,
+          "packedBytes": 13722048,
+          "gzipBytes": 4187247,
+          "compressMs": 134.70500004291534,
+          "decodeMs": 26.209999918937683,
+          "losslessVerified": true
+        },
+        "refine": {
+          "rawBytes": 40109936,
+          "metadataBytes": 916,
+          "packedBytes": 40110852,
+          "gzipBytes": 12844311,
+          "compressMs": 543.1599999666214,
+          "decodeMs": 84,
+          "losslessVerified": true
+        }
+      },
+      "snapshotFields": {
+        "h": 1672704,
+        "water": 1672704,
+        "rock": 418176,
+        "ice": 836352,
+        "river": 418176,
+        "melt": 418176,
+        "relief": 836352,
+        "rcv": 418176,
+        "ocean": 418176,
+        "soil": 418176,
+        "wtd": 418176,
+        "wetland": 418176,
+        "gLr": 836352,
+        "gVsp": 836352,
+        "gYouth": 418176,
+        "gGx": 418176,
+        "gGy": 418176,
+        "gGlac": 418176,
+        "Tsea": 38400,
+        "P": 38400,
+        "cover": 38400,
+        "forest": 38400,
+        "open": 38400,
+        "realm": 19200,
+        "cloud": 38400,
+        "cloudPx": 131072,
+        "season": 115200,
+        "seasonPx": 131072,
+        "seasonIce": 115200,
+        "seasonIcePx": 131072,
+        "cloudYearPx": 262144,
+        "riverYear": 836352
+      },
+      "surface": {
+        "aboveDatumFraction": 0.49017877640036733,
+        "minHeightM": -7285.58642578125,
+        "maxHeightM": 11046.990234375,
+        "places": 77,
+        "hasSea": true
+      }
+    },
+    {
+      "id": 10,
+      "name": "Eacliand",
+      "variants": {
+        "snapshot": {
+          "rawBytes": 2363904,
+          "metadataBytes": 52004,
+          "packedBytes": 2415908,
+          "gzipBytes": 534234,
+          "compressMs": 15.024999976158142,
+          "decodeMs": 5.355000019073486,
+          "losslessVerified": true
+        },
+        "refine": {
+          "rawBytes": 9905668,
+          "metadataBytes": 885,
+          "packedBytes": 9906553,
+          "gzipBytes": 2228839,
+          "compressMs": 121.37000000476837,
+          "decodeMs": 16.664999961853027,
+          "losslessVerified": true
+        }
+      },
+      "snapshotFields": {
+        "h": 497664,
+        "water": 497664,
+        "rock": 124416,
+        "ice": 248832,
+        "river": 124416,
+        "melt": 124416,
+        "relief": 248832,
+        "rcv": 124416,
+        "crat": 124416,
+        "mareLv": 248832
+      },
+      "surface": {
+        "aboveDatumFraction": 0.4324363425925926,
+        "minHeightM": -3383.569091796875,
+        "maxHeightM": 1746.7100830078125,
+        "places": 15,
+        "hasSea": false
+      }
+    },
+    {
+      "id": 12,
+      "name": "Gogrossxint",
+      "variants": {
+        "snapshot": {
+          "rawBytes": 2878848,
+          "metadataBytes": 17696,
+          "packedBytes": 2896544,
+          "gzipBytes": 534333,
+          "compressMs": 16.37000000476837,
+          "decodeMs": 5.134999990463257,
+          "losslessVerified": true
+        },
+        "refine": {
+          "rawBytes": 10085380,
+          "metadataBytes": 885,
+          "packedBytes": 10086265,
+          "gzipBytes": 854269,
+          "compressMs": 85.59500002861023,
+          "decodeMs": 13.044999957084656,
+          "losslessVerified": true
+        }
+      },
+      "snapshotFields": {
+        "h": 677376,
+        "water": 677376,
+        "rock": 169344,
+        "ice": 338688,
+        "river": 169344,
+        "melt": 169344,
+        "relief": 338688,
+        "rcv": 169344,
+        "crat": 169344
+      },
+      "surface": {
+        "aboveDatumFraction": 0,
+        "minHeightM": -895.0847778320312,
+        "maxHeightM": -205.3418426513672,
+        "places": 5,
+        "hasSea": false
+      }
+    },
+    {
+      "id": 13,
+      "name": "Ruxea",
+      "variants": {
+        "snapshot": {
+          "rawBytes": 2878848,
+          "metadataBytes": 2072,
+          "packedBytes": 2880920,
+          "gzipBytes": 563547,
+          "compressMs": 15.409999966621399,
+          "decodeMs": 5.1600000858306885,
+          "losslessVerified": true
+        },
+        "refine": {
+          "rawBytes": 10085380,
+          "metadataBytes": 885,
+          "packedBytes": 10086265,
+          "gzipBytes": 1323233,
+          "compressMs": 118.47000002861023,
+          "decodeMs": 14.365000009536743,
+          "losslessVerified": true
+        }
+      },
+      "snapshotFields": {
+        "h": 677376,
+        "water": 677376,
+        "rock": 169344,
+        "ice": 338688,
+        "river": 169344,
+        "melt": 169344,
+        "relief": 338688,
+        "rcv": 169344,
+        "crat": 169344
+      },
+      "surface": {
+        "aboveDatumFraction": 0,
+        "minHeightM": -867.0933837890625,
+        "maxHeightM": -59.37562942504883,
+        "places": 5,
+        "hasSea": false
+      }
+    },
+    {
+      "id": 14,
+      "name": "Brufae",
+      "variants": {
+        "snapshot": {
+          "rawBytes": 2878848,
+          "metadataBytes": 2268,
+          "packedBytes": 2881116,
+          "gzipBytes": 558355,
+          "compressMs": 15.965000033378601,
+          "decodeMs": 5.019999980926514,
+          "losslessVerified": true
+        },
+        "refine": {
+          "rawBytes": 10085380,
+          "metadataBytes": 885,
+          "packedBytes": 10086265,
+          "gzipBytes": 1352846,
+          "compressMs": 118.76499998569489,
+          "decodeMs": 14.980000019073486,
+          "losslessVerified": true
+        }
+      },
+      "snapshotFields": {
+        "h": 677376,
+        "water": 677376,
+        "rock": 169344,
+        "ice": 338688,
+        "river": 169344,
+        "melt": 169344,
+        "relief": 338688,
+        "rcv": 169344,
+        "crat": 169344
+      },
+      "surface": {
+        "aboveDatumFraction": 0.0000059051398337112624,
+        "minHeightM": -983.0411987304688,
+        "maxHeightM": 4.908164978027344,
+        "places": 6,
+        "hasSea": false
+      }
+    },
+    {
+      "id": 15,
+      "name": "Kioshreind",
+      "variants": {
+        "snapshot": {
+          "rawBytes": 2878848,
+          "metadataBytes": 2075,
+          "packedBytes": 2880923,
+          "gzipBytes": 630325,
+          "compressMs": 15.009999990463257,
+          "decodeMs": 4.919999957084656,
+          "losslessVerified": true
+        },
+        "refine": {
+          "rawBytes": 10085380,
+          "metadataBytes": 885,
+          "packedBytes": 10086265,
+          "gzipBytes": 1426611,
+          "compressMs": 117.66500008106232,
+          "decodeMs": 15.27999997138977,
+          "losslessVerified": true
+        }
+      },
+      "snapshotFields": {
+        "h": 677376,
+        "water": 677376,
+        "rock": 169344,
+        "ice": 338688,
+        "river": 169344,
+        "melt": 169344,
+        "relief": 338688,
+        "rcv": 169344,
+        "crat": 169344
+      },
+      "surface": {
+        "aboveDatumFraction": 0,
+        "minHeightM": -1441.91015625,
+        "maxHeightM": -129.6478271484375,
+        "places": 5,
+        "hasSea": false
+      }
+    },
+    {
+      "id": 16,
+      "name": "Dravreakio",
+      "variants": {
+        "snapshot": {
+          "rawBytes": 417792,
+          "metadataBytes": 3111,
+          "packedBytes": 420903,
+          "gzipBytes": 100087,
+          "compressMs": 3.975000023841858,
+          "decodeMs": 0.9750000238418579,
+          "losslessVerified": true
+        },
+        "refine": {
+          "rawBytes": 9506308,
+          "metadataBytes": 884,
+          "packedBytes": 9507192,
+          "gzipBytes": 808997,
+          "compressMs": 91.64499998092651,
+          "decodeMs": 12.389999985694885,
+          "losslessVerified": true
+        }
+      },
+      "snapshotFields": {
+        "h": 98304,
+        "water": 98304,
+        "rock": 24576,
+        "ice": 49152,
+        "river": 24576,
+        "melt": 24576,
+        "relief": 49152,
+        "rcv": 24576,
+        "crat": 24576
+      },
+      "surface": {
+        "aboveDatumFraction": 0.1063232421875,
+        "minHeightM": -736.2868041992188,
+        "maxHeightM": 494.2121887207031,
+        "places": 10,
+        "hasSea": false
+      }
+    }
+  ],
+  "gpuTileSample": {
+    "body": 8,
+    "setup": 749.5800000429153,
+    "gpu": true,
+    "sim": 267.11499989032745,
+    "finish": 259.3199999332428,
+    "identicalAfterRestore": true
+  },
+  "hardware": {
+    "cpu": "Apple M4",
+    "memoryGiB": 32,
+    "browser": "Codex in-app browser"
+  }
+}
