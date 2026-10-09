@@ -13,9 +13,10 @@ const vessel = t => { const v=new Ship(game,t);v.body={GM:9.81e6};v.pos.set(0,10
 const overlaps = (a,b) => a.min.every((v,i)=>v<b.max[i]-1e-5 && a.max[i]>b.min[i]+1e-5);
 for(const t of Object.values(PIONEER_TYPES)) {
  test(`${t.key}: GLB nodes, metre bounds, materials and animations match the runtime manifest`,()=>{
-  assert.equal(VESSEL_TYPES[t.key],t);assert.equal(t.interiorGravity,'natural');assert.equal(t.ftl,false);
+  assert.equal(VESSEL_TYPES[t.key],t);assert.equal(t.interiorGravity,'natural');assert.equal(t.ftl,["pioneer_anchor", "pioneer_caravan"].includes(t.key));
   const b=readFileSync(new URL('../../'+t.model,import.meta.url));assert.equal(b.readUInt32LE(0),0x46546c67);
   const g=JSON.parse(b.subarray(20,20+b.readUInt32LE(12)));const names=new Set(g.nodes.map(n=>n.name));
+  const authored=JSON.parse(g.nodes.find(n=>n.name===t.key).extras.game_manifest);assert.equal(authored.ftl,t.ftl);
   for(const p of t.parts)assert(names.has(p.node),p.node);
   for(const m of g.meshes)for(const p of m.primitives){assert('POSITION'in p.attributes);assert('NORMAL'in p.attributes);if(g.materials[p.material].extras?.semantic==='Hull')assert('COLOR_0'in p.attributes);}
   assert(g.materials.some(m=>m.extras?.semantic==='Hull'));

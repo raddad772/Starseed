@@ -106,7 +106,7 @@ class Ship:
     if o.get('asset_id')==self.key:bpy.data.objects.remove(o,do_unlink=True)
    bpy.data.scenes.remove(old)
   self.scene=bpy.data.scenes.new(sn);bpy.context.window.scene=self.scene;self.scene.unit_settings.system='METRIC';self.col=bpy.data.collections.new(sn+' / model');self.scene.collection.children.link(self.col);self.root=bpy.data.objects.new(self.key,None);self.col.objects.link(self.root);self.root['asset_id']=self.key;self.root['era']='Expedition';self.root['crew_capacity']=crew;self.root['artificial_gravity']=False
-  self.t={'key':self.key,'className':name+' — Expedition '+{'longreach':'carrier','crosscurrent':'service tender','hearth':'family explorer','porter':'cargo lifter','kestrel':'surface lander','moth':'survey scout','skimmer':'atmospheric scout'}[key],'era':'Expedition','fleetAsset':True,'model':'assets/models/expedition/'+key+'.glb','template':self.key,'big':big,'seatOnly':not big,'ftl':False,'interiorGravity':'natural','crewCapacity':crew,'mass':mass,'I':[mass*length*length/12,mass*length*length/12,mass*length*length/48],'thrust':{'main':.08 if big else .35,'retro':.03 if big else .15,'belly':.02 if big else 1.5,'down':.01 if big else .12,'lateral':.015 if big else .15},'alpha':[.025,.025,.04] if big else [.4,.4,.6],'rate':[.06,.06,.09] if big else [.3,.3,.5],'hullRating':50,'aero':{'cd':[length*2,length*4,length],'wing':0},'livery':{'main':'#658c9e','second':'#d3ccaf','stripe':'#cda34e'},'colliders':[],'solids':[],'rooms':[],'seats':[],'lights':[],'slideDoors':[],'doors':[],'parts':[],'zones':[],'airlocks':[],'engines':[],'entries':[],'probes':[],'hatches':[],'ports':[]}
+  self.t={'key':self.key,'className':name+' — Expedition '+{'longreach':'carrier','crosscurrent':'service tender','hearth':'family explorer','porter':'cargo lifter','kestrel':'surface lander','moth':'survey scout','skimmer':'atmospheric scout'}[key],'era':'Expedition','fleetAsset':True,'model':'assets/models/expedition/'+key+'.glb','template':self.key,'big':big,'seatOnly':not big,'ftl':bool(big),'interiorGravity':'natural','crewCapacity':crew,'mass':mass,'I':[mass*length*length/12,mass*length*length/12,mass*length*length/48],'thrust':{'main':.08 if big else .35,'retro':.03 if big else .15,'belly':.02 if big else 1.5,'down':.01 if big else .12,'lateral':.015 if big else .15},'alpha':[.025,.025,.04] if big else [.4,.4,.6],'rate':[.06,.06,.09] if big else [.3,.3,.5],'hullRating':50,'aero':{'cd':[length*2,length*4,length],'wing':0},'livery':{'main':'#658c9e','second':'#d3ccaf','stripe':'#cda34e'},'colliders':[],'solids':[],'rooms':[],'seats':[],'lights':[],'slideDoors':[],'doors':[],'parts':[],'zones':[],'airlocks':[],'engines':[],'entries':[],'probes':[],'hatches':[],'ports':[]}
   self.rs={};self.builders=[];self.hab=[];self.cuts=[];self.serial=0
  def mesh(self,name,room=None,lod=0):
   b=Mesh(self,self.key+':'+name,room,lod);self.builders.append(b);return b
@@ -240,7 +240,7 @@ class Ship:
      for z in [bx['min'][2],bx['max'][2]]:candidates.add(tuple(round(v,3) for v in (x,y,z)))
   self.t['probes']=[list(p) for p in sorted(candidates)[::max(1,len(candidates)//100)]]
   self.t['probeK']=self.t['mass']*9.81/.12;self.t['probeC']=2*.7*math.sqrt(self.t['probeK']*self.t['mass']/4)
-  self.t.setdefault('help','Expedition: no artificial gravity or FTL · F seats/airlocks · R cycles back inside · Space/C translate in freefall · X brakes')
+  self.t.setdefault('help','Expedition: no artificial gravity'+(' · J FTL' if self.t['ftl'] else ' · no FTL')+' · F seats/airlocks · R cycles back inside · Space/C translate in freefall · X brakes')
   # Controls are also exposed as Blender preview sliders, with export-rest poses left untouched.
   for part in self.t['parts']:
    ob=bpy.data.objects[part['node']];control='door_'+part['door'] if 'door' in part else part.get('channel','motion');self.root[control]=0.0;self.root.id_properties_ui(control).update(min=0,max=1)
@@ -399,7 +399,7 @@ def finish_dress(s):
     s.t['interiorFinish']='furnished-v1';s.t['interiorFeatures']=['wayfinding','finished-fixtures','ventilation','emergency-supplies','restrained-seating']
     s.root['interior_finish']='Furnished, labeled, serviceable exploration interiors'
 
-# Expedition B: shaped, serviced pressure hulls; no AG / FTL / armament.
+# Expedition B: shaped, serviced pressure hulls; no AG / armament; carriers and tenders use standard FTL.
 SHIPS=[]
 def capsule(s,name,stations,x=0):
  m=s.mesh(name);m.loft(stations)
@@ -705,7 +705,7 @@ for s in SHIPS:
   # Cut pressure door and window openings through their decorative covers too.
   for lo,hi in s.cuts:m.cut(lo,hi)
   m.finish()
- s.t['help']=s.t.get('help','Expedition · natural gravity / freefall · F seats and airlocks · R cargo ramp / return to cabin · Y clamp · G gear')
+ s.t['help']=s.t.get('help','Expedition · natural gravity / freefall · F seats and airlocks · R cargo ramp / return to cabin · Y clamp · G gear')+(' · J FTL' if s.t['ftl'] else '')
 
 TYPES={s.key:s.export() for s in SHIPS}
 (OUT/'expedition.data.js').write_text('// Generated by tools/blender/build_expedition.py. Metres, X right, Y up, -Z forward.\nexport const EXPEDITION_TYPES = '+json.dumps(TYPES,separators=(',',':'))+';\n')
