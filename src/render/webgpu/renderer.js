@@ -228,7 +228,8 @@ export class DeferredRenderer {
       opaqueObjects.push({...entry,body});
     }
     stage('visibility');
-    const opaque = opaqueObjects.map(({object,material,body,group})=>{const draw=this.opaque.prepare(object,material,body,this.projection,camera);if(draw)draw.group=group;return draw;}).filter(Boolean);
+    const stamp=this.opaqueStamp=(this.opaqueStamp||0)+1;
+    const opaque = opaqueObjects.map(({object,material,body,group})=>{const draw=this.opaque.prepare(object,material,body,this.projection,camera,stamp);if(draw)draw.group=group;return draw;}).filter(Boolean);
     stage('draw preparation');
     this.ensureCapacity(draw.length, lights.length);
     draw.forEach(({ object, u, body }, i) => {

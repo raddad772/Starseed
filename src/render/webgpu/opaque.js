@@ -8,6 +8,7 @@ import { tuning } from './tuning.js';
 import { opaquePrograms } from './generated/opaque.js';
 export const GBUFFER_FORMATS = ['rgba8unorm','rgba16float','rgba16float','rgba8unorm'];
 import { attribute, fields, cachedFields, layouts, pack, version } from './geometry.js';
+const FAMILY={rock:1,flora:2,grass:3,survey:4,floe:6,iceblock:6,giant:7};
 const disabledShadows={uSunShadow:{value:null},uSkyShadow:{value:null},uGrassCover:{value:null},uTrunkSky:{value:null},uRockSky:{value:null},tShadowAtlas:{value:null},tSkyRings:{value:null}};
 export class OpaquePass {
  constructor(device,textures,descriptors=[...opaquePrograms,surveyProgram]){this.culler=new InstanceCuller(device);this.descriptors=descriptors;this.uniformOverrides=disabledShadows;this.device=device;this.textures=textures;this.programs=new Map();this.materialKeys=new WeakMap();this.meshes=new Map();this.geometryCache=new Map();this.white=new THREE.DataTexture(new Uint8Array([255,255,255,255]),1,1);this.white.needsUpdate=true;}
@@ -30,8 +31,16 @@ export class OpaquePass {
   e.count=count;return e;
  }
  pipeline(p,g,material){const key=(tuning(this.device).enabled?g.layoutKey:JSON.stringify(g.layout))+':'+material.side;let pipeline=p.pipelines.get(key);if(!pipeline){pipeline=this.device.createRenderPipeline({label:p.name+' G-buffer',layout:this.device.createPipelineLayout({bindGroupLayouts:[p.vertexBindings.layout,p.fragmentBindings.layout]}),vertex:{module:p.vertex,entryPoint:'main',buffers:g.layout},fragment:{module:p.fragment,entryPoint:'main',targets:GBUFFER_FORMATS.map(format=>({format}))},primitive:{topology:'triangle-list',cullMode:material.side===THREE.DoubleSide?'none':material.side===THREE.BackSide?'front':'back',frontFace:'ccw'},depthStencil:{format:'depth32float',depthWriteEnabled:true,depthCompare:'greater'}});p.pipelines.set(key,pipeline);}return pipeline;}
- prepare(object,material,body,projection,camera){const p=this.program(material);if(!p)return null;const g=this.geometry(object,p),e=this.mesh(object,p,g,material);if(!e.count)return null;
-  const family={rock:1,flora:2,grass:3,survey:4,standard:material.customProgramCacheKey?.().startsWith('interior')?5:4,floe:6,iceblock:6,giant:7}[p.name]||0;
+ // (stamp: the frame's G-buffer pass; a material's uniforms made once in it, but a standard material's,
+ // which takes the object's own)
+ prepare(object,material,body,projection,camera,stamp){const p=this.program(material);if(!p)return null;const g=this.geometry(object,p),e=this.mesh(object,p,g,material);if(!e.count)return null;
+  const family=p.name==='standard'?(material.customProgramCacheKey?.().startsWith('interior')?5:4):FAMILY[p.name]||0;
+  if(stamp!==undefined&&p.name!=='standard'&&p.name!=='survey'){
+   const u=this.sharedUniforms(material,stamp,()=>({...material.uniforms,...material.userData.webgpu?.uniforms,...this.uniformOverrides,modelMatrix:{value:null},viewMatrix:{value:camera.matrixWorldInverse},projectionMatrix:{value:projection},uBodyIndex:{value:0}}));
+   u.modelMatrix.value=object.matrixWorld;u.uBodyIndex.value=body*16+family;
+   const k=this.sharedKey(p,material);
+   return {p,g,e,pipeline:this.pipeline(p,g,material),vg:p.vertexBindings.get(e,u).group,fg:k?p.fragmentBindings.get(k,u,stamp).group:p.fragmentBindings.get(e,u).group,object};
+  }
   const u={...material.uniforms,...material.userData.webgpu?.uniforms,...this.uniformOverrides,modelMatrix:{value:object.matrixWorld},viewMatrix:{value:camera.matrixWorldInverse},projectionMatrix:{value:projection},uBodyIndex:{value:body*16+family}};
   if(p.name==='standard'||p.name==='survey')Object.assign(u,this.standardUniforms(object,material));
   const vg=p.vertexBindings.get(e,u).group,fg=p.fragmentBindings.get(e,u).group;
@@ -52,6 +61,7 @@ export class OpaquePass {
  // object's (a material's water, a shadow's depth): packed once, not once a draw.
  sharedUniforms(material,stamp,make){const c=this.shared||(this.shared=new WeakMap());let s=c.get(material);if(!s||s.stamp!==stamp){s={stamp,u:make()};c.set(material,s);}return s.u;}
  sharedKey(p,material){if(p.fragmentShared===undefined)p.fragmentShared=!p.fragmentBindings.descriptor.uniforms.some(u=>/^(modelMatrix|modelViewMatrix|normalMatrix|uBodyIndex)$/.test(u.name));if(!p.fragmentShared)return null;const c=this.sharedKeys||(this.sharedKeys=new WeakMap());let k=c.get(material);if(!k){k={material};c.set(material,k);}return k;}
- draw(pass,draw){let triangles=0;for(const d of draw){pass.setPipeline(d.pipeline);pass.setBindGroup(0,d.vg);pass.setBindGroup(1,d.fg);if(d.g.vertices)pass.setVertexBuffer(0,d.g.vertices);if(d.e.instances)pass.setVertexBuffer(1,d.instanceBuffer||d.e.instances,d.instanceOffset||0,d.instanceSize);const range=d.object.geometry.drawRange,start=Math.max(range.start||0,d.group?.start||0),end=Math.min(d.g.count,(range.start||0)+range.count,(d.group?.start||0)+(d.group?.count??Infinity)),count=Math.max(0,end-start);if(d.g.indices){pass.setIndexBuffer(d.g.indices,d.g.indexFormat);if(d.indirect)pass.drawIndexedIndirect(d.indirect,d.indirectOffset||0);else pass.drawIndexed(count,d.e.count,start);}else if(d.indirect)pass.drawIndirect(d.indirect,d.indirectOffset||0);else pass.draw(count,d.e.count,start);triangles+=count*d.e.count/3;}return triangles;}
+ // (state set only where it changes from the draw before, within this call)
+ draw(pass,draw){let triangles=0,pipeline=null,vg=null,fg=null,vb=null;for(const d of draw){if(d.pipeline!==pipeline){pass.setPipeline(pipeline=d.pipeline);}if(d.vg!==vg)pass.setBindGroup(0,vg=d.vg);if(d.fg!==fg)pass.setBindGroup(1,fg=d.fg);if(d.g.vertices&&d.g.vertices!==vb)pass.setVertexBuffer(0,vb=d.g.vertices);if(d.e.instances)pass.setVertexBuffer(1,d.instanceBuffer||d.e.instances,d.instanceOffset||0,d.instanceSize);const range=d.object.geometry.drawRange,start=Math.max(range.start||0,d.group?.start||0),end=Math.min(d.g.count,(range.start||0)+range.count,(d.group?.start||0)+(d.group?.count??Infinity)),count=Math.max(0,end-start);if(d.g.indices){pass.setIndexBuffer(d.g.indices,d.g.indexFormat);if(d.indirect)pass.drawIndexedIndirect(d.indirect,d.indirectOffset||0);else pass.drawIndexed(count,d.e.count,start);}else if(d.indirect)pass.drawIndirect(d.indirect,d.indirectOffset||0);else pass.draw(count,d.e.count,start);triangles+=count*d.e.count/3;}return triangles;}
  dispose(){this.culler.dispose();for(const entries of [...this.meshes.values()])entries.release();for(const variants of [...this.geometryCache.values()])variants.release();for(const p of new Set(this.programs.values())){p.vertexBindings.dispose();p.fragmentBindings.dispose();}this.programs.clear();this.white.dispose();}
 }

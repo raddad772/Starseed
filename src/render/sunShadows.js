@@ -327,11 +327,22 @@ export class SunShadows {
   _swap(scene, layer, key = 'shadowMat') {
     const swapped = this._swapped || (this._swapped = []);
     swapped.length = 0;
-    scene.traverse((o) => {
-      if (!o.isMesh || !o.layers.isEnabled(layer)) return;
-      swapped.push(o, o.material, o.geometry);
-      o.material = o.userData[key] || this.mat;
-    });
+    // (the scene's meshes on each of the maps' layers, found in one walk a frame, not one a layer)
+    let byLayer = this._byLayer;
+    if (!byLayer || byLayer.scene !== scene || byLayer.frame !== this.walk) {
+      byLayer = this._byLayer || (this._byLayer = { lists: new Map() });
+      byLayer.scene = scene; byLayer.frame = this.walk;
+      for (const list of byLayer.lists.values()) list.length = 0;
+      const layers = [SHADOW_LAYER, COVER_LAYER, SKY_LAYER];
+      for (const l of layers) if (!byLayer.lists.has(l)) byLayer.lists.set(l, []);
+      scene.traverse((o) => {
+        if (!o.isMesh) return;
+        for (const l of layers) if (o.layers.isEnabled(l)) byLayer.lists.get(l).push(o);
+      });
+    }
+    const list = byLayer.lists.get(layer);
+    if (!list) { scene.traverse((o) => { if (o.isMesh && o.layers.isEnabled(layer)) { swapped.push(o, o.material, o.geometry); o.material = o.userData[key] || this.mat; } }); return swapped; }
+    for (const o of list) { swapped.push(o, o.material, o.geometry); o.material = o.userData[key] || this.mat; }
     return swapped;
   }
   _restore(swapped) {
@@ -423,6 +434,7 @@ export class SunShadows {
   // the maps for this frame: the camera at the world's origin (positions are camera-relative)
   render(renderer, scene) {
     const U = SUN_SHADOW_UNIFORMS, K = SKY_SHADOW_UNIFORMS;
+    this.walk = (this.walk || 0) + 1;
     U.tShadowAtlas.value = this.atlas.texture; K.tSkyRings.value = this.skyRings.texture;
     if (!this.on || !this.active) { U.uSunShadow.value.x = 0; U.uGrassCover.value.x = 0; U.uTrunkSky.value.x = 0; U.uRockSky.value.x = 0; K.uSkyShadow.value.x = 0; this.skyBody = null; return; }
     // (the maps held to the ground: their cameras turned with the body, the sun held in its frame and moved

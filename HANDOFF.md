@@ -14,8 +14,11 @@ pixel-parity claim is made. Dave confirmed sole-agent work and no coordination m
 ## NOW: second queue (session 39d69fa8, 2026-10-09; Dave: "Do queue")
 
 Queue (tick as done; one report at the end):
-1. [ ] Frame cost, round two: the CPU left near the ground (shadow casters' prepare, the water's chunk
-   materials, scene walks for shadows), then the GPU near the ground measured (drain method) and the worst fixed.
+1. [x] Frame cost, round two (CPU): in the wood again (this load 1024x768 css, 2048x1536 px) engine.render
+   27 -> 24.6 ms median: the G-buffer pass's uniforms made once per material and frame (draw preparation
+   4.8 -> 2.7 ms), mat4s packed whole, the sun's shadow layers found in one scene walk a frame (was one a
+   layer), draw state set only where it changes. GPU NOT measured: with the browser pane hidden the drain
+   (onSubmittedWorkDone after a frame) read ~370 ms a frame, not credible; measure with the pane shown.
 2. [x] The 404: assets/music/prologue-strings.m4a, asked for at every opening though no strings take is chosen
    yet (intro.js PROLOGUE_MUSIC is null until one is; the takes are in tools/voice-audition/music).
 3. [ ] The opening starts ~1.5 km over the mirror (was parked; taken as approved with this queue).
