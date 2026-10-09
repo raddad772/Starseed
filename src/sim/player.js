@@ -18,6 +18,9 @@ import { boxesNear, insideBox, pilotSeat } from './vesselTypes.js';
 import { floraOf } from './floraField.js';
 import { collideEva } from './evaContacts.js';
 
+// what a held view reads as input: nothing pressed, no axis moved
+const HELD_INPUT = new Proxy({ padAxes: {} }, { get: (t, k) => (k in t ? t[k] : () => 0) });
+const HELD_MOUSE = { dx: 0, dy: 0 };
 const EYE = 1.68;
 const RADIUS = 0.3;
 const WALK = 4.2, SPRINT = 8.5, SWIM = 1.8;
@@ -254,6 +257,8 @@ export class Player {
 
   update(dt, input, mouse) {
     this.prompt = null;
+    // (a held view: the opening's shot, your look and your jets idle until it lets go)
+    if (this.heldView) { this.evaQuat.copy(this.heldView); input = HELD_INPUT; mouse = HELD_MOUSE; }
     if (this.moveLatch) {
       const held = MOVE_KEYS.some((k) => input.down(k)) || Object.values(input.padAxes || {}).some((a) => Math.abs(a) > 0.2);
       if (held) input = this.latchedInput(input);

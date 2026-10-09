@@ -4,7 +4,8 @@ import { pilotSeat } from '../sim/vesselTypes.js';
 import { createCampaign } from './state.js';
 import { CampaignSiteStorage,bindSiteStorage } from './siteStorage.js';
 import { createTutorial } from './tutorial.js';
-import { placeMirrorFleet,placeOutsideCraft,syncChildren } from './mirrorScene.js';
+import { placeMirrorFleet,placeOutsideCraft,syncChildren,parkAtBase } from './mirrorScene.js';
+import { CAST } from './lines.js';
 
 const LEADS={horizon:'horizon_neptune3',expedition:'expedition_hearth',pioneer:'pioneer_nomad'};
 const SECOND={horizon:'horizon_shorebird',expedition:'expedition_kestrel',pioneer:'pioneer_hopper'};
@@ -22,12 +23,14 @@ export function provisionExpedition(g,{rules,label='Our expedition',campaign}){
   g.ship=g.yacht=lead;g.carrier=fleet[0];g.tender=null;g.wayfarer=null;
   g.ship2=fleet.find(v=>v.type.key===SECOND[g.fleetEra]);
   for(const v of g.vessels)v.campaignId=crypto.randomUUID();
-  const reference=g.addVessel('pod','Survey reference','SURVEY-01');reference.campaignId=crypto.randomUUID();
+  // (your daughter's craft, out on the survey: the lesson's reference and the one that will cross)
+  const reference=g.addVessel('pod',`${CAST.daughter}'s tender`,'SURVEY-01');reference.campaignId=crypto.randomUUID();
   placeMirrorFleet(g,reference);
   const forward=new THREE.Vector3(0,0,-1).applyQuaternion(reference.quat);
   // Place the active training craft together, clear of the large research vessels.
   placeTrainingCraft(g,lead,reference,forward,-1200,0);
   placeTrainingCraft(g,g.ship2,reference,forward,-1200,200);
+  parkAtBase(g,[reference,lead]);
   c.story.intro.tutorial=createTutorial(reference.campaignId);
   c.fleet={provisioned:true,vesselIds:g.vessels.map(v=>v.campaignId)};
   g.placed=true;g.startChoice='expedition';g.startPending=null;

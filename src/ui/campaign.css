@@ -28,3 +28,7 @@
 .galaxyBrowse{display:flex;gap:12px;align-items:end;flex-wrap:wrap}.galaxyBrowse label{display:grid;gap:5px;font-size:12px}.galaxyBrowse input,.galaxyBrowse select{background:#0a1721;color:#d6e7ed;border:1px solid #355361;border-radius:3px;padding:9px;font:inherit}.galaxyBrowse select{max-width:370px}
 @media(max-width:950px){.galaxyLayout{grid-template-columns:1fr}.galaxyChart svg{max-height:50vh}.galaxyDetails{max-width:600px}.galaxyBrowse select{max-width:100%}}
 @media(max-width:700px){.introHud{width:calc(100vw - 48px);font-size:11px}.introHud p{max-height:90px;overflow:hidden}.newExpeditionCard{padding:18px}}
+.dialogueLine{position:fixed;left:50%;bottom:96px;transform:translateX(-50%);max-width:min(760px,calc(100vw - 48px));box-sizing:border-box;padding:10px 18px;background:rgba(4,10,16,.78);border-radius:6px;color:#e9eef2;font-size:clamp(15px,1.6vw,19px);line-height:1.45;pointer-events:none;z-index:6;text-shadow:0 1px 6px rgba(0,0,0,.6)}
+.dialogueLine strong{color:#f2c879;margin-right:.6em;font-weight:600}
+.dialogueLine.narration span{font-style:italic;color:#d9e2ea}
+body.cinematic #hud{visibility:hidden}

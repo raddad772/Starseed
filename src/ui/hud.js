@@ -199,6 +199,12 @@ export class Hud {
     this.game.input.releaseLock();
   }
 
+  // O: the top panels pinned up, or back to keeping out of the way
+  togglePanels() {
+    this.pinPanels = !this.pinPanels;
+    this.game.message(this.pinPanels ? 'Flight panels pinned · O to let them fade' : 'Flight panels show when they matter · O to pin', 'nav');
+  }
+
   update(dt) {
     const g = this.game;
     for (const m of this.msgs) { m.t += dt; if (m.t > 6) m.el.style.opacity = '0'; }
@@ -213,6 +219,12 @@ export class Hud {
     this.flight.hidden = this.nav.hidden = this.strip.hidden = false;
     this.textTimer -= dt;
     if (this.textTimer <= 0) { this.textTimer = 0.1; this.updateText(); this.updateStrip(); }
+    // (the two top panels keep out of the way: up while they matter, or for a while after what they
+    // say changes, else faded; O pins them up)
+    const ps = this.panelShow || (this.panelShow = { flight: 6, nav: 6 });
+    ps.flight = Math.max(0, ps.flight - dt); ps.nav = Math.max(0, ps.nav - dt);
+    this.flight.classList.toggle('hudFaded', !(this.pinPanels || ps.flight > 0 || this._flightNeeded));
+    this.nav.classList.toggle('hudFaded', !(this.pinPanels || ps.nav > 0 || this._navNeeded));
     const p = g.player.prompt;
     if (p) {
       const html = p.key ? `${this.keyGlyph(p.code || 'Key' + p.key, p.key)}${p.text}` : p.text;
@@ -237,12 +249,16 @@ export class Hud {
 
   updateText() {
     const st = this.state();
-    const { g, s, p, piloting, body, alt } = st;
+    const { g, s, p, piloting, body } = st;
     const rows = [];
     const row = (k, v, cls = '') => rows.push(`<span class="label">${k}</span><span class="v ${cls}">${v}</span>`);
-    const atm = body.atmosphereAt(alt);
+    const atm = body.atmosphereAt(st.alt);
     const gLocal = body.GM / (st.r * st.r);
-    let head = `<h3>${body.data.name} · ${body.data.label}</h3>`;
+    // (outside the mirrored enclosure what's within is unknown: the panel's the mirror's, and the
+    // height the height above it)
+    const shell = g.mirrorShell, outsideShell = !!shell && body === shell.body && st.r > shell.radius;
+    const alt = outsideShell ? st.r - shell.radius : st.alt;
+    let head = outsideShell ? `<h3>The Sphere · mirrored enclosure</h3>` : `<h3>${body.data.name} · ${body.data.label}</h3>`;
     const host = s.parent;
     if (p.mode === 'ship' && (s.big || s.type.interiorGravity === 'natural')) {
       // walking aboard a big ship
@@ -324,6 +340,10 @@ export class Hud {
       row('Local time', `${String(Math.floor(hrs)).padStart(2, '0')}:${String(Math.floor((hrs % 1) * 60)).padStart(2, '0')}`);
     }
     this.flight.innerHTML = head + `<div class="rows">${rows.join('')}</div>`;
+    // (up while you're flying or something's wrong; for a while when what it's about changes)
+    const fsig = head + rows.map(r => r.slice(0, r.indexOf('</span>'))).join('');
+    if (fsig !== this._flightSig) { this._flightSig = fsig; if (this.panelShow) this.panelShow.flight = 6; }
+    this._flightNeeded = piloting || rows.some(r => r.includes('c-warn'));
 
     // navigation cluster
     const nrows = [];
@@ -373,6 +393,10 @@ export class Hud {
       nrow('Survey', res ? `${res.sites.length} ${res.habitable ? 'city' : 'outpost'} sites` : 'surveying…', 'c-ok');
     }
     this.nav.innerHTML = `<h3>Navigation</h3><div class="rows">${nrows.join('')}</div>`;
+    // (up while the nav computer flies, in warp or FTL; for a while when the target or plan changes)
+    const nsig = (tgt ? tgt.data.name : '') + '|' + (ns ? ns.phase + ns.dest : '') + '|' + g.warp + '|' + g.ftl.state;
+    if (nsig !== this._navSig) { this._navSig = nsig; if (this.panelShow) this.panelShow.nav = 8; }
+    this._navNeeded = !!ns || g.warp > 1 || g.ftl.state === 'cruise';
   }
 
   updateStrip() {
@@ -723,8 +747,11 @@ export class Hud {
     const pt = {};
     const curBody = g.player.currentBody();
     const marks = [];
+    // (from outside the mirrored enclosure, nothing within it is marked: what's in there is unknown)
+    const shell = g.mirrorShell, sealed = shell && g.camPos.distanceTo(shell.body.pos) > shell.radius;
     for (const b of g.universe.bodies) {
       if (b === curBody) continue;
+      if (sealed && b.pos.distanceTo(shell.body.pos) < shell.radius) continue;
       this.project(b.pos, pt);
       if (pt.behind) continue;
       if (pt.x < -50 || pt.x > this.w + 50 || pt.y < -50 || pt.y > this.h + 50) continue;

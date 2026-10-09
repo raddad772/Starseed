@@ -1,6 +1,11 @@
 import * as THREE from 'three';
 import { GAME_AU } from '../core/units.js';
 import { pilotSeat } from '../sim/vesselTypes.js';
+import { centralView } from '../sim/centralObject.js';
+
+// the opening's place over the mirror: where the central black hole stands this high over its horizon
+// (radians), so it and its reflection frame the scene
+export const OPENING_HOLE_ELEVATION = 20 * Math.PI / 180;
 
 export function mirrorRadius(system){
   const outer=Math.max(0,...system.bodies.filter(b=>b.kind==='planet').map(b=>(b.orbit?.a||0)*(1+(b.orbit?.e||0))));
@@ -16,6 +21,7 @@ export function placeMirrorFleet(g,reference){
   g.campaign.generation.storyAnchors.mirror={version:1,seed:g.seed,systemId:`system/${g.campaign.generation.galaxySeed}`,radius,label:'Mirrored enclosure'};
   restoreMirror(g);
   g.placeInOrbit(reference,star,radius+30000-star.R,0);
+  faceTheHole(g,reference);
   const roots=g.vessels.filter(v=>!v.parent&&v!==reference);
   roots.forEach((v,i)=>{
     v.nav.cancel(null);v.body=star;v.landed=false;v.rails=false;
@@ -23,6 +29,31 @@ export function placeMirrorFleet(g,reference){
     v.vel.copy(reference.vel);v.quat.copy(reference.quat);v.angVel.set(0,0,0);v.assist=1;v.targetFrame='none';
   });
   for(const root of roots)syncChildren(root);
+}
+// turn v's place on its orbit round the star (its position, velocity and attitude together) to where
+// the central black hole stands OPENING_HOLE_ELEVATION over the mirror's horizon
+function faceTheHole(g,v){
+  const view=centralView(g,{});if(!view)return;
+  const d=view.dir.clone().normalize(),here=v.pos.clone().normalize();
+  const t=here.clone().addScaledVector(d,-here.dot(d));
+  if(t.lengthSq()<1e-9)t.set(1,0,0).addScaledVector(d,-d.x);
+  t.normalize();
+  const want=d.clone().multiplyScalar(Math.sin(OPENING_HOLE_ELEVATION)).addScaledVector(t,Math.cos(OPENING_HOLE_ELEVATION)).normalize();
+  const turn=new THREE.Quaternion().setFromUnitVectors(here,want);
+  v.pos.applyQuaternion(turn);v.vel.applyQuaternion(turn);v.quat.premultiply(turn);
+  // (its rails taken again from where it is now: they held the orbit it was placed on)
+  if(v.rails&&v.enterRails){v.rails=false;v.enterRails();}
+}
+// the fleet's other craft waiting at the expedition's base, far along the mirror and out of sight:
+// on the opening spacewalk there's your craft and hers
+export function parkAtBase(g,keep){
+  const star=g.universe.star,roots=g.vessels.filter(v=>!v.parent&&!keep.includes(v)&&v.body===star);
+  if(!roots.length)return;
+  const ref=keep[0],axis=ref.pos.clone().cross(ref.vel).normalize();
+  if(axis.lengthSq()<0.5)return;
+  // (~6e7 along the orbit: beyond the range ships are marked at)
+  const turn=new THREE.Quaternion().setFromAxisAngle(axis,-6e7/ref.pos.length());
+  for(const v of roots){v.pos.applyQuaternion(turn);v.vel.applyQuaternion(turn);v.quat.premultiply(turn);syncChildren(v);}
 }
 export function syncChildren(root){for(const child of root.children){child.syncFromParent();syncChildren(child);}}
 export function placeOutsideCraft(g,p=g.players[0]){

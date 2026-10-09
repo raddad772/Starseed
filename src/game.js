@@ -1793,6 +1793,7 @@ export class Game {
     if (input.hit('KeyP')) this.player.recallSeat();
     if (input.hit('KeyU')) this.suit.show(this.fleetApp);
     if (input.hit('KeyI')) this.suit.show(this.inventoryApp);
+    if (input.hit('KeyO')) this.hud.togglePanels();
     if (input.hit('KeyN')) {
       const pv = this.player.vessel;
       if (this.player.aboard && pv.pilot && pv.pilot !== this.player) this.message(`${pv.name}'s nav computer: ${pv.pilot.label} has the controls`, 'caution');
