@@ -160,8 +160,26 @@ float cloudCoverG(vec3 pf, vec3 dirF, float foot, float bias) {
 // deck's optical depth (uCloudTau). A cloud of optical depth tau lets the sun through directly as
 // exp(-tau / mu) and in all about 1 / (1 + 3 (1 - g) tau / 4) (Bohren 1987; g ~0.85), so under an
 // overcast the light is dim, shadowless and grey-white; under broken cloud the shadows move with it.
+// And a rocky world's rings between the point and the sun (gen/rings.js): their shadow, the sun's
+// light through them, exp(-tau / mu) where its ray crosses their plane (the world's equator: y = 0 in
+// its fixed frame), their optical depth there from 32 samples across them (uRingTau; uRing x, y their
+// inner and outer radii, z on).
 // Needs GLSL_CLOUD_N, uSunDir, uToFixed, uCloud, uCloudOn, uCloudOpacity
 export const GLSL_CLOUD_SHADOW = /* glsl */`
+uniform vec4 uRing;
+uniform vec4 uRingTau[8];
+float ringShadow(vec3 rel) {
+  if (uRing.z < 0.5) return 1.0;
+  vec3 pF = uToFixed * rel, sF = uToFixed * uSunDir;
+  if (pF.y * sF.y >= 0.0 || abs(sF.y) < 1e-4) return 1.0;
+  vec3 q = pF - sF * (pF.y / sF.y);
+  float x = (length(q.xz) - uRing.x) / (uRing.y - uRing.x);
+  if (x <= 0.0 || x >= 1.0) return 1.0;
+  float f = clamp(x * 32.0 - 0.5, 0.0, 31.0);
+  int i = int(floor(f)), j = min(i + 1, 31);
+  float tau = mix(uRingTau[i / 4][i - 4 * (i / 4)], uRingTau[j / 4][j - 4 * (j / 4)], f - floor(f));
+  return exp(-tau / abs(sF.y));
+}
 uniform sampler2D tCloudShadow;
 uniform vec3 uCSOrigin;
 uniform vec3 uCSE;
@@ -174,7 +192,8 @@ uniform float uCloudTau;
 float cloudDirZ = 1.0, cloudTotZ = 1.0;
 float cloudLight(vec3 rel, float r, float muS, float foot, vec3 sunAbove, inout vec3 skyE) {
   cloudDirZ = 1.0; cloudTotZ = 1.0;
-  if (uCloudOn < 0.5) return 1.0;
+  float ring = ringShadow(rel);
+  if (uCloudOn < 0.5) return muS > -0.05 ? ring : 1.0;
   float mu = max(muS, 0.05);
   float Tdir = 1.0, Ttot = 1.0, Dup = 1.0;
   // (near: the map; a point above the datum reads it where its own sun ray, carried down to the datum,
@@ -202,7 +221,7 @@ float cloudLight(vec3 rel, float r, float muS, float foot, vec3 sunAbove, inout 
   Tdir = mix(Tdir, m0.r, w); Ttot = mix(Ttot, m1.g, w); Dup = mix(Dup, m1.b, w);
   cloudDirZ = Dup; cloudTotZ = Ttot;
   skyE = skyE * Ttot + sunAbove * max(muS, 0.0) * max(Ttot - Dup, 0.0);
-  return muS > -0.05 ? Tdir : 1.0;
+  return muS > -0.05 ? Tdir * ring : 1.0;
 }`;
 
 // a hot world's own light. blackbodyGlow: a blackbody's visible light at T K in the scene's radiance

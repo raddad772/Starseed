@@ -49,6 +49,8 @@ export class AirPass {
       this.central?.render(engine, t, t.air[0]);
       src=t.air[0];index=1;
     }
+    // (a rocky world's rings seen through its air, before the air's drawn over them: webgpu/rings.js)
+    this.rings?.render(engine, t, src, 0);
     for (const a of atmos || []) {
       const u = a.material.uniforms;
       if (!t.airOwners.has(a.material)) { t.airOwners.set(a.material, {}); t.compositeOwners.set(a.material, {}); }
@@ -60,9 +62,12 @@ export class AirPass {
       }, [output]);
       src = output; index = 1 - index;
     }
+    // (and the rest of them, in front of any air)
+    this.rings?.render(engine, t, src, 1);
     return src.texture;
   }
   release(t) {
+    this.rings?.release(t);
     this.passes.names.get('background')?.bindings.release(t);
     for (const owner of t.airOwners?.values() || []) for (const name of ['volume', 'atmosphere']) this.passes.names.get(name).bindings.release(owner);
     for (const owner of t.compositeOwners?.values() || []) this.passes.names.get('composite').bindings.release(owner);

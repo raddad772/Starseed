@@ -17,6 +17,7 @@ import { SHIP_INTERIOR, SHIP_HULL_BOXES } from '../render/shipModel.js';
 import { boxesNear, insideBox, pilotSeat } from './vesselTypes.js';
 import { floraOf } from './floraField.js';
 import { collideEva, evaColliders, ballInBox } from './evaContacts.js';
+import { collideSuitWithRing } from './ringField.js';
 
 // what a held view reads as input: nothing pressed, no axis moved
 const HELD_INPUT = new Proxy({ padAxes: {} }, { get: (t, k) => (k in t ? t[k] : () => 0) });
@@ -930,6 +931,8 @@ export class Player {
     }
     this.ePos.addScaledVector(this.eVel, dt);
     collideEva(this, dt);
+    // (and a ring's boulders: sim/ringField.js)
+    collideSuitWithRing(b, this.ePos, this.eVel, _v4.set(0, 1, 0).applyQuaternion(this.evaQuat), this.game.universe.t);
     this.jetFuel = Math.min(1, this.jetFuel + dt / 60); // suit reserve slowly recharges
     this.nearShip = near;
     // vessels: board a ramp, or get pulled onto a deck by its plating

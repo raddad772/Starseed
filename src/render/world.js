@@ -9,6 +9,8 @@ import { frostCaps, frostPixels, FROST_NL, FROST_NS } from '../gen/frostcap.js';
 import { Atmosphere, blankCloudMap, thermalUniform, cloudLife, lensZ } from './atmosphere.js';
 import { makeStarMesh, SKY_LENS } from './sky.js';
 import { makeGiantMesh, makeRingMesh } from './giant.js';
+import { ringSamples } from '../gen/rings.js';
+import { RingBoulders } from './ringBoulders.js';
 import { VolumePass } from './volume.js';
 import { CloudShadow, noCloudShadow } from './cloudShadow.js';
 import { loadMaterials, windRipple } from './materials.js';
@@ -59,6 +61,8 @@ export class WorldRenderer {
     this.engine = engine;
     this.cloudNoise = cloudNoise;
     this.u = universe;
+    // (a rocky world's ring's boulders round the camera: ringBoulders.js)
+    this.ringBoulders = new RingBoulders(engine.scene);
     this.pool = pool;
     FallFx.soft = { scene: engine.softScene, uniforms: engine.softUniforms };
     RIBBON_PASS.scene = engine.waterScene; RIBBON_PASS.uniforms = engine.waterUniforms;
@@ -149,7 +153,11 @@ export class WorldRenderer {
     if (b.solid) it.liquid = new Liquid(b, b.data.insolation || this.u.sunIlluminance(b.pos));
     // (and the air's: its shadows in the haze, the sky pass's and the near volume's)
     if (it.heightCube && a) for (const k of ['tHeightCube', 'uHeightCube']) a.material.uniforms[k] = it.heightCube.uniforms[k];
+    // (a rocky world's rings' shadow on its ground: atmosphere.js ringShadow; their optical depth across them)
+    const debris = b.data.rings?.kind === 'debris' ? b.data.rings : null, tau = debris ? ringSamples(debris, 32) : null;
     it.shared = {
+      uRing: { value: new THREE.Vector4(debris ? debris.inner : 0, debris ? debris.outer : 1, debris ? 1 : 0, 0) },
+      uRingTau: { value: Array.from({ length: 8 }, (_, k) => new THREE.Vector4(...(tau ? tau.slice(4 * k, 4 * k + 4) : [0, 0, 0, 0]))) },
       uSunDir: { value: new THREE.Vector3(1, 0, 0) },
       uSunE: { value: new THREE.Vector3(1, 1, 1) },
       uCenter: { value: new THREE.Vector3() },
@@ -304,6 +312,7 @@ export class WorldRenderer {
     this.sunGain = G > 0 ? G : 1; this.moonGain = G > 0 ? G : NIGHT_GAIN;
     this.engine.nightShift = Math.log2(this.sunGain);
     this._updateHand();
+    const ringBodies = this.engine.ringBodies = [];
     for (const it of this.items) {
       const b = it.body;
       _v.copy(b.pos).sub(camWorld);
@@ -370,6 +379,14 @@ export class WorldRenderer {
         it.atmo.material.uniforms.uCloudYear.value.set(it.cloudYearOn ? Math.cos(L) : 0, it.cloudYearOn ? Math.sin(L) : 0);
       }
       if (it.liquid) it.liquid.update(this.timeSec, _v2.copy(sh.uSunDir.value).applyMatrix3(sh.uToFixed.value));
+      // (a rocky world's rings, for the air pass this view: webgpu/rings.js; where they'd show)
+      const rings = b.data.rings;
+      if (rings?.kind === 'debris' && rings.outer / Math.max(dist - rings.outer, 1) * pxPerRad > 0.5) {
+        const rb = it.ringView || (it.ringView = { rings, center: new THREE.Vector3(), normal: new THREE.Vector3(), sunDir: sh.uSunDir.value, sunE: sh.uSunE.value });
+        rb.center.copy(_v); rb.normal.set(0, 1, 0).applyQuaternion(b.qTilt); (rb.axis ||= new THREE.Vector3()).set(1, 0, 0).applyQuaternion(b.qTilt); rb.radius = b.R; rb.top = it.atmo ? it.atmo.top : 0;
+        rb.sunRadius = this.u.star.R / Math.max(b.pos.distanceTo(this.u.star.pos), 1);
+        ringBodies.push(rb);
+      }
       const angular = (b.R + (it.atmo ? it.atmo.top - b.R : 0)) / Math.max(dist, 1) * pxPerRad;
       if (it.terrain) {
         _v2.copy(camWorld).sub(b.pos).applyQuaternion(b.qInv);
@@ -443,6 +460,7 @@ export class WorldRenderer {
       }
     }
     out.sort((x, y) => this.items[y.body.id].dist - this.items[x.body.id].dist);
+    this.ringBoulders.update(this.items, camWorld, this.u.t);
     return out;
   }
 

@@ -14,6 +14,7 @@ import { OpaquePass } from './opaque.js';
 import { ShadowPass } from './shadows.js';
 import { ClusteredLights } from './clustered.js';
 import { ForwardPass } from './forward.js';
+import { RingPass } from './rings.js';
 import { TerrainCuller } from './culling.js';
 import { MapPass } from './map.js';
 import { GTAO } from './gtao.js';
@@ -61,6 +62,7 @@ export class DeferredRenderer {
     this.terrainCuller = new TerrainCuller(this.device);
     this.materialEffects = new GBufferEffects(this.device);
     this.forward = new ForwardPass(this.device,this.textures,this.localLights);
+    this.rings = new RingPass(this.device);
     this.opaque = new OpaquePass(this.device, this.textures);
     this.lightBindings = new ProgramBindings(this.device, lightLayout, this.textures);
   }
@@ -68,6 +70,8 @@ export class DeferredRenderer {
     const d = this.device, S = GPUShaderStage;
     await Promise.all([this.passes.init(), this.air.init(), this.opaque.init(), this.shadows.init(), this.forward.init(), this.localLights.init(), this.gtao.init(), this.materialEffects.init(), this.map.init(), this.terrainCuller.init(), this.mirror.init(), this.central.init()]);
     this.air.central = this.central;
+    // (the rings a nicety: a failure there turns them off, not the renderer)
+    this.air.rings = this.rings; await this.rings.init().catch((e) => { console.error('Rings off:', e); this.air.rings = null; });
     this.frameLayout = d.createBindGroupLayout({ label: 'frame and world', entries: [
       { binding: 0, visibility: S.VERTEX | S.FRAGMENT, buffer: { type: 'uniform' } },
       { binding: 1, visibility: S.VERTEX | S.FRAGMENT, buffer: { type: 'read-only-storage' } },
@@ -339,7 +343,7 @@ export class DeferredRenderer {
     if (this.disposed) return; this.disposed = true;
     for (const geometry of [...this.geometries]) geometry.dispose();
     for (const target of this.targets.values()) { this.air.release(target); this.post.release(target); this.localLights.release(target); for (const texture of target.textures) texture.destroy(); }
-    this.targets.clear(); this.timer.dispose(); this.surfaces.dispose(); this.background.dispose(); this.shadows.dispose(); this.opaque.dispose(); this.forward.dispose(); this.localLights.dispose(); this.gtao.dispose(); this.map.dispose(); this.terrainCuller.dispose(); this.central.dispose(); this.materialEffects.dispose(); this.lightBindings.dispose(); this.passes.dispose(); this.textures.dispose();
+    this.targets.clear(); this.timer.dispose(); this.surfaces.dispose(); this.background.dispose(); this.shadows.dispose(); this.opaque.dispose(); this.forward.dispose(); this.rings.dispose(); this.localLights.dispose(); this.gtao.dispose(); this.map.dispose(); this.terrainCuller.dispose(); this.central.dispose(); this.materialEffects.dispose(); this.lightBindings.dispose(); this.passes.dispose(); this.textures.dispose();
     this.frameBuffer?.destroy(); this.objectBuffer?.destroy(); this.objectIndices?.destroy(); this.bodyBuffer?.destroy();
     this.mirror.dispose();
     this.releaseContext(); this.device.destroy();

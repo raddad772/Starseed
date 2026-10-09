@@ -62,6 +62,7 @@ import { AudioEngine } from './audio.js';
 import * as U from './core/units.js';
 import { TerrainTiles } from './sim/terrainTiles.js';
 import { hasImmersiveView, immersiveFor, hideFromView, restoreView } from './ui/immersiveView.js';
+import { collideShipWithRing, inRing } from './sim/ringField.js';
 
 export { WARP_LEVELS } from './sim/warpConsent.js';
 // (the big ships' orbits above the FTL lock were laid out in km at the old tenth-size worlds: the
@@ -2057,6 +2058,7 @@ export class Game {
     s.computeControl(h, F, T);
     if (settling) F.set(0, 0, 0); // unpiloted: drop onto the legs
     s.step(h, F, T);
+    collideShipWithRing(s, this.universe.t);   // (a ring's boulders: sim/ringField.js)
     s.environment(h);
     s.tryLand(h);
     if (settling) s.legComp.fill(0);
@@ -2194,6 +2196,12 @@ export class Game {
         const air = v.body.atm && alt < v.body.atmHeight;
         this.tell(v, `${air ? 'Atmospheric entry' : 'Surface proximity'}: warp stopped`, 'caution', `${v.name} ${air ? 'entering the atmosphere' : 'near the surface'}: warp stopped`);
       }
+      return true;
+    }
+    // (in a ring's slab: its boulders to meet, physically: sim/ringField.js)
+    if (inRing(v.body, v.pos, (v.type.radius || 20) + 40)) {
+      v.rails = false; v._mode = 'physics';
+      if (this.warp > 1) { this.setWarp(0); this.tell(v, `${v.body.data.name}'s ring: warp stopped`, 'caution'); }
       return true;
     }
     const c = v.ctrl, input = c.fwd || c.strafe || c.lift || c.brake;

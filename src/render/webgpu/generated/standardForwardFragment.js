@@ -174,13 +174,31 @@ export const layout = {
       "offset": 192
     },
     {
+      "name": "uRing",
+      "type": "vec4",
+      "count": 0,
+      "align": 16,
+      "size": 16,
+      "stride": 16,
+      "offset": 208
+    },
+    {
+      "name": "uRingTau",
+      "type": "vec4",
+      "count": 8,
+      "align": 16,
+      "size": 16,
+      "stride": 16,
+      "offset": 224
+    },
+    {
       "name": "uCSOrigin",
       "type": "vec3",
       "count": 0,
       "align": 16,
       "size": 12,
       "stride": 12,
-      "offset": 208
+      "offset": 352
     },
     {
       "name": "uCSE",
@@ -189,7 +207,7 @@ export const layout = {
       "align": 16,
       "size": 12,
       "stride": 12,
-      "offset": 224
+      "offset": 368
     },
     {
       "name": "uCSN",
@@ -198,7 +216,7 @@ export const layout = {
       "align": 16,
       "size": 12,
       "stride": 12,
-      "offset": 240
+      "offset": 384
     },
     {
       "name": "uCSInvL",
@@ -207,7 +225,7 @@ export const layout = {
       "align": 4,
       "size": 4,
       "stride": 4,
-      "offset": 252
+      "offset": 396
     },
     {
       "name": "uCSLod",
@@ -216,7 +234,7 @@ export const layout = {
       "align": 4,
       "size": 4,
       "stride": 4,
-      "offset": 256
+      "offset": 400
     },
     {
       "name": "uCSOn",
@@ -225,7 +243,7 @@ export const layout = {
       "align": 4,
       "size": 4,
       "stride": 4,
-      "offset": 260
+      "offset": 404
     },
     {
       "name": "uCloudTau",
@@ -234,7 +252,7 @@ export const layout = {
       "align": 4,
       "size": 4,
       "stride": 4,
-      "offset": 264
+      "offset": 408
     },
     {
       "name": "uThermal",
@@ -243,7 +261,7 @@ export const layout = {
       "align": 16,
       "size": 16,
       "stride": 16,
-      "offset": 272
+      "offset": 416
     },
     {
       "name": "uHeightCube",
@@ -252,7 +270,7 @@ export const layout = {
       "align": 16,
       "size": 16,
       "stride": 16,
-      "offset": 288
+      "offset": 432
     },
     {
       "name": "uSunShadow",
@@ -261,7 +279,7 @@ export const layout = {
       "align": 16,
       "size": 16,
       "stride": 16,
-      "offset": 304
+      "offset": 448
     },
     {
       "name": "uSunShadowVP0",
@@ -270,7 +288,7 @@ export const layout = {
       "align": 16,
       "size": 64,
       "stride": 64,
-      "offset": 320
+      "offset": 464
     },
     {
       "name": "uSunShadowVP1",
@@ -279,7 +297,7 @@ export const layout = {
       "align": 16,
       "size": 64,
       "stride": 64,
-      "offset": 384
+      "offset": 528
     },
     {
       "name": "uSunShadowL0",
@@ -288,7 +306,7 @@ export const layout = {
       "align": 16,
       "size": 16,
       "stride": 16,
-      "offset": 448
+      "offset": 592
     },
     {
       "name": "uSunShadowL1",
@@ -297,7 +315,7 @@ export const layout = {
       "align": 16,
       "size": 16,
       "stride": 16,
-      "offset": 464
+      "offset": 608
     },
     {
       "name": "uSunShadowDir",
@@ -306,7 +324,7 @@ export const layout = {
       "align": 16,
       "size": 12,
       "stride": 12,
-      "offset": 480
+      "offset": 624
     },
     {
       "name": "uGrassCover",
@@ -315,7 +333,7 @@ export const layout = {
       "align": 16,
       "size": 16,
       "stride": 16,
-      "offset": 496
+      "offset": 640
     },
     {
       "name": "uGrassCoverVP",
@@ -324,7 +342,7 @@ export const layout = {
       "align": 16,
       "size": 64,
       "stride": 64,
-      "offset": 512
+      "offset": 656
     },
     {
       "name": "uTrunkSky",
@@ -333,7 +351,7 @@ export const layout = {
       "align": 16,
       "size": 16,
       "stride": 16,
-      "offset": 576
+      "offset": 720
     },
     {
       "name": "uRockSky",
@@ -342,7 +360,7 @@ export const layout = {
       "align": 16,
       "size": 16,
       "stride": 16,
-      "offset": 592
+      "offset": 736
     },
     {
       "name": "uTrunkSkyVP",
@@ -351,7 +369,7 @@ export const layout = {
       "align": 16,
       "size": 64,
       "stride": 64,
-      "offset": 608
+      "offset": 752
     },
     {
       "name": "uSkyShadow",
@@ -360,7 +378,7 @@ export const layout = {
       "align": 16,
       "size": 16,
       "stride": 16,
-      "offset": 672
+      "offset": 816
     },
     {
       "name": "uSkyShadowVP0",
@@ -369,7 +387,7 @@ export const layout = {
       "align": 16,
       "size": 64,
       "stride": 64,
-      "offset": 688
+      "offset": 832
     },
     {
       "name": "uSkyShadowVP1",
@@ -378,7 +396,7 @@ export const layout = {
       "align": 16,
       "size": 64,
       "stride": 64,
-      "offset": 752
+      "offset": 896
     },
     {
       "name": "uSkyShadowL0",
@@ -387,7 +405,7 @@ export const layout = {
       "align": 16,
       "size": 16,
       "stride": 16,
-      "offset": 816
+      "offset": 960
     },
     {
       "name": "uSkyShadowL1",
@@ -396,7 +414,7 @@ export const layout = {
       "align": 16,
       "size": 16,
       "stride": 16,
-      "offset": 832
+      "offset": 976
     },
     {
       "name": "uSkyShadowUp0",
@@ -405,7 +423,7 @@ export const layout = {
       "align": 16,
       "size": 12,
       "stride": 12,
-      "offset": 848
+      "offset": 992
     },
     {
       "name": "uSkyShadowUp1",
@@ -414,7 +432,7 @@ export const layout = {
       "align": 16,
       "size": 12,
       "stride": 12,
-      "offset": 864
+      "offset": 1008
     },
     {
       "name": "uSkyCenter",
@@ -423,7 +441,7 @@ export const layout = {
       "align": 16,
       "size": 12,
       "stride": 12,
-      "offset": 880
+      "offset": 1024
     },
     {
       "name": "uSkyToFixed",
@@ -432,7 +450,7 @@ export const layout = {
       "align": 16,
       "size": 48,
       "stride": 48,
-      "offset": 896
+      "offset": 1040
     },
     {
       "name": "uSkyD",
@@ -441,7 +459,7 @@ export const layout = {
       "align": 8,
       "size": 8,
       "stride": 8,
-      "offset": 944
+      "offset": 1088
     },
     {
       "name": "uLeafTint",
@@ -450,7 +468,7 @@ export const layout = {
       "align": 16,
       "size": 12,
       "stride": 12,
-      "offset": 960
+      "offset": 1104
     },
     {
       "name": "uMoonDir",
@@ -459,7 +477,7 @@ export const layout = {
       "align": 16,
       "size": 12,
       "stride": 12,
-      "offset": 976
+      "offset": 1120
     },
     {
       "name": "uMoonE",
@@ -468,7 +486,7 @@ export const layout = {
       "align": 16,
       "size": 12,
       "stride": 12,
-      "offset": 992
+      "offset": 1136
     },
     {
       "name": "uInterior",
@@ -477,7 +495,7 @@ export const layout = {
       "align": 4,
       "size": 4,
       "stride": 4,
-      "offset": 1004
+      "offset": 1148
     },
     {
       "name": "uCanopy",
@@ -486,7 +504,7 @@ export const layout = {
       "align": 4,
       "size": 4,
       "stride": 4,
-      "offset": 1008
+      "offset": 1152
     },
     {
       "name": "uBase",
@@ -495,7 +513,7 @@ export const layout = {
       "align": 16,
       "size": 16,
       "stride": 16,
-      "offset": 1024
+      "offset": 1168
     },
     {
       "name": "uLivery",
@@ -504,7 +522,7 @@ export const layout = {
       "align": 8,
       "size": 8,
       "stride": 8,
-      "offset": 1040
+      "offset": 1184
     },
     {
       "name": "uPaint1",
@@ -513,7 +531,7 @@ export const layout = {
       "align": 16,
       "size": 12,
       "stride": 12,
-      "offset": 1056
+      "offset": 1200
     },
     {
       "name": "uPaint2",
@@ -522,7 +540,7 @@ export const layout = {
       "align": 16,
       "size": 12,
       "stride": 12,
-      "offset": 1072
+      "offset": 1216
     },
     {
       "name": "uPaint3",
@@ -531,7 +549,7 @@ export const layout = {
       "align": 16,
       "size": 12,
       "stride": 12,
-      "offset": 1088
+      "offset": 1232
     },
     {
       "name": "uEmissive",
@@ -540,7 +558,7 @@ export const layout = {
       "align": 16,
       "size": 12,
       "stride": 12,
-      "offset": 1104
+      "offset": 1248
     },
     {
       "name": "uPBR",
@@ -549,7 +567,7 @@ export const layout = {
       "align": 16,
       "size": 16,
       "stride": 16,
-      "offset": 1120
+      "offset": 1264
     },
     {
       "name": "uFlags",
@@ -558,7 +576,7 @@ export const layout = {
       "align": 16,
       "size": 16,
       "stride": 16,
-      "offset": 1136
+      "offset": 1280
     },
     {
       "name": "uNormalScale",
@@ -567,7 +585,7 @@ export const layout = {
       "align": 8,
       "size": 8,
       "stride": 8,
-      "offset": 1152
+      "offset": 1296
     },
     {
       "name": "mapTransform",
@@ -576,7 +594,7 @@ export const layout = {
       "align": 16,
       "size": 48,
       "stride": 48,
-      "offset": 1168
+      "offset": 1312
     },
     {
       "name": "normalMapTransform",
@@ -585,7 +603,7 @@ export const layout = {
       "align": 16,
       "size": 48,
       "stride": 48,
-      "offset": 1216
+      "offset": 1360
     },
     {
       "name": "roughnessMapTransform",
@@ -594,7 +612,7 @@ export const layout = {
       "align": 16,
       "size": 48,
       "stride": 48,
-      "offset": 1264
+      "offset": 1408
     },
     {
       "name": "metalnessMapTransform",
@@ -603,7 +621,7 @@ export const layout = {
       "align": 16,
       "size": 48,
       "stride": 48,
-      "offset": 1312
+      "offset": 1456
     },
     {
       "name": "emissiveMapTransform",
@@ -612,7 +630,7 @@ export const layout = {
       "align": 16,
       "size": 48,
       "stride": 48,
-      "offset": 1360
+      "offset": 1504
     },
     {
       "name": "aoMapTransform",
@@ -621,7 +639,7 @@ export const layout = {
       "align": 16,
       "size": 48,
       "stride": 48,
-      "offset": 1408
+      "offset": 1552
     },
     {
       "name": "alphaMapTransform",
@@ -630,7 +648,7 @@ export const layout = {
       "align": 16,
       "size": 48,
       "stride": 48,
-      "offset": 1456
+      "offset": 1600
     },
     {
       "name": "uChannels",
@@ -639,7 +657,7 @@ export const layout = {
       "align": 16,
       "size": 16,
       "stride": 16,
-      "offset": 1504
+      "offset": 1648
     },
     {
       "name": "uChannels2",
@@ -648,7 +666,7 @@ export const layout = {
       "align": 16,
       "size": 12,
       "stride": 12,
-      "offset": 1520
+      "offset": 1664
     }
   ],
   "textures": [
@@ -758,7 +776,7 @@ export const layout = {
       "samplerBinding": 30
     }
   ],
-  "bytes": 1536,
+  "bytes": 1680,
   "group": 1,
   "attributes": []
 };
@@ -783,6 +801,8 @@ struct Params {
     uCloudYear: vec2<f32>,
     uCloudClock: vec4<f32>,
     uCloudWind: vec4<f32>,
+    uRing: vec4<f32>,
+    uRingTau: array<vec4<f32>, 8>,
     uCSOrigin: vec3<f32>,
     uCSE: vec3<f32>,
     uCSN: vec3<f32>,
@@ -930,42 +950,42 @@ fn lensTrueZ(zd: f32) -> f32 {
     var local: f32;
 
     zd_1 = zd;
-    let _e179 = global.uSunLift;
-    hD = (1.5707963f + _e179.x);
-    let _e184 = global.uSunLift;
-    hT = (1.5707963f + _e184.y);
-    let _e188 = zd_1;
-    let _e189 = hD;
-    if (_e188 <= _e189) {
-        let _e191 = zd_1;
-        let _e192 = hT;
-        let _e194 = hD;
-        local = ((_e191 * _e192) / _e194);
-    } else {
+    let _e183 = global.uSunLift;
+    hD = (1.5707963f + _e183.x);
+    let _e188 = global.uSunLift;
+    hT = (1.5707963f + _e188.y);
+    let _e192 = zd_1;
+    let _e193 = hD;
+    if (_e192 <= _e193) {
+        let _e195 = zd_1;
         let _e196 = hT;
-        let _e197 = zd_1;
         let _e198 = hD;
-        let _e201 = hT;
-        let _e205 = hD;
-        local = (_e196 + (((_e197 - _e198) * (3.1415927f - _e201)) / (3.1415927f - _e205)));
+        local = ((_e195 * _e196) / _e198);
+    } else {
+        let _e200 = hT;
+        let _e201 = zd_1;
+        let _e202 = hD;
+        let _e205 = hT;
+        let _e209 = hD;
+        local = (_e200 + (((_e201 - _e202) * (3.1415927f - _e205)) / (3.1415927f - _e209)));
     }
-    let _e210 = local;
-    return _e210;
+    let _e214 = local;
+    return _e214;
 }
 
 fn liftMu(mu: f32) -> f32 {
     var mu_1: f32;
 
     mu_1 = mu;
-    let _e178 = global.uSunLift;
-    let _e180 = global.uSunLift;
-    if (_e178.x <= _e180.y) {
-        let _e183 = mu_1;
-        return _e183;
+    let _e182 = global.uSunLift;
+    let _e184 = global.uSunLift;
+    if (_e182.x <= _e184.y) {
+        let _e187 = mu_1;
+        return _e187;
     }
-    let _e184 = mu_1;
-    let _e190 = lensTrueZ(acos(clamp(_e184, -1f, 1f)));
-    return cos(_e190);
+    let _e188 = mu_1;
+    let _e194 = lensTrueZ(acos(clamp(_e188, -1f, 1f)));
+    return cos(_e194);
 }
 
 fn transmittanceUV(r: f32, mu_2: f32) -> vec2<f32> {
@@ -980,40 +1000,40 @@ fn transmittanceUV(r: f32, mu_2: f32) -> vec2<f32> {
 
     r_1 = r;
     mu_3 = mu_2;
-    let _e181 = global.uTop;
-    let _e182 = global.uTop;
-    let _e184 = global.uBottom;
-    let _e185 = global.uBottom;
-    H = sqrt(max(0f, ((_e181 * _e182) - (_e184 * _e185))));
-    let _e192 = r_1;
-    let _e193 = r_1;
-    let _e195 = global.uBottom;
-    let _e196 = global.uBottom;
-    rho = sqrt(max(0f, ((_e192 * _e193) - (_e195 * _e196))));
-    let _e202 = r_1;
-    let _e203 = r_1;
-    let _e205 = mu_3;
-    let _e206 = mu_3;
-    let _e211 = global.uTop;
-    let _e212 = global.uTop;
-    disc = (((_e202 * _e203) * ((_e205 * _e206) - 1f)) + (_e211 * _e212));
-    let _e217 = r_1;
-    let _e219 = mu_3;
-    let _e221 = disc;
-    d = max(0f, ((-(_e217) * _e219) + sqrt(max(_e221, 0f))));
-    let _e228 = global.uTop;
-    let _e229 = r_1;
-    dMin = (_e228 - _e229);
-    let _e232 = rho;
-    let _e233 = H;
-    dMax = (_e232 + _e233);
-    let _e236 = d;
-    let _e237 = dMin;
-    let _e239 = dMax;
-    let _e240 = dMin;
-    let _e245 = rho;
-    let _e246 = H;
-    return vec2<f32>(((_e236 - _e237) / max((_e239 - _e240), 0.000001f)), (_e245 / max(_e246, 0.000001f)));
+    let _e185 = global.uTop;
+    let _e186 = global.uTop;
+    let _e188 = global.uBottom;
+    let _e189 = global.uBottom;
+    H = sqrt(max(0f, ((_e185 * _e186) - (_e188 * _e189))));
+    let _e196 = r_1;
+    let _e197 = r_1;
+    let _e199 = global.uBottom;
+    let _e200 = global.uBottom;
+    rho = sqrt(max(0f, ((_e196 * _e197) - (_e199 * _e200))));
+    let _e206 = r_1;
+    let _e207 = r_1;
+    let _e209 = mu_3;
+    let _e210 = mu_3;
+    let _e215 = global.uTop;
+    let _e216 = global.uTop;
+    disc = (((_e206 * _e207) * ((_e209 * _e210) - 1f)) + (_e215 * _e216));
+    let _e221 = r_1;
+    let _e223 = mu_3;
+    let _e225 = disc;
+    d = max(0f, ((-(_e221) * _e223) + sqrt(max(_e225, 0f))));
+    let _e232 = global.uTop;
+    let _e233 = r_1;
+    dMin = (_e232 - _e233);
+    let _e236 = rho;
+    let _e237 = H;
+    dMax = (_e236 + _e237);
+    let _e240 = d;
+    let _e241 = dMin;
+    let _e243 = dMax;
+    let _e244 = dMin;
+    let _e249 = rho;
+    let _e250 = H;
+    return vec2<f32>(((_e240 - _e241) / max((_e243 - _e244), 0.000001f)), (_e249 / max(_e250, 0.000001f)));
 }
 
 fn atmoSunTransmittance(r_2: f32, mu_4: f32) -> vec3<f32> {
@@ -1027,41 +1047,41 @@ fn atmoSunTransmittance(r_2: f32, mu_4: f32) -> vec3<f32> {
 
     r_3 = r_2;
     mu_5 = mu_4;
-    let _e180 = mu_5;
-    let _e181 = liftMu(_e180);
-    mu_5 = _e181;
-    let _e182 = global.uGround;
-    let _e183 = global.uTrueK;
-    Rg = (_e182 * max(_e183, 1f));
-    let _e188 = Rg;
-    let _e189 = Rg;
-    let _e190 = r_3;
-    let _e191 = global.uGround;
-    sinH = (_e188 / (_e189 + max((_e190 - _e191), 0f)));
-    let _e200 = sinH;
-    let _e201 = sinH;
-    cosH = -(sqrt(max(0f, (1f - (_e200 * _e201)))));
-    let _e208 = cosH;
-    let _e211 = cosH;
-    let _e214 = mu_5;
-    vis = smoothstep((_e208 - 0.01f), (_e211 + 0.01f), _e214);
-    let _e217 = global.uHasAtmo;
-    if (_e217 < 0.5f) {
-        let _e220 = vis;
-        return vec3(_e220);
+    let _e184 = mu_5;
+    let _e185 = liftMu(_e184);
+    mu_5 = _e185;
+    let _e186 = global.uGround;
+    let _e187 = global.uTrueK;
+    Rg = (_e186 * max(_e187, 1f));
+    let _e192 = Rg;
+    let _e193 = Rg;
+    let _e194 = r_3;
+    let _e195 = global.uGround;
+    sinH = (_e192 / (_e193 + max((_e194 - _e195), 0f)));
+    let _e204 = sinH;
+    let _e205 = sinH;
+    cosH = -(sqrt(max(0f, (1f - (_e204 * _e205)))));
+    let _e212 = cosH;
+    let _e215 = cosH;
+    let _e218 = mu_5;
+    vis = smoothstep((_e212 - 0.01f), (_e215 + 0.01f), _e218);
+    let _e221 = global.uHasAtmo;
+    if (_e221 < 0.5f) {
+        let _e224 = vis;
+        return vec3(_e224);
     }
-    let _e222 = r_3;
-    let _e223 = global.uBottom;
-    let _e224 = global.uTop;
-    let _e226 = mu_5;
-    let _e227 = transmittanceUV(clamp(_e222, _e223, _e224), _e226);
-    uv = _e227;
-    let _e236 = uv;
-    uv = (vec2<f32>(0.001953125f, 0.0078125f) + (_e236 * vec2<f32>(0.99609375f, 0.984375f)));
-    let _e246 = uv;
-    let _e248 = textureSampleLevel(tTransTexture, tTransSampler, _e246, 0f);
-    let _e250 = vis;
-    return (_e248.xyz * _e250);
+    let _e226 = r_3;
+    let _e227 = global.uBottom;
+    let _e228 = global.uTop;
+    let _e230 = mu_5;
+    let _e231 = transmittanceUV(clamp(_e226, _e227, _e228), _e230);
+    uv = _e231;
+    let _e240 = uv;
+    uv = (vec2<f32>(0.001953125f, 0.0078125f) + (_e240 * vec2<f32>(0.99609375f, 0.984375f)));
+    let _e250 = uv;
+    let _e252 = textureSampleLevel(tTransTexture, tTransSampler, _e250, 0f);
+    let _e254 = vis;
+    return (_e252.xyz * _e254);
 }
 
 fn atmoSkyIrradiance(r_4: f32, mu_6: f32) -> vec3<f32> {
@@ -1071,42 +1091,42 @@ fn atmoSkyIrradiance(r_4: f32, mu_6: f32) -> vec3<f32> {
 
     r_5 = r_4;
     mu_7 = mu_6;
-    let _e180 = global.uHasAtmo;
-    if (_e180 < 0.5f) {
+    let _e184 = global.uHasAtmo;
+    if (_e184 < 0.5f) {
         return vec3(0f);
     }
-    let _e185 = mu_7;
-    let _e186 = liftMu(_e185);
-    mu_7 = _e186;
-    let _e187 = mu_7;
-    let _e192 = r_5;
-    let _e193 = global.uGround;
-    let _e195 = global.uTop;
-    let _e196 = global.uGround;
-    uv_1 = vec2<f32>(((_e187 * 0.5f) + 0.5f), clamp(((_e192 - _e193) / (_e195 - _e196)), 0f, 1f));
-    let _e211 = uv_1;
-    uv_1 = (vec2<f32>(0.0078125f, 0.03125f) + (_e211 * vec2<f32>(0.984375f, 0.9375f)));
-    let _e221 = uv_1;
-    let _e223 = textureSampleLevel(tIrrTexture, tIrrSampler, _e221, 0f);
-    return _e223.xyz;
+    let _e189 = mu_7;
+    let _e190 = liftMu(_e189);
+    mu_7 = _e190;
+    let _e191 = mu_7;
+    let _e196 = r_5;
+    let _e197 = global.uGround;
+    let _e199 = global.uTop;
+    let _e200 = global.uGround;
+    uv_1 = vec2<f32>(((_e191 * 0.5f) + 0.5f), clamp(((_e196 - _e197) / (_e199 - _e200)), 0f, 1f));
+    let _e215 = uv_1;
+    uv_1 = (vec2<f32>(0.0078125f, 0.03125f) + (_e215 * vec2<f32>(0.984375f, 0.9375f)));
+    let _e225 = uv_1;
+    let _e227 = textureSampleLevel(tIrrTexture, tIrrSampler, _e225, 0f);
+    return _e227.xyz;
 }
 
 fn cloudN(n: f32) -> f32 {
     var n_1: f32;
 
     n_1 = n;
-    let _e179 = n_1;
-    return (0.55f + ((_e179 - 0.682f) * 4.3f));
+    let _e183 = n_1;
+    return (0.55f + ((_e183 - 0.682f) * 4.3f));
 }
 
 fn cloudBias(cover: f32) -> f32 {
     var cover_1: f32;
 
     cover_1 = cover;
-    let _e178 = cover_1;
-    let _e186 = cover_1;
-    let _e194 = cover_1;
-    return ((((_e178 - 0.5f) * 0.3f) + (0.5f * smoothstep(0.8f, 1f, _e186))) - (0.5f * (1f - smoothstep(0f, 0.2f, _e194))));
+    let _e182 = cover_1;
+    let _e190 = cover_1;
+    let _e198 = cover_1;
+    return ((((_e182 - 0.5f) * 0.3f) + (0.5f * smoothstep(0.8f, 1f, _e190))) - (0.5f * (1f - smoothstep(0f, 0.2f, _e198))));
 }
 
 fn cloudFade(foot: f32, L: f32) -> f32 {
@@ -1115,9 +1135,9 @@ fn cloudFade(foot: f32, L: f32) -> f32 {
 
     foot_1 = foot;
     L_1 = L;
-    let _e182 = foot_1;
-    let _e185 = L_1;
-    return smoothstep(1f, 4f, ((_e182 * 64f) / _e185));
+    let _e186 = foot_1;
+    let _e189 = L_1;
+    return smoothstep(1f, 4f, ((_e186 * 64f) / _e189));
 }
 
 fn cloudMapSmooth(uv_2: vec2<f32>) -> vec3<f32> {
@@ -1138,68 +1158,68 @@ fn cloudMapSmooth(uv_2: vec2<f32>) -> vec3<f32> {
     var h1_: vec2<f32>;
 
     uv_3 = uv_2;
-    let _e179 = textureDimensions(tCloudMapTexture, 0i);
-    sz = vec2<f32>(vec2<i32>(_e179));
-    let _e183 = uv_3;
-    let _e184 = sz;
-    st = ((_e183 * _e184) - vec2(0.5f));
-    let _e190 = st;
-    i = floor(_e190);
-    let _e193 = st;
-    let _e194 = i;
-    f = (_e193 - _e194);
-    let _e197 = f;
-    let _e198 = f;
-    f2_ = (_e197 * _e198);
-    let _e201 = f2_;
+    let _e183 = textureDimensions(tCloudMapTexture, 0i);
+    sz = vec2<f32>(vec2<i32>(_e183));
+    let _e187 = uv_3;
+    let _e188 = sz;
+    st = ((_e187 * _e188) - vec2(0.5f));
+    let _e194 = st;
+    i = floor(_e194);
+    let _e197 = st;
+    let _e198 = i;
+    f = (_e197 - _e198);
+    let _e201 = f;
     let _e202 = f;
-    f3_ = (_e201 * _e202);
-    let _e207 = f;
-    let _e212 = f2_;
-    let _e215 = f3_;
-    w0_ = ((((vec2(1f) - (3f * _e207)) + (3f * _e212)) - _e215) / vec2(6f));
-    let _e223 = f2_;
-    let _e228 = f3_;
-    w1_ = (((vec2(4f) - (6f * _e223)) + (3f * _e228)) / vec2(6f));
-    let _e237 = f;
-    let _e242 = f2_;
-    let _e246 = f3_;
-    w2_ = ((((vec2(1f) + (3f * _e237)) + (3f * _e242)) - (3f * _e246)) / vec2(6f));
-    let _e253 = f3_;
-    w3_ = (_e253 / vec2(6f));
-    let _e258 = w0_;
-    let _e259 = w1_;
-    g0_ = (_e258 + _e259);
-    let _e262 = w2_;
-    let _e263 = w3_;
-    g1_ = (_e262 + _e263);
-    let _e266 = i;
-    let _e270 = w1_;
-    let _e271 = g0_;
-    let _e274 = sz;
-    h0_ = (((_e266 - vec2(0.5f)) + (_e270 / _e271)) / _e274);
-    let _e277 = i;
-    let _e281 = w3_;
-    let _e282 = g1_;
-    let _e285 = sz;
-    h1_ = (((_e277 + vec2(1.5f)) + (_e281 / _e282)) / _e285);
-    let _e288 = g0_;
-    let _e290 = g0_;
-    let _e292 = h0_;
-    let _e294 = textureSampleLevel(tCloudMapTexture, tCloudMapSampler, _e292, 0f);
-    let _e297 = g1_;
-    let _e299 = h1_;
-    let _e301 = h0_;
-    let _e305 = textureSampleLevel(tCloudMapTexture, tCloudMapSampler, vec2<f32>(_e299.x, _e301.y), 0f);
-    let _e310 = g1_;
-    let _e312 = g0_;
-    let _e314 = h0_;
-    let _e316 = h1_;
-    let _e320 = textureSampleLevel(tCloudMapTexture, tCloudMapSampler, vec2<f32>(_e314.x, _e316.y), 0f);
-    let _e323 = g1_;
-    let _e325 = h1_;
-    let _e327 = textureSampleLevel(tCloudMapTexture, tCloudMapSampler, _e325, 0f);
-    return ((_e288.y * ((_e290.x * _e294.xyz) + (_e297.x * _e305.xyz))) + (_e310.y * ((_e312.x * _e320.xyz) + (_e323.x * _e327.xyz))));
+    f2_ = (_e201 * _e202);
+    let _e205 = f2_;
+    let _e206 = f;
+    f3_ = (_e205 * _e206);
+    let _e211 = f;
+    let _e216 = f2_;
+    let _e219 = f3_;
+    w0_ = ((((vec2(1f) - (3f * _e211)) + (3f * _e216)) - _e219) / vec2(6f));
+    let _e227 = f2_;
+    let _e232 = f3_;
+    w1_ = (((vec2(4f) - (6f * _e227)) + (3f * _e232)) / vec2(6f));
+    let _e241 = f;
+    let _e246 = f2_;
+    let _e250 = f3_;
+    w2_ = ((((vec2(1f) + (3f * _e241)) + (3f * _e246)) - (3f * _e250)) / vec2(6f));
+    let _e257 = f3_;
+    w3_ = (_e257 / vec2(6f));
+    let _e262 = w0_;
+    let _e263 = w1_;
+    g0_ = (_e262 + _e263);
+    let _e266 = w2_;
+    let _e267 = w3_;
+    g1_ = (_e266 + _e267);
+    let _e270 = i;
+    let _e274 = w1_;
+    let _e275 = g0_;
+    let _e278 = sz;
+    h0_ = (((_e270 - vec2(0.5f)) + (_e274 / _e275)) / _e278);
+    let _e281 = i;
+    let _e285 = w3_;
+    let _e286 = g1_;
+    let _e289 = sz;
+    h1_ = (((_e281 + vec2(1.5f)) + (_e285 / _e286)) / _e289);
+    let _e292 = g0_;
+    let _e294 = g0_;
+    let _e296 = h0_;
+    let _e298 = textureSampleLevel(tCloudMapTexture, tCloudMapSampler, _e296, 0f);
+    let _e301 = g1_;
+    let _e303 = h1_;
+    let _e305 = h0_;
+    let _e309 = textureSampleLevel(tCloudMapTexture, tCloudMapSampler, vec2<f32>(_e303.x, _e305.y), 0f);
+    let _e314 = g1_;
+    let _e316 = g0_;
+    let _e318 = h0_;
+    let _e320 = h1_;
+    let _e324 = textureSampleLevel(tCloudMapTexture, tCloudMapSampler, vec2<f32>(_e318.x, _e320.y), 0f);
+    let _e327 = g1_;
+    let _e329 = h1_;
+    let _e331 = textureSampleLevel(tCloudMapTexture, tCloudMapSampler, _e329, 0f);
+    return ((_e292.y * ((_e294.x * _e298.xyz) + (_e301.x * _e309.xyz))) + (_e314.y * ((_e316.x * _e324.xyz) + (_e327.x * _e331.xyz))));
 }
 
 fn cloudClimate(dirF: vec3<f32>) -> f32 {
@@ -1208,25 +1228,25 @@ fn cloudClimate(dirF: vec3<f32>) -> f32 {
     var cm: vec3<f32>;
 
     dirF_1 = dirF;
-    let _e178 = dirF_1;
-    lat = asin(clamp(_e178.y, -1f, 1f));
-    let _e186 = global.uCloudMapMean;
-    if (_e186 <= 0f) {
-        let _e190 = lat;
-        return (0.12f * cos((abs(_e190) * 6f)));
+    let _e182 = dirF_1;
+    lat = asin(clamp(_e182.y, -1f, 1f));
+    let _e190 = global.uCloudMapMean;
+    if (_e190 <= 0f) {
+        let _e194 = lat;
+        return (0.12f * cos((abs(_e194) * 6f)));
     }
-    let _e196 = dirF_1;
-    let _e198 = dirF_1;
-    let _e205 = lat;
-    let _e211 = cloudMapSmooth(vec2<f32>(((atan2(_e196.z, _e198.x) / 6.2832f) + 0.5f), ((_e205 / 3.14159f) + 0.5f)));
-    cm = _e211;
-    let _e213 = cm;
-    let _e215 = cm;
-    let _e219 = global.uCloudYear;
-    let _e223 = cm;
-    let _e227 = global.uCloudYear;
-    let _e231 = global.uCloudMapMean;
-    return ((((_e213.x + ((_e215.y - 0.5f) * _e219.x)) + ((_e223.z - 0.5f) * _e227.y)) - _e231) * 0.8f);
+    let _e200 = dirF_1;
+    let _e202 = dirF_1;
+    let _e209 = lat;
+    let _e215 = cloudMapSmooth(vec2<f32>(((atan2(_e200.z, _e202.x) / 6.2832f) + 0.5f), ((_e209 / 3.14159f) + 0.5f)));
+    cm = _e215;
+    let _e217 = cm;
+    let _e219 = cm;
+    let _e223 = global.uCloudYear;
+    let _e227 = cm;
+    let _e231 = global.uCloudYear;
+    let _e235 = global.uCloudMapMean;
+    return ((((_e217.x + ((_e219.y - 0.5f) * _e223.x)) + ((_e227.z - 0.5f) * _e231.y)) - _e235) * 0.8f);
 }
 
 fn cloudCoverC(q: vec3<f32>, foot_2: f32, bias: f32, clim: f32) -> f32 {
@@ -1249,56 +1269,56 @@ fn cloudCoverC(q: vec3<f32>, foot_2: f32, bias: f32, clim: f32) -> f32 {
     foot_3 = foot_2;
     bias_1 = bias;
     clim_1 = clim;
-    let _e184 = global.uRadius;
-    L0_ = (_e184 * 1f);
     let _e188 = global.uRadius;
-    L1_ = (_e188 * 0.236f);
-    let _e192 = foot_3;
-    let _e193 = L0_;
-    let _e194 = cloudFade(_e192, _e193);
-    f0_ = _e194;
+    L0_ = (_e188 * 1f);
+    let _e192 = global.uRadius;
+    L1_ = (_e192 * 0.236f);
     let _e196 = foot_3;
-    let _e197 = L1_;
+    let _e197 = L0_;
     let _e198 = cloudFade(_e196, _e197);
-    f1_ = _e198;
-    let _e200 = q_1;
-    qz = (_e200 * vec3<f32>(0.5f, 1f, 0.5f));
-    let _e207 = f0_;
-    if (_e207 > 0.999f) {
+    f0_ = _e198;
+    let _e200 = foot_3;
+    let _e201 = L1_;
+    let _e202 = cloudFade(_e200, _e201);
+    f1_ = _e202;
+    let _e204 = q_1;
+    qz = (_e204 * vec3<f32>(0.5f, 1f, 0.5f));
+    let _e211 = f0_;
+    if (_e211 > 0.999f) {
         local_1 = 0.682f;
     } else {
-        let _e211 = qz;
-        let _e212 = L0_;
-        let _e216 = textureSampleLevel(tNoiseTexture, tNoiseSampler, (_e211 / vec3(_e212)), 0f);
-        let _e219 = f0_;
-        local_1 = mix(_e216.x, 0.682f, _e219);
+        let _e215 = qz;
+        let _e216 = L0_;
+        let _e220 = textureSampleLevel(tNoiseTexture, tNoiseSampler, (_e215 / vec3(_e216)), 0f);
+        let _e223 = f0_;
+        local_1 = mix(_e220.x, 0.682f, _e223);
     }
-    let _e222 = local_1;
-    a = _e222;
-    let _e224 = f1_;
-    if (_e224 > 0.999f) {
+    let _e226 = local_1;
+    a = _e226;
+    let _e228 = f1_;
+    if (_e228 > 0.999f) {
         local_2 = 0.682f;
     } else {
-        let _e228 = qz;
-        let _e229 = L1_;
-        let _e236 = textureSampleLevel(tNoiseTexture, tNoiseSampler, ((_e228 / vec3(_e229)) + vec3(0.5f)), 0f);
-        let _e239 = f1_;
-        local_2 = mix(_e236.x, 0.682f, _e239);
+        let _e232 = qz;
+        let _e233 = L1_;
+        let _e240 = textureSampleLevel(tNoiseTexture, tNoiseSampler, ((_e232 / vec3(_e233)) + vec3(0.5f)), 0f);
+        let _e243 = f1_;
+        local_2 = mix(_e240.x, 0.682f, _e243);
     }
-    let _e242 = local_2;
-    b = _e242;
-    let _e245 = f0_;
-    let _e248 = f1_;
-    spread = length(vec2<f32>((0.124f * _e245), (0.083f * _e248)));
-    let _e254 = bias_1;
-    let _e256 = spread;
-    let _e259 = bias_1;
-    let _e261 = spread;
-    let _e263 = a;
-    let _e266 = b;
-    let _e270 = cloudN(((_e263 * 0.6f) + (_e266 * 0.4f)));
-    let _e271 = clim_1;
-    return smoothstep(((0.6f - _e254) - _e256), ((0.8f - _e259) + _e261), (_e270 + _e271));
+    let _e246 = local_2;
+    b = _e246;
+    let _e249 = f0_;
+    let _e252 = f1_;
+    spread = length(vec2<f32>((0.124f * _e249), (0.083f * _e252)));
+    let _e258 = bias_1;
+    let _e260 = spread;
+    let _e263 = bias_1;
+    let _e265 = spread;
+    let _e267 = a;
+    let _e270 = b;
+    let _e274 = cloudN(((_e267 * 0.6f) + (_e270 * 0.4f)));
+    let _e275 = clim_1;
+    return smoothstep(((0.6f - _e258) - _e260), ((0.8f - _e263) + _e265), (_e274 + _e275));
 }
 
 fn cloudGens(dirF_2: vec3<f32>, gA: ptr<function, vec3<f32>>, gB: ptr<function, vec3<f32>>) {
@@ -1315,58 +1335,58 @@ fn cloudGens(dirF_2: vec3<f32>, gA: ptr<function, vec3<f32>>, gB: ptr<function, 
     var wa: f32;
 
     dirF_3 = dirF_2;
-    let _e180 = global.uCloudClock;
-    T = _e180.z;
-    let _e183 = T;
-    if (_e183 <= 0f) {
+    let _e184 = global.uCloudClock;
+    T = _e184.z;
+    let _e187 = T;
+    if (_e187 <= 0f) {
         {
             (*gA) = vec3<f32>(1f, 0f, 0f);
             (*gB) = vec3(0f);
             return;
         }
     }
-    let _e193 = dirF_3;
     let _e197 = dirF_3;
-    let _e202 = dirF_3;
-    let _e208 = dirF_3;
+    let _e201 = dirF_3;
+    let _e206 = dirF_3;
     let _e212 = dirF_3;
-    let _e217 = dirF_3;
-    ph = ((((1.1f * _e193.x) + (0.7f * _e197.z)) - (0.5f * _e202.y)) + (0.35f * sin((((2.3f * _e208.y) + (1.7f * _e212.x)) - (0.9f * _e217.z)))));
-    let _e225 = global.uCloudClock;
-    let _e227 = T;
-    let _e229 = ph;
-    s = (((_e225.x / _e227) + _e229) + 4f);
-    let _e234 = s;
-    a_1 = floor(_e234);
-    let _e237 = s;
-    let _e238 = a_1;
-    fa = (_e237 - _e238);
+    let _e216 = dirF_3;
+    let _e221 = dirF_3;
+    ph = ((((1.1f * _e197.x) + (0.7f * _e201.z)) - (0.5f * _e206.y)) + (0.35f * sin((((2.3f * _e212.y) + (1.7f * _e216.x)) - (0.9f * _e221.z)))));
+    let _e229 = global.uCloudClock;
+    let _e231 = T;
+    let _e233 = ph;
+    s = (((_e229.x / _e231) + _e233) + 4f);
+    let _e238 = s;
+    a_1 = floor(_e238);
     let _e241 = s;
-    b_1 = floor((_e241 + 0.5f));
-    let _e246 = s;
-    let _e249 = b_1;
-    fb = ((_e246 + 0.5f) - _e249);
-    let _e253 = dirF_3;
-    let _e263 = dirF_3;
-    let _e275 = dirF_3;
-    j = (0.065f * ((sin((dot(_e253, vec3<f32>(5.1f, 3.7f, -4.3f)) + 1.3f)) + sin((dot(_e263, vec3<f32>(-3.9f, 7.3f, 6.1f)) + 0.4f))) + (0.6f * sin((dot(_e275, vec3<f32>(11.3f, -8.9f, 7.7f)) + 2.1f)))));
-    let _e289 = s;
-    let _e290 = j;
-    fj = fract((_e289 + _e290));
-    let _e298 = fj;
-    wa = smoothstep(0.4f, 0.6f, (1f - abs(((2f * _e298) - 1f))));
-    let _e306 = wa;
-    let _e307 = fa;
-    let _e310 = T;
-    let _e313 = global.uCloudClock;
-    let _e315 = a_1;
-    (*gA) = vec3<f32>(_e306, ((_e307 - 0.5f) * _e310), (2f * (_e313.y + _e315)));
-    let _e320 = wa;
-    let _e322 = fb;
-    let _e325 = T;
-    let _e328 = global.uCloudClock;
-    let _e330 = b_1;
-    (*gB) = vec3<f32>((1f - _e320), ((_e322 - 0.5f) * _e325), ((2f * (_e328.y + _e330)) + 1f));
+    let _e242 = a_1;
+    fa = (_e241 - _e242);
+    let _e245 = s;
+    b_1 = floor((_e245 + 0.5f));
+    let _e250 = s;
+    let _e253 = b_1;
+    fb = ((_e250 + 0.5f) - _e253);
+    let _e257 = dirF_3;
+    let _e267 = dirF_3;
+    let _e279 = dirF_3;
+    j = (0.065f * ((sin((dot(_e257, vec3<f32>(5.1f, 3.7f, -4.3f)) + 1.3f)) + sin((dot(_e267, vec3<f32>(-3.9f, 7.3f, 6.1f)) + 0.4f))) + (0.6f * sin((dot(_e279, vec3<f32>(11.3f, -8.9f, 7.7f)) + 2.1f)))));
+    let _e293 = s;
+    let _e294 = j;
+    fj = fract((_e293 + _e294));
+    let _e302 = fj;
+    wa = smoothstep(0.4f, 0.6f, (1f - abs(((2f * _e302) - 1f))));
+    let _e310 = wa;
+    let _e311 = fa;
+    let _e314 = T;
+    let _e317 = global.uCloudClock;
+    let _e319 = a_1;
+    (*gA) = vec3<f32>(_e310, ((_e311 - 0.5f) * _e314), (2f * (_e317.y + _e319)));
+    let _e324 = wa;
+    let _e326 = fb;
+    let _e329 = T;
+    let _e332 = global.uCloudClock;
+    let _e334 = b_1;
+    (*gB) = vec3<f32>((1f - _e324), ((_e326 - 0.5f) * _e329), ((2f * (_e332.y + _e334)) + 1f));
     return;
 }
 
@@ -1375,20 +1395,20 @@ fn cloudGenOff(idx: f32) -> vec3<f32> {
     var h: u32;
 
     idx_1 = idx;
-    let _e178 = idx_1;
-    h = (u32(_e178) * 2654435761u);
-    let _e183 = h;
-    let _e184 = h;
-    h = (_e183 ^ (_e184 >> 15u));
+    let _e182 = idx_1;
+    h = (u32(_e182) * 2654435761u);
+    let _e187 = h;
     let _e188 = h;
-    h = (_e188 * 2246822519u);
-    let _e191 = h;
+    h = (_e187 ^ (_e188 >> 15u));
     let _e192 = h;
-    h = (_e191 ^ (_e192 >> 13u));
+    h = (_e192 * 2246822519u);
+    let _e195 = h;
     let _e196 = h;
+    h = (_e195 ^ (_e196 >> 13u));
     let _e200 = h;
-    let _e206 = h;
-    return (((vec3<f32>(f32((_e196 & 1023u)), f32(((_e200 >> 10u) & 1023u)), f32(((_e206 >> 20u) & 1023u))) / vec3(1024f)) - vec3(0.5f)) * 400000f);
+    let _e204 = h;
+    let _e210 = h;
+    return (((vec3<f32>(f32((_e200 & 1023u)), f32(((_e204 >> 10u) & 1023u)), f32(((_e210 >> 20u) & 1023u))) / vec3(1024f)) - vec3(0.5f)) * 400000f);
 }
 
 fn cloudAdvect(pf: vec3<f32>, dirF_4: vec3<f32>, g: vec3<f32>) -> vec3<f32> {
@@ -1402,26 +1422,26 @@ fn cloudAdvect(pf: vec3<f32>, dirF_4: vec3<f32>, g: vec3<f32>) -> vec3<f32> {
     pf_1 = pf;
     dirF_5 = dirF_4;
     g_1 = g;
-    let _e182 = dirF_5;
-    lat_1 = asin(clamp(_e182.y, -1f, 1f));
-    let _e190 = global.uCloudWind;
-    let _e192 = lat_1;
-    let _e193 = global.uCloudWind;
-    let _e198 = global.uCloudWind;
-    let _e204 = global.uCloudWind;
-    let _e206 = lat_1;
-    let _e208 = lat_1;
-    U = (_e190.x * (sin((((_e192 * _e193.y) * 2f) + (_e198.z * 6.2832f))) + (_e204.w * exp(((-(_e206) * _e208) * 40f)))));
-    let _e217 = dirF_5;
+    let _e186 = dirF_5;
+    lat_1 = asin(clamp(_e186.y, -1f, 1f));
+    let _e194 = global.uCloudWind;
+    let _e196 = lat_1;
+    let _e197 = global.uCloudWind;
+    let _e202 = global.uCloudWind;
+    let _e208 = global.uCloudWind;
+    let _e210 = lat_1;
+    let _e212 = lat_1;
+    U = (_e194.x * (sin((((_e196 * _e197.y) * 2f) + (_e202.z * 6.2832f))) + (_e208.w * exp(((-(_e210) * _e212) * 40f)))));
     let _e221 = dirF_5;
-    east = normalize((vec3<f32>(-(_e217.z), 0f, _e221.x) + vec3<f32>(0.000001f, 0f, 0f)));
-    let _e231 = pf_1;
-    let _e232 = east;
-    let _e233 = U;
-    let _e235 = g_1;
+    let _e225 = dirF_5;
+    east = normalize((vec3<f32>(-(_e221.z), 0f, _e225.x) + vec3<f32>(0.000001f, 0f, 0f)));
+    let _e235 = pf_1;
+    let _e236 = east;
+    let _e237 = U;
     let _e239 = g_1;
-    let _e241 = cloudGenOff(_e239.z);
-    return ((_e231 + ((_e232 * _e233) * _e235.y)) + _e241);
+    let _e243 = g_1;
+    let _e245 = cloudGenOff(_e243.z);
+    return ((_e235 + ((_e236 * _e237) * _e239.y)) + _e245);
 }
 
 fn cloudCoverG(pf_2: vec3<f32>, dirF_6: vec3<f32>, foot_4: f32, bias_2: f32) -> f32 {
@@ -1438,49 +1458,116 @@ fn cloudCoverG(pf_2: vec3<f32>, dirF_6: vec3<f32>, foot_4: f32, bias_2: f32) -> 
     dirF_7 = dirF_6;
     foot_5 = foot_4;
     bias_3 = bias_2;
-    let _e186 = dirF_7;
-    cloudGens(_e186, (&gA_1), (&gB_1));
-    let _e193 = dirF_7;
-    let _e194 = cloudClimate(_e193);
-    clim_2 = _e194;
-    let _e196 = gA_1;
-    if (_e196.x > 0.005f) {
-        let _e200 = c;
-        let _e201 = gA_1;
-        let _e203 = pf_3;
-        let _e204 = dirF_7;
+    let _e190 = dirF_7;
+    cloudGens(_e190, (&gA_1), (&gB_1));
+    let _e197 = dirF_7;
+    let _e198 = cloudClimate(_e197);
+    clim_2 = _e198;
+    let _e200 = gA_1;
+    if (_e200.x > 0.005f) {
+        let _e204 = c;
         let _e205 = gA_1;
-        let _e206 = cloudAdvect(_e203, _e204, _e205);
-        let _e207 = foot_5;
-        let _e208 = bias_3;
-        let _e209 = clim_2;
-        let _e210 = cloudCoverC(_e206, _e207, _e208, _e209);
-        c = (_e200 + (_e201.x * _e210));
+        let _e207 = pf_3;
+        let _e208 = dirF_7;
+        let _e209 = gA_1;
+        let _e210 = cloudAdvect(_e207, _e208, _e209);
+        let _e211 = foot_5;
+        let _e212 = bias_3;
+        let _e213 = clim_2;
+        let _e214 = cloudCoverC(_e210, _e211, _e212, _e213);
+        c = (_e204 + (_e205.x * _e214));
     }
-    let _e213 = gB_1;
-    if (_e213.x > 0.005f) {
-        let _e217 = c;
-        let _e218 = gB_1;
-        let _e220 = pf_3;
-        let _e221 = dirF_7;
+    let _e217 = gB_1;
+    if (_e217.x > 0.005f) {
+        let _e221 = c;
         let _e222 = gB_1;
-        let _e223 = cloudAdvect(_e220, _e221, _e222);
-        let _e224 = foot_5;
-        let _e225 = bias_3;
-        let _e226 = clim_2;
-        let _e227 = cloudCoverC(_e223, _e224, _e225, _e226);
-        c = (_e217 + (_e218.x * _e227));
+        let _e224 = pf_3;
+        let _e225 = dirF_7;
+        let _e226 = gB_1;
+        let _e227 = cloudAdvect(_e224, _e225, _e226);
+        let _e228 = foot_5;
+        let _e229 = bias_3;
+        let _e230 = clim_2;
+        let _e231 = cloudCoverC(_e227, _e228, _e229, _e230);
+        c = (_e221 + (_e222.x * _e231));
     }
-    let _e230 = c;
-    return _e230;
+    let _e234 = c;
+    return _e234;
 }
 
-fn cloudLight(rel: vec3<f32>, r_6: f32, muS: f32, foot_6: f32, sunAbove: vec3<f32>, skyE: ptr<function, vec3<f32>>) -> f32 {
+fn ringShadow(rel: vec3<f32>) -> f32 {
     var rel_1: vec3<f32>;
+    var pF: vec3<f32>;
+    var sF: vec3<f32>;
+    var q_2: vec3<f32>;
+    var x: f32;
+    var f_1: f32;
+    var i_1: i32;
+    var j_1: i32;
+    var tau: f32;
+
+    rel_1 = rel;
+    let _e182 = global.uRing;
+    if (_e182.z < 0.5f) {
+        return 1f;
+    }
+    let _e187 = global.uToFixed;
+    let _e188 = rel_1;
+    pF = (_e187 * _e188);
+    let _e191 = global.uToFixed;
+    let _e192 = global.uSunDir;
+    sF = (_e191 * _e192);
+    let _e195 = pF;
+    let _e197 = sF;
+    let _e202 = sF;
+    if (((_e195.y * _e197.y) >= 0f) || (abs(_e202.y) < 0.0001f)) {
+        return 1f;
+    }
+    let _e209 = pF;
+    let _e210 = sF;
+    let _e211 = pF;
+    let _e213 = sF;
+    q_2 = (_e209 - (_e210 * (_e211.y / _e213.y)));
+    let _e219 = q_2;
+    let _e222 = global.uRing;
+    let _e225 = global.uRing;
+    let _e227 = global.uRing;
+    x = ((length(_e219.xz) - _e222.x) / (_e225.y - _e227.x));
+    let _e232 = x;
+    let _e235 = x;
+    if ((_e232 <= 0f) || (_e235 >= 1f)) {
+        return 1f;
+    }
+    let _e240 = x;
+    f_1 = clamp(((_e240 * 32f) - 0.5f), 0f, 31f);
+    let _e249 = f_1;
+    i_1 = i32(floor(_e249));
+    let _e253 = i_1;
+    j_1 = min((_e253 + 1i), 31i);
+    let _e259 = i_1;
+    let _e261 = i_1;
+    let _e266 = i_1;
+    let _e271 = global.uRingTau[(_e266 / 4i)][(_e259 - (4i * (_e261 / 4i)))];
+    let _e272 = j_1;
+    let _e274 = j_1;
+    let _e279 = j_1;
+    let _e284 = global.uRingTau[(_e279 / 4i)][(_e272 - (4i * (_e274 / 4i)))];
+    let _e285 = f_1;
+    let _e286 = f_1;
+    tau = mix(_e271, _e284, (_e285 - floor(_e286)));
+    let _e291 = tau;
+    let _e293 = sF;
+    return exp((-(_e291) / abs(_e293.y)));
+}
+
+fn cloudLight(rel_2: vec3<f32>, r_6: f32, muS: f32, foot_6: f32, sunAbove: vec3<f32>, skyE: ptr<function, vec3<f32>>) -> f32 {
+    var rel_3: vec3<f32>;
     var r_7: f32;
     var muS_1: f32;
     var foot_7: f32;
     var sunAbove_1: vec3<f32>;
+    var ring: f32;
+    var local_3: f32;
     var mu_8: f32;
     var Tdir: f32 = 1f;
     var Ttot: f32 = 1f;
@@ -1490,169 +1577,181 @@ fn cloudLight(rel: vec3<f32>, r_6: f32, muS: f32, foot_6: f32, sunAbove: vec3<f3
     var m1_: vec4<f32> = vec4(1f);
     var pf_4: vec3<f32>;
     var upF: vec3<f32>;
-    var sF: vec3<f32>;
+    var sF_1: vec3<f32>;
     var d_1: vec3<f32>;
     var uv_4: vec2<f32>;
     var hc: f32;
     var ds: vec3<f32>;
-    var local_3: f32;
+    var local_4: f32;
     var cs: f32;
     var dz: vec3<f32>;
     var cz: f32;
-    var local_4: f32;
+    var local_5: f32;
 
-    rel_1 = rel;
+    rel_3 = rel_2;
     r_7 = r_6;
     muS_1 = muS;
     foot_7 = foot_6;
     sunAbove_1 = sunAbove;
     cloudDirZ = 1f;
     cloudTotZ = 1f;
-    let _e191 = global.uCloudOn;
-    if (_e191 < 0.5f) {
-        return 1f;
+    let _e195 = rel_3;
+    let _e196 = ringShadow(_e195);
+    ring = _e196;
+    let _e198 = global.uCloudOn;
+    if (_e198 < 0.5f) {
+        let _e201 = muS_1;
+        if (_e201 > -0.05f) {
+            let _e205 = ring;
+            local_3 = _e205;
+        } else {
+            local_3 = 1f;
+        }
+        let _e208 = local_3;
+        return _e208;
     }
-    let _e195 = muS_1;
-    mu_8 = max(_e195, 0.05f);
-    let _e213 = global.uCSOn;
-    if (_e213 > 0.5f) {
+    let _e209 = muS_1;
+    mu_8 = max(_e209, 0.05f);
+    let _e227 = global.uCSOn;
+    if (_e227 > 0.5f) {
         {
-            let _e216 = global.uToFixed;
-            let _e217 = rel_1;
-            pf_4 = (_e216 * _e217);
-            let _e220 = pf_4;
-            let _e221 = r_7;
-            upF = (_e220 / vec3(_e221));
-            let _e225 = global.uToFixed;
-            let _e226 = global.uSunDir;
-            sF = (_e225 * _e226);
-            let _e229 = pf_4;
-            let _e230 = global.uCSOrigin;
-            let _e232 = sF;
-            let _e233 = upF;
-            let _e234 = sF;
-            let _e235 = upF;
-            let _e239 = r_7;
-            let _e240 = global.uRadius;
-            let _e243 = sF;
-            let _e244 = upF;
-            d_1 = ((_e229 - _e230) - (((_e232 - (_e233 * dot(_e234, _e235))) * (_e239 - _e240)) / vec3(max(dot(_e243, _e244), 0.1f))));
-            let _e252 = d_1;
-            let _e253 = global.uCSE;
-            let _e255 = d_1;
-            let _e256 = global.uCSN;
-            let _e259 = global.uCSInvL;
-            uv_4 = ((vec2<f32>(dot(_e252, _e253), dot(_e255, _e256)) * _e259) + vec2(0.5f));
-            let _e267 = uv_4;
-            let _e270 = uv_4;
-            let _e274 = uv_4;
-            let _e277 = uv_4;
-            w = smoothstep(0f, 0.08f, min(min(_e267.x, (1f - _e270.x)), min(_e274.y, (1f - _e277.y))));
-            let _e283 = w;
-            if (_e283 > 0f) {
+            let _e230 = global.uToFixed;
+            let _e231 = rel_3;
+            pf_4 = (_e230 * _e231);
+            let _e234 = pf_4;
+            let _e235 = r_7;
+            upF = (_e234 / vec3(_e235));
+            let _e239 = global.uToFixed;
+            let _e240 = global.uSunDir;
+            sF_1 = (_e239 * _e240);
+            let _e243 = pf_4;
+            let _e244 = global.uCSOrigin;
+            let _e246 = sF_1;
+            let _e247 = upF;
+            let _e248 = sF_1;
+            let _e249 = upF;
+            let _e253 = r_7;
+            let _e254 = global.uRadius;
+            let _e257 = sF_1;
+            let _e258 = upF;
+            d_1 = ((_e243 - _e244) - (((_e246 - (_e247 * dot(_e248, _e249))) * (_e253 - _e254)) / vec3(max(dot(_e257, _e258), 0.1f))));
+            let _e266 = d_1;
+            let _e267 = global.uCSE;
+            let _e269 = d_1;
+            let _e270 = global.uCSN;
+            let _e273 = global.uCSInvL;
+            uv_4 = ((vec2<f32>(dot(_e266, _e267), dot(_e269, _e270)) * _e273) + vec2(0.5f));
+            let _e281 = uv_4;
+            let _e284 = uv_4;
+            let _e288 = uv_4;
+            let _e291 = uv_4;
+            w = smoothstep(0f, 0.08f, min(min(_e281.x, (1f - _e284.x)), min(_e288.y, (1f - _e291.y))));
+            let _e297 = w;
+            if (_e297 > 0f) {
                 {
-                    let _e286 = uv_4;
-                    let _e288 = textureSampleLevel(tCloudShadowTexture, tCloudShadowSampler, _e286, 0f);
-                    m0_ = _e288;
-                    let _e289 = uv_4;
-                    let _e290 = global.uCSLod;
-                    let _e291 = textureSampleLevel(tCloudShadowTexture, tCloudShadowSampler, _e289, _e290);
-                    m1_ = _e291;
+                    let _e300 = uv_4;
+                    let _e302 = textureSampleLevel(tCloudShadowTexture, tCloudShadowSampler, _e300, 0f);
+                    m0_ = _e302;
+                    let _e303 = uv_4;
+                    let _e304 = global.uCSLod;
+                    let _e305 = textureSampleLevel(tCloudShadowTexture, tCloudShadowSampler, _e303, _e304);
+                    m1_ = _e305;
                 }
             }
         }
     }
-    let _e292 = global.uCloud;
-    let _e294 = r_7;
-    let _e295 = global.uRadius;
-    hc = (_e292.x - (_e294 - _e295));
-    let _e299 = hc;
-    let _e302 = w;
-    if ((_e299 > 0f) && (_e302 < 1f)) {
+    let _e306 = global.uCloud;
+    let _e308 = r_7;
+    let _e309 = global.uRadius;
+    hc = (_e306.x - (_e308 - _e309));
+    let _e313 = hc;
+    let _e316 = w;
+    if ((_e313 > 0f) && (_e316 < 1f)) {
         {
-            let _e306 = global.uToFixed;
-            let _e307 = rel_1;
-            let _e308 = global.uSunDir;
-            let _e309 = hc;
-            let _e311 = muS_1;
-            ds = normalize((_e306 * normalize((_e307 + ((_e308 * _e309) / vec3(max(_e311, 0.08f)))))));
-            let _e321 = muS_1;
-            if (_e321 > -0.05f) {
-                let _e325 = ds;
-                let _e326 = global.uRadius;
-                let _e328 = ds;
-                let _e329 = foot_7;
-                let _e330 = global.uCloud;
-                let _e332 = cloudBias(_e330.z);
-                let _e333 = cloudCoverG((_e325 * _e326), _e328, _e329, _e332);
-                let _e334 = global.uCloudOpacity;
-                local_3 = (_e333 * _e334);
+            let _e320 = global.uToFixed;
+            let _e321 = rel_3;
+            let _e322 = global.uSunDir;
+            let _e323 = hc;
+            let _e325 = muS_1;
+            ds = normalize((_e320 * normalize((_e321 + ((_e322 * _e323) / vec3(max(_e325, 0.08f)))))));
+            let _e335 = muS_1;
+            if (_e335 > -0.05f) {
+                let _e339 = ds;
+                let _e340 = global.uRadius;
+                let _e342 = ds;
+                let _e343 = foot_7;
+                let _e344 = global.uCloud;
+                let _e346 = cloudBias(_e344.z);
+                let _e347 = cloudCoverG((_e339 * _e340), _e342, _e343, _e346);
+                let _e348 = global.uCloudOpacity;
+                local_4 = (_e347 * _e348);
             } else {
-                local_3 = 0f;
+                local_4 = 0f;
             }
-            let _e338 = local_3;
-            cs = _e338;
-            let _e340 = global.uToFixed;
-            let _e341 = rel_1;
-            dz = normalize((_e340 * _e341));
-            let _e345 = dz;
-            let _e346 = global.uRadius;
-            let _e348 = dz;
-            let _e349 = foot_7;
-            let _e351 = hc;
-            let _e354 = global.uCloud;
-            let _e356 = cloudBias(_e354.z);
-            let _e357 = cloudCoverG((_e345 * _e346), _e348, max(_e349, (3.5f * _e351)), _e356);
-            let _e358 = global.uCloudOpacity;
-            cz = (_e357 * _e358);
-            let _e362 = cs;
-            let _e364 = cs;
-            let _e365 = global.uCloudTau;
-            let _e367 = mu_8;
-            Tdir = ((1f - _e362) + (_e364 * exp((-(_e365) / _e367))));
-            let _e373 = cz;
-            let _e375 = cz;
-            let _e378 = global.uCloudTau;
-            Ttot = ((1f - _e373) + (_e375 / (1f + (0.1125f * _e378))));
-            let _e384 = cz;
-            let _e386 = cz;
-            let _e387 = global.uCloudTau;
-            let _e389 = mu_8;
-            Dup = ((1f - _e384) + (_e386 * exp((-(_e387) / _e389))));
+            let _e352 = local_4;
+            cs = _e352;
+            let _e354 = global.uToFixed;
+            let _e355 = rel_3;
+            dz = normalize((_e354 * _e355));
+            let _e359 = dz;
+            let _e360 = global.uRadius;
+            let _e362 = dz;
+            let _e363 = foot_7;
+            let _e365 = hc;
+            let _e368 = global.uCloud;
+            let _e370 = cloudBias(_e368.z);
+            let _e371 = cloudCoverG((_e359 * _e360), _e362, max(_e363, (3.5f * _e365)), _e370);
+            let _e372 = global.uCloudOpacity;
+            cz = (_e371 * _e372);
+            let _e376 = cs;
+            let _e378 = cs;
+            let _e379 = global.uCloudTau;
+            let _e381 = mu_8;
+            Tdir = ((1f - _e376) + (_e378 * exp((-(_e379) / _e381))));
+            let _e387 = cz;
+            let _e389 = cz;
+            let _e392 = global.uCloudTau;
+            Ttot = ((1f - _e387) + (_e389 / (1f + (0.1125f * _e392))));
+            let _e398 = cz;
+            let _e400 = cz;
+            let _e401 = global.uCloudTau;
+            let _e403 = mu_8;
+            Dup = ((1f - _e398) + (_e400 * exp((-(_e401) / _e403))));
         }
     }
-    let _e394 = Tdir;
-    let _e395 = m0_;
-    let _e397 = w;
-    Tdir = mix(_e394, _e395.x, _e397);
-    let _e399 = Ttot;
-    let _e400 = m1_;
-    let _e402 = w;
-    Ttot = mix(_e399, _e400.y, _e402);
-    let _e404 = Dup;
-    let _e405 = m1_;
-    let _e407 = w;
-    Dup = mix(_e404, _e405.z, _e407);
-    let _e409 = Dup;
-    cloudDirZ = _e409;
-    let _e410 = Ttot;
-    cloudTotZ = _e410;
-    let _e411 = (*skyE);
-    let _e412 = Ttot;
-    let _e414 = sunAbove_1;
-    let _e415 = muS_1;
-    let _e419 = Ttot;
-    let _e420 = Dup;
-    (*skyE) = ((_e411 * _e412) + ((_e414 * max(_e415, 0f)) * max((_e419 - _e420), 0f)));
-    let _e426 = muS_1;
-    if (_e426 > -0.05f) {
-        let _e430 = Tdir;
-        local_4 = _e430;
+    let _e408 = Tdir;
+    let _e409 = m0_;
+    let _e411 = w;
+    Tdir = mix(_e408, _e409.x, _e411);
+    let _e413 = Ttot;
+    let _e414 = m1_;
+    let _e416 = w;
+    Ttot = mix(_e413, _e414.y, _e416);
+    let _e418 = Dup;
+    let _e419 = m1_;
+    let _e421 = w;
+    Dup = mix(_e418, _e419.z, _e421);
+    let _e423 = Dup;
+    cloudDirZ = _e423;
+    let _e424 = Ttot;
+    cloudTotZ = _e424;
+    let _e425 = (*skyE);
+    let _e426 = Ttot;
+    let _e428 = sunAbove_1;
+    let _e429 = muS_1;
+    let _e433 = Ttot;
+    let _e434 = Dup;
+    (*skyE) = ((_e425 * _e426) + ((_e428 * max(_e429, 0f)) * max((_e433 - _e434), 0f)));
+    let _e440 = muS_1;
+    if (_e440 > -0.05f) {
+        let _e444 = Tdir;
+        let _e445 = ring;
+        local_5 = (_e444 * _e445);
     } else {
-        local_4 = 1f;
+        local_5 = 1f;
     }
-    let _e433 = local_4;
-    return _e433;
+    let _e449 = local_5;
+    return _e449;
 }
 
 fn blackbodyGlow(T_1: f32) -> vec3<f32> {
@@ -1660,100 +1759,100 @@ fn blackbodyGlow(T_1: f32) -> vec3<f32> {
     var g_2: f32;
 
     T_2 = T_1;
-    let _e180 = T_2;
-    if (_e180 < 650f) {
+    let _e184 = T_2;
+    if (_e184 < 650f) {
         return vec3(0f);
     }
-    let _e188 = T_2;
-    g_2 = max(0f, (0.0287f + (0.000237f * (_e188 - 1000f))));
-    let _e196 = g_2;
-    let _e202 = T_2;
-    let _e208 = g_2;
-    return (vec3<f32>(1f, _e196, 0f) * ((600000f * exp((-24060f / _e202))) / (0.2126f + (0.7152f * _e208))));
+    let _e192 = T_2;
+    g_2 = max(0f, (0.0287f + (0.000237f * (_e192 - 1000f))));
+    let _e200 = g_2;
+    let _e206 = T_2;
+    let _e212 = g_2;
+    return (vec3<f32>(1f, _e200, 0f) * ((600000f * exp((-24060f / _e206))) / (0.2126f + (0.7152f * _e212))));
 }
 
 fn heightCubeAt(d_2: vec3<f32>) -> f32 {
     var d_3: vec3<f32>;
     var a_2: vec3<f32>;
-    var local_5: i32;
     var local_6: i32;
     var local_7: i32;
     var local_8: i32;
     var local_9: i32;
-    var f_1: i32;
-    var local_10: array<vec3<f32>, 6> = HC_N;
+    var local_10: i32;
+    var f_2: i32;
+    var local_11: array<vec3<f32>, 6> = HC_N;
     var dn: f32;
-    var local_11: array<vec3<f32>, 6> = HC_U;
-    var local_12: array<vec3<f32>, 6> = HC_V;
+    var local_12: array<vec3<f32>, 6> = HC_U;
+    var local_13: array<vec3<f32>, 6> = HC_V;
     var uv_5: vec2<f32>;
 
     d_3 = d_2;
-    let _e183 = d_3;
-    a_2 = abs(_e183);
-    let _e186 = a_2;
-    let _e188 = a_2;
-    let _e191 = a_2;
-    let _e193 = a_2;
-    if ((_e186.x >= _e188.y) && (_e191.x >= _e193.z)) {
-        let _e197 = d_3;
-        if (_e197.x >= 0f) {
-            local_5 = 0i;
+    let _e187 = d_3;
+    a_2 = abs(_e187);
+    let _e190 = a_2;
+    let _e192 = a_2;
+    let _e195 = a_2;
+    let _e197 = a_2;
+    if ((_e190.x >= _e192.y) && (_e195.x >= _e197.z)) {
+        let _e201 = d_3;
+        if (_e201.x >= 0f) {
+            local_6 = 0i;
         } else {
-            local_5 = 1i;
+            local_6 = 1i;
         }
-        let _e204 = local_5;
-        local_9 = _e204;
+        let _e208 = local_6;
+        local_10 = _e208;
     } else {
-        let _e205 = a_2;
-        let _e207 = a_2;
-        if (_e205.y >= _e207.z) {
-            let _e210 = d_3;
-            if (_e210.y >= 0f) {
-                local_6 = 2i;
+        let _e209 = a_2;
+        let _e211 = a_2;
+        if (_e209.y >= _e211.z) {
+            let _e214 = d_3;
+            if (_e214.y >= 0f) {
+                local_7 = 2i;
             } else {
-                local_6 = 3i;
+                local_7 = 3i;
             }
-            let _e217 = local_6;
-            local_8 = _e217;
+            let _e221 = local_7;
+            local_9 = _e221;
         } else {
-            let _e218 = d_3;
-            if (_e218.z >= 0f) {
-                local_7 = 4i;
+            let _e222 = d_3;
+            if (_e222.z >= 0f) {
+                local_8 = 4i;
             } else {
-                local_7 = 5i;
+                local_8 = 5i;
             }
-            let _e225 = local_7;
-            local_8 = _e225;
+            let _e229 = local_8;
+            local_9 = _e229;
         }
-        let _e227 = local_8;
-        local_9 = _e227;
+        let _e231 = local_9;
+        local_10 = _e231;
     }
-    let _e229 = local_9;
-    f_1 = _e229;
-    let _e231 = d_3;
-    let _e232 = f_1;
-    let _e236 = local_10[_e232];
-    dn = dot(_e231, _e236);
-    let _e239 = d_3;
-    let _e240 = f_1;
-    let _e244 = local_11[_e240];
-    let _e246 = dn;
-    let _e249 = d_3;
-    let _e250 = f_1;
-    let _e254 = local_12[_e250];
-    let _e256 = dn;
-    uv_5 = (((vec2<f32>(atan((dot(_e239, _e244) / _e246)), atan((dot(_e249, _e254) / _e256))) / vec2(0.785398f)) * 0.5f) + vec2(0.5f));
-    let _e269 = uv_5;
-    let _e270 = f_1;
-    let _e274 = vec3<f32>(_e269.x, _e269.y, f32(_e270));
-    let _e279 = textureSampleLevel(tHeightCubeTexture, tHeightCubeSampler, _e274.xy, i32(_e274.z), 0f);
-    return _e279.x;
+    let _e233 = local_10;
+    f_2 = _e233;
+    let _e235 = d_3;
+    let _e236 = f_2;
+    let _e240 = local_11[_e236];
+    dn = dot(_e235, _e240);
+    let _e243 = d_3;
+    let _e244 = f_2;
+    let _e248 = local_12[_e244];
+    let _e250 = dn;
+    let _e253 = d_3;
+    let _e254 = f_2;
+    let _e258 = local_13[_e254];
+    let _e260 = dn;
+    uv_5 = (((vec2<f32>(atan((dot(_e243, _e248) / _e250)), atan((dot(_e253, _e258) / _e260))) / vec2(0.785398f)) * 0.5f) + vec2(0.5f));
+    let _e273 = uv_5;
+    let _e274 = f_2;
+    let _e278 = vec3<f32>(_e273.x, _e273.y, f32(_e274));
+    let _e283 = textureSampleLevel(tHeightCubeTexture, tHeightCubeSampler, _e278.xy, i32(_e278.z), 0f);
+    return _e283.x;
 }
 
-fn terrainShadow(pF: vec3<f32>, up: vec3<f32>, sF_1: vec3<f32>, R: f32) -> f32 {
-    var pF_1: vec3<f32>;
+fn terrainShadow(pF_1: vec3<f32>, up: vec3<f32>, sF_2: vec3<f32>, R: f32) -> f32 {
+    var pF_2: vec3<f32>;
     var up_1: vec3<f32>;
-    var sF_2: vec3<f32>;
+    var sF_3: vec3<f32>;
     var R_1: f32;
     var texel: f32;
     var top: f32;
@@ -1762,83 +1861,83 @@ fn terrainShadow(pF: vec3<f32>, up: vec3<f32>, sF_1: vec3<f32>, R: f32) -> f32 {
     var o: vec3<f32>;
     var t: f32;
     var sh: f32 = 1f;
-    var i_1: i32 = 0i;
+    var i_2: i32 = 0i;
     var qp: vec3<f32>;
     var rq: f32;
     var d_4: f32;
 
-    pF_1 = pF;
+    pF_2 = pF_1;
     up_1 = up;
-    sF_2 = sF_1;
+    sF_3 = sF_2;
     R_1 = R;
-    let _e189 = global.uHeightCube;
-    let _e193 = up_1;
-    let _e194 = sF_2;
-    if ((_e189.x < 0.5f) || (dot(_e193, _e194) < -0.2f)) {
+    let _e193 = global.uHeightCube;
+    let _e197 = up_1;
+    let _e198 = sF_3;
+    if ((_e193.x < 0.5f) || (dot(_e197, _e198) < -0.2f)) {
         return 1f;
     }
-    let _e201 = global.uHeightCube;
-    texel = _e201.w;
-    let _e204 = R_1;
     let _e205 = global.uHeightCube;
-    top = (_e204 + _e205.z);
-    let _e209 = pF_1;
-    r0_ = length(_e209);
-    let _e213 = R_1;
-    let _e214 = up_1;
-    let _e215 = heightCubeAt(_e214);
-    let _e217 = r0_;
-    below = max(0f, ((_e213 + _e215) - _e217));
-    let _e221 = pF_1;
-    let _e222 = up_1;
-    let _e223 = texel;
-    o = (_e221 + ((_e222 * _e223) * 0.1f));
-    let _e229 = texel;
-    t = _e229;
+    texel = _e205.w;
+    let _e208 = R_1;
+    let _e209 = global.uHeightCube;
+    top = (_e208 + _e209.z);
+    let _e213 = pF_2;
+    r0_ = length(_e213);
+    let _e217 = R_1;
+    let _e218 = up_1;
+    let _e219 = heightCubeAt(_e218);
+    let _e221 = r0_;
+    below = max(0f, ((_e217 + _e219) - _e221));
+    let _e225 = pF_2;
+    let _e226 = up_1;
+    let _e227 = texel;
+    o = (_e225 + ((_e226 * _e227) * 0.1f));
+    let _e233 = texel;
+    t = _e233;
     loop {
-        let _e235 = i_1;
-        if !((_e235 < 28i)) {
+        let _e239 = i_2;
+        if !((_e239 < 28i)) {
             break;
         }
         {
-            let _e242 = o;
-            let _e243 = sF_2;
-            let _e244 = t;
-            qp = (_e242 + (_e243 * _e244));
-            let _e248 = qp;
-            rq = length(_e248);
-            let _e251 = rq;
-            let _e252 = top;
-            if (_e251 > _e252) {
+            let _e246 = o;
+            let _e247 = sF_3;
+            let _e248 = t;
+            qp = (_e246 + (_e247 * _e248));
+            let _e252 = qp;
+            rq = length(_e252);
+            let _e255 = rq;
+            let _e256 = top;
+            if (_e255 > _e256) {
                 break;
             }
-            let _e254 = rq;
-            let _e255 = R_1;
-            let _e256 = qp;
-            let _e257 = rq;
-            let _e260 = heightCubeAt((_e256 / vec3(_e257)));
-            let _e263 = below;
-            let _e264 = t;
-            let _e267 = texel;
-            d_4 = ((_e254 - (_e255 + _e260)) + (_e263 * exp((-(_e264) / (3f * _e267)))));
-            let _e274 = sh;
-            let _e275 = d_4;
-            let _e276 = t;
-            sh = min(_e274, clamp(((_e275 / (_e276 * 0.035f)) + 0.5f), 0f, 1f));
-            let _e286 = sh;
-            if (_e286 <= 0f) {
+            let _e258 = rq;
+            let _e259 = R_1;
+            let _e260 = qp;
+            let _e261 = rq;
+            let _e264 = heightCubeAt((_e260 / vec3(_e261)));
+            let _e267 = below;
+            let _e268 = t;
+            let _e271 = texel;
+            d_4 = ((_e258 - (_e259 + _e264)) + (_e267 * exp((-(_e268) / (3f * _e271)))));
+            let _e278 = sh;
+            let _e279 = d_4;
+            let _e280 = t;
+            sh = min(_e278, clamp(((_e279 / (_e280 * 0.035f)) + 0.5f), 0f, 1f));
+            let _e290 = sh;
+            if (_e290 <= 0f) {
                 break;
             }
-            let _e289 = t;
-            t = (_e289 * 1.35f);
+            let _e293 = t;
+            t = (_e293 * 1.35f);
         }
         continuing {
-            let _e239 = i_1;
-            i_1 = (_e239 + 1i);
+            let _e243 = i_2;
+            i_2 = (_e243 + 1i);
         }
     }
-    let _e292 = sh;
-    return _e292;
+    let _e296 = sh;
+    return _e296;
 }
 
 fn sunShadowTap(org: vec2<i32>, n_2: i32, VP: mat4x4<f32>, L_2: vec4<f32>, wp: vec3<f32>, bias_4: f32) -> f32 {
@@ -1856,12 +1955,12 @@ fn sunShadowTap(org: vec2<i32>, n_2: i32, VP: mat4x4<f32>, L_2: vec4<f32>, wp: v
     var fr: vec2<f32>;
     var p0_: vec2<i32>;
     var cmp: array<f32, 16>;
-    var j_1: i32 = 0i;
-    var i_2: i32;
-    var local_13: f32;
-    var lit: f32 = 0f;
     var j_2: i32 = 0i;
     var i_3: i32;
+    var local_14: f32;
+    var lit: f32 = 0f;
+    var j_3: i32 = 0i;
+    var i_4: i32;
 
     org_1 = org;
     n_3 = n_2;
@@ -1869,108 +1968,108 @@ fn sunShadowTap(org: vec2<i32>, n_2: i32, VP: mat4x4<f32>, L_2: vec4<f32>, wp: v
     L_3 = L_2;
     wp_1 = wp;
     bias_5 = bias_4;
-    let _e193 = VP_1;
-    let _e194 = wp_1;
-    c_1 = (_e193 * vec4<f32>(_e194.x, _e194.y, _e194.z, 1f));
-    let _e202 = c_1;
-    let _e204 = c_1;
-    uv_6 = (((_e202.xy / vec2(_e204.w)) * 0.5f) + vec2(0.5f));
-    let _e214 = uv_6;
-    let _e219 = uv_6;
-    if (any((_e214 < vec2(0f))) || any((_e219 > vec2(1f)))) {
+    let _e197 = VP_1;
+    let _e198 = wp_1;
+    c_1 = (_e197 * vec4<f32>(_e198.x, _e198.y, _e198.z, 1f));
+    let _e206 = c_1;
+    let _e208 = c_1;
+    uv_6 = (((_e206.xy / vec2(_e208.w)) * 0.5f) + vec2(0.5f));
+    let _e218 = uv_6;
+    let _e223 = uv_6;
+    if (any((_e218 < vec2(0f))) || any((_e223 > vec2(1f)))) {
         return 1f;
     }
-    let _e226 = L_3;
-    let _e228 = wp_1;
-    let _e230 = global.uSunShadowDir;
-    let _e232 = bias_5;
-    d_5 = (dot((_e226.xyz - _e228), _e230) - _e232);
-    let _e235 = n_3;
-    sz_1 = vec2(_e235);
-    let _e238 = uv_6;
-    let _e239 = sz_1;
-    st_1 = ((_e238 * vec2<f32>(_e239)) - vec2(0.5f));
-    let _e246 = st_1;
-    fr = fract(_e246);
-    let _e249 = st_1;
-    p0_ = vec2<i32>(floor(_e249));
+    let _e230 = L_3;
+    let _e232 = wp_1;
+    let _e234 = global.uSunShadowDir;
+    let _e236 = bias_5;
+    d_5 = (dot((_e230.xyz - _e232), _e234) - _e236);
+    let _e239 = n_3;
+    sz_1 = vec2(_e239);
+    let _e242 = uv_6;
+    let _e243 = sz_1;
+    st_1 = ((_e242 * vec2<f32>(_e243)) - vec2(0.5f));
+    let _e250 = st_1;
+    fr = fract(_e250);
+    let _e253 = st_1;
+    p0_ = vec2<i32>(floor(_e253));
     loop {
-        let _e256 = j_1;
-        if !((_e256 < 4i)) {
-            break;
-        }
-        i_2 = 0i;
-        loop {
-            let _e265 = i_2;
-            if !((_e265 < 4i)) {
-                break;
-            }
-            let _e272 = j_1;
-            let _e275 = i_2;
-            let _e278 = d_5;
-            let _e279 = org_1;
-            let _e280 = p0_;
-            let _e281 = i_2;
-            let _e284 = j_1;
-            let _e291 = sz_1;
-            let _e298 = textureLoad(tShadowAtlasTexture, (_e279 + clamp((_e280 + vec2<i32>((_e281 - 1i), (_e284 - 1i))), vec2(0i), (_e291 - vec2(1i)))), 0i);
-            if (_e278 <= _e298.x) {
-                local_13 = 1f;
-            } else {
-                local_13 = 0f;
-            }
-            let _e304 = local_13;
-            cmp[((_e272 * 4i) + _e275)] = _e304;
-            continuing {
-                let _e269 = i_2;
-                i_2 = (_e269 + 1i);
-            }
-        }
-        continuing {
-            let _e260 = j_1;
-            j_1 = (_e260 + 1i);
-        }
-    }
-    loop {
-        let _e309 = j_2;
-        if !((_e309 < 3i)) {
+        let _e260 = j_2;
+        if !((_e260 < 4i)) {
             break;
         }
         i_3 = 0i;
         loop {
-            let _e318 = i_3;
-            if !((_e318 < 3i)) {
+            let _e269 = i_3;
+            if !((_e269 < 4i)) {
                 break;
             }
-            let _e325 = lit;
-            let _e326 = j_2;
-            let _e329 = i_3;
-            let _e332 = cmp[((_e326 * 4i) + _e329)];
-            let _e333 = j_2;
-            let _e336 = i_3;
-            let _e341 = cmp[(((_e333 * 4i) + _e336) + 1i)];
-            let _e342 = fr;
-            let _e345 = j_2;
-            let _e348 = i_3;
-            let _e353 = cmp[(((_e345 * 4i) + _e348) + 4i)];
-            let _e354 = j_2;
-            let _e357 = i_3;
-            let _e362 = cmp[(((_e354 * 4i) + _e357) + 5i)];
-            let _e363 = fr;
-            let _e366 = fr;
-            lit = (_e325 + mix(mix(_e332, _e341, _e342.x), mix(_e353, _e362, _e363.x), _e366.y));
+            let _e276 = j_2;
+            let _e279 = i_3;
+            let _e282 = d_5;
+            let _e283 = org_1;
+            let _e284 = p0_;
+            let _e285 = i_3;
+            let _e288 = j_2;
+            let _e295 = sz_1;
+            let _e302 = textureLoad(tShadowAtlasTexture, (_e283 + clamp((_e284 + vec2<i32>((_e285 - 1i), (_e288 - 1i))), vec2(0i), (_e295 - vec2(1i)))), 0i);
+            if (_e282 <= _e302.x) {
+                local_14 = 1f;
+            } else {
+                local_14 = 0f;
+            }
+            let _e308 = local_14;
+            cmp[((_e276 * 4i) + _e279)] = _e308;
             continuing {
-                let _e322 = i_3;
-                i_3 = (_e322 + 1i);
+                let _e273 = i_3;
+                i_3 = (_e273 + 1i);
             }
         }
         continuing {
-            let _e313 = j_2;
-            j_2 = (_e313 + 1i);
+            let _e264 = j_2;
+            j_2 = (_e264 + 1i);
         }
     }
-    let _e370 = lit;
-    return (_e370 / 9f);
+    loop {
+        let _e313 = j_3;
+        if !((_e313 < 3i)) {
+            break;
+        }
+        i_4 = 0i;
+        loop {
+            let _e322 = i_4;
+            if !((_e322 < 3i)) {
+                break;
+            }
+            let _e329 = lit;
+            let _e330 = j_3;
+            let _e333 = i_4;
+            let _e336 = cmp[((_e330 * 4i) + _e333)];
+            let _e337 = j_3;
+            let _e340 = i_4;
+            let _e345 = cmp[(((_e337 * 4i) + _e340) + 1i)];
+            let _e346 = fr;
+            let _e349 = j_3;
+            let _e352 = i_4;
+            let _e357 = cmp[(((_e349 * 4i) + _e352) + 4i)];
+            let _e358 = j_3;
+            let _e361 = i_4;
+            let _e366 = cmp[(((_e358 * 4i) + _e361) + 5i)];
+            let _e367 = fr;
+            let _e370 = fr;
+            lit = (_e329 + mix(mix(_e336, _e345, _e346.x), mix(_e357, _e366, _e367.x), _e370.y));
+            continuing {
+                let _e326 = i_4;
+                i_4 = (_e326 + 1i);
+            }
+        }
+        continuing {
+            let _e317 = j_3;
+            j_3 = (_e317 + 1i);
+        }
+    }
+    let _e374 = lit;
+    return (_e374 / 9f);
 }
 
 fn sunShadowMap(wp_2: vec3<f32>, N: vec3<f32>) -> f32 {
@@ -1985,57 +2084,57 @@ fn sunShadowMap(wp_2: vec3<f32>, N: vec3<f32>) -> f32 {
 
     wp_3 = wp_2;
     N_1 = N;
-    let _e185 = global.uSunShadow;
-    if (_e185.x < 0.5f) {
+    let _e189 = global.uSunShadow;
+    if (_e189.x < 0.5f) {
         return 1f;
     }
-    let _e190 = wp_3;
-    dist = length(_e190);
-    let _e193 = dist;
-    let _e194 = global.uSunShadow;
-    if (_e193 > _e194.z) {
+    let _e194 = wp_3;
+    dist = length(_e194);
+    let _e197 = dist;
+    let _e198 = global.uSunShadow;
+    if (_e197 > _e198.z) {
         return 1f;
     }
-    let _e198 = N_1;
-    let _e199 = global.uSunShadowDir;
-    ndl = max(dot(_e198, _e199), 0.05f);
-    let _e205 = ndl;
-    let _e206 = ndl;
+    let _e202 = N_1;
+    let _e203 = global.uSunShadowDir;
+    ndl = max(dot(_e202, _e203), 0.05f);
+    let _e209 = ndl;
     let _e210 = ndl;
-    slope = (sqrt((1f - (_e205 * _e206))) / _e210);
-    let _e217 = global.uSunShadowVP1_;
-    let _e218 = global.uSunShadowL1_;
-    let _e219 = wp_3;
-    let _e220 = global.uSunShadowL1_;
-    let _e223 = slope;
-    let _e228 = sunShadowTap(vec2<i32>(2048i, 0i), 2048i, _e217, _e218, _e219, (_e220.w * (1.5f + min(_e223, 6f))));
-    s1_ = _e228;
-    let _e230 = s1_;
-    let _e233 = global.uSunShadow;
-    let _e236 = global.uSunShadow;
-    let _e238 = dist;
-    sh_1 = mix(_e230, 1f, smoothstep((0.85f * _e233.z), _e236.z, _e238));
+    let _e214 = ndl;
+    slope = (sqrt((1f - (_e209 * _e210))) / _e214);
+    let _e221 = global.uSunShadowVP1_;
+    let _e222 = global.uSunShadowL1_;
+    let _e223 = wp_3;
+    let _e224 = global.uSunShadowL1_;
+    let _e227 = slope;
+    let _e232 = sunShadowTap(vec2<i32>(2048i, 0i), 2048i, _e221, _e222, _e223, (_e224.w * (1.5f + min(_e227, 6f))));
+    s1_ = _e232;
+    let _e234 = s1_;
+    let _e237 = global.uSunShadow;
+    let _e240 = global.uSunShadow;
     let _e242 = dist;
-    let _e243 = global.uSunShadow;
-    if (_e242 < _e243.y) {
+    sh_1 = mix(_e234, 1f, smoothstep((0.85f * _e237.z), _e240.z, _e242));
+    let _e246 = dist;
+    let _e247 = global.uSunShadow;
+    if (_e246 < _e247.y) {
         {
-            let _e250 = global.uSunShadowVP0_;
-            let _e251 = global.uSunShadowL0_;
-            let _e252 = wp_3;
-            let _e253 = global.uSunShadowL0_;
-            let _e256 = slope;
-            let _e261 = sunShadowTap(vec2<i32>(0i, 0i), 2048i, _e250, _e251, _e252, (_e253.w * (1.5f + min(_e256, 6f))));
-            s0_ = _e261;
-            let _e263 = s0_;
-            let _e264 = sh_1;
-            let _e266 = global.uSunShadow;
-            let _e269 = global.uSunShadow;
-            let _e271 = dist;
-            sh_1 = mix(_e263, _e264, smoothstep((0.75f * _e266.y), _e269.y, _e271));
+            let _e254 = global.uSunShadowVP0_;
+            let _e255 = global.uSunShadowL0_;
+            let _e256 = wp_3;
+            let _e257 = global.uSunShadowL0_;
+            let _e260 = slope;
+            let _e265 = sunShadowTap(vec2<i32>(0i, 0i), 2048i, _e254, _e255, _e256, (_e257.w * (1.5f + min(_e260, 6f))));
+            s0_ = _e265;
+            let _e267 = s0_;
+            let _e268 = sh_1;
+            let _e270 = global.uSunShadow;
+            let _e273 = global.uSunShadow;
+            let _e275 = dist;
+            sh_1 = mix(_e267, _e268, smoothstep((0.75f * _e270.y), _e273.y, _e275));
         }
     }
-    let _e274 = sh_1;
-    return _e274;
+    let _e278 = sh_1;
+    return _e278;
 }
 
 fn grassCover(wp_4: vec3<f32>) -> f32 {
@@ -2052,71 +2151,71 @@ fn grassCover(wp_4: vec3<f32>) -> f32 {
     var a_3: f32;
     var b_2: f32;
     var d_6: f32;
-    var f_2: f32;
+    var f_3: f32;
     var sum: f32;
 
     wp_5 = wp_4;
-    let _e183 = global.uGrassCover;
-    if (_e183.x < 0.5f) {
+    let _e187 = global.uGrassCover;
+    if (_e187.x < 0.5f) {
         return 0f;
     }
-    let _e188 = global.uGrassCoverVP;
-    let _e189 = wp_5;
-    c_2 = (_e188 * vec4<f32>(_e189.x, _e189.y, _e189.z, 1f));
-    let _e197 = c_2;
-    let _e199 = c_2;
-    uv_7 = (((_e197.xy / vec2(_e199.w)) * 0.5f) + vec2(0.5f));
-    let _e209 = uv_7;
-    let _e216 = uv_7;
-    e = max(abs(((_e209.x * 2f) - 1f)), abs(((_e216.y * 2f) - 1f)));
-    let _e225 = e;
-    if (_e225 >= 1f) {
+    let _e192 = global.uGrassCoverVP;
+    let _e193 = wp_5;
+    c_2 = (_e192 * vec4<f32>(_e193.x, _e193.y, _e193.z, 1f));
+    let _e201 = c_2;
+    let _e203 = c_2;
+    uv_7 = (((_e201.xy / vec2(_e203.w)) * 0.5f) + vec2(0.5f));
+    let _e213 = uv_7;
+    let _e220 = uv_7;
+    e = max(abs(((_e213.x * 2f) - 1f)), abs(((_e220.y * 2f) - 1f)));
+    let _e229 = e;
+    if (_e229 >= 1f) {
         return 0f;
     }
-    let _e229 = global.uGrassCover;
-    n_4 = i32(_e229.w);
-    let _e233 = uv_7;
-    let _e234 = global.uGrassCover;
-    st_2 = ((_e233 * _e234.w) - vec2(0.5f));
-    let _e241 = st_2;
-    fr_1 = fract(_e241);
-    let _e244 = st_2;
-    p0_1 = vec2<i32>(floor(_e244));
-    let _e248 = global.uGrassCover;
-    org_2 = vec2<i32>(_e248.yz);
-    let _e252 = n_4;
-    hi = vec2((_e252 - 1i));
-    let _e257 = org_2;
-    let _e258 = p0_1;
-    let _e261 = hi;
-    let _e265 = textureLoad(tShadowAtlasTexture, (_e257 + clamp(_e258, vec2(0i), _e261)), 0i);
-    a_3 = _e265.x;
-    let _e268 = org_2;
-    let _e269 = p0_1;
-    let _e276 = hi;
-    let _e280 = textureLoad(tShadowAtlasTexture, (_e268 + clamp((_e269 + vec2<i32>(1i, 0i)), vec2(0i), _e276)), 0i);
-    b_2 = _e280.x;
-    let _e283 = org_2;
-    let _e284 = p0_1;
-    let _e291 = hi;
-    let _e295 = textureLoad(tShadowAtlasTexture, (_e283 + clamp((_e284 + vec2<i32>(0i, 1i)), vec2(0i), _e291)), 0i);
-    d_6 = _e295.x;
-    let _e298 = org_2;
-    let _e299 = p0_1;
-    let _e306 = hi;
-    let _e310 = textureLoad(tShadowAtlasTexture, (_e298 + clamp((_e299 + vec2<i32>(1i, 1i)), vec2(0i), _e306)), 0i);
-    f_2 = _e310.x;
-    let _e313 = a_3;
-    let _e314 = b_2;
-    let _e315 = fr_1;
-    let _e318 = d_6;
-    let _e319 = f_2;
-    let _e320 = fr_1;
-    let _e323 = fr_1;
-    sum = mix(mix(_e313, _e314, _e315.x), mix(_e318, _e319, _e320.x), _e323.y);
-    let _e327 = sum;
-    let _e331 = e;
-    return (_e327 * (1f - smoothstep(0.75f, 1f, _e331)));
+    let _e233 = global.uGrassCover;
+    n_4 = i32(_e233.w);
+    let _e237 = uv_7;
+    let _e238 = global.uGrassCover;
+    st_2 = ((_e237 * _e238.w) - vec2(0.5f));
+    let _e245 = st_2;
+    fr_1 = fract(_e245);
+    let _e248 = st_2;
+    p0_1 = vec2<i32>(floor(_e248));
+    let _e252 = global.uGrassCover;
+    org_2 = vec2<i32>(_e252.yz);
+    let _e256 = n_4;
+    hi = vec2((_e256 - 1i));
+    let _e261 = org_2;
+    let _e262 = p0_1;
+    let _e265 = hi;
+    let _e269 = textureLoad(tShadowAtlasTexture, (_e261 + clamp(_e262, vec2(0i), _e265)), 0i);
+    a_3 = _e269.x;
+    let _e272 = org_2;
+    let _e273 = p0_1;
+    let _e280 = hi;
+    let _e284 = textureLoad(tShadowAtlasTexture, (_e272 + clamp((_e273 + vec2<i32>(1i, 0i)), vec2(0i), _e280)), 0i);
+    b_2 = _e284.x;
+    let _e287 = org_2;
+    let _e288 = p0_1;
+    let _e295 = hi;
+    let _e299 = textureLoad(tShadowAtlasTexture, (_e287 + clamp((_e288 + vec2<i32>(0i, 1i)), vec2(0i), _e295)), 0i);
+    d_6 = _e299.x;
+    let _e302 = org_2;
+    let _e303 = p0_1;
+    let _e310 = hi;
+    let _e314 = textureLoad(tShadowAtlasTexture, (_e302 + clamp((_e303 + vec2<i32>(1i, 1i)), vec2(0i), _e310)), 0i);
+    f_3 = _e314.x;
+    let _e317 = a_3;
+    let _e318 = b_2;
+    let _e319 = fr_1;
+    let _e322 = d_6;
+    let _e323 = f_3;
+    let _e324 = fr_1;
+    let _e327 = fr_1;
+    sum = mix(mix(_e317, _e318, _e319.x), mix(_e322, _e323, _e324.x), _e327.y);
+    let _e331 = sum;
+    let _e335 = e;
+    return (_e331 * (1f - smoothstep(0.75f, 1f, _e335)));
 }
 
 fn atlasSum(o_1: vec2<f32>, wp_6: vec3<f32>) -> f32 {
@@ -2134,115 +2233,115 @@ fn atlasSum(o_1: vec2<f32>, wp_6: vec3<f32>) -> f32 {
     var a_4: f32;
     var b_3: f32;
     var d_7: f32;
-    var f_3: f32;
+    var f_4: f32;
     var sum_1: f32;
 
     o_2 = o_1;
     wp_7 = wp_6;
-    let _e185 = global.uTrunkSkyVP;
-    let _e186 = wp_7;
-    c_3 = (_e185 * vec4<f32>(_e186.x, _e186.y, _e186.z, 1f));
-    let _e194 = c_3;
-    let _e196 = c_3;
-    uv_8 = (((_e194.xy / vec2(_e196.w)) * 0.5f) + vec2(0.5f));
-    let _e206 = uv_8;
-    let _e213 = uv_8;
-    e_1 = max(abs(((_e206.x * 2f) - 1f)), abs(((_e213.y * 2f) - 1f)));
-    let _e222 = e_1;
-    if (_e222 >= 1f) {
+    let _e189 = global.uTrunkSkyVP;
+    let _e190 = wp_7;
+    c_3 = (_e189 * vec4<f32>(_e190.x, _e190.y, _e190.z, 1f));
+    let _e198 = c_3;
+    let _e200 = c_3;
+    uv_8 = (((_e198.xy / vec2(_e200.w)) * 0.5f) + vec2(0.5f));
+    let _e210 = uv_8;
+    let _e217 = uv_8;
+    e_1 = max(abs(((_e210.x * 2f) - 1f)), abs(((_e217.y * 2f) - 1f)));
+    let _e226 = e_1;
+    if (_e226 >= 1f) {
         return 0f;
     }
-    let _e226 = global.uTrunkSky;
-    n_5 = i32(_e226.w);
-    let _e230 = uv_8;
-    let _e231 = global.uTrunkSky;
-    st_3 = ((_e230 * _e231.w) - vec2(0.5f));
-    let _e238 = st_3;
-    fr_2 = fract(_e238);
-    let _e241 = st_3;
-    p0_2 = vec2<i32>(floor(_e241));
-    let _e245 = o_2;
-    org_3 = vec2<i32>(_e245);
-    let _e248 = n_5;
-    hi_1 = vec2((_e248 - 1i));
-    let _e253 = org_3;
-    let _e254 = p0_2;
-    let _e257 = hi_1;
-    let _e261 = textureLoad(tShadowAtlasTexture, (_e253 + clamp(_e254, vec2(0i), _e257)), 0i);
-    a_4 = _e261.x;
-    let _e264 = org_3;
-    let _e265 = p0_2;
-    let _e272 = hi_1;
-    let _e276 = textureLoad(tShadowAtlasTexture, (_e264 + clamp((_e265 + vec2<i32>(1i, 0i)), vec2(0i), _e272)), 0i);
-    b_3 = _e276.x;
-    let _e279 = org_3;
-    let _e280 = p0_2;
-    let _e287 = hi_1;
-    let _e291 = textureLoad(tShadowAtlasTexture, (_e279 + clamp((_e280 + vec2<i32>(0i, 1i)), vec2(0i), _e287)), 0i);
-    d_7 = _e291.x;
-    let _e294 = org_3;
-    let _e295 = p0_2;
-    let _e302 = hi_1;
-    let _e306 = textureLoad(tShadowAtlasTexture, (_e294 + clamp((_e295 + vec2<i32>(1i, 1i)), vec2(0i), _e302)), 0i);
-    f_3 = _e306.x;
-    let _e309 = a_4;
-    let _e310 = b_3;
-    let _e311 = fr_2;
-    let _e314 = d_7;
-    let _e315 = f_3;
-    let _e316 = fr_2;
-    let _e319 = fr_2;
-    sum_1 = mix(mix(_e309, _e310, _e311.x), mix(_e314, _e315, _e316.x), _e319.y);
-    let _e323 = sum_1;
-    let _e327 = e_1;
-    return (_e323 * (1f - smoothstep(0.75f, 1f, _e327)));
+    let _e230 = global.uTrunkSky;
+    n_5 = i32(_e230.w);
+    let _e234 = uv_8;
+    let _e235 = global.uTrunkSky;
+    st_3 = ((_e234 * _e235.w) - vec2(0.5f));
+    let _e242 = st_3;
+    fr_2 = fract(_e242);
+    let _e245 = st_3;
+    p0_2 = vec2<i32>(floor(_e245));
+    let _e249 = o_2;
+    org_3 = vec2<i32>(_e249);
+    let _e252 = n_5;
+    hi_1 = vec2((_e252 - 1i));
+    let _e257 = org_3;
+    let _e258 = p0_2;
+    let _e261 = hi_1;
+    let _e265 = textureLoad(tShadowAtlasTexture, (_e257 + clamp(_e258, vec2(0i), _e261)), 0i);
+    a_4 = _e265.x;
+    let _e268 = org_3;
+    let _e269 = p0_2;
+    let _e276 = hi_1;
+    let _e280 = textureLoad(tShadowAtlasTexture, (_e268 + clamp((_e269 + vec2<i32>(1i, 0i)), vec2(0i), _e276)), 0i);
+    b_3 = _e280.x;
+    let _e283 = org_3;
+    let _e284 = p0_2;
+    let _e291 = hi_1;
+    let _e295 = textureLoad(tShadowAtlasTexture, (_e283 + clamp((_e284 + vec2<i32>(0i, 1i)), vec2(0i), _e291)), 0i);
+    d_7 = _e295.x;
+    let _e298 = org_3;
+    let _e299 = p0_2;
+    let _e306 = hi_1;
+    let _e310 = textureLoad(tShadowAtlasTexture, (_e298 + clamp((_e299 + vec2<i32>(1i, 1i)), vec2(0i), _e306)), 0i);
+    f_4 = _e310.x;
+    let _e313 = a_4;
+    let _e314 = b_3;
+    let _e315 = fr_2;
+    let _e318 = d_7;
+    let _e319 = f_4;
+    let _e320 = fr_2;
+    let _e323 = fr_2;
+    sum_1 = mix(mix(_e313, _e314, _e315.x), mix(_e318, _e319, _e320.x), _e323.y);
+    let _e327 = sum_1;
+    let _e331 = e_1;
+    return (_e327 * (1f - smoothstep(0.75f, 1f, _e331)));
 }
 
 fn trunkSum(wp_8: vec3<f32>) -> f32 {
     var wp_9: vec3<f32>;
-    var local_14: f32;
+    var local_15: f32;
 
     wp_9 = wp_8;
-    let _e183 = global.uTrunkSky;
-    if (_e183.x < 0.5f) {
-        local_14 = 0f;
+    let _e187 = global.uTrunkSky;
+    if (_e187.x < 0.5f) {
+        local_15 = 0f;
     } else {
-        let _e188 = global.uTrunkSky;
-        let _e190 = wp_9;
-        let _e191 = atlasSum(_e188.yz, _e190);
-        local_14 = _e191;
+        let _e192 = global.uTrunkSky;
+        let _e194 = wp_9;
+        let _e195 = atlasSum(_e192.yz, _e194);
+        local_15 = _e195;
     }
-    let _e193 = local_14;
-    return _e193;
+    let _e197 = local_15;
+    return _e197;
 }
 
 fn rockSum(wp_10: vec3<f32>) -> f32 {
     var wp_11: vec3<f32>;
-    var local_15: f32;
+    var local_16: f32;
 
     wp_11 = wp_10;
-    let _e183 = global.uRockSky;
-    if (_e183.x < 0.5f) {
-        local_15 = 0f;
+    let _e187 = global.uRockSky;
+    if (_e187.x < 0.5f) {
+        local_16 = 0f;
     } else {
-        let _e188 = global.uRockSky;
-        let _e190 = wp_11;
-        let _e191 = atlasSum(_e188.yz, _e190);
-        local_15 = _e191;
+        let _e192 = global.uRockSky;
+        let _e194 = wp_11;
+        let _e195 = atlasSum(_e192.yz, _e194);
+        local_16 = _e195;
     }
-    let _e193 = local_15;
-    return _e193;
+    let _e197 = local_16;
+    return _e197;
 }
 
 fn trunkSky(wp_12: vec3<f32>) -> f32 {
     var wp_13: vec3<f32>;
 
     wp_13 = wp_12;
-    let _e183 = wp_13;
-    let _e184 = trunkSum(_e183);
-    let _e186 = wp_13;
-    let _e187 = rockSum(_e186);
-    return exp((-(_e184) - _e187));
+    let _e187 = wp_13;
+    let _e188 = trunkSum(_e187);
+    let _e190 = wp_13;
+    let _e191 = rockSum(_e190);
+    return exp((-(_e188) - _e191));
 }
 
 fn skyRing(sc: vec2<f32>, d_8: f32, D: f32, a_5: f32, b_4: f32) -> f32 {
@@ -2259,44 +2358,44 @@ fn skyRing(sc: vec2<f32>, d_8: f32, D: f32, a_5: f32, b_4: f32) -> f32 {
     D_1 = D;
     a_6 = a_5;
     b_5 = b_4;
-    let _e191 = sc_1;
-    if (_e191.x <= 0.003f) {
+    let _e195 = sc_1;
+    if (_e195.x <= 0.003f) {
         return 0f;
     }
-    let _e196 = d_9;
-    let _e197 = D_1;
-    let _e198 = sc_1;
-    let _e200 = sc_1;
-    dh = (_e196 - (_e197 + (_e198.y / _e200.x)));
-    let _e206 = dh;
-    if (_e206 <= 0f) {
-        return 0f;
-    }
+    let _e200 = d_9;
+    let _e201 = D_1;
+    let _e202 = sc_1;
+    let _e204 = sc_1;
+    dh = (_e200 - (_e201 + (_e202.y / _e204.x)));
     let _e210 = dh;
-    let _e211 = dh;
-    h2_ = (_e210 * _e211);
-    let _e214 = sc_1;
-    let _e216 = b_5;
-    let _e217 = b_5;
-    let _e219 = b_5;
+    if (_e210 <= 0f) {
+        return 0f;
+    }
+    let _e214 = dh;
+    let _e215 = dh;
+    h2_ = (_e214 * _e215);
+    let _e218 = sc_1;
     let _e220 = b_5;
-    let _e222 = h2_;
-    let _e225 = a_6;
-    let _e226 = a_6;
-    let _e228 = a_6;
+    let _e221 = b_5;
+    let _e223 = b_5;
+    let _e224 = b_5;
+    let _e226 = h2_;
     let _e229 = a_6;
-    let _e231 = h2_;
-    return (_e214.x * (((_e216 * _e217) / ((_e219 * _e220) + _e222)) - ((_e225 * _e226) / (((_e228 * _e229) + _e231) + 0.000001f))));
+    let _e230 = a_6;
+    let _e232 = a_6;
+    let _e233 = a_6;
+    let _e235 = h2_;
+    return (_e218.x * (((_e220 * _e221) / ((_e223 * _e224) + _e226)) - ((_e229 * _e230) / (((_e232 * _e233) + _e235) + 0.000001f))));
 }
 
-fn skyShadowMap(u0_: f32, D_2: f32, VP_2: mat4x4<f32>, L_4: vec4<f32>, upF_1: vec3<f32>, ext: f32, pF_2: vec3<f32>) -> f32 {
+fn skyShadowMap(u0_: f32, D_2: f32, VP_2: mat4x4<f32>, L_4: vec4<f32>, upF_1: vec3<f32>, ext: f32, pF_3: vec3<f32>) -> f32 {
     var u0_1: f32;
     var D_3: f32;
     var VP_3: mat4x4<f32>;
     var L_5: vec4<f32>;
     var upF_2: vec3<f32>;
     var ext_1: f32;
-    var pF_3: vec3<f32>;
+    var pF_4: vec3<f32>;
     var c_4: vec4<f32>;
     var uv_9: vec2<f32>;
     var edge: f32;
@@ -2313,130 +2412,130 @@ fn skyShadowMap(u0_: f32, D_2: f32, VP_2: mat4x4<f32>, L_4: vec4<f32>, upF_1: ve
     L_5 = L_4;
     upF_2 = upF_1;
     ext_1 = ext;
-    pF_3 = pF_2;
-    let _e195 = VP_3;
-    let _e196 = pF_3;
-    c_4 = (_e195 * vec4<f32>(_e196.x, _e196.y, _e196.z, 1f));
-    let _e204 = c_4;
-    let _e206 = c_4;
-    uv_9 = (((_e204.xy / vec2(_e206.w)) * 0.5f) + vec2(0.5f));
-    let _e218 = ext_1;
-    edge = (45f / (2f * _e218));
-    let _e222 = uv_9;
-    let _e223 = edge;
-    let _e227 = uv_9;
-    let _e229 = edge;
-    if (any((_e222 < vec2(_e223))) || any((_e227 > vec2((1f - _e229))))) {
+    pF_4 = pF_3;
+    let _e199 = VP_3;
+    let _e200 = pF_4;
+    c_4 = (_e199 * vec4<f32>(_e200.x, _e200.y, _e200.z, 1f));
+    let _e208 = c_4;
+    let _e210 = c_4;
+    uv_9 = (((_e208.xy / vec2(_e210.w)) * 0.5f) + vec2(0.5f));
+    let _e222 = ext_1;
+    edge = (45f / (2f * _e222));
+    let _e226 = uv_9;
+    let _e227 = edge;
+    let _e231 = uv_9;
+    let _e233 = edge;
+    if (any((_e226 < vec2(_e227))) || any((_e231 > vec2((1f - _e233))))) {
         return -1f;
     }
-    let _e237 = uv_9;
-    uv_9 = clamp(_e237, vec2(0.0009765625f), vec2(0.99902344f));
-    let _e251 = u0_1;
-    x0_ = (_e251 * 3f);
-    let _e255 = x0_;
-    let _e258 = uv_9;
-    let _e261 = NB;
-    let _e263 = uv_9;
-    let _e267 = textureSampleLevel(tSkyRingsTexture, tSkyRingsSampler, vec2<f32>((((_e255 + 2f) + _e258.x) / _e261), _e263.y), 0f);
-    C = _e267;
-    let _e269 = C;
-    if (_e269.z < 0.002f) {
+    let _e241 = uv_9;
+    uv_9 = clamp(_e241, vec2(0.0009765625f), vec2(0.99902344f));
+    let _e255 = u0_1;
+    x0_ = (_e255 * 3f);
+    let _e259 = x0_;
+    let _e262 = uv_9;
+    let _e265 = NB;
+    let _e267 = uv_9;
+    let _e271 = textureSampleLevel(tSkyRingsTexture, tSkyRingsSampler, vec2<f32>((((_e259 + 2f) + _e262.x) / _e265), _e267.y), 0f);
+    C = _e271;
+    let _e273 = C;
+    if (_e273.z < 0.002f) {
         return 0f;
     }
-    let _e274 = x0_;
-    let _e275 = uv_9;
-    let _e278 = NB;
-    let _e280 = uv_9;
-    let _e284 = textureSampleLevel(tSkyRingsTexture, tSkyRingsSampler, vec2<f32>(((_e274 + _e275.x) / _e278), _e280.y), 0f);
-    A = _e284;
-    let _e286 = x0_;
-    let _e289 = uv_9;
-    let _e292 = NB;
-    let _e294 = uv_9;
-    let _e298 = textureSampleLevel(tSkyRingsTexture, tSkyRingsSampler, vec2<f32>((((_e286 + 1f) + _e289.x) / _e292), _e294.y), 0f);
-    B = _e298;
-    let _e300 = L_5;
-    let _e302 = pF_3;
-    let _e304 = upF_2;
-    let _e308 = L_5;
-    d_10 = (dot((_e300.xyz - _e302), _e304) - (0.3f + (1.5f * _e308.w)));
-    let _e314 = A;
-    let _e316 = d_10;
-    let _e317 = D_3;
-    let _e320 = skyRing(_e314.xy, _e316, _e317, 0f, 1f);
-    let _e321 = A;
-    let _e323 = d_10;
-    let _e324 = D_3;
-    let _e327 = skyRing(_e321.zw, _e323, _e324, 1f, 3.5f);
-    let _e329 = B;
-    let _e331 = d_10;
-    let _e332 = D_3;
-    let _e335 = skyRing(_e329.xy, _e331, _e332, 3.5f, 9f);
-    let _e337 = B;
-    let _e339 = d_10;
-    let _e340 = D_3;
-    let _e343 = skyRing(_e337.zw, _e339, _e340, 9f, 20f);
-    let _e345 = C;
-    let _e347 = d_10;
-    let _e348 = D_3;
-    let _e351 = skyRing(_e345.xy, _e347, _e348, 20f, 45f);
-    return clamp(((((_e320 + _e327) + _e335) + _e343) + _e351), 0f, 1f);
+    let _e278 = x0_;
+    let _e279 = uv_9;
+    let _e282 = NB;
+    let _e284 = uv_9;
+    let _e288 = textureSampleLevel(tSkyRingsTexture, tSkyRingsSampler, vec2<f32>(((_e278 + _e279.x) / _e282), _e284.y), 0f);
+    A = _e288;
+    let _e290 = x0_;
+    let _e293 = uv_9;
+    let _e296 = NB;
+    let _e298 = uv_9;
+    let _e302 = textureSampleLevel(tSkyRingsTexture, tSkyRingsSampler, vec2<f32>((((_e290 + 1f) + _e293.x) / _e296), _e298.y), 0f);
+    B = _e302;
+    let _e304 = L_5;
+    let _e306 = pF_4;
+    let _e308 = upF_2;
+    let _e312 = L_5;
+    d_10 = (dot((_e304.xyz - _e306), _e308) - (0.3f + (1.5f * _e312.w)));
+    let _e318 = A;
+    let _e320 = d_10;
+    let _e321 = D_3;
+    let _e324 = skyRing(_e318.xy, _e320, _e321, 0f, 1f);
+    let _e325 = A;
+    let _e327 = d_10;
+    let _e328 = D_3;
+    let _e331 = skyRing(_e325.zw, _e327, _e328, 1f, 3.5f);
+    let _e333 = B;
+    let _e335 = d_10;
+    let _e336 = D_3;
+    let _e339 = skyRing(_e333.xy, _e335, _e336, 3.5f, 9f);
+    let _e341 = B;
+    let _e343 = d_10;
+    let _e344 = D_3;
+    let _e347 = skyRing(_e341.zw, _e343, _e344, 9f, 20f);
+    let _e349 = C;
+    let _e351 = d_10;
+    let _e352 = D_3;
+    let _e355 = skyRing(_e349.xy, _e351, _e352, 20f, 45f);
+    return clamp(((((_e324 + _e331) + _e339) + _e347) + _e355), 0f, 1f);
 }
 
 fn skyBlocked(wp_14: vec3<f32>) -> f32 {
     var wp_15: vec3<f32>;
     var dist_1: f32;
-    var pF_4: vec3<f32>;
+    var pF_5: vec3<f32>;
     var bl: f32 = -1f;
 
     wp_15 = wp_14;
-    let _e183 = global.uSkyShadow;
-    if (_e183.x < 0.5f) {
+    let _e187 = global.uSkyShadow;
+    if (_e187.x < 0.5f) {
         return 0f;
     }
-    let _e188 = wp_15;
-    dist_1 = length(_e188);
-    let _e191 = dist_1;
-    let _e192 = global.uSkyShadow;
-    if (_e191 > _e192.z) {
+    let _e192 = wp_15;
+    dist_1 = length(_e192);
+    let _e195 = dist_1;
+    let _e196 = global.uSkyShadow;
+    if (_e195 > _e196.z) {
         return 0f;
     }
-    let _e196 = global.uSkyToFixed;
-    let _e197 = wp_15;
-    let _e198 = global.uSkyCenter;
-    pF_4 = (_e196 * (_e197 - _e198));
-    let _e205 = dist_1;
-    let _e206 = global.uSkyShadow;
-    if (_e205 < _e206.y) {
-        let _e210 = global.uSkyD;
-        let _e212 = global.uSkyShadowVP0_;
-        let _e213 = global.uSkyShadowL0_;
-        let _e214 = global.uSkyShadowUp0_;
-        let _e215 = global.uSkyShadow;
-        let _e217 = pF_4;
-        let _e218 = skyShadowMap(0f, _e210.x, _e212, _e213, _e214, _e215.y, _e217);
-        bl = _e218;
+    let _e200 = global.uSkyToFixed;
+    let _e201 = wp_15;
+    let _e202 = global.uSkyCenter;
+    pF_5 = (_e200 * (_e201 - _e202));
+    let _e209 = dist_1;
+    let _e210 = global.uSkyShadow;
+    if (_e209 < _e210.y) {
+        let _e214 = global.uSkyD;
+        let _e216 = global.uSkyShadowVP0_;
+        let _e217 = global.uSkyShadowL0_;
+        let _e218 = global.uSkyShadowUp0_;
+        let _e219 = global.uSkyShadow;
+        let _e221 = pF_5;
+        let _e222 = skyShadowMap(0f, _e214.x, _e216, _e217, _e218, _e219.y, _e221);
+        bl = _e222;
     }
-    let _e219 = bl;
-    if (_e219 < 0f) {
-        let _e223 = global.uSkyD;
-        let _e225 = global.uSkyShadowVP1_;
-        let _e226 = global.uSkyShadowL1_;
-        let _e227 = global.uSkyShadowUp1_;
-        let _e228 = global.uSkyShadow;
-        let _e230 = pF_4;
-        let _e231 = skyShadowMap(1f, _e223.y, _e225, _e226, _e227, _e228.z, _e230);
-        bl = _e231;
-    }
-    let _e232 = bl;
-    if (_e232 < 0f) {
-        return 0f;
+    let _e223 = bl;
+    if (_e223 < 0f) {
+        let _e227 = global.uSkyD;
+        let _e229 = global.uSkyShadowVP1_;
+        let _e230 = global.uSkyShadowL1_;
+        let _e231 = global.uSkyShadowUp1_;
+        let _e232 = global.uSkyShadow;
+        let _e234 = pF_5;
+        let _e235 = skyShadowMap(1f, _e227.y, _e229, _e230, _e231, _e232.z, _e234);
+        bl = _e235;
     }
     let _e236 = bl;
-    let _e239 = global.uSkyShadow;
-    let _e242 = global.uSkyShadow;
-    let _e244 = dist_1;
-    return (_e236 * (1f - smoothstep((0.8f * _e239.z), _e242.z, _e244)));
+    if (_e236 < 0f) {
+        return 0f;
+    }
+    let _e240 = bl;
+    let _e243 = global.uSkyShadow;
+    let _e246 = global.uSkyShadow;
+    let _e248 = dist_1;
+    return (_e240 * (1f - smoothstep((0.8f * _e243.z), _e246.z, _e248)));
 }
 
 fn canopyLit(bl_1: f32, sunTop: vec3<f32>, muS_2: f32, skyE_1: vec3<f32>) -> vec3<f32> {
@@ -2449,16 +2548,16 @@ fn canopyLit(bl_1: f32, sunTop: vec3<f32>, muS_2: f32, skyE_1: vec3<f32>) -> vec
     sunTop_1 = sunTop;
     muS_3 = muS_2;
     skyE_2 = skyE_1;
-    let _e189 = bl_2;
-    let _e192 = sunTop_1;
-    let _e193 = muS_3;
-    let _e197 = skyE_2;
-    let _e200 = global.uLeafTint;
-    return (((_e189 * 0.1f) * ((_e192 * max(_e193, 0f)) + _e197)) * _e200);
+    let _e193 = bl_2;
+    let _e196 = sunTop_1;
+    let _e197 = muS_3;
+    let _e201 = skyE_2;
+    let _e204 = global.uLeafTint;
+    return (((_e193 * 0.1f) * ((_e196 * max(_e197, 0f)) + _e201)) * _e204);
 }
 
-fn moonLit(rel_2: vec3<f32>, r_8: f32, up_2: vec3<f32>, N_2: vec3<f32>, sh_2: f32, trans: f32, wrap: f32, skyK: f32) -> vec3<f32> {
-    var rel_3: vec3<f32>;
+fn moonLit(rel_4: vec3<f32>, r_8: f32, up_2: vec3<f32>, N_2: vec3<f32>, sh_2: f32, trans: f32, wrap: f32, skyK: f32) -> vec3<f32> {
+    var rel_5: vec3<f32>;
     var r_9: f32;
     var up_3: vec3<f32>;
     var N_3: vec3<f32>;
@@ -2467,12 +2566,12 @@ fn moonLit(rel_2: vec3<f32>, r_8: f32, up_2: vec3<f32>, N_2: vec3<f32>, sh_2: f3
     var wrap_1: f32;
     var skyK_1: f32;
     var muM: f32;
-    var pF_5: vec3<f32>;
+    var pF_6: vec3<f32>;
     var T_3: vec3<f32>;
     var S: vec3<f32>;
     var nd: f32;
 
-    rel_3 = rel_2;
+    rel_5 = rel_4;
     r_9 = r_8;
     up_3 = up_2;
     N_3 = N_2;
@@ -2480,49 +2579,49 @@ fn moonLit(rel_2: vec3<f32>, r_8: f32, up_2: vec3<f32>, N_2: vec3<f32>, sh_2: f3
     trans_1 = trans;
     wrap_1 = wrap;
     skyK_1 = skyK;
-    let _e197 = global.uMoonE;
-    if (_e197.y <= 0f) {
+    let _e201 = global.uMoonE;
+    if (_e201.y <= 0f) {
         return vec3(0f);
     }
-    let _e203 = up_3;
-    let _e204 = global.uMoonDir;
-    muM = dot(_e203, _e204);
-    let _e207 = muM;
-    if (_e207 < -0.1f) {
+    let _e207 = up_3;
+    let _e208 = global.uMoonDir;
+    muM = dot(_e207, _e208);
+    let _e211 = muM;
+    if (_e211 < -0.1f) {
         return vec3(0f);
     }
-    let _e213 = global.uToFixed;
-    let _e214 = rel_3;
-    pF_5 = (_e213 * _e214);
-    let _e217 = r_9;
-    let _e218 = muM;
-    let _e219 = atmoSunTransmittance(_e217, _e218);
-    let _e220 = pF_5;
-    let _e221 = pF_5;
-    let _e223 = global.uToFixed;
-    let _e224 = global.uMoonDir;
-    let _e226 = global.uRadius;
-    let _e227 = terrainShadow(_e220, normalize(_e221), (_e223 * _e224), _e226);
-    let _e229 = sh_3;
-    let _e231 = cloudDirZ;
-    T_3 = (((_e219 * _e227) * _e229) * _e231);
-    let _e234 = r_9;
-    let _e235 = muM;
-    let _e236 = atmoSkyIrradiance(_e234, _e235);
-    let _e237 = cloudTotZ;
-    S = (_e236 * _e237);
-    let _e240 = N_3;
-    let _e241 = global.uMoonDir;
-    nd = dot(_e240, _e241);
-    let _e244 = global.uMoonE;
-    let _e245 = T_3;
-    let _e246 = nd;
-    let _e249 = trans_1;
+    let _e217 = global.uToFixed;
+    let _e218 = rel_5;
+    pF_6 = (_e217 * _e218);
+    let _e221 = r_9;
+    let _e222 = muM;
+    let _e223 = atmoSunTransmittance(_e221, _e222);
+    let _e224 = pF_6;
+    let _e225 = pF_6;
+    let _e227 = global.uToFixed;
+    let _e228 = global.uMoonDir;
+    let _e230 = global.uRadius;
+    let _e231 = terrainShadow(_e224, normalize(_e225), (_e227 * _e228), _e230);
+    let _e233 = sh_3;
+    let _e235 = cloudDirZ;
+    T_3 = (((_e223 * _e231) * _e233) * _e235);
+    let _e238 = r_9;
+    let _e239 = muM;
+    let _e240 = atmoSkyIrradiance(_e238, _e239);
+    let _e241 = cloudTotZ;
+    S = (_e240 * _e241);
+    let _e244 = N_3;
+    let _e245 = global.uMoonDir;
+    nd = dot(_e244, _e245);
+    let _e248 = global.uMoonE;
+    let _e249 = T_3;
     let _e250 = nd;
-    let _e257 = S;
-    let _e258 = wrap_1;
-    let _e260 = skyK_1;
-    return (_e244 * ((_e245 * (max(_e246, 0f) + (_e249 * max(-(_e250), 0f)))) + ((_e257 * _e258) * _e260)));
+    let _e253 = trans_1;
+    let _e254 = nd;
+    let _e261 = S;
+    let _e262 = wrap_1;
+    let _e264 = skyK_1;
+    return (_e248 * ((_e249 * (max(_e250, 0f) + (_e253 * max(-(_e254), 0f)))) + ((_e261 * _e262) * _e264)));
 }
 
 fn deferredLight(p: vec3<f32>, N_4: vec3<f32>, albedo: vec3<f32>, roughness: f32, ao: f32, wet: f32, f0_1: f32, cave: f32, trans_2: f32, foot_8: f32, metal: f32, kind: f32, selfShadow: f32, screenAO: f32) -> vec3<f32> {
@@ -2540,28 +2639,28 @@ fn deferredLight(p: vec3<f32>, N_4: vec3<f32>, albedo: vec3<f32>, roughness: f32
     var kind_1: f32;
     var selfShadow_1: f32;
     var screenAO_1: f32;
-    var local_16: f32;
+    var local_17: f32;
     var glint: f32;
-    var rel_4: vec3<f32>;
+    var rel_6: vec3<f32>;
     var r_10: f32;
     var up_4: vec3<f32>;
     var muS_4: f32;
     var sunT: vec3<f32>;
     var skyE_3: vec3<f32>;
     var cloudT: f32;
-    var pF_6: vec3<f32>;
+    var pF_7: vec3<f32>;
     var sunTop_2: vec3<f32>;
     var keySh: f32;
     var nd_1: f32;
     var ndl_1: f32;
-    var local_17: f32;
+    var local_18: f32;
     var wrap_2: f32;
     var direct: vec3<f32>;
     var skyBl: f32;
-    var local_18: f32;
+    var local_19: f32;
     var skyK_2: f32;
     var ambient: vec3<f32>;
-    var local_19: f32;
+    var local_20: f32;
     var gSum: f32;
     var gCov: f32;
     var diffuse: vec3<f32>;
@@ -2596,294 +2695,294 @@ fn deferredLight(p: vec3<f32>, N_4: vec3<f32>, albedo: vec3<f32>, roughness: f32
     kind_1 = kind;
     selfShadow_1 = selfShadow;
     screenAO_1 = screenAO;
-    let _e209 = kind_1;
-    if (_e209 == 0f) {
-        let _e212 = trans_3;
-        local_16 = (_e212 * 3f);
+    let _e213 = kind_1;
+    if (_e213 == 0f) {
+        let _e216 = trans_3;
+        local_17 = (_e216 * 3f);
     } else {
-        local_16 = 0f;
+        local_17 = 0f;
     }
-    let _e217 = local_16;
-    glint = _e217;
-    let _e219 = kind_1;
-    if (_e219 == 0f) {
+    let _e221 = local_17;
+    glint = _e221;
+    let _e223 = kind_1;
+    if (_e223 == 0f) {
         trans_3 = 0f;
     }
-    let _e223 = kind_1;
-    if (_e223 == 5f) {
+    let _e227 = kind_1;
+    if (_e227 == 5f) {
         return vec3(0f);
     }
-    let _e228 = p_1;
-    let _e229 = global.uCenter;
-    rel_4 = (_e228 - _e229);
-    let _e232 = rel_4;
-    r_10 = length(_e232);
-    let _e235 = rel_4;
-    let _e236 = r_10;
-    up_4 = (_e235 / vec3(max(_e236, 0.000001f)));
-    let _e242 = up_4;
-    let _e243 = global.uSunDir;
-    muS_4 = dot(_e242, _e243);
-    let _e246 = r_10;
-    let _e247 = muS_4;
-    let _e248 = atmoSunTransmittance(_e246, _e247);
-    sunT = _e248;
+    let _e232 = p_1;
+    let _e233 = global.uCenter;
+    rel_6 = (_e232 - _e233);
+    let _e236 = rel_6;
+    r_10 = length(_e236);
+    let _e239 = rel_6;
+    let _e240 = r_10;
+    up_4 = (_e239 / vec3(max(_e240, 0.000001f)));
+    let _e246 = up_4;
+    let _e247 = global.uSunDir;
+    muS_4 = dot(_e246, _e247);
     let _e250 = r_10;
     let _e251 = muS_4;
-    let _e252 = atmoSkyIrradiance(_e250, _e251);
-    skyE_3 = _e252;
-    let _e254 = rel_4;
-    let _e255 = r_10;
-    let _e256 = muS_4;
-    let _e257 = foot_9;
-    let _e258 = sunT;
-    let _e261 = cloudLight(_e254, _e255, _e256, _e257, _e258, (&skyE_3));
-    cloudT = _e261;
-    let _e263 = sunT;
-    let _e264 = cloudT;
-    sunT = (_e263 * _e264);
-    let _e266 = global.uToFixed;
-    let _e267 = rel_4;
-    pF_6 = (_e266 * _e267);
-    let _e270 = sunT;
-    let _e271 = pF_6;
-    let _e272 = pF_6;
-    let _e274 = global.uToFixed;
-    let _e275 = global.uSunDir;
-    let _e277 = global.uRadius;
-    let _e278 = terrainShadow(_e271, normalize(_e272), (_e274 * _e275), _e277);
-    sunT = (_e270 * _e278);
-    let _e280 = sunT;
-    sunTop_2 = _e280;
-    let _e282 = p_1;
-    let _e283 = N_5;
-    let _e284 = sunShadowMap(_e282, _e283);
-    keySh = _e284;
-    let _e286 = sunT;
-    let _e287 = keySh;
-    sunT = (_e286 * _e287);
-    let _e289 = N_5;
-    let _e290 = global.uSunDir;
-    nd_1 = dot(_e289, _e290);
-    let _e293 = nd_1;
-    ndl_1 = max(_e293, 0f);
-    let _e297 = kind_1;
-    if (_e297 == 2f) {
-        let _e302 = N_5;
-        let _e303 = up_4;
-        local_17 = (0.55f + (0.45f * dot(_e302, _e303)));
+    let _e252 = atmoSunTransmittance(_e250, _e251);
+    sunT = _e252;
+    let _e254 = r_10;
+    let _e255 = muS_4;
+    let _e256 = atmoSkyIrradiance(_e254, _e255);
+    skyE_3 = _e256;
+    let _e258 = rel_6;
+    let _e259 = r_10;
+    let _e260 = muS_4;
+    let _e261 = foot_9;
+    let _e262 = sunT;
+    let _e265 = cloudLight(_e258, _e259, _e260, _e261, _e262, (&skyE_3));
+    cloudT = _e265;
+    let _e267 = sunT;
+    let _e268 = cloudT;
+    sunT = (_e267 * _e268);
+    let _e270 = global.uToFixed;
+    let _e271 = rel_6;
+    pF_7 = (_e270 * _e271);
+    let _e274 = sunT;
+    let _e275 = pF_7;
+    let _e276 = pF_7;
+    let _e278 = global.uToFixed;
+    let _e279 = global.uSunDir;
+    let _e281 = global.uRadius;
+    let _e282 = terrainShadow(_e275, normalize(_e276), (_e278 * _e279), _e281);
+    sunT = (_e274 * _e282);
+    let _e284 = sunT;
+    sunTop_2 = _e284;
+    let _e286 = p_1;
+    let _e287 = N_5;
+    let _e288 = sunShadowMap(_e286, _e287);
+    keySh = _e288;
+    let _e290 = sunT;
+    let _e291 = keySh;
+    sunT = (_e290 * _e291);
+    let _e293 = N_5;
+    let _e294 = global.uSunDir;
+    nd_1 = dot(_e293, _e294);
+    let _e297 = nd_1;
+    ndl_1 = max(_e297, 0f);
+    let _e301 = kind_1;
+    if (_e301 == 2f) {
+        let _e306 = N_5;
+        let _e307 = up_4;
+        local_18 = (0.55f + (0.45f * dot(_e306, _e307)));
     } else {
-        let _e309 = N_5;
-        let _e310 = up_4;
-        local_17 = (0.5f + (0.5f * dot(_e309, _e310)));
+        let _e313 = N_5;
+        let _e314 = up_4;
+        local_18 = (0.5f + (0.5f * dot(_e313, _e314)));
     }
-    let _e315 = local_17;
-    wrap_2 = _e315;
-    let _e317 = kind_1;
-    if (_e317 == 7f) {
-        let _e320 = albedo_1;
-        let _e324 = global.uSunE;
-        let _e326 = sunT;
-        let _e327 = ndl_1;
-        let _e329 = N_5;
-        let _e330 = p_1;
-        let _e339 = selfShadow_1;
-        let _e341 = skyE_3;
-        return (((_e320 / vec3(3.1415927f)) * _e324) * ((((_e326 * _e327) * pow(max(dot(_e329, normalize(-(_e330))), 0f), 0.15f)) * _e339) + (_e341 * 0.6f)));
+    let _e319 = local_18;
+    wrap_2 = _e319;
+    let _e321 = kind_1;
+    if (_e321 == 7f) {
+        let _e324 = albedo_1;
+        let _e328 = global.uSunE;
+        let _e330 = sunT;
+        let _e331 = ndl_1;
+        let _e333 = N_5;
+        let _e334 = p_1;
+        let _e343 = selfShadow_1;
+        let _e345 = skyE_3;
+        return (((_e324 / vec3(3.1415927f)) * _e328) * ((((_e330 * _e331) * pow(max(dot(_e333, normalize(-(_e334))), 0f), 0.15f)) * _e343) + (_e345 * 0.6f)));
     }
-    let _e346 = global.uSunE;
-    let _e347 = sunT;
-    let _e349 = ndl_1;
-    let _e350 = trans_3;
-    let _e351 = nd_1;
-    direct = ((_e346 * _e347) * (_e349 + (_e350 * max(-(_e351), 0f))));
-    let _e359 = p_1;
-    let _e360 = skyBlocked(_e359);
-    skyBl = _e360;
-    let _e362 = screenAO_1;
-    let _e364 = skyBl;
-    let _e367 = kind_1;
-    if (_e367 == 1f) {
-        let _e370 = p_1;
-        let _e371 = trunkSum(_e370);
-        local_18 = exp(-(_e371));
-    } else {
+    let _e350 = global.uSunE;
+    let _e351 = sunT;
+    let _e353 = ndl_1;
+    let _e354 = trans_3;
+    let _e355 = nd_1;
+    direct = ((_e350 * _e351) * (_e353 + (_e354 * max(-(_e355), 0f))));
+    let _e363 = p_1;
+    let _e364 = skyBlocked(_e363);
+    skyBl = _e364;
+    let _e366 = screenAO_1;
+    let _e368 = skyBl;
+    let _e371 = kind_1;
+    if (_e371 == 1f) {
         let _e374 = p_1;
-        let _e375 = trunkSky(_e374);
-        local_18 = _e375;
-    }
-    let _e377 = local_18;
-    skyK_2 = ((_e362 * (1f - _e364)) * _e377);
-    let _e380 = global.uSunE;
-    let _e381 = skyE_3;
-    let _e382 = wrap_2;
-    let _e384 = skyK_2;
-    let _e386 = skyBl;
-    let _e387 = sunTop_2;
-    let _e388 = muS_4;
-    let _e389 = skyE_3;
-    let _e390 = canopyLit(_e386, _e387, _e388, _e389);
-    let _e391 = screenAO_1;
-    let _e395 = global.uAmbientFloor;
-    let _e396 = screenAO_1;
-    let _e399 = rel_4;
-    let _e400 = r_10;
-    let _e401 = up_4;
-    let _e402 = N_5;
-    let _e403 = keySh;
-    let _e404 = trans_3;
-    let _e405 = wrap_2;
-    let _e406 = skyK_2;
-    let _e407 = moonLit(_e399, _e400, _e401, _e402, _e403, _e404, _e405, _e406);
-    ambient = (((_e380 * (((_e381 * _e382) * _e384) + (_e390 * _e391))) + (_e395 * _e396)) + _e407);
-    let _e410 = kind_1;
-    if (_e410 == 3f) {
-        local_19 = 0f;
+        let _e375 = trunkSum(_e374);
+        local_19 = exp(-(_e375));
     } else {
-        let _e414 = p_1;
-        let _e415 = grassCover(_e414);
-        local_19 = _e415;
+        let _e378 = p_1;
+        let _e379 = trunkSky(_e378);
+        local_19 = _e379;
     }
-    let _e417 = local_19;
-    gSum = _e417;
-    let _e421 = gSum;
-    gCov = exp((-2.2f * _e421));
-    let _e425 = direct;
-    let _e426 = gCov;
-    let _e427 = selfShadow_1;
-    direct = (_e425 * (_e426 * _e427));
-    let _e430 = ambient;
-    let _e436 = gSum;
-    ambient = (_e430 * (1f - (0.35f * (1f - exp((-0.8f * _e436))))));
-    let _e443 = albedo_1;
-    let _e445 = metal_1;
-    diffuse = (_e443 * (1f - _e445));
-    let _e449 = diffuse;
-    let _e453 = direct;
-    let _e455 = ao_1;
-    let _e459 = ambient;
-    let _e460 = ao_1;
-    let _e464 = cave_1;
-    color = (((_e449 / vec3(3.1415927f)) * ((_e453 * mix(1f, _e455, 0.35f)) + (_e459 * _e460))) * _e464);
-    let _e467 = p_1;
-    V = normalize(-(_e467));
-    let _e471 = V;
-    let _e472 = global.uSunDir;
-    H_1 = normalize((_e471 + _e472));
-    let _e476 = roughness_1;
-    let _e478 = wet_1;
-    rg = clamp(mix(_e476, 0.12f, (_e478 * 0.8f)), 0.05f, 1f);
-    let _e486 = rg;
-    let _e487 = rg;
-    let _e489 = rg;
+    let _e381 = local_19;
+    skyK_2 = ((_e366 * (1f - _e368)) * _e381);
+    let _e384 = global.uSunE;
+    let _e385 = skyE_3;
+    let _e386 = wrap_2;
+    let _e388 = skyK_2;
+    let _e390 = skyBl;
+    let _e391 = sunTop_2;
+    let _e392 = muS_4;
+    let _e393 = skyE_3;
+    let _e394 = canopyLit(_e390, _e391, _e392, _e393);
+    let _e395 = screenAO_1;
+    let _e399 = global.uAmbientFloor;
+    let _e400 = screenAO_1;
+    let _e403 = rel_6;
+    let _e404 = r_10;
+    let _e405 = up_4;
+    let _e406 = N_5;
+    let _e407 = keySh;
+    let _e408 = trans_3;
+    let _e409 = wrap_2;
+    let _e410 = skyK_2;
+    let _e411 = moonLit(_e403, _e404, _e405, _e406, _e407, _e408, _e409, _e410);
+    ambient = (((_e384 * (((_e385 * _e386) * _e388) + (_e394 * _e395))) + (_e399 * _e400)) + _e411);
+    let _e414 = kind_1;
+    if (_e414 == 3f) {
+        local_20 = 0f;
+    } else {
+        let _e418 = p_1;
+        let _e419 = grassCover(_e418);
+        local_20 = _e419;
+    }
+    let _e421 = local_20;
+    gSum = _e421;
+    let _e425 = gSum;
+    gCov = exp((-2.2f * _e425));
+    let _e429 = direct;
+    let _e430 = gCov;
+    let _e431 = selfShadow_1;
+    direct = (_e429 * (_e430 * _e431));
+    let _e434 = ambient;
+    let _e440 = gSum;
+    ambient = (_e434 * (1f - (0.35f * (1f - exp((-0.8f * _e440))))));
+    let _e447 = albedo_1;
+    let _e449 = metal_1;
+    diffuse = (_e447 * (1f - _e449));
+    let _e453 = diffuse;
+    let _e457 = direct;
+    let _e459 = ao_1;
+    let _e463 = ambient;
+    let _e464 = ao_1;
+    let _e468 = cave_1;
+    color = (((_e453 / vec3(3.1415927f)) * ((_e457 * mix(1f, _e459, 0.35f)) + (_e463 * _e464))) * _e468);
+    let _e471 = p_1;
+    V = normalize(-(_e471));
+    let _e475 = V;
+    let _e476 = global.uSunDir;
+    H_1 = normalize((_e475 + _e476));
+    let _e480 = roughness_1;
+    let _e482 = wet_1;
+    rg = clamp(mix(_e480, 0.12f, (_e482 * 0.8f)), 0.05f, 1f);
+    let _e490 = rg;
     let _e491 = rg;
-    a2_ = (((_e486 * _e487) * _e489) * _e491);
-    let _e494 = N_5;
-    let _e495 = H_1;
-    NdH = max(dot(_e494, _e495), 0f);
-    let _e500 = N_5;
-    let _e501 = V;
-    NdV = max(dot(_e500, _e501), 0.001f);
-    let _e506 = V;
-    let _e507 = H_1;
-    VdH = max(dot(_e506, _e507), 0f);
-    let _e512 = a2_;
-    let _e513 = NdH;
-    let _e514 = NdH;
+    let _e493 = rg;
+    let _e495 = rg;
+    a2_ = (((_e490 * _e491) * _e493) * _e495);
+    let _e498 = N_5;
+    let _e499 = H_1;
+    NdH = max(dot(_e498, _e499), 0f);
+    let _e504 = N_5;
+    let _e505 = V;
+    NdV = max(dot(_e504, _e505), 0.001f);
+    let _e510 = V;
+    let _e511 = H_1;
+    VdH = max(dot(_e510, _e511), 0f);
     let _e516 = a2_;
-    Dg = (_e512 / (PI * pow((((_e513 * _e514) * (_e516 - 1f)) + 1f), 2f)));
-    let _e527 = rg;
-    let _e530 = rg;
-    kk = (((_e527 + 1f) * (_e530 + 1f)) / 8f);
-    let _e537 = NdV;
-    let _e538 = NdV;
-    let _e540 = kk;
-    let _e543 = kk;
-    let _e546 = ndl_1;
-    let _e548 = ndl_1;
-    let _e550 = kk;
-    let _e553 = kk;
-    Gg = (((_e537 / ((_e538 * (1f - _e540)) + _e543)) * _e546) / ((_e548 * (1f - _e550)) + _e553));
-    let _e557 = f0_2;
-    let _e559 = f0_2;
-    let _e562 = VdH;
-    Fs = (_e557 + ((1f - _e559) * pow((1f - _e562), 5f)));
-    let _e569 = kind_1;
-    if (_e569 != 2f) {
-        let _e572 = color;
-        let _e573 = global.uSunE;
-        let _e574 = sunT;
-        let _e576 = gCov;
-        let _e578 = selfShadow_1;
-        let _e580 = Dg;
-        let _e582 = Gg;
-        let _e584 = Fs;
-        let _e586 = albedo_1;
-        let _e589 = albedo_1;
-        let _e592 = VdH;
-        let _e598 = metal_1;
-        let _e603 = NdV;
-        color = (_e572 + (((((((_e573 * _e574) * _e576) * _e578) * _e580) * _e582) * mix(vec3(_e584), (_e586 + ((vec3(1f) - _e589) * pow((1f - _e592), 5f))), vec3(_e598))) / vec3((4f * _e603))));
+    let _e517 = NdH;
+    let _e518 = NdH;
+    let _e520 = a2_;
+    Dg = (_e516 / (PI * pow((((_e517 * _e518) * (_e520 - 1f)) + 1f), 2f)));
+    let _e531 = rg;
+    let _e534 = rg;
+    kk = (((_e531 + 1f) * (_e534 + 1f)) / 8f);
+    let _e541 = NdV;
+    let _e542 = NdV;
+    let _e544 = kk;
+    let _e547 = kk;
+    let _e550 = ndl_1;
+    let _e552 = ndl_1;
+    let _e554 = kk;
+    let _e557 = kk;
+    Gg = (((_e541 / ((_e542 * (1f - _e544)) + _e547)) * _e550) / ((_e552 * (1f - _e554)) + _e557));
+    let _e561 = f0_2;
+    let _e563 = f0_2;
+    let _e566 = VdH;
+    Fs = (_e561 + ((1f - _e563) * pow((1f - _e566), 5f)));
+    let _e573 = kind_1;
+    if (_e573 != 2f) {
+        let _e576 = color;
+        let _e577 = global.uSunE;
+        let _e578 = sunT;
+        let _e580 = gCov;
+        let _e582 = selfShadow_1;
+        let _e584 = Dg;
+        let _e586 = Gg;
+        let _e588 = Fs;
+        let _e590 = albedo_1;
+        let _e593 = albedo_1;
+        let _e596 = VdH;
+        let _e602 = metal_1;
+        let _e607 = NdV;
+        color = (_e576 + (((((((_e577 * _e578) * _e580) * _e582) * _e584) * _e586) * mix(vec3(_e588), (_e590 + ((vec3(1f) - _e593) * pow((1f - _e596), 5f))), vec3(_e602))) / vec3((4f * _e607))));
     }
-    let _e608 = color;
-    let _e609 = global.uSunE;
-    let _e610 = sunT;
-    let _e612 = gCov;
-    let _e614 = glint;
-    color = (_e608 + (((_e609 * _e610) * _e612) * _e614));
-    let _e619 = wet_1;
-    poolK = smoothstep(0.85f, 1f, _e619);
-    let _e622 = poolK;
-    if (_e622 > 0f) {
+    let _e612 = color;
+    let _e613 = global.uSunE;
+    let _e614 = sunT;
+    let _e616 = gCov;
+    let _e618 = glint;
+    color = (_e612 + (((_e613 * _e614) * _e616) * _e618));
+    let _e623 = wet_1;
+    poolK = smoothstep(0.85f, 1f, _e623);
+    let _e626 = poolK;
+    if (_e626 > 0f) {
         {
-            let _e625 = up_4;
-            let _e626 = V;
-            cP = max(dot(_e625, _e626), 0.001f);
-            let _e634 = cP;
-            Fp = (0.02f + (0.98f * pow((1f - _e634), 5f)));
-            let _e641 = color;
-            let _e642 = color;
-            let _e644 = Fp;
-            let _e647 = global.uSunE;
-            let _e648 = skyE_3;
-            let _e655 = Fp;
-            let _e657 = screenAO_1;
-            let _e660 = global.uSunE;
-            let _e661 = sunT;
-            let _e665 = V;
-            let _e667 = up_4;
-            let _e669 = global.uSunDir;
-            let _e677 = poolK;
-            color = mix(_e641, (((_e642 * (1f - _e644)) + (((((_e647 * _e648) / vec3(3.1415927f)) * 1.1f) * _e655) * _e657)) + (((_e660 * _e661) * 0.05f) * pow(max(dot(reflect(-(_e665), _e667), _e669), 0f), 200f))), vec3(_e677));
+            let _e629 = up_4;
+            let _e630 = V;
+            cP = max(dot(_e629, _e630), 0.001f);
+            let _e638 = cP;
+            Fp = (0.02f + (0.98f * pow((1f - _e638), 5f)));
+            let _e645 = color;
+            let _e646 = color;
+            let _e648 = Fp;
+            let _e651 = global.uSunE;
+            let _e652 = skyE_3;
+            let _e659 = Fp;
+            let _e661 = screenAO_1;
+            let _e664 = global.uSunE;
+            let _e665 = sunT;
+            let _e669 = V;
+            let _e671 = up_4;
+            let _e673 = global.uSunDir;
+            let _e681 = poolK;
+            color = mix(_e645, (((_e646 * (1f - _e648)) + (((((_e651 * _e652) / vec3(3.1415927f)) * 1.1f) * _e659) * _e661)) + (((_e664 * _e665) * 0.05f) * pow(max(dot(reflect(-(_e669), _e671), _e673), 0f), 200f))), vec3(_e681));
         }
     }
-    let _e680 = global.uThermal;
-    if (_e680.x > 0f) {
+    let _e684 = global.uThermal;
+    if (_e684.x > 0f) {
         {
-            let _e684 = albedo_1;
-            a_7 = clamp(_e684, vec3(0f), vec3(1f));
-            let _e691 = color;
-            let _e694 = a_7;
-            let _e696 = global.uThermal;
-            let _e698 = global.uThermal;
-            let _e700 = r_10;
-            let _e701 = global.uRadius;
-            let _e705 = blackbodyGlow((_e696.x - (_e698.y * (_e700 - _e701))));
-            color = (_e691 + ((vec3(1f) - _e694) * _e705));
-            let _e708 = color;
-            let _e709 = a_7;
-            let _e712 = r_10;
-            let _e714 = atmoSunTransmittance(_e712, 1f);
-            let _e717 = global.uThermal;
-            let _e719 = global.uThermal;
-            let _e721 = r_10;
-            let _e722 = global.uRadius;
-            let _e728 = blackbodyGlow((_e717.x - (_e719.z * max((_e721 - _e722), 0f))));
-            color = (_e708 + ((_e709 * (vec3(1f) - _e714)) * _e728));
+            let _e688 = albedo_1;
+            a_7 = clamp(_e688, vec3(0f), vec3(1f));
+            let _e695 = color;
+            let _e698 = a_7;
+            let _e700 = global.uThermal;
+            let _e702 = global.uThermal;
+            let _e704 = r_10;
+            let _e705 = global.uRadius;
+            let _e709 = blackbodyGlow((_e700.x - (_e702.y * (_e704 - _e705))));
+            color = (_e695 + ((vec3(1f) - _e698) * _e709));
+            let _e712 = color;
+            let _e713 = a_7;
+            let _e716 = r_10;
+            let _e718 = atmoSunTransmittance(_e716, 1f);
+            let _e721 = global.uThermal;
+            let _e723 = global.uThermal;
+            let _e725 = r_10;
+            let _e726 = global.uRadius;
+            let _e732 = blackbodyGlow((_e721.x - (_e723.z * max((_e725 - _e726), 0f))));
+            color = (_e712 + ((_e713 * (vec3(1f) - _e718)) * _e732));
         }
     }
-    let _e731 = color;
-    return _e731;
+    let _e735 = color;
+    return _e735;
 }
 
 fn nativeLocal(clusterWorld: vec3<f32>, clusterNormal: vec3<f32>, clusterAlbedo: vec4<f32>, clusterSurface: vec4<f32>, clusterRough: f32, clusterKind: f32, clusterPixel: vec2<f32>) -> vec3<f32> {
@@ -2908,30 +3007,30 @@ fn nativeLocal(clusterWorld: vec3<f32>, clusterNormal: vec3<f32>, clusterAlbedo:
 fn texUV(channel: i32, transform: mat3x3<f32>) -> vec2<f32> {
     var channel_1: i32;
     var transform_1: mat3x3<f32>;
-    var local_20: vec2<f32>;
     var local_21: vec2<f32>;
+    var local_22: vec2<f32>;
 
     channel_1 = channel;
     transform_1 = transform;
-    let _e193 = transform_1;
-    let _e194 = channel_1;
-    if (_e194 == 1i) {
-        let _e197 = vUv1_1;
-        local_21 = _e197;
+    let _e197 = transform_1;
+    let _e198 = channel_1;
+    if (_e198 == 1i) {
+        let _e201 = vUv1_1;
+        local_22 = _e201;
     } else {
-        let _e198 = channel_1;
-        if (_e198 == 2i) {
-            let _e201 = vUv2_1;
-            local_20 = _e201;
+        let _e202 = channel_1;
+        if (_e202 == 2i) {
+            let _e205 = vUv2_1;
+            local_21 = _e205;
         } else {
-            let _e202 = vUv_1;
-            local_20 = _e202;
+            let _e206 = vUv_1;
+            local_21 = _e206;
         }
-        let _e204 = local_20;
-        local_21 = _e204;
+        let _e208 = local_21;
+        local_22 = _e208;
     }
-    let _e206 = local_21;
-    return (_e193 * vec3<f32>(_e206.x, _e206.y, 1f)).xy;
+    let _e210 = local_22;
+    return (_e197 * vec3<f32>(_e210.x, _e210.y, 1f)).xy;
 }
 
 fn main_1() {
@@ -2947,14 +3046,14 @@ fn main_1() {
     var uvA: vec2<f32>;
     var uvAlpha: vec2<f32>;
     var base: vec4<f32>;
-    var local_22: f32;
+    var local_23: f32;
     var mask: vec4<f32>;
     var paint: vec3<f32>;
     var an: vec3<f32>;
-    var local_23: vec2<f32>;
     var local_24: vec2<f32>;
-    var q_2: vec2<f32>;
-    var f_4: vec2<f32>;
+    var local_25: vec2<f32>;
+    var q_3: vec2<f32>;
+    var f_5: vec2<f32>;
     var fw: vec2<f32>;
     var fade: f32;
     var seam: f32;
@@ -2963,7 +3062,7 @@ fn main_1() {
     var metal_2: f32;
     var ao_2: f32;
     var emit: vec3<f32>;
-    var local_25: vec3<f32>;
+    var local_26: vec3<f32>;
     var N_6: vec3<f32>;
     var mapN: vec3<f32>;
     var q1_: vec3<f32>;
@@ -2971,316 +3070,316 @@ fn main_1() {
     var T_4: vec3<f32>;
     var B_1: vec3<f32>;
     var scale: f32;
-    var local_26: f32;
+    var local_27: f32;
     var kind_2: f32;
     var color_1: vec3<f32>;
     var alpha: f32;
     var fresK: f32;
 
-    let _e189 = vWorld_1;
-    let _e190 = dpdx(_e189);
-    dpX = _e190;
-    let _e192 = vWorld_1;
-    let _e193 = dpdy(_e192);
-    dpY = _e193;
-    let _e195 = global.uChannels;
-    let _e197 = global.normalMapTransform;
-    let _e198 = texUV(_e195.y, _e197);
-    nUV = _e198;
-    let _e200 = nUV;
-    let _e201 = dpdx(_e200);
-    dx = _e201;
-    let _e203 = nUV;
-    let _e204 = dpdy(_e203);
-    dy = _e204;
-    let _e206 = global.uChannels;
-    let _e208 = global.mapTransform;
-    let _e209 = texUV(_e206.x, _e208);
-    uv0_ = _e209;
-    let _e211 = global.uChannels;
-    let _e213 = global.roughnessMapTransform;
-    let _e214 = texUV(_e211.z, _e213);
-    uvR = _e214;
-    let _e216 = global.uChannels;
-    let _e218 = global.metalnessMapTransform;
-    let _e219 = texUV(_e216.w, _e218);
-    uvM = _e219;
-    let _e221 = global.uChannels2_;
-    let _e223 = global.emissiveMapTransform;
-    let _e224 = texUV(_e221.x, _e223);
-    uvE = _e224;
-    let _e226 = global.uChannels2_;
-    let _e228 = global.aoMapTransform;
-    let _e229 = texUV(_e226.y, _e228);
-    uvA = _e229;
-    let _e231 = global.uChannels2_;
-    let _e233 = global.alphaMapTransform;
-    let _e234 = texUV(_e231.z, _e233);
-    uvAlpha = _e234;
-    let _e236 = global.uBase;
-    let _e237 = uv0_;
-    let _e238 = uv0_;
-    let _e239 = dpdx(_e238);
-    let _e240 = uv0_;
-    let _e241 = dpdy(_e240);
-    let _e242 = textureSampleGrad(mapTexture, mapSampler, _e237, _e239, _e241);
-    base = (_e236 * _e242);
-    let _e245 = global.uLivery;
-    if (_e245.x > 0.5f) {
+    let _e193 = vWorld_1;
+    let _e194 = dpdx(_e193);
+    dpX = _e194;
+    let _e196 = vWorld_1;
+    let _e197 = dpdy(_e196);
+    dpY = _e197;
+    let _e199 = global.uChannels;
+    let _e201 = global.normalMapTransform;
+    let _e202 = texUV(_e199.y, _e201);
+    nUV = _e202;
+    let _e204 = nUV;
+    let _e205 = dpdx(_e204);
+    dx = _e205;
+    let _e207 = nUV;
+    let _e208 = dpdy(_e207);
+    dy = _e208;
+    let _e210 = global.uChannels;
+    let _e212 = global.mapTransform;
+    let _e213 = texUV(_e210.x, _e212);
+    uv0_ = _e213;
+    let _e215 = global.uChannels;
+    let _e217 = global.roughnessMapTransform;
+    let _e218 = texUV(_e215.z, _e217);
+    uvR = _e218;
+    let _e220 = global.uChannels;
+    let _e222 = global.metalnessMapTransform;
+    let _e223 = texUV(_e220.w, _e222);
+    uvM = _e223;
+    let _e225 = global.uChannels2_;
+    let _e227 = global.emissiveMapTransform;
+    let _e228 = texUV(_e225.x, _e227);
+    uvE = _e228;
+    let _e230 = global.uChannels2_;
+    let _e232 = global.aoMapTransform;
+    let _e233 = texUV(_e230.y, _e232);
+    uvA = _e233;
+    let _e235 = global.uChannels2_;
+    let _e237 = global.alphaMapTransform;
+    let _e238 = texUV(_e235.z, _e237);
+    uvAlpha = _e238;
+    let _e240 = global.uBase;
+    let _e241 = uv0_;
+    let _e242 = uv0_;
+    let _e243 = dpdx(_e242);
+    let _e244 = uv0_;
+    let _e245 = dpdy(_e244);
+    let _e246 = textureSampleGrad(mapTexture, mapSampler, _e241, _e243, _e245);
+    base = (_e240 * _e246);
+    let _e249 = global.uLivery;
+    if (_e249.x > 0.5f) {
         {
-            let _e249 = vColor_1;
-            let _e250 = _e249.xyz;
-            let _e251 = global.uLivery;
-            if (_e251.y > 0.5f) {
-                let _e255 = vColor_1;
-                local_22 = _e255.w;
+            let _e253 = vColor_1;
+            let _e254 = _e253.xyz;
+            let _e255 = global.uLivery;
+            if (_e255.y > 0.5f) {
+                let _e259 = vColor_1;
+                local_23 = _e259.w;
             } else {
-                local_22 = 0f;
+                local_23 = 0f;
             }
-            let _e259 = local_22;
-            mask = vec4<f32>(_e250.x, _e250.y, _e250.z, _e259);
-            let _e265 = global.uPaint1_;
-            let _e266 = global.uPaint2_;
-            let _e267 = mask;
-            let _e271 = global.uPaint3_;
-            let _e272 = mask;
-            paint = mix(mix(_e265, _e266, vec3(_e267.y)), _e271, vec3(_e272.z));
-            let _e277 = vObjN_1;
-            an = abs(_e277);
-            let _e280 = an;
-            let _e282 = an;
+            let _e263 = local_23;
+            mask = vec4<f32>(_e254.x, _e254.y, _e254.z, _e263);
+            let _e269 = global.uPaint1_;
+            let _e270 = global.uPaint2_;
+            let _e271 = mask;
+            let _e275 = global.uPaint3_;
+            let _e276 = mask;
+            paint = mix(mix(_e269, _e270, vec3(_e271.y)), _e275, vec3(_e276.z));
+            let _e281 = vObjN_1;
+            an = abs(_e281);
             let _e284 = an;
-            if (_e280.x > max(_e282.y, _e284.z)) {
-                let _e288 = vObjPos_1;
-                local_24 = _e288.zy;
+            let _e286 = an;
+            let _e288 = an;
+            if (_e284.x > max(_e286.y, _e288.z)) {
+                let _e292 = vObjPos_1;
+                local_25 = _e292.zy;
             } else {
-                let _e290 = an;
-                let _e292 = an;
-                if (_e290.y > _e292.z) {
-                    let _e295 = vObjPos_1;
-                    local_23 = _e295.xz;
+                let _e294 = an;
+                let _e296 = an;
+                if (_e294.y > _e296.z) {
+                    let _e299 = vObjPos_1;
+                    local_24 = _e299.xz;
                 } else {
-                    let _e297 = vObjPos_1;
-                    local_23 = _e297.xy;
+                    let _e301 = vObjPos_1;
+                    local_24 = _e301.xy;
                 }
-                let _e300 = local_23;
-                local_24 = _e300;
+                let _e304 = local_24;
+                local_25 = _e304;
             }
-            let _e302 = local_24;
-            q_2 = _e302;
-            let _e304 = q_2;
-            f_4 = (fract((_e304 / vec2<f32>(9f, 4.5f))) - vec2(0.5f));
-            let _e314 = q_2;
-            let _e319 = fwidth((_e314 / vec2<f32>(9f, 4.5f)));
-            fw = _e319;
-            let _e324 = fw;
-            let _e326 = fw;
-            fade = (1f - smoothstep(0.03f, 0.12f, max(_e324.x, _e326.y)));
-            let _e332 = fade;
-            let _e336 = fw;
-            let _e342 = f_4;
-            let _e351 = fw;
-            let _e357 = f_4;
-            seam = (_e332 * max((1f - smoothstep(0f, ((1.5f * _e336.x) + 0.004f), (0.5f - abs(_e342.x)))), (1f - smoothstep(0f, ((1.5f * _e351.y) + 0.004f), (0.5f - abs(_e357.y))))));
-            let _e366 = q_2;
-            tone = fract((sin(dot(floor((_e366 / vec2<f32>(9f, 4.5f))), vec2<f32>(12.9898f, 78.233f))) * 43758.547f));
-            let _e381 = base;
-            let _e383 = base;
-            let _e385 = paint;
-            let _e388 = tone;
-            let _e394 = seam;
-            let _e400 = mask;
-            let _e405 = (_e383.xyz * (((_e385 * (0.9f + (0.12f * _e388))) * (1f - (0.35f * _e394))) * (1f - (0.45f * _e400.w))));
-            base.x = _e405.x;
-            base.y = _e405.y;
-            base.z = _e405.z;
+            let _e306 = local_25;
+            q_3 = _e306;
+            let _e308 = q_3;
+            f_5 = (fract((_e308 / vec2<f32>(9f, 4.5f))) - vec2(0.5f));
+            let _e318 = q_3;
+            let _e323 = fwidth((_e318 / vec2<f32>(9f, 4.5f)));
+            fw = _e323;
+            let _e328 = fw;
+            let _e330 = fw;
+            fade = (1f - smoothstep(0.03f, 0.12f, max(_e328.x, _e330.y)));
+            let _e336 = fade;
+            let _e340 = fw;
+            let _e346 = f_5;
+            let _e355 = fw;
+            let _e361 = f_5;
+            seam = (_e336 * max((1f - smoothstep(0f, ((1.5f * _e340.x) + 0.004f), (0.5f - abs(_e346.x)))), (1f - smoothstep(0f, ((1.5f * _e355.y) + 0.004f), (0.5f - abs(_e361.y))))));
+            let _e370 = q_3;
+            tone = fract((sin(dot(floor((_e370 / vec2<f32>(9f, 4.5f))), vec2<f32>(12.9898f, 78.233f))) * 43758.547f));
+            let _e385 = base;
+            let _e387 = base;
+            let _e389 = paint;
+            let _e392 = tone;
+            let _e398 = seam;
+            let _e404 = mask;
+            let _e409 = (_e387.xyz * (((_e389 * (0.9f + (0.12f * _e392))) * (1f - (0.35f * _e398))) * (1f - (0.45f * _e404.w))));
+            base.x = _e409.x;
+            base.y = _e409.y;
+            base.z = _e409.z;
         }
     } else {
-        let _e412 = global.uFlags;
-        if (_e412.x > 0.5f) {
-            let _e416 = base;
-            let _e417 = vColor_1;
-            base = (_e416 * _e417);
+        let _e416 = global.uFlags;
+        if (_e416.x > 0.5f) {
+            let _e420 = base;
+            let _e421 = vColor_1;
+            base = (_e420 * _e421);
         } else {
-            let _e419 = base;
-            let _e421 = base;
-            let _e423 = vColor_1;
-            let _e425 = (_e421.xyz * _e423.xyz);
-            base.x = _e425.x;
-            base.y = _e425.y;
-            base.z = _e425.z;
+            let _e423 = base;
+            let _e425 = base;
+            let _e427 = vColor_1;
+            let _e429 = (_e425.xyz * _e427.xyz);
+            base.x = _e429.x;
+            base.y = _e429.y;
+            base.z = _e429.z;
         }
     }
-    let _e433 = base;
-    let _e435 = uvAlpha;
-    let _e436 = uvAlpha;
-    let _e437 = dpdx(_e436);
-    let _e438 = uvAlpha;
-    let _e439 = dpdy(_e438);
-    let _e440 = textureSampleGrad(alphaMapTexture, alphaMapSampler, _e435, _e437, _e439);
-    base.w = (_e433.w * _e440.y);
-    let _e443 = global.uPBR;
-    let _e445 = uvR;
-    let _e446 = uvR;
-    let _e447 = dpdx(_e446);
-    let _e448 = uvR;
-    let _e449 = dpdy(_e448);
-    let _e450 = textureSampleGrad(roughnessMapTexture, roughnessMapSampler, _e445, _e447, _e449);
-    rough = (_e443.x * _e450.y);
-    let _e454 = global.uPBR;
-    let _e456 = uvM;
-    let _e457 = uvM;
-    let _e458 = dpdx(_e457);
-    let _e459 = uvM;
-    let _e460 = dpdy(_e459);
-    let _e461 = textureSampleGrad(metalnessMapTexture, metalnessMapSampler, _e456, _e458, _e460);
-    metal_2 = (_e454.y * _e461.z);
-    let _e466 = uvA;
-    let _e467 = uvA;
-    let _e468 = dpdx(_e467);
-    let _e469 = uvA;
-    let _e470 = dpdy(_e469);
-    let _e471 = textureSampleGrad(aoMapTexture, aoMapSampler, _e466, _e468, _e470);
-    let _e473 = global.uPBR;
-    ao_2 = mix(1f, _e471.x, _e473.w);
-    let _e477 = global.uEmissive;
-    let _e478 = uvE;
-    let _e479 = uvE;
-    let _e480 = dpdx(_e479);
-    let _e481 = uvE;
-    let _e482 = dpdy(_e481);
-    let _e483 = textureSampleGrad(emissiveMapTexture, emissiveMapSampler, _e478, _e480, _e482);
-    emit = (_e477 * _e483.xyz);
-    let _e487 = global.uFlags;
-    if (_e487.w > 0.5f) {
-        let _e491 = dpX;
-        let _e492 = dpY;
-        local_25 = cross(_e491, _e492);
+    let _e437 = base;
+    let _e439 = uvAlpha;
+    let _e440 = uvAlpha;
+    let _e441 = dpdx(_e440);
+    let _e442 = uvAlpha;
+    let _e443 = dpdy(_e442);
+    let _e444 = textureSampleGrad(alphaMapTexture, alphaMapSampler, _e439, _e441, _e443);
+    base.w = (_e437.w * _e444.y);
+    let _e447 = global.uPBR;
+    let _e449 = uvR;
+    let _e450 = uvR;
+    let _e451 = dpdx(_e450);
+    let _e452 = uvR;
+    let _e453 = dpdy(_e452);
+    let _e454 = textureSampleGrad(roughnessMapTexture, roughnessMapSampler, _e449, _e451, _e453);
+    rough = (_e447.x * _e454.y);
+    let _e458 = global.uPBR;
+    let _e460 = uvM;
+    let _e461 = uvM;
+    let _e462 = dpdx(_e461);
+    let _e463 = uvM;
+    let _e464 = dpdy(_e463);
+    let _e465 = textureSampleGrad(metalnessMapTexture, metalnessMapSampler, _e460, _e462, _e464);
+    metal_2 = (_e458.y * _e465.z);
+    let _e470 = uvA;
+    let _e471 = uvA;
+    let _e472 = dpdx(_e471);
+    let _e473 = uvA;
+    let _e474 = dpdy(_e473);
+    let _e475 = textureSampleGrad(aoMapTexture, aoMapSampler, _e470, _e472, _e474);
+    let _e477 = global.uPBR;
+    ao_2 = mix(1f, _e475.x, _e477.w);
+    let _e481 = global.uEmissive;
+    let _e482 = uvE;
+    let _e483 = uvE;
+    let _e484 = dpdx(_e483);
+    let _e485 = uvE;
+    let _e486 = dpdy(_e485);
+    let _e487 = textureSampleGrad(emissiveMapTexture, emissiveMapSampler, _e482, _e484, _e486);
+    emit = (_e481 * _e487.xyz);
+    let _e491 = global.uFlags;
+    if (_e491.w > 0.5f) {
+        let _e495 = dpX;
+        let _e496 = dpY;
+        local_26 = cross(_e495, _e496);
     } else {
-        let _e494 = vNormal_1;
-        local_25 = _e494;
+        let _e498 = vNormal_1;
+        local_26 = _e498;
     }
-    let _e496 = local_25;
-    N_6 = normalize(_e496);
-    let _e500 = gl_FrontFacing_1;
-    if !(_e500) {
-        let _e502 = N_6;
-        N_6 = -(_e502);
+    let _e500 = local_26;
+    N_6 = normalize(_e500);
+    let _e504 = gl_FrontFacing_1;
+    if !(_e504) {
+        let _e506 = N_6;
+        N_6 = -(_e506);
     }
-    let _e504 = nUV;
-    let _e505 = dx;
-    let _e506 = dy;
-    let _e507 = textureSampleGrad(normalMapTexture, normalMapSampler, _e504, _e505, _e506);
-    mapN = ((_e507.xyz * 2f) - vec3(1f));
-    let _e515 = global.uFlags;
-    if (_e515.z > 0.5f) {
+    let _e508 = nUV;
+    let _e509 = dx;
+    let _e510 = dy;
+    let _e511 = textureSampleGrad(normalMapTexture, normalMapSampler, _e508, _e509, _e510);
+    mapN = ((_e511.xyz * 2f) - vec3(1f));
+    let _e519 = global.uFlags;
+    if (_e519.z > 0.5f) {
         {
-            let _e519 = mapN;
-            let _e521 = mapN;
-            let _e523 = global.uNormalScale;
-            let _e524 = (_e521.xy * _e523);
-            mapN.x = _e524.x;
-            mapN.y = _e524.y;
-            let _e529 = dpY;
-            let _e530 = N_6;
-            q1_ = cross(_e529, _e530);
-            let _e533 = N_6;
-            let _e534 = dpX;
-            q0_ = cross(_e533, _e534);
-            let _e537 = q1_;
-            let _e538 = dx;
-            let _e541 = q0_;
-            let _e542 = dy;
-            T_4 = ((_e537 * _e538.x) + (_e541 * _e542.x));
-            let _e547 = q1_;
-            let _e548 = dx;
-            let _e551 = q0_;
-            let _e552 = dy;
-            B_1 = ((_e547 * _e548.y) + (_e551 * _e552.y));
-            let _e557 = T_4;
-            let _e558 = T_4;
-            let _e560 = B_1;
-            let _e561 = B_1;
-            scale = inverseSqrt(max(max(dot(_e557, _e558), dot(_e560, _e561)), 0.00000000000000000001f));
-            let _e568 = T_4;
-            let _e569 = mapN;
-            let _e571 = scale;
-            let _e574 = B_1;
-            let _e575 = mapN;
-            let _e577 = scale;
-            let _e581 = N_6;
-            let _e582 = mapN;
-            N_6 = normalize((((_e568 * (_e569.x * _e571)) + (_e574 * (_e575.y * _e577))) + (_e581 * _e582.z)));
+            let _e523 = mapN;
+            let _e525 = mapN;
+            let _e527 = global.uNormalScale;
+            let _e528 = (_e525.xy * _e527);
+            mapN.x = _e528.x;
+            mapN.y = _e528.y;
+            let _e533 = dpY;
+            let _e534 = N_6;
+            q1_ = cross(_e533, _e534);
+            let _e537 = N_6;
+            let _e538 = dpX;
+            q0_ = cross(_e537, _e538);
+            let _e541 = q1_;
+            let _e542 = dx;
+            let _e545 = q0_;
+            let _e546 = dy;
+            T_4 = ((_e541 * _e542.x) + (_e545 * _e546.x));
+            let _e551 = q1_;
+            let _e552 = dx;
+            let _e555 = q0_;
+            let _e556 = dy;
+            B_1 = ((_e551 * _e552.y) + (_e555 * _e556.y));
+            let _e561 = T_4;
+            let _e562 = T_4;
+            let _e564 = B_1;
+            let _e565 = B_1;
+            scale = inverseSqrt(max(max(dot(_e561, _e562), dot(_e564, _e565)), 0.00000000000000000001f));
+            let _e572 = T_4;
+            let _e573 = mapN;
+            let _e575 = scale;
+            let _e578 = B_1;
+            let _e579 = mapN;
+            let _e581 = scale;
+            let _e585 = N_6;
+            let _e586 = mapN;
+            N_6 = normalize((((_e572 * (_e573.x * _e575)) + (_e578 * (_e579.y * _e581))) + (_e585 * _e586.z)));
         }
     }
-    let _e587 = base;
-    let _e589 = global.uPBR;
-    if (_e587.w < _e589.z) {
+    let _e591 = base;
+    let _e593 = global.uPBR;
+    if (_e591.w < _e593.z) {
         discard;
     }
-    let _e592 = global.uInterior;
-    if (_e592 > 0.5f) {
-        local_26 = 5f;
+    let _e596 = global.uInterior;
+    if (_e596 > 0.5f) {
+        local_27 = 5f;
     } else {
-        local_26 = 4f;
+        local_27 = 4f;
     }
-    let _e598 = local_26;
-    kind_2 = _e598;
-    let _e600 = vWorld_1;
-    let _e601 = N_6;
-    let _e602 = base;
-    let _e604 = rough;
-    let _e605 = ao_2;
-    let _e610 = vWorld_1;
-    let _e611 = fwidth(_e610);
-    let _e613 = metal_2;
-    let _e614 = kind_2;
-    let _e617 = deferredLight(_e600, _e601, _e602.xyz, _e604, _e605, 0f, 0.04f, 1f, 0f, length(_e611), _e613, _e614, 1f, 1f);
-    let _e618 = emit;
-    color_1 = (_e617 + _e618);
-    let _e622 = color_1;
-    let _e623 = vWorld_1;
-    let _e624 = N_6;
-    let _e625 = base;
-    let _e626 = _e625.xyz;
-    let _e627 = ao_2;
-    let _e634 = metal_2;
-    let _e637 = rough;
-    let _e638 = kind_2;
-    let _e639 = gl_FragCoord_1;
-    let _e641 = nativeLocal(_e623, _e624, vec4<f32>(_e626.x, _e626.y, _e626.z, _e627), vec4<f32>(0f, 0f, _e634, 0.04f), _e637, _e638, _e639.xy);
-    color_1 = (_e622 + _e641);
-    let _e643 = global.uFlags;
-    if (_e643.y > 0.5f) {
-        let _e647 = base;
-        let _e649 = emit;
-        color_1 = (_e647.xyz + _e649);
+    let _e602 = local_27;
+    kind_2 = _e602;
+    let _e604 = vWorld_1;
+    let _e605 = N_6;
+    let _e606 = base;
+    let _e608 = rough;
+    let _e609 = ao_2;
+    let _e614 = vWorld_1;
+    let _e615 = fwidth(_e614);
+    let _e617 = metal_2;
+    let _e618 = kind_2;
+    let _e621 = deferredLight(_e604, _e605, _e606.xyz, _e608, _e609, 0f, 0.04f, 1f, 0f, length(_e615), _e617, _e618, 1f, 1f);
+    let _e622 = emit;
+    color_1 = (_e621 + _e622);
+    let _e626 = color_1;
+    let _e627 = vWorld_1;
+    let _e628 = N_6;
+    let _e629 = base;
+    let _e630 = _e629.xyz;
+    let _e631 = ao_2;
+    let _e638 = metal_2;
+    let _e641 = rough;
+    let _e642 = kind_2;
+    let _e643 = gl_FragCoord_1;
+    let _e645 = nativeLocal(_e627, _e628, vec4<f32>(_e630.x, _e630.y, _e630.z, _e631), vec4<f32>(0f, 0f, _e638, 0.04f), _e641, _e642, _e643.xy);
+    color_1 = (_e626 + _e645);
+    let _e647 = global.uFlags;
+    if (_e647.y > 0.5f) {
+        let _e651 = base;
+        let _e653 = emit;
+        color_1 = (_e651.xyz + _e653);
     }
-    let _e651 = base;
-    alpha = _e651.w;
-    let _e654 = global.uCanopy;
-    if (_e654 > 0.5f) {
+    let _e655 = base;
+    alpha = _e655.w;
+    let _e658 = global.uCanopy;
+    if (_e658 > 0.5f) {
         {
-            let _e657 = gl_FrontFacing_1;
-            if _e657 {
+            let _e661 = gl_FrontFacing_1;
+            if _e661 {
                 {
-                    let _e659 = N_6;
-                    let _e660 = vWorld_1;
-                    fresK = pow((1f - abs(dot(_e659, normalize(-(_e660))))), 2.5f);
-                    let _e671 = fresK;
-                    alpha = mix(0.16f, 0.85f, _e671);
-                    let _e673 = color_1;
-                    let _e678 = fresK;
-                    color_1 = (_e673 + (vec3<f32>(0.05f, 0.07f, 0.09f) * _e678));
+                    let _e663 = N_6;
+                    let _e664 = vWorld_1;
+                    fresK = pow((1f - abs(dot(_e663, normalize(-(_e664))))), 2.5f);
+                    let _e675 = fresK;
+                    alpha = mix(0.16f, 0.85f, _e675);
+                    let _e677 = color_1;
+                    let _e682 = fresK;
+                    color_1 = (_e677 + (vec3<f32>(0.05f, 0.07f, 0.09f) * _e682));
                 }
             } else {
                 alpha = 0.06f;
             }
         }
     }
-    let _e682 = color_1;
-    let _e683 = alpha;
-    fragmentColor = vec4<f32>(_e682.x, _e682.y, _e682.z, _e683);
+    let _e686 = color_1;
+    let _e687 = alpha;
+    fragmentColor = vec4<f32>(_e686.x, _e686.y, _e686.z, _e687);
     return;
 }
 
@@ -3297,7 +3396,7 @@ fn main(@location(0) vObjPos: vec3<f32>, @location(1) vObjN: vec3<f32>, @locatio
     gl_FrontFacing_1 = gl_FrontFacing;
     gl_FragCoord_1 = gl_FragCoord;
     main_1();
-    let _e257 = fragmentColor;
-    return FragmentOutput(_e257);
+    let _e261 = fragmentColor;
+    return FragmentOutput(_e261);
 }
 `;

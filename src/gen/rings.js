@@ -27,11 +27,12 @@ export function addRockyRings(system) {
     // (rocky planets only; one already decided this version is left)
     if (b.kind !== 'planet' || (b.class !== 'terrestrial' && b.class !== 'dwarf')) continue;
     if (b.rings && (b.rings.kind !== 'debris' || b.rings.version === RINGS_VERSION)) continue;
-    b.rings = rockyRings(Rng.fromString(`starseed/rings/v${RINGS_VERSION}/${system.seed}/${b.id}`), b, (b.moons || []).map((id) => byId.get(id)).filter(Boolean));
+    b.rings = rockyRings(Rng.fromString(`starseed/rings/v1/${system.seed}/${b.id}`), b, (b.moons || []).map((id) => byId.get(id)).filter(Boolean));
   }
   return system;
 }
-const RINGS_VERSION = 1;
+// (the data's version: a ring made by an older one is made again; its random stream stays the same)
+const RINGS_VERSION = 2;
 
 function rockyRings(rng, b, moons) {
   const Rp = b.radiusM, Mkg = b.massEarth * U.M_EARTH, rhoP = Mkg / (4 / 3 * Math.PI * Rp ** 3);
@@ -69,13 +70,16 @@ function rockyRings(rng, b, moons) {
     }
   }
   // (a first fragment's track: where a big piece held together a while before it too broke)
-  const fragments = Array.from({ length: rng.int(0, young > 0.4 ? 3 : 1) }, () => ({ x: rng.range(0.55, 0.95), w: rng.range(0.004, 0.02), k: rng.range(0.4, 1.4) }));
+  // (its fragments: a shard still in it clears a lane (a gap, k < 0); one's debris still crowded (a ringlet))
+  const fragments = Array.from({ length: rng.int(1, young > 0.4 ? 4 : 2) }, () => rng.chance(0.55)
+    ? { x: rng.range(0.45, 0.97), w: rng.range(0.003, 0.012), k: -rng.range(0.6, 0.97) }
+    : { x: rng.range(0.4, 0.95), w: rng.range(0.004, 0.015), k: rng.range(0.5, 1.5) });
   return {
     kind: 'debris', version: RINGS_VERSION,
     innerReal: inner, outerReal: outer, inner: inner * U.LEN_SCALE, outer: outer * U.LEN_SCALE,
     // (its thickness, drawn: thin, but enough to fly into, its boulders round you)
     thickness: dm.clamp(Rp * U.LEN_SCALE * rng.range(0.0012, 0.0025), 60, 400),
-    color, opacity: tau0, tau0, ageMyr: Math.round(ageMyr), icy, moonKm: Math.round(moonKm * 10) / 10,
+    color, opacity: tau0, tau0, ageMyr: Math.round(ageMyr), young: Math.round(young * 1000) / 1000, icy, moonKm: Math.round(moonKm * 10) / 10,
     peak: rng.range(0.55, 0.85), seed: rng.u32(), gaps, fragments,
     origin: `a ${Math.round(moonKm)} km ${icy ? 'icy' : 'rocky'} moon, torn apart ${ageMyr < 100 ? Math.round(ageMyr) + ' million' : (ageMyr / 1000).toFixed(1) + ' billion'} years ago`,
   };
@@ -84,18 +88,22 @@ function rockyRings(rng, b, moons) {
 function hash(x) { const s = Math.sin(x * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); }
 function vnoise(x) { const i = Math.floor(x), f = x - i, u = f * f * (3 - 2 * f); return hash(i) + (hash(i + 1) - hash(i)) * u; }
 
-// The ring's normal optical depth at r (game units from the planet's centre).
+// The ring's normal optical depth at r (game units from the planet's centre). Its zones, as a debris
+// ring spreads: a faint inner one, its material draining onto the planet (Saturn's C ring); the
+// dense main band round where most of it stayed (its B ring); thinner out to the sharp outer edge
+// where the moon came apart. Gaps where a moon's resonance or a surviving fragment clears its lane;
+// a ringlet where a fragment's debris still crowds. Its plateaus and ringlets differ severalfold
+// (jitter at three scales, in the log; a young ring's sharper, an old one's spread smoother).
 export function ringTau(R, r) {
   if (r <= R.inner || r >= R.outer) return 0;
-  const x = (r - R.inner) / (R.outer - R.inner);
-  // (rising off the inner edge, where it drains onto the planet; densest round where most of it
-  // stayed; a sharp outer edge where the moon came apart, held by the moons' pull)
-  let f = dm.smoothstep(0, 0.12, x) * (0.35 + 0.65 * Math.exp(-(((x - R.peak) / 0.35) ** 2))) * (1 - dm.smoothstep(0.985, 1, x));
+  const x = (r - R.inner) / (R.outer - R.inner), young = R.young ?? 0.5;
+  const drain = 0.08 + 0.92 * dm.smoothstep(0.08, 0.3, x);
+  const band = 0.45 + 0.55 * Math.exp(-(((x - R.peak) / 0.22) ** 2));
+  let f = dm.smoothstep(0, 0.04, x) * drain * band * (1 - dm.smoothstep(0.992, 1, x));
   for (const g of R.gaps || []) { const d = (r - g.r) / Math.max(g.w, 1e-6); f *= 1 - g.depth * Math.exp(-d * d); }
-  for (const s of R.fragments || []) { const d = (x - s.x) / s.w; f *= 1 + s.k * Math.exp(-d * d); }
-  // (its ringlets and plateaus: jitter at three scales)
-  const s = (R.seed % 997) * 0.37;
-  f *= 0.62 + 0.22 * vnoise(x * 23 + s) + 0.1 * vnoise(x * 97 + s * 2) + 0.06 * vnoise(x * 389 + s * 3);
+  for (const q of R.fragments || []) { const d = (x - q.x) / q.w; f *= q.k > 0 ? 1 + q.k * Math.exp(-d * d) : 1 + q.k * Math.exp(-d * d * d * d); }
+  const s = (R.seed % 997) * 0.37, k = 0.6 + 0.6 * young;
+  f *= Math.exp(k * (1.1 * (vnoise(x * 19 + s) - 0.5) + 0.8 * (vnoise(x * 83 + s * 2) - 0.5) + 0.5 * (vnoise(x * 341 + s * 3) - 0.5)));
   return R.tau0 * f;
 }
 
