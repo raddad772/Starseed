@@ -2,9 +2,11 @@
 Run inside Blender; output directory comes from EXPEDITION_OUT (default /tmp/starseed-expedition).
 Owns only scenes named 'Expedition - ...'. Existing fleet scenes are preserved.
 """
-import bpy, math, json, os, hashlib
+import bpy, math, json, os, hashlib, sys
 from pathlib import Path
 from mathutils import Vector, Matrix
+sys.path.insert(0,str(Path(globals().get('__file__','/Users/dave/dev/starseed/tools/blender/build_expedition.py')).parent))
+from exterior import exterior_physics, MANIFEST_SKIP
 
 OUT=Path(os.environ.get('EXPEDITION_OUT','/tmp/starseed-expedition'));OUT.mkdir(parents=True,exist_ok=True)
 G=lambda p:Vector((p[0],-p[2],p[1]))
@@ -65,7 +67,13 @@ class Mesh:
   if caps:self.face(rings[0],mat,paint,-axis);self.face(rings[1],mat,paint,axis)
   if collision:
    rr=max(r,r1);mn=[min(a[i],b[i])-rr*(math.sqrt(max(0,1-axis[i]**2))) for i in range(3)];mx=[max(a[i],b[i])+rr*(math.sqrt(max(0,1-axis[i]**2))) for i in range(3)];self.ship.t['colliders'].append({'min':mn,'max':mx})
- def beam(self,a,b,r=.12,mat='Metal'):self.cyl(a,b,r,mat,n=6,collision=True)
+ def beam(self,a,b,r=.12,mat='Metal'):
+  self.cyl(a,b,r,mat,n=6)
+  # (its collision boxed in short lengths where it runs on a slant: one box round a diagonal beam
+  # would wall off the empty space beside it)
+  a,b=Vector(a),Vector(b);axis=(b-a).normalized();n=1 if sum(abs(c)>1e-6 for c in axis)<2 else max(1,math.ceil((b-a).length/max(8*r,1.5)))
+  for i in range(n):
+   p,q=(a,b) if n==1 else (a+(b-a)*(i/n),a+(b-a)*((i+1)/n));self.ship.t['colliders'].append({'min':[min(p[k],q[k])-r*math.sqrt(max(0,1-axis[k]**2)) for k in range(3)],'max':[max(p[k],q[k])+r*math.sqrt(max(0,1-axis[k]**2)) for k in range(3)]})
  def loft(self,stations,mat='Hull',paint=0,n=20,caps=True):
   # (z, half-width, lower-y, upper-y). Flats face up/down for serviceable decks.
   rings=[]
@@ -173,7 +181,7 @@ class Ship:
    for side in [-1,1]:m.box((cx+side*(x1-x0)*.3,y+.73,z0+.6),((x1-x0)*.23,.12,.5),'Metal',solid=True);m.box((cx+side*(x1-x0)*.3,y+.81,z0+.6),((x1-x0)*.19,.03,.36),'Screen')
   m.finish()
  def habitat(self,stations):
-  m=self.mesh('pressure_hull_'+str(len(self.hab)));m.loft(stations);self.hab.append(m)
+  m=self.mesh('pressure_hull_'+str(len(self.hab)));m.loft(stations);m.stations=stations;self.hab.append(m)
   # Narrow raised seam bands make the pressure vessel read as assembled sections.
   d=self.mesh('habitat_seams_'+str(len(self.hab)),lod=1)
   for z,w,low,high in stations[1:-1]:d.loft([(z-.09,w+.035,low-.035,high+.035),(z+.09,w+.035,low-.035,high+.035)],'Hull',1,caps=False)
@@ -259,7 +267,7 @@ class Ship:
     for curve in ob.animation_data.drivers:
      expression=curve.driver.expression;curve.driver.expression=expression+'+0';curve.driver.expression=expression
   self.root.update_tag()
-  self.scene.frame_set(1);bpy.context.view_layer.update();self.root['game_manifest']=json.dumps(self.t)
+  self.scene.frame_set(1);bpy.context.view_layer.update();self.root['game_manifest']=json.dumps({k:v for k,v in self.t.items() if k not in MANIFEST_SKIP})
   bpy.ops.object.select_all(action='DESELECT')
   for o in self.scene.objects:o.select_set(True)
   path=OUT/(self.key.removeprefix('expedition_')+'.glb');kw=dict(filepath=str(path),export_format='GLB',use_selection=True,use_active_scene=True,export_yup=True,export_extras=True,export_animations=False,export_apply=True)
@@ -402,7 +410,7 @@ def finish_dress(s):
 # Expedition B: shaped, serviced pressure hulls; no AG / armament; carriers and tenders use standard FTL.
 SHIPS=[]
 def capsule(s,name,stations,x=0):
- m=s.mesh(name);m.loft(stations)
+ m=s.mesh(name);m.loft(stations);m.stations=stations;m.skin_x=x
  if x:m.polys=[([(p[0]+x,p[1],p[2]) for p in ps],mat,idx) for ps,mat,idx in m.polys]
  s.hab.append(m);return m
 
@@ -415,6 +423,7 @@ def lifting_hull(s,stations):
   if s.name=='Hearth' and -8<=z<=4.8:c=.32
   ring=[(0,low,z),(.7*w,low+.07*h,z),(w,low+.23*h,z),(.90*w,low+.57*h,z),(.69*w,high,z),(.34*w,high+c*.85,z),(0,high+c,z),(-.34*w,high+c*.85,z),(-.69*w,high,z),(-.90*w,low+.57*h,z),(-w,low+.23*h,z),(-.7*w,low+.07*h,z)]
   rings.append(ring)
+ m.rings=[(st[0],[(p[0],p[1]) for p in ring]) for st,ring in zip(stations,rings)]
  m.face(rings[0],'Hull',normal=(0,0,-1));m.face(rings[-1],'Hull',normal=(0,0,1))
  for n,(a,b) in enumerate(zip(rings,rings[1:])):
   for i in range(12):
@@ -693,6 +702,9 @@ for s in SHIPS:
     if q:
      normal=(Vector(poly[1])-Vector(poly[0])).cross(Vector(poly[2])-Vector(poly[0])).normalized();glass.face([Vector(p)+normal*.02 for p in q],'Glass')
  glass.finish()
+
+# Solid from outside, open where it's open (exterior.py); its passages' cuts reach the panels below.
+for s in SHIPS:exterior_physics(s)
 
 # Sparse service panels follow the actual skin rather than floating above the ship.
 for s in SHIPS:

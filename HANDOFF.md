@@ -41,7 +41,13 @@ Queue (tick as done):
    shuttles, by its outside collision (hull, parts, doors as they stand; evaContacts ballInBox for hinged
    slabs), low parts stepped onto, roofs stood on; a lowered ramp still walks you aboard.
    tools/tests/landed-craft-walk.test.mjs; checked in game (Lark stops you, Neptune 3's ramp boards).
-4. [ ] Expedition and Pioneer fleets: run the sweep test on their fairings; close gaps.
+4. [x] Expedition and Pioneer fleets solid from outside too: the hull code moved to tools/blender/exterior.py,
+   shared by all three builders (lofted skins exact, the Expedition lifting bodies ray-cast through their
+   mesh); no airlock there is buried, so no passages. Diagonal beams' collision boxed in short lengths
+   (one box round a slanted beam walled off empty space: the Gantry's aft yokes blocked its airlock);
+   Pioneer inspection panels cut at openings (Gantry's). fleet-eva-hull.test.mjs sweeps all 21 craft
+   (an airlock may be reached along the hull: the Porter's rocket pod stands off its door). Expedition
+   and Pioneer airlock doors left at 1.1 m (older eras, cramped on purpose).
 5. [ ] Near-ground frame cost (engine.render CPU 20-23 ms near the ground): profile and fix the worst.
 
 Parked for Dave: voices (Higgs v2 in ~/tools/higgs needs the July-2025 model revisions; v3 is

@@ -2,9 +2,11 @@
 Run inside Blender; output directory comes from PIONEER_OUT (default /tmp/starseed-pioneer).
 Owns only scenes named 'Pioneer - ...'. Existing fleet scenes are preserved.
 """
-import bpy, math, json, os, hashlib
+import bpy, math, json, os, hashlib, sys
 from pathlib import Path
 from mathutils import Vector, Matrix
+sys.path.insert(0,str(Path(globals().get('__file__','/Users/dave/dev/starseed/tools/blender/build_pioneer.py')).parent))
+from exterior import exterior_physics, MANIFEST_SKIP
 
 OUT=Path(os.environ.get('PIONEER_OUT','/tmp/starseed-pioneer'));OUT.mkdir(parents=True,exist_ok=True)
 G=lambda p:Vector((p[0],-p[2],p[1]))
@@ -65,7 +67,13 @@ class Mesh:
   if caps:self.face(rings[0],mat,paint,-axis);self.face(rings[1],mat,paint,axis)
   if collision:
    rr=max(r,r1);mn=[min(a[i],b[i])-rr*(math.sqrt(max(0,1-axis[i]**2))) for i in range(3)];mx=[max(a[i],b[i])+rr*(math.sqrt(max(0,1-axis[i]**2))) for i in range(3)];self.ship.t['colliders'].append({'min':mn,'max':mx})
- def beam(self,a,b,r=.12,mat='Metal'):self.cyl(a,b,r,mat,n=6,collision=True)
+ def beam(self,a,b,r=.12,mat='Metal'):
+  self.cyl(a,b,r,mat,n=6)
+  # (its collision boxed in short lengths where it runs on a slant: one box round a diagonal beam
+  # would wall off the empty space beside it)
+  a,b=Vector(a),Vector(b);axis=(b-a).normalized();n=1 if sum(abs(c)>1e-6 for c in axis)<2 else max(1,math.ceil((b-a).length/max(8*r,1.5)))
+  for i in range(n):
+   p,q=(a,b) if n==1 else (a+(b-a)*(i/n),a+(b-a)*((i+1)/n));self.ship.t['colliders'].append({'min':[min(p[k],q[k])-r*math.sqrt(max(0,1-axis[k]**2)) for k in range(3)],'max':[max(p[k],q[k])+r*math.sqrt(max(0,1-axis[k]**2)) for k in range(3)]})
  def loft(self,stations,mat='Hull',paint=0,n=20,caps=True):
   # (z, half-width, lower-y, upper-y). Flats face up/down for serviceable decks.
   rings=[]
@@ -173,7 +181,7 @@ class Ship:
    for side in [-1,1]:m.box((cx+side*(x1-x0)*.3,y+.73,z0+.6),((x1-x0)*.23,.12,.5),'Metal',solid=True);m.box((cx+side*(x1-x0)*.3,y+.81,z0+.6),((x1-x0)*.19,.03,.36),'Screen')
   m.finish()
  def habitat(self,stations):
-  m=self.mesh('pressure_hull_'+str(len(self.hab)));m.loft(stations);self.hab.append(m)
+  m=self.mesh('pressure_hull_'+str(len(self.hab)));m.loft(stations);m.stations=stations;self.hab.append(m)
   # Narrow raised seam bands make the pressure vessel read as assembled sections.
   d=self.mesh('habitat_seams_'+str(len(self.hab)),lod=1)
   for z,w,low,high in stations[1:-1]:d.loft([(z-.09,w+.035,low-.035,high+.035),(z+.09,w+.035,low-.035,high+.035)],'Hull',1,caps=False)
@@ -240,7 +248,7 @@ class Ship:
      for z in [bx['min'][2],bx['max'][2]]:candidates.add(tuple(round(v,3) for v in (x,y,z)))
   self.t['probes']=[list(p) for p in sorted(candidates)[::max(1,len(candidates)//100)]]
   self.t['probeK']=self.t['mass']*9.81/.12;self.t['probeC']=2*.7*math.sqrt(self.t['probeK']*self.t['mass']/4)
-  self.t.setdefault('help','Pioneer: no artificial gravity'+(' · J FTL' if self.t['ftl'] else ' · no FTL')+' · F seats/airlocks · R cycles back inside · Space/C translate in freefall · X brakes')
+  self.t.setdefault('help','Pioneer: no artificial gravity'+('' if self.t['ftl'] else ' or FTL')+' · F seats/airlocks · R cycles back inside · Space/C translate in freefall · X brakes'+(' · J FTL' if self.t['ftl'] else ''))
   # Controls are also exposed as Blender preview sliders, with export-rest poses left untouched.
   for part in self.t['parts']:
    ob=bpy.data.objects[part['node']];control='door_'+part['door'] if 'door' in part else part.get('channel','motion');self.root[control]=0.0;self.root.id_properties_ui(control).update(min=0,max=1)
@@ -253,7 +261,7 @@ class Ship:
     # Wheel movement is continuous in-game; export retains its bind pose.
     pass
   self.root['gear']=1.0
-  self.scene.frame_set(1);bpy.context.view_layer.update();self.root['game_manifest']=json.dumps(self.t)
+  self.scene.frame_set(1);bpy.context.view_layer.update();self.root['game_manifest']=json.dumps({k:v for k,v in self.t.items() if k not in MANIFEST_SKIP})
   bpy.ops.object.select_all(action='DESELECT')
   for o in self.scene.objects:o.select_set(True)
   path=OUT/(self.key.removeprefix('pioneer_')+'.glb');kw=dict(filepath=str(path),export_format='GLB',use_selection=True,use_active_scene=True,export_yup=True,export_extras=True,export_animations=False,export_apply=True)
@@ -532,6 +540,9 @@ for o in list(s.scene.objects):
 s.t['parts']=[p for p in s.t['parts'] if p.get('channel')!='gear'];s.t['thrust']={k:0 for k in s.t['thrust']};s.t['alpha']=[0,0,0];s.t['ground']={'kind':'wheels','drive':.22,'vmax':12,'yawRate':.55,'yawAccel':.7,'steer':.48,'grip':1.0,'feel':1.0,'push':3.0};s.t['cargo']={'offset':[0,-1.05,0]};s.t['gearFixed']=True;s.t['help']='Six-wheel surface rover · four contact suspension · sealed two-person cabin / EVA lock · no flight'
 SHIPS.append(s)
 
+# Solid from outside, open where it's open (exterior.py).
+for s in SHIPS:exterior_physics(s)
+
 # External inspection covers, painted pressure-vessel bands and registration plates.
 for s in SHIPS:
  for hi,hull in enumerate(s.hab):
@@ -543,6 +554,8 @@ for s in SHIPS:
    pts=[center+(Vector(p)-center)*.70 for p in poly]
    normal=(Vector(poly[1])-Vector(poly[0])).cross(Vector(poly[2])-Vector(poly[0])).normalized()
    skin.face([p+normal*.035 for p in pts],'Hull',1 if j%3 else 2)
+  # (cut where the skin is: doorways, windows, airlock passages)
+  for lo,hi in s.cuts:skin.cut(lo,hi)
   skin.finish()
  # Registration is true vector geometry, not a packed image texture.
  bpy.context.window.scene=s.scene
