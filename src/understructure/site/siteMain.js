@@ -9,7 +9,7 @@ import { buildSiteScene } from './siteScene.js';
 import { SiteWalker } from './siteWalker.js';
 import { SiteGuide } from './siteGuide.js';
 import { SiteCompass } from './siteCompass.js';
-import { SiteMechanisms } from './siteMechanisms.js';
+import { SiteMechanisms, AnomalySense } from './siteMechanisms.js';
 import { THEME_NAMES } from '../plan/themes.js';
 import { SiteSound } from './siteSound.js';
 import { SiteMap } from './siteMap.js';
@@ -32,6 +32,7 @@ let saved = {}; try { saved = JSON.parse(localStorage.getItem(saveKey) || '{}');
 if (params.has('reset')) saved = {};
 const state = { flashlight: true, collected: new Set(saved.collected || []), returned: false };
 const mech = new SiteMechanisms(site, visual.collision, visual.root, visual.mat, saved.mech || {});
+const sense = new AnomalySense(mech.anomalies);
 const sound = new SiteSound(plan, site);
 const map = new SiteMap(plan, site, saved.map || {});
 const dust = buildAirDust(plan, visual.root, { underground: () => true });
@@ -186,7 +187,7 @@ function hud() {
   document.body.classList.toggle('zero-g', g === 0); $('floatHelp').hidden = g !== 0;
   const r = raw(); $('count').textContent = `${String(r).padStart(3, '0')}%`; $('credit').textContent = `CREDIT ${credit(r)} / 170`;
   const o = running ? offer() : null; $('prompt').hidden = !o; if (o) $('prompt').innerHTML = `<b>${usingPad ? 'X' : 'F'}</b>${o.text}`;
-  const a = walker.takeAlert(); if (a) toast(a);
+  const a = walker.takeAlert() || sense.takeAlert(); if (a) toast(a);
   $('toast').textContent = performance.now() < noticeUntil ? notice : ''; $('toast').hidden = !$('toast').textContent;
   // the compass: where the route goes next, in camera space
   let tgt = guide.target(walker.pos, { recordTaken: state.collected.has(recordFind.id), recordPos: recordFind.pos });
@@ -231,10 +232,10 @@ function loop(now) {
   if (document.hidden) return;
   const dt = Math.min((now - last) / 1000, 0.1); if (now - last < 1000 / 60) return; last = now;
   padControls(dt);
-  if (running) { walker.step(dt, input()); time += dt; mech.update(dt, walker.pos); if (time > 1.5) scanOnArrival(); }
+  if (running) { walker.step(dt, input()); time += dt; mech.update(dt, walker.pos); sense.update(dt, walker.pos); if (time > 1.5) scanOnArrival(); }
   sound.update({ pos: walker.pos, yaw: walker.yaw, grounded: walker.grounded, zeroG: walker.gravity === 0, time }, running);
   render();
 }
-if (params.has('test')) window.siteTest = { plan, site, walker, state, guide, mech, sound, map, toggleMap, visual, errors, render, start, pause, interact, offer, raw, credit, get renderer() { return renderer; }, get frame() { return frame; }, engine };
+if (params.has('test')) window.siteTest = { plan, site, walker, state, guide, mech, sense, sound, map, toggleMap, visual, errors, render, start, pause, interact, offer, raw, credit, get renderer() { return renderer; }, get frame() { return frame; }, engine };
 try { resize(); renderer = await DeferredRenderer.create(canvas, fail); engine.webgpu = renderer; $('start').disabled = false; $('start').textContent = 'Start'; render(); last = performance.now(); requestAnimationFrame(loop); }
 catch (e) { fail(e); }

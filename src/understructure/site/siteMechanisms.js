@@ -8,6 +8,9 @@ import { inside, inflate } from '../plan/geom2.js';
 import { THEME_NAMES } from '../plan/themes.js';
 
 const REACH = 2.8;
+// (how near a glitch the suit picks it up, and how far away again before it will say so again)
+const ANOMALY_NEAR = 10, ANOMALY_REARM = 22;
+const ANOMALY_SAYS = { temporal: 'Warning: temporal anomaly detected.', spatial: 'Warning: spatial anomaly detected.' };
 
 export class SiteMechanisms {
   constructor(site, collision, root, mat, saved = {}) {
@@ -97,6 +100,18 @@ export class SiteMechanisms {
       for (const k of g.keys) v.keys.set(k.id, this._keyProp(k, root, M, mat));
       this.visual.set(g.id, v);
     }
+    // the place's glitches, where they are (AnomalySense, below, is who has noticed them): out of
+    // step with time (a span that comes and goes, a door between wrecked and whole), or space folded
+    // (a distance gate's frames)
+    const centre = (poly) => [0, 1].map((k) => poly.reduce((a, q) => a + q[k], 0) / poly.length);
+    this.anomalies = [
+      ...this.working.filter((v) => v.d.kind === 'flicker').map((v) => ({ pos: [v.d.mid[0], v.d.y0, v.d.mid[1]], r: ANOMALY_NEAR, kind: 'temporal' })),
+      ...this.gates.filter((g) => g.kind === 'span' && g.theme === 'time').map((g) => {
+        const [cx, cz] = centre(g.floor.poly), size = Math.max(...g.floor.poly.map(([x, z]) => Math.hypot(x - cx, z - cz)));
+        return { pos: [cx, g.floor.y, cz], r: ANOMALY_NEAR + size, kind: 'temporal' };
+      }),
+      ...this.gates.filter((g) => g.kind === 'fold').map((g) => ({ pos: g.collapse.p, r: ANOMALY_NEAR + 3, kind: 'spatial' })),
+    ];
   }
 
   _control(g, root, M) {
@@ -248,4 +263,23 @@ export class SiteMechanisms {
   }
 
   save() { return { solved: [...this.solved], relays: [...this.relays], terminals: [...this.terminals], valves: this.valves, carrying: this.carrying, cellsDelivered: [...this.cellsDelivered] }; }
+}
+
+// A suit's sense for the site's glitches (one per player): the first time you come near one it says
+// so, and again once you've been well away. Near means on about its level: a glitch a floor below
+// or above, through the rock, isn't noticed; one met within a few seconds of another is the same.
+export class AnomalySense {
+  constructor(anomalies) { this.anomalies = anomalies; this.armed = anomalies.map(() => true); this.time = 0; this.last = -Infinity; this.alert = null; }
+  update(dt, p) {
+    this.time += dt;
+    this.anomalies.forEach((a, i) => {
+      const d = Math.hypot(p[0] - a.pos[0], p[2] - a.pos[2]), dy = Math.abs(p[1] - a.pos[1]);
+      if (this.armed[i] && d < a.r && dy < 6) {
+        this.armed[i] = false;
+        if (this.time - this.last > 6) this.alert = ANOMALY_SAYS[a.kind];
+        this.last = this.time;
+      } else if (!this.armed[i] && (d > a.r + ANOMALY_REARM || dy > 16)) this.armed[i] = true;
+    });
+  }
+  takeAlert() { const a = this.alert; this.alert = null; return a; }
 }

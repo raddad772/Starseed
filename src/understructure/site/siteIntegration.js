@@ -12,7 +12,7 @@ import { compileSite } from '../plan/compile.js';
 import { inside } from '../plan/geom2.js';
 import { buildSiteScene } from './siteScene.js';
 import { SiteWalker } from './siteWalker.js';
-import { SiteMechanisms } from './siteMechanisms.js';
+import { SiteMechanisms, AnomalySense } from './siteMechanisms.js';
 import { SiteGuide } from './siteGuide.js';
 import { SiteCompass } from './siteCompass.js';
 import { SiteMap } from './siteMap.js';
@@ -157,6 +157,7 @@ export class SiteSession {
     const st = plan.nodes.find((n) => n.id === 'staging');
     this.walker = new SiteWalker(w.visual.collision, { pos: [st.center[0], plan.surfaceY - 1.2, st.center[1]], yaw: w.compiled.spawn.yaw });
     this.ride = { kind: 'down', t: 0, from: plan.surfaceY - 1.2, to: st.y0, x: st.center[0], z: st.center[1] };
+    this.sense = new AnomalySense(w.mech.anomalies);
     this.guide = new SiteGuide(plan); this.map = new SiteMap(plan, w.compiled, w.saved.map || {});
     this.sound = new SiteSound(plan, w.compiled);
     this.time = 0; this.lastSave = 0; this.flashlight = true; this.notice = ''; this.noticeUntil = 0;
@@ -239,7 +240,8 @@ export class SiteSession {
     this.time += dt;
     // the world's part ticks once a frame, whoever is down here
     if (this.w.tickAt !== this.game.lastFrame) { this.w.tickAt = this.game.lastFrame; this.w.mech.update(dt, w.pos); }
-    const a = w.takeAlert(); if (a) this.toast(a);
+    this.sense.update(dt, w.pos);
+    const a = w.takeAlert() || this.sense.takeAlert(); if (a) this.toast(a);
     // where you are, in the planet's frame: you are physically here; and in the world (the
     // planet keeps moving and turning while you are down here: the world camera goes with you)
     const p = this.player, b = this.site.body;
