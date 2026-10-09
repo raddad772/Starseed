@@ -5,6 +5,25 @@ import { installCampaignJoin,seatExpeditionPlayer } from './newGame.js';
 import { Dialogue } from './dialogue.js';
 import { LINES,WELCOME_NUDGE,PROLOGUE } from './lines.js';
 
+// the music under the prologue (assets/music; nothing if it isn't there)
+const PROLOGUE_MUSIC = 'assets/music/prologue-strings.m4a';
+function playMusic(url, level = 0.55, fadeIn = 4) {
+  const a = new Audio(url);
+  a.volume = 0; a.loop = false;
+  a.play().catch(() => {});
+  let target = level, rate = level / fadeIn, timer = null;
+  const tick = () => {
+    const v = a.volume + Math.sign(target - a.volume) * Math.min(Math.abs(target - a.volume), rate * 0.05);
+    a.volume = Math.max(0, Math.min(1, v));
+    if (Math.abs(a.volume - target) < 1e-3) { clearInterval(timer); timer = null; if (target === 0) a.pause(); }
+  };
+  timer = setInterval(tick, 50);
+  return {
+    fade(to, seconds) { target = to; rate = Math.abs(to - a.volume) / Math.max(seconds, 0.05); if (!timer) timer = setInterval(tick, 50); },
+    stop() { clearInterval(timer); a.pause(); },
+  };
+}
+
 // the opening shot: held level on the mirror's horizon under the central black hole (it above, its
 // reflection below) while your thoughts run, then turned back to your craft as she calls
 const TURN_SECONDS = 2.5;
@@ -70,6 +89,8 @@ export class FlightIntro {
       pr.back=p.evaQuat.clone();
       p.heldView=pr.shot.clone();document.body.classList.add('cinematic');
       for(const line of PROLOGUE)this.dialogue.say(line);
+      // (strings under your thoughts, fading in; out again as she talks)
+      this.music=playMusic(PROLOGUE_MUSIC);
       pr.phase='voice';return true;
     }
     // (Enter: on to her line)
@@ -77,6 +98,7 @@ export class FlightIntro {
     if(pr.phase==='voice'&&(this.dialogue.idle||skip)){
       if(skip)this.dialogue.clear();
       pr.phase='turn';pr.t=0;this.welcomed=true;this.dialogue.say(LINES.welcome);
+      this.music?.fade(0,skip?1.5:7);
     }
     if(pr.phase==='turn'){
       pr.t+=dt;const k=Math.min(1,pr.t/TURN_SECONDS),e=k*k*(3-2*k);
@@ -134,5 +156,5 @@ export class FlightIntro {
     if(['target','translate','brake','scan'].includes(this.state.step)){this.state.step='target';this.state.origin=null;this.state.scanning=false;this.state.scanSeconds=0;}
     this.changed();
   }
-  dispose(){this.hud.remove();this.dialogue.dispose();document.body.classList.remove('cinematic');if(this.game.players[0])this.game.players[0].heldView=null;}
+  dispose(){this.music?.stop();this.hud.remove();this.dialogue.dispose();document.body.classList.remove('cinematic');if(this.game.players[0])this.game.players[0].heldView=null;}
 }
