@@ -19,6 +19,7 @@ import { SEASON_W, SEASON_H, SEASON_V } from '../gen/worldsim/season.js';
 import { TILE_VERSION } from '../gen/tileshape.js';
 import { refineLevelN } from '../gen/localsim.js';
 import { newRefine, putTile, complete, toStorable, fromStorable, RIVER_VERSION } from '../gen/worldsim/refine.js';
+import { FINE_STEPS } from '../gen/worldsim/epochs.js';
 
 // a refinement's rivers made from it whole and indexed (refine.js worldRivers: each river's source
 // stream with it), in a worker of their own; its arrays shared, or copied. R: the drawn globe's
@@ -91,7 +92,7 @@ export class WorldSims {
     this.seed = game.seed;
     this.N = opts.N || 288;
     this.myr = opts.myr || 150;
-    this.steps = opts.steps || 40;
+    this.steps = opts.steps || FINE_STEPS;   // (the fine epoch's: worldsim/epochs.js)
     this.gpu = opts.gpu !== false;   // (the tile sims on the GPU where there is one)
     this.status = new Map();   // body id -> 'queued' | 'running' | 'ready' | 'failed'
     this.queue = [];           // { kind: 'sim', id, N } | { kind: 'refine', id, face, snap }
@@ -101,12 +102,15 @@ export class WorldSims {
     this.dbP.then(dbPrune);
     const cores = (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 4;
     const nw = Math.max(1, Math.min(4, opts.workers || (cores >= 8 ? 2 : 1)));
+    // (and where there are cores to spare, tiles on the CPU too: the integer sim compiled, the GPU's
+    // result bit for bit, ~5 s a tile each; the refinements' first, the pyramid's when none wait)
+    const nc = opts.cpuTiles ?? (cores >= 8 ? 2 : 0);
     this.workers = [];
     // (the sims' workers, and two for the GPU's tiles: the terrain pyramid near the player and
     // the refinements, never waiting behind a world's minute-long sim; two, so one's CPU work
     // overlaps the other's on the GPU)
-    for (let i = 0; i < nw + 2; i++) {
-      const w = { worker: new Worker(new URL('../workers/worldsimWorker.js' + location.search, import.meta.url), { type: 'module' }), job: null, role: i < nw ? 'sim' : 'tile' };
+    for (let i = 0; i < nw + 2 + nc; i++) {
+      const w = { worker: new Worker(new URL('../workers/worldsimWorker.js' + location.search, import.meta.url), { type: 'module' }), job: null, role: i < nw ? 'sim' : i < nw + 2 ? 'tile' : 'cpu' };
       w.worker.onmessage = (e) => this._onMessage(w, e.data);
       w.worker.onerror = (e) => {
         console.error('world-sim worker error', e.message || e);
@@ -242,14 +246,14 @@ export class WorldSims {
   }
 
   _pick(w) {
-    const order = w.role === 'tile' ? ['pyr', 'refine'] : ['pyr', 'sim', 'refine'];
+    const order = w.role === 'tile' ? ['pyr', 'refine'] : w.role === 'cpu' ? ['refine', 'pyr'] : ['pyr', 'sim', 'refine'];
     const mine = (j) => j.kind === 'pyr' || !this.focus || this.focus.has(j.id);
     for (const kind of order) {
       const i = this.queue.findIndex((j) => j.kind === kind && mine(j));
       if (i >= 0) return this.queue.splice(i, 1)[0];
     }
     // the other worlds, in the background: a sim worker, one job at a time
-    if (!this.focus || w.role === 'tile' || this.workers.some((o) => o.job && !mine(o.job))) return null;
+    if (!this.focus || w.role !== 'sim' || this.workers.some((o) => o.job && !mine(o.job))) return null;
     for (const kind of ['sim', 'refine']) {
       const i = this.queue.findIndex((j) => j.kind === kind);
       if (i >= 0) return this.queue.splice(i, 1)[0];
@@ -274,14 +278,14 @@ export class WorldSims {
         const sent = w.refSent || (w.refSent = new Map()), refKey = this.refKey(job.id), R = job.refine;
         const refine = sent.get(job.id) === R ? null : { version: R.version, L: R.L, n: R.n, K: R.K, h: R.h, rw: R.rw, fl: R.fl, rcv: R.rcv, done: R.done };
         sent.set(job.id, R);
-        w.worker.postMessage({ type: 'pyr', job: job.id, seed: this.seed, definition:this.game.system.definition, body: job.id, L: job.L, face: job.face, ti: job.ti, tj: job.tj, snap, refine, refKey, parents: job.parents, gpu: this.gpu });
+        w.worker.postMessage({ type: 'pyr', job: job.id, seed: this.seed, definition:this.game.system.definition, body: job.id, L: job.L, face: job.face, ti: job.ti, tj: job.tj, snap, refine, refKey, parents: job.parents, gpu: this.gpu && w.role !== 'cpu' });
         continue;
       }
       if (job.kind === 'refine') {
         this.refine.get(job.id).status = 'running';
         const has = w.hasSnap || (w.hasSnap = new Set()), snap = has.has(job.id) ? null : job.snap;
         has.add(job.id);
-        w.worker.postMessage({ type: 'refine', job: job.id, seed: this.seed, definition:this.game.system.definition, body: job.id, face: job.face, ti: job.ti, tj: job.tj, snap, gpu: this.gpu });
+        w.worker.postMessage({ type: 'refine', job: job.id, seed: this.seed, definition:this.game.system.definition, body: job.id, face: job.face, ti: job.ti, tj: job.tj, snap, gpu: this.gpu && w.role !== 'cpu' });
         continue;
       }
       this.status.set(job.id, 'running');
