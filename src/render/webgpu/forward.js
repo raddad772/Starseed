@@ -25,14 +25,21 @@ export class ForwardPass extends OpaquePass {
     const additive=m.blending===THREE.AdditiveBlending;
     const premult=m.premultipliedAlpha||m.blendSrc===THREE.OneFactor;
     const blend=!liquid&&m.transparent?{color:{operation:'add',srcFactor:premult?'one':'src-alpha',dstFactor:additive?'one':'one-minus-src-alpha'},alpha:{operation:'add',srcFactor:'one',dstFactor:additive?'one':'one-minus-src-alpha'}}:undefined;
-    const key=JSON.stringify([g.layout,m.side,m.depthTest,m.depthWrite,blend]);
+    const key=g.layoutKey+'|'+m.side+'|'+m.depthTest+'|'+m.depthWrite+'|'+(blend?(premult?'p':'s')+(additive?'a':''):'-')+'|'+(m.polygonOffset?(m.polygonOffsetUnits||0)+','+(m.polygonOffsetFactor||0):'');
     let pipeline=p.pipelines.get(key);
     if(!pipeline){pipeline=this.device.createRenderPipeline({label:p.name+' forward',layout:this.device.createPipelineLayout({bindGroupLayouts:[p.vertexBindings.layout,p.fragmentBindings.layout,...(p.name==='standardForward'?[this.localLights.shadeLayout]:[])]}),vertex:{module:p.vertex,entryPoint:'main',buffers:g.layout},fragment:{module:p.fragment,entryPoint:'main',targets:[{format:'rgba16float',blend}]},primitive:{topology:'triangle-list',cullMode:m.side===THREE.DoubleSide?'none':m.side===THREE.BackSide?'front':'back'},depthStencil:{format:'depth32float',depthWriteEnabled:liquid||m.depthWrite,depthCompare:m.depthTest===false?'always':'greater-equal',depthBias:m.polygonOffset?-(m.polygonOffsetUnits||0):0,depthBiasSlopeScale:m.polygonOffset?-(m.polygonOffsetFactor||0):0}});p.pipelines.set(key,pipeline);}
     return pipeline;
   }
-  prepare(object,material,projection,camera,uniforms){
+  prepare(object,material,projection,camera,uniforms,stamp){
     const p=this.program(material);if(!p)return null;
     const g=this.geometry(object,p),e=this.mesh(object,p,g,material);if(!e.count)return null;
+    // (all but a standard material's: the pass's uniforms for the material once, the object's matrices set in them)
+    if(p.name!=='standardForward'&&stamp!==undefined){
+      const u=this.sharedUniforms(material,stamp,()=>{const u={...material.uniforms,...this.uniformOverrides,...uniforms,modelMatrix:{value:null},modelViewMatrix:{value:new THREE.Matrix4()},viewMatrix:{value:camera.matrixWorldInverse},projectionMatrix:{value:projection}};if(!u.tCloudShadow?.value?.userData?.webgpuRecipe){u.tCloudShadow={value:null};u.uCSOn={value:0};}return u;});
+      u.modelMatrix.value=object.matrixWorld;u.modelViewMatrix.value.multiplyMatrices(camera.matrixWorldInverse,object.matrixWorld);
+      const k=this.sharedKey(p,material);
+      return {p,g,e,object,pipeline:this.pipeline(p,g,material),vg:p.vertexBindings.get(e,u).group,fg:k?p.fragmentBindings.get(k,u,stamp).group:p.fragmentBindings.get(e,u).group};
+    }
     const u={...material.uniforms,...this.uniformOverrides,...uniforms,modelMatrix:{value:object.matrixWorld},modelViewMatrix:{value:new THREE.Matrix4().multiplyMatrices(camera.matrixWorldInverse,object.matrixWorld)},viewMatrix:{value:camera.matrixWorldInverse},projectionMatrix:{value:projection}};
     if(p.name==='standardForward'){
       let body=this.bodyLights?.[0]||{},distance=Infinity;const point=new THREE.Vector3().setFromMatrixPosition(object.matrixWorld);
@@ -45,10 +52,11 @@ export class ForwardPass extends OpaquePass {
   draw(pass,draws){let n=0;for(const d of draws){if(d.p.name==='standardForward')pass.setBindGroup(2,this.clusterGroup);n+=super.draw(pass,[d]);}return n;}
   collect(scene,camera,projection,frustum,uniforms,predicate=()=>true){
     const draws=[];if(!scene)return draws;
+    const stamp=this.stamp=(this.stamp||0)+1;
     scene.traverseVisible(object=>{
       if(!object.isMesh||!object.layers.test(camera.layers)||(object.frustumCulled&&!frustum.intersectsObject(object)))return;
       const materials=Array.isArray(object.material)?object.geometry.groups.map(group=>({material:object.material[group.materialIndex],group})):[{material:object.material}];
-      for(const {material,group} of materials){if(!material?.visible||!predicate(material,object))continue;const d=this.prepare(object,material,projection,camera,uniforms);if(d){d.group=group;d.order=object.renderOrder;d.distance=object.getWorldPosition(new THREE.Vector3()).distanceToSquared(camera.position);draws.push(d);}}
+      for(const {material,group} of materials){if(!material?.visible||!predicate(material,object))continue;const d=this.prepare(object,material,projection,camera,uniforms,stamp);if(d){d.group=group;d.order=object.renderOrder;d.distance=object.getWorldPosition(new THREE.Vector3()).distanceToSquared(camera.position);draws.push(d);}}
     });
     return draws.sort((a,b)=>a.order-b.order||b.distance-a.distance);
   }

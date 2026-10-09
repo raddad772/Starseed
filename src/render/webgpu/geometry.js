@@ -13,7 +13,18 @@ export function cachedFields(layout,object){
  let schema=schemas.get(key);if(!schema){schema=fields(layout,object);schemas.set(key,schema);}return schema;
 }
 export function layouts(fields){return [false,true].map(inst=>{const a=fields.filter(f=>f.inst===inst);return a.length?{arrayStride:a.reduce((n,f)=>n+f.n*4,0),stepMode:inst?'instance':'vertex',attributes:a.map(f=>({shaderLocation:f.location,offset:f.offset,format:f.n===1?'float32':'float32x'+f.n}))}:null;});}
-export function pack(object,fields,inst,count){const list=fields.filter(f=>f.inst===inst),stride=list.reduce((n,f)=>n+f.n,0),out=new Float32Array(count*stride);for(let i=0;i<count;i++)for(const f of list){const a=attribute(object,f.name),col=/^instance([0-3])$/.exec(f.name);for(let k=0;k<f.n;k++){
+// (a float attribute, plain or interleaved, one element per vertex or instance: read straight from its array,
+// not component by component; the creatures' instances are packed afresh every frame, for each pass)
+const direct=a=>a&&(a.isInterleavedBufferAttribute?a.data.array:a.array) instanceof Float32Array&&(a.meshPerAttribute||a.data?.meshPerAttribute||1)===1&&!a.isGLBufferAttribute;
+export function pack(object,fields,inst,count){const list=fields.filter(f=>f.inst===inst),stride=list.reduce((n,f)=>n+f.n,0),out=new Float32Array(count*stride);
+ const slow=[];
+ for(const f of list){const a=attribute(object,f.name),col=/^instance([0-3])$/.exec(f.name),o=f.offset/4;
+  if(!direct(a)){slow.push(f);continue;}
+  const arr=a.isInterleavedBufferAttribute?a.data.array:a.array,step=a.isInterleavedBufferAttribute?a.data.stride:a.itemSize,base=a.isInterleavedBufferAttribute?a.offset:0;
+  if(col){const c0=Number(col[1])*4;for(let i=0;i<count;i++){const src=i*step+base+c0,dst=i*stride+o;for(let k=0;k<f.n;k++)out[dst+k]=arr[src+k];}}
+  else{const fill=f.name==='color'?1:0,m=Math.min(f.n,a.itemSize);for(let i=0;i<count;i++){const src=i*step+base,dst=i*stride+o;for(let k=0;k<m;k++)out[dst+k]=arr[src+k];for(let k=m;k<f.n;k++)out[dst+k]=k===3?fill:0;}}
+ }
+ if(slow.length)for(let i=0;i<count;i++)for(const f of slow){const a=attribute(object,f.name),col=/^instance([0-3])$/.exec(f.name);for(let k=0;k<f.n;k++){
  let v;if(col){const c=Number(col[1])*4+k;v=a?component(a,i,c):identity[c];}
  else if(a)v=k<a.itemSize?component(a,Math.floor(i/(a.meshPerAttribute||a.data?.meshPerAttribute||1)),k):(f.name==='color'&&k===3?1:0);
  else v=f.name==='instanceColor'||f.name==='color'?1:f.name==='normal'&&k===1?1:0;

@@ -38,14 +38,17 @@ class ShadowGeometry extends OpaquePass {
     }
     return pipeline;
   }
-  prepare(object,material,camera){
+  // (stamp: the map being drawn; a material's uniforms made once a map, the object's matrices set in them)
+  prepare(object,material,camera,stamp){
     const p=this.program(material,object),g=this.geometry(object,p),e=this.mesh(object,p,g,material);
     if(!e.count)return null;
-    const uniforms={...material.uniforms,...SHADOW_LIGHT_UNIFORMS,
-      modelMatrix:{value:object.matrixWorld},modelViewMatrix:{value:new THREE.Matrix4().multiplyMatrices(camera.matrixWorldInverse,object.matrixWorld)},
+    const uniforms=this.sharedUniforms(material,stamp,()=>({...material.uniforms,...SHADOW_LIGHT_UNIFORMS,
+      modelMatrix:{value:null},modelViewMatrix:{value:new THREE.Matrix4()},
       viewMatrix:{value:camera.matrixWorldInverse},projectionMatrix:{value:camera.projectionMatrix},
-    };
-    return {p,g,e,object,pipeline:this.pipeline(p,g,material),vg:p.vertexBindings.get(e,uniforms).group,fg:p.fragmentBindings.get(e,uniforms).group};
+    }));
+    uniforms.modelMatrix.value=object.matrixWorld;uniforms.modelViewMatrix.value.multiplyMatrices(camera.matrixWorldInverse,object.matrixWorld);
+    const k=this.sharedKey(p,material);
+    return {p,g,e,object,pipeline:this.pipeline(p,g,material),vg:p.vertexBindings.get(e,uniforms).group,fg:k?p.fragmentBindings.get(k,uniforms,stamp).group:p.fragmentBindings.get(e,uniforms).group};
   }
 }
 export class ShadowPass {
@@ -94,15 +97,16 @@ export class ShadowPass {
       if(e.mipLevelCount>1)this.textures.generateMips(e.texture,e.format,e.mipLevelCount,1);
       return;
     }
-    camera.updateMatrixWorld();scene.updateMatrixWorld();
+    // (the frame's scene had its matrices brought up to date once, before its maps: not again for each)
+    camera.updateMatrixWorld();if(scene!==this.fresh)scene.updateMatrixWorld();
     this.frustum.setFromProjectionMatrix(this.matrix.multiplyMatrices(camera.projectionMatrix,camera.matrixWorldInverse));
-    const draws=[];let additive=false;
+    const draws=[];let additive=false;const stamp=this.stamp=(this.stamp||0)+1;
     scene.traverseVisible(object=>{
       if(!object.isMesh||(!object.layers.test(camera.layers)&&!(camera.layers.isEnabled(SHADOW_LAYER)&&object.castShadow)))return;
       if(object.frustumCulled&&!this.frustum.intersectsObject(object))return;
       const material=Array.isArray(object.material)?object.material[0]:object.material;
       additive ||= material.blending===THREE.CustomBlending;
-      const draw=this.geometry.prepare(object,material,camera);if(draw)draws.push(draw);
+      const draw=this.geometry.prepare(object,material,camera,stamp);if(draw)draws.push(draw);
     });
     let output=e,rect=target.viewport;
     if(additive){
@@ -120,13 +124,14 @@ export class ShadowPass {
     }
     this.device.queue.submit([encoder.finish()]);
   }
+  // (scene: the frame's, its matrices already updated)
   update(source,scene){
     if(!source)return;
     if(!this.state)this.state=new SunShadows();
     const s=this.state;
     for(const key of ['on','sky','active','body'])s[key]=source[key];
     for(const key of ['sunDir','anchor','bodyQInv'])s[key].copy(source[key]);
-    s.render(this,scene);
+    this.fresh=scene;try{s.render(this,scene);}finally{this.fresh=null;}
     // Allocate inactive outputs too: bindings may be evaluated before the first
     // active cascade, but their enable flags keep those zero-filled maps unused.
     this.map(s.atlas);this.map(s.skyRings);

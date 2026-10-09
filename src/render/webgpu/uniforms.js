@@ -46,7 +46,11 @@ export function packUniforms(layout, uniforms, data = new ArrayBuffer(layout.byt
         const n = field.matrix, array = value?.elements || value;
         for (let c = 0; c < n; c++) for (let r = 0; r < n; r++) f[offset + c * 4 + r] = array?.[c * n + r] ?? (c === r ? 1 : 0);
       } else if (field.width === 1) dst[offset] = value ?? 0;
-      else if (value?.isColor) for (let k = 0; k < field.width; k++) dst[offset + k] = value[['r','g','b'][k]] ?? 0;
+      // (vectors and colours by their fields, not component by component)
+      else if (value?.isVector2 || value?.isVector3 || value?.isVector4) {
+        const w = field.width; dst[offset] = value.x ?? 0; dst[offset + 1] = value.y ?? 0;
+        if (w > 2) dst[offset + 2] = value.z ?? 0; if (w > 3) dst[offset + 3] = value.w ?? 0;
+      } else if (value?.isColor) { const w = field.width; dst[offset] = value.r ?? 0; dst[offset + 1] = value.g ?? 0; if (w > 2) dst[offset + 2] = value.b ?? 0; if (w > 3) dst[offset + 3] = 0; }
       else for (let k = 0; k < field.width; k++) dst[offset + k] = value?.getComponent?.(k) ?? value?.[k] ?? 0;
     }
   }
