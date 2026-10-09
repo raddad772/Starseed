@@ -11,6 +11,22 @@ maps and viewscreens are native. WebGL exists only in explicit test tooling (`?w
 no production fallback. Other browser/GPU combinations still need certification; no speedup or exact
 pixel-parity claim is made. Dave confirmed sole-agent work and no coordination messages this session.
 
+## NOW: planet generation faster (session 39d69fa8, 2026-10-09; Dave: "do the free wins", coastlines
+moving a little fine with before/after shots)
+
+- ac8c0f5 bit for bit (13 worlds' snapshots fingerprinted the same): climate's rain sweeps' constants
+  once; a stagnant lid's rise shape once; sea levels/cut-offs by selection (worldsim/select.js).
+- b08e283 two CPU tile workers on >= 8 cores (refinements first): ~a fifth of the tiles beside the GPU's.
+- 92d3397 SIM_VERSION 71: fine epoch 20 x 500 kyr (worldsim/epochs.js), the climates after the deep time
+  warm-started (opts.warm) with 40 rain sweeps (opts.rainSweeps), long wet eras in <= ~200 steps. The deep
+  time's climate untouched: any change there remakes the continents (73-80% land/sea agreement).
+  Result: land/sea 97-99% the same, heights p50 ~15 m; 13 worlds 280 -> 174 s CPU (Earth 34 -> 26,
+  Mars 13 -> 3.9, Vygern 83 -> 31). Bundles regenerated. Before/after maps via
+  `node tools/survey.mjs --out DIR --refine 0 --W 1600 SEED:body ...` (new maps-only option).
+- Not done (from the profiling): a new plate method (<= 7 s, loses the plates' history: not worth it),
+  GPU pass fusion for tiles, sending the snapshot to refinement before landmarks/seasons, deferring
+  refinement of worlds nobody's near, prebaked snapshot packs.
+
 ## NOW: immersive pilot view, rings round rocky worlds (session 39d69fa8, 2026-10-09)
 
 - Immersive pilot view (40203fd; Dave: "pilot seats that have immersive vr interfaces that allow full
