@@ -140,6 +140,10 @@ export function climate(G, opts) {
     Tb2[NB - 1] = rr[NB - 1] / bb[NB - 1];
     for (let b = NB - 2; b >= 0; b--) Tb2[b] = (rr[b] - cc[b] * Tb2[b + 1]) / bb[b];
   };
+  // (opts.warm: a world's own last A, kept through its deep time: its next climate is searched for
+  // within 15% of it, the whole range again if it isn't there)
+  const solve = (lo, hi) => {
+  Alo = lo; Ahi = hi;
   for (let pass = 0; pass < PASSES; pass++) {
     A = dm.sqrt(Alo * Ahi);
     T.fill(target);
@@ -168,9 +172,14 @@ export function climate(G, opts) {
     for (let m = 0; m < MONTHS; m++) for (let c = 0; c < n; c++) { mean += Tm[m * n + c] * G.area[c]; wt += G.area[c]; }
     mean /= wt;
     if (opts.debug) opts.debug(`pass ${pass}: A ${A.toFixed(1)}, mean ${(mean - 273.15).toFixed(1)} C`);
-    if (Math.abs(mean - target) < 0.3) break;
+    if (Math.abs(mean - target) < 0.3) return true;
     if (mean > target) Alo = A; else Ahi = A;
   }
+  return false;
+  };
+  const warm = opts.warm;
+  if (!(warm && warm.A > 0 && solve(warm.A / 1.15, warm.A * 1.15))) solve(2, 20000);
+  if (warm) warm.A = A;
   // heights: the lapse rate on land
   const lapse = opts.lapse ?? 0.0065;
   for (let m = 0; m < MONTHS; m++) for (let c = 0; c < n; c++) if (!sea[c]) Tm[m * n + c] -= lapse * h[c];
@@ -215,7 +224,7 @@ export function climate(G, opts) {
       stab[c] = dm.clamp(1 + (Tmm[c] + lift - Tb[bandOf[c]]) / 8, 0.2, 2) * (1 - 0.8 * coolCoast[c]);
     }
     const wind = windField(G, lat, itcz, nH, opts.locked ? opts.substellar : null, spin);
-    rainMonth(G, geo, h, sea, Tmm, Tair, stab, wind, itczC, lat, Pm.subarray(m * n, (m + 1) * n), opts.locked, vegCover, opts.trace ? (o) => opts.trace(m, { ...o, itczC, stab }) : null);
+    rainMonth(G, geo, h, sea, Tmm, Tair, stab, wind, itczC, lat, Pm.subarray(m * n, (m + 1) * n), opts.locked, vegCover, opts.trace ? (o) => opts.trace(m, { ...o, itczC, stab }) : null, opts.rainSweeps ?? 80);
   }
   // global scale: ~1000 mm/yr on an Earth, rising ~2.5%/K, with the sea's share; the rise
   // spent by ~330 K (a hothouse's rain is heavy, not millions of times Earth's), and none reaching
@@ -350,7 +359,7 @@ function monsoonBelt(lat, G, T, itcz, locked) {
   return out;
 }
 
-function rainMonth(G, geo, h, sea, T, Tair, stab, wind, itcz, lat, out, locked, cover, trace = null) {
+function rainMonth(G, geo, h, sea, T, Tair, stab, wind, itcz, lat, out, locked, cover, trace = null, SWEEPS = 80) {
   const n = G.n;
   const qs = (t) => dm.exp(0.0687 * (t - 273)); // water the air can hold (relative, Clausius-Clapeyron)
   // (a cell's evaporation fills only a small part of what the air holds: air crossing a
@@ -411,7 +420,9 @@ function rainMonth(G, geo, h, sea, T, Tair, stab, wind, itcz, lat, out, locked, 
     // the rain far inland, the Amazon's way)
     backC[c] = cover ? 0.2 + 0.5 * cover[c] : 0.6;
   }
-  for (let it = 0; it < 80; it++) {
+  // (opts.rainSweeps: fewer for the climates after a world's deep time, 40 within ~1.5% of 80's rain on
+  // land, its climates' classes 98.5% the same; the deep time's exact, its plates' history chaotic)
+  for (let it = 0; it < SWEEPS; it++) {
     for (let c = 0; c < n; c++) {
       // what arrives: from the upwind neighbours
       let inflow = 0;

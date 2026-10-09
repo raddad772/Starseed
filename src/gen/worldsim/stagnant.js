@@ -92,6 +92,7 @@ export function stagnantWorld(G, opts) {
   // (an icy lid's contraction ridges: in two pulses as its shell thickens)
   const icyLid = !!(body.terrain && body.terrain.icy), crng = rng.fork('contraction'), rugged = icyLid ? new Float64Array(n) : null, folds = [];
   let pulses = 0;
+  let wetEvery = 0;
   for (let t = 0; t < age; t += DT_MYR / 1000, step++) {
     stats.craters += imp.step(DT_MYR, dMin, (c, dh) => { h[c] += dh; }, t * 1000, t, h).length;
     if (icyLid && pulses < 2 && t >= age * (pulses === 0 ? 0.35 : 0.7)) { const a = contractionRidges(G, h, crng, scale, 0.5, rugged); folds.push(...a); stats.ridges = folds.length; pulses++; }
@@ -176,7 +177,10 @@ export function stagnantWorld(G, opts) {
       // basin, Menrva, where Callisto keeps hundreds)
       if (opts.overturn) { let m = 0; for (let c = 0; c < n; c++) m += h[c]; m /= n; for (let c = 0; c < n; c++) h[c] = m + opts.overturn * (h[c] - m); }
     }
-    if (wet && t >= wet[0] && t < wet[1] && rk > 2e-3) {
+    // (a long wet era's wear in at most ~200 steps, each as long as it needs: billions of years in
+    // 10 Myr steps were most of an icy world's minute)
+    if (wet && !wetEvery) wetEvery = Math.max(1, Math.ceil((wet[1] - wet[0]) * 1000 / DT_MYR / 200));
+    if (wet && t >= wet[0] && t < wet[1] && rk > 2e-3 && (step % wetEvery === 0)) {
       // (any sea is its rivers' base level: without one the whole world is a closed basin, and
       // its lakes fill it level (a Titan's polar seas, a few % of it, are its base)
       if (!E) E = new Erosion(G, hs, { sea: opts.seaFrac > 0, K: 8e-7, rain: 1, m: 0.45, kd: 1 });
@@ -189,7 +193,7 @@ export function stagnantWorld(G, opts) {
       // (a trickle (a Titan's methane, 0.5% of an Earth's rain) cuts nothing a cell this size
       // shows: the water's ways are traced, for its rivers; the finer levels cut their valleys)
       if ((opts.rainK0 ?? 1) < 0.05) { E.route(); E.drain(); }
-      else E.step(DT_MYR * 1e6);
+      else E.step(DT_MYR * wetEvery * 1e6);
       for (let c = 0; c < n; c++) { h[c] = hs[c] + sl; if (!E.base[c]) river[c] = Math.max(river[c], E.A[c]); }
       stats.wetSteps++;
       // (lasting rain wears the craters away; brief spells leave them)

@@ -36,6 +36,7 @@ import { soilAndWater } from './soil.js';
 import { LifeMap } from './life.js';
 import { Ground } from './ground.js';
 import { SIM_LEN } from '../../core/units.js';
+import { FINE_STEPS, FINE_SPAN } from './epochs.js';
 
 // river erosion (stream power) constants, deep time and the fine epoch: real K ~1e-6
 // m^0.1/yr for m = 0.45, x ~0.8 at the game's 1/10 scale (areas and lengths shrink)
@@ -318,6 +319,11 @@ export function worldSim(body, star, opts = {}) {
   // on the map (life.js)
   const Gc = new SimGrid(opts.Nc ?? 40, body.R);
   const climOpts = climateOpts(body, star, host);
+  // (its climates after the deep time: each starts near the one before's solution (warm), their
+  // rain in 40 sweeps; the deep time's own exact, its plates' history being chaotic: a change there
+  // remakes the continents. Not in climOpts, which the snapshot's seasons use afresh, as a cached
+  // world's would)
+  const after = { warm: {}, rainSweeps: 40 };
   // (a world without seas has none in its climate, whatever lies below its datum)
   const drySea = sea ? null : new Uint8Array(Gt.n);
   // life through the history (on unless opts.lifeHistory is false): its map advanced as the plates move, every
@@ -367,14 +373,14 @@ export function worldSim(body, star, opts = {}) {
   if (realms.checks) realms.check(T, ht, 0);
   if (realms.checks) log(`realms: ${realms.count()} lineages on the land now; ${realms.interchanges.length} interchanges (landmasses meeting), ${realms.splits} divergences (split apart)`);
   T.heights(ht, ut);
-  let clim = climateOn(Gc, Gt, ht, climOpts, drySea, lifeMap);
+  let clim = climateOn(Gc, Gt, ht, { ...climOpts, ...after }, drySea, lifeMap);
   // life on the map (life.js), and the climate again with its plant cover (forests darken
   // the land, plants hand rain on inland): the cover then holds the fine epoch's soil
   // (the realms the plates' history left, on the climate grid; with the life through the
   // history, where its map has got to)
   const realmGc = realms.checks ? realms.onGrid(Gc) : null;
   let life0 = lifeOn(Gc, clim, H, rng.fork('life0'), null, realmGc, lifeMap);
-  clim = climateOn(Gc, Gt, ht, climOpts, drySea, life0);
+  clim = climateOn(Gc, Gt, ht, { ...climOpts, ...after }, drySea, life0);
   life0 = lifeOn(Gc, clim, H, rng.fork('life0'), null, realmGc, lifeMap);
   log(`climate: ${summarizeKoppen(clim)}`);
   log(`plates: ${myr} Myr, ${T.plates.filter((q) => !q.dead).length} plates, ${T.hot.length} hotspots (${T.activity.name}), ${(T.events || []).length} rifts/welds, ${T.impacts.events.length} impacts`);
@@ -412,7 +418,7 @@ export function worldSim(body, star, opts = {}) {
   E.findBase(); E.route();
   log(`lakes on the plates' surface: ${lakeShare(E, h)}% of the land under standing water (if every basin filled)`);
   const Ef = new Impacts(G, { rng: rng.fork('impacts-fine'), g: body.gravity, pressure, rate, scale });
-  const steps = opts.steps ?? 60, dt = opts.dt ?? 2.5e5;
+  const steps = opts.steps ?? FINE_STEPS, dt = opts.dt ?? FINE_SPAN / steps;
   const hb = new Float64Array(G.n);
   const ice = new Glaciers(G, p.climate, scale);
   ice.Tsl = Tsl; ice.TmSL = TmSL; ice.lapse = lapse;
@@ -560,7 +566,7 @@ export function worldSim(body, star, opts = {}) {
   // the climate now, on the finished surface: biomes for the game
   // (open water for the climate: the sea and the lakes)
   const wetMask = Uint8Array.from(E.base, (b, c) => b || E.water[c] - h[c] >= 1 ? 1 : 0);
-  clim = climateOn(Gc, G, h, climOpts, wetMask, life0);
+  clim = climateOn(Gc, G, h, { ...climOpts, ...after }, wetMask, life0);
   log(`climate now: ${summarizeKoppen(clim)}`);
   out.climate = clim; out.Gc = Gc; out.climOpts = climOpts;
   // the beaches' sand shows as the surface rock there

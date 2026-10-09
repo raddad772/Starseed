@@ -34,7 +34,7 @@ try {
   const key = `${seed}|${b.id}|v${SIM_VERSION}|N${simNFor(b)}`;
   let snap = await new Promise((res, rej) => { const r = indexedDB.open('starseed-worldsim', 1); r.onsuccess = () => { const g = r.result.transaction('snap').objectStore('snap').get(key); g.onsuccess = () => res(g.result); g.onerror = rej; }; r.onerror = rej; });
   // (?body= a world the game hasn't simulated here: its world sim run now)
-  if (!snap && q.get('body') != null && q.get('kind') !== 'pyr') { log(`${b.name}: running its world sim`); snap = packSnapshot(worldSim(b, sys.bodies[0], { N: simNFor(b), myr: 150, steps: 40, ...simOptsFor(b, sys) }), b); }
+  if (!snap && q.get('body') != null && q.get('kind') !== 'pyr') { log(`${b.name}: running its world sim`); snap = packSnapshot(worldSim(b, sys.bodies[0], { N: simNFor(b), myr: 150, ...simOptsFor(b, sys) }), b); }
   if (!snap) throw new Error('no cached sim for ' + key + ' (run the game on this seed first)');
   const gen = new TerrainGenerator({ ...b.terrain, snapshot: snap });
   let face = +(q.get('face') ?? 1), ti = +(q.get('ti') ?? 1), tj = +(q.get('tj') ?? 0);

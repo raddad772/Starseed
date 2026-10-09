@@ -17,12 +17,14 @@
 // DIR/survey.json listing them (for a contact sheet). The refinement and pyramid run the tile
 // sim as the game does (the integer sim, compiled: the GPU's results bit for bit), the
 // refinement's tiles on --threads workers (tools/surveyWorker.mjs); --float 1 runs the
-// floating-point sim instead (alike, not bit for bit). The caches keep the two apart.
+// floating-point sim instead (alike, not bit for bit). The caches keep the two apart. --refine 0:
+// the world sims' maps alone (no refinement, no views), for comparing world sims.
 
 import fs from 'fs';
 import path from 'path';
 import { generateSystem } from '../src/gen/system.js';
 import { worldSim, simOptsFor } from '../src/gen/worldsim/world.js';
+import { FINE_STEPS } from '../src/gen/worldsim/epochs.js';
 import { packSnapshot, simNFor, SIM_VERSION } from '../src/gen/worldsim/snapshot.js';
 import { findFeatures } from '../src/gen/worldsim/features.js';
 import { nameLandmarks, landmarks } from '../src/gen/worldsim/landmarks.js';
@@ -67,7 +69,7 @@ for (const w of worlds) {
   if (fs.existsSync(sf)) { snap = JSON.parse(fs.readFileSync(sf)); for (const k in TY) if (snap[k]) snap[k] = TY[k].from(snap[k]); if (snap.dunes) snap.dunePatch = dunePatches(); }
   else {
     const t0 = performance.now();
-    const Wd = worldSim(b, sys.bodies[0], { N, myr: 150, steps: 40, ...simOptsFor(b, sys), log: () => {} });
+    const Wd = worldSim(b, sys.bodies[0], { N, myr: 150, steps: FINE_STEPS, ...simOptsFor(b, sys), log: () => {} });
     snap = packSnapshot(Wd, b);
     try {
       const F = findFeatures(Wd.G, Wd.h, { E: Wd.E, scale: Wd.G.R / b.radiusM, craters: Wd.craters || [], volcanoes: Wd.volcanoes, tuyas: Wd.tuyas, glaciers: Wd.glaciers, coasts: Wd.coasts, rock: Wd.rock, rockNames: ROCKS.map((r) => r.name), climate: Wd.climate, Gc: Wd.Gc, dunes: Wd.dunes, mesas: Wd.mesas, soil: Wd.soil, drowned: Wd.drowned, top: 5 });
@@ -81,8 +83,10 @@ for (const w of worlds) {
   let gen = new TerrainGenerator({ ...b.terrain, snapshot: snap });
   // its refinement, cached
   const rf = path.join(CACHE, `ref-${seed}-${b.id}-N${N}-v${SIM_VERSION}-r${TILE_VERSION}${FLOAT ? 'f' : 'i'}${TS_TAG}`);
-  let R;
-  if (fs.existsSync(rf + '.v8')) {
+  let R = null;
+  // (--refine 0: no refinement, the world sim's map alone: for comparing world sims)
+  if (opt.refine === '0') {}
+  else if (fs.existsSync(rf + '.v8')) {
     R = fromStorable(v8.deserialize(fs.readFileSync(rf + '.v8')));
     // (its rivers indexed again from it whole when the index is older than the code: as the game does)
     if (!R.riv || R.riv.version !== RIVER_VERSION) { R.riv = riverIndex([worldRivers(R)], snap.N, gen.R); fs.writeFileSync(rf + '.v8', v8.serialize(toStorable(R))); }
@@ -116,7 +120,7 @@ for (const w of worlds) {
     log(`  world map in ${((performance.now() - t0) / 1000).toFixed(0)} s`);
   }
   // each landmark at three scales
-  const marks = (snap.landmarks || []).slice(0, MARKS);
+  const marks = opt.refine === '0' ? [] : (snap.landmarks || []).slice(0, MARKS);
   // (canyon country's deepest gorges, one per place)
   if (opt.gorges && snap.gorge) {
     const Gl = new GridLite(snap.N, snap.R), cells = [];
