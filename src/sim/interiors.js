@@ -1,3 +1,4 @@
+import { interactShipStation } from './shipStations.js';
 import { interactDeckFrames } from './deckFrames.js';
 // Walkable interiors in vessel-local coordinates. Gravity plating pulls along
 // the vessel's -Y. Each interior answers the same questions for the player:
@@ -363,6 +364,7 @@ export class RoomInterior {
     const p = pl.sPos;
     if (interactDeckFrames(this.v,pl,input)) return;
     if (interactAirlock(this.v, pl, input)) return;
+    if (interactShipStation(this.v, pl, input)) return;
     // hatches to the craft this ship carries (the yacht, the escape pods)
     for (const h of this.v.type.hatches || []) {
       if (Math.hypot(p.x - h.pos[0], p.z - h.pos[2]) > 1.8 || Math.abs(p.y - h.pos[1]) > 1.2) continue;

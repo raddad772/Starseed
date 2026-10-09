@@ -557,8 +557,30 @@ export function boxPenetration(boxes, p, outN) {
 export function deckBelow(boxes, p, reach = 400) {
   let top = -Infinity;
   for (const b of boxesNear(boxes, p.x, p.z)) {
-    if (p.x < b.min[0] || p.x > b.max[0] || p.z < b.min[2] || p.z > b.max[2]) continue;
-    const t = b.max[1];
+    if (p.x < b.min[0] || p.x > b.max[0]) continue;
+    let t;
+    if (b.angle) {
+      // Cast vertically down in the ramp's unswung frame. Its closed box
+      // does not cover the deployed ramp's footprint or sloping surface.
+      const c = Math.cos(b.angle), s = Math.sin(b.angle);
+      const y = p.y + 0.05 - b.hinge[0], z = p.z - b.hinge[1];
+      const origin = [b.hinge[0] + y * c + z * s, b.hinge[1] - y * s + z * c];
+      const dir = [-c, s];
+      let near = -Infinity, far = Infinity;
+      for (let i = 0; i < 2; i++) {
+        if (Math.abs(dir[i]) < 1e-9) {
+          if (origin[i] < b.min[i + 1] || origin[i] > b.max[i + 1]) { far = -Infinity; break; }
+        } else {
+          const a = (b.min[i + 1] - origin[i]) / dir[i], d = (b.max[i + 1] - origin[i]) / dir[i];
+          near = Math.max(near, Math.min(a, d)); far = Math.min(far, Math.max(a, d));
+        }
+      }
+      if (near < -1e-8 || far < near || near > reach + 0.05) continue;
+      t = p.y + 0.05 - Math.max(0, near);
+    } else {
+      if (p.z < b.min[2] || p.z > b.max[2]) continue;
+      t = b.max[1];
+    }
     if (t <= p.y + 0.05 && t > top && p.y - t < reach) top = t;
   }
   return top;

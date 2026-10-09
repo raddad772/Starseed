@@ -19,7 +19,7 @@ import { spawnHorizonFleet } from './horizonFleet.js';
 const ERAS = {
   pioneer: { spawn: spawnPioneerFleet, alt: 150000, phase: 0.8, carried: [['pioneer_gantry', 'pioneer_trail']] },
   expedition: { spawn: spawnExpeditionFleet, alt: 190000, phase: 0.1, carried: [['expedition_porter', 'expedition_skimmer']] },
-  horizon: { spawn: spawnHorizonFleet, alt: 230000, phase: -0.15, carried: [['horizon_cradle', 'horizon_drift']] },
+  horizon: { spawn: spawnHorizonFleet, alt: 230000, phase: -0.15, carried: [['horizon_cradle', 'horizon_drift'], ['horizon_neptune3', 'runabout', true]] },
 };
 const FLEET_K = U.LEN_SCALE / 0.1, GAP = 300;
 
@@ -37,10 +37,10 @@ export function parkEra(g, key, b = g.startBody) {
     v.assist = 0; v.gearTarget = v.gear = 0;
     prev = v.type.radius;
   }
-  for (const [h, c] of E.carried) {
+  for (const [h, c, turned = false] of E.carried) {
     const host = fleet.find((v) => v.type.key === h), craft = fleet.find((v) => v.type.key === c);
     craft.dead = false; craft.hull = 1;
-    g.clampCargo(host, craft, false, false);
+    g.clampCargo(host, craft, false, turned);
   }
   return fleet;
 }

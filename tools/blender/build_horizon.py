@@ -97,6 +97,70 @@ class Mesh:
   for k,v in props.items():ob[k]=v
   return ob
 
+"""Remove coincident rectangular wall surfaces without moving room boundaries."""
+
+def _wall_rectangle(poly, material):
+    if material != 'Wall':
+        return None
+    spans=[max(p[i] for p in poly)-min(p[i] for p in poly) for i in range(3)]
+    flat=[i for i in range(3) if spans[i]<1e-5]
+    if len(flat)!=1:
+        return None
+    axis=flat[0];u,v=[i for i in range(3) if i!=axis]
+    area=sum(a[u]*b[v]-b[u]*a[v] for a,b in zip(poly,poly[1:]+poly[:1]))/2
+    rect=(min(p[u] for p in poly),max(p[u] for p in poly),min(p[v] for p in poly),max(p[v] for p in poly))
+    size=(rect[1]-rect[0])*(rect[3]-rect[2])
+    if size<1e-9 or abs(abs(area)-size)>max(1e-6,size*1e-6):
+        return None
+    return axis,poly[0][axis],1 if area>0 else -1,rect
+
+def _wall_subtract_rect(rect, cutter):
+    x0,x1,y0,y1=rect;a0,a1,b0,b1=cutter
+    a0=max(x0,a0);a1=min(x1,a1);b0=max(y0,b0);b1=min(y1,b1)
+    if a1-a0<1e-6 or b1-b0<1e-6:
+        return [rect]
+    return [r for r in [(x0,a0,y0,y1),(a1,x1,y0,y1),(a0,a1,y0,b0),(a0,a1,b1,y1)]
+            if r[1]-r[0]>1e-6 and r[3]-r[2]>1e-6]
+
+def clean_shared_room_walls(meshes):
+    """Meshes expose (convex polygon, material, metadata) tuples in .polys.
+
+    Retain one owner for same-facing overlap; remove both opposite-facing
+    contact surfaces. Subtraction preserves door holes and wall thickness.
+    Nonrectangular faces and non-wall materials pass through unchanged.
+    """
+    groups={};records={};serial=0
+    for mi,mesh in enumerate(meshes):
+        for pi,(poly,material,metadata) in enumerate(mesh.polys):
+            rec=_wall_rectangle(poly,material)
+            if rec is None:continue
+            axis,plane,sign,rect=rec
+            key=(axis,round(plane,5));entry=(serial,sign,rect)
+            groups.setdefault(key,[]).append(entry)
+            records[(mi,pi)]=(key,entry,plane);serial+=1
+    before=after=0.0;faces_after=0
+    for mi,mesh in enumerate(meshes):
+        result=[]
+        for pi,(poly,material,metadata) in enumerate(mesh.polys):
+            rec=records.get((mi,pi))
+            if rec is None:
+                result.append((poly,material,metadata));continue
+            key,(index,sign,rect),plane=rec;axis=key[0]
+            before+=(rect[1]-rect[0])*(rect[3]-rect[2]);pieces=[rect]
+            for other,other_sign,cutter in groups[key]:
+                if other==index or (other_sign==sign and other>index):continue
+                pieces=[q for piece in pieces for q in _wall_subtract_rect(piece,cutter)]
+                if not pieces:break
+            u,v=[i for i in range(3) if i!=axis]
+            for x0,x1,y0,y1 in pieces:
+                points=[]
+                for x,y in [(x0,y0),(x1,y0),(x1,y1),(x0,y1)]:
+                    point=[0.0,0.0,0.0];point[axis]=plane;point[u]=x;point[v]=y;points.append(tuple(point))
+                if sign<0:points.reverse()
+                result.append((points,material,metadata));after+=(x1-x0)*(y1-y0);faces_after+=1
+        mesh.polys=result
+    return {'wall_faces_before':serial,'wall_faces_after':faces_after,'overlap_surface_area_removed':before-after}
+
 class Ship:
  def __init__(self,key,name,mass,crew,length,big=False):
   self.key='horizon_'+key;self.name=name
@@ -182,6 +246,7 @@ class Ship:
   if room:self.rs[room].setdefault('windows',[]).append(([x0,f,z-.5],[x1,f+h,z+.5]))
   self.cuts.append(([x0,f,z-.5],[x1,f+h,z+.5]));m=self.mesh('window_'+str(self.serial));self.serial+=1;m.box(((x0+x1)/2,f+h/2,z-.02),(x1-x0,.0+ h,.035),'Glass');m.finish()
  def room_geometry(self):
+  room_meshes=[]
   for id,item in self.rs.items():
    r=item['r'];lo,hi=r['min'],r['max'];m=self.mesh('room_'+id,room=id)
    m.box(((lo[0]+hi[0])/2,lo[1]-.075,(lo[2]+hi[2])/2),(hi[0]-lo[0],.15,hi[2]-lo[2]),'Floor',collision=True)
@@ -205,11 +270,13 @@ class Ship:
    hand.finish()
    for mn,mx in item.get('windows',[]):
     m.cut(mn,mx)
-   m.finish()
+   room_meshes.append(m)
    count=max(1,math.ceil((hi[2]-lo[2])/7))
    for i in range(count):
     self.t['lights'].append({'room':id,'pos':[(lo[0]+hi[0])/2,hi[1]-.20,lo[2]+(i+.5)*(hi[2]-lo[2])/count],'color':0xffe0b8,'intensity':18,'range':max(8,min(18,hi[2]-lo[2]+2))})
    lp=self.mesh('light_'+id,room=id);lp.box(((lo[0]+hi[0])/2,hi[1]-.025,(lo[2]+hi[2])/2),(.28,.04,min(2,hi[2]-lo[2]-.2)),'LightPanel');lp.finish()
+  clean_shared_room_walls(room_meshes)
+  for m in room_meshes:m.finish()
   for m in self.hab:
    for lo,hi in self.cuts:m.cut(lo,hi)
    m.finish()
@@ -605,20 +672,361 @@ add_transit(s,[
 ],{'nodes':{'junction':[0,-8,12]},'edges':[['forward-low','junction'],['junction','engineering-low'],['junction','port-low'],['junction','starboard-low']]})
 s.t['thrust'].update(main=1.8,belly=1.2,lateral=.5,retro=.6);SHIPS.append(s)
 
-# NEPTUNE 3: seven private berths, complete domestic/service core and rover garage.
-s=Ship('neptune3','Neptune 3',145_000,7,56)
+"""Neptune 3: family-scale furniture, structural lining and exploration stations."""
+
+def n3_screen(m,c,w,h,forward=1):
+    start=len(m.polys);finish_screen(m,c,w,h)
+    if forward<0:
+        m.polys[start:]=[([(2*c[0]-p[0],p[1],2*c[2]-p[2]) for p in poly],mat,paint) for poly,mat,paint in m.polys[start:]]
+
+def n3_chair(s,room,x,z,heading,label):
+    m=s.mesh('n3_seat_'+str(len(s.t['seats'])),room=room)
+    m.box((0,.25,0),(.46,.5,.48),'Metal')
+    m.box((0,.52,0),(.66,.15,.66),'Fabric')
+    m.box((0,.94,.28),(.66,.78,.12),'Fabric')
+    for side in [-1,1]:m.box((side*.36,.73,0),(.07,.09,.56),'Wood')
+    angle=math.atan2(-heading[0],-heading[2]);ca,sa=math.cos(angle),math.sin(angle)
+    def point(p):return (x+p[0]*ca+p[2]*sa,p[1],z-p[0]*sa+p[2]*ca)
+    m.polys=[([point(p) for p in pts],mat,paint) for pts,mat,paint in m.polys];m.finish()
+    s.t['solids'].append({'min':[x-.35,.02,z-.35],'max':[x+.35,1.35,z+.35],'room':room,'kind':'furniture'})
+    s.t['seats'].append({'pos':[x,0,z],'eye':[x,1.35,z],'stand':[x-heading[0]*.85,0,z-heading[2]*.85],'heading':heading,'label':label,'room':room})
+
+def n3_window(s,room,side,z,width=2.7):
+    from mathutils.geometry import intersect_ray_tri
+    inner=side*11;bottom=.95;top=2.45;a=z-width/2;b=z+width/2
+    cutlo=[-22 if side<0 else 10.8,bottom,a];cuthi=[-10.8 if side<0 else 22,top,b]
+    s.rs[room].setdefault('windows',[]).append((cutlo,cuthi));s.cuts.append((cutlo,cuthi))
+    inner_pts=[(inner,bottom,a),(inner,bottom,b),(inner,top,b),(inner,top,a)]
+    outer=[]
+    for p in inner_pts:
+        start=Vector(p);direction=Vector((side,0,0));hits=[]
+        for poly,mat,paint in s.hab[0].polys:
+            for i in range(1,len(poly)-1):
+                q=intersect_ray_tri(Vector(poly[0]),Vector(poly[i]),Vector(poly[i+1]),direction,start)
+                if q is not None and (q-start).dot(direction)>0:hits.append(q)
+        assert hits,(room,p)
+        q=min(hits,key=lambda q:(q-start).length);q.x+=side*.014;outer.append(tuple(q))
+    m=s.mesh('n3_window_reveal_'+room,room=room)
+    for i in range(4):m.face([inner_pts[i],inner_pts[(i+1)%4],outer[(i+1)%4],outer[i]],'Wall')
+    # Transparent hull glazing; the deeper sill reads as part of the pressure shell.
+    m.face(outer,'Glass',normal=(side,0,0))
+    for zz in [a-.035,b+.035]:m.box((inner-side*.065,(bottom+top)/2,zz),(.08,top-bottom+.15,.07),'Metal')
+    for yy in [bottom-.035,top+.035]:m.box((inner-side*.065,yy,z),(.08,.07,width+.12),'Metal')
+    m.box((inner-side*.13,bottom-.06,z),(.26,.09,width+.14),'Wood');m.finish()
+
+"""Neptune 3 develops the approved Neptune 2 radial interior, using its saved mesh basis."""
+
+def n3_from2(p):
+    x,y,z=p;sx=1.14-.11*max(0,min(1,(z-12.3)/12.7))
+    return (x*sx,y+1.1,z*1.08-2)
+
+def n3_room(s,id,name,lo,hi,kind='cabin',**kw):
+    return s.room(id,name,lo,hi,kind,**kw)
+
+def n3_lineage_rooms(s):
+    n3_room(s,'bridge','Raised flight deck',[-2.964,.6,-23.6],[2.964,3.25,-19.28],'bridge')
+    n3_room(s,'commons','Circular family lounge',[-5.928,0,-19.28],[5.928,3.25,-2.378],'lounge',diningPlaces=8)
+    n3_room(s,'galley','Bow kitchen and pantry',[-8.7,0,-16.6],[-5.928,3.25,-10.802],'galley')
+    n3_room(s,'guest','Guest bedroom',[-12.1,0,-16.6],[-8.7,3.25,-10.802],'quarters',berths=1)
+    n3_room(s,'dining','Bow dining alcove',[5.928,0,-19.28],[15.0,3.25,-10.802],'lounge')
+    n3_room(s,'parents','Parents suite',[-15.8,0,-10.802],[-5.928,3.25,-2.378],'quarters',berths=2)
+    n3_room(s,'kids-a','Three-person cabin',[5.928,0,-10.802],[15.8,3.25,-6.62],'quarters',berths=3)
+    n3_room(s,'kids-b','Two-person cabin',[5.928,0,-6.62],[15.8,3.25,-2.378],'quarters',berths=2)
+    n3_room(s,'wash','Washrooms and laundry',[-9.576,0,-2.378],[-1.938,3.25,4.804],'hygiene')
+    n3_room(s,'suits','EVA dressing room',[-9.348,0,4.804],[-1.938,3.25,11.23],'cabin')
+    n3_room(s,'mechanical','Survey and mechanical bay',[1.938,0,-2.378],[12.312,3.25,11.23],'engineering')
+    n3_room(s,'passage','Aft service passage',[-1.938,0,-2.378],[1.938,3.25,8.284],'corridor')
+    n3_room(s,'garage','Runabout garage',[-5.05,0,11.284],[5.05,5,25],'bay',vacuum=True)
+    for side in [-1,1]:
+        lo,hi=sorted([side*5.68,side*10.0])
+        n3_room(s,'engine-'+('port' if side<0 else 'starboard'),'Drive service bay',[lo,0,12.04],[hi,3.25,24.7],'engineering')
+    s.t['openConnections']=[['bridge','commons'],['commons','galley'],['commons','dining'],['commons','passage']]
+    for id,a,b,axis,plane,u,w in [
+        ('door-guest','galley','guest','x',-8.7,-12.05,1.3),
+        ('door-parents','commons','parents','x',-5.928,-9.02,1.368),
+        ('door-kids-a','commons','kids-a','x',5.928,-9.02,1.368),
+        ('door-kids-b','commons','kids-b','x',5.928,-4.65,1.368),
+        ('door-wash','passage','wash','x',-1.938,.916,1.368),
+        ('door-suits','passage','suits','x',-1.938,6.856,1.368),
+        ('door-mechanical','passage','mechanical','x',1.938,5.236,1.482),
+        ('door-engine-port','garage','engine-port','x',-5.38,15.604,1.512),
+        ('door-engine-starboard','garage','engine-starboard','x',5.38,15.604,1.512),
+    ]:s.door(id,a,b,axis,plane,u,w,2.3)
+    s.airlock('commons',[-15.55,0,-19.28],[-5.928,3.25,-16.6],'x',-5.928,-15.55,-17.85,'bridge-eva')
+    s.airlock('suits',[-15.05,0,5.128],[-9.348,3.25,8.8],'x',-9.348,-15.05,7.018,'suit-eva')
+    for d in s.t['slideDoors']:
+        if d['id'] in ['bridge-eva-outer','suit-eva-outer']:s.cuts.append(([-22,0,d['u0']],[d['plane']+.2,2.3,d['u1']]))
+    garage_lock(s,'passage','garage',8.284,11.284,half_width=1.938)
+    cargo_ramp(s,'garage',25,9.7,4.8)
+    s.t['zones'].append({'name':'Runabout garage','kind':'hold','min':[-4.9,.01,11.384],'max':[4.9,4.7,25],'gravity':9.81,'pressure':0,'door':'ramp','snug':True,'exitMargin':1,'groundSpeedLimit':3})
+    s.t['clamp']={'name':'Rover restraint','pos':[0,1.8,18.9],'reach':[1.5,1.2,2.5],'fits':[9.5,4.5,10],'positionsByType':{'runabout':[0,.65,18.9]}}
+
+def n3_merge(cells,nx,nz):
+    used=set();out=[]
+    for x,z in sorted(cells):
+        if (x,z) in used:continue
+        z1=z
+        while (x,z1+1) in cells and (x,z1+1) not in used:z1+=1
+        x1=x
+        while x1+1<nx and all((x1+1,k) in cells and (x1+1,k) not in used for k in range(z,z1+1)):x1+=1
+        used.update((i,k) for i in range(x,x1+1) for k in range(z,z1+1));out.append((x,z,x1,z1))
+    return out
+
+def n3_lineage_collision(s):
+    from mathutils.bvhtree import BVHTree
+    wall_meshes=[m for m in s.builders if m.room and any(mat=='Wall' for _,mat,_ in m.polys)]
+    s.t['wallCleanup']=clean_shared_room_walls(wall_meshes)
+    for m in wall_meshes:
+        original=s.scene.objects.get(m.name)
+        assert original,m.name
+        replacement=m.finish();original.data=replacement.data;bpy.data.objects.remove(replacement,do_unlink=True)
+    bpy.context.view_layer.update()
+    verts=[];faces=[];floorverts=[];floorfaces=[]
+    for o in s.scene.objects:
+        if o.type!='MESH' or not o.get('interior') or o.get('ceiling') or ':door_' in o.name or ':finish_label_' in o.name:continue
+        base=len(verts);verts.extend(o.matrix_world@v.co for v in o.data.vertices)
+        for p in o.data.polygons:
+            faces.append([base+i for i in p.vertices])
+            mat=o.data.materials[p.material_index]
+            if mat.get('semantic')=='Floor' and p.normal.z>.7:
+                j=len(floorverts);floorverts.extend(o.matrix_world@o.data.vertices[i].co for i in p.vertices);floorfaces.append(list(range(j,len(floorverts))))
+    tree=BVHTree.FromPolygons(verts,faces);floor=BVHTree.FromPolygons(floorverts,floorfaces)
+    cell=.15;x0=-17.1;z0=-24;nx=228;nz=327;blocked=set();physical=set();levels={};walk=set()
+    for i in range(nx):
+        for k in range(nz):
+            x=x0+(i+.5)*cell;z=z0+(k+.5)*cell
+            hit=floor.ray_cast(G((x,.85,z)),Vector((0,0,-1)),1.1)
+            if hit[0] is None:
+                is_exit=(abs(x)<4.85 and z>24.6) or any(x<d['plane']+.01 and d['u0']<=z<=d['u1'] for d in s.t['slideDoors'] if d['id'] in ['bridge-eva-outer','suit-eva-outer'])
+                if not is_exit:blocked.add((i,k))
+                continue
+            f=round(hit[0].z,3);levels.setdefault(f,set()).add((i,k))
+            up=tree.ray_cast(G((x,f+.06,z)),Vector((0,0,1)),1.95)
+            if up[0] is not None or any(tree.find_nearest(G((x,f+h,z)),.045)[0] is not None for h in [.3,1.0,1.7]):
+                blocked.add((i,k));physical.add((i,k))
+            else:walk.add((i,k))
+    for cells,physical_box in [(blocked,False),(physical,True)]:
+        for a,b,c,d in n3_merge(cells,nx,nz):
+            box={'min':[round(x0+a*cell,4),0,round(z0+b*cell,4)],'max':[round(x0+(c+1)*cell,4),2.9,round(z0+(d+1)*cell,4)]}
+            if physical_box:s.t['colliders'].append(box)
+            else:s.t['solids'].append(dict(box,kind='architecture'))
+    for f,cells in levels.items():
+        for a,b,c,d in n3_merge(cells,nx,nz):
+            box={'min':[round(x0+a*cell,4),f-.15,round(z0+b*cell,4)],'max':[round(x0+(c+1)*cell,4),f,round(z0+(d+1)*cell,4)]}
+            s.t['colliders'].append(box)
+            if f>.05:s.t['solids'].append(dict(box,kind='step'))
+    s.t['layoutBasis']={'ship':'Neptune 2','source':'neptune2-interior-basis.json','hubCenter':[0,0,-10.64],'circulationRadii':[3.1*1.08,4.4*1.14],'walkCell':cell,'freeCells':len(walk)}
+    for m in s.hab:
+        for lo,hi in s.cuts:m.cut(lo,hi)
+        m.finish()
+
+def n3_lineage_window(s,room,side,z,width=2.7):
+    from mathutils.geometry import intersect_ray_tri
+    inner=side*15.8;bottom=.95;top=2.45;a=z-width/2;b=z+width/2
+    cutlo=[-22 if side<0 else 15.65,bottom,a];cuthi=[-15.65 if side<0 else 22,top,b]
+    s.rs[room].setdefault('windows',[]).append((cutlo,cuthi));s.cuts.append((cutlo,cuthi))
+    inner_pts=[(inner,bottom,a),(inner,bottom,b),(inner,top,b),(inner,top,a)]
+    outer=[]
+    for p in inner_pts:
+        start=Vector(p);direction=Vector((side,0,0));hits=[]
+        for poly,mat,paint in s.hab[0].polys:
+            for i in range(1,len(poly)-1):
+                q=intersect_ray_tri(Vector(poly[0]),Vector(poly[i]),Vector(poly[i+1]),direction,start)
+                if q is not None and (q-start).dot(direction)>0:hits.append(q)
+        assert hits,(room,p)
+        q=min(hits,key=lambda q:(q-start).length);q.x+=side*.014;outer.append(tuple(q))
+    m=s.mesh('n3_window_reveal_'+room,room=room)
+    for i in range(4):m.face([inner_pts[i],inner_pts[(i+1)%4],outer[(i+1)%4],outer[i]],'Wall')
+    # Transparent hull glazing; the deeper sill reads as part of the pressure shell.
+    m.face(outer,'Glass',normal=(side,0,0))
+    for zz in [a-.035,b+.035]:m.box((inner-side*.065,(bottom+top)/2,zz),(.08,top-bottom+.15,.07),'Metal')
+    for yy in [bottom-.035,top+.035]:m.box((inner-side*.065,yy,z),(.08,.07,width+.12),'Metal')
+    m.box((inner-side*.13,bottom-.06,z),(.26,.09,width+.14),'Wood');m.finish()
+
+
+
+def n3_expand_cabin_wall(pts):
+    # Move the three original cabin outer walls into the old service voids.
+    if all(-10.87<=z<=-2.31 and abs(x)>=5.85 for x,y,z in pts):
+        return [((1 if x>0 else -1)*(15.8+min(.057,abs(x)-12.54)) if abs(x)>12.45 else x,y,z) for x,y,z in pts]
+    return pts
+
+def n3_accommodation_geometry(s):
+    # Original cabin floors are replaced, so their widened decks share only edges.
+    floors=s.mesh('accommodation_floors',room='commons');ceil=s.mesh('accommodation_ceilings',room='commons')
+    for id in ['parents','kids-a','kids-b']:
+        lo,hi=s.rs[id]['r']['min'],s.rs[id]['r']['max']
+        c=((lo[0]+hi[0])/2,-.075,(lo[2]+hi[2])/2);sz=(hi[0]-lo[0],.15,hi[2]-lo[2]);floors.box(c,sz,'Floor')
+        ceil.box((c[0],3.29,c[2]),(sz[0],.08,sz[2]),'Ceiling')
+    floors.finish();ceil.finish(ceiling=True)
+    # Guest cabin: use the spare galley-side area, with a door into shared circulation.
+    m=s.mesh('guest_cabin_walls',room='guest');r=s.rs['guest']['r'];lo,hi=r['min'],r['max']
+    for axis in [0,2]:
+        ua=2 if axis==0 else 0
+        for sign in [-1,1]:
+            if axis==2:continue # Existing front vestibule / parents bulkheads bound both ends.
+            side=('-' if sign<0 else '+')+('x' if axis==0 else 'z');plane=(lo if sign<0 else hi)[axis]
+            cuts=s.rs['guest']['holes'].get(side,[]);edges=sorted(set([lo[ua],hi[ua]]+[v for a,b,h in cuts for v in [a,b]]))
+            for a,b in zip(edges,edges[1:]):
+                low=max([h for aa,bb,h in cuts if aa<(a+b)/2<bb]or[0]);c=[0,(low+hi[1])/2,0];sz=[0,hi[1]-low,0];c[axis]=plane;c[ua]=(a+b)/2;sz[axis]=.10;sz[ua]=b-a;m.box(c,sz,'Wall')
+    m.finish()
+    c=s.mesh('guest_ceiling',room='guest');c.box(((lo[0]+hi[0])/2,3.29,(lo[2]+hi[2])/2),(hi[0]-lo[0],.08,hi[2]-lo[2]),'Ceiling');c.finish(ceiling=True)
+    # Guest storage and desk; keep the door approach and bed access open.
+    m=s.mesh('guest_storage',room='guest')
+    m.box((-9.35,1.12,-11.2),(.70,2.24,.35),'Wood')
+    m.box((-10.95,.76,-11.28),(1.35,.10,.65),'Wood');n3_screen(m,(-10.95,1.08,-11.31),.64,.4,-1)
+    m.finish();n3_chair(s,'guest',-10.95,-12.25,[0,0,1],'Guest study chair')
+    # Widened family cabins gain usable sitting/dressing areas, not empty wall cavities.
+    m=s.mesh('expanded_cabin_storage',room='commons')
+    for x,z in [(-15.15,-3.3),(15.15,-7.1),(15.15,-5.95)]:m.box((x,1.13,z),(.70,2.26,1.0),'Wood')
+    m.box((-13.4,.76,-9.95),(1.7,.10,.65),'Wood');n3_screen(m,(-13.4,1.06,-9.95),.8,.43)
+    m.finish();n3_chair(s,'parents',-13.4,-9.0,[0,0,-1],'Parents window desk')
+    n3_chair(s,'kids-a',14.3,-8.5,[0,0,1],'Children’s reading chair')
+    n3_chair(s,'kids-b',14.3,-3.8,[0,0,-1],'Children’s reading chair')
+    # The lounge keeps a clear center between its curved couches.
+    m=s.mesh('lounge_low_table',room='commons');m.box((0,.45,-10.64),(1.35,.10,1.1),'Wood');m.box((0,.21,-10.64),(.55,.42,.55),'Metal');m.finish()
+    # A real outboard collar surrounds the working forward pressure lock.
+    m=s.mesh('forward_docking_collar')
+    for z in [-18.5,-17.2]:m.box((-15.57,1.1,z),(.30,2.6,.20),'Metal')
+    for y in [-.1,2.3]:m.box((-15.57,y,-17.85),(.30,.20,1.5),'Metal')
+    for z in [-18.48,-17.22]:m.box((-15.745,1.1,z),(.035,2.3,.07),'Hazard')
+    m.finish()
+    m=s.mesh('forward_docking_fittings',room='bridge-eva')
+    m.box((-12.8,.48,-16.96),(1.3,.18,.55),'Fabric');m.box((-12.8,.22,-16.96),(.9,.40,.4),'Metal')
+    m.box((-8.25,1.23,-19.13),(1.2,.78,.08),'Metal');n3_screen(m,(-8.25,1.23,-19.065),1.03,.59)
+    m.finish()
+    s.rs['bridge-eva']['r']['name']='Forward docking / EVA vestibule'
+    for e in s.t['entries']:
+        if e.get('airlock')=='bridge-eva':e['label']='Forward docking / EVA collar'
+    s.t['ports']=[{'id':'forward-dock','label':'Forward docking collar','room':'bridge-eva','pos':[-15.72,1.1,-17.85],'normal':[-1,0,0],'up':[0,1,0],'aperture':[1.1,2.15],'airlock':'bridge-eva','innerDoor':'bridge-eva-inner','outerDoor':'bridge-eva-outer','role':'Pressure transfer interface; berth partner supplied by host'}]
+    s.t['accommodation']={'family':7,'guests':1,'bedrooms':4,'enlargedCabinWidth':9.872,'dockingRoom':'bridge-eva','loungeCore':'open'}
+
+def finish_neptune3(s):
+    s.finish_serial=0;s.t['fixtures']=[];s.t['stations']=[];s.t['walkTargets']=[]
+    def target(id,room,pos):s.t['walkTargets'].append({'id':id,'room':room,'pos':list(pos)})
+    def actual_room(p):
+        return next((r['id'] for r in s.t['rooms'] if r['type'] not in ['door','exterior'] and all(r['min'][i]-.01<=p[i]<=r['max'][i]+.01 for i in range(3))),'commons')
+    def station(id,room,kind,name,pos):
+        s.t['stations'].append({'id':id,'room':room,'kind':kind,'label':name,'pos':list(pos),'reach':1.15});target(id,room,pos)
+    for args in [('parents',-1,-7.0,3.1),('kids-a',1,-8.8,2.3),('kids-b',1,-4.5,2.2)]:n3_lineage_window(s,*args)
+    basis=json.loads(Path(os.environ.get('NEPTUNE2_BASIS',str(Path(globals().get('__file__','/Users/dave/dev/starseed/tools/blender/build_horizon.py')).with_name('neptune2-interior-basis.json')))).read_text())
+    mapping={'deck':'commons','partitions':'commons','ceilings':'commons','family_commons':'commons','hub_lounge':'commons','washrooms':'wash','suit_prep':'suits','mechanical':'mechanical','engine_bays':'garage','cockpit':'bridge','garage_fittings':'garage'}
+    for record in basis['objects']:
+        name=record['name']
+        if name=='berths':continue
+        m=s.mesh('neptune2_'+name,room=mapping[name])
+        for face in record['faces']:
+            pts=[n3_from2(record['vertices'][i]) for i in face['vertices']];mat=face['material'];mat={'Console':'Metal','Trim':'Metal'}.get(mat,mat)
+            if name=='partitions' and all(abs(x)<2 and -12.3<z<-9.0 for x,y,z in pts):continue
+            if name=='partitions':pts=n3_expand_cabin_wall(pts)
+            if name=='ceilings' and all(abs(x)>5.8 and -10.87<=z<=-2.3 for x,y,z in pts):continue
+            # Let the bridge airlock occupy the unused forward port corner; slide the galley back one metre.
+            if name=='family_commons' and sum(p[0] for p in pts)/len(pts)<-5.5:pts=[(x,y,z+1.0) for x,y,z in pts]
+            if name=='family_commons' and all(p[0]<-6.6 and -10.5<p[2]<-8.5 for p in [record['vertices'][i] for i in face['vertices']]):pts=[(x+1.7,y,-12.45+(z+11.26)*.38) for x,y,z in pts]
+            if name=='washrooms' and max(p[1] for p in pts)<.111 and min(p[1] for p in pts)>=0:mat='Floor'
+            if name=='garage_fittings' and sum(p[2] for p in pts)/len(pts)>20 and max(abs(p[0]) for p in pts)>3:
+                pts=[((1 if old[0]>0 else -1)*4.65+(old[0]-(3.8 if old[0]>0 else -3.8))*.62,q[1],q[2]) for old,q in zip([record['vertices'][i] for i in face['vertices']],pts)]
+            m.face(pts,mat)
+        if name=='partitions':
+            for r in s.rs.values():
+                for lo,hi in r.get('windows',[]):m.cut(lo,hi)
+        if name in ['partitions','ceilings']:
+            for id in ['bridge-eva-inner','bridge-eva-outer','door-kids-b']:
+                door=next(d for d in s.t['slideDoors'] if d['id']==id);ax=0 if door['axis']=='x' else 2;ua=2 if ax==0 else 0;lo=[-50,0,-50];hi=[50,2.3,50];lo[ax]=door['plane']-.25;hi[ax]=door['plane']+.25;lo[ua]=door['u0'];hi[ua]=door['u1'];m.cut(lo,hi)
+        if name=='deck':
+            for id in ['bridge-eva','suit-eva','parents','kids-a','kids-b']:
+                r=s.rs[id]['r'];m.cut([r['min'][0],-.5,r['min'][2]],[r['max'][0],.1,r['max'][2]])
+        if name=='partitions':s.lineage_partitions=m
+        m.finish(ceiling=name=='ceilings')
+    # New partitions only where the later model adds privacy or pressure isolation.
+    m=s.mesh('lineage_new_bulkheads',room='commons')
+    r=s.rs['suit-eva']['r'];lo,hi=r['min'],r['max'];m.box(((lo[0]+hi[0])/2,-.075,(lo[2]+hi[2])/2),(hi[0]-lo[0],.15,hi[2]-lo[2]),'Floor')
+    m.box((10.864,1.625,-6.62),(9.872,3.25,.10),'Wall')
+    for id in ['bridge-eva','garage-lock']:
+        r=s.rs[id]['r'];lo,hi=r['min'],r['max']
+        m.box(((lo[0]+hi[0])/2,-.075,(lo[2]+hi[2])/2),(hi[0]-lo[0],.15,hi[2]-lo[2]),'Floor') if id=='bridge-eva' else None
+        for axis in [0,2]:
+            ua=2 if axis==0 else 0
+            for sign in [-1,1]:
+                side=('-' if sign<0 else '+')+('x' if axis==0 else 'z');plane=(lo if sign<0 else hi)[axis]
+                if id=='garage-lock' and (axis==0 or sign>0):continue
+                cuts=s.rs[id]['holes'].get(side,[]);edges=sorted(set([lo[ua],hi[ua]]+[u for a,b,h in cuts for u in [a,b]]))
+                for a,b in zip(edges,edges[1:]):
+                    low=max([h for aa,bb,h in cuts if aa<(a+b)/2<bb]or[0]);c=[0,(low+hi[1])/2,0];sz=[0,hi[1]-low,0];c[axis]=plane;c[ua]=(a+b)/2;sz[axis]=.1;sz[ua]=b-a;m.box(c,sz,'Wall')
+    m.finish()
+    # Replace the old stacked bunks with five full-size single beds, in two cabins.
+    for room,spots in [('parents',[(-9.0,-6.6,1.9)]),('kids-a',[(7.2,-9.45,1.05),(9.4,-9.45,1.05),(11.6,-9.45,1.05)]),('kids-b',[(7.6,-3.8,1.1),(10.7,-3.8,1.1)])]:
+        m=s.mesh('lineage_bed_storage_'+room,room=room)
+        for x,z,w in spots:
+            berth_bed(s,room,x,z,width=w);m.box((x,1.0,z-1.14),(w+.13,.9,.08),'Fabric')
+            target(room+'-bed-'+str(x),room,[x+1.1 if x<9 else x-1.1,0,z] if room=='kids-b' else [x,0,z+1.65])
+        if room=='parents':
+            m.box((-11.6,1.15,-3.2),(1.1,2.3,.7),'Wood');m.box((-7.2,.74,-3.2),(1.4,.10,.7),'Wood');n3_screen(m,(-7.2,1.04,-3.22),.64,.38,-1);n3_chair(s,room,-7.2,-4.15,[0,0,1],'Study chair')
+        else:
+            z=-6.97 if room=='kids-a' else -6.23
+            m.box((11.95,1.12,z),(.9,2.24,.6),'Wood')
+            m.box((7.2,.76,z),(1.8,.10,.65),'Wood');n3_screen(m,(7.2,1.06,z),.72,.4,1 if room=='kids-b' else -1)
+        m.finish()
+    n3_accommodation_geometry(s)
+    berth_bed(s,'guest',-10.4,-14.8,width=1.1)
+    target('guest-bed','guest',[-10.4,0,-13.15])
+    for id,room,pos in [('parents-window','parents',[-14.8,0,-6]),('kids-a-window','kids-a',[13.4,0,-9.4]),('kids-b-window','kids-b',[13.4,0,-3.4]),('docking-vestibule','bridge-eva',[-11.6,0,-17.85]),('lounge-center-fore','commons',[0,0,-12])]:target(id,room,pos)
+    # Seats on the inherited seven-place dinette and the curved hub benches are usable.
+    dining=[(3.65,11.45,(0,0,-1)),(4.5,11.45,(0,0,-1)),(5.35,11.45,(0,0,-1)),(2.95,12.55,(1,0,0)),(2.95,13.55,(1,0,0)),(6.05,12.55,(-1,0,0)),(6.05,13.55,(-1,0,0))]
+    for x,z,heading in dining:
+        pos=n3_from2((x,-1.1,-z));stand=[pos[0]-heading[0]*.85,0,pos[2]-heading[2]*.85]
+        s.t['seats'].append({'pos':pos,'eye':[pos[0],1.34,pos[2]],'stand':stand,'heading':heading,'label':'Family dining seat','room':actual_room(pos)})
+    for side in [-1,1]:
+        for z in [-11.05,-10.1]:
+            x=side*2.68;s.t['seats'].append({'pos':[x,0,z],'eye':[x,1.34,z],'stand':[side*3.65,0,z],'heading':[-side,0,0],'label':'Hub lounge seat','room':'commons'})
+    n3_chair(s,'commons',5.13,-17.55,[0,0,1],'Guest dining seat')
+    # Existing cockpit geometry, correctly placed at its raised floor.
+    for side in [-1,1]:
+        x=side*1.425;z=-21.764;s.t['seats'].insert(0 if side<0 else 1,{'pilot':side<0,'pos':[x,.6,z],'eye':[x,1.86,z-.15],'stand':[x,.6,z+1.05],'heading':[0,0,-1],'label':'Pilot seat' if side<0 else 'Co-pilot seat','room':'bridge'})
+    # Family planning table, sample analysis and garage controls keep the playable refit.
+    m=s.mesh('lineage_exploration_stations',room='commons')
+    for x,z,room in [(0,-5.1,'commons'),(3.65,2.6,'mechanical'),(4.2,12.6,'garage'),(2.05,-19.95,'bridge')]:
+        f=.6 if room=='bridge' else 0;m.box((x,f+.48,z),(1.25,.96,.58),'Wood');n3_screen(m,(x,f+1.23,z),.92,.47,-1 if room=='bridge' else 1)
+    m.finish()
+    station('family-atlas','commons','atlas','Family expedition atlas',[0,0,-4.1])
+    station('survey-lab','mechanical','survey','Survey analysis bench',[3.65,0,3.6])
+    station('garage-control','garage','garage','Runabout bay controls',[3.8,0,13.6])
+    station('bridge-survey','bridge','survey','Exploration console',[2.05,.6,-20.75])
+    for id,room,p in [('galley','commons',[-4.95,0,-14.3]),('wash-basins','wash',[-3.4,0,-.1]),('toilet','wash',[-6.55,0,.65]),('shower','wash',[-3.55,0,2.2]),('suit-racks','suits',[-5.0,0,9.4]),('runabout-boarding','garage',[-1.9,0,18.9]),('ramp-exit','garage',[-3.7,0,24]),('ring-port','commons',[-4.0,0,-10.64]),('ring-starboard','commons',[4.0,0,-10.64]),('ring-aft','commons',[0,0,-7.0]),('ring-forward','commons',[0,0,-15.0]),('engine-port','engine-port',[-6.35,0,15.6]),('engine-starboard','engine-starboard',[6.35,0,15.6])]:target(id,room,p)
+    # Lighting and shallow trim retain the circular hub rather than creating box-room ceilings.
+    m=s.mesh('lineage_hub_trim',room='commons')
+    for i in range(48):
+        a=i*math.tau/48;b=(i+1)*math.tau/48
+        m.face([(r*math.cos(q),.02,-10.64+r*math.sin(q)) for r,q in [(4.92,a),(4.96,a),(4.96,b),(4.92,b)]],'LightPanel')
+    m.finish()
+    for r in s.t['rooms']:
+        if r['type'] in ['door','exterior']:continue
+        lo,hi=r['min'],r['max'];s.t['lights'].append({'room':r['id'],'pos':[(lo[0]+hi[0])/2,hi[1]-.2,(lo[2]+hi[2])/2],'color':0xffe0c4,'intensity':14,'range':14})
+    s.t['interiorFinish']='neptune2-accommodation-v2';s.t['interiorFeatures']=['neptune2-radial-plan','open-circular-lounge','curved-lounge','eight-berths-four-bedrooms','five-single-child-beds','seven-dining-seats','survey-stations','three-airlocks','forward-docking-vestibule','runabout-bay-controls']
+    s.t['help']='Neptune 3 · Neptune 2 family layout · F seats / airlocks / exploration consoles · R ramp · Y runabout restraint'
+    s.root['interior_finish']='Neptune 2 layout / enlarged family cabins, guest bedroom, forward docking / 2026-10-06'
+    # Continuous inner pressure-shell lining: the exterior is deliberately single-sided.
+    liner=s.mesh('lineage_inner_shell')
+    for poly,mat,paint in s.hab[0].polys:
+        liner.face(list(reversed([(x*.995,y-.10 if y>0 else y+.10,z*.998) for x,y,z in poly])),'Ceiling')
+    for r in s.rs.values():
+        for lo,hi in r.get('windows',[]):liner.cut(lo,hi)
+    liner.cut([-3.5,1.25,-30],[3.5,3.05,-23])
+    for d in s.t['slideDoors']:
+        if d['id'] in ['bridge-eva-outer','suit-eva-outer']:liner.cut([-22,0,d['u0']],[d['plane']+.2,2.3,d['u1']])
+    exit_cut=([-4.85,-.04,24.8],[4.85,4.85,30]);s.cuts.append(exit_cut);liner.cut(*exit_cut)
+    liner.finish(interior=True,ceiling=True)
+    # These shared architectural meshes span several rooms; do not cull them as a single room's furniture.
+    for suffix in ['neptune2_deck','neptune2_partitions','neptune2_ceilings','lineage_new_bulkheads','lineage_exploration_stations','accommodation_floors','accommodation_ceilings','expanded_cabin_storage']:
+        ob=s.scene.objects.get(s.key+':'+suffix)
+        if ob and 'room_id' in ob:del ob['room_id']
+    s.room_geometry=lambda:n3_lineage_collision(s)
+
+# NEPTUNE 3: develops the approved Neptune 2 circular family layout.
+s=Ship('neptune3','Neptune 3',145_000,8,56)
 skin(s,'oval_family_hull',[(-28,4,-1,3.6),(-24,9,-1.6,5),(-18,15,-2.2,6.3),(-8,17,-2.5,6.5),(12,16,-2,6.3),(23,12,-1.5,5.4),(27,8,-1,4.8)])
-bridge(s,-26.5,-19.5,4.2);cabin(s,'passage','Family promenade',[-1.2,0,-19.5],[1.2,3.2,4],'corridor');s.door('bridge-link','bridge','passage','z',-19.5,0,1.8)
-for id,name,lo,hi,n,parents in [('parents','Parents suite',[-11,0,-19.5],[-1.2,3.2,-10.5],2,True),('kids-a','Two-person cabin A',[1.2,0,-19.5],[11,3.2,-13.5],2,False),('kids-b','Two-person cabin B',[1.2,0,-13.5],[11,3.2,-7.5],2,False),('kids-c','Single cabin',[1.2,0,-7.5],[11,3.2,-1.5],1,False)]:
- suite(s,id,name,lo,hi,n,parents);s.door('door-'+id,'passage',id,'x',-1.2 if lo[0]<0 else 1.2,(lo[2]+hi[2])/2,1.3)
-for id,name,lo,hi,kind in [('commons','Family kitchen and living room',[-11,0,-10.5],[-1.2,3.2,1.5],'galley'),('wash','Family washroom and laundry',[1.2,0,-1.5],[11,3.2,4],'hygiene'),('mechanical','Workshop and life support',[-11,0,1.5],[-1.2,3.2,7],'engineering')]:
- cabin(s,id,name,lo,hi,kind);s.door('door-'+id,'passage',id,'x',-1.2 if lo[0]<0 else 1.2,min(2.7,(lo[2]+hi[2])/2),1.3)
- if kind=='galley':galley(s,id)
- else:s.furniture(id,kind)
-s.airlock('bridge',[-12,0,-25],[-4.2,3.2,-21],'x',-4.2,-12,-23,'bridge-eva')
-cabin(s,'garage','Rover garage and expedition stores',[-6,0,7],[6,5.0,25],'bay');garage_lock(s,'passage','garage',4,7,half_width=1.2);cargo_ramp(s,'garage',25,10.8,4.8)
-s.t['zones'].append({'name':'Rover garage','kind':'hold','min':[-5.8,.01,7.1],'max':[5.8,4.7,25],'gravity':9.81,'pressure':0,'door':'ramp','snug':True,'exitMargin':1})
-s.t['clamp']={'name':'Rover restraint','pos':[0,1.8,15],'reach':[1.5,1.2,2.5],'fits':[10.8,4.5,10]}
+n3_lineage_rooms(s)
+s.front_window(-28.02,-3.5,3.5,1.25,1.8,room='bridge')
 pad(s,'Dorsal scout terrace',0,-1,15,18,6.8)
 for side in [-1,1]:pod(s,side*12,1.4,15,28,1.8)
 s.legs([(-10,-.4,-19),(10,-.4,-19),(-10,-.4,20),(10,-.4,20)],2.35)
@@ -684,7 +1092,8 @@ for s in SHIPS:
  z0=s.rs['bridge']['r']['min'][2];r=s.rs['bridge']['r'];s.cuts.append(([r['min'][0]+.25,r['min'][1]+.9,z0-2000],[r['max'][0]-.25,r['min'][1]+2.6,z0+.5]))
  for room in s.t['rooms']:
   if room['type'] not in ['door','exterior']:s.cuts.append(([v-.015 for v in room['min']],[v+.015 for v in room['max']]))
- finish_dress(s)
+ if s.key=='horizon_neptune3':finish_neptune3(s)
+ else:finish_dress(s)
 TYPES={s.key:s.export() for s in SHIPS}
 (OUT/'manifest.json').write_text(json.dumps(TYPES,indent=2));(OUT/'horizon.data.js').write_text('// Generated Horizon fleet. Metres, X right, Y up, -Z forward.\nexport const HORIZON_TYPES = '+json.dumps(TYPES,separators=(',',':'))+';\n')
 bpy.ops.wm.save_as_mainfile(filepath=str(OUT.parent/'starseed-complete.blend'),copy=True,compress=True)

@@ -1181,7 +1181,8 @@ export class Game {
     const q = new THREE.Quaternion();
     if (turned) q.setFromAxisAngle(_v1.set(0, 1, 0), Math.PI);
     const off = cargo.type.cargo.offset;
-    const pos = new THREE.Vector3(cl.pos[0] + off[0], cl.pos[1] + off[1], cl.pos[2] + off[2]);
+    const mount = cl.positionsByType?.[cargo.type.key] || cl.pos;
+    const pos = new THREE.Vector3(mount[0] + off[0], mount[1] + off[1], mount[2] + off[2]);
     const f = cl.fits;
     const zone = { name: cl.name, kind: 'clamp', gravity: 'host', pressure: 0,
       min: [pos.x - f[0] / 2, pos.y - f[1] / 2, pos.z - f[2] / 2], max: [pos.x + f[0] / 2, pos.y + f[1] / 2, pos.z + f[2] / 2] };
@@ -1217,7 +1218,8 @@ export class Game {
       if (c === v || c.dead || !c.type.cargo || c.body !== v.body) continue;
       if (c.parent && c.parent.cargo === c) continue; // (in someone else's clamp)
       const off = c.type.cargo.offset;
-      const d = _v1.copy(c.pos).sub(v.pos).applyQuaternion(qi).sub(_v2.set(cl.pos[0] + off[0], cl.pos[1] + off[1], cl.pos[2] + off[2]));
+      const mount = cl.positionsByType?.[c.type.key] || cl.pos;
+      const d = _v1.copy(c.pos).sub(v.pos).applyQuaternion(qi).sub(_v2.set(mount[0] + off[0], mount[1] + off[1], mount[2] + off[2]));
       if (Math.abs(d.x) > cl.reach[0] || Math.abs(d.y) > cl.reach[1] || Math.abs(d.z) > cl.reach[2]) continue;
       // lined up with the clamp (either way round), upright, and small enough
       const fz = _v2.set(0, 0, -1).applyQuaternion(c.quat).applyQuaternion(qi).z;
@@ -1447,7 +1449,7 @@ export class Game {
     // attachments; the shuttle's by default)
     const right = fwd.clone().cross(up).normalize();
     const samples = s.type.legAttach && s.type.key !== 'shuttle' ? [...s.type.legAttach.map((a) => [a[0], a[2]]), [0, 0]] : [[-3, -6.6], [3, -6.6], [-3.1, 6.2], [3.1, 6.2], [0, 0]];
-    let hs = 0;
+    let hs = -Infinity; // terrain may lie below the reference radius
     const nrm = new THREE.Vector3();
     const R = b.R;
     const pts = [];

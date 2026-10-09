@@ -754,7 +754,7 @@ export class Ship {
     const m = this.effMass;
     const vRel = local ? _v1.copy(this.lvel) : this.surfaceVel(_v1);
     vRel.applyQuaternion(_q1.copy(local ? this.lquat : this.quat).invert()); // vehicle axes
-    const vmax = G.vmax * k;
+    const vmax = Math.min(G.vmax * k, local ? (this.zone?.groundSpeedLimit ?? Infinity) : Infinity);
     const pads = this.legState[0] + this.legState[1] + this.legState[2] + this.legState[3];
     if (pads > 0) {
       const aMax = G.drive * G0 * m, sMax = G.strafe * G0 * m;

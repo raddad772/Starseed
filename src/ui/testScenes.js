@@ -51,12 +51,12 @@ export const TEST_SCENES = [
   })),
   ...['longreach', 'crosscurrent', 'hearth', 'porter', 'kestrel', 'moth', 'skimmer'].map(key => ({
     label: `Expedition: ${key[0].toUpperCase() + key.slice(1)}`,
-    note: 'Integrated exploration fleet · freefall · F airlocks / seats · R ramps · Y cargo · Skimmer needs atmosphere',
+    note: 'Integrated exploration fleet · freefall · F airlocks / seats · R ramps · Y cargo · Skimmer needs atmosphere' + (["longreach", "crosscurrent"].includes(key) ? ' · J FTL' : ''),
     run: g => boardExpedition(g, key),
   })),
   ...['caravan', 'anchor', 'nomad', 'gantry', 'hopper', 'firefly', 'trail'].map(key => ({
     label: `Pioneer: ${key[0].toUpperCase() + key.slice(1)}`,
-    note: 'Early exploration fleet · no artificial gravity · F airlocks/seats · Space/C freefall, X brakes · Y cargo clamp',
+    note: 'Early exploration fleet · no artificial gravity · F airlocks/seats · Space/C freefall, X brakes · Y cargo clamp' + (["caravan", "anchor"].includes(key) ? ' · J FTL' : ''),
     run: g => boardPioneer(g, key),
   })),
   {

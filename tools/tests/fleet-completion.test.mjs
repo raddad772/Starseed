@@ -96,5 +96,5 @@ test('Neptune 3 compartments do not overlap and its garage connection stays clea
  assert.equal(passage.max[2],lock.min[2]);assert.equal(lock.max[2],garage.min[2]);
  assert.equal(passage.min[0],lock.min[0]);assert.equal(passage.max[0],lock.max[0]);
  // Human clearance through both doors and the entire sealed connecting chamber.
- for(let z=3.5;z<=7.5;z+=.1){const body={min:[-.3,.01,z-.3],max:[.3,1.81,z+.3]};assert(!t.solids.some(b=>!b.door&&overlap(b,body)),'Blocked at '+z);}
+ for(let z=lock.min[2]-.5;z<=lock.max[2]+.5;z+=.1){const body={min:[-.3,.01,z-.3],max:[.3,1.81,z+.3]};assert(!t.solids.some(b=>!b.door&&overlap(b,body)),'Blocked at '+z);}
 });

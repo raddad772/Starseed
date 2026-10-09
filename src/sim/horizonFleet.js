@@ -15,6 +15,10 @@ export function spawnHorizonFleet(g) {
   const porter = g.horizonFleet.find(v => v.type.key === 'horizon_cradle');
   const skimmer = g.horizonFleet.find(v => v.type.key === 'horizon_drift');
   g.clampCargo(porter, skimmer, false, false);
+  const family = g.horizonFleet.find(v => v.type.key === 'horizon_neptune3');
+  const runabout = g.addVessel('runabout', 'Neptune 3 surface runabout', 'H-03-R');
+  g.horizonFleet.push(runabout);
+  g.clampCargo(family, runabout, false, true);
   return g.horizonFleet;
 }
 export function boardHorizon(g, key = 'meridian') {
