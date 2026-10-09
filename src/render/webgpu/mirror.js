@@ -23,6 +23,8 @@ struct Mirror {
 @group(0) @binding(4) var starA: texture_2d_array<f32>;
 @group(0) @binding(5) var starB: texture_2d_array<f32>;
 @group(0) @binding(6) var adapt: texture_2d<f32>;
+@group(0) @binding(7) var gasVolume: texture_3d<f32>;
+@group(0) @binding(8) var gasSampler: sampler;
 struct Reflection { @location(0) color: vec4f, @builtin(frag_depth) depth: f32 };
 // a row of seams (one each cell, a its width as a share of the cell) averaged over a footprint w
 // (cells) round x: the share of it that's seam. Each way of the grid is filtered by its own
@@ -59,8 +61,10 @@ fn cSeams(x: f32, y: f32, wx: f32, wy: f32, a: f32) -> f32 {
   var out: Reflection;
   out.depth=clamp(clip.z/clip.w,0.0,1.0);
   let L=cLens(C,reflected);
-  var col=L.color;
-  if (L.trans>0.0) { col+=L.trans*(textureSampleLevel(sky,skySampler,L.dir,0.0).rgb*u.shape.y+cStars(C,starA,starB,adapt,L.dir,C.stars3.x)); }
+  let gas=cGas(C,gasVolume,gasSampler,reflected);
+  var behind=gas.back.rgb;
+  if (L.trans>0.0) { behind+=gas.back.a*(textureSampleLevel(sky,skySampler,L.dir,0.0).rgb*u.shape.y+cStars(C,starA,starB,adapt,L.dir,C.stars3.x)); }
+  var col=gas.front.rgb+gas.front.a*(L.color+L.trans*behind);
   // Silvered: a metal's reflectance, a little under one and warmer than it is blue, rising to one
   // at grazing (Schlick), so the surface darkens a touch looking straight down on it and is whole
   // at its horizon; and a faint haze (u.shape.z of the light scattered a few degrees), the sky's
@@ -120,7 +124,7 @@ export class MirrorPass {
   render(engine,t,hdr,inverse,projection){
     const shell=engine.mirrorShell,sky=engine.frameInputs?.sky,source=sky?.cubeRT.texture;
     if(!shell||!source)return;
-    const cube=this.background.cube(source),stars=this.background.stars(sky),adapt=t.post?.adapt[t.post.idx]||this.background.blank;
+    const cube=this.background.cube(source),stars=this.background.stars(sky),adapt=t.post?.adapt[t.post.idx]||this.background.blank,gas=this.background.gas(engine.central?.gas);
     let buffer=this.buffers.get(engine.view);
     if(!buffer){buffer={view:this.device.createBuffer({label:'mirror view',size:208,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST}),
       central:this.device.createBuffer({label:'mirror central black hole',size:CENTRAL_FLOATS*4,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST})};this.buffers.set(engine.view,buffer);}
@@ -143,7 +147,7 @@ export class MirrorPass {
     this.device.queue.writeBuffer(buffer.central,0,centralUniforms(engine,null,engine.tanHalf,[t.width,t.height],this.centralData));
     const group=this.device.createBindGroup({layout:this.pipeline.getBindGroupLayout(0),entries:[
       {binding:0,resource:{buffer:buffer.view}},{binding:1,resource:cube.view},{binding:2,resource:cube.sampler},{binding:3,resource:{buffer:buffer.central}},
-      {binding:4,resource:stars.a},{binding:5,resource:stars.b},{binding:6,resource:adapt.view}]});
+      {binding:4,resource:stars.a},{binding:5,resource:stars.b},{binding:6,resource:adapt.view},{binding:7,resource:gas.view},{binding:8,resource:gas.sampler}]});
     const encoder=this.device.createCommandEncoder({label:'mirror enclosure'});
     const pass=encoder.beginRenderPass({colorAttachments:[{view:hdr.createView(),loadOp:'load',storeOp:'store'}],
       depthStencilAttachment:{view:t.depth.createView(),depthLoadOp:'load',depthStoreOp:'store'}});

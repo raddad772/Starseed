@@ -22,10 +22,13 @@ at the opening, nothing marked inside the mirror, fading top panels (O pins), Ne
 outside ramp prompt, canopy cockpit and bigger airlocks.
 
 Queue (tick as done):
-1. [ ] The nebula falling toward the hole: a gas cloud on its first plunge, its parcels on two-body orbits
-   (history, not noise), torn into a hooked streamer; deposited into a 3D density, ray-marched in the
-   central pass (and the mirror) as ionized emission (H-alpha red, [O III] teal) lit by the disk, with dust.
-   Richer emission nebulae in the background bake too.
+1. [x] The nebula falling toward the hole (sim/nebula.js, workers/nebulaWorker.js): a clumpy cloud (420
+   clumps, 90k parcels) on its first plunge, each parcel on its own two-body orbit, caught just past its
+   0.3 pc pericentre; cloud-in-cell into a ~4M-cell grid (rg16float 3D texture: density, and its share of
+   the hole's light, shadowed through the gas between); ray-marched in the central pass and the mirror
+   (80 steps, H-alpha red tail to [O III] teal near the hole, dust), split in front of and behind the hole.
+   Simulated in a worker (~3 s), faded in. 60 fps at the opening, GPU ~12.6 ms with the gas filling the view.
+   Not done: richer emission nebulae in the background bake (left for later).
 2. [ ] Every Horizon ship physically real outside: EVA hull collision from its skins (generalise
    n3_hull_colliders), the same sweep test per ship; ramp prompts for every ramp door; bigger airlock doors
    where they fit.

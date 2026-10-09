@@ -36,7 +36,14 @@ struct Central {
   stars: vec4f,      // the sky's stars (sky.js starMat): x: the exposure they're brightened toward in space, y: twinkle (in air), z: time (s), w: extinction
   stars2: vec4f,     // x: exposure key, y, z: least and most exposure, w: the star table's cells a face (0: none)
   stars3: vec4f,     // x: radians a css pixel at the view's centre
+  neb0: vec4f,       // the gas falling in (sim/nebula.js): xyz the camera's place on the galaxy chart (pc, the hole at 0); w its brightness
+  neb1: vec4f,       // xyz its volume's least corner (pc); w on (> 0.5)
+  neb2: vec4f,       // xyz its volume's greatest corner (pc); w its dust's opacity (per pc at full density)
+  nebX: vec4f,       // world -> chart: the chart's x, y and z axes in world terms
+  nebY: vec4f,
+  nebZ: vec4f,
 };
+struct Gas { front: vec4f, back: vec4f };   // light added and what comes through: before the hole, beyond it
 struct Lens { color: vec3f, trans: f32, dir: vec3f };
 
 fn cPlanck(lambdaUm: f32, T: f32) -> f32 {
@@ -112,6 +119,47 @@ fn cStars(C: Central, tA: texture_2d_array<f32>, tB: texture_2d_array<f32>, adap
   let expo = clamp(C.stars2.x / exp2(textureLoad(adapt, vec2i(0, 0), 0).r), C.stars2.y, C.stars2.z);
   let boost = mix(clamp(C.stars.x / expo, 1.0, 12.0), 1.0, clamp(C.stars.y * 2.0, 0.0, 1.0));
   return acc * boost * C.stars.w;
+}
+
+// the gas falling toward the hole along a ray (world) from the camera: its light and its dust, split
+// where the ray passes the hole (what's beyond it sits behind the hole's shadow and disk). Ionized by
+// the disk's light, brightest nearest the hole, teal [O III] there, H-alpha red further out, its
+// emission as density squared (recombination); its fine wisps a texture below the simulation's grid
+fn cGas(C: Central, vol: texture_3d<f32>, samp: sampler, ray: vec3f) -> Gas {
+  var G: Gas;
+  G.front = vec4f(0.0, 0.0, 0.0, 1.0); G.back = vec4f(0.0, 0.0, 0.0, 1.0);
+  if (C.neb1.w < 0.5) { return G; }
+  let o = C.neb0.xyz;
+  let d = normalize(vec3f(dot(C.nebX.xyz, ray), dot(C.nebY.xyz, ray), dot(C.nebZ.xyz, ray)));
+  // (the ray through its box)
+  let inv = 1.0 / select(d, vec3f(1e-6), abs(d) < vec3f(1e-6));
+  let ta = (C.neb1.xyz - o) * inv;
+  let tb = (C.neb2.xyz - o) * inv;
+  let t0 = max(max(min(ta.x, tb.x), min(ta.y, tb.y)), max(min(ta.z, tb.z), 0.0));
+  let t1 = min(min(max(ta.x, tb.x), max(ta.y, tb.y)), max(ta.z, tb.z));
+  if (t1 <= t0) { return G; }
+  let tc = -dot(o, d);
+  let N = 80;
+  let dt = (t1 - t0) / f32(N);
+  let jitter = fract(sin(dot(ray, vec3f(12.9898, 78.233, 37.719))) * 43758.5453);
+  let size = C.neb2.xyz - C.neb1.xyz;
+  for (var i = 0; i < N; i++) {
+    let t = t0 + (f32(i) + jitter) * dt;
+    let pos = o + d * t;
+    let g = textureSampleLevel(vol, samp, (pos - C.neb1.xyz) / size, 0.0).rg;
+    var rho = g.r;
+    if (rho < 0.003) { continue; }
+    rho *= 0.7 + 0.6 * (0.6 * cNoise(pos * 60.0) + 0.4 * cNoise(pos * 170.0 + 5.3));
+    // (lit by the hole: its light falling off with distance and shadowed by the gas between)
+    let r = length(pos);
+    let lit = g.g * (0.08 + 1.0 / (1.0 + r * r / 0.3));
+    let col = mix(vec3f(1.0, 0.16, 0.12), vec3f(0.18, 0.9, 0.78), smoothstep(1.3, 0.35, r) * 0.65) + vec3f(0.08, 0.06, 0.05);
+    let e = col * (C.neb0.w * rho * rho * lit * dt);
+    let k = exp(-C.neb2.w * rho * dt);
+    if (t < tc) { G.front = vec4f(G.front.rgb + G.front.a * e, G.front.a * k); }
+    else { G.back = vec4f(G.back.rgb + G.back.a * e, G.back.a * k); }
+  }
+  return G;
 }
 
 // the disk's optical depth straight through at r: thick where it's hot, thinning fast outside (a
@@ -354,6 +402,8 @@ const CODE = FULLSCREEN + CENTRAL_WGSL + /* wgsl */`
 @group(0) @binding(4) var starA: texture_2d_array<f32>;
 @group(0) @binding(5) var starB: texture_2d_array<f32>;
 @group(0) @binding(6) var adapt: texture_2d<f32>;
+@group(0) @binding(7) var gasVolume: texture_3d<f32>;
+@group(0) @binding(8) var gasSampler: sampler;
 // the sky the way d (true, world) looks: the galaxy's light and its stars
 fn skyAt(d: vec3f) -> vec3f {
   return textureSampleLevel(sky, skySampler, d, 0.0).rgb * C.misc.x + cStars(C, starA, starB, adapt, d, C.stars3.x);
@@ -365,15 +415,18 @@ fn skyAt(d: vec3f) -> vec3f {
   let dv = normalize(vec3f(ndc.x * C.misc.y, ndc.y * C.misc.z, -1.0));
   let ray = cLensDir(C, normalize((C.camRot * vec4f(dv, 0.0)).xyz), false);
   let L = cLens(C, ray);
-  // (in place of the sky drawn here: the hole's light, and the sky bent round it through what of it comes through)
-  var c = L.color;
-  if (L.trans > 0.0) { c += L.trans * skyAt(L.dir); }
+  let gas = cGas(C, gasVolume, gasSampler, ray);
+  // (in place of the sky drawn here: the gas in front, through it the hole's light, and the gas
+  // beyond the hole and the sky bent round it through what comes through)
+  var behind = gas.back.rgb;
+  if (L.trans > 0.0) { behind += gas.back.a * skyAt(L.dir); }
+  let c = gas.front.rgb + gas.front.a * (L.color + L.trans * behind);
   return vec4f(c, 1.0);
 }
 `;
 
 // the uniforms (shared with the mirror's pass): engine.central from the game (sim/centralObject.js)
-export const CENTRAL_FLOATS = 64;
+export const CENTRAL_FLOATS = 88;
 export function centralUniforms(engine, camRot, tanHalf, size, out = new Float32Array(CENTRAL_FLOATS)) {
   const c = engine.central;
   out.fill(0);
@@ -397,6 +450,15 @@ export function centralUniforms(engine, camRot, tanHalf, size, out = new Float32
   // (a css pixel's angle at the centre: the stars' sizes are the points' own, in css pixels)
   const th = engine.tanHalf, css = engine.cssH || (size ? size[1] : 1);
   out.set([2 * th.y / Math.max(1, (engine.view?.rect?.h || css)), 0, 0, 0], 60);
+  const g = c.gas;
+  if (g) {
+    out.set([g.camera[0], g.camera[1], g.camera[2], g.brightness], 64);
+    out.set([g.min[0], g.min[1], g.min[2], 1], 68);
+    out.set([g.max[0], g.max[1], g.max[2], g.dust], 72);
+    out.set([g.axes[0].x, g.axes[0].y, g.axes[0].z, 0], 76);
+    out.set([g.axes[1].x, g.axes[1].y, g.axes[1].z, 0], 80);
+    out.set([g.axes[2].x, g.axes[2].y, g.axes[2].z, 0], 84);
+  }
   return out;
 }
 
@@ -412,6 +474,7 @@ export class CentralPass {
     const sky = engine.frameInputs?.sky, source = sky?.cubeRT.texture;
     if (!this.pipeline || !engine.central || !source) return;
     const cube = this.background.cube(source), stars = this.background.stars(sky), adapt = t.post?.adapt[t.post.idx] || this.background.blank;
+    const gas = this.background.gas(engine.central.gas);
     const camera = engine.view.camera, m = camera.matrixWorld.elements;
     // (the camera's rotation, as a mat4 with the 3x3 in its top left)
     const rot = [m[0], m[1], m[2], 0, m[4], m[5], m[6], 0, m[8], m[9], m[10], 0, 0, 0, 0, 1];
@@ -420,7 +483,8 @@ export class CentralPass {
     this.device.queue.writeBuffer(buffer, 0, centralUniforms(engine, rot, engine.tanHalf, [t.width, t.height], this.data));
     const group = this.device.createBindGroup({ layout: this.pipeline.getBindGroupLayout(0), entries: [
       { binding: 0, resource: { buffer } }, { binding: 1, resource: t.sampledDepth.view }, { binding: 2, resource: cube.view }, { binding: 3, resource: cube.sampler },
-      { binding: 4, resource: stars.a }, { binding: 5, resource: stars.b }, { binding: 6, resource: adapt.view }] });
+      { binding: 4, resource: stars.a }, { binding: 5, resource: stars.b }, { binding: 6, resource: adapt.view },
+      { binding: 7, resource: gas.view }, { binding: 8, resource: gas.sampler }] });
     const encoder = this.device.createCommandEncoder({ label: 'central black hole' });
     const pass = encoder.beginRenderPass({ colorAttachments: [{ view: target.view, loadOp: 'load', storeOp: 'store' }] });
     pass.setPipeline(this.pipeline); pass.setBindGroup(0, group); pass.draw(3); pass.end();

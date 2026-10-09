@@ -7,6 +7,7 @@
 // place (3 pc out). Lengths go out to the renderer in M = GM/c^2.
 import * as THREE from 'three';
 import { resolveSystem, chart, CENTRAL_OBJECT } from '../campaign/galaxy.js';
+import { infallStreamerAsync } from './nebula.js';
 
 export const CENTRAL = {
   massSun: 6e10,            // a fictional sixty billion suns
@@ -23,6 +24,8 @@ export const CENTRAL = {
   disk: { outer: 200, brightness: 4, temperature: 4000, opaqueTo: 20, tau: 6 },   // outer edge in M (the inner's the spin's innermost stable orbit); temperature at its hottest (K); optical depth straight through within opaqueTo (M), falling as r^-4 beyond
   // jets: synchrotron light, spectral index 0.6, cut off near the ultraviolet (3x green's frequency
   // in the jet's frame) at the base, the cutoff falling along it as its electrons cool (halved by 150 pc)
+  // the gas falling toward it (sim/nebula.js): its light at full density, and its dust's opacity (per pc)
+  gas: { brightness: 0.12, dust: 9.0 },
   jet: { lengthPc: 3000, angleDeg: 1.6, brightness: 0.6, gamma: 6, knots: 2.4, cutoff: 3, index: 0.6, coolingPc: 150 },
 };
 
@@ -78,6 +81,15 @@ export function centralView(game, out = {}) {
   if (Q && Q.has('bhPc')) { p = p.map(n => n * CENTRAL.distancePc / dPc); dPc = CENTRAL.distancePc; }
   out.dir = sky.chartToWorld(p, [-p[0] / dPc, -p[1] / dPc, -p[2] / dPc], out.dir || new THREE.Vector3()).normalize();
   out.spin = sky.chartToWorld(p, spinAxisChart(), out.spin || new THREE.Vector3()).normalize();
+  // (the gas falling toward it, in the chart's frame: where the camera is in it, and its axes in the world)
+  // (simulated in a worker: none until it's ready, then faded in over a few seconds)
+  const sys = out.chartPos, vol = infallStreamerAsync();
+  if (vol) {
+    const gas = out.gas || (out.gas = { axes: [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()], since: performance.now() });
+    const fade = Math.min(1, (performance.now() - gas.since) / 3000);
+    gas.volume = vol; gas.min = vol.min; gas.max = vol.max; gas.camera = sys; gas.brightness = CENTRAL.gas.brightness * fade; gas.dust = CENTRAL.gas.dust * fade;
+    for (let i = 0; i < 3; i++) sky.chartToWorld(sys, [i === 0 ? 1 : 0, i === 1 ? 1 : 0, i === 2 ? 1 : 0], gas.axes[i]);
+  }
   out.distance = dPc * PC / M;
   out.distancePc = dPc;
   out.massM = M;
