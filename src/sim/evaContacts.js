@@ -8,10 +8,15 @@ const hollowHulls = new WeakMap();
 // Some older exterior hulls are filled boxes. Where an authored hold has its
 // own interior walls, cut that empty space out before using the hull for EVA.
 // Keep the moving door slabs: opening a ramp must never remove a closed door.
-export function evaColliders(v) {
+// (near: an optional box {min, max}, in the ship's frame: only the colliders that might touch it,
+// from a grid over a big ship's thousands)
+export function evaColliders(v, near = null) {
   const t = v.type, all = v.colliders();
   // (a hull built with its own outside collision, solid but where it's open: that and the rest)
-  if (t.hullColliders) return t.hullColliders.concat(all);
+  if (t.hullColliders) {
+    if (!near) return t.hullColliders.concat(all);
+    return nearBoxes(staticGrid(t, () => t.hullColliders.concat(t.colliders || [])), near).concat(all.slice((t.colliders || []).length));
+  }
   if (!t.inner || !t.zones?.some(z => z.kind === 'hold')) return all;
   let hull = hollowHulls.get(t);
   if (!hull) {
@@ -33,6 +38,32 @@ export function evaColliders(v) {
     hollowHulls.set(t, hull);
   }
   return [...hull, ...all.slice(t.colliders.length)];
+}
+
+// A uniform grid over a ship's fixed boxes (its doors' slabs move, and are added as they stand)
+const GRID_CELL = 8, grids = new WeakMap();
+function staticGrid(t, list) {
+  let g = grids.get(t);
+  if (g) return g;
+  const boxes = list(), cells = new Map();
+  if (boxes.length > 200) boxes.forEach((b, n) => {
+    const lo = b.min.map(x => Math.floor(x / GRID_CELL)), hi = b.max.map(x => Math.floor(x / GRID_CELL));
+    for (let i = lo[0]; i <= hi[0]; i++) for (let j = lo[1]; j <= hi[1]; j++) for (let k = lo[2]; k <= hi[2]; k++) {
+      const key = `${i},${j},${k}`; let c = cells.get(key); if (!c) cells.set(key, c = []); c.push(n);
+    }
+  });
+  grids.set(t, g = { boxes, cells, small: boxes.length <= 200, stamp: new Uint32Array(boxes.length), mark: 0 });
+  return g;
+}
+function nearBoxes(g, near) {
+  if (g.small) return g.boxes.slice();
+  const out = [], m = ++g.mark;
+  const lo = near.min.map(x => Math.floor(x / GRID_CELL)), hi = near.max.map(x => Math.floor(x / GRID_CELL));
+  for (let i = lo[0]; i <= hi[0]; i++) for (let j = lo[1]; j <= hi[1]; j++) for (let k = lo[2]; k <= hi[2]; k++) {
+    const c = g.cells.get(`${i},${j},${k}`);
+    if (c) for (const n of c) if (g.stamp[n] !== m) { g.stamp[n] = m; out.push(g.boxes[n]); }
+  }
+  return out;
 }
 
 // Sweep against the same authored boxes used by spacecraft contacts. Sweeping
@@ -89,9 +120,11 @@ export function collideEva(player, dt) {
     const surfaceVelocity=v.pointVelocity(end,new THREE.Vector3());
     const relative=player.eVel.clone().sub(surfaceVelocity).applyQuaternion(qi);
     if (end.length() > v.type.radius+2+relative.length()*dt) continue;
-    const boxes=evaColliders(v);
-    if (!boxes.length) continue;
     const start=end.clone().addScaledVector(relative,-dt);
+    // (the boxes near the sweep: the suit's probes reach 1.4 m below the eye, its balls 0.3 m round)
+    const reach=2;
+    const boxes=evaColliders(v,{min:[0,1,2].map(i=>Math.min(start.getComponent(i),end.getComponent(i))-reach),max:[0,1,2].map(i=>Math.max(start.getComponent(i),end.getComponent(i))+reach)});
+    if (!boxes.length) continue;
     const up=new THREE.Vector3(0,1,0).applyQuaternion(player.evaQuat).applyQuaternion(qi);
     const contact=sweepSuit(start,end,up,boxes);
     if (!contact.normals.length) continue;

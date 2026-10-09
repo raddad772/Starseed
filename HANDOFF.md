@@ -29,9 +29,14 @@ Queue (tick as done):
    (80 steps, H-alpha red tail to [O III] teal near the hole, dust), split in front of and behind the hole.
    Simulated in a worker (~3 s), faded in. 60 fps at the opening, GPU ~12.6 ms with the gas filling the view.
    Not done: richer emission nebulae in the background bake (left for later).
-2. [ ] Every Horizon ship physically real outside: EVA hull collision from its skins (generalise
-   n3_hull_colliders), the same sweep test per ship; ramp prompts for every ramp door; bigger airlock doors
-   where they fit.
+2. [x] Every Horizon ship physically real outside (build_horizon.py exterior_physics, hull_colliders): solid
+   columns under every skin (exact open-part subtraction, sides and ends trimmed to the skin, cells merged
+   within a tolerance on the carriers: Meridian 4.7k boxes at 3 m, the small craft 0.4 m), open only at
+   ramp holds, pads, hangars, the flight deck's view slot and each airlock's passage; airlocks buried
+   inside a hull get a lined, lit passage out through the skin (Meridian 74 m, Confluence 30 m, Lark's
+   aft cap). Wider pressure doors (1.8x2.5 on the carriers, 1.6x2.4 small craft, 1.4x2.2 Drift), panels
+   beside them, lockers moved clear. EVA collision has a grid broadphase (evaContacts.js). Ramp prompts
+   from outside were already generic. tools/tests/horizon-eva-hull.test.mjs sweeps every ship.
 3. [ ] Walking on a planet bumps into landed ships (hullColliders on the surface, not shuttle-only).
 4. [ ] Expedition and Pioneer fleets: run the sweep test on their fairings; close gaps.
 5. [ ] Near-ground frame cost (engine.render CPU 20-23 ms near the ground): profile and fix the worst.

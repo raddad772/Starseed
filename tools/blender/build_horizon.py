@@ -171,7 +171,7 @@ class Ship:
    bpy.data.scenes.remove(old)
   self.scene=bpy.data.scenes.new(sn);bpy.context.window.scene=self.scene;self.scene.unit_settings.system='METRIC';self.col=bpy.data.collections.new(sn+' / model');self.scene.collection.children.link(self.col);self.root=bpy.data.objects.new(self.key,None);self.col.objects.link(self.root);self.root['asset_id']=self.key;self.root['era']='Horizon';self.root['crew_capacity']=crew;self.root['artificial_gravity']=False
   self.t={'key':self.key,'className':name+' — Horizon '+{'meridian':'carrier','confluence':'exploration tender','neptune3':'family explorer','cradle':'cargo lifter','shorebird':'landing shuttle','lark':'survey scout','drift':'hover scout'}[key],'era':'Horizon','fleetAsset':True,'model':'assets/models/horizon/'+key+'.glb','template':self.key,'big':big,'seatOnly':not big,'ftl':False,'interiorGravity':'natural','crewCapacity':crew,'mass':mass,'I':[mass*length*length/12,mass*length*length/12,mass*length*length/48],'thrust':{'main':.08 if big else .35,'retro':.03 if big else .15,'belly':.02 if big else 1.5,'down':.01 if big else .12,'lateral':.015 if big else .15},'alpha':[.025,.025,.04] if big else [.4,.4,.6],'rate':[.06,.06,.09] if big else [.3,.3,.5],'hullRating':50,'aero':{'cd':[length*2,length*4,length],'wing':0},'livery':{'main':'#c6cdca','second':'#315e62','stripe':'#c3954d'},'colliders':[],'solids':[],'rooms':[],'seats':[],'lights':[],'slideDoors':[],'doors':[],'parts':[],'zones':[],'airlocks':[],'engines':[],'entries':[],'probes':[],'hatches':[],'ports':[]}
-  self.rs={};self.builders=[];self.hab=[];self.cuts=[];self.serial=0
+  self.rs={};self.builders=[];self.hab=[];self.cuts=[];self.open=[];self.serial=0
  def mesh(self,name,room=None,lod=0):
   b=Mesh(self,self.key+':'+name,room,lod);self.builders.append(b);return b
  def room(self,id,name,lo,hi,kind='cabin',**extra):
@@ -195,18 +195,22 @@ class Ship:
   self.door(id+'-inner',host,id,innerAxis,innerPlane,u,door[0],door[1],id);self.door(id+'-outer',id,None,innerAxis,outerPlane,u,door[0],door[1],id)
   r['open']=[('+' if sign>0 else '-')+innerAxis];r['gate']={r['open'][0]:id+'-outer'}
   inside=[(lo[i]+hi[i])/2 for i in range(3)];inside[1]=lo[1];outside=inside.copy();outside[ax]=outerPlane+sign*.85
-  panels=[]
+  # (its panels beside the doorway, clear of a wide door's opening)
+  panels=[];po=max(.70,door[0]/2+.15)
   for role,plane,off in [('inner',innerPlane,-sign*.45),('outer',outerPlane,sign*.45)]:
-   p=inside.copy();p[ax]=plane+off;p[1]+=1.2;p[2 if ax==0 else 0]=u+.70;panels.append({'side':role,'pos':p})
-  mid=inside.copy();mid[1]+=1.2;mid[2 if ax==0 else 0]=u+.70
+   p=inside.copy();p[ax]=plane+off;p[1]+=1.2;p[2 if ax==0 else 0]=u+po;panels.append({'side':role,'pos':p})
+  mid=inside.copy();mid[1]+=1.2;mid[2 if ax==0 else 0]=u+po
   panels.extend([{'side':'inner','pos':mid},{'side':'outer','pos':[mid[0],mid[1]+.32,mid[2]]}])
   self.t['airlocks'].append({'id':id,'inner':id+'-inner','outer':id+'-outer','room':id,'cycleSeconds':5,'panels':panels})
   self.t['entries'].append({'label':'EVA airlock','outside':outside,'inside':inside,'heading':[-sign,0,0] if ax==0 else [0,0,-sign],'airlock':id})
   m=self.mesh('lock_fittings_'+id,room=id);cx=(lo[0]+hi[0])/2;cz=(lo[2]+hi[2])/2
   for p in panels:m.box(p['pos'],[.15,.20,.12],'Screen')
-  # shallow equipment lockers kept against the long side, clear of the door-to-door line
-  if ax==0:m.box((cx,lo[1]+1.02,hi[2]-.22),(.62,2.04,.35),'Hull',1,solid=True)
-  else:m.box((hi[0]-.23,lo[1]+1.02,cz),(.35,2.04,.62),'Hull',1,solid=True)
+  # shallow equipment lockers kept against the long side, clear of the door-to-door line (and of
+  # the panels: across the room from them where they'd meet, or none where neither side has room)
+  ua=2 if ax==0 else 0;inset=.22 if ax==0 else .23
+  at=hi[ua]-inset if hi[ua]-inset-.175>u+po+.06 else lo[ua]+inset if lo[ua]+inset+.175<u-door[0]/2-.02 else None
+  if at is not None and ax==0:m.box((cx,lo[1]+1.02,at),(.62,2.04,.35),'Hull',1,solid=True)
+  elif at is not None:m.box((at,lo[1]+1.02,cz),(.35,2.04,.62),'Hull',1,solid=True)
   m.finish()
   mn=lo.copy();mx=hi.copy();mn[ax]=min(innerPlane,outerPlane)-.3;mx[ax]=max(innerPlane,outerPlane)+.3;mn[1]-=.02;mx[1]=lo[1]+2.2;self.cuts.append((mn,mx))
  def seat(self,room,x,f,z,pilot=False):
@@ -325,7 +329,7 @@ class Ship:
     for curve in ob.animation_data.drivers:
      expression=curve.driver.expression;curve.driver.expression=expression+'+0';curve.driver.expression=expression
   self.root.update_tag()
-  self.scene.frame_set(1);bpy.context.view_layer.update();self.root['game_manifest']=json.dumps(self.t)
+  self.scene.frame_set(1);bpy.context.view_layer.update();self.root['game_manifest']=json.dumps({k:v for k,v in self.t.items() if k not in ('hullColliders','hullOpen','skins','hullStep','lockPassages')})
   bpy.ops.object.select_all(action='DESELECT')
   for o in self.scene.objects:o.select_set(True)
   path=OUT/(self.key.removeprefix('horizon_')+'.glb');kw=dict(filepath=str(path),export_format='GLB',use_selection=True,use_active_scene=True,export_yup=True,export_extras=True,export_animations=False,export_apply=True)
@@ -514,9 +518,11 @@ def add_transit(s,stations,edges):
 
 # Horizon: spacious civilian field-drive exploration ships, artificial gravity.
 SHIPS=[]
+# (pressure doors a suited crew passes in comfort, where the airlock has the room; Neptune 3's size)
+WIDE_LOCK=(1.8,2.5)
 
 def skin(s,name,stations,x=0,paint=0):
- m=s.mesh(name);m.loft(stations,'Hull',paint,n=24);m.stations=stations
+ m=s.mesh(name);m.loft(stations,'Hull',paint,n=24);m.stations=stations;m.skin_x=x
  if x:m.polys=[([(p[0]+x,p[1],p[2]) for p in ps],mat,idx) for ps,mat,idx in m.polys]
  s.hab.append(m);return m
 
@@ -591,7 +597,7 @@ def spine_living(s,z0,z1,w,crew):
     m.box(((xa+xb)/2,.5,z),(3.5,1,1.0),'Fabric',solid=True)
    m.box((xa+.35,1.4,za+dep/2),(.1,1.0,2),'Screen');m.finish()
   else:s.furniture(id,kind)
- s.airlock('bridge',[-10,0,z0+1],[-5,3.2,z0+5],'x',-5,-10,z0+3,'bridge-eva')
+ s.airlock('bridge',[-10,0,z0+1],[-5,3.2,z0+5],'x',-5,-10,z0+3,'bridge-eva',door=WIDE_LOCK)
 
 def pad(s,id,x,z,w,d,y=0):
  m=s.mesh('pad_'+id);m.box((x,y-.20,z),(w,.4,d),'Metal',collision=True)
@@ -609,8 +615,8 @@ def cargo_ramp(s,room,z,w,h):
  s.t['doors'].append({'id':'ramp','label':'Cargo ramp','ramp':True,'min':[-w/2,0,z],'max':[w/2,h,z+.14],'hinge':[0,z],'angle':a,'speed':.45,'panel':[w/2+.35,1.2,z+.5],'panelIn':[w/2-.5,1.2,z-1]})
  s.t['ramps']=[{'door':'ramp','width':w,'hinge':[0,z],'length':h}];s.t['solids'].append({'min':[-w/2,0,z-.06],'max':[w/2,h,z+.14],'door':'ramp','kind':'door'})
 
-def garage_lock(s,host,garage,z0,z1,half_width=1.3):
- s.airlock(host,[-half_width,0,z0],[half_width,3.2,z1],'z',z0,z1,0,'garage-lock');s.t['airlocks'][-1]['outerRoom']=garage;s.t['entries'][-1]['internal']=True;s.t['slideDoors'][-1]['rooms']=['garage-lock',garage];s.hole(garage,'-z',0,1.1,2.15);s.t['rooms'].append({'id':'garage-link','name':'Garage doorway','type':'door','min':[-.55,0,z1-.5],'max':[.55,2.15,z1+.5]})
+def garage_lock(s,host,garage,z0,z1,half_width=1.3,door=(1.1,2.15)):
+ s.airlock(host,[-half_width,0,z0],[half_width,3.2,z1],'z',z0,z1,0,'garage-lock',door=door);s.t['airlocks'][-1]['outerRoom']=garage;s.t['entries'][-1]['internal']=True;s.t['slideDoors'][-1]['rooms']=['garage-lock',garage];s.hole(garage,'-z',0,door[0],door[1]);s.t['rooms'].append({'id':'garage-link','name':'Garage doorway','type':'door','min':[-door[0]/2,0,z1-.5],'max':[door[0]/2,door[1],z1+.5]})
 
 # MERIDIAN: inhabited crescent bow, twin service keels, sheltered lateral hangars.
 s=Ship('meridian','Meridian',380_000_000,48,1500,True)
@@ -629,11 +635,11 @@ for side in [-1,1]:
  m.box((x,18,260),(90,40,3),'Hull',collision=True);m.finish()
  lo,hi=sorted([side*3,side*92]);cabin(s,'hangar-access-'+str(side),'Hangar service gallery',[lo,0,20],[hi,3.2,26],'corridor');s.door('hangar-spine-'+str(side),'service','hangar-access-'+str(side),'x',side*3,23,1.8)
  skin(s,'hangar_link_'+str(side),[(19,(hi-lo)/2,-.6,4.2),(27,(hi-lo)/2,-.6,4.2)],(lo+hi)/2)
- a,b=sorted([side*92,side*96]);s.airlock('hangar-access-'+str(side),[a,0,20],[b,3.2,26],'x',side*92,side*96,23,'hangar-lock-'+str(side))
+ a,b=sorted([side*92,side*96]);s.airlock('hangar-access-'+str(side),[a,0,20],[b,3.2,26],'x',side*92,side*96,23,'hangar-lock-'+str(side),door=WIDE_LOCK)
  # Swept shoulders carry hangar loads into the central hull; the court remains open.
  skin(s,'structural_shoulder_'+str(side),[(-600,26,-8,13),(-450,45,-17,28),(-180,48,-18,30),(240,48,-18,30),(490,40,-15,23),(680,18,-7,12)],side*80)
  skin(s,'hangar_fairing_'+str(side),[(-275,32,-3,32),(-230,49,-5,44),(195,52,-7,46),(285,35,-4,36),(320,12,-1,16)],x,1)
- s.cuts.append(([x-43.4,-.1,-300],[x+43.4,36.4,258.4]))
+ s.cuts.append(([x-43.4,-.1,-300],[x+43.4,36.4,258.4]));s.open.append(([x-43.4,-.1,-300],[x+43.4,36.4,258.4]))
  # Rim bands and luminous navigation stripes emphasize the layered civilian hull.
  trim=s.mesh('hangar_rim_'+str(side),lod=1)
  for xx in [x-43,x+43]:
@@ -660,7 +666,7 @@ for side in [-1,1]:
  x=side*48;id='spine-'+str(side);cabin(s,id,'Pressurized visitor promenade',[x-2.2,0,-80],[x+2.2,3.2,150],'corridor');s.door('forward-'+id,'forecross',id,'z',-80,x,1.8);s.door('aft-'+id,id,'engineering','z',150,x,1.8)
  skin(s,id,[(-80,9,-5,8),(60,10,-6,10),(150,9,-5,8)],x)
  for j,z in enumerate([-34,64]):
-  a,b=sorted([x-side*2.2,x-side*10]);s.airlock(id,[a,0,z-2],[b,3.2,z+2],'x',x-side*2.2,x-side*10,z,id+'-eva-'+str(j));pad(s,id+' berth '+str(j+1),side*20,z,34,80,0)
+  a,b=sorted([x-side*2.2,x-side*10]);s.airlock(id,[a,0,z-2],[b,3.2,z+2],'x',x-side*2.2,x-side*10,z,id+'-eva-'+str(j),door=WIDE_LOCK);pad(s,id+' berth '+str(j+1),side*20,z,34,80,0)
  pod(s,side*30,2,174,210,5)
 s.furniture('engineering','engineering')
 pad(s,'Dorsal visitor terrace',0,-133,70,85,19)
@@ -915,45 +921,185 @@ def n3_hull_half(stations,z):
         if a[0]<=z<=b[0]:t=(z-a[0])/max(b[0]-a[0],1e-9);return a[1]+(b[1]-a[1])*t
     return st[0][1] if z<st[0][0] else st[-1][1]
 
-def n3_hull_colliders(s,stations,cuts,step=.6,q=.2):
-    # The hull's own collision for anyone outside it (EVA): solid columns under the lofted skin
-    # (its sections are squircles, (x/w)^4 + ((y-mid)/half)^4 = 1, linear between stations), hollow
-    # where the ship is open to the outside (the garage behind its ramp opening, the airlock
-    # recesses), merged into boxes. Vessel frame: x starboard, y up, z aft.
-    st=sorted(stations)
-    def section(z):
-        if z<st[0][0] or z>st[-1][0]:return None
-        for a,b in zip(st,st[1:]):
-            if a[0]<=z<=b[0]:
-                t=(z-a[0])/max(b[0]-a[0],1e-9);return tuple(a[i]+(b[i]-a[i])*t for i in (1,2,3))
-    z0=st[0][0];z1=st[-1][0];wmax=max(w for _,w,_,_ in st)
-    nx=int(math.ceil(2*wmax/step));nz=int(math.ceil((z1-z0)/step))
+def skin_section(m,z):
+    # a lofted skin's section at z: (half-width, lower y, upper y), or None past its ends
+    st=sorted(m.stations)
+    if z<st[0][0] or z>st[-1][0]:return None
+    for a,b in zip(st,st[1:]):
+        if a[0]<=z<=b[0]:
+            t=(z-a[0])/max(b[0]-a[0],1e-9);return tuple(a[i]+(b[i]-a[i])*t for i in (1,2,3))
+
+def skin_span(m,x,z):
+    # where a vertical line through the skin at (x, z) is inside it: (low, high) or None
+    # (its sections are squircles, (x/w)^4 + ((y-mid)/half)^4 = 1, linear between stations)
+    sec=skin_section(m,z)
+    if not sec:return None
+    w,low,high=sec;u=abs(x-getattr(m,'skin_x',0))/w
+    if u>=1:return None
+    mid=(low+high)/2;half=(high-low)/2*(1-u**4)**.25;return (mid-half,mid+half)
+
+def inside_skins(skins,p):
+    for m in skins:
+        sp=skin_span(m,p[0],p[2])
+        if sp and sp[0]<p[1]<sp[1]:return True
+    return False
+
+def box_minus(box,cut):
+    # a box less another: the pieces left (up to six), or the box itself where they don't meet
+    lo,hi=box
+    if any(lo[i]>=cut[1][i] or hi[i]<=cut[0][i] for i in range(3)):return [box]
+    core=[list(lo),list(hi)];out=[]
+    for i in range(3):
+        if core[0][i]<cut[0][i]:p=[list(core[0]),list(core[1])];p[1][i]=cut[0][i];out.append(p);core[0][i]=cut[0][i]
+        if core[1][i]>cut[1][i]:p=[list(core[0]),list(core[1])];p[0][i]=cut[1][i];out.append(p);core[1][i]=cut[1][i]
+    return out
+
+def merge_within(cells,nx,nz,tol):
+    # cells {(x, z): (low, high)} grown into rectangles whose lows and highs each stay within tol,
+    # each taken at its smallest (inside the skin): [(low, high, (x0, z0, x1, z1))]
+    used=set();out=[]
+    for x,z in sorted(cells):
+        if (x,z) in used:continue
+        a0=a1=cells[(x,z)][0];b0=b1=cells[(x,z)][1]
+        def fits(c):
+            if c not in cells or c in used:return None
+            a,b=cells[c];na0,na1,nb0,nb1=min(a0,a),max(a1,a),min(b0,b),max(b1,b)
+            return (na0,na1,nb0,nb1) if na1-na0<=tol and nb1-nb0<=tol else None
+        z1=z
+        while True:
+            f=fits((x,z1+1))
+            if not f:break
+            a0,a1,b0,b1=f;z1+=1
+        x1=x
+        while x1+1<nx:
+            acc=(a0,a1,b0,b1);ok=True
+            for k in range(z,z1+1):
+                c=(x1+1,k)
+                if c not in cells or c in used:ok=False;break
+                a,b=cells[c];acc=(min(acc[0],a),max(acc[1],a),min(acc[2],b),max(acc[3],b))
+                if acc[1]-acc[0]>tol or acc[3]-acc[2]>tol:ok=False;break
+            if not ok:break
+            a0,a1,b0,b1=acc;x1+=1
+        used.update((i,k) for i in range(x,x1+1) for k in range(z,z1+1));out.append((a1,b0,(x,z,x1,z1)))
+    return out
+
+def hull_colliders(s,skins,cuts,step=.6,q=.2,exact=False,tol=0):
+    # The hull's own collision for anyone outside it (EVA): solid columns under the lofted skins,
+    # hollow where the ship is open to the outside (a hold behind its ramp, airlock passages, pads,
+    # hangars), merged into boxes. Vessel frame: x starboard, y up, z aft. exact: the open parts
+    # taken out of the merged boxes exactly (not cell by cell), and the columns at a skin's sides and
+    # ends trimmed to it (not half a cell proud), for coarse cells on a big ship's hull.
+    x0=min(getattr(m,'skin_x',0)-max(w for _,w,_,_ in m.stations) for m in skins)
+    x1=max(getattr(m,'skin_x',0)+max(w for _,w,_,_ in m.stations) for m in skins)
+    z0=min(min(st[0] for st in m.stations) for m in skins);z1=max(max(st[0] for st in m.stations) for m in skins)
+    nx=int(math.ceil((x1-x0)/step));nz=int(math.ceil((z1-z0)/step))
     spans={}
     for i in range(nx):
-        x=-wmax+(i+.5)*step
+        x=x0+(i+.5)*step;xa=x-step/2;xb=x+step/2
         for k in range(nz):
-            z=z0+(k+.5)*step;sec=section(z)
-            if not sec:continue
-            w,low,high=sec;u=abs(x)/w
-            if u>=1:continue
-            mid=(low+high)/2;half=(high-low)/2*(1-u**4)**.25
-            col=[(round((mid-half)/q)*q,round((mid+half)/q)*q)]
+            z=z0+(k+.5)*step;za=z-step/2;zb=z+step/2
+            # (the skins over this column, overlaps joined; each with how far the cell is trimmed)
+            col=[]
+            for m in skins:
+                sp=skin_span(m,x,z)
+                if not sp:continue
+                trim=(None,None,None,None)
+                if exact:
+                    w=skin_section(m,z)[0];xo=getattr(m,'skin_x',0);st=sorted(m.stations)
+                    trim=tuple(round(v/q)*q if c else None for v,c in [(xo-w,xo-w>xa),(xo+w,xo+w<xb),(st[0][0],st[0][0]>za),(st[-1][0],st[-1][0]<zb)])
+                col.append((round(sp[0]/q)*q,round(sp[1]/q)*q,trim))
+            col.sort(key=lambda c:(c[0],c[1]))
+            # (joined skins trimmed only where both are, to the wider)
+            union=lambda s1,s2:tuple(None if u is None or v is None else (min(u,v) if n%2==0 else max(u,v)) for n,(u,v) in enumerate(zip(s1,s2)))
+            joined=[]
+            for a,b,tr in col:
+                if joined and a<=joined[-1][1]:joined[-1]=(joined[-1][0],max(joined[-1][1],b),union(joined[-1][2],tr))
+                else:joined.append((a,b,tr))
+            col=joined
             # (the open parts cut out of the column)
-            for lo,hi in cuts:
-                if not(lo[0]<=x<=hi[0] and lo[2]<=z<=hi[2]):continue
-                out=[]
-                for a,b in col:
-                    if b<=lo[1] or a>=hi[1]:out.append((a,b));continue
-                    if a<lo[1]:out.append((a,lo[1]))
-                    if b>hi[1]:out.append((hi[1],b))
-                col=out
-            for a,b in col:
-                if b-a>1e-3:spans.setdefault((a,b),set()).add((i,k))
+            if not exact:
+                for lo,hi in cuts:
+                    if not(lo[0]<=x<=hi[0] and lo[2]<=z<=hi[2]):continue
+                    out=[]
+                    for a,b,tr in col:
+                        if b<=lo[1] or a>=hi[1]:out.append((a,b,tr));continue
+                        if a<lo[1]:out.append((a,lo[1],tr))
+                        if b>hi[1]:out.append((hi[1],b,tr))
+                    col=out
+            col=[c for c in col if c[1]-c[0]>1e-3]
+            for n,(a,b,tr) in enumerate(col):
+                if exact:spans.setdefault((n,tr),{})[(i,k)]=(a,b)
+                else:spans.setdefault((a,b,tr),set()).add((i,k))
     boxes=[]
-    for (a,b),cells in spans.items():
-        for ia,ka,ib,kb in n3_merge(cells,nx,nz):
-            boxes.append({'min':[round(-wmax+ia*step,3),round(a,3),round(z0+ka*step,3)],'max':[round(-wmax+(ib+1)*step,3),round(b,3),round(z0+(kb+1)*step,3)]})
-    return boxes
+    rects=[(a,b,tr,r) for (a,b,tr),cells in spans.items() for r in n3_merge(cells,nx,nz)] if not exact else [(a,b,tr,r) for (n,tr),cells in spans.items() for a,b,r in merge_within(cells,nx,nz,tol)]
+    for a,b,tr,(ia,ka,ib,kb) in rects:
+            lo=[x0+ia*step,a,z0+ka*step];hi=[x0+(ib+1)*step,b,z0+(kb+1)*step]
+            if tr[0] is not None:lo[0]=max(lo[0],tr[0])
+            if tr[1] is not None:hi[0]=min(hi[0],tr[1])
+            if tr[2] is not None:lo[2]=max(lo[2],tr[2])
+            if tr[3] is not None:hi[2]=min(hi[2],tr[3])
+            if all(hi[n]-lo[n]>1e-3 for n in range(3)):boxes.append((lo,hi))
+    if exact:
+        for cut in cuts:boxes=[p for bx in boxes for p in box_minus(bx,cut)]
+    return [{'min':[round(v,3) for v in lo],'max':[round(v,3) for v in hi]} for lo,hi in boxes if all(hi[n]-lo[n]>1e-3 for n in range(3))]
+
+def exterior_physics(s):
+    # Every ship solid from outside, open only where it's open: a hold behind its ramp, its pads,
+    # anything the ship marks open (s.open, a carrier's hangars), its flight deck's view slot, and
+    # each airlock's outer door, reached by a lined passage out through the skin where the skin lies
+    # beyond it. Before export, so the passages' cuts reach the skins.
+    skins=[m for m in s.hab if hasattr(m,'stations')]
+    if not skins or 'hullColliders' in s.t:return
+    far=max(abs(v) for m in skins for st in m.stations for v in st)*2+50
+    open_parts=list(s.open)
+    # (a hold behind its ramp, out through the skin; the ramp's own slab closes it)
+    for r in s.t['rooms']:
+        for side,door in (r.get('gate') or {}).items():
+            if not any(dd['id']==door and dd.get('ramp') for dd in s.t['doors']):continue
+            ax={'x':0,'z':2}[side[1]];lo=list(r['min']);hi=list(r['max'])
+            if side[0]=='+':hi[ax]=far
+            else:lo[ax]=-far
+            open_parts.append((lo,hi))
+    for r in s.t['rooms']:
+        if r['type']=='exterior':open_parts.append((r['min'],r['max']))
+    # (the flight deck's forward view, its slot through the skin to the glass)
+    r=s.rs['bridge']['r'];open_parts.append(([r['min'][0]+.25,r['min'][1]+.9,r['min'][2]-far],[r['max'][0]-.25,r['min'][1]+2.6,r['min'][2]-.1]))
+    def solid(p):return inside_skins(skins,p) and not any(all(lo[i]<=p[i]<=hi[i] for i in range(3)) for lo,hi in open_parts)
+    lining=s.mesh('lock_passages');passages=[]
+    for e in s.t['entries']:
+        if not e.get('airlock') or e.get('internal'):continue
+        d=next(d for d in s.t['slideDoors'] if d['id']==e['airlock']+'-outer')
+        ax=0 if d['axis']=='x' else 2;ua=2-ax;out=-e['heading'][ax];u0,u1,y0,y1=d['u0'],d['u1'],d['y0'],d['y1']
+        def at(t,u,y):p=[0,y,0];p[ax]=d['plane']+out*t;p[ua]=u;return p
+        # (how far out the skin goes over the door's whole opening)
+        depth=0
+        for n in range(1,int(far/.05)):
+            t=n*.05
+            if any(solid(at(t,u,y)) for u in (u0,(u0+u1)/2,u1) for y in (y0+.05,(y0+y1)/2,y1+.1)):depth=t
+            elif t>depth+1:break
+        lo=[0,y0-.4,0];hi=[0,y1+.3,0];lo[ua]=u0-.15;hi[ua]=u1+.15
+        a,b=sorted([d['plane']-out*.3,d['plane']+out*(depth+.6)]);lo[ax]=a;hi[ax]=b;passages.append((lo,hi))
+        s.t.setdefault('lockPassages',[]).append({'airlock':e['airlock'],'depth':round(depth,2)})
+        if depth<.35:continue
+        # (the passage: walls, floor and ceiling from the door out through the skin, lit, its skin
+        # cut to its opening)
+        a,b=sorted([d['plane'],d['plane']+out*(depth+.15)]);c=(a+b)/2;L=b-a
+        def box(cu,cy,su,sy,mat):
+            cc=[0,cy,0];cc[ax]=c;cc[ua]=cu;sz=[0,sy,0];sz[ax]=L;sz[ua]=su;lining.box(cc,sz,mat,collision=True)
+        for u in (u0-.05,u1+.05):box(u,(y0+y1+.15)/2,.1,y1+.25-y0,'Wall')
+        box((u0+u1)/2,y1+.2,u1-u0+.2,.1,'Ceiling');box((u0+u1)/2,y0-.05,u1-u0+.2,.1,'Floor')
+        n=max(1,int(L/4))
+        for i in range(n):
+            cc=[0,y1+.14,0];cc[ax]=a+(i+.5)*L/n;cc[ua]=(u0+u1)/2;sz=[0,.03,0];sz[ax]=min(1.2,L/n*.6);sz[ua]=.24;lining.box(cc,sz,'LightPanel')
+        clo=[0,y0-.05,0];chi=[0,y1+.2,0];clo[ua]=u0-.05;chi[ua]=u1+.05;a2,b2=sorted([d['plane']-out*.05,d['plane']+out*(depth+.4)]);clo[ax]=a2;chi[ax]=b2;s.cuts.append((clo,chi))
+    if lining.polys:lining.finish()
+    span=max(max(st[0] for st in m.stations) for m in skins)-min(min(st[0] for st in m.stations) for m in skins)
+    step=min(3,max(.4,span/90))
+    s.t['hullColliders']=hull_colliders(s,skins,open_parts+passages,step,min(step/3,.25),exact=True,tol=min(1,step*.3))
+    # (the skins and what's open in them, for the hull's tests: x offset, stations (z, half-width, low, high))
+    s.t['skins']=[{'x':getattr(m,'skin_x',0),'stations':[list(st) for st in sorted(m.stations)]} for m in skins]
+    s.t['hullOpen']=[{'min':[round(v,3) for v in lo],'max':[round(v,3) for v in hi]} for lo,hi in open_parts+passages]
+    s.t['hullStep']=round(step,3)
 
 def finish_neptune3(s):
     s.finish_serial=0;s.t['fixtures']=[];s.t['stations']=[];s.t['walkTargets']=[]
@@ -1106,7 +1252,9 @@ def finish_neptune3(s):
     for d in s.t['slideDoors']:
         if d['id'] in ['bridge-eva-outer','suit-eva-outer']:
             open_parts.append(([-22,-.4,d['u0']-.15],[d['plane']+.3,d['y1']+.3,d['u1']+.15]))
-    s.t['hullColliders']=n3_hull_colliders(s,s.hab[0].stations,open_parts)
+    s.t['hullColliders']=hull_colliders(s,[s.hab[0]],open_parts)
+    s.t['skins']=[{'x':0,'stations':[list(st) for st in sorted(s.hab[0].stations)]}];s.t['hullStep']=.6
+    s.t['hullOpen']=[{'min':[round(v,3) for v in lo],'max':[round(v,3) for v in hi]} for lo,hi in open_parts]
     # These shared architectural meshes span several rooms; do not cull them as a single room's furniture.
     for suffix in ['neptune2_deck','neptune2_partitions','neptune2_ceilings','lineage_new_bulkheads','lineage_exploration_stations','accommodation_floors','accommodation_ceilings','expanded_cabin_storage']:
         ob=s.scene.objects.get(s.key+':'+suffix)
@@ -1128,7 +1276,7 @@ skin(s,'forward_cabin',[(-15,3,-.7,4),(-12,4.8,-1,5.8),(-8,5,-.6,5.1),(-4.5,4,-.
 bridge(s,-14.2,-9.1,2.7);cabin(s,'crew','Two-person living cabin',[-2.7,0,-9.1],[2.7,3.2,-4.8],'cabin');s.door('crew-door','bridge','crew','z',-9.1,0,1.4)
 berth_bed(s,'crew',1.75,-7.1,0,.85);berth_bed(s,'crew',1.75,-7.1,1.1,.85)
 m=s.mesh('camper_services',room='crew');m.box((-2.3,.48,-8.3),(.55,.96,1),'Wall',solid=True);m.box((-1.9,.35,-5.5),(.55,.70,.65),'Wall',solid=True);m.box((-1.45,1.2,-5.5),(.06,2.4,1.25),'Wall',solid=True);m.finish()
-s.airlock('bridge',[-5.3,0,-13.7],[-2.7,3.2,-10.5],'x',-2.7,-5.3,-12.1)
+s.airlock('bridge',[-5.3,0,-13.7],[-2.7,3.2,-10.5],'x',-2.7,-5.3,-12.1,door=(1.6,2.4))
 skin(s,'arched_service_spine',[(-5,2,3.4,5.1),(-1,1.8,5.3,7.5),(6,1.8,5.5,7.9),(11,2.0,3.5,6),(14.5,2.1,3.2,4.5)])
 skin(s,'aft_mechanical_hull',[(10,2,.2,4.5),(13,3,-.4,5.2),(15,2,.2,4)])
 m=s.mesh('pod_supports')
@@ -1144,8 +1292,8 @@ skin(s,'civilian_lifting_body',[(-12.5,2.3,-.5,3.8),(-10,5,-.9,4.6),(-6,7,-1.1,5
 bridge(s,-11.8,-7.2,3);cabin(s,'cabin','Four-place passenger cabin',[-3.2,0,-7.2],[3.2,3.2,-2.7],'cabin');s.door('cabin-door','bridge','cabin','z',-7.2,0,1.4)
 for x in [-1.9,1.9]:
  for z in [-6,-4.3]:s.seat('cabin',x,0,z)
-s.airlock('bridge',[-6,0,-11],[-3,3.2,-7.8],'x',-3,-6,-9.4,'bridge-eva')
-cabin(s,'garage','Surface operations bay',[-4.8,0,.3],[4.8,4.8,10],'bay');garage_lock(s,'cabin','garage',-2.7,.3);cargo_ramp(s,'garage',10,8.5,4.7)
+s.airlock('bridge',[-6,0,-11],[-3,3.2,-7.8],'x',-3,-6,-9.4,'bridge-eva',door=(1.6,2.4))
+cabin(s,'garage','Surface operations bay',[-4.8,0,.3],[4.8,4.8,10],'bay');garage_lock(s,'cabin','garage',-2.7,.3,door=(1.6,2.4));cargo_ramp(s,'garage',10,8.5,4.7)
 s.t['clamp']={'name':'Exploration vehicle restraint','pos':[0,1.8,5],'reach':[1.2,1,2],'fits':[8.5,4.6,8.8]};s.t['zones'].append({'name':'Vehicle bay','kind':'hold','min':[-4.6,.01,.4],'max':[4.6,4.65,10],'gravity':9.81,'pressure':0,'door':'ramp','snug':True})
 for side in [-1,1]:pod(s,side*7,1.3,1,12.5,1.1)
 s.legs([(-5,-.2,-8),(5,-.2,-8),(-5,-.2,8),(5,-.2,8)],1.30,mounts=False);s.t['thrust'].update(main=5,belly=4,lateral=1.5,retro=1.5);SHIPS.append(s)
@@ -1153,7 +1301,7 @@ s.legs([(-5,-.2,-8),(5,-.2,-8),(-5,-.2,8),(5,-.2,8)],1.30,mounts=False);s.t['thr
 # LARK: two-person survey launch with cabin access, short-range supplies and sensor fins.
 s=Ship('lark','Lark',13_000,2,14)
 skin(s,'survey_hull',[(-7,1.8,-.4,3),(-5.5,3.4,-.7,4.1),(-2,4.0,-.8,4.5),(3,3.8,-.8,4.2),(5.5,2.3,-.4,3.4)])
-bridge(s,-6.5,1.8,2.0);s.airlock('bridge',[-1.25,0,1.8],[1.25,3.2,5.0],'z',1.8,5,0)
+bridge(s,-6.5,1.8,2.0);s.airlock('bridge',[-1.25,0,1.8],[1.25,3.2,5.0],'z',1.8,5,0,door=(1.6,2.4))
 for side in [-1,1]:
  pod(s,side*3.4,.6,3,7,.65)
  m=s.mesh('sensor_fin_'+str(side));m.face([(side*3,1,-1),(side*4.8,1.2,.5),(side*4.5,1.2,2.8),(side*3,1,3)],'Hull',1,normal=(0,1,0));m.face([(side*3,.9,3),(side*4.5,1.1,2.8),(side*4.8,1.1,.5),(side*3,.9,-1)],'Hull',normal=(0,-1,0));m.box((side*4.4,1.22,1.5),(.35,.10,1),'Screen');m.finish()
@@ -1162,7 +1310,7 @@ s.legs([(-2.7,-.3,-4),(2.7,-.3,-4),(-2.7,-.3,4),(2.7,-.3,4)],.8);s.t['thrust'].u
 # DRIFT: broad lower chine, continuous canopy, short aft field pods; no armament.
 s=Ship('drift','Drift',5_000,2,7.8)
 skin(s,'arrowhead_scout',[(-3.9,1.15,-.35,2.7),(-2.9,2.7,-.6,3.2),(-.8,3.15,-.7,3.5),(1.9,3.4,-.6,3.35),(3.6,2.9,-.3,3.0)])
-bridge(s,-3.6,.5,1.3);s.airlock('bridge',[-1.15,0,.5],[1.15,2.65,3.4],'z',.5,3.4,0)
+bridge(s,-3.6,.5,1.3);s.airlock('bridge',[-1.15,0,.5],[1.15,2.65,3.4],'z',.5,3.4,0,door=(1.4,2.2))
 for r in s.t['rooms']:
  if r['type']!='door':r['max'][1]=2.65
 for side in [-1,1]:pod(s,side*3.5,.50,.2,3.9,.48)
@@ -1184,6 +1332,7 @@ for s in SHIPS:
   if room['type'] not in ['door','exterior']:s.cuts.append(([v-.015 for v in room['min']],[v+.015 for v in room['max']]))
  if s.key=='horizon_neptune3':finish_neptune3(s)
  else:finish_dress(s)
+ exterior_physics(s)
 TYPES={s.key:s.export() for s in SHIPS}
 (OUT/'manifest.json').write_text(json.dumps(TYPES,indent=2));(OUT/'horizon.data.js').write_text('// Generated Horizon fleet. Metres, X right, Y up, -Z forward.\nexport const HORIZON_TYPES = '+json.dumps(TYPES,separators=(',',':'))+';\n')
 bpy.ops.wm.save_as_mainfile(filepath=str(OUT.parent/'starseed-complete.blend'),copy=True,compress=True)
