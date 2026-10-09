@@ -25,9 +25,20 @@ Queue (tick as done; one report at the end):
    under you; the others kept level along the mirror (their offsets in the ship's axes could have put them
    under it); a respawn at the mirror at the same height. Checked: prologue shot, then Neptune 3 and Eleanor's
    line.
-4. [ ] From 25 km up the land streaks and the coasts saw-tooth (see "Seen, open" under Measuring frame cost):
-   read a far coastal chunk's positions back, find the cause, fix.
-5. [ ] Mars from afar: a chaos raft's apron (talus) missing off the near field.
+4. [~] From 25 km up (SOL 33N 78W, sun 40, 35 deg down; full-res frames by engine.webgpu.captureURL()
+   POSTed to a copy of tools/shot_server.py): no streaks seen in this world's land now; seen instead (a) a
+   fine dotted lattice (~4 px, much finer than the ~1 km/20 px mesh) on pale land beside the clouds, which
+   stays with the cloud shadows off (world item shared.uCSOn = 0) and is on the clouds' own edges too, so it
+   looks like the volume pass's per-pixel sampling, not the ground; (b) the coasts in small regular saw
+   teeth, the shore interpolated per vertex at that spacing. Not fixed: switching the volume pass off from
+   the console (item.volActive, volume.visible) did nothing, and the ?webglReference=1 side-by-side
+   (tools/webgpu-compare.js capture) drew the default orbit, not the freecam: next, a clean A/B of the
+   volume pass at this view.
+5. [~] Mars from afar, a raft's apron: not a terrain.js chaos raft (SOL Mars's snapshot has no chaos regions;
+   _chaosAt is the icy shells'), but a block in the world sim's grid, a km step drawn ~10 m tall with its
+   cells' notched rim. Its apron far off would be talus made by the tile sim (the integer path, every
+   level) at the foot of steep faces, not only the near field's talAt: a terrain-sim change, left for a
+   terrain session (judge it on the integer path with a SOL suite).
 6. [x] Titan's craters (SIM 70): its outgassing overturn reset only the crater record's bookkeeping, so all
    865 grid-scale basins (>200 km, every one older than the overturn) stayed in its heights, 128 still over
    300 m deep. Now the overturn resurfaces it: 15% of the old relief left (world.js OVERTURN_KEEP,
