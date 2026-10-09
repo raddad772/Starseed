@@ -11,7 +11,22 @@ maps and viewscreens are native. WebGL exists only in explicit test tooling (`?w
 no production fallback. Other browser/GPU combinations still need certification; no speedup or exact
 pixel-parity claim is made. Dave confirmed sole-agent work and no coordination messages this session.
 
-## NOW: overnight queue (session 39d69fa8, 2026-10-08 night)
+## NOW: second queue (session 39d69fa8, 2026-10-09; Dave: "Do queue")
+
+Queue (tick as done; one report at the end):
+1. [ ] Frame cost, round two: the CPU left near the ground (shadow casters' prepare, the water's chunk
+   materials, scene walks for shadows), then the GPU near the ground measured (drain method) and the worst fixed.
+2. [ ] The 404 on every page load: find which file and fix it.
+3. [ ] The opening starts ~1.5 km over the mirror (was parked; taken as approved with this queue).
+4. [ ] From 25 km up the land streaks and the coasts saw-tooth (see "Seen, open" under Measuring frame cost):
+   read a far coastal chunk's positions back, find the cause, fix.
+5. [ ] Mars from afar: a chaos raft's apron (talus) missing off the near field.
+6. [ ] Titan keeps far too many big craters: cumulative methane-rain erosion / warm-ice relaxation.
+7. [ ] Richer emission nebulae in the galaxy's background bake (last, its own commit, for Dave's eye).
+Not in it (Dave's call): Expedition/Pioneer airlock widths, voices, the strings take, deleting old worktrees,
+the stale entries in .claude/launch.json.
+
+## Done: overnight queue (session 39d69fa8, 2026-10-08 night)
 
 All worktrees are merged into main and work happens in main (Dave, 2026-10-08). Done today and committed:
 the central black hole traced in the Kerr metric (render/webgpu/central.js), one sky across systems
