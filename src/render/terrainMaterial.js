@@ -5,6 +5,7 @@ import { GLSL_SURFACE_ATMO, GLSL_CLOUD_N, GLSL_CLOUD_SHADOW, GLSL_THERMAL } from
 import { GLSL_NOISE } from './glsl.js';
 import { MAT_UNIFORMS, GLSL_MATERIALS, trackMaterial } from './materials.js';
 import { GLSL_TERRAIN_SHADOW } from './terrainShadow.js';
+import { GLSL_COLOUR_CUBE } from './colourCube.js';
 import { GLSL_SUN_SHADOW, GLSL_SKY_SHADOW } from './sunShadows.js';
 import { GLSL_MOON } from './moonlight.js';
 import { GLSL_LIQUID } from './liquid.js';
@@ -210,6 +211,7 @@ ${GLSL_CLOUD_N}
 ${GLSL_CLOUD_SHADOW}
 ${GLSL_THERMAL}
 ${GLSL_TERRAIN_SHADOW}
+${GLSL_COLOUR_CUBE}
 ${GLSL_SUN_SHADOW}
 uniform vec3 uSoilCol;
 ${GLSL_SKY_SHADOW}
@@ -289,6 +291,17 @@ void main() {
   float r = length(rel);
   vec3 up = rel / r;
   float dist = length(vWorldPos);
+  // (from afar its colour and where its water is the colour map's, finer there than the far chunks'
+  // vertices: colourCube.js)
+  vec3 colC = vCol.rgb;
+  float shoreV = vShore;
+  float cK = colourCubeK(dist);
+  if (cK > 0.0) {
+    vec4 cc = colourCubeAt(normalize(uToFixed * up));
+    colC = mix(colC, cc.rgb, cK);
+    shoreV = mix(shoreV, (cc.a * 255.0 - 128.0) / 127.0, cK);
+    albedo = colC * colC;
+  }
   vec3 N = normalize(vNormal);
   float muS = dot(up, uSunDir);
   vec3 sunT = atmoSunTransmittance(r, muS);
@@ -314,7 +327,7 @@ void main() {
   float midK = 1.0 - smoothstep(600.0, 9000.0, dist);
   float farK = 1.0 - smoothstep(6000.0, 90000.0, dist);
   // (the shore: where the vertices' distances to it, signed, cross 0)
-  float isWater = vShore > 0.0 ? 1.0 : 0.0;
+  float isWater = shoreV > 0.0 ? 1.0 : 0.0;
   float gRough = 0.8, gAO = 1.0;   // (the scanned surfaces' roughness and occlusion: materials.js)
   if (isWater < 0.5) {
     // (d0: the detail's whole period, 4 km)
@@ -451,7 +464,7 @@ void main() {
     }
 #else
     // (its depth: the vertices' (chunkbuilder.js encodeWater), to none at the shore over half a spacing out)
-    float depthW = waterEnc * waterEnc * 6000.0 * smoothstep(0.0, 0.125, vShore);
+    float depthW = waterEnc * waterEnc * 6000.0 * smoothstep(0.0, 0.125, shoreV);
 #endif
     // (smooth noise for the waves: their crests' bends, from the 512 m tile, and their groups' heights)
     vec4 nW = tri(fp, w, 512.0), nG = tri(fp, w, 64.0);
@@ -540,7 +553,7 @@ void main() {
       vec3 Ed = uSunE * sunT * max(muS, 0.0) + uSunE * skyE;
       // (where it's deep: the sea's or a lake's own colour, as the terrain draws it from afar, so the two
       // meet without a step; a river's its silt's scatter)
-      vec3 deep = dot(vCol.rgb, vec3(1.0)) > 0.001 ? vCol.rgb * vCol.rgb / PI * (uSunE * sunT * max(muS, 0.0) * 0.6 + uSunE * skyE * 0.5) : 0.33 * bb / K / PI * Ed;
+      vec3 deep = dot(colC, vec3(1.0)) > 0.001 ? colC * colC / PI * (uSunE * sunT * max(muS, 0.0) * 0.6 + uSunE * skyE * 0.5) : 0.33 * bb / K / PI * Ed;
       body = bed * Tb + deep * (1.0 - exp(-K * depthW * (1.0 / cT + 1.0)));
     }
     // ---- what it reflects: the banks and trees drawn (a ray marched across the image's depth),

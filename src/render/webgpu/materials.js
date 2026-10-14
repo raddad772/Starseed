@@ -16,8 +16,27 @@ struct MaterialParams {
   soilColor: vec4f,
   lavaColor: vec4f,
   windTimeMode: vec4f,
+  colourCube: vec4f,
 };
 @group(2) @binding(7) var<uniform> material: MaterialParams;
+// the ground's colour and its shore from afar (render/colourCube.js): rgb the colour's square root, a the
+// shore's distance (0.5 at the shore, more under the water); colourCube x on, y its size, z a texel (m)
+@group(2) @binding(8) var colourCubeTex: texture_2d_array<f32>;
+fn colourCubeAt(d: vec3f) -> vec4f {
+  let a = abs(d);
+  var f = 0; var N = vec3f(1.0, 0.0, 0.0); var U = vec3f(0.0, 0.0, -1.0); var V = vec3f(0.0, 1.0, 0.0);
+  if (a.x >= a.y && a.x >= a.z) { if (d.x < 0.0) { f = 1; N = vec3f(-1.0, 0.0, 0.0); U = vec3f(0.0, 0.0, 1.0); } }
+  else if (a.y >= a.z) {
+    U = vec3f(1.0, 0.0, 0.0);
+    if (d.y >= 0.0) { f = 2; N = vec3f(0.0, 1.0, 0.0); V = vec3f(0.0, 0.0, -1.0); } else { f = 3; N = vec3f(0.0, -1.0, 0.0); V = vec3f(0.0, 0.0, 1.0); }
+  } else {
+    if (d.z >= 0.0) { f = 4; N = vec3f(0.0, 0.0, 1.0); U = vec3f(1.0, 0.0, 0.0); } else { f = 5; N = vec3f(0.0, 0.0, -1.0); U = vec3f(-1.0, 0.0, 0.0); }
+  }
+  let dn = dot(d, N);
+  let uv = vec2f(atan(dot(d, U) / dn), atan(dot(d, V) / dn)) / 0.7853981634 * 0.5 + 0.5;
+  let h = 0.5 / max(material.colourCube.y, 1.0);
+  return textureSampleLevel(colourCubeTex, climateSampler, clamp(uv, vec2f(h), vec2f(1.0 - h)), f, 0.0);
+}
 struct Scan { ratio: vec3f, height: f32, normal: vec3f, roughness: f32, ao: f32 };
 struct ScanTexels { albedo: vec4f, normal: vec4f };
 fn matHash(c: vec2f) -> f32 {

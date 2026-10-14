@@ -15,6 +15,7 @@ import { VolumePass } from './volume.js';
 import { CloudShadow, noCloudShadow } from './cloudShadow.js';
 import { loadMaterials, windRipple } from './materials.js';
 import { HeightCube } from './terrainShadow.js';
+import { ColourCube } from './colourCube.js';
 import { SUN_SHADOW_UNIFORMS, SKY_SHADOW_UNIFORMS } from './sunShadows.js';
 import { moonLight, NIGHT_GAIN, GAIN_REF, HAND_LIGHT } from './moonlight.js';
 const _nsA = [0, 0, 0], _nsB = [0, 0, 0], _lg = new THREE.Vector3(), _lg2 = new THREE.Vector3();
@@ -87,6 +88,7 @@ export class WorldRenderer {
     it.terrain.gpuLOD = !!this.engine.renderer.isNativeWebGPU;
     it.group.add(it.terrain.group);
     if (it.heightCube) it.heightCube.invalidate();
+    if (it.colourCube) it.colourCube.invalidate();
     // its clouds where its climate puts them
     const snap = it.body.data.terrain && it.body.data.terrain.snapshot;
     // (baked with the snapshot; a snapshot cached before that, baked here, coarser)
@@ -149,6 +151,8 @@ export class WorldRenderer {
     const a = it.atmo;
     // (the ground's shadows on itself: its coarse heights, built when it's near: terrainShadow.js)
     if (b.solid) it.heightCube = new HeightCube(b, this.pool);
+    // (and its colour and its shore from afar, for its far chunks: colourCube.js)
+    if (b.solid) it.colourCube = new ColourCube(b, this.pool);
     // (its seas', lakes' and rivers' liquid: liquid.js)
     if (b.solid) it.liquid = new Liquid(b, b.data.insolation || this.u.sunIlluminance(b.pos));
     // (and the air's: its shadows in the haze, the sky pass's and the near volume's)
@@ -193,6 +197,7 @@ export class WorldRenderer {
       uThermal: a ? a.material.uniforms.uThermal : { value: thermalUniform(b) },
       uWindRipple: { value: windRipple(b) },
       ...(it.heightCube ? it.heightCube.uniforms : {}),
+      ...(it.colourCube ? it.colourCube.uniforms : {}),
       ...(it.liquid ? it.liquid.uniforms : {}),
       ...(it.liquid ? (it.falls = fallPhysics(b, it.liquid.U)).uniforms : {}),
       ...SUN_SHADOW_UNIFORMS,
@@ -401,6 +406,8 @@ export class WorldRenderer {
           it.atmo.setDust(this.engine.renderer, dk > 0 ? it.terrain.dust.tau * dk + mD * (1 - dk) : mD, dk > 0 ? it.terrain.dust.salt * dk + mS * (1 - dk) : mS);
         }
         if (it.heightCube && it.heightCube.state === 0 && angular > 40) it.heightCube.build();
+        // (once its world sim's in: a minute's work on the workers, not to be thrown away when it comes)
+        if (it.colourCube && it.colourCube.state === 0 && angular > 40 && b.data.terrain && b.data.terrain.snapshot) it.colourCube.build();
       }
       // (the clouds' shadows and the overcast's light on the ground near the camera, when it's low enough
       // to see the ground under them: cloudShadow.js, the near volume's decks on the wind)

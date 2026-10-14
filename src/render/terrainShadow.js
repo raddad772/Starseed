@@ -24,7 +24,7 @@ export class HeightCube {
     if (!SHADOW_SIZE || this.state === 1) return;
     this.state = 1;
     const gen = this.gen = (this.gen || 0) + 1, size = SHADOW_SIZE;
-    const jobs = [0, 1, 2, 3, 4, 5].map((face) => this.pool.submit({ type: 'hface', body: this.body.data.id, face, size }, 12));
+    const jobs = this.jobs = [0, 1, 2, 3, 4, 5].map((face) => this.pool.submit({ type: 'hface', body: this.body.data.id, face, size }, 12));
     Promise.all(jobs.map((j) => j.promise)).then((faces) => {
       if (gen !== this.gen) return;
       const n = size * size, half = new Uint16Array(6 * n);
@@ -46,8 +46,13 @@ export class HeightCube {
     }, () => { if (gen === this.gen) this.state = 0; });
   }
 
-  // the terrain changed under it (a simulated world arrived): build it again
-  invalidate() { this.state = 0; this.gen = (this.gen || 0) + 1; }
+  // the terrain changed under it (a simulated world arrived): build it again (the old one's jobs still
+  // queued dropped)
+  invalidate() {
+    if (this.jobs) for (const jb of this.jobs) this.pool.cancel(jb);
+    this.jobs = null;
+    this.state = 0; this.gen = (this.gen || 0) + 1;
+  }
 }
 
 // the march. pF: the point from the world's centre, its up, sF the sun (all planet-fixed); R the

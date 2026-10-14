@@ -9,6 +9,7 @@ import { terrainPortrait, terrainGlobeMap } from '../gen/portrait.js';
 import { VolumeField, buildVolumeChunk, volumeTransferables } from '../gen/volume.js';
 import { TileSet } from '../gen/worldsim/refine.js';
 import { heightFace } from '../gen/heightmap.js';
+import { colourFace } from '../gen/colourmap.js';
 import { scatterStones } from '../gen/rocks.js';
 import { buildFloes } from '../gen/floeslabs.js';
 import { fireTile } from '../gen/life/fire.js';
@@ -115,6 +116,12 @@ self.onmessage = (e) => {
       // a fire tile's recent centuries (gen/life/fire.js)
       const r = fireTile(gen(m.body), m.face, m.ti, m.tj, { o2K: m.o2K, seed: m.seed });
       self.postMessage({ type: 'fire', job: m.job, ...r }, [r.ageG.buffer, r.ageC.buffer, r.fires.buffer]);
+      return;
+    }
+    if (m.type === 'cface') {
+      // a strip of a cube face of the world's colour and water seen from afar (render/colourCube.js)
+      const px = colourFace(gen(m.body), m.face, m.size, m.j0, m.j1);
+      self.postMessage({ type: 'cface', job: m.job, px }, [px.buffer]);
       return;
     }
     if (m.type === 'hface') {

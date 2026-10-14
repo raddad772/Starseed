@@ -96,13 +96,22 @@ struct GBuffer { @location(0) albedoAO: vec4f, @location(1) normalMaterial: vec4
     if (o.nearBand.y < 0.5) { if (dn < 0.97 * o.nearBand.x && v.occShore.y <= 0.0) { discard; } }
     else if (dn < o.nearBand.z || dn > o.nearBand.w) { discard; }
   }
-  if (v.occShore.y > 0.0) { discard; }
   let b = bodies[u32(o.surface.x)];
   let rel = v.worldPos - b.center.xyz;
   let up = normalize(rel);
-  let surface = groundSurface(v.color, v.mat, v.ext, v.cls0, v.cls1, v.cls2,
+  // (from afar its colour and where its water is the colour map's, finer there than the far chunks'
+  // vertices: render/colourCube.js, as terrainMaterial.js)
+  var color = v.color; var shore = v.occShore.y;
+  let cK = material.colourCube.x * smoothstep(30.0 * material.colourCube.z, 60.0 * material.colourCube.z, length(v.worldPos));
+  if (cK > 0.0) {
+    let cc = colourCubeAt(normalize(material.toFixed * up));
+    color = vec4f(mix(color.rgb, cc.rgb, cK), color.a);
+    shore = mix(shore, (cc.a * 255.0 - 128.0) / 127.0, cK);
+  }
+  if (shore > 0.0) { discard; }
+  let surface = groundSurface(color, v.mat, v.ext, v.cls0, v.cls1, v.cls2,
     v.fixedPos, v.anchorPos, dx, dy, normalize(v.fixedNormal), material.toFixed * up,
-    length(v.worldPos), foot, dot(up, b.sunDir.xyz), v.occShore.y);
+    length(v.worldPos), foot, dot(up, b.sunDir.xyz), shore);
   let N=normalize(transpose(material.toFixed)*surface.normal);
   var glint=0.0;
   let gw=v.cls2.z+0.6*v.cls1.z;let gc=foot*220.0;
