@@ -382,7 +382,7 @@ export class PlanetTerrain {
   stoneVisit(node, dist) {
     node.stoneFrame = this.frame;
     if (node.stones) { node.stones.visible = node.state === 2; return; }
-    if (node.stoneJob || dist >= STONE_DIST) return;
+    if (node.stoneJob || node.stonesNone || dist >= STONE_DIST) return;
     this.ensureFloraSet();
     const gen = this.generation;
     (this.stoneNodes || (this.stoneNodes = new Set())).add(node);
@@ -391,12 +391,16 @@ export class PlanetTerrain {
       if (gen !== this.generation || !node.stoneJob) return;
       node.stoneJob = null;
       node.stones = this.rockSet.build(data);
-      if (node.stones) { node.stones.position.set(data.origin[0], data.origin[1], data.origin[2]); this.reseatQ.add(node.stones); this.group.add(node.stones); }
+      // (none here, on sand, snow or water: remembered till the node's dropped, not asked for again
+      // each frame, which kept the workers on stones and the ground's chunks waiting behind them)
+      if (!node.stones) { node.stonesNone = true; return; }
+      node.stones.position.set(data.origin[0], data.origin[1], data.origin[2]); this.reseatQ.add(node.stones); this.group.add(node.stones);
     }, () => { node.stoneJob = null; });
   }
   dropStones(node) {
     if (node.stoneJob) { this.pool.cancel(node.stoneJob); node.stoneJob = null; }
     if (node.stones) { this.group.remove(node.stones); node.stones.dispose(); node.stones = null; }
+    node.stonesNone = false;
     if (this.stoneNodes) this.stoneNodes.delete(node);
   }
 
