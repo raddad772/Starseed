@@ -24,7 +24,7 @@ import { dunePatches } from '../dunes.js';
 import { ROCK_UP } from './lithology.js';
 import { seasonsFor, cloudOf } from './season.js';
 
-export const SIM_VERSION = 72;   // (72: the impactors the air broke up those of its own time (its history's dry air and water vapour), the finer levels' craters each by the air when it was made; 71: the fine epoch in 20 steps of 500 kyr, the climates after the deep time warm-started with 40 rain sweeps, a long wet era in at most ~200 steps; 70: a Titan's overturn resurfaces it, its old basins all but gone; 69: the soil, the water table and the wetlands in the snapshot; 61: the climate's orbit eccentric, its perihelion where it falls in the year; 62: a moon's seasons its tilt to its planet's orbit; 63: a Titan's low latitudes raised as cos^2 of the latitude, not a step, drawn at the world's scale; 64: generation's last Math.sin/cos/hypot... through dmath: the folds' arcs moved an ulp, so every client holds the same bits; 65: the monsoon rain belt, the subtropics' sinking air, summer convection, the air's capacity over its own ground; life's leaps by the room each stage has; 66: life's realms and their family tree in the snapshot; 67: its places, every landmass sized, described and tagged (places.js); 68: a world without a sea, its named features its places)
+export const SIM_VERSION = 73;   // (73: the life map's fields carried out over the climate grid's sea from the nearest land (read smoothly across a coast they had been diluted toward bare by the sea's zeros); 72: the impactors the air broke up those of its own time (its history's dry air and water vapour), the finer levels' craters each by the air when it was made; 71: the fine epoch in 20 steps of 500 kyr, the climates after the deep time warm-started with 40 rain sweeps, a long wet era in at most ~200 steps; 70: a Titan's overturn resurfaces it, its old basins all but gone; 69: the soil, the water table and the wetlands in the snapshot; 61: the climate's orbit eccentric, its perihelion where it falls in the year; 62: a moon's seasons its tilt to its planet's orbit; 63: a Titan's low latitudes raised as cos^2 of the latitude, not a step, drawn at the world's scale; 64: generation's last Math.sin/cos/hypot... through dmath: the folds' arcs moved an ulp, so every client holds the same bits; 65: the monsoon rain belt, the subtropics' sinking air, summer convection, the air's capacity over its own ground; life's leaps by the room each stage has; 66: life's realms and their family tree in the snapshot; 67: its places, every landmass sized, described and tagged (places.js); 68: a world without a sea, its named features its places)
 
 // the soil's and the water table's depths as bytes (packSnapshot, SnapshotSampler.soil, .wtd)
 const SOIL_D0 = 0.02, SOIL_LOG = dm.log(1 + 40 / SOIL_D0), WTD_D0 = 0.1, WTD_LOG = dm.log(1 + 500 / WTD_D0);
@@ -147,7 +147,10 @@ export function packSnapshot(W, body) {
     out.Nc = Gc.N;
     out.Tsea = new Float32Array(m); out.P = Float32Array.from(W.climate.Pann);
     for (let c = 0; c < m; c++) out.Tsea[c] = W.climate.Tann[c] + (W.climate.sea[c] ? 0 : lapse * Math.max(0, W.climate.h ? W.climate.h[c] : 0));
-    if (W.life) { out.cover = Float32Array.from(W.life.cover); out.forest = Float32Array.from(W.life.forest); out.open = Float32Array.from(W.life.open); }
+    if (W.life) {
+      out.cover = Float32Array.from(W.life.cover); out.forest = Float32Array.from(W.life.forest); out.open = Float32Array.from(W.life.open);
+      if (W.life.env && W.life.env.land) landOutward(Gc, W.life.env.land, [out.cover, out.forest, out.open]);
+    }
     if (W.life && W.life.realm && W.life.landed) Object.assign(out, realmsOf(W.life, Gc));
     // cloud cover (for the render's clouds: season.js cloudOf, by the year's rain)
     out.cloud = new Float32Array(m);
@@ -199,6 +202,22 @@ function realmsOf(L, Gc) {
 }
 
 // the arrays a snapshot carries (for transfer lists and caching)
+// the life map's fields (life.js, on the climate grid: none over the sea) carried out over the sea's cells
+// from the nearest land's, breadth first: the ground reads them smoothly across the cells (B-spline), and
+// round a coast the sea's zeros had diluted them toward bare a cell or two in (~250 km on Earth), its
+// rainforests half bare from afar and an island world's land thin; land smaller than the grid's cells took
+// its sea's nothing
+function landOutward(G, land, fields) {
+  const n = G.n, from = new Int32Array(n).fill(-1), q = new Int32Array(n);
+  let qn = 0;
+  for (let c = 0; c < n; c++) if (land[c]) { from[c] = c; q[qn++] = c; }
+  for (let i = 0; i < qn; i++) {
+    const c = q[i];
+    for (let e = G.nStart[c]; e < G.nStart[c + 1]; e++) { const o = G.nbr[e]; if (from[o] < 0) { from[o] = from[c]; q[qn++] = o; } }
+  }
+  for (let c = 0; c < n; c++) if (!land[c] && from[c] >= 0) for (const f of fields) f[c] = f[from[c]];
+}
+
 export function snapshotBuffers(s) {
   return ['h', 'water', 'rock', 'ice', 'river', 'melt', 'relief', 'rcv', 'soil', 'wtd', 'wetland', 'Tsea', 'P', 'cover', 'forest', 'open', 'cloud', 'cloudPx', 'cloudYearPx', 'riverYear', 'realm', 'season', 'seasonPx', 'seasonIce', 'seasonIcePx', 'crat', 'dunes', 'gorge', 'ocean', 'mareLv'].filter((k) => s[k]).map((k) => s[k].buffer);
 }

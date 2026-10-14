@@ -21,6 +21,33 @@ pixel-parity claim is made. Dave confirmed sole-agent work and no coordination m
    "suuuuper deep": you start out deep and go REALLY deep, deep enough that gravity changes on the way
    down (a shell's or a hollow world's own gravity: less the deeper you go?). Ideas first, for Dave to pick.
 
+## NOW: the land's plants by its water, islands colonised (session 39d69fa8, 2026-10-14, SIM 73)
+
+Dave: "why is there so little green" / "the world sims are verified and tuned by giving real planet
+parameters from our solar system ... if the history is correct and the outcome isn't, we need to tune".
+SOL Earth's history is fine (0.71 bar, 12.8 C, CO2 532 ppm, land plants 230 Myr ago); the outcome wasn't:
+its land was >0.6 cover on 12%, <0.1 on 40%, forest share at 1000-2000 mm ~0.43. Three causes, fixed:
+- Cover was the productivity (Miami NPP / 2400): a grassland at half a forest's growth read half bare.
+  Now its own field (life.js landCover): by aridity P/PET (+groundwater), saturating as MODIS's cover
+  does (~0.2 at 0.1, ~0.65 at 0.35, ~0.95 humid), a growing season (warmest month 2-10 C), the light.
+- Far colonisation was one try every few Myr for the whole world: archipelagos stood bare for hundreds
+  of Myr (Laugloath LAB-519, two fifths of its land). Now 40 tries a Myr, each at an empty viable place,
+  from the best source in reach (distance x climate likeness). Earth's sim 75 s -> 73 s; Laugloath 65 -> 32.
+- The snapshot's B-spline reads near coasts were diluted by the sea's zero cells (snapshot.js landOutward
+  carries cover/forest/open out over the sea from the nearest land).
+- After (12 living worlds, cover >0.6): Earth 0.12 -> 0.76 (<0.1: 0.39 -> 0.12; forest >0.5 0.10 -> 0.35),
+  Opast 0.16 -> 0.55, Seamibest 0.17 -> 0.49, Saeverkion 0.11 -> 0.85, Digork 0.08 -> 0.17, Eperea 0.14
+  -> 0.29, Laugloath 0.14 -> 0.57, Gremsaziorn 0 -> 0.5, Stafetriash 0 -> 0.14, Keateasia 0.18 -> 0.43,
+  Gicand 0.16 -> 0.26, Vrouskor 0.06 -> 0.21. The cover feeds the deep-time climate, so living worlds'
+  continents re-rolled (land/sea kept); worlds without land plants are bit-identical.
+- Census (Dave: "a bit rarer than it used to be?"): land-plant worlds in LAB-0..299 were 6 on Oct 2, 4 on
+  Oct 4-5, 6 on Oct 7, Oct 9 and now; unchanged by this. Life is as rare as it was.
+- Also in: 84bee33 wetland pools by the ground's hummocks (B-spline share, no cell squares); b48ec7e the
+  colour cube (gen/colourmap.js, render/colourCube.js: 1024/face colour+shore read past 30-60 texels,
+  the far chunks' blocks gone from orbit; ?cmap=0 off).
+- Left: the soil-depth patch is cell-shaped (bilinear then thresholded); Mars' CO2 frost day-mean on
+  exaggerated slopes; far tree LOD diamonds; cloud-edge dither near the limb.
+
 ## NOW: Earth from orbit: the haze and the coasts (session 39d69fa8, 2026-10-14, a5ee6ee, 9f38bca)
 
 Dave: "The orbital imagery shows grey-brown terrain under haze rather than green forests, with blocky

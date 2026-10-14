@@ -50,7 +50,7 @@ export class LifeMap {
     const o2 = H.air ? (H.air.O2 || 0) / Math.max(H.P, 1e-6) : 0;
     const fireOK = dm.smoothstep(0.15, 0.2, o2);
     const stage = stageAt ?? (H.lifeStage || 0), flora = floraAt ?? (H.floraStage ?? -1);
-    const out = { landPot: new Float32Array(n), seaPot: new Float32Array(n) };
+    const out = { landPot: new Float32Array(n), landCover: new Float32Array(n), seaPot: new Float32Array(n) };
     for (let c = 0; c < n; c++) {
       const tC = env.T[c] - 273.15;
       if (env.land[c]) {
@@ -61,6 +61,17 @@ export class LifeMap {
         for (let m = 0; m < 12; m++) { if (env.Tm[m * n + c] > 283) warm++; if (env.Pm[m * n + c] < 30) dry++; }
         if (warm === 0) pot *= 0.15;   // (no month above 10 C: tundra at most)
         out.landPot[c] = dm.clamp(pot, 0, 1.2);
+        // how much of the ground plants hold (0..1): by the water they get against what the warmth would
+        // draw off (P / PET, groundwater near the surface), saturating long before growth does (a
+        // grassland's 600-1000 mm cover the ground with half a forest's growth: the productivity had
+        // stood for it, and a temperate world's open country read half bare, its forests' a third:
+        // MODIS's cover against aridity, ~0.2 at 0.1, ~0.65 at 0.35, ~0.95 humid); a growing season
+        // (its warmest month: the high Arctic's polar desert at a few C bare, the low Arctic's tundra at
+        // ~10 C covered); the light it has
+        let Tw = -1e9;
+        for (let m = 0; m < 12; m++) Tw = Math.max(Tw, env.Tm[m * n + c]);
+        const Wc = env.P[c] / 1000 / Math.max(0.05, env.pet[c]) + (env.wtd[c] < 5 ? 0.5 : 0);
+        out.landCover[c] = (1 - dm.exp(-3.2 * Math.max(0, Wc - 0.03))) * dm.smoothstep(275, 283, Tw) * Math.min(1, lightK);
         // the structure, where there are land plants
         if (stage >= 7) {
           const W = env.P[c] / 1000 / Math.max(0.05, env.pet[c]) + (env.wtd[c] < 5 ? 0.5 : 0);
@@ -158,23 +169,31 @@ export class LifeMap {
         }
       }
     }
-    // (spores and light seeds on the high winds: now and then one lands far away, the nearer
-    // the likelier, where the climate is like home: means.far a Myr, falling off over farKm)
-    if (means && means.far && rng.next() < dt * means.far * wk) {
-      const from = [];
-      for (let c = 0; c < n; c++) if (this.landed[c]) from.push(c);
-      if (from.length) {
-        const a = from[Math.floor(rng.next() * from.length)], Rkm = this.H.radiusKm || 6371;
-        let best = -1, bw = 0;
-        for (let k = 0; k < 24; k++) {
-          const b = Math.floor(rng.next() * n);
-          if (!env.land[b] || this.landed[b] || pot.landPot[b] < 0.02) continue;
+    // (spores and light seeds on the high winds, seeds on birds: empty land's first plants from the
+    // land that has them, the nearer the likelier, from a climate like its own (the best of those in
+    // reach: a world's plants long since spread over its climates are suited somewhere to most of
+    // them; from the nearest alone, an M dwarf's islands beside land 20 K warmer stood bare): means.far
+    // tries a Myr, each at an empty place, falling off over farKm. New land a few thousand km from any is green
+    // within years to millennia (Surtsey's the year after it rose, Krakatoa's within three years of 1883):
+    // in a step of the map's, half a Myr, the empty land in reach is mostly taken. It had been one try
+    // every few Myr for the whole world, and an archipelago's islands stood bare for hundreds of Myr
+    // beside green ones (Laugloath, LAB-519: two fifths of its land))
+    if (means && means.far) {
+      const to = [], from = [];
+      for (let c = 0; c < n; c++) { if (this.landed[c]) from.push(c); else if (env.land[c] && pot.landPot[c] >= 0.02) to.push(c); }
+      let tries = 0;
+      if (to.length && from.length) for (let L = dm.exp(-dt * means.far * wk), q = rng.next(); q > L && tries < 400; q *= rng.next()) tries++;
+      const Rkm = this.H.radiusKm || 6371;
+      for (let k = 0; k < tries; k++) {
+        const b = to[Math.floor(rng.next() * to.length)];
+        if (this.landed[b]) continue;
+        let w = 0;
+        for (const a of from) {
           const cos = G.dir[a * 3] * G.dir[b * 3] + G.dir[a * 3 + 1] * G.dir[b * 3 + 1] + G.dir[a * 3 + 2] * G.dir[b * 3 + 2];
-          const km = dm.acos(dm.clamp(cos, -1, 1)) * Rkm;
-          const w = dm.exp(-km / means.farKm) * dm.exp(-Math.abs(env.T[a] - env.T[b]) / 6 - Math.abs(dm.log((env.P[a] + 50) / (env.P[b] + 50))));
-          if (w > bw) { bw = w; best = b; }
+          const wa = dm.exp(-dm.acos(dm.clamp(cos, -1, 1)) * Rkm / means.farKm - Math.abs(env.T[a] - env.T[b]) / 6 - Math.abs(dm.log((env.P[a] + 50) / (env.P[b] + 50))));
+          if (wa > w) w = wa;
         }
-        if (best >= 0 && rng.next() < bw) add.push([best, this.realmNext++]);
+        if (rng.next() < w) add.push([b, this.realmNext++]);
       }
     }
     if (fliers && rng.next() < dt * 0.5) {
@@ -242,11 +261,11 @@ export class LifeMap {
     // (the first plants: spores, slow over the ground (they need it wet) but light enough for
     // the wind to carry far over the sea; seeds: faster over the ground, nearer over the sea;
     // with animals carrying seeds, faster still)
-    const means = this.means = flora <= 1 ? { base: 0.4, rich: 0.6, sea: 0.05, reach: 6, far: 0.3, farKm: 4000 } : animals ? { base: 1.6, rich: 0.6, sea: 0.03, reach: 4, far: 0.1, farKm: 2500 } : { base: 0.9, rich: 0.6, sea: 0.02, reach: 3, far: 0.15, farKm: 2500 };
+    const means = this.means = flora <= 1 ? { base: 0.4, rich: 0.6, sea: 0.05, reach: 6, far: 40, farKm: 4000 } : animals ? { base: 1.6, rich: 0.6, sea: 0.03, reach: 4, far: 40, farKm: 3000 } : { base: 0.9, rich: 0.6, sea: 0.02, reach: 3, far: 40, farKm: 2500 };
     means.world = dm.clamp(H.usableLight ?? 1, 0.3, 1.5);
     for (let s = 0; s < dt - 1e-9; s += 0.5) this.spread(env, pot, Math.min(0.5, dt - s), fliers, means);
     for (let c = 0; c < n; c++) {
-      if (this.landed[c]) this.cover[c] = dm.clamp(pot.landPot[c], 0, 1);
+      if (this.landed[c]) this.cover[c] = pot.landCover[c];
       else { this.cover[c] = crust(c); this.forest[c] = 0; this.open[c] = 0; }
     }
     return this;
@@ -257,7 +276,7 @@ export class LifeMap {
     const { G, H } = this, n = G.n;
     const realmArea = new Map();
     for (let c = 0; c < n; c++) if (this.landed[c]) {
-      this.cover[c] = Math.max(this.cover[c], dm.clamp(pot.landPot[c], 0, 1));
+      this.cover[c] = Math.max(this.cover[c], pot.landCover[c]);
       realmArea.set(this.realm[c], (realmArea.get(this.realm[c]) || 0) + G.area[c]);
     }
     let total = 0;
