@@ -21,6 +21,28 @@ pixel-parity claim is made. Dave confirmed sole-agent work and no coordination m
    "suuuuper deep": you start out deep and go REALLY deep, deep enough that gravity changes on the way
    down (a shell's or a hollow world's own gravity: less the deeper you go?). Ideas first, for Dave to pick.
 
+## NOW: Earth from orbit: the haze and the coasts (session 39d69fa8, 2026-10-14, a5ee6ee, 9f38bca)
+
+Dave: "The orbital imagery shows grey-brown terrain under haze rather than green forests, with blocky
+coastline - needs fix. Remember light color of life is per planet."
+- Measured over Earth's dense forest (1 N 45.5 E) from 60 km straight down: as drawn (96,122,158),
+  without the ground haze (77,111,150), the lit ground alone (13,34,22). The ground is the world's own
+  foliage colour (P.veg, its pigments': #294d3e; the far canopy P.veg x0.8, x~0.67 for its unresolved
+  shadow, ~0.54 of a leaf's: a canopy's). The real air (Rayleigh 0.07, aerosols ~0.16 at green) over so
+  dark a canopy is about 1.7x its light, as on Earth over a tropical forest (~1x): right. The ground haze
+  (uHaze, the stand-in for distance the 1/64 world leaves out) was ~0.2 more straight down, grey-brown.
+- a5ee6ee: the haze by each view ray's horizontal part (atmosphere.js gHazeH, from the true-size up;
+  composite and near-volume marches): unchanged along the ground and on the limb, none looking down.
+- 9f38bca: the mesh's shore was where its vertices' signed heights crossed 0, hugging the land vertices
+  (a staircase of the grid from afar). Now found along each water-to-land edge (bisection, 3 halvings,
+  sampled and shaded as the vertices are) and held as each vertex's signed distance to it
+  (chunkbuilder.js shoreDistances, SHORE_R 4 spacings; the parent grid's too for the morph); the depth
+  near the shore from encodeWater, faded to none at the line. Coastal chunks ~10-20% slower to build.
+- Left: from full orbit (~170 km drawn) the colours inside the coast (the shallows' teal, the land's
+  patches) are only as fine as the coarsest chunks' vertices (km apart): blocky at that scale. Grid-cell
+  blocks in the far ground's colour along rivers (wetland pools?) and pale rectangles: per-cell fields.
+  The forests read teal-green from ~7 km drawn (clouds off); from full orbit dim under the real air.
+
 ## NOW: scenic shots of Earth, and a streaming stall fixed (session 39d69fa8, 2026-10-14, 2a73fcb)
 
 - Fixed: a terrain node near the camera whose stones came back empty (sand, snow, water) asked again
