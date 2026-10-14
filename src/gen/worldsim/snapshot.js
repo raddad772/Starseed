@@ -340,7 +340,17 @@ export class SnapshotSampler {
   // where the world keeps none (a snapshot before them, an airless world)
   soil(x, y, z) { const a = this.s.soil; return a ? SOIL_D0 * (dm.exp(this.G.sample(a, this._d(x, y, z), this.uv) / 255 * SOIL_LOG) - 1) : null; }
   wtd(x, y, z) { const a = this.s.wtd; return a ? WTD_D0 * (dm.exp(this.G.sample(a, this._d(x, y, z), this.uv) / 255 * WTD_LOG) - 1) : null; }
-  wetland(x, y, z) { const a = this.s.wetland; return a ? this.G.sample(a, this._d(x, y, z), this.uv) / 255 : 0; }
+  // (the cells' smooth blend, as meltSmooth: read bilinearly a wetland's edge ran along the cells, its pools
+  // stopping in straight lines and square corners seen from afar)
+  wetland(x, y, z) {
+    const a = this.s.wetland;
+    if (!a) return 0;
+    const c = this._c16 || (this._c16 = new Int32Array(16)), w = this._w16 || (this._w16 = new Float64Array(16));
+    this.G.corners16(this._d(x, y, z), c, w, this.uv);
+    let s = 0;
+    for (let k = 0; k < 16; k++) s += a[c[k]] * w[k];
+    return s / 255;
+  }
   ice(x, y, z) { return this.G.sample(this.s.ice, this._d(x, y, z), this.uv); }
   river(x, y, z) { return this.G.sample(this.s.river, this._d(x, y, z), this.uv) / 255; }
   melt(x, y, z) { return this.G.sample(this.s.melt, this._d(x, y, z), this.uv) / 255; }

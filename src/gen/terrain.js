@@ -1036,10 +1036,12 @@ export class TerrainGenerator {
     out[S_POOL] = 0;
     if (S.s.wetland && p.liquid === 'water' && this.wetNow && grainA > 0 && h > 0 && wl < h) {
       const wf = S.wetland(x, y, z);
-      if (wf > 0.2) {
+      if (wf > 0.02) {
         // (the level against the ground as it lies without its grain, whatever has moved it since: a lake's
-        // rim, a river's banks)
-        const pl = h - grainS - grainA * (1.2 - 1.2 * wf);
+        // rim, a river's banks; sinking toward the wetland's edge, so its pools thin out among the hummocks
+        // there: they had stopped where the wetland fell under a fifth, along the world sim's cells in
+        // straight lines hundreds of metres long)
+        const pl = h - grainS - grainA * (1.2 - 1.2 * wf + 3 * (1 - dm.smoothstep(0, 0.4, wf)));
         if (pl > h) out[S_POOL] = Math.min(1, (pl - h) / (0.3 * grainA));
       }
     }
