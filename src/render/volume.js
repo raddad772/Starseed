@@ -247,9 +247,12 @@ void main() {
       vec3 p = (t - tca) * D - perp;
       float r = length(p);
       float h = r - uRadius;
+      vec3 nT = trueUp(p, r, upC, kT);
+      // (the ground haze by the ray's horizontal part: atmosphere.js gHazeH)
+      float muV = dot(D, nT);
+      gHazeH = sqrt(max(0.0, 1.0 - muV * muV));
       vec3 sR, sM, e;
       mediumAt(r, sR, sM, e);
-      vec3 nT = trueUp(p, r, upC, kT);
       float muS = dot(nT, uSunDir);
       vec3 ext = e;
       float tauAbove = 0.0, tauBelow = 0.0, tlS = 0.0;

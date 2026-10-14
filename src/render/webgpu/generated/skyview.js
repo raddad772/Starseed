@@ -284,6 +284,7 @@ var tMSTexture: texture_2d<f32>;
 var tMSSampler: sampler;
 var<private> fragmentColor: vec4<f32>;
 var<private> gHazeK: f32 = 1f;
+var<private> gHazeH: f32 = 1f;
 var<private> gAirSun: f32 = 1f;
 var<private> vUv_1: vec2<f32>;
 
@@ -424,63 +425,64 @@ fn mediumAt(r_4: f32, scatR: ptr<function, vec3<f32>>, scatM: ptr<function, vec3
     var dH: vec3<f32>;
 
     r_5 = r_4;
-    let _e61 = r_5;
-    let _e62 = global.uRadius;
-    h = (_e61 - _e62);
-    let _e65 = h;
-    let _e66 = global.uKnee;
-    if (_e65 <= _e66) {
-        let _e68 = h;
-        local_1 = _e68;
+    let _e62 = r_5;
+    let _e63 = global.uRadius;
+    h = (_e62 - _e63);
+    let _e66 = h;
+    let _e67 = global.uKnee;
+    if (_e66 <= _e67) {
+        let _e69 = h;
+        local_1 = _e69;
     } else {
-        let _e69 = global.uKnee;
-        let _e70 = h;
-        let _e71 = global.uKnee;
-        let _e73 = global.uUpper;
-        local_1 = (_e69 + ((_e70 - _e71) / _e73));
+        let _e70 = global.uKnee;
+        let _e71 = h;
+        let _e72 = global.uKnee;
+        let _e74 = global.uUpper;
+        local_1 = (_e70 + ((_e71 - _e72) / _e74));
     }
-    let _e77 = local_1;
-    hr = _e77;
-    let _e79 = hr;
-    let _e81 = global.uRayleighH;
-    dR = exp((-(_e79) / _e81));
-    let _e85 = hr;
-    let _e87 = global.uMieH;
-    dM = exp((-(_e85) / _e87));
-    let _e91 = global.uAbsExp;
-    if (_e91 > 0.5f) {
-        let _e94 = dR;
-        local_2 = _e94;
+    let _e78 = local_1;
+    hr = _e78;
+    let _e80 = hr;
+    let _e82 = global.uRayleighH;
+    dR = exp((-(_e80) / _e82));
+    let _e86 = hr;
+    let _e88 = global.uMieH;
+    dM = exp((-(_e86) / _e88));
+    let _e92 = global.uAbsExp;
+    if (_e92 > 0.5f) {
+        let _e95 = dR;
+        local_2 = _e95;
     } else {
-        let _e97 = h;
-        let _e98 = global.uAbsCenter;
-        let _e101 = global.uAbsWidth;
-        local_2 = max(0f, (1f - (abs((_e97 - _e98)) / max(_e101, 1f))));
+        let _e98 = h;
+        let _e99 = global.uAbsCenter;
+        let _e102 = global.uAbsWidth;
+        local_2 = max(0f, (1f - (abs((_e98 - _e99)) / max(_e102, 1f))));
     }
-    let _e108 = local_2;
-    dA = _e108;
-    let _e110 = global.uHaze;
-    let _e112 = gHazeK;
-    let _e114 = h;
-    let _e118 = global.uHaze;
-    let _e125 = global.uHazeCol;
-    dH = (((_e110.x * _e112) * exp((-(max(_e114, 0f)) / max(_e118.y, 1f)))) * _e125);
-    let _e128 = global.uRayleigh;
-    let _e129 = dR;
-    (*scatR) = (_e128 * _e129);
-    let _e131 = global.uMie;
-    let _e132 = dM;
-    let _e134 = dH;
-    (*scatM) = ((_e131 * _e132) + _e134);
-    let _e136 = (*scatR);
-    let _e137 = (*scatM);
-    let _e139 = global.uMieAbs;
-    let _e140 = dM;
-    let _e143 = global.uAbs;
-    let _e144 = dA;
-    let _e147 = dH;
-    let _e148 = global.uHaze;
-    (*ext) = ((((_e136 + _e137) + (_e139 * _e140)) + (_e143 * _e144)) + (_e147 * _e148.z));
+    let _e109 = local_2;
+    dA = _e109;
+    let _e111 = global.uHaze;
+    let _e113 = gHazeK;
+    let _e115 = gHazeH;
+    let _e117 = h;
+    let _e121 = global.uHaze;
+    let _e128 = global.uHazeCol;
+    dH = ((((_e111.x * _e113) * _e115) * exp((-(max(_e117, 0f)) / max(_e121.y, 1f)))) * _e128);
+    let _e131 = global.uRayleigh;
+    let _e132 = dR;
+    (*scatR) = (_e131 * _e132);
+    let _e134 = global.uMie;
+    let _e135 = dM;
+    let _e137 = dH;
+    (*scatM) = ((_e134 * _e135) + _e137);
+    let _e139 = (*scatR);
+    let _e140 = (*scatM);
+    let _e142 = global.uMieAbs;
+    let _e143 = dM;
+    let _e146 = global.uAbs;
+    let _e147 = dA;
+    let _e150 = dH;
+    let _e151 = global.uHaze;
+    (*ext) = ((((_e139 + _e140) + (_e142 * _e143)) + (_e146 * _e147)) + (_e150 * _e151.z));
     return;
 }
 
@@ -489,20 +491,20 @@ fn realH(h_1: f32) -> f32 {
     var local_3: f32;
 
     h_2 = h_1;
-    let _e58 = h_2;
-    let _e59 = global.uKnee;
-    if (_e58 <= _e59) {
-        let _e61 = h_2;
-        local_3 = _e61;
+    let _e59 = h_2;
+    let _e60 = global.uKnee;
+    if (_e59 <= _e60) {
+        let _e62 = h_2;
+        local_3 = _e62;
     } else {
-        let _e62 = global.uKnee;
-        let _e63 = h_2;
-        let _e64 = global.uKnee;
-        let _e66 = global.uUpper;
-        local_3 = (_e62 + ((_e63 - _e64) / _e66));
+        let _e63 = global.uKnee;
+        let _e64 = h_2;
+        let _e65 = global.uKnee;
+        let _e67 = global.uUpper;
+        local_3 = (_e63 + ((_e64 - _e65) / _e67));
     }
-    let _e70 = local_3;
-    return _e70;
+    let _e71 = local_3;
+    return _e71;
 }
 
 fn drawnH(hr_1: f32) -> f32 {
@@ -510,20 +512,20 @@ fn drawnH(hr_1: f32) -> f32 {
     var local_4: f32;
 
     hr_2 = hr_1;
-    let _e58 = hr_2;
-    let _e59 = global.uKnee;
-    if (_e58 <= _e59) {
-        let _e61 = hr_2;
-        local_4 = _e61;
+    let _e59 = hr_2;
+    let _e60 = global.uKnee;
+    if (_e59 <= _e60) {
+        let _e62 = hr_2;
+        local_4 = _e62;
     } else {
-        let _e62 = global.uKnee;
-        let _e63 = hr_2;
-        let _e64 = global.uKnee;
-        let _e66 = global.uUpper;
-        local_4 = (_e62 + ((_e63 - _e64) * _e66));
+        let _e63 = global.uKnee;
+        let _e64 = hr_2;
+        let _e65 = global.uKnee;
+        let _e67 = global.uUpper;
+        local_4 = (_e63 + ((_e64 - _e65) * _e67));
     }
-    let _e70 = local_4;
-    return _e70;
+    let _e71 = local_4;
+    return _e71;
 }
 
 fn mediumAtReal(hr_3: f32, scatR_1: ptr<function, vec3<f32>>, scatM_1: ptr<function, vec3<f32>>, ext_1: ptr<function, vec3<f32>>) {
@@ -536,49 +538,49 @@ fn mediumAtReal(hr_3: f32, scatR_1: ptr<function, vec3<f32>>, scatM_1: ptr<funct
     var dH_1: vec3<f32>;
 
     hr_4 = hr_3;
-    let _e61 = hr_4;
-    let _e62 = drawnH(_e61);
-    h_3 = _e62;
-    let _e64 = hr_4;
-    let _e66 = global.uRayleighH;
-    dR_1 = exp((-(_e64) / _e66));
-    let _e70 = hr_4;
-    let _e72 = global.uMieH;
-    dM_1 = exp((-(_e70) / _e72));
-    let _e76 = global.uAbsExp;
-    if (_e76 > 0.5f) {
-        let _e79 = dR_1;
-        local_5 = _e79;
+    let _e62 = hr_4;
+    let _e63 = drawnH(_e62);
+    h_3 = _e63;
+    let _e65 = hr_4;
+    let _e67 = global.uRayleighH;
+    dR_1 = exp((-(_e65) / _e67));
+    let _e71 = hr_4;
+    let _e73 = global.uMieH;
+    dM_1 = exp((-(_e71) / _e73));
+    let _e77 = global.uAbsExp;
+    if (_e77 > 0.5f) {
+        let _e80 = dR_1;
+        local_5 = _e80;
     } else {
-        let _e82 = h_3;
-        let _e83 = global.uAbsCenter;
-        let _e86 = global.uAbsWidth;
-        local_5 = max(0f, (1f - (abs((_e82 - _e83)) / max(_e86, 1f))));
+        let _e83 = h_3;
+        let _e84 = global.uAbsCenter;
+        let _e87 = global.uAbsWidth;
+        local_5 = max(0f, (1f - (abs((_e83 - _e84)) / max(_e87, 1f))));
     }
-    let _e93 = local_5;
-    dA_1 = _e93;
-    let _e95 = global.uHaze;
-    let _e97 = gHazeK;
-    let _e99 = hr_4;
-    let _e103 = global.uHaze;
-    let _e110 = global.uHazeCol;
-    dH_1 = (((_e95.x * _e97) * exp((-(max(_e99, 0f)) / max(_e103.y, 1f)))) * _e110);
-    let _e113 = global.uRayleigh;
-    let _e114 = dR_1;
-    (*scatR_1) = (_e113 * _e114);
-    let _e116 = global.uMie;
-    let _e117 = dM_1;
-    let _e119 = dH_1;
-    (*scatM_1) = ((_e116 * _e117) + _e119);
-    let _e121 = (*scatR_1);
-    let _e122 = (*scatM_1);
-    let _e124 = global.uMieAbs;
-    let _e125 = dM_1;
-    let _e128 = global.uAbs;
-    let _e129 = dA_1;
-    let _e132 = dH_1;
-    let _e133 = global.uHaze;
-    (*ext_1) = ((((_e121 + _e122) + (_e124 * _e125)) + (_e128 * _e129)) + (_e132 * _e133.z));
+    let _e94 = local_5;
+    dA_1 = _e94;
+    let _e96 = global.uHaze;
+    let _e98 = gHazeK;
+    let _e100 = hr_4;
+    let _e104 = global.uHaze;
+    let _e111 = global.uHazeCol;
+    dH_1 = (((_e96.x * _e98) * exp((-(max(_e100, 0f)) / max(_e104.y, 1f)))) * _e111);
+    let _e114 = global.uRayleigh;
+    let _e115 = dR_1;
+    (*scatR_1) = (_e114 * _e115);
+    let _e117 = global.uMie;
+    let _e118 = dM_1;
+    let _e120 = dH_1;
+    (*scatM_1) = ((_e117 * _e118) + _e120);
+    let _e122 = (*scatR_1);
+    let _e123 = (*scatM_1);
+    let _e125 = global.uMieAbs;
+    let _e126 = dM_1;
+    let _e129 = global.uAbs;
+    let _e130 = dA_1;
+    let _e133 = dH_1;
+    let _e134 = global.uHaze;
+    (*ext_1) = ((((_e122 + _e123) + (_e125 * _e126)) + (_e129 * _e130)) + (_e133 * _e134.z));
     return;
 }
 
@@ -586,9 +588,9 @@ fn phaseRayleigh(c: f32) -> f32 {
     var c_1: f32;
 
     c_1 = c;
-    let _e64 = c_1;
     let _e65 = c_1;
-    return (0.059683103f * (1f + (_e64 * _e65)));
+    let _e66 = c_1;
+    return (0.059683103f * (1f + (_e65 * _e66)));
 }
 
 fn phaseCS(c_2: f32, g: f32) -> f32 {
@@ -598,17 +600,17 @@ fn phaseCS(c_2: f32, g: f32) -> f32 {
 
     c_3 = c_2;
     g_1 = g;
-    let _e60 = g_1;
     let _e61 = g_1;
-    g2_ = (_e60 * _e61);
-    let _e70 = g2_;
-    let _e73 = c_3;
+    let _e62 = g_1;
+    g2_ = (_e61 * _e62);
+    let _e71 = g2_;
     let _e74 = c_3;
-    let _e80 = g2_;
-    let _e83 = g2_;
-    let _e86 = g_1;
-    let _e88 = c_3;
-    return ((0.119366206f * ((1f - _e70) * (1f + (_e73 * _e74)))) / ((2f + _e80) * pow(max(((1f + _e83) - ((2f * _e86) * _e88)), 0.0001f), 1.5f)));
+    let _e75 = c_3;
+    let _e81 = g2_;
+    let _e84 = g2_;
+    let _e87 = g_1;
+    let _e89 = c_3;
+    return ((0.119366206f * ((1f - _e71) * (1f + (_e74 * _e75)))) / ((2f + _e81) * pow(max(((1f + _e84) - ((2f * _e87) * _e89)), 0.0001f), 1.5f)));
 }
 
 fn phaseHG(c_4: f32, g_2: f32) -> f32 {
@@ -617,39 +619,39 @@ fn phaseHG(c_4: f32, g_2: f32) -> f32 {
 
     c_5 = c_4;
     g_3 = g_2;
-    let _e61 = g_3;
     let _e62 = g_3;
-    let _e69 = g_3;
+    let _e63 = g_3;
     let _e70 = g_3;
-    let _e74 = g_3;
-    let _e76 = c_5;
-    return ((1f - (_e61 * _e62)) / (12.566371f * pow(max(((1f + (_e69 * _e70)) - ((2f * _e74) * _e76)), 0.000001f), 1.5f)));
+    let _e71 = g_3;
+    let _e75 = g_3;
+    let _e77 = c_5;
+    return ((1f - (_e62 * _e63)) / (12.566371f * pow(max(((1f + (_e70 * _e71)) - ((2f * _e75) * _e77)), 0.000001f), 1.5f)));
 }
 
 fn phaseMie(c_6: f32) -> vec3<f32> {
     var c_7: f32;
 
     c_7 = c_6;
-    let _e58 = c_7;
-    let _e59 = global.uMieG;
-    let _e61 = phaseCS(_e58, _e59.x);
-    let _e62 = c_7;
-    let _e63 = global.uMieG;
-    let _e65 = phaseCS(_e62, _e63.y);
-    let _e66 = c_7;
-    let _e67 = global.uMieG;
-    let _e69 = phaseCS(_e66, _e67.z);
-    let _e71 = c_7;
-    let _e72 = global.uMieGL;
-    let _e74 = phaseHG(_e71, _e72.x);
-    let _e75 = c_7;
-    let _e76 = global.uMieGL;
-    let _e78 = phaseHG(_e75, _e76.y);
-    let _e79 = c_7;
-    let _e80 = global.uMieGL;
-    let _e82 = phaseHG(_e79, _e80.z);
-    let _e84 = global.uMieF;
-    return mix(vec3<f32>(_e61, _e65, _e69), vec3<f32>(_e74, _e78, _e82), _e84);
+    let _e59 = c_7;
+    let _e60 = global.uMieG;
+    let _e62 = phaseCS(_e59, _e60.x);
+    let _e63 = c_7;
+    let _e64 = global.uMieG;
+    let _e66 = phaseCS(_e63, _e64.y);
+    let _e67 = c_7;
+    let _e68 = global.uMieG;
+    let _e70 = phaseCS(_e67, _e68.z);
+    let _e72 = c_7;
+    let _e73 = global.uMieGL;
+    let _e75 = phaseHG(_e72, _e73.x);
+    let _e76 = c_7;
+    let _e77 = global.uMieGL;
+    let _e79 = phaseHG(_e76, _e77.y);
+    let _e80 = c_7;
+    let _e81 = global.uMieGL;
+    let _e83 = phaseHG(_e80, _e81.z);
+    let _e85 = global.uMieF;
+    return mix(vec3<f32>(_e62, _e66, _e70), vec3<f32>(_e75, _e79, _e83), _e85);
 }
 
 fn distToTop(r_6: f32, mu_4: f32) -> f32 {
@@ -659,17 +661,17 @@ fn distToTop(r_6: f32, mu_4: f32) -> f32 {
 
     r_7 = r_6;
     mu_5 = mu_4;
-    let _e60 = r_7;
     let _e61 = r_7;
-    let _e63 = mu_5;
+    let _e62 = r_7;
     let _e64 = mu_5;
-    let _e69 = global.uTop;
+    let _e65 = mu_5;
     let _e70 = global.uTop;
-    disc_1 = (((_e60 * _e61) * ((_e63 * _e64) - 1f)) + (_e69 * _e70));
-    let _e75 = r_7;
-    let _e77 = mu_5;
-    let _e79 = disc_1;
-    return max(0f, ((-(_e75) * _e77) + sqrt(max(_e79, 0f))));
+    let _e71 = global.uTop;
+    disc_1 = (((_e61 * _e62) * ((_e64 * _e65) - 1f)) + (_e70 * _e71));
+    let _e76 = r_7;
+    let _e78 = mu_5;
+    let _e80 = disc_1;
+    return max(0f, ((-(_e76) * _e78) + sqrt(max(_e80, 0f))));
 }
 
 fn hitsGround(r_8: f32, mu_6: f32, gr: f32) -> bool {
@@ -680,14 +682,14 @@ fn hitsGround(r_8: f32, mu_6: f32, gr: f32) -> bool {
     r_9 = r_8;
     mu_7 = mu_6;
     gr_1 = gr;
-    let _e62 = mu_7;
-    let _e65 = r_9;
+    let _e63 = mu_7;
     let _e66 = r_9;
-    let _e68 = mu_7;
+    let _e67 = r_9;
     let _e69 = mu_7;
-    let _e74 = gr_1;
+    let _e70 = mu_7;
     let _e75 = gr_1;
-    return ((_e62 < 0f) && ((((_e65 * _e66) * ((_e68 * _e69) - 1f)) + (_e74 * _e75)) >= 0f));
+    let _e76 = gr_1;
+    return ((_e63 < 0f) && ((((_e66 * _e67) * ((_e69 * _e70) - 1f)) + (_e75 * _e76)) >= 0f));
 }
 
 fn transmittanceToTop(r_10: f32, mu_8: f32) -> vec3<f32> {
@@ -697,17 +699,17 @@ fn transmittanceToTop(r_10: f32, mu_8: f32) -> vec3<f32> {
 
     r_11 = r_10;
     mu_9 = mu_8;
-    let _e60 = r_11;
-    let _e61 = global.uBottom;
-    let _e62 = global.uTop;
-    let _e64 = mu_9;
-    let _e65 = transmittanceUV(clamp(_e60, _e61, _e62), _e64);
-    uv = _e65;
-    let _e74 = uv;
-    uv = (vec2<f32>(0.001953125f, 0.0078125f) + (_e74 * vec2<f32>(0.99609375f, 0.984375f)));
-    let _e84 = uv;
-    let _e86 = textureSampleLevel(tTransTexture, tTransSampler, _e84, 0f);
-    return _e86.xyz;
+    let _e61 = r_11;
+    let _e62 = global.uBottom;
+    let _e63 = global.uTop;
+    let _e65 = mu_9;
+    let _e66 = transmittanceUV(clamp(_e61, _e62, _e63), _e65);
+    uv = _e66;
+    let _e75 = uv;
+    uv = (vec2<f32>(0.001953125f, 0.0078125f) + (_e75 * vec2<f32>(0.99609375f, 0.984375f)));
+    let _e85 = uv;
+    let _e87 = textureSampleLevel(tTransTexture, tTransSampler, _e85, 0f);
+    return _e87.xyz;
 }
 
 fn sunTransmittance(r_12: f32, mu_10: f32) -> vec3<f32> {
@@ -720,29 +722,29 @@ fn sunTransmittance(r_12: f32, mu_10: f32) -> vec3<f32> {
 
     r_13 = r_12;
     mu_11 = mu_10;
-    let _e60 = mu_11;
-    let _e61 = liftMu(_e60);
-    mu_11 = _e61;
-    let _e62 = global.uGround;
-    let _e63 = global.uTrueK;
-    Rg = (_e62 * max(_e63, 1f));
-    let _e68 = Rg;
+    let _e61 = mu_11;
+    let _e62 = liftMu(_e61);
+    mu_11 = _e62;
+    let _e63 = global.uGround;
+    let _e64 = global.uTrueK;
+    Rg = (_e63 * max(_e64, 1f));
     let _e69 = Rg;
-    let _e70 = r_13;
-    let _e71 = global.uGround;
-    sinH = (_e68 / (_e69 + max((_e70 - _e71), 0f)));
-    let _e80 = sinH;
+    let _e70 = Rg;
+    let _e71 = r_13;
+    let _e72 = global.uGround;
+    sinH = (_e69 / (_e70 + max((_e71 - _e72), 0f)));
     let _e81 = sinH;
-    cosH = -(sqrt(max(0f, (1f - (_e80 * _e81)))));
-    let _e88 = cosH;
-    let _e91 = cosH;
-    let _e94 = mu_11;
-    vis = smoothstep((_e88 - 0.004f), (_e91 + 0.004f), _e94);
-    let _e97 = r_13;
-    let _e98 = mu_11;
-    let _e99 = transmittanceToTop(_e97, _e98);
-    let _e100 = vis;
-    return (_e99 * _e100);
+    let _e82 = sinH;
+    cosH = -(sqrt(max(0f, (1f - (_e81 * _e82)))));
+    let _e89 = cosH;
+    let _e92 = cosH;
+    let _e95 = mu_11;
+    vis = smoothstep((_e89 - 0.004f), (_e92 + 0.004f), _e95);
+    let _e98 = r_13;
+    let _e99 = mu_11;
+    let _e100 = transmittanceToTop(_e98, _e99);
+    let _e101 = vis;
+    return (_e100 * _e101);
 }
 
 fn sunAtTrue(rK: f32, Rk: f32, mu_12: f32) -> vec3<f32> {
@@ -757,32 +759,32 @@ fn sunAtTrue(rK: f32, Rk: f32, mu_12: f32) -> vec3<f32> {
     rK_1 = rK;
     Rk_1 = Rk;
     mu_13 = mu_12;
-    let _e62 = global.uRadius;
-    let _e63 = rK_1;
-    let _e64 = Rk_1;
-    let _e66 = drawnH((_e63 - _e64));
-    rD = (_e62 + _e66);
-    let _e69 = Rk_1;
-    let _e70 = global.uGround;
-    let _e71 = global.uRadius;
-    let _e73 = realH((_e70 - _e71));
-    gK = (_e69 + _e73);
-    let _e76 = gK;
-    let _e77 = rK_1;
-    let _e78 = gK;
-    sinH_1 = (_e76 / max(_e77, _e78));
-    let _e84 = sinH_1;
+    let _e63 = global.uRadius;
+    let _e64 = rK_1;
+    let _e65 = Rk_1;
+    let _e67 = drawnH((_e64 - _e65));
+    rD = (_e63 + _e67);
+    let _e70 = Rk_1;
+    let _e71 = global.uGround;
+    let _e72 = global.uRadius;
+    let _e74 = realH((_e71 - _e72));
+    gK = (_e70 + _e74);
+    let _e77 = gK;
+    let _e78 = rK_1;
+    let _e79 = gK;
+    sinH_1 = (_e77 / max(_e78, _e79));
     let _e85 = sinH_1;
-    cosH_1 = -(sqrt(max(0f, (1f - (_e84 * _e85)))));
-    let _e92 = rD;
-    let _e93 = global.uBottom;
-    let _e94 = global.uTop;
-    let _e96 = mu_13;
-    let _e97 = transmittanceToTop(clamp(_e92, _e93, _e94), _e96);
-    let _e98 = cosH_1;
-    let _e101 = cosH_1;
-    let _e104 = mu_13;
-    return (_e97 * smoothstep((_e98 - 0.004f), (_e101 + 0.004f), _e104));
+    let _e86 = sinH_1;
+    cosH_1 = -(sqrt(max(0f, (1f - (_e85 * _e86)))));
+    let _e93 = rD;
+    let _e94 = global.uBottom;
+    let _e95 = global.uTop;
+    let _e97 = mu_13;
+    let _e98 = transmittanceToTop(clamp(_e93, _e94, _e95), _e97);
+    let _e99 = cosH_1;
+    let _e102 = cosH_1;
+    let _e105 = mu_13;
+    return (_e98 * smoothstep((_e99 - 0.004f), (_e102 + 0.004f), _e105));
 }
 
 fn multiScatterAt(r_14: f32, muT: f32) -> vec3<f32> {
@@ -792,19 +794,19 @@ fn multiScatterAt(r_14: f32, muT: f32) -> vec3<f32> {
 
     r_15 = r_14;
     muT_1 = muT;
-    let _e60 = muT_1;
-    let _e65 = r_15;
-    let _e66 = global.uBottom;
-    let _e68 = global.uTop;
-    let _e69 = global.uBottom;
-    uv_1 = vec2<f32>(((_e60 * 0.5f) + 0.5f), ((_e65 - _e66) / (_e68 - _e69)));
-    let _e74 = uv_1;
-    uv_1 = clamp(_e74, vec2(0f), vec2(1f));
-    let _e84 = uv_1;
-    uv_1 = (vec2(0.015625f) + (_e84 * 0.96875f));
-    let _e90 = uv_1;
-    let _e92 = textureSampleLevel(tMSTexture, tMSSampler, _e90, 0f);
-    return _e92.xyz;
+    let _e61 = muT_1;
+    let _e66 = r_15;
+    let _e67 = global.uBottom;
+    let _e69 = global.uTop;
+    let _e70 = global.uBottom;
+    uv_1 = vec2<f32>(((_e61 * 0.5f) + 0.5f), ((_e66 - _e67) / (_e69 - _e70)));
+    let _e75 = uv_1;
+    uv_1 = clamp(_e75, vec2(0f), vec2(1f));
+    let _e85 = uv_1;
+    uv_1 = (vec2(0.015625f) + (_e85 * 0.96875f));
+    let _e91 = uv_1;
+    let _e93 = textureSampleLevel(tMSTexture, tMSSampler, _e91, 0f);
+    return _e93.xyz;
 }
 
 fn multiScatter(r_16: f32, muS: f32) -> vec3<f32> {
@@ -813,11 +815,11 @@ fn multiScatter(r_16: f32, muS: f32) -> vec3<f32> {
 
     r_17 = r_16;
     muS_1 = muS;
-    let _e60 = r_17;
-    let _e61 = muS_1;
-    let _e62 = liftMu(_e61);
-    let _e63 = multiScatterAt(_e60, _e62);
-    return _e63;
+    let _e61 = r_17;
+    let _e62 = muS_1;
+    let _e63 = liftMu(_e62);
+    let _e64 = multiScatterAt(_e61, _e63);
+    return _e64;
 }
 
 fn exitSphere(p_2: vec3<f32>, d_1: vec3<f32>, rr: f32) -> f32 {
@@ -832,28 +834,28 @@ fn exitSphere(p_2: vec3<f32>, d_1: vec3<f32>, rr: f32) -> f32 {
     p_3 = p_2;
     d_2 = d_1;
     rr_1 = rr;
-    let _e63 = p_3;
-    let _e64 = d_2;
-    b = dot(_e63, _e64);
-    let _e67 = p_3;
+    let _e64 = p_3;
+    let _e65 = d_2;
+    b = dot(_e64, _e65);
     let _e68 = p_3;
-    let _e70 = rr_1;
+    let _e69 = p_3;
     let _e71 = rr_1;
-    c_8 = (dot(_e67, _e68) - (_e70 * _e71));
-    let _e75 = b;
+    let _e72 = rr_1;
+    c_8 = (dot(_e68, _e69) - (_e71 * _e72));
     let _e76 = b;
-    let _e78 = c_8;
-    q = ((_e75 * _e76) - _e78);
-    let _e81 = q;
-    if (_e81 < 0f) {
+    let _e77 = b;
+    let _e79 = c_8;
+    q = ((_e76 * _e77) - _e79);
+    let _e82 = q;
+    if (_e82 < 0f) {
         local_6 = -1f;
     } else {
-        let _e86 = b;
-        let _e88 = q;
-        local_6 = (-(_e86) + sqrt(_e88));
+        let _e87 = b;
+        let _e89 = q;
+        local_6 = (-(_e87) + sqrt(_e89));
     }
-    let _e92 = local_6;
-    return _e92;
+    let _e93 = local_6;
+    return _e93;
 }
 
 fn hitSphere(p_4: vec3<f32>, d_3: vec3<f32>, rr_2: f32) -> f32 {
@@ -869,34 +871,34 @@ fn hitSphere(p_4: vec3<f32>, d_3: vec3<f32>, rr_2: f32) -> f32 {
     p_5 = p_4;
     d_4 = d_3;
     rr_3 = rr_2;
-    let _e63 = p_5;
-    let _e64 = d_4;
-    b_1 = dot(_e63, _e64);
-    let _e67 = p_5;
+    let _e64 = p_5;
+    let _e65 = d_4;
+    b_1 = dot(_e64, _e65);
     let _e68 = p_5;
-    let _e70 = rr_3;
+    let _e69 = p_5;
     let _e71 = rr_3;
-    c_9 = (dot(_e67, _e68) - (_e70 * _e71));
-    let _e75 = b_1;
+    let _e72 = rr_3;
+    c_9 = (dot(_e68, _e69) - (_e71 * _e72));
     let _e76 = b_1;
-    let _e78 = c_9;
-    q_1 = ((_e75 * _e76) - _e78);
-    let _e81 = q_1;
-    if (_e81 < 0f) {
+    let _e77 = b_1;
+    let _e79 = c_9;
+    q_1 = ((_e76 * _e77) - _e79);
+    let _e82 = q_1;
+    if (_e82 < 0f) {
         return -1f;
     }
-    let _e86 = b_1;
-    let _e88 = q_1;
-    t = (-(_e86) - sqrt(_e88));
-    let _e92 = t;
-    if (_e92 > 0f) {
-        let _e95 = t;
-        local_7 = _e95;
+    let _e87 = b_1;
+    let _e89 = q_1;
+    t = (-(_e87) - sqrt(_e89));
+    let _e93 = t;
+    if (_e93 > 0f) {
+        let _e96 = t;
+        local_7 = _e96;
     } else {
         local_7 = -1f;
     }
-    let _e99 = local_7;
-    return _e99;
+    let _e100 = local_7;
+    return _e100;
 }
 
 fn main_1() {
@@ -937,166 +939,166 @@ fn main_1() {
     var ms: vec3<f32>;
     var S: vec3<f32>;
 
-    let _e57 = vUv_1;
-    v = ((_e57.y * 2f) - 1f);
-    let _e64 = v;
-    let _e66 = v;
-    let _e68 = v;
-    el = (((sign(_e64) * _e66) * _e68) * 1.5707963f);
-    let _e73 = vUv_1;
-    az = (_e73.x * 3.1415927f);
-    let _e78 = el;
-    let _e80 = az;
-    let _e83 = el;
-    let _e85 = el;
-    let _e87 = az;
-    D = vec3<f32>((cos(_e78) * cos(_e80)), sin(_e83), (cos(_e85) * sin(_e87)));
-    let _e94 = global.uSunMu;
+    let _e58 = vUv_1;
+    v = ((_e58.y * 2f) - 1f);
+    let _e65 = v;
+    let _e67 = v;
+    let _e69 = v;
+    el = (((sign(_e65) * _e67) * _e69) * 1.5707963f);
+    let _e74 = vUv_1;
+    az = (_e74.x * 3.1415927f);
+    let _e79 = el;
+    let _e81 = az;
+    let _e84 = el;
+    let _e86 = el;
+    let _e88 = az;
+    D = vec3<f32>((cos(_e79) * cos(_e81)), sin(_e84), (cos(_e86) * sin(_e88)));
     let _e95 = global.uSunMu;
-    let _e100 = global.uSunMu;
-    sun = vec3<f32>(sqrt(max(0f, (1f - (_e94 * _e95)))), _e100, 0f);
-    let _e104 = global.uTrueK;
-    K = max(_e104, 1f);
-    let _e108 = global.uRadius;
-    let _e109 = K;
-    Rt = (_e108 * _e109);
-    let _e112 = global.uGround;
-    let _e113 = global.uRadius;
-    grH = (_e112 - _e113);
-    let _e116 = Rt;
-    let _e117 = grH;
-    Rg_1 = (_e116 + _e117);
-    let _e121 = Rt;
-    let _e122 = global.uCamH;
-    let _e123 = realH(_e122);
-    cT = vec3<f32>(0f, (_e121 + _e123), 0f);
-    let _e128 = cT;
-    let _e129 = D;
-    let _e130 = Rt;
-    let _e131 = global.uTop;
-    let _e132 = global.uRadius;
-    let _e134 = realH((_e131 - _e132));
-    let _e136 = exitSphere(_e128, _e129, (_e130 + _e134));
-    sT = _e136;
-    let _e138 = cT;
-    let _e139 = D;
-    let _e140 = Rg_1;
-    let _e141 = hitSphere(_e138, _e139, _e140);
-    gT = _e141;
-    let _e143 = gT;
-    if (_e143 > 0f) {
-        let _e146 = sT;
-        let _e147 = gT;
-        sT = min(_e146, _e147);
+    let _e96 = global.uSunMu;
+    let _e101 = global.uSunMu;
+    sun = vec3<f32>(sqrt(max(0f, (1f - (_e95 * _e96)))), _e101, 0f);
+    let _e105 = global.uTrueK;
+    K = max(_e105, 1f);
+    let _e109 = global.uRadius;
+    let _e110 = K;
+    Rt = (_e109 * _e110);
+    let _e113 = global.uGround;
+    let _e114 = global.uRadius;
+    grH = (_e113 - _e114);
+    let _e117 = Rt;
+    let _e118 = grH;
+    Rg_1 = (_e117 + _e118);
+    let _e122 = Rt;
+    let _e123 = global.uCamH;
+    let _e124 = realH(_e123);
+    cT = vec3<f32>(0f, (_e122 + _e124), 0f);
+    let _e129 = cT;
+    let _e130 = D;
+    let _e131 = Rt;
+    let _e132 = global.uTop;
+    let _e133 = global.uRadius;
+    let _e135 = realH((_e132 - _e133));
+    let _e137 = exitSphere(_e129, _e130, (_e131 + _e135));
+    sT = _e137;
+    let _e139 = cT;
+    let _e140 = D;
+    let _e141 = Rg_1;
+    let _e142 = hitSphere(_e139, _e140, _e141);
+    gT = _e142;
+    let _e144 = gT;
+    if (_e144 > 0f) {
+        let _e147 = sT;
+        let _e148 = gT;
+        sT = min(_e147, _e148);
     }
-    let _e149 = sT;
-    if !((_e149 > 1f)) {
+    let _e150 = sT;
+    if !((_e150 > 1f)) {
         {
             fragmentColor = vec4<f32>(0f, 0f, 0f, 1f);
             return;
         }
     }
-    let _e158 = D;
-    let _e159 = sun;
-    cosT = dot(_e158, _e159);
-    let _e162 = cosT;
-    let _e163 = phaseRayleigh(_e162);
-    pR = _e163;
-    let _e165 = cosT;
-    let _e166 = phaseMie(_e165);
-    pM = _e166;
+    let _e159 = D;
+    let _e160 = sun;
+    cosT = dot(_e159, _e160);
+    let _e163 = cosT;
+    let _e164 = phaseRayleigh(_e163);
+    pR = _e164;
+    let _e166 = cosT;
+    let _e167 = phaseMie(_e166);
+    pM = _e167;
     loop {
-        let _e178 = i;
-        let _e179 = N;
-        if !((_e178 < _e179)) {
+        let _e179 = i;
+        let _e180 = N;
+        if !((_e179 < _e180)) {
             break;
         }
         {
-            let _e185 = i;
-            let _e187 = N;
-            u0_ = (f32(_e185) / f32(_e187));
-            let _e191 = i;
-            let _e195 = N;
-            u1_ = (f32((_e191 + 1i)) / f32(_e195));
-            let _e199 = sT;
-            let _e200 = u0_;
+            let _e186 = i;
+            let _e188 = N;
+            u0_ = (f32(_e186) / f32(_e188));
+            let _e192 = i;
+            let _e196 = N;
+            u1_ = (f32((_e192 + 1i)) / f32(_e196));
+            let _e200 = sT;
             let _e201 = u0_;
-            let _e203 = u1_;
+            let _e202 = u0_;
             let _e204 = u1_;
-            s = ((_e199 * ((_e200 * _e201) + (_e203 * _e204))) * 0.5f);
-            let _e211 = sT;
-            let _e212 = u1_;
+            let _e205 = u1_;
+            s = ((_e200 * ((_e201 * _e202) + (_e204 * _e205))) * 0.5f);
+            let _e212 = sT;
             let _e213 = u1_;
-            let _e215 = u0_;
+            let _e214 = u1_;
             let _e216 = u0_;
-            ds = (_e211 * ((_e212 * _e213) - (_e215 * _e216)));
-            let _e221 = cT;
-            let _e222 = D;
-            let _e223 = s;
-            p_6 = (_e221 + (_e222 * _e223));
-            let _e227 = p_6;
-            r_18 = length(_e227);
-            let _e230 = r_18;
-            let _e231 = Rt;
-            hr_5 = (_e230 - _e231);
-            let _e234 = global.uRadius;
-            let _e235 = hr_5;
-            let _e236 = drawnH(_e235);
-            rr_4 = (_e234 + _e236);
-            let _e242 = hr_5;
-            mediumAtReal(_e242, (&sR), (&sM), (&e));
-            let _e249 = e;
-            let _e251 = ds;
-            Ts = exp((-(_e249) * _e251));
-            let _e255 = p_6;
-            let _e256 = r_18;
-            let _e259 = sun;
-            muS_2 = dot((_e255 / vec3(_e256)), _e259);
-            let _e264 = Rg_1;
-            let _e265 = r_18;
-            let _e266 = Rg_1;
-            let _e269 = Rg_1;
-            let _e270 = r_18;
-            let _e271 = Rg_1;
-            cosH_2 = -(sqrt(max(0f, (1f - ((_e264 / max(_e265, _e266)) * (_e269 / max(_e270, _e271)))))));
-            let _e280 = rr_4;
-            let _e281 = muS_2;
-            let _e282 = transmittanceToTop(_e280, _e281);
-            let _e283 = cosH_2;
-            let _e286 = cosH_2;
-            let _e289 = muS_2;
-            sunT = (_e282 * smoothstep((_e283 - 0.004f), (_e286 + 0.004f), _e289));
-            let _e293 = rr_4;
-            let _e294 = muS_2;
-            let _e295 = multiScatter(_e293, _e294);
-            ms = _e295;
-            let _e297 = sR;
-            let _e298 = sunT;
-            let _e299 = pR;
-            let _e301 = ms;
-            let _e304 = sM;
-            let _e305 = sunT;
-            let _e306 = pM;
-            let _e308 = ms;
-            S = ((_e297 * ((_e298 * _e299) + _e301)) + (_e304 * ((_e305 * _e306) + _e308)));
-            let _e313 = L;
-            let _e314 = T;
-            let _e315 = S;
+            let _e217 = u0_;
+            ds = (_e212 * ((_e213 * _e214) - (_e216 * _e217)));
+            let _e222 = cT;
+            let _e223 = D;
+            let _e224 = s;
+            p_6 = (_e222 + (_e223 * _e224));
+            let _e228 = p_6;
+            r_18 = length(_e228);
+            let _e231 = r_18;
+            let _e232 = Rt;
+            hr_5 = (_e231 - _e232);
+            let _e235 = global.uRadius;
+            let _e236 = hr_5;
+            let _e237 = drawnH(_e236);
+            rr_4 = (_e235 + _e237);
+            let _e243 = hr_5;
+            mediumAtReal(_e243, (&sR), (&sM), (&e));
+            let _e250 = e;
+            let _e252 = ds;
+            Ts = exp((-(_e250) * _e252));
+            let _e256 = p_6;
+            let _e257 = r_18;
+            let _e260 = sun;
+            muS_2 = dot((_e256 / vec3(_e257)), _e260);
+            let _e265 = Rg_1;
+            let _e266 = r_18;
+            let _e267 = Rg_1;
+            let _e270 = Rg_1;
+            let _e271 = r_18;
+            let _e272 = Rg_1;
+            cosH_2 = -(sqrt(max(0f, (1f - ((_e265 / max(_e266, _e267)) * (_e270 / max(_e271, _e272)))))));
+            let _e281 = rr_4;
+            let _e282 = muS_2;
+            let _e283 = transmittanceToTop(_e281, _e282);
+            let _e284 = cosH_2;
+            let _e287 = cosH_2;
+            let _e290 = muS_2;
+            sunT = (_e283 * smoothstep((_e284 - 0.004f), (_e287 + 0.004f), _e290));
+            let _e294 = rr_4;
+            let _e295 = muS_2;
+            let _e296 = multiScatter(_e294, _e295);
+            ms = _e296;
+            let _e298 = sR;
+            let _e299 = sunT;
+            let _e300 = pR;
+            let _e302 = ms;
+            let _e305 = sM;
+            let _e306 = sunT;
+            let _e307 = pM;
+            let _e309 = ms;
+            S = ((_e298 * ((_e299 * _e300) + _e302)) + (_e305 * ((_e306 * _e307) + _e309)));
+            let _e314 = L;
+            let _e315 = T;
             let _e316 = S;
-            let _e317 = Ts;
-            let _e321 = e;
-            L = (_e313 + ((_e314 * (_e315 - (_e316 * _e317))) / max(_e321, vec3(0.00000000000001f))));
-            let _e327 = T;
-            let _e328 = Ts;
-            T = (_e327 * _e328);
+            let _e317 = S;
+            let _e318 = Ts;
+            let _e322 = e;
+            L = (_e314 + ((_e315 * (_e316 - (_e317 * _e318))) / max(_e322, vec3(0.00000000000001f))));
+            let _e328 = T;
+            let _e329 = Ts;
+            T = (_e328 * _e329);
         }
         continuing {
-            let _e182 = i;
-            i = (_e182 + 1i);
+            let _e183 = i;
+            i = (_e183 + 1i);
         }
     }
-    let _e330 = L;
-    fragmentColor = vec4<f32>(_e330.x, _e330.y, _e330.z, 1f);
+    let _e331 = L;
+    fragmentColor = vec4<f32>(_e331.x, _e331.y, _e331.z, 1f);
     return;
 }
 
@@ -1104,7 +1106,7 @@ fn main_1() {
 fn main(@location(0) vUv: vec2<f32>) -> FragmentOutput {
     vUv_1 = vUv;
     main_1();
-    let _e71 = fragmentColor;
-    return FragmentOutput(_e71);
+    let _e74 = fragmentColor;
+    return FragmentOutput(_e74);
 }
 `;

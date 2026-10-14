@@ -304,6 +304,13 @@ float liftMu(float mu) {
 // the haze is the game's stand-in for the distance the drawn world leaves out, and over a ray toward the
 // horizon it took the setting sun and paled the low sky (the passes' mains set it))
 float gHazeK = 1.0;
+// (and its share by the ray's way at a step, the horizontal part of it (the march's, from the true-size
+// world's up there): the haze stands for air the drawn world leaves out, and it leaves out only distance
+// along the ground (its heights are real, its distances a 64th), so a ray straight down from orbit, which
+// has all the air the true world's would, has none of it, and one along the ground or grazing the limb
+// all of it. Looking down it had added ~0.2 optical depth of grey-brown dust over everything, more than
+// the air's own aerosols, and a world's forests and their colours were lost under it from space)
+float gHazeH = 1.0;
 // (the near passes' sunlit air's share: 0 for a sky pixel from low down, whose sunlit air is the true-size
 // world's, SKYVIEW_FRAG; its moonlit air, its clouds and the air's dimming of them kept)
 float gAirSun = 1.0;
@@ -313,7 +320,7 @@ void mediumAt(float r, out vec3 scatR, out vec3 scatM, out vec3 ext) {
   float dR = exp(-hr / uRayleighH);
   float dM = exp(-hr / uMieH);
   float dA = uAbsExp > 0.5 ? dR : max(0.0, 1.0 - abs(h - uAbsCenter) / max(uAbsWidth, 1.0));
-  vec3 dH = uHaze.x * gHazeK * exp(-max(h, 0.0) / max(uHaze.y, 1.0)) * uHazeCol;
+  vec3 dH = uHaze.x * gHazeK * gHazeH * exp(-max(h, 0.0) / max(uHaze.y, 1.0)) * uHazeCol;
   scatR = uRayleigh * dR;
   scatM = uMie * dM + dH;
   ext = scatR + scatM + uMieAbs * dM + uAbs * dA + dH * uHaze.z;
@@ -819,9 +826,11 @@ void march(float t0, float t1, vec3 D, float tca, vec3 perp, float cosTheta, flo
     if (sq) { float u = (float(i) + jitter) / float(steps); t = t0 + (t1 - t0) * u * u; dti = (t1 - t0) * 2.0 * u / float(steps) + 1e-3; }
     vec3 p = (t - tca) * D - perp;
     float r = length(p);
+    vec3 nT = trueUp(p, r, upC, kT);
+    float muV = dot(D, nT);
+    gHazeH = sqrt(max(0.0, 1.0 - muV * muV));
     vec3 sR, sM, e;
     mediumAt(r, sR, sM, e);
-    vec3 nT = trueUp(p, r, upC, kT);
     float muS = dot(nT, uSunDir);
     vec3 sunT = sunTransmittance(r, muS);
     // (air in a mountain's shadow: terrainShadow.js)
