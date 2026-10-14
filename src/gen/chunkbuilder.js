@@ -74,14 +74,47 @@ function shoreDepth(depth, h, kind, wl) {
   if (!(depth > 0)) return -Math.min(2, Math.max(0.02, wl > -1e8 ? h - wl : h));
   return kind < 0.2 ? depth : Math.max(depth, 0.3);
 }
-// (into the normal's spare byte, companded: fine near the shore)
+// The shore across a chunk's grid, n x n vertices (its spacing the unit), from each vertex's signed height
+// against the water (sd, > 0 under it): where an edge of its triangles (along i, along j, the a-c diagonal)
+// runs from water to land, the point on it where the shore is (find(i0, j0, i1, j1, s0, s1): its share of
+// the way from the first), and each vertex's signed distance to the nearest of those within two of its
+// cells (+ under the water), at most SHORE_R. The shader's shore is where these, interpolated across a
+// triangle, cross 0: a distance runs straight across a coast, so the line lies where the shore is. The
+// signed heights interpolated put it where the ground's height crossed the water's between two vertices,
+// and a steep coast's land vertex 2 m up beside a water one 30 m down held it a fifth of the way from the
+// land vertex: every coast drawn as the grid's outline round its land vertices, a staircase from afar.
+export const SHORE_R = 4;
+function shoreDistances(n, sd, find, out) {
+  const cx = [], cy = [];
+  const edge = (i0, j0, i1, j1) => {
+    const s0 = sd[j0 * n + i0], s1 = sd[j1 * n + i1];
+    if ((s0 > 0) === (s1 > 0)) return;
+    const t = find(i0, j0, i1, j1, s0, s1);
+    cx.push(i0 + (i1 - i0) * t); cy.push(j0 + (j1 - j0) * t);
+  };
+  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+    if (i + 1 < n) edge(i, j, i + 1, j);
+    if (j + 1 < n) edge(i, j, i, j + 1);
+    if (i + 1 < n && j + 1 < n) edge(i, j, i + 1, j + 1);
+  }
+  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+    let d2 = SHORE_R * SHORE_R;
+    for (let k = 0; k < cx.length; k++) {
+      const dx = cx[k] - i, dy = cy[k] - j;
+      if (dx > -2.01 && dx < 2.01 && dy > -2.01 && dy < 2.01) d2 = Math.min(d2, dx * dx + dy * dy);
+    }
+    out[j * n + i] = (sd[j * n + i] > 0 ? 1 : -1) * Math.sqrt(d2);
+  }
+  return out;
+}
+// (into the normal's spare byte: the shore's distance, signed, over SHORE_R of the grid's spacings)
 function encodeShore(d) {
-  const v = Math.round(Math.sign(d) * Math.sqrt(Math.min(Math.abs(d), 64) / 64) * 127);
+  const v = Math.round(Math.max(-1, Math.min(1, d / SHORE_R)) * 127);
   return d > 0 ? Math.max(1, v) : Math.min(-1, v);
 }
 
 // scratch buffers reused between chunks
-let scratchN = 0, fineS, fineP, coarseS, coarseP, fineNrm, coarseNrm, coarseCol, rivWd, lvL, lvK, lvF, lvC, seaBed, cSeaBed;
+let scratchN = 0, fineS, fineP, coarseS, coarseP, fineNrm, coarseNrm, coarseCol, rivWd, lvL, lvK, lvF, lvC, seaBed, cSeaBed, sdF, dF, sdC, dC;
 
 // a grid's steep normals (V x V, fineP's positions FV wide with a ring round them) averaged with the steep
 // ones round them facing the same way (a 5 x 5 patch): a cliff across the grid's cells is a staircase,
@@ -130,6 +163,7 @@ export function buildChunk(gen, face, level, ix, iy, N = CHUNK_N) {
     rivWd = new Float64Array(FV * FV);
     lvL = new Float64Array(FV * FV); lvK = new Float64Array(FV * FV); lvF = new Float64Array(FV * FV); lvC = new Float64Array(FV * FV * 3);
     seaBed = new Uint8Array(FV * FV); cSeaBed = new Uint8Array(CV * CV);
+    sdF = new Float64Array(V * V); dF = new Float64Array(V * V); sdC = new Float64Array((CN + 1) * (CN + 1)); dC = new Float64Array((CN + 1) * (CN + 1));
   }
   const { u0, v0, size } = chunkUVBounds(level, ix, iy);
   const du = size / N;
@@ -184,6 +218,24 @@ export function buildChunk(gen, face, level, ix, iy, N = CHUNK_N) {
       for (let c = 0; c < 3; c++) lvC[k * 3 + c] = P.waterShallow[c] + (P.waterDeep[c] - P.waterShallow[c]) * e;
     }
     return 1;
+  };
+
+  // (where a coast crosses an edge: halved toward it three times, the ground sampled and shaded there as
+  // the vertices are, then between the last two by their signed heights. Where the chunk draws no water of
+  // its own (the level water's, near), between the vertices' own signed heights, as before)
+  const ldd = !LV, pS = new Float64Array(S_LEN), pDir = [0, 0, 0], pCol = [0, 0, 0], pMat = new Float64Array(MAT_N);
+  const shoreLinear = (i0, j0, i1, j1, s0, s1) => s0 / (s0 - s1);
+  const shoreProbe = (dg, mw) => (i0, j0, i1, j1, s0, s1) => {
+    let t0 = 0, t1 = 1;
+    for (let k = 0; k < 3; k++) {
+      const t = (t0 + t1) / 2;
+      dirFromFaceUV(face, u0 + (i0 + (i1 - i0) * t) * dg, v0 + (j0 + (j1 - j0) * t) * dg, pDir);
+      gen.sample(pDir[0], pDir[1], pDir[2], mw, pS);
+      gen.shade(pS, 0.05, pCol, pMat, null);
+      const sm = shoreDepth(pMat[4], pS[0], pMat[0], pS[S_WLVL]);
+      if ((sm > 0) === (s0 > 0)) { t0 = t; s0 = sm; } else { t1 = t; s1 = sm; }
+    }
+    return t0 + (t1 - t0) * s0 / (s0 - s1);
   };
 
   // chunk origin: centre direction at datum radius
@@ -277,8 +329,10 @@ export function buildChunk(gen, face, level, ix, iy, N = CHUNK_N) {
         gen._bed = false;
         const oc = (j * CVi + i) * 4;
         coarseCol[oc] = col[0]; coarseCol[oc + 1] = col[1]; coarseCol[oc + 2] = col[2]; coarseCol[oc + 3] = shoreDepth(mat[4], s[0], mat[0], s[S_WLVL]);
+        sdC[j * CVi + i] = coarseCol[oc + 3];
       }
     }
+    shoreDistances(CVi, sdC, ldd ? shoreProbe(cdu, coarseMinW) : shoreLinear, dC);
   }
 
   // ---- pack vertex attributes
@@ -352,7 +406,7 @@ export function buildChunk(gen, face, level, ix, iy, N = CHUNK_N) {
       nrm[vi * 4] = Math.round(nx * 127); nrm[vi * 4 + 1] = Math.round(ny * 127); nrm[vi * 4 + 2] = Math.round(nz * 127);
       if (mat[4] > 0 && mat[0] > 0.55 && mat[0] < 0.85) { steepA[vi] = 1 - up; wdA[vi] = mat[4]; }
       const sd = shoreDepth(mat[4], s[0], mat[0], s[S_WLVL]);
-      nrm[vi * 4 + 3] = encodeShore(sd);
+      sdF[vi] = sd;
       colA[vi * 4] = encodeColor(col[0]); colA[vi * 4 + 1] = encodeColor(col[1]); colA[vi * 4 + 2] = encodeColor(col[2]);
       colA[vi * 4 + 3] = encodeWater(mat[4]);
       // (a bed under the sea's or a lake's own surface: how deep it lies, for the shader to leave out the
@@ -378,10 +432,10 @@ export function buildChunk(gen, face, level, ix, iy, N = CHUNK_N) {
       for (let k = 0; k < NC; k++) clsA[vi * NC + k] = Math.round(Math.min(1, mat[MAT_W0 + k]) * 255);
 
       // morph target
-      let mx, my, mz, mnx, mny, mnz, mr, mg, mb, mw;
+      let mx, my, mz, mnx, mny, mnz, mr, mg, mb, mw, md;
       if (!hasParent) {
         mx = px; my = py; mz = pz; mnx = nx; mny = ny; mnz = nz;
-        mr = col[0]; mg = col[1]; mb = col[2]; mw = sd;
+        mr = col[0]; mg = col[1]; mb = col[2]; mw = sd; md = null;
       } else {
         const ei = (i & 1) === 0, ej = (j & 1) === 0;
         let a0, a1, b0, b1;
@@ -398,14 +452,20 @@ export function buildChunk(gen, face, level, ix, iy, N = CHUNK_N) {
         const ca = (a1 * CVi + a0) * 4, cb = (b1 * CVi + b0) * 4;
         mr = (coarseCol[ca] + coarseCol[cb]) * 0.5; mg = (coarseCol[ca + 1] + coarseCol[cb + 1]) * 0.5;
         mb = (coarseCol[ca + 2] + coarseCol[cb + 2]) * 0.5; mw = (coarseCol[ca + 3] + coarseCol[cb + 3]) * 0.5;
+        // (the parent's shore distance there, as its triangle has it: in this grid's spacings, half its)
+        md = (dC[a1 * CVi + a0] + dC[b1 * CVi + b0]);
       }
       morph[vi * 3] = mx - ox; morph[vi * 3 + 1] = my - oy; morph[vi * 3 + 2] = mz - oz;
       mnrm[vi * 4] = Math.round(mnx * 127); mnrm[vi * 4 + 1] = Math.round(mny * 127); mnrm[vi * 4 + 2] = Math.round(mnz * 127);
-      mnrm[vi * 4 + 3] = encodeShore(mw);
+      if (md != null) mnrm[vi * 4 + 3] = encodeShore(md);
       mcolA[vi * 4] = encodeColor(mr); mcolA[vi * 4 + 1] = encodeColor(mg); mcolA[vi * 4 + 2] = encodeColor(mb);
       mcolA[vi * 4 + 3] = encodeWater(mw);
     }
   }
+  // (the shore's distance at each vertex; a chunk with no parent its own for the morph's too)
+  gen._shadeSp = spacing;
+  shoreDistances(V, sdF, ldd ? shoreProbe(du, minW) : shoreLinear, dF);
+  for (let vi = 0; vi < V * V; vi++) { nrm[vi * 4 + 3] = encodeShore(dF[vi]); if (!hasParent) mnrm[vi * 4 + 3] = encodeShore(dF[vi]); }
   gen._shadeSp = 0;
 
   // ---- skirts: copies of edge vertices pushed down radially

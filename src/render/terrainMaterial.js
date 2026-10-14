@@ -66,7 +66,8 @@ void main() {
   vExt = ext;
   vLiq = liq;
   vFlw = flw;
-  // (its height against the water, signed: chunkbuilder.js; > 0 under it)
+  // (the shore's distance, signed, over SHORE_R of the grid's spacings: chunkbuilder.js shoreDistances;
+  // > 0 under the water)
   vShore = mix(nrm.w, mnrm.w, m);
   vCls0 = cls0; vCls1 = cls1; vCls2 = cls2;
   vMorphK = m;
@@ -312,7 +313,7 @@ void main() {
   float fineK = 1.0 - smoothstep(60.0, 900.0, dist);
   float midK = 1.0 - smoothstep(600.0, 9000.0, dist);
   float farK = 1.0 - smoothstep(6000.0, 90000.0, dist);
-  // (the shore: where the vertices' signed height against the water crosses 0)
+  // (the shore: where the vertices' distances to it, signed, cross 0)
   float isWater = vShore > 0.0 ? 1.0 : 0.0;
   float gRough = 0.8, gAO = 1.0;   // (the scanned surfaces' roughness and occlusion: materials.js)
   if (isWater < 0.5) {
@@ -449,7 +450,8 @@ void main() {
                            * mix(0.15, 1.0, smoothstep(0.0, 0.5, 1.0 - vRib.x * vRib.x)), fallK0);
     }
 #else
-    float depthW = vShore * vShore * 64.0;
+    // (its depth: the vertices' (chunkbuilder.js encodeWater), to none at the shore over half a spacing out)
+    float depthW = waterEnc * waterEnc * 6000.0 * smoothstep(0.0, 0.125, vShore);
 #endif
     // (smooth noise for the waves: their crests' bends, from the 512 m tile, and their groups' heights)
     vec4 nW = tri(fp, w, 512.0), nG = tri(fp, w, 64.0);
