@@ -21,6 +21,19 @@ pixel-parity claim is made. Dave confirmed sole-agent work and no coordination m
    "suuuuper deep": you start out deep and go REALLY deep, deep enough that gravity changes on the way
    down (a shell's or a hollow world's own gravity: less the deeper you go?). Ideas first, for Dave to pick.
 
+## NOW: scenic shots of Earth, and a streaming stall fixed (session 39d69fa8, 2026-10-14, 2a73fcb)
+
+- Fixed: a terrain node near the camera whose stones came back empty (sand, snow, water) asked again
+  every frame; the workers ran stones jobs round and round and the chunks starved (a coast at 17.8 S
+  146.4 W never settled). planetTerrain.js `stonesNone`, cleared in dropStones.
+- Shots (tools/scenic.js; pick places by the snapshot's forest/cover, not relief: this Earth's land is
+  ~40% under 0.1 cover): 23.0 S 144.2 E savanna-woodland at sunset; 17.8 S 146.4 W mountain coast (from
+  120 deg); 1.1 S 89.2 W valley to the sea; 12.4 S 12.3 W forested mountains; 1 N 45.5 E dense forest.
+  A view takes ~4-6 min of tiles in a hidden tab.
+- Seen, not fixed: mid-distance trees' far LOD reads as diamonds/cones on sticks; from orbit the forests
+  don't read green (land grey-brown under a grainy haze, coastlines stair-stepped); cloud edges dithered
+  near the limb.
+
 ## NOW: the air as it is (session 39d69fa8, 2026-10-09, 59df5e3; Dave: "correctness here ... not bandaids")
 
 - Was: thin dusty Mars-like worlds' ground black (RING-56 Oulvoclox): sulfate tau ~23,600 (SO2 all made into
