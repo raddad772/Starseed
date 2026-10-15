@@ -199,6 +199,10 @@ export function scatterFlora(gen, face, level, ix, iy, maxLevel, species) {
     const slope = Math.min(1, Math.abs(hx - h) / 0.75);
     gen.shade(s, slope * 0.5, col, mat);
     const veg = mat[0], snow = mat[1], rock = mat[2], sand = mat[3];
+    // (on a beach, nothing below where the sea reaches (gen/tides.js): its trees a metre above it, its shrubs
+    // (the dunes' scrub) from a little under it)
+    const reach = gen.p.seaReach ?? 4, beach = hasSea && sand > 0.3;
+    if (beach && h < reach * 0.8) continue;
     const r = R + h;
     const px = dir[0] * r - ox, py = dir[1] * r - oy, pz = dir[2] * r - oz;
     const roll = rng.next();
@@ -231,6 +235,7 @@ export function scatterFlora(gen, face, level, ix, iy, maxLevel, species) {
       const pPlant = veg * 0.9 * (1 + 0.4 * meadow) * (species.plantScarce ? 0.08 : 1) * ok; // (crusts only, where no plants reached land)
       // (each: where, its size, its turn, its tint, the slope, the year's mean temperature there (C: the
       // seasons' snow on it, floraRender.js))
+      if (beach && h < reach + 1) pTree = 0;
       if (roll < pTree) {
         // (its species: how the place suits each (its year, its ground's water), its stand's dominant most
         // likely; none suiting it, no tree)

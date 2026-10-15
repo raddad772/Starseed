@@ -23,6 +23,13 @@ pixel-parity claim is made. Dave confirmed sole-agent work and no coordination m
 4. (Dave, 2026-10-15) Beach trees: they stand where tides and the run-up reach (SOL Earth 30.4 S 137.1 E,
    beauty/trees_pair.jpg) - flora should keep off the beach face and the reach of the sea; and the ground
    there reads sand, a narrow dirt strip, then beach sand (a vegetated band between two sand bands).
+   DONE (2026-10-15): each sea's reach up its beaches (gen/tides.js seaReachOf: the open ocean's tide from its
+   moons and star, doubled on a shelf, and a gale's run-up; SOL Earth 4.4 m), filled into the terrain params
+   on load (game.js); beach sand below it bare (terrain.js shade: a forest stand drawn down onto the sand
+   had made the dark strip), no trees under it + 1 m, no shrubs under 0.8 of it (flora.js).
+   Dave next (2026-10-15): the tide "calculated from the moon, and also follow it" (moving tides, high
+   under the moon twice a day), and a hollow moon has less tide (its mass: the hollow large, its crust a
+   few km, as first proposed).
 3. Brainstorm (then propose) vertically oriented megastructures: going down a crack between buildings,
    "suuuuper deep": you start out deep and go REALLY deep, deep enough that gravity changes on the way
    down (a shell's or a hollow world's own gravity: less the deeper you go?). Ideas first, for Dave to pick.

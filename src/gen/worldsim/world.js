@@ -18,6 +18,7 @@
 // resurfacing, glaciers, climate, regime changes mid-history in one run.)
 
 import * as dm from '../../core/dmath.js';
+import { tideOf } from '../tides.js';
 import { Rng } from '../../core/rng.js';
 import { Noise3 } from '../../core/noise.js';
 import { TerrainGenerator, S_LEN, S_H, S_MOIST, S_TEMP } from '../terrain.js';
@@ -42,17 +43,8 @@ import { FINE_STEPS, FINE_SPAN } from './epochs.js';
 // m^0.1/yr for m = 0.45, x ~0.8 at the game's 1/10 scale (areas and lengths shrink)
 const KD = +(globalThis.process?.env?.WS_KD || 6e-7), KF = +(globalThis.process?.env?.WS_KF || 8e-7);
 
-// the open ocean's tide (m): each moon and the star, by the equilibrium tide (M/Mp)
-// Rp^4/d^3 (Earth: Moon 0.36 m, Sun 0.16 m); a world locked to its host feels no tide from it
-export function tideOf(body, sys) {
-  let a = 0;
-  // (powers as products: ** and Math.pow are an engine's own approximation)
-  const Rp = body.radiusM, Mp = body.massEarth, Rp4 = (Rp * Rp) * (Rp * Rp);
-  for (const id of body.moons || []) { const m = sys.bodies[id]; const d = m.orbit && m.orbit.aReal || 0; if (d > 0) a += (m.massEarth / Mp) * Rp4 / (d * d * d); }
-  if (body.kind === 'moon' && !body.rotation.locked) { const hst = sys.bodies[body.parentId]; const d = body.orbit && body.orbit.aReal || 0; if (d > 0) a += (hst.massEarth / Mp) * Rp4 / (d * d * d); }
-  if (!(body.rotation.locked && body.kind !== 'moon')) { const d = body.aAU * 1.496e11; a += (sys.bodies[0].mass * 332946 / Mp) * Rp4 / (d * d * d); }
-  return Math.min(a, 30);
-}
+// the open ocean's tide (m): gen/tides.js
+export { tideOf };
 // a big moon (over 0.5% of the planet's mass) steadies the tilt: milder ice ages
 export function bigMoonOf(body, sys) { return (body.moons || []).some((id) => sys.bodies[id].massEarth / body.massEarth > 0.005); }
 // the options a body's world sim takes from its system (the lab's and the game's alike)

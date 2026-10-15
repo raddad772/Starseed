@@ -63,6 +63,7 @@ import * as U from './core/units.js';
 import { TerrainTiles } from './sim/terrainTiles.js';
 import { hasImmersiveView, immersiveFor, hideFromView, restoreView } from './ui/immersiveView.js';
 import { collideShipWithRing, inRing } from './sim/ringField.js';
+import { seaReachOf } from './gen/tides.js';
 
 export { WARP_LEVELS } from './sim/warpConsent.js';
 // (the big ships' orbits above the FTL lock were laid out in km at the old tenth-size worlds: the
@@ -82,6 +83,8 @@ export class Game {
     this.opts = opts;
     this.system = getSystem(opts.systemDefinition || seed);
     if(this.system.seed!==seed)throw Error('System recipe does not match the requested world');
+    // (each sea's reach up its beaches: gen/tides.js; its shores' plants keep above it)
+    for (const b of this.system.bodies) if (b.terrain && b.terrain.liquid && b.terrain.seaReach == null) b.terrain.seaReach = seaReachOf(b, this.system);
     this.universe = new Universe(this.system);
     this.engine = new Engine(canvas, { renderScale: opts.renderScale || 1, reversedDepth: opts.reversedDepth });
     const terrainBodies = this.system.bodies.filter((b) => b.terrain).map((b) => ({ id: b.id, terrain: b.terrain }));

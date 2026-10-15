@@ -2476,6 +2476,10 @@ export class TerrainGenerator {
         const sb = (fl[2] + (P.veg[2] - fl[2]) * 0.3) * 0.75 * (1 - far) + P.veg[2] * 0.8 * far;
         vr += (sr - vr) * k; vg += (sg - vg) * k; vb += (sb - vb) * k;
         vegW = Math.max(vegW, k * (1 - rockV));
+        // (a beach is bare up to where the sea reaches, its high tide and a storm's run-up (gen/tides.js, ~4 m on
+        // an Earth); its plants begin above: a forest's stand drawn down onto the sand had laid a dark strip
+        // between the beach and the bare dunes)
+        if (p.liquid === 'water' && this.contThreshold > -1e8 && sandW > 0.3) vegW *= 1 - (1 - dm.smoothstep((p.seaReach ?? 4) - 0.5, (p.seaReach ?? 4) + 1.5, h)) * dm.smoothstep(0.3, 0.6, sandW);
         r += (vr - r) * vegW; g += (vg - g) * vegW; b += (vb - b) * vegW;
         mat[0] = vegW;
         mat[2] = rockW * (1 - vegW);   // (the rock showing through them)
