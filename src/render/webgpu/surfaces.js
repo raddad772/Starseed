@@ -31,7 +31,7 @@ export class SurfaceCache {
     const key = u.uCenter || u;
     let entry = this.cache.get(key);
     if (!entry) {
-      entry = { buffer: this.device.createBuffer({ label: 'surface coefficients', size: 160, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }), data: new Float32Array(40), images: [] };
+      entry = { buffer: this.device.createBuffer({ label: 'surface coefficients', size: 176, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }), data: new Float32Array(44), images: [] };
       this.cache.set(key, entry);
     }
     const source = ['tDetail', 'tMatA', 'tMatN', 'tSeasonMap', 'tFrost', 'tColourCube'].map((k, i) => val(u, k) || this.neutral[i]);
@@ -53,6 +53,9 @@ export class SurfaceCache {
     vector(data, 28, val(u, 'uLavaColor'), 3); vector(data, 32, val(u, 'uWindRipple'), 2);
     data[34] = val(u, 'uTime') || 0; data[35] = mode;
     vector(data, 36, val(u, 'uColourCube'));
+    // (the surf: the wind, gravity, the sea level's radius, how much the waves stand (0: no sea))
+    const lq = val(u, 'uLiquid'), lq2 = val(u, 'uLiquid2'), sea = val(u, 'uSurfSea') || 0;
+    data[40] = lq ? lq.y : 0; data[41] = lq2 ? lq2.x : 9.81; data[42] = val(u, 'uRadius') || 0; data[43] = lq && sea ? lq.z : 0;
     this.device.queue.writeBuffer(entry.buffer, 0, data);
     return entry;
   }

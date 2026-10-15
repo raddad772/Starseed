@@ -57,6 +57,10 @@ const NG = MT + 2 * MARGIN;        // the simulated grid per side
 // the tile level for a world: 2^L tiles across a face, each about 2 km; its regions'
 // the world's refinement: tiles a few times finer than its world sim's grid, over the whole
 // world (simulated with the world sim, from orbit down to where the regions take over)
+// a sandy shoreface's (finish: the shore the waves make): Dean's A (m^1/3), the closure's distance out (m:
+// where A d^2/3 reaches the ~6 m the storms' waves stir), the berm's height (m: their run-up) and the
+// beach face's slope
+const SHORE_A = 0.1, SHORE_DC = Math.pow(6 / SHORE_A, 1.5), SHORE_ZB = 1.8, SHORE_BF = 0.08;
 export function refineLevelN(N) { return Math.max(0, Math.round(dm.log2(N * 4 / MT))); }
 export function refineLevel(gen) { return refineLevelN(gen.snap.s.N); }
 
@@ -993,13 +997,17 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
     // a shallow cove all but closed in by land fills with sand (beaches, bay bars): the fine
     // fringe of the drowned land wears to a coast; hard headlands stand
     const SAND = ROCKS.findIndex((r) => r.name === 'quartz sand'), waveH = dm.pow(Math.min(1, cell / 900), 0.5);   // (what waves cut: less on a finer grid's smaller points)
+    // (the steps these rules set between a cell made sea and one made land, held to what a cell's width
+    // holds at a beach's slopes: 2 m down and 1 up on a coarse grid; on a finer level's metres-wide cells
+    // they had stood as banks over a flat shelf)
+    const stepS = Math.min(2, 0.1 * cell), stepL = Math.min(1, 0.05 * cell), stepA = Math.min(4, 0.2 * cell);
     for (let it = 0; it < (opts.waves ?? (pyr ? 3 : 6)); it++) {
       for (let c = 0; c < n; c++) {
         if (edge(c) || wet[c] === 2) continue;
         let ns = 0;
         for (let e = nStart[c]; e < nStart[c + 1]; e++) if (water[nbr[e]] === 1) ns++;
-        if (!water[c] && ns >= 5 && h[c] < waveH * (10 + 60 * (1 - hardAt(c)))) { water[c] = 1; h[c] = Math.min(h[c], -2); }
-        else if (water[c] === 1 && ns <= 2 && h[c] > -25 && !(E.A[c] >= MOUTH_A)) { water[c] = 0; h[c] = 1; rockC[c] = SAND; }
+        if (!water[c] && ns >= 5 && h[c] < waveH * (10 + 60 * (1 - hardAt(c)))) { water[c] = 1; h[c] = Math.min(h[c], -stepS); }
+        else if (water[c] === 1 && ns <= 2 && h[c] > -25 && !(E.A[c] >= MOUTH_A)) { water[c] = 0; h[c] = stepL; rockC[c] = SAND; }
       }
     }
     // longshore drift: along a soft or sandy shore the waves carry sand down the coast, building
@@ -1012,8 +1020,8 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
         let land = 0;
         for (let dj = -2; dj <= 2; dj++) for (let di = -2; di <= 2; di++) if (!water[c + dj * NG + di]) land++;
         if (land === 0 || land === 25) continue;
-        if (water[c] === 1 && land >= 16 && h[c] > -15 * waveH && !(E.A[c] >= MOUTH_A)) { water[c] = 0; h[c] = 1; rockC[c] = SAND; }
-        else if (!water[c] && land <= 9 && h[c] < 8 * waveH) { water[c] = 1; h[c] = Math.min(h[c], -2); }
+        if (water[c] === 1 && land >= 16 && h[c] > -15 * waveH && !(E.A[c] >= MOUTH_A)) { water[c] = 0; h[c] = stepL; rockC[c] = SAND; }
+        else if (!water[c] && land <= 9 && h[c] < 8 * waveH) { water[c] = 1; h[c] = Math.min(h[c], -stepS); }
       }
     }
     // the shore read as a line, not a staircase of cells: the rules above decide each cell, sea or
@@ -1032,13 +1040,55 @@ export function prepareTile(gen, face, ti, tj, opts = {}) {
         if (water[c] === 1 && E.A[c] >= MOUTH_A) continue;
         const f = phi[c];
         if (f <= -0.9 || f >= 0.9) continue;
-        if (f < 0) { water[c] = 1; h[c] = Math.min(h[c], -0.3 + 4 * f); }
-        else { if (water[c] === 1) { water[c] = 0; rockC[c] = SAND; } h[c] = Math.max(h[c], 0.3 + 4 * f); }
+        if (f < 0) { water[c] = 1; h[c] = Math.min(h[c], -Math.min(0.3, 0.1 * stepA) + stepA * f); }
+        else { if (water[c] === 1) { water[c] = 0; rockC[c] = SAND; } h[c] = Math.max(h[c], Math.min(0.3, 0.1 * stepA) + stepA * f); }
+      }
+    }
+    // the shoreface the waves make, on a soft or sandy coast: its floor deepening out from the shoreline as
+    // A d^2/3 (Dean 1977: an equilibrium beach, A ~0.1 m^1/3 for medium sand) to the depth the storms' waves
+    // stir (the closure, SHORE_DC), the beach above rising at its face's slope to the berm their run-up
+    // builds; a hard coast keeps its cliffs and platforms (by its rock's hardness). Made where a tile sees
+    // that far out past its kept square (the refinement's, the first level's); finer levels keep it from
+    // the level above, their own rules' steps held to their cells
+    if (gen.p.liquid && KEEP * cell >= SHORE_DC) {
+      const D = new Float64Array(n).fill(1e9), isSea = (c) => water[c] === 1;
+      for (let c = 0; c < n; c++) {
+        const i = c % NG, j = (c - i) / NG, w = isSea(c);
+        if ((i > 0 && isSea(c - 1) !== w) || (i < NG - 1 && isSea(c + 1) !== w) || (j > 0 && isSea(c - NG) !== w) || (j < NG - 1 && isSea(c + NG) !== w)) D[c] = 0.5 * cell;
+      }
+      const relax = (c, o, k) => { if (D[o] + k < D[c]) D[c] = D[o] + k; }, dg = 1.4142 * cell;
+      for (let j = 0; j < NG; j++) for (let i = 0; i < NG; i++) {
+        const c = j * NG + i;
+        if (i > 0) relax(c, c - 1, cell);
+        if (j > 0) { relax(c, c - NG, cell); if (i > 0) relax(c, c - NG - 1, dg); if (i < NG - 1) relax(c, c - NG + 1, dg); }
+      }
+      for (let j = NG - 1; j >= 0; j--) for (let i = NG - 1; i >= 0; i--) {
+        const c = j * NG + i;
+        if (i < NG - 1) relax(c, c + 1, cell);
+        if (j < NG - 1) { relax(c, c + NG, cell); if (i < NG - 1) relax(c, c + NG + 1, dg); if (i > 0) relax(c, c + NG - 1, dg); }
+      }
+      const wb = SHORE_ZB / SHORE_BF;   // (the beach face's run up to the berm, m)
+      for (let c = 0; c < n; c++) {
+        if (wet[c] === 2 || edge(c)) continue;
+        const soft = 1 - dm.smoothstep(0.45, 0.7, hardAt(c)), d = D[c];
+        if (soft <= 0) continue;
+        if (isSea(c)) {
+          if (d > SHORE_DC || E.A[c] >= MOUTH_A) continue;
+          const k = soft * (1 - dm.smoothstep(0.7 * SHORE_DC, SHORE_DC, d));
+          h[c] += (-Math.max(0.05, SHORE_A * dm.pow(d, 0.6667)) - h[c]) * k;
+        } else {
+          if (d > 3 * wb) continue;
+          const k = soft * (1 - dm.smoothstep(1.5 * wb, 3 * wb, d));
+          h[c] = Math.max(0.05, h[c] + (Math.min(SHORE_BF * d, SHORE_ZB) - h[c]) * k);
+        }
       }
     }
     // (below the datum and cut off from the sea: a dry basin, its floor just above it; a world
     // with no liquid has no datum, its craters and basins as deep as they are)
-    if (gen.p.liquid) for (let c = 0; c < n; c++) if (!water[c] && h[c] < 0.5) h[c] = 0.5 - 0.02 * h[c];
+    // (its floor held to what a cell holds as the others are: half a metre on a coarse grid; on a finer
+    // level's cells a beach's foot just above the water had stood as a half-metre step)
+    const dryF = Math.min(0.5, 0.05 * cell);
+    if (gen.p.liquid) for (let c = 0; c < n; c++) if (!water[c] && h[c] < dryF) h[c] = dryF - 0.02 * h[c];
     const AL = ROCKS.findIndex((r) => r.name === 'alluvium'), aLay = 4e8 * (cell / 900) * (cell / 900);
     // (where water runs: on an airless world nothing ever carried it)
     if (K0 > 0) for (let c = 0; c < n; c++) {

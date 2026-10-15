@@ -106,12 +106,12 @@ struct GBuffer { @location(0) albedoAO: vec4f, @location(1) normalMaterial: vec4
   if (cK > 0.0) {
     let cc = colourCubeAt(normalize(material.toFixed * up));
     color = vec4f(mix(color.rgb, cc.rgb, cK), color.a);
-    shore = mix(shore, (cc.a * 255.0 - 128.0) / 127.0, cK);
+    shore = mix(shore, clamp((cc.a * 255.0 - 128.0) / 127.0 * material.colourCube.w / 4.0, -1.0, 1.0), cK);
   }
   if (shore > 0.0) { discard; }
   let surface = groundSurface(color, v.mat, v.ext, v.cls0, v.cls1, v.cls2,
     v.fixedPos, v.anchorPos, dx, dy, normalize(v.fixedNormal), material.toFixed * up,
-    length(v.worldPos), foot, dot(up, b.sunDir.xyz), shore);
+    length(v.worldPos), foot, dot(up, b.sunDir.xyz), shore, length(rel) - material.surf.z);
   let N=normalize(transpose(material.toFixed)*surface.normal);
   var glint=0.0;
   let gw=v.cls2.z+0.6*v.cls1.z;let gc=foot*220.0;

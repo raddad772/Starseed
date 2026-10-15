@@ -276,6 +276,12 @@ void main() {
   float foot = length(fwidth(vWorldPos));
   // (the scanned surfaces' screen derivatives, here in uniform control flow: read in branches)
   vec3 dpx = dFdx(vFixedPos), dpy = dFdy(vFixedPos);
+  // (and the water's depth's, for the surf: liquid.js surfAt; and the shore's distance (m, + under the
+  // water) from the colour map, its crests' way along the coast: liquid.js surfPhaseX)
+  vec2 dEnc = vec2(dFdx(vCol.a), dFdy(vCol.a));
+  float shoreX = -1.0;
+  if (uColourCube.x > 0.5) shoreX = colourCubeShore(colourCubeAt(normalize(uToFixed * normalize(vWorldPos - uCenter))).a) * uColourCube.z;
+  vec2 dShoreX = vec2(dFdx(shoreX), dFdy(shoreX));
   vec3 albedo = vCol.rgb * vCol.rgb;
   float waterEnc = vCol.a;
 #ifndef RIBBON
@@ -299,7 +305,7 @@ void main() {
   if (cK > 0.0) {
     vec4 cc = colourCubeAt(normalize(uToFixed * up));
     colC = mix(colC, cc.rgb, cK);
-    shoreV = mix(shoreV, (cc.a * 255.0 - 128.0) / 127.0, cK);
+    shoreV = mix(shoreV, colourCubeShoreV(cc.a), cK);
     albedo = colC * colC;
   }
   vec3 N = normalize(vNormal);
@@ -480,7 +486,19 @@ void main() {
     fv *= pow(clamp(depthW / max(vRib.y, 0.05), 0.0, 2.0), 0.667);
     fv = min(fv, sqrt(uLiquid2.x * max(depthW, 0.05)));
 #endif
-    liquidSurface(fp, fn, upF, kind, flow, fetch, depthW, foot, wn, grp, vFlw.xyz, fv, nF, wr, foam);
+    // (the depth's gradient across the ground (planet-fixed), from its screen derivatives solved on the
+    // plane the pixel's two steps span: the surf's way in and its crests' slopes)
+    vec3 gradH = vec3(0.0), gradX = vec3(0.0);
+#ifndef RIBBON
+    {
+      float a11 = dot(dpx, dpx), a12 = dot(dpx, dpy), a22 = dot(dpy, dpy), det = a11 * a22 - a12 * a12;
+      if (det > 1e-12) {
+        gradH = 12000.0 * waterEnc * ((a22 * dEnc.x - a12 * dEnc.y) * dpx + (a11 * dEnc.y - a12 * dEnc.x) * dpy) / det;
+        gradX = ((a22 * dShoreX.x - a12 * dShoreX.y) * dpx + (a11 * dShoreX.y - a12 * dShoreX.x) * dpy) / det;
+      }
+    }
+#endif
+    liquidSurface(fp, fn, upF, kind, flow, fetch, depthW, foot, wn, grp, vFlw.xyz, fv, gradH, shoreX, gradX, nF, wr, foam);
     // (the sea's ice: how close its pack is here (liquid.js seaIceCover); the waves die in it, the short
     // chop at once and the swell within a few floes (Squire 2007), so its leads lie calm, no whitecaps)
     vec2 tsf = liquidTs(Tm, kind, flow, upF);

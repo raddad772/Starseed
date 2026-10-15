@@ -18,7 +18,7 @@ export class ColourCube {
     this.state = 0;   // 0 none, 1 building, 2 ready
     const blank = new THREE.DataArrayTexture(new Uint8Array(4 * 6), 1, 1, 6);
     blank.needsUpdate = true;
-    // x on, y face size (texels), z a texel's width (m)
+    // x on, y face size (texels), z a texel's width (m), w the shore distance's reach (texels)
     this.uniforms = { tColourCube: { value: blank }, uColourCube: { value: new THREE.Vector4(0, 1, 1, 0) } };
   }
 
@@ -41,7 +41,7 @@ export class ColourCube {
       t.needsUpdate = true;
       const old = this.uniforms.tColourCube.value;
       this.uniforms.tColourCube.value = t;
-      this.uniforms.uColourCube.value.set(1, size, (Math.PI / 2) * this.body.R / size, 0);
+      this.uniforms.uColourCube.value.set(1, size, (Math.PI / 2) * this.body.R / size, COLOUR_SHORE_R);
       if (old) old.dispose();
       this.state = 2; this.jobs = null;
     }, () => { if (gen === this.gen) this.state = 0; });
@@ -88,6 +88,10 @@ export const GLSL_COLOUR_CUBE = /* glsl */`
 uniform highp sampler2DArray tColourCube;
 uniform vec4 uColourCube;
 float colourCubeK(float dist) { return uColourCube.x * smoothstep(30.0 * uColourCube.z, 60.0 * uColourCube.z, dist); }
+// (its alpha as the shore's distance, texels (+ under the water); and as the mesh's vShore has it, over
+// four of them)
+float colourCubeShore(float a) { return (a * 255.0 - 128.0) / 127.0 * uColourCube.w; }
+float colourCubeShoreV(float a) { return clamp(colourCubeShore(a) / 4.0, -1.0, 1.0); }
 vec4 colourCubeAt(vec3 d) {
   vec3 a = abs(d), N, U, V;
   float f;

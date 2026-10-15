@@ -24,6 +24,33 @@ pixel-parity claim is made. Dave confirmed sole-agent work and no coordination m
    through a small moon, gravity from depth, zero at the centre, "down" turning over past it), entered by
    the Rift (a slot between the founders' archive walls). Waiting for Dave's pick.
 
+## NOW: surf on the shores, beaches shaped by their waves (session 39d69fa8, 2026-10-15; QUEUE 1, a first pass)
+
+Dave's queue: "Convincing waves on shorelines: breaking surf, run-up and backwash on beaches, by the sea's
+fetch and the wind". What's in:
+- The surf (liquid.js surfSea/surfPhaseX/surfAt, in the water pass): the wind's sea fully developed
+  (Hs 0.21 U^2/g; a swell's period 10 U/g), its crests coming in along the coast by the distance out from
+  it (the colour map's shore distance, now 24 texels each way: COLOUR_SHORE_R; its old readers rescaled),
+  their travel time over a Dean shoreface; shoaling (Green), breaking at 0.78 of the depth into bores
+  (steep face, long back), each wave its own height (sets), fronts bent by noise; foam on the bores and
+  behind them, more where the bed rises (plunging). Without the colour map (before it's built) the phase
+  by the depth alone.
+- The swash (webgpu/materials.js surfSwash, the land's G-buffer): each wave's sheet running up the beach
+  and draining back (Stockdon et al. 2006's run-up from the sea's height, its deep-water length and the
+  beach's slope), dark, glossy and smoothed under it, its uprush's edge white and torn. A sea at the datum
+  only (world.js uSurfSea: terrain liquid and ocean); the material buffer's surf vec4 (wind, g, R, on).
+- Beaches (localsim.js finish, TILE_VERSION 60): the coasts had stood as banks: the tiles' coast rule
+  stepped the ground 4 m across a cell (on the finest levels' metres-wide cells, a bank over a flat
+  shelf). Now a soft or sandy coast's floor deepens A d^2/3 (Dean 1977, A 0.1) out to ~6 m depth (465 m),
+  its beach rising at 0.08 to a 1.8 m berm, made where a tile sees that far (the refinement and the first
+  pyramid level) and kept below; the finer levels' coast steps and dry-land floor held to their cells.
+  SOL Earth 30.4 S 137.1 E: was +1.5 m to -2.6 m in 10 m then a flat 2-3 m shelf; now -1.2 at 10 m out,
+  -2 at 70, -3 at 130, -4 at 200. Scratchpad beauty/beach_before_after.jpg.
+- Not yet: the waves' faces in the geometry (the water's vertices displaced by the surf: the vertex shader
+  is terrainMaterial's VERT, generated to waterVertex); the wind waves' normals streak at grazing views
+  near the camera (seen with the wind on, not calm: aliasing of their short octaves); the land swash's
+  phase lacks the bores' noise bend (they drift apart a little); lakes' surf is the sea's x0.3 x fetch.
+
 ## NOW: trees and shrubs by climate, many species a world (session 39d69fa8, 2026-10-14)
 
 Dave: "We also need tree and plant diversity, correct by climate. A hilltop forest shouldn't have the same

@@ -11,8 +11,9 @@ import { MAT_N } from './matclasses.js';
 
 // (as chunkbuilder.js's vertices: the colour's square root over the byte)
 const enc = (c) => Math.max(0, Math.min(255, Math.round(Math.sqrt(Math.max(c, 0)) * 255)));
-// the shore's distance's reach (texels each way) over the byte's half
-export const COLOUR_SHORE_R = 4;
+// the shore's distance's reach (texels each way) over the byte's half: far enough out to set the surf's
+// crests along the coast (liquid.js surfPhase: ~3.7 km on an Earth)
+export const COLOUR_SHORE_R = 24;
 
 // rows j0 .. j1 - 1 of a face size texels a side: RGBA bytes, a 255 under water and 0 on land
 export function colourFace(gen, face, size, j0 = 0, j1 = size) {
