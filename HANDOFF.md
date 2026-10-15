@@ -20,6 +20,9 @@ pixel-parity claim is made. Dave confirmed sole-agent work and no coordination m
 3. Brainstorm (then propose) vertically oriented megastructures: going down a crack between buildings,
    "suuuuper deep": you start out deep and go REALLY deep, deep enough that gravity changes on the way
    down (a shell's or a hollow world's own gravity: less the deeper you go?). Ideas first, for Dave to pick.
+   PROPOSED (2026-10-14): notes/VERTICAL_MEGASTRUCTURES.md, six ideas; recommended: the Plumb (a borehole
+   through a small moon, gravity from depth, zero at the centre, "down" turning over past it), entered by
+   the Rift (a slot between the founders' archive walls). Waiting for Dave's pick.
 
 ## NOW: trees and shrubs by climate, many species a world (session 39d69fa8, 2026-10-14)
 
