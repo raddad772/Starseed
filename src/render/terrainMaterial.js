@@ -344,7 +344,7 @@ void main() {
     if (uSeason.z > 0.5 || uFrost.y > 0.5) {
       float sn0 = mix(d2.r, d1.r, smoothstep(250.0, 1000.0, dist)) * 0.7 + d0.a * 0.3;
       float sn = uSeason.z > 0.5 ? seasonSnow(uToFixed * up, fn, vExt.a * 120.0 - 60.0, sn0) : 0.0;
-      if (uFrost.y > 0.5) { float fr = seasonFrost(fn, sn0); frostK = fr > sn ? 1.0 : 0.0; sn = max(sn, fr); }
+      if (uFrost.y > 0.5) { float fr = seasonFrost(uToFixed * up, fn, sn0); frostK = fr > sn ? 1.0 : 0.0; sn = max(sn, fr); }
       sn *= (1.0 - smoothstep(0.0, 0.02, waterEnc)) * (1.0 - smoothstep(0.0, 0.1, emissive));
       // (the year-round snow showing: a glacier's bare ice, its ablation zone, isn't; a winter's snow
       // covers it too)

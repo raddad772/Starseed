@@ -1,6 +1,7 @@
 // The seasons' snow in the shaders: the ground's (terrainMaterial.js) and its rocks' (rockRender.js), the
 // same snowpack. Their uniforms are the world's shared ones (world.js setSeasonMap, solarLongitude).
 import { SUBLIM_YR, DDF_SNOW } from '../gen/worldsim/season.js';
+import { FROST_NL, FROST_TILTS } from '../gen/frostcap.js';
 
 // (seasonal snow's bulk density, kg/m3: ~0.3 of water's once it has settled, Sturm et al. 2010; its
 // depth, m, per mm of its water)
@@ -88,16 +89,26 @@ float seasonSnow(vec3 dirF, vec3 fn, float Ta, float n) {
   return c * (1.0 - 0.9 * smoothstep(0.12, 0.45, 1.0 - dn));
 }
 // ---- the seasons' frost where a thin air freezes out at the poles (Mars' CO2; gen/frostcap.js, world.js):
-// its mass by the solar longitude (x) and latitude (y, south to north), sqrt(kg / 2000); uFrost x: where
-// the sun stands in the year, y: on
+// its mass by the solar longitude (x) and latitude (y, south to north) for each tilt toward the pole in
+// turn (FROST_TILTS, one above another), sqrt(kg / 2000); uFrost x: where the sun stands in the year, y: on
 uniform sampler2D tFrost;
 uniform vec4 uFrost;
-// how much of a surface facing fn (planet-fixed) it covers (0..1): read at the latitude the surface faces
-// (one tilted toward the pole by a degrees has the day's sun of a place a degrees nearer it: the pole-
-// facing sides keep their frost longest, the sunward lose it first); ~10 kg/m2 (under a cm) hides the
+const float FROST_NL = ${FROST_NL.toFixed(1)}, FROST_NT = ${FROST_TILTS.length.toFixed(1)}, FROST_TILT0 = ${FROST_TILTS[0].toFixed(1)}, FROST_DTILT = ${(FROST_TILTS[1] - FROST_TILTS[0]).toFixed(1)};
+// how much of a surface at dirF facing fn (planet-fixed) it covers (0..1): by its latitude and how far it
+// tilts toward the pole (its normal's part along the meridian: an east or west face is level ground's), as
+// frostcap.js has a slope's year (the pole-facing sides keep their frost longest, the sunward lose it
+// first, a steep wall near the equator none: the warm ground round it); ~10 kg/m2 (under a cm) hides the
 // ground, a thin frost lying in patches (n: the ground's own tiles, as the snow's)
-float seasonFrost(vec3 fn, float n) {
-  float m = texture(tFrost, vec2(uFrost.x / 6.28319, asin(clamp(fn.y, -1.0, 1.0)) / 3.14159 + 0.5)).r;
+float seasonFrost(vec3 dirF, vec3 fn, float n) {
+  float sy = clamp(dirF.y, -1.0, 1.0);
+  vec3 north = vec3(0.0, 1.0, 0.0) - dirF * sy;
+  float nl = length(north);
+  float tilt = nl > 1e-4 ? degrees(asin(clamp(dot(fn, north) / nl, -1.0, 1.0))) * (sy < 0.0 ? -1.0 : 1.0) : 0.0;
+  float ft = clamp((tilt - FROST_TILT0) / FROST_DTILT, 0.0, FROST_NT - 1.0), t0 = min(floor(ft), FROST_NT - 2.0);
+  float v = clamp((asin(sy) / 3.14159 + 0.5) * FROST_NL, 0.5, FROST_NL - 0.5), u = uFrost.x / 6.28319;
+  float m0 = texture(tFrost, vec2(u, (t0 * FROST_NL + v) / (FROST_NT * FROST_NL))).r;
+  float m1 = texture(tFrost, vec2(u, ((t0 + 1.0) * FROST_NL + v) / (FROST_NT * FROST_NL))).r;
+  float m = mix(m0, m1, ft - t0);
   float c = 1.0 - exp(-m * m * 2000.0 / 10.0);
   return smoothstep(n - 0.25, n + 0.25, c * 1.2 - 0.1);
 }

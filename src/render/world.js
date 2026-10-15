@@ -5,7 +5,7 @@ import { PlanetTerrain } from './planetTerrain.js';
 import { cloudMapPixels } from '../gen/worldsim/snapshot.js';
 import { DDF_SNOW, snowsBySeason } from '../gen/worldsim/season.js';
 import { climateOpts } from '../gen/worldsim/climate.js';
-import { frostCaps, frostPixels, FROST_NL, FROST_NS } from '../gen/frostcap.js';
+import { FROST_NL, FROST_NS, FROST_TILTS } from '../gen/frostcap.js';
 import { Atmosphere, blankCloudMap, thermalUniform, cloudLife, lensZ } from './atmosphere.js';
 import { makeStarMesh, SKY_LENS } from './sky.js';
 import { makeGiantMesh, makeRingMesh } from './giant.js';
@@ -41,17 +41,27 @@ const _m4 = new THREE.Matrix4(), _up = new THREE.Vector3();
 // (a world's seasons before its climate's year arrives: none)
 const _blankSeason = (() => { const t = new THREE.DataTexture(new Uint8Array([128, 128, 0, 255]), 1, 1, THREE.RGBAFormat); t.needsUpdate = true; return t; })();
 function blankSeasonMap() { return _blankSeason; }
-// a world's seasonal frost where its thin air freezes out at the poles (Mars' CO2: gen/frostcap.js), as
-// a texture by the solar longitude and latitude, or null: a solid world under a thin air (under ~0.05
-// bar: one that carries little heat to its poles) with CO2 in it, and no liquid on it (a sea's heat; a
-// lava or sulfur moon's poles hold no frost). A world locked to its star has no seasons: its night side's
-// cold trap (the air collapsing onto it as CO2 ice) is another thing, not drawn yet
-function frostTexture(d, sys) {
+// a world's seasonal frost where its thin air freezes out at the poles (Mars' CO2: gen/frostcap.js), its
+// table's inputs, or null: a solid world under a thin air (under ~0.05 bar: one that carries little heat
+// to its poles) with CO2 in it, and no liquid on it (a sea's heat; a lava or sulfur moon's poles hold no
+// frost). A world locked to its star has no seasons: its night side's cold trap (the air collapsing onto
+// it as CO2 ice) is another thing, not drawn yet. The workers build the table (a third of a second): a
+// texture by the solar longitude, and the latitude for each tilt toward the pole (frostTexture)
+function frostJob(d, sys) {
   const a = d.atmosphere, t = d.terrain;
   if (!a || !a.comp || !(a.comp.CO2 > 0) || !(a.pressure < 0.05) || !t || !t.climate || t.liquid || !sys || !sys.bodies) return null;
-  const host = d.kind === 'moon' ? sys.bodies[d.parentId] : null, f = frostCaps(climateOpts(d, sys.bodies[0], host), a.pressure * 1e5 * a.comp.CO2);
-  if (!f) return null;
-  const tex = new THREE.DataTexture(frostPixels(f), FROST_NS, FROST_NL, THREE.RedFormat);
+  // (its aerosols at green, the dust's light on the slopes in the shade: their depth, how much of what they
+  // meet they scatter, and how far forward (the sky's two lobes'))
+  const r = a.render || {}, pops = r.aer || [];
+  let tau = 0, sc = 0;
+  for (const q of pops) { tau += q.tau[1]; sc += q.tau[1] * q.ssa[1]; }
+  const at = (v, k) => (Array.isArray(v) ? v[k] : v);
+  const g = r.mieG != null ? (1 - at(r.mieF, 1)) * at(r.mieG, 1) + at(r.mieF, 1) * at(r.mieGL, 1) : 0.7;
+  const host = d.kind === 'moon' ? sys.bodies[d.parentId] : null;
+  return { type: 'frost', opts: climateOpts(d, sys.bodies[0], host), pCO2: a.pressure * 1e5 * a.comp.CO2, dust: { tau, ssa: tau > 0 ? sc / tau : 1, g } };
+}
+function frostTexture(px) {
+  const tex = new THREE.DataTexture(px, FROST_NS, FROST_NL * FROST_TILTS.length, THREE.RedFormat);
   tex.wrapS = THREE.RepeatWrapping; tex.wrapT = THREE.ClampToEdgeWrapping; tex.magFilter = THREE.LinearFilter; tex.minFilter = THREE.LinearFilter; tex.needsUpdate = true;
   return tex;
 }
@@ -217,10 +227,8 @@ export class WorldRenderer {
       tFrost: { value: _blankFrost },
       uFrost: { value: new THREE.Vector4(0, 0, 0, 0) },
     };
-    if (b.solid) {
-      const ft = frostTexture(b.data, this.u.system);
-      if (ft) { it.shared.tFrost.value = ft; it.shared.uFrost.value.y = 1; }
-    }
+    const fj = b.solid ? frostJob(b.data, this.u.system) : null;
+    if (fj) this.pool.submit(fj, 12).promise.then((r) => { if (r.px) { it.shared.tFrost.value = frostTexture(r.px); it.shared.uFrost.value.y = 1; } }, () => {});
     if (a) {
       const clouds = b.data.atmosphere && b.data.atmosphere.clouds;
       if (b.giant) it.volume = new VolumePass(b, a, this.cloudNoise, 0);

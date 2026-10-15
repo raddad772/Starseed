@@ -13,6 +13,7 @@ import { colourFace } from '../gen/colourmap.js';
 import { scatterStones } from '../gen/rocks.js';
 import { buildFloes } from '../gen/floeslabs.js';
 import { fireTile } from '../gen/life/fire.js';
+import { frostCaps, frostPixels } from '../gen/frostcap.js';
 
 const params = new Map();
 const gens = new Map();
@@ -116,6 +117,12 @@ self.onmessage = (e) => {
       // a fire tile's recent centuries (gen/life/fire.js)
       const r = fireTile(gen(m.body), m.face, m.ti, m.tj, { o2K: m.o2K, seed: m.seed });
       self.postMessage({ type: 'fire', job: m.job, ...r }, [r.ageG.buffer, r.ageC.buffer, r.fires.buffer]);
+      return;
+    }
+    if (m.type === 'frost') {
+      // a thin air's seasonal frost through the year, by latitude and slope (gen/frostcap.js; render/world.js)
+      const f = frostCaps(m.opts, m.pCO2, m.dust), px = f ? frostPixels(f) : null;
+      self.postMessage({ type: 'frost', job: m.job, px }, px ? [px.buffer] : []);
       return;
     }
     if (m.type === 'cface') {

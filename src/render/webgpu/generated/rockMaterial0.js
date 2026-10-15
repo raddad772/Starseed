@@ -108,6 +108,10 @@ struct FragmentOutput {
 }
 
 const PI: f32 = 3.1415927f;
+const FROST_NL: f32 = 180f;
+const FROST_NT: f32 = 9f;
+const FROST_TILT0_: f32 = -40f;
+const FROST_DTILT: f32 = 10f;
 const SNOW_DEPTH_PER_MM: f32 = 0.003333f;
 const DDF_SNOW: f32 = 4f;
 const HC_N: array<vec3<f32>, 6> = array<vec3<f32>, 6>(vec3<f32>(1f, 0f, 0f), vec3<f32>(-1f, 0f, 0f), vec3<f32>(0f, 1f, 0f), vec3<f32>(0f, -1f, 0f), vec3<f32>(0f, 0f, 1f), vec3<f32>(0f, 0f, -1f));
@@ -338,25 +342,83 @@ fn seasonSWE(dirF_2: vec3<f32>, Ta: f32) -> f32 {
     return max(0f, (_e157 - (_e158 * ((_e159 * (_e160 + _e161)) + (_e164 * (sin(_e165) + sin(_e167)))))));
 }
 
-fn seasonFrost(fn_: vec3<f32>, n_2: f32) -> f32 {
+fn seasonFrost(dirF_4: vec3<f32>, fn_: vec3<f32>, n_2: f32) -> f32 {
+    var dirF_5: vec3<f32>;
     var fn_1: vec3<f32>;
     var n_3: f32;
+    var sy: f32;
+    var north: vec3<f32>;
+    var nl: f32;
+    var local_4: f32;
+    var local_5: f32;
+    var tilt: f32;
+    var ft: f32;
+    var t0_: f32;
+    var v: f32;
+    var u: f32;
+    var m0_: f32;
+    var m1_: f32;
     var m_1: f32;
     var c: f32;
 
+    dirF_5 = dirF_4;
     fn_1 = fn_;
     n_3 = n_2;
-    let _e38 = global.uFrost;
-    let _e42 = fn_1;
-    let _e55 = textureSampleLevel(tFrostTexture, tFrostSampler, vec2<f32>((_e38.x / 6.28319f), ((asin(clamp(_e42.y, -1f, 1f)) / 3.14159f) + 0.5f)), 0f);
-    m_1 = _e55.x;
-    let _e59 = m_1;
-    let _e61 = m_1;
-    c = (1f - exp((((-(_e59) * _e61) * 2000f) / 10f)));
-    let _e70 = n_3;
-    let _e73 = n_3;
-    let _e76 = c;
-    return smoothstep((_e70 - 0.25f), (_e73 + 0.25f), ((_e76 * 1.2f) - 0.1f));
+    let _e44 = dirF_5;
+    sy = clamp(_e44.y, -1f, 1f);
+    let _e55 = dirF_5;
+    let _e56 = sy;
+    north = (vec3<f32>(0f, 1f, 0f) - (_e55 * _e56));
+    let _e60 = north;
+    nl = length(_e60);
+    let _e63 = nl;
+    if (_e63 > 0.0001f) {
+        let _e66 = fn_1;
+        let _e67 = north;
+        let _e69 = nl;
+        let _e77 = sy;
+        if (_e77 < 0f) {
+            local_4 = -1f;
+        } else {
+            local_4 = 1f;
+        }
+        let _e84 = local_4;
+        local_5 = (degrees(asin(clamp((dot(_e66, _e67) / _e69), -1f, 1f))) * _e84);
+    } else {
+        local_5 = 0f;
+    }
+    let _e88 = local_5;
+    tilt = _e88;
+    let _e90 = tilt;
+    ft = clamp(((_e90 - FROST_TILT0_) / FROST_DTILT), 0f, 8f);
+    let _e99 = ft;
+    t0_ = min(floor(_e99), 7f);
+    let _e106 = sy;
+    v = clamp((((asin(_e106) / 3.14159f) + 0.5f) * FROST_NL), 0.5f, 179.5f);
+    let _e119 = global.uFrost;
+    u = (_e119.x / 6.28319f);
+    let _e124 = u;
+    let _e125 = t0_;
+    let _e127 = v;
+    let _e135 = textureSampleLevel(tFrostTexture, tFrostSampler, vec2<f32>(_e124, (((_e125 * FROST_NL) + _e127) / 1620f)), 0f);
+    m0_ = _e135.x;
+    let _e138 = u;
+    let _e139 = t0_;
+    let _e143 = v;
+    let _e151 = textureSampleLevel(tFrostTexture, tFrostSampler, vec2<f32>(_e138, ((((_e139 + 1f) * FROST_NL) + _e143) / 1620f)), 0f);
+    m1_ = _e151.x;
+    let _e154 = m0_;
+    let _e155 = m1_;
+    let _e156 = ft;
+    let _e157 = t0_;
+    m_1 = mix(_e154, _e155, (_e156 - _e157));
+    let _e162 = m_1;
+    let _e164 = m_1;
+    c = (1f - exp((((-(_e162) * _e164) * 2000f) / 10f)));
+    let _e173 = n_3;
+    let _e176 = n_3;
+    let _e179 = c;
+    return smoothstep((_e173 - 0.25f), (_e176 + 0.25f), ((_e179 * 1.2f) - 0.1f));
 }
 
 fn main_1() {
@@ -381,117 +443,119 @@ fn main_1() {
     var nT: vec3<f32>;
     var fk: f32;
 
-    let _e41 = vWorld_1;
-    let _e42 = fwidth(_e41);
-    foot = length(_e42);
-    let _e45 = vLocal_1;
-    let _e46 = dpdx(_e45);
-    dpx = _e46;
-    let _e48 = vLocal_1;
-    let _e49 = dpdy(_e48);
-    dpy = _e49;
-    let _e51 = vLocalN_1;
-    ln = normalize(_e51);
-    let _e54 = vCol_1;
-    let _e57 = vR_1;
-    albedo_2 = (_e54 * (0.85f + (0.3f * fract((_e57.x * 3.17f)))));
-    let _e70 = vAx_1;
-    let _e71 = vLocalN_1;
-    let _e74 = vAy_1;
+    let _e45 = vWorld_1;
+    let _e46 = fwidth(_e45);
+    foot = length(_e46);
+    let _e49 = vLocal_1;
+    let _e50 = dpdx(_e49);
+    dpx = _e50;
+    let _e52 = vLocal_1;
+    let _e53 = dpdy(_e52);
+    dpy = _e53;
+    let _e55 = vLocalN_1;
+    ln = normalize(_e55);
+    let _e58 = vCol_1;
+    let _e61 = vR_1;
+    albedo_2 = (_e58 * (0.85f + (0.3f * fract((_e61.x * 3.17f)))));
+    let _e74 = vAx_1;
     let _e75 = vLocalN_1;
-    let _e79 = vAz_1;
-    let _e80 = vLocalN_1;
-    sN = normalize((((_e70 * _e71.x) + (_e74 * _e75.y)) + (_e79 * _e80.z)));
-    let _e86 = vWorld_1;
-    let _e87 = dpdx(_e86);
-    let _e88 = vWorld_1;
-    let _e89 = dpdy(_e88);
-    fN = normalize(cross(_e87, _e89));
-    let _e93 = fN;
-    let _e94 = sN;
-    if (dot(_e93, _e94) < 0f) {
-        let _e98 = fN;
-        fN = -(_e98);
+    let _e78 = vAy_1;
+    let _e79 = vLocalN_1;
+    let _e83 = vAz_1;
+    let _e84 = vLocalN_1;
+    sN = normalize((((_e74 * _e75.x) + (_e78 * _e79.y)) + (_e83 * _e84.z)));
+    let _e90 = vWorld_1;
+    let _e91 = dpdx(_e90);
+    let _e92 = vWorld_1;
+    let _e93 = dpdy(_e92);
+    fN = normalize(cross(_e91, _e93));
+    let _e97 = fN;
+    let _e98 = sN;
+    if (dot(_e97, _e98) < 0f) {
+        let _e102 = fN;
+        fN = -(_e102);
     }
-    let _e100 = fN;
-    let _e101 = sN;
-    let _e102 = vR_1;
-    let _e111 = vAx_1;
-    let _e112 = ln;
-    let _e115 = vAy_1;
+    let _e104 = fN;
+    let _e105 = sN;
+    let _e106 = vR_1;
+    let _e115 = vAx_1;
     let _e116 = ln;
-    let _e120 = vAz_1;
-    let _e121 = ln;
-    let _e126 = sN;
-    N = normalize(((mix(_e100, _e101, vec3(clamp((_e102.z * 1.4f), 0f, 1f))) + (((_e111 * _e112.x) + (_e115 * _e116.y)) + (_e120 * _e121.z))) - _e126));
-    let _e130 = vWorld_1;
-    let _e131 = global.uCenter;
-    rel = (_e130 - _e131);
-    let _e134 = rel;
-    r = length(_e134);
-    let _e137 = rel;
-    let _e138 = r;
-    up = (_e137 / vec3(_e138));
-    let _e142 = global.uSeason;
-    if (_e142.z > 0.5f) {
+    let _e119 = vAy_1;
+    let _e120 = ln;
+    let _e124 = vAz_1;
+    let _e125 = ln;
+    let _e130 = sN;
+    N = normalize(((mix(_e104, _e105, vec3(clamp((_e106.z * 1.4f), 0f, 1f))) + (((_e115 * _e116.x) + (_e119 * _e120.y)) + (_e124 * _e125.z))) - _e130));
+    let _e134 = vWorld_1;
+    let _e135 = global.uCenter;
+    rel = (_e134 - _e135);
+    let _e138 = rel;
+    r = length(_e138);
+    let _e141 = rel;
+    let _e142 = r;
+    up = (_e141 / vec3(_e142));
+    let _e146 = global.uSeason;
+    if (_e146.z > 0.5f) {
         {
-            let _e146 = global.uToFixed;
-            let _e147 = up;
-            let _e149 = vTa_1;
-            let _e150 = seasonSWE((_e146 * _e147), _e149);
-            swe = _e150;
-            let _e153 = swe;
-            cov = (1f - exp((-(_e153) / 12f)));
-            let _e160 = swe;
-            depth = (min(_e160, 3000f) * SNOW_DEPTH_PER_MM);
-            let _e166 = depth;
-            let _e169 = depth;
-            let _e172 = vLocal_1;
-            bank = (1f - smoothstep((_e166 - 0.04f), (_e169 + 0.04f), _e172.y));
-            let _e177 = cov;
-            let _e178 = bank;
-            let _e181 = N;
-            let _e182 = up;
-            sk = (_e177 * max(_e178, smoothstep(0.55f, 0.85f, dot(_e181, _e182))));
-            let _e188 = albedo_2;
-            let _e189 = global.uSnowCol;
-            let _e190 = sk;
-            albedo_2 = mix(_e188, _e189, vec3(_e190));
-            let _e193 = rough;
-            let _e195 = sk;
-            rough = mix(_e193, 0.75f, _e195);
-            let _e197 = ao_2;
+            let _e150 = global.uToFixed;
+            let _e151 = up;
+            let _e153 = vTa_1;
+            let _e154 = seasonSWE((_e150 * _e151), _e153);
+            swe = _e154;
+            let _e157 = swe;
+            cov = (1f - exp((-(_e157) / 12f)));
+            let _e164 = swe;
+            depth = (min(_e164, 3000f) * SNOW_DEPTH_PER_MM);
+            let _e170 = depth;
+            let _e173 = depth;
+            let _e176 = vLocal_1;
+            bank = (1f - smoothstep((_e170 - 0.04f), (_e173 + 0.04f), _e176.y));
+            let _e181 = cov;
+            let _e182 = bank;
+            let _e185 = N;
+            let _e186 = up;
+            sk = (_e181 * max(_e182, smoothstep(0.55f, 0.85f, dot(_e185, _e186))));
+            let _e192 = albedo_2;
+            let _e193 = global.uSnowCol;
+            let _e194 = sk;
+            albedo_2 = mix(_e192, _e193, vec3(_e194));
+            let _e197 = rough;
             let _e199 = sk;
-            ao_2 = mix(_e197, 1f, _e199);
+            rough = mix(_e197, 0.75f, _e199);
+            let _e201 = ao_2;
+            let _e203 = sk;
+            ao_2 = mix(_e201, 1f, _e203);
         }
     }
-    let _e201 = global.uFrost;
-    if (_e201.y > 0.5f) {
+    let _e205 = global.uFrost;
+    if (_e205.y > 0.5f) {
         {
-            let _e205 = up;
-            let _e206 = N;
-            let _e207 = up;
-            let _e208 = N;
             let _e209 = up;
-            nT = normalize((_e205 + ((_e206 - (_e207 * dot(_e208, _e209))) * 0.33f)));
-            let _e218 = global.uToFixed;
-            let _e219 = nT;
-            let _e222 = seasonFrost((_e218 * _e219), 0.5f);
-            fk = _e222;
-            let _e224 = albedo_2;
-            let _e225 = global.uSnowCol;
-            let _e226 = fk;
-            albedo_2 = mix(_e224, _e225, vec3(_e226));
-            let _e229 = rough;
-            let _e231 = fk;
-            rough = mix(_e229, 0.75f, _e231);
+            let _e210 = N;
+            let _e211 = up;
+            let _e212 = N;
+            let _e213 = up;
+            nT = normalize((_e209 + ((_e210 - (_e211 * dot(_e212, _e213))) * 0.33f)));
+            let _e222 = global.uToFixed;
+            let _e223 = up;
+            let _e225 = global.uToFixed;
+            let _e226 = nT;
+            let _e229 = seasonFrost((_e222 * _e223), (_e225 * _e226), 0.5f);
+            fk = _e229;
+            let _e231 = albedo_2;
+            let _e232 = global.uSnowCol;
+            let _e233 = fk;
+            albedo_2 = mix(_e231, _e232, vec3(_e233));
+            let _e236 = rough;
+            let _e238 = fk;
+            rough = mix(_e236, 0.75f, _e238);
         }
     }
-    let _e233 = albedo_2;
-    let _e234 = N;
-    let _e235 = rough;
-    let _e236 = ao_2;
-    materialOutput(_e233, _e234, _e235, _e236, 0f, 0f, 0.04f);
+    let _e240 = albedo_2;
+    let _e241 = N;
+    let _e242 = rough;
+    let _e243 = ao_2;
+    materialOutput(_e240, _e241, _e242, _e243, 0f, 0f, 0.04f);
     return;
 }
 
@@ -507,10 +571,10 @@ fn main(@location(0) vWorld: vec3<f32>, @location(1) vLocal: vec3<f32>, @locatio
     vCol_1 = vCol;
     vTa_1 = vTa;
     main_1();
-    let _e91 = gAlbedo;
-    let _e93 = gNormal;
-    let _e95 = gEmission;
-    let _e97 = gSurface;
-    return FragmentOutput(_e91, _e93, _e95, _e97);
+    let _e99 = gAlbedo;
+    let _e101 = gNormal;
+    let _e103 = gEmission;
+    let _e105 = gSurface;
+    return FragmentOutput(_e99, _e101, _e103, _e105);
 }
 `;

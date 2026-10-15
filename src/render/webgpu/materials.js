@@ -1,3 +1,5 @@
+import { FROST_NL, FROST_TILTS } from '../../gen/frostcap.js';
+
 // Scanned surface sampling, shared by terrain, rocks and bark. Explicit gradients
 // are taken by callers before material-dependent branches or alpha rejection.
 export const SCANNED_MATERIALS = /* wgsl */`
@@ -163,9 +165,19 @@ fn seasonSnow(dir: vec3f, normal: vec3f, meanT: f32, noise: f32) -> f32 {
   let c = smoothstep(noise - 0.25, noise + 0.25, (1.0 - exp(-swe / 12.0)) * 1.2 - 0.1);
   return c * (1.0 - 0.9 * smoothstep(0.12, 0.45, 1.0 - dn));
 }
-fn seasonFrost(normal: vec3f, noise: f32) -> f32 {
-  let uv = vec2f(material.frost.x / 6.28319, asin(clamp(normal.y, -1.0, 1.0)) / 3.14159 + 0.5);
-  let m = textureSampleLevel(frostTexture, climateSampler, uv, 0.0).r;
+fn seasonFrost(dir: vec3f, normal: vec3f, noise: f32) -> f32 {
+  let sy = clamp(dir.y, -1.0, 1.0);
+  let north = vec3f(0.0, 1.0, 0.0) - dir * sy;
+  let nl = length(north);
+  var tilt = 0.0;
+  if (nl > 1e-4) { tilt = degrees(asin(clamp(dot(normal, north) / nl, -1.0, 1.0))) * select(1.0, -1.0, sy < 0.0); }
+  let nt = ${FROST_TILTS.length.toFixed(1)}; let nlat = ${FROST_NL.toFixed(1)};
+  let ft = clamp((tilt - (${FROST_TILTS[0].toFixed(1)})) / ${(FROST_TILTS[1] - FROST_TILTS[0]).toFixed(1)}, 0.0, nt - 1.0);
+  let t0 = min(floor(ft), nt - 2.0);
+  let v = clamp((asin(sy) / 3.14159 + 0.5) * nlat, 0.5, nlat - 0.5); let u = material.frost.x / 6.28319;
+  let m0 = textureSampleLevel(frostTexture, climateSampler, vec2f(u, (t0 * nlat + v) / (nt * nlat)), 0.0).r;
+  let m1 = textureSampleLevel(frostTexture, climateSampler, vec2f(u, ((t0 + 1.0) * nlat + v) / (nt * nlat)), 0.0).r;
+  let m = mix(m0, m1, ft - t0);
   let c = 1.0 - exp(-m * m * 2000.0 / 10.0);
   return smoothstep(noise - 0.25, noise + 0.25, c * 1.2 - 0.1);
 }
@@ -222,7 +234,7 @@ fn groundSurface(col: vec4f, mat: vec4f, ext: vec4f, cls0: vec4f, cls1: vec4f, c
       let sn0 = mix(d2.r, d1.r, smoothstep(250.0, 1000.0, dist)) * 0.7 + d0.a * 0.3;
       var sn = 0.0;
       if (material.season.z > 0.5) { sn = seasonSnow(up, normalF, ext.a * 120.0 - 60.0, sn0); }
-      if (material.frost.y > 0.5) { let fr = seasonFrost(normalF, sn0); frostK = select(0.0, 1.0, fr > sn); sn = max(sn, fr); }
+      if (material.frost.y > 0.5) { let fr = seasonFrost(up, normalF, sn0); frostK = select(0.0, 1.0, fr > sn); sn = max(sn, fr); }
       sn *= (1.0 - smoothstep(0.0, 0.02, waterEnc)) * (1.0 - smoothstep(0.0, 0.1, emissive));
       let snow0 = snow * (1.0 - c2.w);
       if (sn > snow0) {

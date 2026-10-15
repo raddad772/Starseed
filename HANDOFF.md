@@ -21,6 +21,32 @@ pixel-parity claim is made. Dave confirmed sole-agent work and no coordination m
    "suuuuper deep": you start out deep and go REALLY deep, deep enough that gravity changes on the way
    down (a shell's or a hollow world's own gravity: less the deeper you go?). Ideas first, for Dave to pick.
 
+## NOW: Mars' frost on slopes by the slope's own year (session 39d69fa8, 2026-10-14)
+
+Dave (2026-10-09): "shouldn't CO2 frost only show up at night" (white crater walls at 21 N, mid-morning).
+- Was: the flat cap's table read at the latitude a slope faces (asin(fn.y)), on walls drawn steep: a north
+  wall at 21 N read ~65 N, inside the spring cap. Now frostcap.js runs each tilt toward the pole (-40..40
+  by 10, FROST_TILTS) as its own band: the sun of the latitude it faces within the horizon's day, the
+  dust's scattered light from the sky it sees (delta-Eddington: the forward peak with the beam; the world's
+  own dust tau/ssa/phase), the level ground round it (its glow, its reflected sun) over (1 - cos b) / 2.
+  The shader reads the point's own latitude and the normal's tilt along the meridian (season.js,
+  webgpu/materials.js; the generated rock/floe/ice/water modules regenerated).
+- Mars against Vincendon et al. 2010 (CO2 on 20-30 degree pole-facing slopes to 34 S in winter, none
+  nearer the equator): 30 degrees to 32.5 S, 20 to 37.5, level ground 48.5 S / 49.5 N as before;
+  equator-facing slopes only past ~54. Without the dust's light (prototype) 30 degree slopes reached 22 S
+  (as their dry model did); they explain theirs by ground ice, ours matches with the dust's light alone.
+- The table (120 x 1620) takes ~0.33 s: built on the terrain workers ('frost' job), the texture set when it
+  comes. tools/tests/frostcap.test.mjs.
+- Seen in a test tab: 21 N at Ls 10, sun 35 up: no frost (frost on and off identical); 45 N at Ls 10: the
+  north-facing crater walls white, the level ground and south-facing walls bare.
+- Not done: low-latitude night frost (Piqueux et al. 2016: a thin CO2 frost most nights on dusty ground,
+  gone soon after sunrise; microns thick, found in the thermal data, hardly visible).
+- Found, not fixed: once, after a fresh build of Mars' refinement and moving the camera 21 N 30 E ->
+  21 N 162 E -> 45 N 168 W, the ground at 45 N showed rectangular steps (chunks tens of metres apart, their
+  skirts as walls); rebuilding every chunk gave steps in a different pattern; not seen on cached loads
+  (with or without the colour cube). A fresh-build retry ran out of memory (one test tab grew to 12.4 GB
+  over a few reloads: worth a look).
+
 ## NOW: the land's plants by its water, islands colonised (session 39d69fa8, 2026-10-14, SIM 73)
 
 Dave: "why is there so little green" / "the world sims are verified and tuned by giving real planet

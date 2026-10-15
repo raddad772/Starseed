@@ -11,6 +11,7 @@ import { fireTile } from '../gen/life/fire.js';
 import { terrainPortrait, terrainGlobeMap } from '../gen/portrait.js';
 import { heightFace } from '../gen/heightmap.js';
 import { colourFace } from '../gen/colourmap.js';
+import { frostCaps, frostPixels } from '../gen/frostcap.js';
 import { scatterStones } from '../gen/rocks.js';
 import { buildFloes } from '../gen/floeslabs.js';
 
@@ -111,6 +112,7 @@ export class WorkerPool {
   _runLocal(e) {
     const m = e.msg;
     try {
+      if (m.type === 'frost') { const f = frostCaps(m.opts, m.pCO2, m.dust); this.pending.delete(e.job); e.resolve({ type: 'frost', px: f ? frostPixels(f) : null }); return; }
       let g = this.gens.get(m.body);
       if (!g) {
         const b = this.bodies.find((x) => x.id === m.body);

@@ -154,7 +154,7 @@ void main() {
   // round it: its north face no polar slope, frost on stones at 15N had been)
   if (uFrost.y > 0.5) {
     vec3 nT = normalize(up + (N - up * dot(N, up)) * 0.33);
-    float fk = seasonFrost(uToFixed * nT, 0.5);
+    float fk = seasonFrost(uToFixed * up, uToFixed * nT, 0.5);
     albedo = mix(albedo, uSnowCol, fk);
     rough = mix(rough, 0.75, fk);
   }
