@@ -80,19 +80,9 @@ export class Liquid {
   }
 }
 
-export const GLSL_LIQUID = /* glsl */`
-uniform vec4 uLiquid;     // F0, the wind (m/s), wind waves (1 .. 0 a thick melt), the peak wavelength (m)
-uniform vec4 uLiquid2;    // gravity, how it foams (water most), the sea's freezing point under the fresh's (C), the sun's latitude now (sin)
-uniform vec4 uLiquid3;    // its absorption (1/m: red, green, blue), its rivers' dissolved organic matter's at 440 nm (1/m)
-uniform float uSurfSea;   // a sea at the datum: its shores' surf (world.js; 0 none)
-uniform vec4 uWaveK[${N_WAVE}];   // each wave's k (planet-fixed, rad/m), its phase now
-// the prevailing wind's way at upF (the belts the sim's climate has: the trades blowing west, the
-// westerlies east, the polar easterlies west): +1 toward the east, -1 toward the west, turning over
-// a few degrees between belts (shared with sand's ripples, materials.js)
-float windSense(vec3 upF) {
-  float al = abs(asin(clamp(upF.y, -1.0, 1.0)));
-  return -1.0 + 2.0 * smoothstep(0.49, 0.55, al) - 2.0 * smoothstep(1.02, 1.08, al);
-}
+// the surf's own (the water's pass and its vertices', terrainMaterial.js): uColourCube (colourCube.js) and
+// tDetail declared before it
+export const GLSL_SURF = /* glsl */`
 // ---- the surf: the sea's waves coming in to its shores. The wind's sea fully developed (its significant
 // height 0.21 U^2 / g, Pierson and Moskowitz) and its period a swell's (the stronger winds' far off:
 // 10 U / g, ~9 s on Earth); over the shallows each crest runs in at a shallow wave's speed sqrt(g h), so
@@ -176,7 +166,22 @@ vec3 surfSwash(float alt, float b, float ph, vec4 sea) {
   float edge = p < 0.32 ? smoothstep(s - 0.25 * Ri - 0.02, s, alt) * cover : 0.0;
   return vec3(cover, edge, R2);
 }
+`;
 
+export const GLSL_LIQUID = /* glsl */`
+uniform vec4 uLiquid;     // F0, the wind (m/s), wind waves (1 .. 0 a thick melt), the peak wavelength (m)
+uniform vec4 uLiquid2;    // gravity, how it foams (water most), the sea's freezing point under the fresh's (C), the sun's latitude now (sin)
+uniform vec4 uLiquid3;    // its absorption (1/m: red, green, blue), its rivers' dissolved organic matter's at 440 nm (1/m)
+uniform float uSurfSea;   // a sea at the datum: its shores' surf (world.js; 0 none)
+uniform vec4 uWaveK[${N_WAVE}];   // each wave's k (planet-fixed, rad/m), its phase now
+// the prevailing wind's way at upF (the belts the sim's climate has: the trades blowing west, the
+// westerlies east, the polar easterlies west): +1 toward the east, -1 toward the west, turning over
+// a few degrees between belts (shared with sand's ripples, materials.js)
+float windSense(vec3 upF) {
+  float al = abs(asin(clamp(upF.y, -1.0, 1.0)));
+  return -1.0 + 2.0 * smoothstep(0.49, 0.55, al) - 2.0 * smoothstep(1.02, 1.08, al);
+}
+${GLSL_SURF}
 // the waves' sum at fp: their slope (x, y, z, planet-fixed), each weighted (wt: kind's and the
 // wind's), how much of it the pixel resolves; crest: the resolved sum itself, in its own deviations
 struct Waves { vec3 g; float var; float var0; float res; float crest; };

@@ -8,7 +8,7 @@ import { GLSL_TERRAIN_SHADOW } from './terrainShadow.js';
 import { GLSL_COLOUR_CUBE } from './colourCube.js';
 import { GLSL_SUN_SHADOW, GLSL_SKY_SHADOW } from './sunShadows.js';
 import { GLSL_MOON } from './moonlight.js';
-import { GLSL_LIQUID } from './liquid.js';
+import { GLSL_LIQUID, GLSL_SURF } from './liquid.js';
 import { detailData } from '../gen/detail.js';
 import { GLSL_SEASON } from './season.js';
 import { RIVER_DEPTH_EXP } from '../gen/worldsim/season.js';
@@ -104,6 +104,16 @@ attribute vec4 col;        // (the sea's or a lake's own colour where it's deep,
 uniform vec3 uOriginMod;
 uniform vec3 uOriginRel;
 uniform vec3 uNearOff;
+// (the sea's surf standing up off it: liquid.js GLSL_SURF)
+uniform float uSurfSea;
+uniform vec4 uLiquid;
+uniform vec4 uLiquid2;
+uniform float uTime;
+uniform mat3 uToFixed;
+uniform vec3 uCenter;
+uniform sampler2D tDetail;
+${GLSL_COLOUR_CUBE}
+${GLSL_SURF}
 varying vec3 vNearRel;
 varying vec3 vAnchorPos;
 varying float vOcc;
@@ -141,6 +151,28 @@ void main() {
     shift = clamp(1.5 * rib.y * (pow(fq, ${RIVER_DEPTH_EXP.toFixed(2)}) - 1.0), -1.5 * rib.y, 1.2 * rib.y);
   }
   vRib = vec2(rib.x, max(rib.y + shift / 1.5, 0.02));
+  // the surf's waves standing up off a sea's or a lake's level water as they come in, at the vertex's own
+  // depth (rib.y, chunkbuilder.js) and phase (liquid.js liquidSurface's, its fronts bent the same); no
+  // sharper than the mesh holds (its spacing ~1/35 of the distance: planetTerrain.js SPLIT_K), fading
+  // where its waves crowd in nearer than ~6 spacings
+  float lift = 0.0, lk = liq.x > 0.02 ? liq.y / liq.x : 1.0;
+  if (uSurfSea > 0.5 && (lk < 0.2 || (lk > 0.3 && lk < 0.55)) && rib.y > 0.0) {
+    vec4 wp0 = modelMatrix * vec4(position, 1.0);
+    vec3 upF = uToFixed * normalize(wp0.xyz - uCenter), fp = uOriginMod + position;
+    float al = abs(asin(clamp(upF.y, -1.0, 1.0)));
+    vec4 sea4 = surfSea(uLiquid.y * (al < 0.09 ? 0.45 : al < 0.52 ? 0.9 : al < 1.05 ? 1.25 : 0.8) * (lk < 0.2 ? 1.0 : mix(0.3, 1.0, liq.w / liq.x)), uLiquid2.x);
+    sea4.x *= (lk < 0.2 ? 1.0 : 0.3 * liq.w / liq.x) * uLiquid.z;
+    float h = rib.y, hb = pow(sea4.x * 1.3 * pow(0.1 * sea4.w, 0.25) / 0.78, 0.8);
+    if (h < 2.0 * hb + 0.5 && sea4.x > 0.02) {
+      float shoreX = uColourCube.x > 0.5 ? colourCubeShoreSmooth(upF) * uColourCube.z : -1.0;
+      vec4 nW = surfNoise(fp, n, 512.0, 0.0), nG = surfNoise(fp, n, 64.0, 0.0);
+      float ph = surfPhase(fp, surfOut(h, shoreX), sea4, uLiquid2.x, uTime) + 1.6 * (clamp(nG.a * 1.6 - 0.3, 0.0, 1.0) - 0.5) + 0.8 * (nW.r - 0.5);
+      float sp = max(0.6, length(wp0.xyz) / 35.0), Lh = sea4.y * sqrt(uLiquid2.x * max(h, 0.05));
+      vec4 sf = surfAt(h, ph, sea4, clamp(3.0 * sp / Lh, 0.07, 0.4));
+      lift = sf.x * (1.0 - smoothstep(1.5 * hb, 2.0 * hb + 0.5, h)) * smoothstep(4.0, 10.0, Lh / sp);
+    }
+  }
+  shift += lift;
   vec4 wp = modelMatrix * vec4(position + n * shift, 1.0);
   vWorldPos = wp.xyz;
   vNormal = normalize(mat3(modelMatrix) * n);
@@ -278,7 +310,12 @@ void main() {
   vec3 dpx = dFdx(vFixedPos), dpy = dFdy(vFixedPos);
   // (and the water's depth's, for the surf: liquid.js surfAt; and the shore's distance (m, + under the
   // water) from the colour map, its crests' way along the coast: liquid.js surfPhaseX)
+#ifdef RIBBON
+  // (a level water's: its vertices' own depth, m)
+  vec2 dEnc = vec2(dFdx(vRib.y), dFdy(vRib.y));
+#else
   vec2 dEnc = vec2(dFdx(vCol.a), dFdy(vCol.a));
+#endif
   float shoreX = -1.0;
   if (uColourCube.x > 0.5) shoreX = colourCubeShoreSmooth(normalize(uToFixed * normalize(vWorldPos - uCenter))) * uColourCube.z;
   vec2 dShoreX = vec2(dFdx(shoreX), dFdy(shoreX));
@@ -489,16 +526,24 @@ void main() {
     // (the depth's gradient across the ground (planet-fixed), from its screen derivatives solved on the
     // plane the pixel's two steps span: the surf's way in and its crests' slopes)
     vec3 gradH = vec3(0.0), gradX = vec3(0.0);
-#ifndef RIBBON
     {
       float a11 = dot(dpx, dpx), a12 = dot(dpx, dpy), a22 = dot(dpy, dpy), det = a11 * a22 - a12 * a12;
       if (det > 1e-12) {
+#ifdef RIBBON
+        gradH = ((a22 * dEnc.x - a12 * dEnc.y) * dpx + (a11 * dEnc.y - a12 * dEnc.x) * dpy) / det;
+#else
         gradH = 12000.0 * waterEnc * ((a22 * dEnc.x - a12 * dEnc.y) * dpx + (a11 * dEnc.y - a12 * dEnc.x) * dpy) / det;
+#endif
         gradX = ((a22 * dShoreX.x - a12 * dShoreX.y) * dpx + (a11 * dShoreX.y - a12 * dShoreX.x) * dpy) / det;
       }
     }
+    // (a level water's surf by its still depth (the vertices'), the same its vertices were raised by; the
+    // image's depth under it counts their rise)
+    float depthL = depthW;
+#ifdef RIBBON
+    if (!river) depthL = vRib.y;
 #endif
-    liquidSurface(fp, fn, upF, kind, flow, fetch, depthW, foot, wn, grp, vFlw.xyz, fv, gradH, shoreX, gradX, nF, wr, foam);
+    liquidSurface(fp, fn, upF, kind, flow, fetch, depthL, foot, wn, grp, vFlw.xyz, fv, gradH, shoreX, gradX, nF, wr, foam);
     // (the sea's ice: how close its pack is here (liquid.js seaIceCover); the waves die in it, the short
     // chop at once and the swell within a few floes (Squire 2007), so its leads lie calm, no whitecaps)
     vec2 tsf = liquidTs(Tm, kind, flow, upF);

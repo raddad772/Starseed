@@ -40,6 +40,13 @@ fetch and the wind". What's in:
   as it thins; its cover where the pixel can't resolve them), more where the bed is steep (the Iribarren
   number of the mean slope out to there: plunging). Crest normals tilted at most 0.3; no roughness of
   its own (it read as grey slabs).
+- The waves in the geometry: the level water's vertices (the sea's and lakes' near surface, the ribbon
+  pass) raised by the surf's height at their own depth (chunkbuilder.js rib.y: the water's over its
+  ground) and phase, the same surf functions (liquid.js GLSL_SURF, shared with terrainMaterial.js
+  RIBBON_VERT), no sharper than the mesh's spacing holds (~distance/35, planetTerrain.js SPLIT_K) and
+  faded where the waves crowd nearer than ~6 spacings. The bores stand up off the water as fronts, the
+  surf line a ridge on the horizon. The ribbon's shading takes the same still depth (vRib.y) and now
+  its gradients too (its crest normals had been untilted: its depth came from the depth buffer only).
 - The swash (webgpu/materials.js surfSwash, the land's G-buffer): each wave's sheet running up the beach
   and draining back (Stockdon et al. 2006's run-up from the sea's height, its deep-water length and the
   beach's slope), dark, glossy and smoothed under it, its uprush's edge white and torn; its phase bent as
@@ -54,11 +61,12 @@ fetch and the wind". What's in:
   pyramid level) and kept below; the finer levels' coast steps and dry-land floor held to their cells.
   SOL Earth 30.4 S 137.1 E: was +1.5 m to -2.6 m in 10 m then a flat 2-3 m shelf; now -1.2 at 10 m out,
   -2 at 70, -3 at 130, -4 at 200. Scratchpad beauty/beach_before_after.jpg.
-- Not yet: the waves' faces in the geometry (the water's vertices displaced by the surf: the vertex shader
-  is terrainMaterial's VERT, generated to waterVertex); the wind waves' normals streak at grazing views
+- Not yet: the wind waves' normals streak at grazing views
   near the camera (seen with the wind on, not calm: aliasing of their short octaves); lakes' surf is the
   sea's x0.3 x fetch. Seen, not the surf's (there with it off): dark sawtooth-edged patches on low sand
-  behind the SOL Earth beach at 30.4 S 137.1 E, from 60 m up (a chunk or near band's shading).
+  behind the SOL Earth beach at 30.4 S 137.1 E, from 60 m up (a chunk or near band's shading); and the
+  low sand behind it (0.2..1.1 m) a wetland whose pools (terrain.js S_POOL) draw as one still mirror over
+  the ground with trees standing in it (by design, but wide: check soil.js's wetland on a beach ridge).
   Testing note: navigating the tab to its own URL with a #hash doesn't reload it; use location.reload().
 
 ## NOW: trees and shrubs by climate, many species a world (session 39d69fa8, 2026-10-14)
