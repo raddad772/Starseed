@@ -102,9 +102,18 @@ export function buildHollowScene(w) {
 
   // the hubs: a drum at each pole, standing in from the shell on the axis; the shaft into the north one
   for (const s of [1, -1]) {
-    const y0 = s * (w.Rs - w.hubDepth / 2);
-    const drum = new THREE.CylinderGeometry(w.hubR, w.hubR, w.hubDepth, 48, 1, true); drum.translate(0, y0, 0);
-    add(drum, Object.assign(mat.stone.clone(), { side: THREE.DoubleSide }));
+    // (its wall, and at its foot where it meets the cap a doorway onto each stairway's top: the wall's lower
+    // band in pieces between them)
+    const DOOR = 14, gap = 5.5 / w.hubR, drumM = Object.assign(mat.stone.clone(), { side: THREE.DoubleSide });
+    const upper = new THREE.CylinderGeometry(w.hubR, w.hubR, w.hubDepth - DOOR, 48, 1, true); upper.translate(0, s * (w.Rs - DOOR - (w.hubDepth - DOOR) / 2), 0);
+    add(upper, drumM);
+    // (three's cylinders run their angle from +z toward +x: a stairway at th lies at pi/2 - th)
+    const doors = w.stairs.map((th) => ((Math.PI / 2 - th) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2)).sort((a, b) => a - b);
+    doors.forEach((d, k) => {
+      const from = d + gap, to = (k + 1 < doors.length ? doors[k + 1] : doors[0] + Math.PI * 2) - gap;
+      const band = new THREE.CylinderGeometry(w.hubR, w.hubR, DOOR, 16, 1, true, from, to - from); band.translate(0, s * (w.Rs - DOOR / 2), 0);
+      add(band, drumM);
+    });
     // (its inner end, facing the far pole, with a ring of lamps; open in the middle onto the axis)
     const ring = new THREE.RingGeometry(14, w.hubR, 48); ring.rotateX(s > 0 ? Math.PI / 2 : -Math.PI / 2); ring.translate(0, s * (w.Rs - w.hubDepth), 0);
     add(ring, Object.assign(mat.metal.clone(), { side: THREE.DoubleSide }));

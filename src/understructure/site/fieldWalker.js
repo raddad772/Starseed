@@ -65,7 +65,18 @@ export class FieldWalker {
     if (was >= FLOAT_G && g < FLOAT_G) this.alert = 'Warning: zero gravity detected.';
     else if (was < FLOAT_G && g >= FLOAT_G) this.alert = 'Weight returning.';
     this.lastG = g; this.gravity = g;
-    if (gm > 1e-6 && g >= FLOAT_G * 0.5) this._turnUp(norm([-gv[0] / gm, -gv[1] / gm, -gv[2] / gm]));
+    // (floating, your up stays as it was; with weight it turns toward the field's, no faster than ~2 rad/s, so
+    // coming into weight near an axis it swings round rather than snapping your heading over)
+    if (gm > 1e-6 && g >= FLOAT_G) {
+      const t = norm([-gv[0] / gm, -gv[1] / gm, -gv[2] / gm]), d = Math.max(-1, Math.min(1, dot(t, this.up))), ang = Math.acos(d), mx = 2 * dt;
+      if (ang <= mx) this._turnUp(t);
+      else {
+        // (a step of mx toward it, round the axis between them)
+        let ax = crossV(this.up, t); const al = Math.hypot(...ax); ax = al > 1e-9 ? ax.map((x) => x / al) : norm(crossV(this.up, Math.abs(this.up[0]) < 0.9 ? [1, 0, 0] : [0, 0, 1]));
+        const c = Math.cos(mx), s2 = Math.sin(mx), u = this.up, k = crossV(ax, u), kd = dot(ax, u);
+        this._turnUp(norm([u[0] * c + k[0] * s2 + ax[0] * kd * (1 - c), u[1] * c + k[1] * s2 + ax[1] * kd * (1 - c), u[2] * c + k[2] * s2 + ax[2] * kd * (1 - c)]));
+      }
+    }
     const om = c.omega || null;
     // (the spinning frame's sideways pull on whatever moves through it: -2 w x v)
     const coriolis = (vv) => (om ? crossV(om, vv).map((x) => -2 * x) : [0, 0, 0]);
