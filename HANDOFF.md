@@ -43,8 +43,10 @@ pixel-parity claim is made. Dave confirmed sole-agent work and no coordination m
    ezFarGeometry, k-means over the leaves), not a slab or a diamond. tools/treeforms.html shows the forms
    side by side; tools/tests/coast-bands.test.mjs. The dune grass's colour is the world's own (Dave: "if it's
    supposed to be blue grey by the planet then it's supposed to be"): don't tune plant colours toward Earth's.
-   KNOWN: the small ground plants (flora 'plant' kind) draw near-black at some distances (dune5_on.jpg, the
-   dashes on the sand; gone with plants hidden): more of them on the dunes now (their cover raised there).
+   FIXED: black dashes on the sand (dune5_on.jpg) were the grass's flower heads, not the ground plants: a
+   patch's frame is mirrored on some cube faces, a mirrored disc's front its underside, and the WebGPU
+   standard shader (normal by winding) drew it unlit; their frames now unmirrored (grassRender.js), and in
+   tussock grass fewer of them (they had hung on air between the clumps).
    SOL Earth's foliage (Dave: "manually tweak earth's generation, there should be a mechanism"): its real
    pigments as a known input (system.js EARTH_PIGMENT: chlorophyll a and b, their Soret bands, carotenoids,
    the red edge at 715 nm), like its day and tilt, through the same reflectance model (bodies.js): its leaves

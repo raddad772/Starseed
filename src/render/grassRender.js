@@ -17,6 +17,8 @@ import { dirFromFaceUV, faceUVFromDir } from '../gen/cubesphere.js';
 import { S_LEN, S_H, S_TEMP, S_SAND, S_ICE, S_WDEPTH, S_RIVR, S_WLVL, S_POOL, S_SOILK } from '../gen/terrain.js';
 import { fmix32 } from '../core/rng.js';
 import * as dm from '../core/dmath.js';
+
+const FLIP_Z = new THREE.Matrix4().makeScale(1, 1, -1);
 import { FireField } from '../sim/fireField.js';
 import { receiveShadows, COVER_LAYER, COVER_MIN_W, SHADOW_LIGHT_UNIFORMS, GLSL_TRUNK_VS } from './sunShadows.js';
 import { standAt } from '../gen/life/stands.js';
@@ -604,17 +606,23 @@ void main() { gl_FragColor = vec4(vGA * 2.0 * max(0.0, 1.0 - abs(vGSide)), 0.0, 
     const per = size === TILE ? Math.round(fl * 40) : 0;
     if (per > 0 && q) {
       const fm = new THREE.InstancedMesh(this.flowerGeo, this.fmat, q * per);
-      const P2 = new THREE.Vector3(), Mf = new THREE.Matrix4(), Sf = new THREE.Matrix4();
+      const P2 = new THREE.Vector3(), Mf = new THREE.Matrix4(), Sf = new THREE.Matrix4(), Rf = new THREE.Matrix4();
       let f = 0;
       for (let p = 0; p < q; p++) {
         M.fromArray(T.mat, p * 16);
+        // (a head's frame its patch's turned, never mirrored: on some of the cube's faces a patch's own frame is
+        // left-handed, and a mirrored disc's front was its underside, drawn unlit, black (the WebGPU renderer
+        // takes a face's normal by its winding; the WebGL one had been told not to, onBeforeCompile above))
+        Rf.extractRotation(M); if (Rf.determinant() < 0) Rf.multiply(FLIP_Z);
         for (let e = 0; e < per; e++) {
           const x = rnd() * 2 - 1, z = rnd() * 2 - 1, u = x * 0.5 + 0.5, v = z * 0.5 + 0.5;
+          // (in tussocks fewer, as their sward's clumped: the heads stand over its blades, not on air between)
+          if (rnd() < T.form[p * 4]) { rnd(); rnd(); rnd(); continue; }
           const hgp = (T.corner[p * 4] * (1 - u) + T.corner[p * 4 + 1] * u) * (1 - v) + (T.corner[p * 4 + 2] * (1 - u) + T.corner[p * 4 + 3] * u) * v;
           const fs = 0.02 + 0.025 * rnd();
           P2.set(x, hgp + T.grass[p * 4 + 1] * (0.7 + 0.3 * rnd()), z).applyMatrix4(M);
           Sf.makeScale(fs, fs, fs);
-          Mf.extractRotation(M).multiply(Sf).setPosition(P2);
+          Mf.copy(Rf).multiply(Sf).setPosition(P2);
           fm.setMatrixAt(f, Mf);
           const fc = this.flowerCols[Math.floor(rnd() * this.flowerCols.length)];
           fm.setColorAt(f, _c.setRGB(fc[0], fc[1], fc[2]));
