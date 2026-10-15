@@ -431,10 +431,11 @@ void main() {
     // (glacier ice: its body blue)
     albedo *= mix(vec3(1.0), vec3(0.74, 0.88, 1.0), c2.w);
     gRough = ms.rough; gAO = ms.ao;
-    // sand: the wind's ripples, as far as this world's air works its sand
+    // sand: the wind's ripples, as far as this world's air works its sand; on bare sand only, none where plants
+    // hold it (a dune's grass and brush: gen/terrain.js coastBands)
     if (vCls1.z > 0.05 && uWindRipple.x > 0.0 && under > 0.0) {
       vec3 upL = uToFixed * up;
-      ms.n = sandRippleN(vAnchorPos, dpx, dpy, ms.n, uWindRipple.y, foot, uWindRipple.x * min(vCls1.z * 1.5, 1.0), cross(vec3(0.0, 1.0, 0.0), upL), upL, windSense(upL));
+      ms.n = sandRippleN(vAnchorPos, dpx, dpy, ms.n, uWindRipple.y, foot, uWindRipple.x * min(vCls1.z * 1.5, 1.0) * (1.0 - smoothstep(0.15, 0.45, c2.y)), cross(vec3(0.0, 1.0, 0.0), upL), upL, windSense(upL));
     }
     // snow: packed by the wind into sastrugi, hard ridges a few metres apart running along it (the
     // ripples' layer at ~3 m, a tenth as high as they're apart as sand's are; crests along the zonal

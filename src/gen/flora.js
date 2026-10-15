@@ -173,7 +173,7 @@ export function scatterFlora(gen, face, level, ix, iy, maxLevel, species) {
   const s = new Float64Array(S_LEN);
   const s2 = new Float64Array(S_LEN);
   const s3 = new Float64Array(S_LEN);
-  const col = [0, 0, 0], mat = new Float64Array(8);
+  const col = [0, 0, 0], mat = new Float64Array(8), cbo = [0, 0, 0];
   const dir = [0, 0, 0];
   const hasSea = !!gen.p.liquid && gen.contThreshold > -1e8;
   // the world's tree species (life/plants.js), each to its climate: which stands where, by how the place
@@ -199,10 +199,10 @@ export function scatterFlora(gen, face, level, ix, iy, maxLevel, species) {
     const slope = Math.min(1, Math.abs(hx - h) / 0.75);
     gen.shade(s, slope * 0.5, col, mat);
     const veg = mat[0], snow = mat[1], rock = mat[2], sand = mat[3];
-    // (on a beach, nothing below where the sea reaches (gen/tides.js): its trees a metre above it, its shrubs
-    // (the dunes' scrub) from a little under it)
-    const reach = gen.p.seaReach ?? 4, beach = hasSea && sand > 0.3;
-    if (beach && h < reach * 0.8) continue;
+    // (a sandy coast's bands (terrain.js coastBands): nothing on its beach, below where the sea reaches (gen/
+    // tides.js); no trees on its foredune, the dunes' behind fewer and low; brush on both, thickest behind)
+    const cb = hasSea && sand > 0.3 ? gen.coastBands(dir[0], dir[1], dir[2], h, cbo) : null;
+    if (cb && cb[0] > 0.5) continue;
     const r = R + h;
     const px = dir[0] * r - ox, py = dir[1] * r - oy, pz = dir[2] * r - oz;
     const roll = rng.next();
@@ -214,7 +214,7 @@ export function scatterFlora(gen, face, level, ix, iy, maxLevel, species) {
     if (species.life > 0 && slope < 0.55 && snow < 0.5) {
       // (a simulated world's life map: how much of the cover is forest and how much open
       // country, so trees stand in its forests and shrubs and grass fill its open land)
-      let fk = 1, ok = 1, pTree, treeScale = 1;
+      let fk = 1, ok = 1, pTree, treeScale = 1, brush = 0;
       if (gen.snap) {
         // (a simulated world's forests as they stand: its life map's forest share closing to a canopy, ~90%
         // of the ground under crowns ~0.3 of a tree's height across (a conifer's narrower), one candidate
@@ -230,12 +230,23 @@ export function scatterFlora(gen, face, level, ix, iy, maxLevel, species) {
         pTree = (st.k * closed + (1 - st.k) * 0.02 * f) * (0.85 + 0.15 * species.densityTree) * (Tc > -2 && Tc < 42 ? 1 : 0.2) * (1 - meadow) * Math.min(1, veg * 2.5);
         treeScale = st.size;
         ok *= 1 - 0.3 * st.k;   // (the forest floor's shrubs and plants: an understorey under its canopy, a little thinner)
+        // (brush, where shrubs hold more of the ground than trees or grass (Dave: "brush in general"): a dry
+        // country's scrub, between ~150 and ~800 mm of rain and warm enough (a chaparral's, a mallee's, the
+        // steppe's sage); the cold's dwarf shrubs at the tree line and past it (a shrub tundra's willow and
+        // birch); a wood's edge, where it gives onto open country; a sandy coast's dunes behind the beach, the
+        // sea's wet air on them)
+        const P = S.s.P ? S.Gc.sample(S.s.P, dir) : 800;
+        const dry = dm.smoothstep(100, 250, P) * (1 - dm.smoothstep(600, 1000, P)) * dm.smoothstep(0, 8, Tc);
+        const cold = dm.smoothstep(-11, -7, Tc) * (1 - dm.smoothstep(-3, 1, Tc)) * dm.smoothstep(150, 300, P);
+        const edge = 2.4 * f * (1 - f) * Math.min(1, cov * 2);
+        const coast = cb ? (0.4 * cb[1] + cb[2]) * dm.smoothstep(100, 300, P) * dm.smoothstep(-2, 4, Tc) : 0;
+        brush = Math.min(1, Math.max(dry, cold, edge, coast)) * (1 - 0.7 * st.k);
       } else pTree = veg * veg * species.densityTree * (Tc > -2 && Tc < 42 ? 1 : 0.2) * 0.5 * (1 - meadow) * fk;
-      const pShrub = veg * species.densityShrub * 0.45 * (1 - 0.75 * meadow) * ok;
+      const pShrub = species.densityShrub * 0.45 * Math.max(veg * (1 - 0.75 * meadow) * ok, 0.8 * brush);
       const pPlant = veg * 0.9 * (1 + 0.4 * meadow) * (species.plantScarce ? 0.08 : 1) * ok; // (crusts only, where no plants reached land)
       // (each: where, its size, its turn, its tint, the slope, the year's mean temperature there (C: the
       // seasons' snow on it, floraRender.js))
-      if (beach && h < reach + 1) pTree = 0;
+      if (cb) { pTree *= Math.max(0, 1 - cb[0] - cb[1]) * (1 - 0.5 * cb[2]); treeScale *= 1 - 0.45 * cb[2]; }
       if (roll < pTree) {
         // (its species: how the place suits each (its year, its ground's water), its stand's dominant most
         // likely; none suiting it, no tree)
@@ -266,6 +277,22 @@ export function scatterFlora(gen, face, level, ix, iy, maxLevel, species) {
         }
         out.shrub.push(px, py, pz, size, rot, tint, slope, Tc);
         shrubSp.push(k);
+        // (brush grows in thickets, each shrub's own kind spreading round it from its roots and its seed
+        // falling near: a few more of it a metre or three off, as many as the place is brushy)
+        const more = Math.floor(brush * 3.2 + rng.next());
+        for (let m = 0; m < more; m++) {
+          const a = rng.range(0, dm.TWO_PI), dd = (0.8 + 1.2 * rng.next()) * size * ((spool[k] && spool[k].shrubHeight) || species.shrubHeight || 1.4) / R;
+          const ex = Math.abs(dir[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
+          let tx = ex[1] * dir[2] - ex[2] * dir[1], ty = ex[2] * dir[0] - ex[0] * dir[2], tz = ex[0] * dir[1] - ex[1] * dir[0]; const tl = Math.hypot(tx, ty, tz); tx /= tl; ty /= tl; tz /= tl;
+          const bx = dir[1] * tz - dir[2] * ty, by = dir[2] * tx - dir[0] * tz, bz = dir[0] * ty - dir[1] * tx;
+          const c = Math.cos(a) * dd, sn = Math.sin(a) * dd;
+          let qx = dir[0] + tx * c + bx * sn, qy = dir[1] + ty * c + by * sn, qz = dir[2] + tz * c + bz * sn; const ql = Math.hypot(qx, qy, qz); qx /= ql; qy /= ql; qz /= ql;
+          gen.sample(qx, qy, qz, minW, s2);
+          const hq = s2[S_H];
+          if ((hasSea && hq < 0.5) || s2[S_WDEPTH] > 0 || (cb && hq < (gen.p.seaReach ?? 4))) continue;
+          out.shrub.push(qx * (R + hq) - ox, qy * (R + hq) - oy, qz * (R + hq) - oz, size * rng.range(0.6, 1.05), rng.range(0, dm.TWO_PI), rng.next(), slope, Tc);
+          shrubSp.push(k);
+        }
         continue;
       }
       if (roll < pTree + pShrub * 0.6 + pPlant * 0.6) { out.plant.push(px, py, pz, rng.range(0.6, 1.5), rot, tint, slope, Tc); continue; }

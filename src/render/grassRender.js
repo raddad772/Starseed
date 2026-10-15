@@ -16,6 +16,7 @@ import * as THREE from 'three';
 import { dirFromFaceUV, faceUVFromDir } from '../gen/cubesphere.js';
 import { S_LEN, S_H, S_TEMP, S_SAND, S_ICE, S_WDEPTH, S_RIVR, S_WLVL, S_POOL, S_SOILK } from '../gen/terrain.js';
 import { fmix32 } from '../core/rng.js';
+import * as dm from '../core/dmath.js';
 import { FireField } from '../sim/fireField.js';
 import { receiveShadows, COVER_LAYER, COVER_MIN_W, SHADOW_LIGHT_UNIFORMS, GLSL_TRUNK_VS } from './sunShadows.js';
 import { standAt } from '../gen/life/stands.js';
@@ -434,11 +435,23 @@ void main() { gl_FragColor = vec4(vGA * 2.0 * max(0.0, 1.0 - abs(vGSide)), 0.0, 
     const s2 = this._s2 || (this._s2 = new Float64Array(S_LEN));
     // (and under the water's surface as the ground's drawn (hd): the near field's volume can lie lower than
     // the heightfield, a river's bank planed, and grass had stood in a plunge pool's shallows)
+    // (sand's bare, a desert's dunes and a beach, save where its grass holds it (Dave: "let's get sea grass"):
+    // a sandy coast's dunes behind its beach (terrain.js coastBands), the foredune's marram catching the blown
+    // sand and the settled dunes' behind; and sandy country with rain enough. How much, into dune)
+    const cbo = this._cbo || (this._cbo = [0, 0, 0]);
+    let dune = 0;
+    const sandy = (dd, h) => {
+      const cb = gen.coastBands(dd[0], dd[1], dd[2], h, cbo);
+      dune = cb[0] > 0.5 ? 0 : Math.max(Math.min(1, cb[1] + cb[2]), dm.smoothstep(300, 700, P));
+      return dune > 0.3;
+    };
     const bare = (dd, hd) => {
       gen.sample(dd[0], dd[1], dd[2], 2, s2);
+      dune = 0;
       // (a wetland's reeds and sedges stand in its pools' shallows, a third of a metre deep)
       const marshy = snap.wetland && gen.p.liquid === 'water' && snap.wetland(dd[0], dd[1], dd[2]) > 0.3;
-      if (s2[S_SAND] > 0.3 || s2[S_ICE] > 0 || s2[S_WDEPTH] > (marshy ? 0.35 : 0.05) || s2[S_RIVR] > 0 || (gen.p.liquid && s2[S_H] < 0.25)) return true;
+      if (s2[S_ICE] > 0 || s2[S_WDEPTH] > (marshy ? 0.35 : 0.05) || s2[S_RIVR] > 0 || (gen.p.liquid && s2[S_H] < 0.25)) return true;
+      if (s2[S_SAND] > 0.3) return !sandy(dd, s2[S_H]);
       // (nor on the mud a bank's water level rises over through the year: a fifth of a metre over it, drawn)
       if (!marshy && s2[S_WLVL] > -1e8 && s2[S_WLVL] > hd - 0.2 && gen.p.liquid === 'water') return true;
       if (marshy && s2[S_WLVL] > hd + 0.35) return true;
@@ -446,8 +459,8 @@ void main() { gl_FragColor = vec4(vGA * 2.0 * max(0.0, 1.0 - abs(vGSide)), 0.0, 
       if (s2[S_POOL] > 0.7) return true;
       if (snap.rockAt) {
         const hs = s2[S_H] / (gen.hScale || 1);
-        if (snap.rockAt(dd[0], dd[1], dd[2], hs) >= 11) return true;
-        if (gen.p.liquid === 'water' && s2[S_H] < 14 && snap.rockPyr && snap.rockAt(dd[0], dd[1], dd[2], hs, 0) >= 11) return true;
+        if (snap.rockAt(dd[0], dd[1], dd[2], hs) >= 11) return !sandy(dd, s2[S_H]);
+        if (gen.p.liquid === 'water' && s2[S_H] < 14 && snap.rockPyr && snap.rockAt(dd[0], dd[1], dd[2], hs, 0) >= 11) return !sandy(dd, s2[S_H]);
       }
       return false;
     };
@@ -476,16 +489,18 @@ void main() { gl_FragColor = vec4(vGA * 2.0 * max(0.0, 1.0 - abs(vGSide)), 0.0, 
     // country between grassed over)
     const fo = Math.min(1, forest), share = Math.min(1, c * 1.2) * fo;
     const thick = Math.min(1, Math.max(0, c) * 1.5 + 0.5 * marsh) * ash * (1 - 0.9 * thinS);
-    if (thick < 0.02) return T;
+    // (none but on a sandy coast's dunes, its grass there whatever the country's own cover)
+    const cbT = thick < 0.02 && gen.p.liquid === 'water' ? gen.coastBands(dc[0], dc[1], dc[2], s[S_H], cbo) : null;
+    if (thick < 0.02 && !(cbT && cbT[1] + cbT[2] > 0.05)) return T;
     // (its ground: the heights at the patches' corners, 5 x 5, as the drawn ground has them: the near
     // field's volume where it's built (sim/nearGround.js), the heightfield's finest mesh beyond)
-    const hg = new Float64Array(25), gC = new Float32Array(25), cd = new Float64Array(75), d = [0, 0, 0], V = new THREE.Vector3();
+    const hg = new Float64Array(25), gC = new Float32Array(25), dC = new Float32Array(25), cd = new Float64Array(75), d = [0, 0, 0], V = new THREE.Vector3();
     for (let a = 0; a < 5; a++) for (let bb = 0; bb < 5; bb++) {
       dirFromFaceUV(face, u0 + du * a / 4, v0 + du * bb / 4, d);
       cd[(a * 5 + bb) * 3] = d[0]; cd[(a * 5 + bb) * 3 + 1] = d[1]; cd[(a * 5 + bb) * 3 + 2] = d[2];
       const g0 = b.groundHeight(V.set(d[0], d[1], d[2]));
       hg[a * 5 + bb] = b.near && b.near.field ? b.floorAt(V.multiplyScalar(R + g0 + 0.3)) : g0;
-      gC[a * 5 + bb] = bare(d, hg[a * 5 + bb]) ? 0 : 1;
+      gC[a * 5 + bb] = bare(d, hg[a * 5 + bb]) ? 0 : 1; dC[a * 5 + bb] = dune;
     }
     const span = size / PPT;
     // (the tile's own centre on its ground: its meshes there, culled and ranked by distance from there)
@@ -529,6 +544,11 @@ void main() { gl_FragColor = vec4(vGA * 2.0 * max(0.0, 1.0 - abs(vGSide)), 0.0, 
     if (this.fern) { fClump = Math.max(fClump, 0.55); fArch = Math.max(fArch, 0.7); }
     const fWidth = 1 + 0.7 * fHot * (1 - 0.5 * fDry) + 0.9 * marsh - 0.3 * fCold, fStiff = Math.min(1, 0.15 + 0.75 * marsh + 0.35 * fCold);
     const base = this.veg.map((x, q) => (x + (this.dry[q] - x) * k0) * (1.35 + 0.3 * green));
+    // (a dune's grass, marram's and lyme grass's: tussocks of stiff, narrow, rolled leaves, knee to waist high,
+    // most of the sand bare between them; the world's foliage paled toward its straw, a waxy bloom keeping the salt
+    // wind's drying off)
+    const Hd = 0.85 * (0.6 + 0.4 * warm) * this.gK, dg = this.veg.map((x, q) => x + (this.dry[q] - x) * 0.6);
+    const dl = 0.3 * dg[0] + 0.6 * dg[1] + 0.1 * dg[2], duneCol = dg.map((x) => (x + (dl - x) * 0.4) * 1.6);
     const dryTip = this.dry.map((x) => x * 1.45);
     // (the patches: their frames, their corners, their density, height and colour)
     const n = PPT * PPT, mat = new Float32Array(n * 16), corner = new Float32Array(n * 4), grows = new Float32Array(n * 4), grass = new Float32Array(n * 4), wave = new Float32Array(n * 3), col = new Float32Array(n * 3), form = new Float32Array(n * 4);
@@ -545,7 +565,9 @@ void main() { gl_FragColor = vec4(vGA * 2.0 * max(0.0, 1.0 - abs(vGSide)), 0.0, 
       if (steep > 0.9 || g00 + g10 + g01 + g11 === 0) { rnd(); rnd(); rnd(); continue; }
       const kS = share > 0 ? standAt(gen, d, s, share, true).k * (1 - meadowAt(gen, d, h0, this.species)) : 0;
       rnd();
-      const dens = thick * (1 - 0.68 * kS) * (this.fern ? 0.6 : 1);
+      // (how much of it's a dune's: its growing corners')
+      const gn = g00 + g10 + g01 + g11, dP = gn > 0 ? (g00 * dC[a * 5 + bb] + g10 * dC[(a + 1) * 5 + bb] + g01 * dC[a * 5 + bb + 1] + g11 * dC[(a + 1) * 5 + bb + 1]) / gn : 0;
+      const dens0 = thick * (1 - 0.68 * kS) * (this.fern ? 0.6 : 1), dens = dens0 + (0.22 - dens0) * dP;
       if (dens < 0.01) { rnd(); rnd(); continue; }
       Y.set(d[0], d[1], d[2]);
       // (the frame in metres from its own corners, its blades over [-1, 1]: the cube-sphere's cells aren't
@@ -562,16 +584,17 @@ void main() { gl_FragColor = vec4(vGA * 2.0 * max(0.0, 1.0 - abs(vGSide)), 0.0, 
       corner[q * 4] = c00 - h0; corner[q * 4 + 1] = c10 - h0; corner[q * 4 + 2] = c01 - h0; corner[q * 4 + 3] = c11 - h0;
       grows[q * 4] = g00; grows[q * 4 + 1] = g10; grows[q * 4 + 2] = g01; grows[q * 4 + 3] = g11;
       rnd();
-      const Hp = H;
+      const Hp = H + (Hd - H) * dP;
       // (in a stand's shade broader leaves, looser: the light's scarce, not the water)
-      form[q * 4] = fClump * (1 - 0.5 * kS); form[q * 4 + 1] = fWidth * (1 + 0.6 * kS); form[q * 4 + 2] = fStiff; form[q * 4 + 3] = fArch * (1 - 0.4 * kS);
+      const fc = fClump * (1 - 0.5 * kS), fw = fWidth * (1 + 0.6 * kS), fa = fArch * (1 - 0.4 * kS);
+      form[q * 4] = fc + (0.96 - fc) * dP; form[q * 4 + 1] = fw + (0.5 - fw) * dP; form[q * 4 + 2] = fStiff + (0.8 - fStiff) * dP; form[q * 4 + 3] = fa + (0.4 - fa) * dP;
       grass[q * 4] = Math.min(1, dens); grass[q * 4 + 1] = Hp; grass[q * 4 + 2] = (this.fern ? 0.7 : 0.12 + 0.45 * Math.min(1, Hp / 1.2)) / Math.max(1, Hp * 0.6); grass[q * 4 + 3] = snowD;
       const wx = d[0] * R, wy = d[1] * R, wz = d[2] * R;
       wave[q * 3] = wx - 2048 * Math.floor(wx / 2048); wave[q * 3 + 1] = wy - 2048 * Math.floor(wy / 2048); wave[q * 3 + 2] = wz - 2048 * Math.floor(wz / 2048);
       rnd();
       const tdr = 0.25 * (0.3 + dryK);
       // (the shade's grass under a stand darker, greener: no sun to dry it)
-      for (let cc = 0; cc < 3; cc++) col[q * 3 + cc] = (base[cc] + (dryTip[cc] - base[cc]) * tdr * (1 - kS)) * (1 - 0.25 * kS);
+      for (let cc = 0; cc < 3; cc++) { const c0 = (base[cc] + (dryTip[cc] - base[cc]) * tdr * (1 - kS)) * (1 - 0.25 * kS); col[q * 3 + cc] = c0 + (duneCol[cc] - c0) * dP; }
       q++;
     }
     T.n = q; T.mat = mat.subarray(0, q * 16); T.corner = corner.subarray(0, q * 4); T.bare = grows.subarray(0, q * 4); T.grass = grass.subarray(0, q * 4); T.wave = wave.subarray(0, q * 3); T.col = col.subarray(0, q * 3); T.form = form.subarray(0, q * 4);

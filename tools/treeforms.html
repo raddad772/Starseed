@@ -1,0 +1,41 @@
+<!doctype html>
+<!-- Dev-only: a world's tree and shrub forms side by side (near, middle, far), each crown kind in a row; WebGL,
+     plain lambert, the leaves' part green and the bark brown. ?h=height&g=gravity -->
+<html><head><meta charset="utf-8"><title>Tree forms</title>
+<style>html,body{margin:0;background:#9fb4c8;overflow:hidden}canvas{display:block}#lab{position:fixed;left:8px;top:6px;font:12px ui-monospace,monospace;color:#123}</style>
+<script type="importmap">{"imports":{"three":"../vendor/three.module.js","three/addons/":"../vendor/addons/"}}</script>
+</head><body><div id="lab"></div>
+<script type="module">
+import * as THREE from 'three';
+import { ezTreeGeometry, ezBushGeometry } from '../src/render/ezTrees.js';
+import { ezFarGeometry, treeFarGeometry } from '../src/render/floraRender.js';
+const q = new URLSearchParams(location.search), H = +(q.get('h') || 16), G = +(q.get('g') || 9.81);
+const r = new THREE.WebGLRenderer({ antialias: true }); r.setSize(innerWidth, innerHeight); document.body.append(r.domElement);
+const scene = new THREE.Scene(), cam = new THREE.PerspectiveCamera(30, innerWidth / innerHeight, 1, 5000);
+scene.add(new THREE.HemisphereLight(0xdde8ff, 0x554433, 1.2)); const sun = new THREE.DirectionalLight(0xffffff, 2.2); sun.position.set(-40, 80, 60); scene.add(sun);
+const leaf = new THREE.MeshLambertMaterial({ color: 0x3d6b2e, side: THREE.DoubleSide }), bark = new THREE.MeshLambertMaterial({ color: 0x6b4a32 });
+// (a finalize'd geometry: its 'part' attribute splits bark (0) from leaves (1))
+function split(g) {
+  const p = g.attributes.position.array, n = g.attributes.normal.array, pt = g.attributes.part.array, out = [[], []], on = [[], []];
+  for (let i = 0; i < pt.length; i += 3) { const k = pt[i] > 0.5 ? 1 : 0; for (let j = 0; j < 9; j++) { out[k].push(p[i * 3 + j]); on[k].push(n[i * 3 + j]); } }
+  return out.map((a, k) => { const b = new THREE.BufferGeometry(); b.setAttribute('position', new THREE.Float32BufferAttribute(a, 3)); b.setAttribute('normal', new THREE.Float32BufferAttribute(on[k], 3)); return new THREE.Mesh(b, k ? leaf : bark); });
+}
+const raw = (ez) => [new THREE.Mesh(ez.bark, bark), new THREE.Mesh(ez.leaves, leaf)];
+const crowns = [['broadleaf', 'round'], ['broadleaf', 'umbrella'], ['broadleaf', 'column'], ['broadleaf', 'emergent'], ['conifer', 'spire'], ['conifer', 'cone'], ['conifer', 'parasol']];
+let y = 0; const lab = [];
+for (const [form, crown] of crowns) {
+  const sp = { tree: form, crown, treeHeight: H, seed: 4242 + y };
+  const near = ezTreeGeometry(sp, G, 0), mid = ezTreeGeometry(sp, G, 1);
+  const cols = [raw(near), raw(mid), split(ezFarGeometry(mid, H)), split(treeFarGeometry(sp))];
+  cols.forEach((ms, x) => { for (const m of ms) { m.position.set(x * H * 1.6, -y * H * 1.4, 0); scene.add(m); } });
+  lab.push(`${form}/${crown}`); y++;
+}
+for (const [k, shrub] of ['tufts', 'blob', 'fan'].entries()) for (const lod of [0, 1]) {
+  const ez = ezBushGeometry({ shrub, seed: 99 + k, shrubHeight: H * 0.25 }, G, lod);
+  for (const m of raw(ez)) { m.position.set((4.2 + lod * 0.5 + k * 1.2) * H * 1.6 / 1.6 * 1.0, -1 * H * 1.4 + 0, 0); scene.add(m); }
+}
+document.getElementById('lab').textContent = 'columns: near · middle · far (new) · far (old) · bushes. rows: ' + lab.join(', ');
+const box = new THREE.Box3().setFromObject(scene), c = box.getCenter(new THREE.Vector3()), sz = box.getSize(new THREE.Vector3());
+cam.position.set(c.x, c.y + sz.y * 0.05, c.z + Math.max(sz.x, sz.y) * 1.9); cam.lookAt(c);
+r.render(scene, cam); window.done = true;
+</script></body></html>

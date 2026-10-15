@@ -27,6 +27,29 @@ pixel-parity claim is made. Dave confirmed sole-agent work and no coordination m
    moons and star, doubled on a shelf, and a gale's run-up; SOL Earth 4.4 m), filled into the terrain params
    on load (game.js); beach sand below it bare (terrain.js shade: a forest stand drawn down onto the sand
    had made the dark strip), no trees under it + 1 m, no shrubs under 0.8 of it (flora.js).
+   THEN (Dave: "bottom left with trees looks better... looks like real coastal sand plants"; "let's get sea
+   grass and brush as well. And brush in general"), 2026-10-15: a sandy coast's bands by distance from the
+   sea (terrain.js seaNear: six ring probes, cached on a grid a quarter of the ring across and blended
+   between its nodes, smooth; coastBands: the beach W = reach/0.08 wide (~55 m) bare below the reach, the
+   foredune to 2W, the back dunes to 4W; none coarser than W, the colour map's texels). The ground: no wood's
+   floor on beach or foredune, half behind; the dunes' sand under their grass tinted and held (the terrain
+   material's ripples on bare sand only, both renderers). The grass (grassRender.js): dune grass on that sand,
+   tall stiff narrow tussocks, sparse, grey-green straw; on inland sand too where rain allows. The flora: no
+   trees on beach or foredune, behind them fewer and low; brush by climate everywhere (dry scrub between
+   ~150 and ~800 mm of rain, the shrub tundra at the tree line, a wood's edge, a coast's dunes), grown in
+   thickets (each shrub a few more round it). Shrubs drawn as EZ-Tree bushes (ezTrees.js ezBushGeometry:
+   many stems from the root crown, by kind), near and middle forms, the old lump far, switched like trees.
+   And (Dave: "the trees are messed up") far trees past 300 m from their own crowns' lobes (floraRender.js
+   ezFarGeometry, k-means over the leaves), not a slab or a diamond. tools/treeforms.html shows the forms
+   side by side; tools/tests/coast-bands.test.mjs. The dune grass's colour is the world's own (Dave: "if it's
+   supposed to be blue grey by the planet then it's supposed to be"): don't tune plant colours toward Earth's.
+   KNOWN: the small ground plants (flora 'plant' kind) draw near-black at some distances (dune5_on.jpg, the
+   dashes on the sand; gone with plants hidden): more of them on the dunes now (their cover raised there).
+   SOL Earth's foliage (Dave: "manually tweak earth's generation, there should be a mechanism"): its real
+   pigments as a known input (system.js EARTH_PIGMENT: chlorophyll a and b, their Soret bands, carotenoids,
+   the red edge at 715 nm), like its day and tilt, through the same reflectance model (bodies.js): its leaves
+   (67, 94, 43) sRGB, its dry grass (118, 115, 69); before, drawn, a teal (36, 76, 60). SOL's fingerprint
+   (system-recipes.test.mjs) moved with it; FSPB-8DTW's didn't.
    Dave next (2026-10-15): the tide "calculated from the moon, and also follow it" (moving tides, high
    under the moon twice a day), and a hollow moon has less tide (its mass: the hollow large, its crust a
    few km, as first proposed).

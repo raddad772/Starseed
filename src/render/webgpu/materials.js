@@ -284,12 +284,13 @@ fn groundSurface(col: vec4f, mat: vec4f, ext: vec4f, cls0: vec4f, cls1: vec4f, c
       let kM = (1.0 - smoothstep(1800.0, 3500.0, dist)) * mix(0.6, 1.0, smoothstep(5.0, 60.0, dist)) * under;
       var ms = matGround(c0, c1, c2, fp, dx, dy, normalF, kF, kM);
       albedo *= ms.ratio * mix(vec3f(1.0), vec3f(0.74, 0.88, 1.0), c2.w);
+      // (on bare sand only: none where plants hold it, a dune's grass and brush)
       if (cls1.z > 0.05 && material.windTimeMode.x > 0.0 && under > 0.0) {
         // liquid.js windSense: trade winds / westerlies / polar easterlies.
         let lat = abs(asin(clamp(up.y, -1.0, 1.0)));
         let sense = -1.0 + 2.0 * smoothstep(0.49, 0.55, lat) - 2.0 * smoothstep(1.02, 1.08, lat);
         ms.normal = sandRippleNormal(anchor, dx, dy, ms.normal, material.windTimeMode.y, foot,
-          material.windTimeMode.x * min(cls1.z * 1.5, 1.0), cross(vec3f(0.0, 1.0, 0.0), up), up, sense);
+          material.windTimeMode.x * min(cls1.z * 1.5, 1.0) * (1.0 - smoothstep(0.15, 0.45, c2.y)), cross(vec3f(0.0, 1.0, 0.0), up), up, sense);
       }
       let sasK = material.windTimeMode.x * smoothstep(0.3, 0.8, c2.z) * (1.0 - frostK) * smoothstep(0.35, 0.75, d2.b) * 0.5;
       if (sasK > 0.01 && under > 0.0) {

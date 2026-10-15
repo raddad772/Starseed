@@ -90,6 +90,53 @@ export function ezTreeGeometry(sp, g = 9.81, lod = 0) {
   return { bark, leaves, flare: flare.geo, footR: flare.R0, barkType: o.bark.type, leafType: o.leaves.type };
 }
 
+// a shrub (Dave: "brush"): EZ-Tree's woody plant grown low and many-stemmed, its stems from its root crown
+// spreading up and out, their twigs, leaves in clusters all over the outside; to its height (sp.shrubHeight).
+// Its build by its kind (gen/life/plants.js shrubPool): the cold's ('tufts', a dwarf willow's or birch's) low and
+// spreading, wiry, small-leaved; a dry country's ('blob', a chaparral's, a mallee's) dense and rounded, its
+// leaves small and leathery; a wet warm one's ('fan') looser, arching, broad-leaved. Under a heavier pull lower
+// and stouter. lod 1: its twigs left off, its leaves' clusters bigger in their place. { bark, leaves, barkType,
+// leafType } (y up, its foot at 0)
+export function ezBushGeometry(sp, g = 9.81, lod = 0) {
+  const rng = Rng.fromString(`ez-bush|${sp.seed}|${sp.shrub}`), gR = Math.max(0.2, Math.min(4, g / 9.81));
+  const reach = Math.pow(gR, -0.3), kind = sp.shrub;
+  const o = new TreeOptions();
+  o.seed = rng.int(1, 1e6);
+  o.type = 'deciduous';
+  o.bark.type = rng.pick(kind === 'tufts' ? ['birch', 'willow'] : ['oak', 'willow', 'birch']);
+  o.leaves.type = kind === 'fan' ? rng.pick(['oak', 'aspen']) : rng.pick(['ash', 'aspen', 'oak']);
+  o.branch.levels = 2;
+  const spread = kind === 'tufts' ? rng.range(58, 72) : kind === 'fan' ? rng.range(42, 58) : rng.range(30, 45);
+  o.branch.children = { 0: kind === 'tufts' ? rng.int(9, 13) : rng.int(7, 11), 1: rng.int(4, 6), 2: 2 };
+  o.branch.angle = { 1: spread, 2: rng.range(40, 60), 3: 45 };
+  o.branch.start = { 1: rng.range(0.0, 0.12), 2: 0.2, 3: 0.3 };
+  o.branch.length = { 0: kind === 'tufts' ? 1 : 1.6, 1: (kind === 'fan' ? 8 : 6.5) * reach * rng.range(0.85, 1.15), 2: (kind === 'tufts' ? 2 : 2.8) * reach, 3: 1 };
+  o.branch.radius = { 0: 0.3 * Math.sqrt(gR), 1: 0.5, 2: 0.55, 3: 0.6 };
+  o.branch.taper = { 0: 0.5, 1: 0.75, 2: 0.7, 3: 0.7 };
+  o.branch.gnarliness = { 0: 0.2, 1: kind === 'blob' ? rng.range(0.25, 0.4) : rng.range(0.15, 0.3), 2: 0.3, 3: 0.05 };
+  o.branch.sections = { 0: 3, 1: 5, 2: 3, 3: 2 };
+  o.branch.segments = { 0: 5, 1: 4, 2: 3, 3: 3 };
+  // (a fan's stems arching over under their leaves; the others reaching up)
+  o.branch.force = { direction: { x: 0, y: 1, z: 0 }, strength: (kind === 'fan' ? -0.006 : 0.008) / gR };
+  o.leaves.count = kind === 'blob' ? rng.int(6, 8) : rng.int(4, 6);
+  o.leaves.size = kind === 'fan' ? 2.4 : kind === 'tufts' ? 1.2 : 1.6;
+  o.leaves.angle = 35; o.leaves.start = 0.15; o.leaves.billboard = 'double';
+  o.bark.textured = false;
+  if (lod > 0) {
+    o.branch.levels -= 1;
+    o.leaves.size *= 2; o.leaves.count = Math.max(4, o.leaves.count - 1); o.leaves.billboard = 'single';
+    for (const k of Object.keys(o.branch.segments)) o.branch.segments[k] = Math.min(o.branch.segments[k], 3);
+  }
+  const t = new Tree(o);
+  t.generate();
+  const bark = t.branchesMesh.geometry, leaves = t.leavesMesh.geometry;
+  bark.computeBoundingBox(); leaves.computeBoundingBox();
+  const top = Math.max(bark.boundingBox.max.y, leaves.boundingBox.max.y), H = (sp.shrubHeight || 1.4) * (kind === 'tufts' ? 0.6 : 1) / Math.sqrt(gR);
+  const k = H / Math.max(top, 1e-3);
+  bark.scale(k, k, k); leaves.scale(k, k, k);
+  return { bark, leaves, barkType: o.bark.type, leafType: o.leaves.type };
+}
+
 // its foot: the trunk flared into its roots, a few buttresses, spreading on below the ground (EZ-Tree's
 // trunk a six-sided tube from its first ring a metre up, stood on the ground it met it in a crease, two
 // planes and a line). From its base ring's radius R0 outward by a share of it (a broadleaf's buttressed,

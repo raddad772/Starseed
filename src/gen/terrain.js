@@ -653,6 +653,65 @@ export class TerrainGenerator {
     return dh;
   }
 
+  // is the sea within dist (m) of the direction (x, y, z)? (six samples round it on the ground; what a sample
+  // leaves set on the generator kept as it was) Smooth: the answer kept on a grid a quarter of dist across (15 m
+  // at least: a chunk's neighbouring vertices and plants ask about the same shore) and blended between its
+  // nodes, 0..1, so the bands it draws follow the shore's own line, not the grid's
+  seaNear(x, y, z, dist) {
+    if (!this.p.liquid || !(this.contThreshold > -1e8)) return 0;
+    const q = Math.max(15, dist / 4) / this.R, fx = x / q, fy = y / q, fz = z / q, ix = Math.floor(fx), iy = Math.floor(fy), iz = Math.floor(fz);
+    const tx = fx - ix, ty = fy - iy, tz = fz - iz;
+    let v = 0;
+    for (let c = 0; c < 8; c++) {
+      const dx = c & 1, dy = (c >> 1) & 1, dz = c >> 2, w = (dx ? tx : 1 - tx) * (dy ? ty : 1 - ty) * (dz ? tz : 1 - tz);
+      if (w > 0 && this._seaNode(ix + dx, iy + dy, iz + dz, q, dist)) v += w;
+    }
+    return v;
+  }
+  _seaNode(i, j, k, q, dist) {
+    const key = `${i},${j},${k},${Math.round(dist)}`, cache = this._seaNear || (this._seaNear = new Map());
+    const was = cache.get(key);
+    if (was !== undefined) return was;
+    if (cache.size > 400000) cache.clear();
+    let x = i * q, y = j * q, z = k * q; const l = Math.hypot(x, y, z) || 1; x /= l; y /= l; z /= l;
+    const s = this._seaS || (this._seaS = new Float64Array(S_LEN)), sw = this._sampleW, mw = this._minW, bd = this._bed;
+    const a = dist / this.R, ax = Math.abs(y) < 0.9 ? [0, 1, 0] : [1, 0, 0];
+    let ux = ax[1] * z - ax[2] * y, uy = ax[2] * x - ax[0] * z, uz = ax[0] * y - ax[1] * x; const ul = Math.hypot(ux, uy, uz); ux /= ul; uy /= ul; uz /= ul;
+    const vx = y * uz - z * uy, vy = z * ux - x * uz, vz = x * uy - y * ux;
+    let near = false;
+    for (let n = 0; n < 6 && !near; n++) {
+      const c = Math.cos(n * Math.PI / 3) * a, sn = Math.sin(n * Math.PI / 3) * a;
+      const px = x + ux * c + vx * sn, py = y + uy * c + vy * sn, pz = z + uz * c + vz * sn, pl = Math.hypot(px, py, pz);
+      this.sample(px / pl, py / pl, pz / pl, Math.max(8, dist / 2), s);
+      if (s[S_H] < 0 && !(s[S_WDEPTH] > 0)) near = true;
+    }
+    this._sampleW = sw; this._minW = mw; this._bed = bd;
+    cache.set(key, near);
+    return near;
+  }
+
+  // a sandy coast's bands, by how near the sea is (Dave: "do trees really appear there in the sand?"): the
+  // beach bare up to where the sea reaches (gen/tides.js), as wide as that reach over a beach face's slope (W,
+  // ~55 m on an Earth); behind it to 2W the foredune, its grass catching the blown sand, a little brush, no
+  // trees; then to 4W the dunes behind, settled, brush thick and low trees shorn by the sea wind; then the
+  // country's own. Into out: [beach, foredune, back dunes], each 0..1, smooth across the bands' edges. On sand
+  // (the caller's), by a water sea, on its low ground
+  coastBands(x, y, z, h, out) {
+    out[0] = out[1] = out[2] = 0;
+    const p = this.p;
+    if (p.liquid !== 'water' || !(this.contThreshold > -1e8)) return out;
+    const reach = p.seaReach ?? 4, W = reach / 0.08;
+    // (none drawn coarser than the beach is wide: the colour map's texels, a far chunk's, the whole band within
+    // one of them; asked of every texel along every sandy coast, its probes had held the world's loading up)
+    if (h > reach + 30 || (this._sampleW || 0) > W) return out;
+    const n4 = this.seaNear(x, y, z, 4 * W);
+    if (n4 <= 0) return out;
+    const n2 = this.seaNear(x, y, z, 2 * W), n1 = n2 > 0 ? this.seaNear(x, y, z, W) : 0;
+    const beach = Math.min(n1, n2) * (1 - dm.smoothstep(reach - 0.5, reach + 1.5, h));
+    out[0] = beach; out[1] = Math.max(0, n2 - beach); out[2] = Math.max(0, n4 - n2);
+    return out;
+  }
+
   // Surface colour and material weights from a sample and the local slope.
   // slope: 1 - dot(normal, up) (0 flat .. 1 vertical). Writes to col (rgb) and mat:
   // mat[0]=vegetation, mat[1]=snow/ice, mat[2]=rock, mat[3]=sand, mat[4]=water depth (m, >0 = liquid),
@@ -2467,7 +2526,11 @@ export class TerrainGenerator {
         const share = Math.min(1, cov * 1.2) * fo, sw = this._sampleW || 0, far = dm.smoothstep(20, 60, sw);
         const mix = dm.smoothstep(60, 400, sw);
         const _d = this._sd || (this._sd = [0, 0, 0]); _d[0] = x; _d[1] = y; _d[2] = z;
-        const k = share > 0 ? (mix < 1 ? standAt(this, _d, s, share, sw <= 40).k : 0) * (1 - mix) + share * mix : 0;
+        // (a sandy coast's bands (coastBands): no wood's floor on its beach or foredune, half of one among the
+        // brush behind: its trees stand back from the sea, as the flora has them; a forest's stand drawn down
+        // onto the sand had laid a dark strip between the beach and the dunes)
+        const cb = sandW > 0.3 ? this.coastBands(x, y, z, h, this._cb || (this._cb = [0, 0, 0])) : null, sk = cb ? dm.smoothstep(0.3, 0.6, sandW) : 0;
+        const k = (share > 0 ? (mix < 1 ? standAt(this, _d, s, share, sw <= 40).k : 0) * (1 - mix) + share * mix : 0) * (cb ? 1 - sk * (cb[0] + cb[1] + 0.5 * cb[2]) : 1);
         const dry = P.vegDry || P.veg, of = Math.max(0.5 * fo / Math.max(1e-3, fo + op), 0.9 * wetK);
         const fl = P.soil || P.veg;
         let vr = dry[0] + (P.veg[0] - dry[0]) * of, vg = dry[1] + (P.veg[1] - dry[1]) * of, vb = dry[2] + (P.veg[2] - dry[2]) * of;
@@ -2476,10 +2539,19 @@ export class TerrainGenerator {
         const sb = (fl[2] + (P.veg[2] - fl[2]) * 0.3) * 0.75 * (1 - far) + P.veg[2] * 0.8 * far;
         vr += (sr - vr) * k; vg += (sg - vg) * k; vb += (sb - vb) * k;
         vegW = Math.max(vegW, k * (1 - rockV));
-        // (a beach is bare up to where the sea reaches, its high tide and a storm's run-up (gen/tides.js, ~4 m on
-        // an Earth); its plants begin above: a forest's stand drawn down onto the sand had laid a dark strip
-        // between the beach and the bare dunes)
-        if (p.liquid === 'water' && this.contThreshold > -1e8 && sandW > 0.3) vegW *= 1 - (1 - dm.smoothstep((p.seaReach ?? 4) - 0.5, (p.seaReach ?? 4) + 1.5, h)) * dm.smoothstep(0.3, 0.6, sandW);
+        // (and its beach bare up to where the sea reaches, its high tide and a storm's run-up (gen/tides.js));
+        // its dunes' sand held by their grass and brush, a share of it under them, their pale grey-green over it
+        // (grassRender.js's dune grass), and no wind's ripples on it (the terrain material: on bare sand only)
+        if (cb) {
+          const dk = Math.min(1, cb[1] + cb[2]) * sk * (1 - cb[0]);
+          if (dk > 0) {
+            // (the sand itself between the tussocks, as much as their colour: from afar the two together)
+            const t0 = dry[0] + (P.veg[0] - dry[0]) * 0.4, t1 = dry[1] + (P.veg[1] - dry[1]) * 0.4, t2 = dry[2] + (P.veg[2] - dry[2]) * 0.4, tl = 0.3 * t0 + 0.6 * t1 + 0.1 * t2;
+            vr += (0.5 * r + 0.8 * (t0 + (tl - t0) * 0.4) - vr) * dk; vg += (0.5 * g + 0.8 * (t1 + (tl - t1) * 0.4) - vg) * dk; vb += (0.5 * b + 0.8 * (t2 + (tl - t2) * 0.4) - vb) * dk;
+            vegW = Math.max(vegW, 0.45 * dk);
+          }
+          vegW *= 1 - cb[0] * sk;
+        }
         r += (vr - r) * vegW; g += (vg - g) * vegW; b += (vb - b) * vegW;
         mat[0] = vegW;
         mat[2] = rockW * (1 - vegW);   // (the rock showing through them)
