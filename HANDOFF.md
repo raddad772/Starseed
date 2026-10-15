@@ -126,7 +126,13 @@ trees as a rain jungle." (flora.js floraSpecies picked one tree form and one shr
   ~31,000 trees round it), a wet tropical mountain (rounded broadleaves), the cold north (spires), dry
   woodland (flat-topped trees over grass, a denser gallery forest by the river). Scratchpad
   beauty/biomes_sheet.jpg.
-- Left: ground plants (one form a world still); far impostors crude (flat discs on sticks from afar).
+- Ground plants by climate too (2026-10-15, grassRender.js iForm): each patch's growth form from its
+  climate, smoothly: a dry country's bunchgrass in tussocks ~0.3-0.5 m apart arching out, bare between
+  (SOL Earth 26 S 6 E, was an even matted sward), the cold's low tufts, a hot country's coarse broad
+  blades, a marsh's stiff reeds, a moist temperate meadow an even sward (26 S 91.5 W, unchanged); in a
+  stand's shade broader and looser; before grasses, ferns in arching clumps. Each patch's clump lattice
+  turned its own way (aligned, the tussocks stood in rows across the field). Scratchpad beauty/gr4_sheet.jpg.
+- Left: far impostors crude (flat discs on sticks from afar).
 
 ## NOW: steps in the ground after a world's tiles are first made; a tab's memory (session 39d69fa8, 2026-10-14)
 

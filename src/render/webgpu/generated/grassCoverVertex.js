@@ -177,6 +177,11 @@ export const layout = {
       "name": "iWave",
       "type": "vec3",
       "location": 10
+    },
+    {
+      "name": "iForm",
+      "type": "vec4",
+      "location": 11
     }
   ]
 };
@@ -219,6 +224,7 @@ var<private> iCorner_1: vec4<f32>;
 var<private> iBare_1: vec4<f32>;
 var<private> iGrass_1: vec4<f32>;
 var<private> iWave_1: vec3<f32>;
+var<private> iForm_1: vec4<f32>;
 var<private> vGA: f32;
 var<private> vGSide: f32;
 var<private> vGT: f32;
@@ -230,18 +236,18 @@ fn grassHash(p: vec3<f32>) -> f32 {
     var p_1: vec3<f32>;
 
     p_1 = p;
-    let _e44 = p_1;
-    return fract((sin(dot(_e44, vec3<f32>(127.1f, 311.7f, 74.7f))) * 43758.547f));
+    let _e45 = p_1;
+    return fract((sin(dot(_e45, vec3<f32>(127.1f, 311.7f, 74.7f))) * 43758.547f));
 }
 
 fn grassHash3_(p_2: vec3<f32>) -> vec3<f32> {
     var p_3: vec3<f32>;
 
     p_3 = p_2;
-    let _e44 = p_3;
-    let _e50 = p_3;
-    let _e56 = p_3;
-    return fract((sin(vec3<f32>(dot(_e44, vec3<f32>(127.1f, 311.7f, 74.7f)), dot(_e50, vec3<f32>(269.5f, 183.3f, 246.1f)), dot(_e56, vec3<f32>(113.5f, 271.9f, 124.6f)))) * 43758.547f));
+    let _e45 = p_3;
+    let _e51 = p_3;
+    let _e57 = p_3;
+    return fract((sin(vec3<f32>(dot(_e45, vec3<f32>(127.1f, 311.7f, 74.7f)), dot(_e51, vec3<f32>(269.5f, 183.3f, 246.1f)), dot(_e57, vec3<f32>(113.5f, 271.9f, 124.6f)))) * 43758.547f));
 }
 
 fn grassNoise3_(p_4: vec3<f32>, per: f32) -> vec3<f32> {
@@ -260,77 +266,77 @@ fn grassNoise3_(p_4: vec3<f32>, per: f32) -> vec3<f32> {
 
     p_5 = p_4;
     per_1 = per;
-    let _e46 = p_5;
-    i = floor(_e46);
-    let _e49 = p_5;
-    f = fract(_e49);
-    let _e52 = f;
+    let _e47 = p_5;
+    i = floor(_e47);
+    let _e50 = p_5;
+    f = fract(_e50);
     let _e53 = f;
-    let _e57 = f;
-    f = ((_e52 * _e53) * (vec3(3f) - (2f * _e57)));
-    let _e62 = i;
-    let _e63 = per_1;
-    let _e64 = vec3(_e63);
-    let _e69 = grassHash3_((_e62 - (floor((_e62 / _e64)) * _e64)));
-    a = _e69;
-    let _e71 = i;
-    let _e76 = (_e71 + vec3<f32>(1f, 0f, 0f));
-    let _e77 = per_1;
-    let _e78 = vec3(_e77);
-    let _e83 = grassHash3_((_e76 - (floor((_e76 / _e78)) * _e78)));
-    b = _e83;
-    let _e85 = i;
-    let _e90 = (_e85 + vec3<f32>(0f, 1f, 0f));
-    let _e91 = per_1;
-    let _e92 = vec3(_e91);
-    let _e97 = grassHash3_((_e90 - (floor((_e90 / _e92)) * _e92)));
-    c = _e97;
-    let _e99 = i;
-    let _e104 = (_e99 + vec3<f32>(1f, 1f, 0f));
-    let _e105 = per_1;
-    let _e106 = vec3(_e105);
-    let _e111 = grassHash3_((_e104 - (floor((_e104 / _e106)) * _e106)));
-    d = _e111;
-    let _e113 = i;
-    let _e118 = (_e113 + vec3<f32>(0f, 0f, 1f));
-    let _e119 = per_1;
-    let _e120 = vec3(_e119);
-    let _e125 = grassHash3_((_e118 - (floor((_e118 / _e120)) * _e120)));
-    e = _e125;
-    let _e127 = i;
-    let _e132 = (_e127 + vec3<f32>(1f, 0f, 1f));
-    let _e133 = per_1;
-    let _e134 = vec3(_e133);
-    let _e139 = grassHash3_((_e132 - (floor((_e132 / _e134)) * _e134)));
-    g = _e139;
-    let _e141 = i;
-    let _e146 = (_e141 + vec3<f32>(0f, 1f, 1f));
-    let _e147 = per_1;
-    let _e148 = vec3(_e147);
-    let _e153 = grassHash3_((_e146 - (floor((_e146 / _e148)) * _e148)));
-    h = _e153;
-    let _e155 = i;
-    let _e160 = (_e155 + vec3<f32>(1f, 1f, 1f));
-    let _e161 = per_1;
-    let _e162 = vec3(_e161);
-    let _e167 = grassHash3_((_e160 - (floor((_e160 / _e162)) * _e162)));
-    k = _e167;
-    let _e169 = a;
-    let _e170 = b;
-    let _e171 = f;
-    let _e175 = c;
-    let _e176 = d;
-    let _e177 = f;
-    let _e181 = f;
-    let _e185 = e;
-    let _e186 = g;
-    let _e187 = f;
-    let _e191 = h;
-    let _e192 = k;
-    let _e193 = f;
-    let _e197 = f;
-    let _e201 = f;
-    return mix(mix(mix(_e169, _e170, vec3(_e171.x)), mix(_e175, _e176, vec3(_e177.x)), vec3(_e181.y)), mix(mix(_e185, _e186, vec3(_e187.x)), mix(_e191, _e192, vec3(_e193.x)), vec3(_e197.y)), vec3(_e201.z));
+    let _e54 = f;
+    let _e58 = f;
+    f = ((_e53 * _e54) * (vec3(3f) - (2f * _e58)));
+    let _e63 = i;
+    let _e64 = per_1;
+    let _e65 = vec3(_e64);
+    let _e70 = grassHash3_((_e63 - (floor((_e63 / _e65)) * _e65)));
+    a = _e70;
+    let _e72 = i;
+    let _e77 = (_e72 + vec3<f32>(1f, 0f, 0f));
+    let _e78 = per_1;
+    let _e79 = vec3(_e78);
+    let _e84 = grassHash3_((_e77 - (floor((_e77 / _e79)) * _e79)));
+    b = _e84;
+    let _e86 = i;
+    let _e91 = (_e86 + vec3<f32>(0f, 1f, 0f));
+    let _e92 = per_1;
+    let _e93 = vec3(_e92);
+    let _e98 = grassHash3_((_e91 - (floor((_e91 / _e93)) * _e93)));
+    c = _e98;
+    let _e100 = i;
+    let _e105 = (_e100 + vec3<f32>(1f, 1f, 0f));
+    let _e106 = per_1;
+    let _e107 = vec3(_e106);
+    let _e112 = grassHash3_((_e105 - (floor((_e105 / _e107)) * _e107)));
+    d = _e112;
+    let _e114 = i;
+    let _e119 = (_e114 + vec3<f32>(0f, 0f, 1f));
+    let _e120 = per_1;
+    let _e121 = vec3(_e120);
+    let _e126 = grassHash3_((_e119 - (floor((_e119 / _e121)) * _e121)));
+    e = _e126;
+    let _e128 = i;
+    let _e133 = (_e128 + vec3<f32>(1f, 0f, 1f));
+    let _e134 = per_1;
+    let _e135 = vec3(_e134);
+    let _e140 = grassHash3_((_e133 - (floor((_e133 / _e135)) * _e135)));
+    g = _e140;
+    let _e142 = i;
+    let _e147 = (_e142 + vec3<f32>(0f, 1f, 1f));
+    let _e148 = per_1;
+    let _e149 = vec3(_e148);
+    let _e154 = grassHash3_((_e147 - (floor((_e147 / _e149)) * _e149)));
+    h = _e154;
+    let _e156 = i;
+    let _e161 = (_e156 + vec3<f32>(1f, 1f, 1f));
+    let _e162 = per_1;
+    let _e163 = vec3(_e162);
+    let _e168 = grassHash3_((_e161 - (floor((_e161 / _e163)) * _e163)));
+    k = _e168;
+    let _e170 = a;
+    let _e171 = b;
+    let _e172 = f;
+    let _e176 = c;
+    let _e177 = d;
+    let _e178 = f;
+    let _e182 = f;
+    let _e186 = e;
+    let _e187 = g;
+    let _e188 = f;
+    let _e192 = h;
+    let _e193 = k;
+    let _e194 = f;
+    let _e198 = f;
+    let _e202 = f;
+    return mix(mix(mix(_e170, _e171, vec3(_e172.x)), mix(_e176, _e177, vec3(_e178.x)), vec3(_e182.y)), mix(mix(_e186, _e187, vec3(_e188.x)), mix(_e192, _e193, vec3(_e194.x)), vec3(_e198.y)), vec3(_e202.z));
 }
 
 fn grassNoise1_(p_6: vec3<f32>) -> f32 {
@@ -339,38 +345,38 @@ fn grassNoise1_(p_6: vec3<f32>) -> f32 {
     var f_1: vec3<f32>;
 
     p_7 = p_6;
-    let _e44 = p_7;
-    i_1 = floor(_e44);
-    let _e47 = p_7;
-    f_1 = fract(_e47);
-    let _e50 = f_1;
+    let _e45 = p_7;
+    i_1 = floor(_e45);
+    let _e48 = p_7;
+    f_1 = fract(_e48);
     let _e51 = f_1;
-    let _e55 = f_1;
-    f_1 = ((_e50 * _e51) * (vec3(3f) - (2f * _e55)));
-    let _e60 = i_1;
-    let _e61 = grassHash(_e60);
-    let _e62 = i_1;
-    let _e68 = grassHash((_e62 + vec3<f32>(1f, 0f, 0f)));
-    let _e69 = f_1;
-    let _e72 = i_1;
-    let _e78 = grassHash((_e72 + vec3<f32>(0f, 1f, 0f)));
-    let _e79 = i_1;
-    let _e85 = grassHash((_e79 + vec3<f32>(1f, 1f, 0f)));
-    let _e86 = f_1;
-    let _e89 = f_1;
-    let _e92 = i_1;
-    let _e98 = grassHash((_e92 + vec3<f32>(0f, 0f, 1f)));
-    let _e99 = i_1;
-    let _e105 = grassHash((_e99 + vec3<f32>(1f, 0f, 1f)));
-    let _e106 = f_1;
-    let _e109 = i_1;
-    let _e115 = grassHash((_e109 + vec3<f32>(0f, 1f, 1f)));
-    let _e116 = i_1;
-    let _e122 = grassHash((_e116 + vec3<f32>(1f, 1f, 1f)));
-    let _e123 = f_1;
-    let _e126 = f_1;
-    let _e129 = f_1;
-    return mix(mix(mix(_e61, _e68, _e69.x), mix(_e78, _e85, _e86.x), _e89.y), mix(mix(_e98, _e105, _e106.x), mix(_e115, _e122, _e123.x), _e126.y), _e129.z);
+    let _e52 = f_1;
+    let _e56 = f_1;
+    f_1 = ((_e51 * _e52) * (vec3(3f) - (2f * _e56)));
+    let _e61 = i_1;
+    let _e62 = grassHash(_e61);
+    let _e63 = i_1;
+    let _e69 = grassHash((_e63 + vec3<f32>(1f, 0f, 0f)));
+    let _e70 = f_1;
+    let _e73 = i_1;
+    let _e79 = grassHash((_e73 + vec3<f32>(0f, 1f, 0f)));
+    let _e80 = i_1;
+    let _e86 = grassHash((_e80 + vec3<f32>(1f, 1f, 0f)));
+    let _e87 = f_1;
+    let _e90 = f_1;
+    let _e93 = i_1;
+    let _e99 = grassHash((_e93 + vec3<f32>(0f, 0f, 1f)));
+    let _e100 = i_1;
+    let _e106 = grassHash((_e100 + vec3<f32>(1f, 0f, 1f)));
+    let _e107 = f_1;
+    let _e110 = i_1;
+    let _e116 = grassHash((_e110 + vec3<f32>(0f, 1f, 1f)));
+    let _e117 = i_1;
+    let _e123 = grassHash((_e117 + vec3<f32>(1f, 1f, 1f)));
+    let _e124 = f_1;
+    let _e127 = f_1;
+    let _e130 = f_1;
+    return mix(mix(mix(_e62, _e69, _e70.x), mix(_e79, _e86, _e87.x), _e90.y), mix(mix(_e99, _e106, _e107.x), mix(_e116, _e123, _e124.x), _e127.y), _e130.z);
 }
 
 fn grassBlade(im: mat4x4<f32>) -> vec3<f32> {
@@ -381,6 +387,15 @@ fn grassBlade(im: mat4x4<f32>) -> vec3<f32> {
     var local: vec2<f32>;
     var local_1: vec2<f32>;
     var local_2: vec2<f32>;
+    var cc: vec2<f32>;
+    var cs: f32;
+    var ca: f32;
+    var c0_: f32;
+    var s0_: f32;
+    var q: vec2<f32>;
+    var cell: vec2<f32>;
+    var jh: vec3<f32>;
+    var cq: vec2<f32>;
     var rr: f32;
     var pc: vec4<f32>;
     var dc: f32;
@@ -409,6 +424,7 @@ fn grassBlade(im: mat4x4<f32>) -> vec3<f32> {
     var local_3: vec2<f32>;
     var wd: vec2<f32>;
     var g_1: f32;
+    var out2_: vec2<f32>;
     var bl: f32;
     var u: f32;
     var v: f32;
@@ -421,284 +437,353 @@ fn grassBlade(im: mat4x4<f32>) -> vec3<f32> {
     var xz: vec2<f32>;
 
     im_1 = im;
-    let _e44 = iWave_1;
-    let _e50 = grassHash(((_e44 * 0.731f) + vec3(0.17f)));
-    ps = _e50;
-    let _e52 = ps;
-    rq = floor((_e52 * 4f));
-    let _e57 = aBlade_1;
-    bx = _e57.xy;
-    let _e60 = rq;
-    if (_e60 < 1f) {
-        let _e63 = bx;
-        local_2 = _e63;
+    let _e45 = iWave_1;
+    let _e51 = grassHash(((_e45 * 0.731f) + vec3(0.17f)));
+    ps = _e51;
+    let _e53 = ps;
+    rq = floor((_e53 * 4f));
+    let _e58 = aBlade_1;
+    bx = _e58.xy;
+    let _e61 = rq;
+    if (_e61 < 1f) {
+        let _e64 = bx;
+        local_2 = _e64;
     } else {
-        let _e64 = rq;
-        if (_e64 < 2f) {
-            let _e67 = bx;
-            let _e70 = bx;
-            local_1 = vec2<f32>(-(_e67.y), _e70.x);
+        let _e65 = rq;
+        if (_e65 < 2f) {
+            let _e68 = bx;
+            let _e71 = bx;
+            local_1 = vec2<f32>(-(_e68.y), _e71.x);
         } else {
-            let _e73 = rq;
-            if (_e73 < 3f) {
-                let _e76 = bx;
-                local = -(_e76);
+            let _e74 = rq;
+            if (_e74 < 3f) {
+                let _e77 = bx;
+                local = -(_e77);
             } else {
-                let _e78 = bx;
-                let _e80 = bx;
-                local = vec2<f32>(_e78.y, -(_e80.x));
+                let _e79 = bx;
+                let _e81 = bx;
+                local = vec2<f32>(_e79.y, -(_e81.x));
             }
-            let _e85 = local;
-            local_1 = _e85;
+            let _e86 = local;
+            local_1 = _e86;
         }
-        let _e87 = local_1;
-        local_2 = _e87;
+        let _e88 = local_1;
+        local_2 = _e88;
     }
-    let _e89 = local_2;
-    bx = _e89;
-    let _e90 = ps;
-    if (fract((_e90 * 7.13f)) > 0.5f) {
-        let _e97 = bx;
-        bx.x = -(_e97.x);
+    let _e90 = local_2;
+    bx = _e90;
+    let _e91 = ps;
+    if (fract((_e91 * 7.13f)) > 0.5f) {
+        let _e98 = bx;
+        bx.x = -(_e98.x);
     }
-    let _e100 = aBlade_1;
-    let _e102 = ps;
-    rr = fract((_e100.z + (_e102 * 0.618f)));
-    let _e108 = global.modelMatrix;
-    let _e109 = im_1;
-    let _e111 = bx;
-    let _e114 = bx;
-    pc = ((_e108 * _e109) * vec4<f32>(_e111.x, 0f, _e114.y, 1f));
-    let _e120 = pc;
-    dc = length(_e120.xyz);
-    let _e124 = bx;
-    u0_ = ((_e124.x * 0.5f) + 0.5f);
-    let _e131 = bx;
-    v0_ = ((_e131.y * 0.5f) + 0.5f);
-    let _e138 = iBare_1;
-    let _e140 = iBare_1;
-    let _e142 = u0_;
-    let _e144 = iBare_1;
-    let _e146 = iBare_1;
-    let _e148 = u0_;
-    let _e150 = v0_;
-    gb = mix(mix(_e138.x, _e140.y, _e142), mix(_e144.z, _e146.w, _e148), _e150);
-    let _e154 = global.uFadeR;
-    let _e157 = global.uFadeR;
-    let _e158 = dc;
-    let _e161 = global.uFadeIn;
-    let _e164 = global.uFadeIn;
-    let _e167 = dc;
-    fade = ((1f - smoothstep((_e154 * 0.7f), _e157, _e158)) * smoothstep((_e161 - 8f), (_e164 + 2f), _e167));
-    let _e171 = rr;
-    let _e172 = iGrass_1;
-    let _e178 = gb;
-    let _e183 = fade;
-    if (_e171 >= (((_e172.x * 1.5f) * smoothstep(0.25f, 0.75f, (_e178 + 0.25f))) * _e183)) {
+    let _e101 = bx;
+    cc = _e101;
+    let _e103 = iForm_1;
+    if (_e103.x > 0.01f) {
+        {
+            let _e109 = iForm_1;
+            let _e112 = global.uPatchK;
+            cs = (mix(0.3f, 0.5f, _e109.x) * _e112);
+            let _e115 = ps;
+            ca = (fract((_e115 * 3.71f)) * 6.2832f);
+            let _e122 = ca;
+            c0_ = cos(_e122);
+            let _e125 = ca;
+            s0_ = sin(_e125);
+            let _e128 = c0_;
+            let _e129 = bx;
+            let _e132 = s0_;
+            let _e133 = bx;
+            let _e137 = s0_;
+            let _e139 = bx;
+            let _e142 = c0_;
+            let _e143 = bx;
+            q = vec2<f32>(((_e128 * _e129.x) + (_e132 * _e133.y)), ((-(_e137) * _e139.x) + (_e142 * _e143.y)));
+            let _e149 = q;
+            let _e150 = cs;
+            cell = floor((_e149 / vec2(_e150)));
+            let _e155 = cell;
+            let _e156 = ps;
+            let _e162 = grassHash3_(vec3<f32>(_e155.x, _e155.y, (_e156 * 17f)));
+            jh = _e162;
+            let _e164 = cell;
+            let _e165 = jh;
+            let _e168 = cs;
+            cq = ((_e164 + _e165.xy) * _e168);
+            let _e171 = c0_;
+            let _e172 = cq;
+            let _e175 = s0_;
+            let _e176 = cq;
+            let _e180 = s0_;
+            let _e181 = cq;
+            let _e184 = c0_;
+            let _e185 = cq;
+            cc = vec2<f32>(((_e171 * _e172.x) - (_e175 * _e176.y)), ((_e180 * _e181.x) + (_e184 * _e185.y)));
+            let _e190 = bx;
+            let _e191 = cc;
+            let _e192 = bx;
+            let _e193 = cc;
+            let _e197 = jh;
+            let _e203 = iForm_1;
+            bx = mix(_e190, (_e191 + ((_e192 - _e193) * (0.08f + (0.2f * _e197.z)))), vec2(_e203.x));
+        }
+    }
+    let _e207 = aBlade_1;
+    let _e209 = ps;
+    rr = fract((_e207.z + (_e209 * 0.618f)));
+    let _e215 = global.modelMatrix;
+    let _e216 = im_1;
+    let _e218 = bx;
+    let _e221 = bx;
+    pc = ((_e215 * _e216) * vec4<f32>(_e218.x, 0f, _e221.y, 1f));
+    let _e227 = pc;
+    dc = length(_e227.xyz);
+    let _e231 = bx;
+    u0_ = ((_e231.x * 0.5f) + 0.5f);
+    let _e238 = bx;
+    v0_ = ((_e238.y * 0.5f) + 0.5f);
+    let _e245 = iBare_1;
+    let _e247 = iBare_1;
+    let _e249 = u0_;
+    let _e251 = iBare_1;
+    let _e253 = iBare_1;
+    let _e255 = u0_;
+    let _e257 = v0_;
+    gb = mix(mix(_e245.x, _e247.y, _e249), mix(_e251.z, _e253.w, _e255), _e257);
+    let _e261 = global.uFadeR;
+    let _e264 = global.uFadeR;
+    let _e265 = dc;
+    let _e268 = global.uFadeIn;
+    let _e271 = global.uFadeIn;
+    let _e274 = dc;
+    fade = ((1f - smoothstep((_e261 * 0.7f), _e264, _e265)) * smoothstep((_e268 - 8f), (_e271 + 2f), _e274));
+    let _e278 = rr;
+    let _e279 = iGrass_1;
+    let _e285 = gb;
+    let _e290 = fade;
+    if (_e278 >= (((_e279.x * 1.5f) * smoothstep(0.25f, 0.75f, (_e285 + 0.25f))) * _e290)) {
         return vec3(0f);
     }
-    let _e188 = im_1;
-    let _e198 = bx;
-    let _e201 = bx;
-    off = (mat3x3<f32>(_e188[0].xyz, _e188[1].xyz, _e188[2].xyz) * vec3<f32>(_e198.x, 0f, _e201.y));
-    let _e206 = iWave_1;
-    let _e207 = off;
-    wp = (_e206 + _e207);
-    let _e210 = wp;
-    let _e215 = grassNoise3_((_e210 / vec3(3.2f)), 640f);
-    nz = _e215;
-    let _e217 = nz;
-    n1_ = _e217.x;
-    let _e220 = nz;
-    n2_ = _e220.y;
-    let _e223 = iGrass_1;
-    let _e226 = n1_;
-    let _e231 = gb;
-    let _e233 = n2_;
-    let _e240 = fade;
-    dens = (((_e223.x * (0.5f + _e226)) * smoothstep(0.25f, 0.75f, (_e231 + (0.5f * (_e233 - 0.5f))))) * _e240);
-    let _e243 = aV_1;
-    vGT = _e243.x;
-    let _e245 = rr;
-    vGK = fract((_e245 * 13.71f));
-    let _e250 = dens;
-    let _e255 = aV_1;
-    vGS = ((1.5f * min(_e250, 1f)) * (1f - _e255.x));
-    let _e259 = rr;
-    let _e260 = dens;
-    if (_e259 >= _e260) {
+    let _e295 = im_1;
+    let _e305 = bx;
+    let _e308 = bx;
+    off = (mat3x3<f32>(_e295[0].xyz, _e295[1].xyz, _e295[2].xyz) * vec3<f32>(_e305.x, 0f, _e308.y));
+    let _e313 = iWave_1;
+    let _e314 = off;
+    wp = (_e313 + _e314);
+    let _e317 = wp;
+    let _e322 = grassNoise3_((_e317 / vec3(3.2f)), 640f);
+    nz = _e322;
+    let _e324 = nz;
+    n1_ = _e324.x;
+    let _e327 = nz;
+    n2_ = _e327.y;
+    let _e330 = iGrass_1;
+    let _e333 = n1_;
+    let _e338 = gb;
+    let _e340 = n2_;
+    let _e347 = fade;
+    dens = (((_e330.x * (0.5f + _e333)) * smoothstep(0.25f, 0.75f, (_e338 + (0.5f * (_e340 - 0.5f))))) * _e347);
+    let _e350 = aV_1;
+    vGT = _e350.x;
+    let _e352 = rr;
+    vGK = fract((_e352 * 13.71f));
+    let _e357 = dens;
+    let _e362 = aV_1;
+    vGS = ((1.5f * min(_e357, 1f)) * (1f - _e362.x));
+    let _e366 = rr;
+    let _e367 = dens;
+    if (_e366 >= _e367) {
         return vec3(0f);
     }
-    let _e264 = aV_1;
-    t = _e264.x;
-    let _e267 = aV_1;
-    side = _e267.y;
-    let _e270 = rr;
-    k1_ = fract((_e270 * 7.31f));
-    let _e275 = rr;
-    let _e278 = aBlade_1;
-    k2_ = fract(((_e275 * 3.17f) + (_e278.w * 0.13f)));
-    let _e285 = iGrass_1;
-    let _e289 = nz;
-    snow = (_e285.w * (0.4f + (1.2f * _e289.z)));
-    let _e295 = iGrass_1;
-    let _e299 = k1_;
-    let _e305 = n2_;
-    let _e309 = snow;
-    hb = (((_e295.y * (0.45f + (0.9f * _e299))) * (0.75f + (0.5f * _e305))) - _e309);
-    let _e312 = hb;
-    if (_e312 < 0.02f) {
+    let _e371 = aV_1;
+    t = _e371.x;
+    let _e374 = aV_1;
+    side = _e374.y;
+    let _e377 = rr;
+    k1_ = fract((_e377 * 7.31f));
+    let _e382 = rr;
+    let _e385 = aBlade_1;
+    k2_ = fract(((_e382 * 3.17f) + (_e385.w * 0.13f)));
+    let _e392 = iGrass_1;
+    let _e396 = nz;
+    snow = (_e392.w * (0.4f + (1.2f * _e396.z)));
+    let _e402 = iGrass_1;
+    let _e406 = k1_;
+    let _e412 = n2_;
+    let _e416 = snow;
+    hb = (((_e402.y * (0.45f + (0.9f * _e406))) * (0.75f + (0.5f * _e412))) - _e416);
+    let _e419 = hb;
+    if (_e419 < 0.02f) {
         return vec3(0f);
     }
-    let _e317 = snow;
-    held = exp((-(_e317) * 6f));
-    let _e323 = aBlade_1;
-    let _e325 = ps;
-    yaw = (_e323.w + (_e325 * 6.2832f));
-    let _e330 = yaw;
-    let _e332 = yaw;
-    f_2 = vec2<f32>(cos(_e330), sin(_e332));
-    let _e336 = f_2;
-    let _e339 = f_2;
-    p_8 = vec2<f32>(-(_e336.y), _e339.x);
-    let _e343 = f_2;
-    let _e344 = iGrass_1;
-    let _e349 = k2_;
-    let _e355 = held;
-    B = (((_e343 * _e344.z) * (0.15f + (0.85f * _e349))) * (0.4f + (0.6f * _e355)));
-    let _e360 = im_1;
-    let _e371 = global.uWindL;
-    wl = (transpose(mat3x3<f32>(_e360[0].xyz, _e360[1].xyz, _e360[2].xyz)) * _e371);
-    let _e374 = wl;
-    if (length(_e374.xz) > 0.0001f) {
-        let _e379 = wl;
-        local_3 = normalize(_e379.xz);
+    let _e424 = snow;
+    held = exp((-(_e424) * 6f));
+    let _e430 = aBlade_1;
+    let _e432 = ps;
+    yaw = (_e430.w + (_e432 * 6.2832f));
+    let _e437 = yaw;
+    let _e439 = yaw;
+    f_2 = vec2<f32>(cos(_e437), sin(_e439));
+    let _e443 = f_2;
+    let _e446 = f_2;
+    p_8 = vec2<f32>(-(_e443.y), _e446.x);
+    let _e450 = f_2;
+    let _e451 = iGrass_1;
+    let _e456 = k2_;
+    let _e462 = held;
+    B = (((_e450 * _e451.z) * (0.15f + (0.85f * _e456))) * (0.4f + (0.6f * _e462)));
+    let _e467 = im_1;
+    let _e478 = global.uWindL;
+    wl = (transpose(mat3x3<f32>(_e467[0].xyz, _e467[1].xyz, _e467[2].xyz)) * _e478);
+    let _e481 = wl;
+    if (length(_e481.xz) > 0.0001f) {
+        let _e486 = wl;
+        local_3 = normalize(_e486.xz);
     } else {
         local_3 = vec2<f32>(1f, 0f);
     }
-    let _e386 = local_3;
-    wd = _e386;
-    let _e390 = wp;
-    let _e394 = global.uWindL;
-    let _e395 = global.uWindT;
-    let _e400 = k1_;
-    let _e405 = grassNoise1_((((_e390 / vec3(7f)) - (_e394 * (_e395 * 0.6f))) + vec3((_e400 * 0.12f))));
-    g_1 = smoothstep(0.2f, 0.85f, _e405);
-    let _e408 = B;
-    let _e409 = wd;
-    let _e410 = global.uGrassWind;
-    let _e414 = g_1;
-    let _e420 = k2_;
-    let _e424 = held;
-    B = (_e408 + ((((_e409 * _e410) * (0.25f + (0.75f * _e414))) * (0.7f + (0.6f * _e420))) * _e424));
-    let _e427 = B;
-    bl = length(_e427);
-    let _e430 = bl;
-    if (_e430 > 1.2f) {
-        let _e433 = B;
-        let _e435 = bl;
-        B = (_e433 * (1.2f / _e435));
+    let _e493 = local_3;
+    wd = _e493;
+    let _e497 = wp;
+    let _e501 = global.uWindL;
+    let _e502 = global.uWindT;
+    let _e507 = k1_;
+    let _e512 = grassNoise1_((((_e497 / vec3(7f)) - (_e501 * (_e502 * 0.6f))) + vec3((_e507 * 0.12f))));
+    g_1 = smoothstep(0.2f, 0.85f, _e512);
+    let _e515 = B;
+    let _e516 = wd;
+    let _e517 = global.uGrassWind;
+    let _e521 = g_1;
+    let _e527 = k2_;
+    let _e531 = held;
+    B = (_e515 + ((((_e516 * _e517) * (0.25f + (0.75f * _e521))) * (0.7f + (0.6f * _e527))) * _e531));
+    let _e534 = B;
+    let _e537 = iForm_1;
+    B = (_e534 * mix(1f, 0.35f, _e537.z));
+    let _e541 = bx;
+    let _e542 = cc;
+    out2_ = (_e541 - _e542);
+    let _e545 = iForm_1;
+    let _e549 = out2_;
+    let _e550 = out2_;
+    if ((_e545.w > 0f) && (dot(_e549, _e550) > 0.00000001f)) {
+        let _e555 = B;
+        let _e556 = out2_;
+        let _e558 = iForm_1;
+        let _e563 = k2_;
+        B = (_e555 + ((normalize(_e556) * _e558.w) * (0.7f + (0.6f * _e563))));
     }
-    let _e438 = bx;
-    u = ((_e438.x * 0.5f) + 0.5f);
-    let _e445 = bx;
-    v = ((_e445.y * 0.5f) + 0.5f);
-    let _e452 = iCorner_1;
-    let _e454 = iCorner_1;
-    let _e456 = u;
-    let _e458 = iCorner_1;
-    let _e460 = iCorner_1;
-    let _e462 = u;
-    let _e464 = v;
-    hg = mix(mix(_e452.x, _e454.y, _e456), mix(_e458.z, _e460.w, _e462), _e464);
-    let _e467 = global.uBladeW;
-    let _e470 = k2_;
-    let _e476 = iGrass_1;
-    let _e482 = t;
-    w = (((_e467 * (0.6f + (0.8f * _e470))) * (1f + (0.6f * _e476.y))) * pow((1f - _e482), 0.7f));
+    let _e568 = B;
+    bl = length(_e568);
+    let _e571 = bl;
+    if (_e571 > 1.2f) {
+        let _e574 = B;
+        let _e576 = bl;
+        B = (_e574 * (1.2f / _e576));
+    }
+    let _e579 = bx;
+    u = ((_e579.x * 0.5f) + 0.5f);
+    let _e586 = bx;
+    v = ((_e586.y * 0.5f) + 0.5f);
+    let _e593 = iCorner_1;
+    let _e595 = iCorner_1;
+    let _e597 = u;
+    let _e599 = iCorner_1;
+    let _e601 = iCorner_1;
+    let _e603 = u;
+    let _e605 = v;
+    hg = mix(mix(_e593.x, _e595.y, _e597), mix(_e599.z, _e601.w, _e603), _e605);
+    let _e608 = global.uBladeW;
+    let _e609 = iForm_1;
+    let _e614 = k2_;
+    let _e620 = iGrass_1;
+    let _e626 = t;
+    w = ((((_e608 * _e609.y) * (0.6f + (0.8f * _e614))) * (1f + (0.6f * _e620.y))) * pow((1f - _e626), 0.7f));
     vGA = 1f;
-    let _e489 = side;
-    vGSide = _e489;
-    let _e490 = global.uCover;
-    if (_e490.x > 0.5f) {
+    let _e633 = side;
+    vGSide = _e633;
+    let _e634 = global.uCover;
+    if (_e634.x > 0.5f) {
         {
-            let _e494 = global.modelMatrix;
-            let _e505 = global.uCoverL;
-            lM = (transpose(mat3x3<f32>(_e494[0].xyz, _e494[1].xyz, _e494[2].xyz)) * _e505);
-            let _e510 = im_1[0];
-            let _e512 = lM;
-            let _e516 = im_1[2];
-            let _e518 = lM;
-            hL = vec2<f32>(dot(_e510.xyz, _e512), dot(_e516.xyz, _e518));
-            let _e522 = hL;
-            let _e523 = hL;
-            if (dot(_e522, _e523) > 0.0000000001f) {
+            let _e638 = global.modelMatrix;
+            let _e649 = global.uCoverL;
+            lM = (transpose(mat3x3<f32>(_e638[0].xyz, _e638[1].xyz, _e638[2].xyz)) * _e649);
+            let _e654 = im_1[0];
+            let _e656 = lM;
+            let _e660 = im_1[2];
+            let _e662 = lM;
+            hL = vec2<f32>(dot(_e654.xyz, _e656), dot(_e660.xyz, _e662));
+            let _e666 = hL;
+            let _e667 = hL;
+            if (dot(_e666, _e667) > 0.0000000001f) {
                 {
-                    let _e527 = hL;
-                    hL = normalize(_e527);
-                    let _e529 = hL;
-                    let _e532 = hL;
-                    p_8 = vec2<f32>(-(_e529.y), _e532.x);
+                    let _e671 = hL;
+                    hL = normalize(_e671);
+                    let _e673 = hL;
+                    let _e676 = hL;
+                    p_8 = vec2<f32>(-(_e673.y), _e676.x);
                 }
             }
-            let _e535 = w;
-            wv = (_e535 * 0.64f);
-            let _e539 = wv;
-            let _e540 = global.uCover;
-            we = max(_e539, _e540.y);
-            let _e544 = wv;
-            let _e545 = we;
-            vGA = (_e544 / max(_e545, 0.000001f));
-            let _e549 = we;
-            w = _e549;
+            let _e679 = w;
+            wv = (_e679 * 0.64f);
+            let _e683 = wv;
+            let _e684 = global.uCover;
+            we = max(_e683, _e684.y);
+            let _e688 = wv;
+            let _e689 = we;
+            vGA = (_e688 / max(_e689, 0.000001f));
+            let _e693 = we;
+            w = _e693;
         }
     }
-    let _e550 = bx;
-    let _e551 = B;
-    let _e552 = hb;
-    let _e554 = t;
-    let _e556 = t;
-    let _e558 = p_8;
-    let _e559 = w;
-    let _e561 = side;
-    let _e564 = global.uPatchK;
-    xz = (_e550 + (((((_e551 * _e552) * _e554) * _e556) + ((_e558 * _e559) * _e561)) * _e564));
-    let _e568 = xz;
-    let _e570 = hg;
-    let _e571 = snow;
-    let _e573 = hb;
-    let _e574 = t;
-    let _e578 = B;
-    let _e579 = B;
-    let _e582 = t;
-    let _e587 = xz;
-    return vec3<f32>(_e568.x, ((_e570 + _e571) + ((_e573 * _e574) * (1f - ((0.3f * dot(_e578, _e579)) * _e582)))), _e587.y);
+    let _e694 = bx;
+    let _e695 = B;
+    let _e696 = hb;
+    let _e698 = t;
+    let _e700 = t;
+    let _e702 = p_8;
+    let _e703 = w;
+    let _e705 = side;
+    let _e708 = global.uPatchK;
+    xz = (_e694 + (((((_e695 * _e696) * _e698) * _e700) + ((_e702 * _e703) * _e705)) * _e708));
+    let _e712 = xz;
+    let _e714 = hg;
+    let _e715 = snow;
+    let _e717 = hb;
+    let _e718 = t;
+    let _e722 = B;
+    let _e723 = B;
+    let _e726 = t;
+    let _e731 = xz;
+    return vec3<f32>(_e712.x, ((_e714 + _e715) + ((_e717 * _e718) * (1f - ((0.3f * dot(_e722, _e723)) * _e726)))), _e731.y);
 }
 
 fn main_1() {
-    let _e43 = global.projectionMatrix;
-    let _e44 = global.viewMatrix;
-    let _e46 = global.modelMatrix;
-    let _e48 = instance0_1;
-    let _e49 = instance1_1;
-    let _e50 = instance2_1;
-    let _e51 = instance3_1;
-    let _e74 = instance0_1;
-    let _e75 = instance1_1;
-    let _e76 = instance2_1;
-    let _e77 = instance3_1;
-    let _e99 = grassBlade(mat4x4<f32>(vec4<f32>(_e74.x, _e74.y, _e74.z, _e74.w), vec4<f32>(_e75.x, _e75.y, _e75.z, _e75.w), vec4<f32>(_e76.x, _e76.y, _e76.z, _e76.w), vec4<f32>(_e77.x, _e77.y, _e77.z, _e77.w)));
-    gl_Position = ((((_e43 * _e44) * _e46) * mat4x4<f32>(vec4<f32>(_e48.x, _e48.y, _e48.z, _e48.w), vec4<f32>(_e49.x, _e49.y, _e49.z, _e49.w), vec4<f32>(_e50.x, _e50.y, _e50.z, _e50.w), vec4<f32>(_e51.x, _e51.y, _e51.z, _e51.w))) * vec4<f32>(_e99.x, _e99.y, _e99.z, 1f));
-    let _e107 = gl_Position;
-    gl_Position.y = -(_e107.y);
-    let _e112 = gl_Position;
-    let _e114 = gl_Position;
-    gl_Position.z = (0.5f * (_e112.z + _e114.w));
+    let _e44 = global.projectionMatrix;
+    let _e45 = global.viewMatrix;
+    let _e47 = global.modelMatrix;
+    let _e49 = instance0_1;
+    let _e50 = instance1_1;
+    let _e51 = instance2_1;
+    let _e52 = instance3_1;
+    let _e75 = instance0_1;
+    let _e76 = instance1_1;
+    let _e77 = instance2_1;
+    let _e78 = instance3_1;
+    let _e100 = grassBlade(mat4x4<f32>(vec4<f32>(_e75.x, _e75.y, _e75.z, _e75.w), vec4<f32>(_e76.x, _e76.y, _e76.z, _e76.w), vec4<f32>(_e77.x, _e77.y, _e77.z, _e77.w), vec4<f32>(_e78.x, _e78.y, _e78.z, _e78.w)));
+    gl_Position = ((((_e44 * _e45) * _e47) * mat4x4<f32>(vec4<f32>(_e49.x, _e49.y, _e49.z, _e49.w), vec4<f32>(_e50.x, _e50.y, _e50.z, _e50.w), vec4<f32>(_e51.x, _e51.y, _e51.z, _e51.w), vec4<f32>(_e52.x, _e52.y, _e52.z, _e52.w))) * vec4<f32>(_e100.x, _e100.y, _e100.z, 1f));
+    let _e108 = gl_Position;
+    gl_Position.y = -(_e108.y);
+    let _e113 = gl_Position;
+    let _e115 = gl_Position;
+    gl_Position.z = (0.5f * (_e113.z + _e115.w));
     return;
 }
 
 @vertex 
-fn main(@location(0) position: vec3<f32>, @location(1) instance0_: vec4<f32>, @location(2) instance1_: vec4<f32>, @location(3) instance2_: vec4<f32>, @location(4) instance3_: vec4<f32>, @location(5) aBlade: vec4<f32>, @location(6) aV: vec2<f32>, @location(7) iCorner: vec4<f32>, @location(8) iBare: vec4<f32>, @location(9) iGrass: vec4<f32>, @location(10) iWave: vec3<f32>) -> VertexOutput {
+fn main(@location(0) position: vec3<f32>, @location(1) instance0_: vec4<f32>, @location(2) instance1_: vec4<f32>, @location(3) instance2_: vec4<f32>, @location(4) instance3_: vec4<f32>, @location(5) aBlade: vec4<f32>, @location(6) aV: vec2<f32>, @location(7) iCorner: vec4<f32>, @location(8) iBare: vec4<f32>, @location(9) iGrass: vec4<f32>, @location(10) iWave: vec3<f32>, @location(11) iForm: vec4<f32>) -> VertexOutput {
     position_1 = position;
     instance0_1 = instance0_;
     instance1_1 = instance1_;
@@ -710,13 +795,14 @@ fn main(@location(0) position: vec3<f32>, @location(1) instance0_: vec4<f32>, @l
     iBare_1 = iBare;
     iGrass_1 = iGrass;
     iWave_1 = iWave;
+    iForm_1 = iForm;
     main_1();
-    let _e81 = vGA;
-    let _e83 = vGSide;
-    let _e85 = vGT;
-    let _e87 = vGK;
-    let _e89 = vGS;
-    let _e91 = gl_Position;
-    return VertexOutput(_e81, _e83, _e85, _e87, _e89, _e91);
+    let _e85 = vGA;
+    let _e87 = vGSide;
+    let _e89 = vGT;
+    let _e91 = vGK;
+    let _e93 = vGS;
+    let _e95 = gl_Position;
+    return VertexOutput(_e85, _e87, _e89, _e91, _e93, _e95);
 }
 `;

@@ -68,6 +68,9 @@ function bladeGeometry(nb, seg, seed) {
 //   iBare: where it grows at the patch's corners (1, 0 bare: a creek's bed, sand, rock showing), blended
 //   across it, ragged by its clumps (a patch all or nothing was a square)
 //   iWave: where the patch lies (body-fixed x, y, z, each wrapped at 2048 m): its noises' place
+//   iForm: its plants' growth form by their climate (GrassSet.tile): clumped (0 an even sward, 1 tussocks),
+//   blade width (x), stiff (0 a soft meadow's, 1 a reed's), arched out from its clump (a bunchgrass's
+//   fountain, a fern's fronds)
 const GLSL_BLADE = /* glsl */`
 attribute vec4 aBlade;
 attribute vec2 aV;
@@ -75,6 +78,7 @@ attribute vec4 iCorner;
 attribute vec4 iBare;
 attribute vec4 iGrass;
 attribute vec3 iWave;
+attribute vec4 iForm;
 uniform float uWindT;
 uniform float uGrassWind;
 uniform vec3 uWindL;
@@ -121,6 +125,19 @@ vec3 grassBlade(mat4 im) {
   vec2 bx = aBlade.xy;
   bx = rq < 1.0 ? bx : rq < 2.0 ? vec2(-bx.y, bx.x) : rq < 3.0 ? -bx : vec2(bx.y, -bx.x);
   if (fract(ps * 7.13) > 0.5) bx.x = -bx.x;
+  // (its tussock: a clump's blades drawn in to its foot, the ground between bare; 0.3 m apart in a loose
+  // sward to half a metre in a dry country's bunchgrass, a far patch's units four times a near one's)
+  // (the clumps' lattice turned its own way in each patch and each clump anywhere in its cell: lined up with
+  // the cube face's axes, every patch's alike, they stood in rows across the field)
+  vec2 cc = bx;
+  if (iForm.x > 0.01) {
+    float cs = mix(0.3, 0.5, iForm.x) * uPatchK, ca = fract(ps * 3.71) * 6.2832, c0 = cos(ca), s0 = sin(ca);
+    vec2 q = vec2(c0 * bx.x + s0 * bx.y, -s0 * bx.x + c0 * bx.y), cell = floor(q / cs);
+    vec3 jh = grassHash3(vec3(cell, ps * 17.0));
+    vec2 cq = (cell + jh.xy) * cs;
+    cc = vec2(c0 * cq.x - s0 * cq.y, s0 * cq.x + c0 * cq.y);
+    bx = mix(bx, cc + (bx - cc) * (0.08 + 0.2 * jh.z), iForm.x);
+  }
   float rr = fract(aBlade.z + ps * 0.618);
   vec4 pc = modelMatrix * im * vec4(bx.x, 0.0, bx.y, 1.0);
   float dc = length(pc.xyz);
@@ -165,11 +182,15 @@ vec3 grassBlade(mat4 im) {
   vec2 wd = length(wl.xz) > 1e-4 ? normalize(wl.xz) : vec2(1.0, 0.0);
   float g = smoothstep(0.2, 0.85, grassNoise1(wp / 7.0 - uWindL * (uWindT * 0.6) + k1 * 0.12));
   B += wd * uGrassWind * (0.25 + 0.75 * g) * (0.7 + 0.6 * k2) * held;
+  // (a stiff one, a reed's, bends less; a tussock's blades arch out from its middle)
+  B *= mix(1.0, 0.35, iForm.z);
+  vec2 out2 = bx - cc;
+  if (iForm.w > 0.0 && dot(out2, out2) > 1e-8) B += normalize(out2) * iForm.w * (0.7 + 0.6 * k2);
   float bl = length(B);
   if (bl > 1.2) B *= 1.2 / bl;
   float u = bx.x * 0.5 + 0.5, v = bx.y * 0.5 + 0.5;
   float hg = mix(mix(iCorner.x, iCorner.y, u), mix(iCorner.z, iCorner.w, u), v);
-  float w = uBladeW * (0.6 + 0.8 * k2) * (1.0 + 0.6 * iGrass.y) * pow(1.0 - t, 0.7);
+  float w = uBladeW * iForm.y * (0.6 + 0.8 * k2) * (1.0 + 0.6 * iGrass.y) * pow(1.0 - t, 0.7);
   // (into the cover map: turned to face the light, as wide as it looks on average (2/pi of it), widened to
   // the least width and as much fainter)
   vGA = 1.0; vGSide = side;
@@ -385,6 +406,7 @@ void main() { gl_FragColor = vec4(vGA * 2.0 * max(0.0, 1.0 - abs(vGSide)), 0.0, 
     g.setAttribute('iBare', new THREE.InstancedBufferAttribute(T.bare, 4));
     g.setAttribute('iGrass', new THREE.InstancedBufferAttribute(T.grass, 4));
     g.setAttribute('iWave', new THREE.InstancedBufferAttribute(T.wave, 3));
+    g.setAttribute('iForm', new THREE.InstancedBufferAttribute(T.form, 4));
     g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), size * 0.75 + 2);
     const m = new THREE.InstancedMesh(g, this.mats[L], T.n);
     m.instanceMatrix.array.set(T.mat);
@@ -496,10 +518,20 @@ void main() { gl_FragColor = vec4(vGA * 2.0 * max(0.0, 1.0 - abs(vGSide)), 0.0, 
     // (its colour: the foliage's where it's wet, straw where it's dry (the world's dry colour, as the ground
     // shades its open country), a fresh burn's green flush; some patches drier)
     const k0 = Math.min(1, 0.55 * dryK + 0.8 * monthDry + 0.7 * cold) * (1 - green) * (1 - 0.8 * marsh);
+    // (its plants' growth form, by their climate, smoothly: a dry country's bunchgrass in tussocks arching
+    // out (their roots sharing out scarce water), the cold's low tufts and cushions, a hot country's coarse
+    // broad blades, a marsh's reeds and sedges stiff and upright, a moist temperate meadow's an even sward;
+    // before grasses, ferns in clumps of arching fronds)
+    const smf = (e0, e1, x) => { const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0))); return t * t * (3 - 2 * t); };
+    const fCold = smf(5, -3, tC), fHot = smf(15, 25, tC), fDry = 1 - wet;
+    let fClump = Math.min(0.92, (0.85 * Math.pow(fDry, 1.3) + 0.6 * fCold) * (1 - 0.8 * marsh));
+    let fArch = (0.55 * fDry + 0.35 * fHot) * (1 - marsh);
+    if (this.fern) { fClump = Math.max(fClump, 0.55); fArch = Math.max(fArch, 0.7); }
+    const fWidth = 1 + 0.7 * fHot * (1 - 0.5 * fDry) + 0.9 * marsh - 0.3 * fCold, fStiff = Math.min(1, 0.15 + 0.75 * marsh + 0.35 * fCold);
     const base = this.veg.map((x, q) => (x + (this.dry[q] - x) * k0) * (1.35 + 0.3 * green));
     const dryTip = this.dry.map((x) => x * 1.45);
     // (the patches: their frames, their corners, their density, height and colour)
-    const n = PPT * PPT, mat = new Float32Array(n * 16), corner = new Float32Array(n * 4), grows = new Float32Array(n * 4), grass = new Float32Array(n * 4), wave = new Float32Array(n * 3), col = new Float32Array(n * 3);
+    const n = PPT * PPT, mat = new Float32Array(n * 16), corner = new Float32Array(n * 4), grows = new Float32Array(n * 4), grass = new Float32Array(n * 4), wave = new Float32Array(n * 3), col = new Float32Array(n * 3), form = new Float32Array(n * 4);
     let hsh = fmix32((face * 0x9e3779b1) ^ (i * 0x85ebca6b) ^ (j * 0xc2b2ae35));
     const rnd = () => { hsh = fmix32((hsh + 0x6d2b79f5) >>> 0); return hsh / 4294967296; };
     const M = new THREE.Matrix4(), X = new THREE.Vector3(), Y = new THREE.Vector3(), Z = new THREE.Vector3(), Pp = new THREE.Vector3();
@@ -531,6 +563,8 @@ void main() { gl_FragColor = vec4(vGA * 2.0 * max(0.0, 1.0 - abs(vGSide)), 0.0, 
       grows[q * 4] = g00; grows[q * 4 + 1] = g10; grows[q * 4 + 2] = g01; grows[q * 4 + 3] = g11;
       rnd();
       const Hp = H;
+      // (in a stand's shade broader leaves, looser: the light's scarce, not the water)
+      form[q * 4] = fClump * (1 - 0.5 * kS); form[q * 4 + 1] = fWidth * (1 + 0.6 * kS); form[q * 4 + 2] = fStiff; form[q * 4 + 3] = fArch * (1 - 0.4 * kS);
       grass[q * 4] = Math.min(1, dens); grass[q * 4 + 1] = Hp; grass[q * 4 + 2] = (this.fern ? 0.7 : 0.12 + 0.45 * Math.min(1, Hp / 1.2)) / Math.max(1, Hp * 0.6); grass[q * 4 + 3] = snowD;
       const wx = d[0] * R, wy = d[1] * R, wz = d[2] * R;
       wave[q * 3] = wx - 2048 * Math.floor(wx / 2048); wave[q * 3 + 1] = wy - 2048 * Math.floor(wy / 2048); wave[q * 3 + 2] = wz - 2048 * Math.floor(wz / 2048);
@@ -540,7 +574,7 @@ void main() { gl_FragColor = vec4(vGA * 2.0 * max(0.0, 1.0 - abs(vGSide)), 0.0, 
       for (let cc = 0; cc < 3; cc++) col[q * 3 + cc] = (base[cc] + (dryTip[cc] - base[cc]) * tdr * (1 - kS)) * (1 - 0.25 * kS);
       q++;
     }
-    T.n = q; T.mat = mat.subarray(0, q * 16); T.corner = corner.subarray(0, q * 4); T.bare = grows.subarray(0, q * 4); T.grass = grass.subarray(0, q * 4); T.wave = wave.subarray(0, q * 3); T.col = col.subarray(0, q * 3);
+    T.n = q; T.mat = mat.subarray(0, q * 16); T.corner = corner.subarray(0, q * 4); T.bare = grows.subarray(0, q * 4); T.grass = grass.subarray(0, q * 4); T.wave = wave.subarray(0, q * 3); T.col = col.subarray(0, q * 3); T.form = form.subarray(0, q * 4);
     // (its flowers: an open, moist grassland's most, a fresh burn's a flush of them; a few heads in a patch,
     // over the grass)
     const fl = this.flowerCols.length ? Math.min(0.25, 0.06 * Math.min(1, open * 1.5) * (0.5 + wet) * (1 + 2 * green)) : 0;
