@@ -235,7 +235,7 @@ function loop(now) {
   const dt = Math.min((now - last) / 1000, 0.1); if (now - last < 1000 / 60) return; last = now;
   padControls(dt);
   if (running) { walker.step(dt, input()); time += dt; mech.update(dt, walker.pos); glitches.update(dt, walker.pos); sense.update(dt, walker.pos); if (time > 1.5) scanOnArrival(); }
-  sound.update({ pos: walker.pos, yaw: walker.yaw, grounded: walker.grounded, zeroG: walker.gravity === 0, time }, running);
+  sound.update({ pos: walker.pos, yaw: walker.yaw, grounded: walker.grounded, zeroG: walker.gravity === 0, time, glitchSounds: glitches.sounds }, running);
   render();
 }
 if (params.has('test')) window.siteTest = { plan, site, walker, state, guide, mech, glitches, sense, sound, map, toggleMap, visual, errors, render, start, pause, interact, offer, raw, credit, get renderer() { return renderer; }, get frame() { return frame; }, engine };

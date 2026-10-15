@@ -60,7 +60,10 @@ in the breach room, the core, the access or a climb):
   always open, SiteCollision portals' oneWay), motes (sourceless lights swarming round a crossing),
   front (a mist wall sweeping a passage every 20 s, shoving whoever it passes along: SiteCollision
   addPush/pushAt, the walker's drift), chorus (a crossing's rails lit at alternating antinodes).
-- Not yet: sound for the glitches and set pieces (hiss, hum, the front's rush), more kinds.
+- Sound (siteSound.js layers hiss, sing, whine; SiteGlitches.sounds): a vent's hiss in its bursts, the
+  front's rush as it passes, the conduit's and the rails' tone (and softly the Chladni floor's), the
+  folds' thin whine; each by how loud it is now and how near.
+- Not yet: more kinds; Dave's play.
 
 ## NOW: surf on the shores, beaches shaped by their waves (session 39d69fa8, 2026-10-15; QUEUE 1, a first pass)
 

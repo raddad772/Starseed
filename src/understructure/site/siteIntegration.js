@@ -261,7 +261,7 @@ export class SiteSession {
     c.position.set(w.pos[0], w.pos[1] + 1.68, w.pos[2]); c.rotation.set(w.pitch, w.yaw, 0); c.updateMatrixWorld();
     this.w.visual.update(c, this.time, { flashlight: this.flashlight, collected: this.w.collected });
     this.engine.time = this.time; this.engine.pixelRatio = this.game.engine.pixelRatio;
-    this.sound.update({ pos: w.pos, yaw: w.yaw, grounded: w.grounded, zeroG: w.gravity === 0, time: this.time }, !this.game.paused && this.game.players[0] === player);
+    this.sound.update({ pos: w.pos, yaw: w.yaw, grounded: w.grounded, zeroG: w.gravity === 0, time: this.time, glitchSounds: this.w.glitches.sounds }, !this.game.paused && this.game.players[0] === player);
     this.game.engine.webgpu.render(this.engine, first);
     this.hud.update(this, c);
   }

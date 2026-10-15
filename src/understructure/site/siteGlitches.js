@@ -35,9 +35,12 @@ export class SiteGlitches {
       echo: [0.5, 0.34, 0.22, 0.12, 0.05].map((o) => veil('#8a8a82', o)),
     };
     this.parts = [];
+    // (what each sounds like now, for the site's sound: site/siteSound.js; a glitch's own as it runs)
+    this.sounds = [];
+    const sound = (kind, pos, level = 1) => { const q = { kind, pos: pos.slice(), level }; this.sounds.push(q); return q; };
     for (const g of site.glitches || []) {
       const make = BUILD[g.kind];
-      if (make) this.parts.push(make(g, { root, mat, M: this.M, collision, rnd: rand(g.id) }));
+      if (make) this.parts.push(make(g, { root, mat, M: this.M, collision, rnd: rand(g.id), sound }));
     }
     this.anomalies = (site.glitches || []).filter((g) => SENSE[g.theme]).map((g) => ({ pos: [g.center[0], g.y0, g.center[1]], r: (g.set ? 16 : 10) + (g.r || 2), kind: SENSE[g.theme] }));
   }
@@ -150,7 +153,8 @@ const BUILD = {
     };
   },
   // a stretch of passage folded away: step into the near frame and out of the far one (and back)
-  skip(g, { root, M, collision }) {
+  skip(g, { root, M, collision, sound }) {
+    sound('whine', [g.center[0], g.y0 + 1.5, g.center[1]], 0.8);
     const ms = g.frames.map((f) => {
       const m = new THREE.Mesh(new THREE.PlaneGeometry(f.half * 2 + 0.3, 3.0), M.fold);
       m.position.set(f.pos[0], f.pos[1] + 1.5, f.pos[2]); m.rotation.y = yawOf(f.dir); root.add(m); return m;
@@ -203,8 +207,9 @@ const BUILD = {
     };
   },
   // vapour jetting from a crack in a wall, in bursts
-  vent(g, { root, mat, M, rnd }) {
+  vent(g, { root, mat, M, rnd, sound }) {
     const w = g.node ? g.wall : passageWall(g), base = G.add(w.mid, G.mul(w.inward, 0.04)), y = g.y0 + 1.1 + rnd() * 0.6, off = rnd() * 7;
+    const snd = sound('hiss', [base[0], y, base[1]], 0);
     const crack = new THREE.Mesh(new THREE.BoxGeometry(0.07, 1.5, 0.05), mat.dark); crack.position.set(base[0], y, base[1]); crack.rotation.set(0, yawOf(w.inward), 0.2); root.add(crack);
     // (each puff two soft discs crossed, turned about the jet: vapour from any side, no edge to it)
     const puffs = [], disc = new THREE.PlaneGeometry(0.6, 0.6);
@@ -215,6 +220,7 @@ const BUILD = {
     }
     return (t) => {
       const on = cyc(t, 7, off) < 0.5;
+      snd.level = on ? 1 : 0;
       for (const q of puffs) {
         const age = cyc(t * 0.9, 1, q.k);
         q.m.visible = on;
@@ -244,8 +250,8 @@ const BUILD = {
     };
   },
   // a conduit singing: standing in the room, shivering, rings lit at its antinodes, each pair in turn
-  hum(g, { root, mat, M, collision }) {
-    const w = g.wall, at = G.add(w.mid, G.mul(w.inward, 0.55)), h = g.y1 - g.y0;
+  hum(g, { root, mat, M, collision, sound }) {
+    const w = g.wall, at = G.add(w.mid, G.mul(w.inward, 0.55)), h = g.y1 - g.y0, snd = sound('sing', [at[0], g.y0 + h / 2, at[1]]);
     const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, h, 12), mat.metal); pipe.position.set(at[0], g.y0 + h / 2, at[1]); root.add(pipe);
     collision.addBlocker({ poly: G.regularPoly(at[0], at[1], 0.24, 0.24, 8, 0), y0: g.y0, y1: g.y1, active: () => true });
     const ringM = [0, 1, 2].map(() => M.cyan.clone()), rings = ringM.map((m, k) => { const r = new THREE.Mesh(new THREE.TorusGeometry(0.25, 0.035, 6, 18), m); r.rotation.x = Math.PI / 2; r.position.set(at[0], g.y0 + h * (k + 0.5) / 3, at[1]); root.add(r); return r; });
@@ -254,12 +260,13 @@ const BUILD = {
       const s = Math.sin(2 * Math.PI * 0.8 * t);
       ringM.forEach((m, k) => { m.emissiveIntensity = 0.3 + 2.2 * Math.max(0, (k % 2 ? -s : s)) ** 2; });
       rings.forEach((r) => { r.scale.setScalar(1 + 0.05 * Math.abs(s)); });
-      pipe.position.x = at[0] + 0.006 * Math.sin(t * 91); light.intensity = 6 + 10 * s * s;
+      pipe.position.x = at[0] + 0.006 * Math.sin(t * 91); light.intensity = 6 + 10 * s * s; snd.level = 0.5 + 0.5 * s * s;
     };
   },
   // the dust on the floor drawn into a standing wave's still lines (Chladni's figures), scattering and
   // drawn into the next mode's
-  figure(g, { root, rnd }) {
+  figure(g, { root, rnd, sound }) {
+    sound('sing', [g.center[0], g.y0 + 0.5, g.center[1]], 0.5);
     const size = Math.min(5, 2 * Math.max(1, g.r - 0.8)), modes = [[2, 5], [3, 7], [1, 6], [4, 7], [3, 8], [5, 8]].sort(() => rnd() - 0.5);
     const mats = modes.map(([n, m]) => new THREE.MeshStandardMaterial({ color: '#ddd5c4', map: chladni(n, m), transparent: true, opacity: 0, depthWrite: false, roughness: 1 }));
     const geo = new THREE.PlaneGeometry(size, size); geo.rotateX(-Math.PI / 2);
@@ -325,8 +332,8 @@ const BUILD = {
     };
   },
   // a dead end's passage folding back on itself for a while: on into its far frame, out of its near one
-  loop(g, { root, M, collision }) {
-    const c = g.cycle, clock = { t: 0 }, active = () => cyc(clock.t, c.period) * c.period < c.open;
+  loop(g, { root, M, collision, sound }) {
+    const c = g.cycle, clock = { t: 0 }, active = () => cyc(clock.t, c.period) * c.period < c.open, snd = sound('whine', [g.center[0], g.y0 + 1.5, g.center[1]], 0);
     const ms = g.frames.map((f) => {
       const m = new THREE.Mesh(new THREE.PlaneGeometry(f.half * 2 + 0.3, 2.9), M.fold.clone());
       m.position.set(f.pos[0], f.pos[1] + 1.45, f.pos[2]); m.rotation.y = yawOf(f.dir); root.add(m); return m;
@@ -336,6 +343,7 @@ const BUILD = {
       clock.t = t;
       const ph = cyc(t, c.period) * c.period, on = ph < c.open, going = on && ph > c.open - 2;
       for (const m of ms) { m.visible = on; m.material.opacity = going ? 0.12 + 0.18 * (Math.floor(t * 8) % 2) : 0.3; }
+      snd.level = on ? 1 : 0;
     };
   },
   // sourceless lights swarming slowly over a hall's pit round its crossing
@@ -352,7 +360,8 @@ const BUILD = {
     };
   },
   // a wall of mist sweeping down a passage now and then, shoving whoever it passes along with it
-  front(g, { root, M, rnd, collision }) {
+  front(g, { root, M, rnd, collision, sound }) {
+    const snd = sound('hiss', [g.from[0], g.y0 + 1.5, g.from[1]], 0);
     const W = g.width * 2 + 0.4, H = g.y1 - g.y0, off = rnd() * 20, P = 20, RUN = 6;
     const layers = [0, 0.7, 1.4].map((k) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(W * 1.6, H * 1.6), M.wall.clone()); m.rotation.y = yawOf(g.dir); m.userData.k = k; root.add(m); return m; });
     const state = { s: -1 };
@@ -366,6 +375,8 @@ const BUILD = {
     return (t) => {
       const ph = cyc(t, P, off) * P;
       state.s = ph < RUN ? (ph / RUN) * g.len : -1;
+      snd.level = state.s >= 0 ? 1.5 : 0;
+      if (state.s >= 0) { snd.pos[0] = g.from[0] + g.dir[0] * state.s; snd.pos[2] = g.from[1] + g.dir[1] * state.s; }
       for (const m of layers) {
         m.visible = state.s >= 0;
         if (!m.visible) continue;
@@ -375,7 +386,8 @@ const BUILD = {
     };
   },
   // a crossing's rails singing: lit at their antinodes, each half of them in turn
-  chorus(g, { root, M }) {
+  chorus(g, { root, M, sound }) {
+    const snd = sound('sing', [g.center[0], g.y0 + 1, g.center[1]], 1);
     const [a, b] = g.walk, L = Math.hypot(b[0] - a[0], b[1] - a[1]), d = [(b[0] - a[0]) / L, (b[1] - a[1]) / L], side = [-d[1], d[0]];
     const geo = new THREE.SphereGeometry(0.1, 8, 6), mats = [M.cyan.clone(), M.cyan.clone()];
     const meshes = mats.map((m, k) => { const n = Math.floor(L / 1.2) * 2, im = new THREE.InstancedMesh(geo, m, n); im.frustumCulled = false; root.add(im); return im; });
@@ -387,7 +399,7 @@ const BUILD = {
       }
     }
     meshes.forEach((m, k) => { m.count = count[k]; m.instanceMatrix.needsUpdate = true; });
-    return (t) => { const s = Math.sin(2 * Math.PI * 0.6 * t); mats[0].emissiveIntensity = 0.2 + 2.4 * Math.max(0, s) ** 2; mats[1].emissiveIntensity = 0.2 + 2.4 * Math.max(0, -s) ** 2; };
+    return (t) => { const s = Math.sin(2 * Math.PI * 0.6 * t); snd.level = 0.6 + 0.4 * Math.abs(s); mats[0].emissiveIntensity = 0.2 + 2.4 * Math.max(0, s) ** 2; mats[1].emissiveIntensity = 0.2 + 2.4 * Math.max(0, -s) ** 2; };
   },
 };
 

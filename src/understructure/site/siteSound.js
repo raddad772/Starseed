@@ -1,7 +1,9 @@
 // Sound for a planned site, built on the survey's pieces (noise, footsteps,
 // the suit voice): the echo of the space you are in from its size and what it
 // is made of, ventilation and rumble, the surviving generator's hum near it,
-// running water near seeps, footsteps, and now and then a drip or a creak.
+// running water near seeps, footsteps, and now and then a drip or a creak; and the themes' glitches (site/
+// siteGlitches.js sounds): a vent's or a pressure front's hiss, a singing conduit's or rail's tone, a fold's
+// thin whine, each as loud as it is now and as near.
 import { Rng } from '../../core/rng.js';
 import { noiseSamples, FootstepTracker } from '../acoustics.js';
 import { SuitVoice } from '../suitVoice.js';
@@ -38,14 +40,16 @@ export class SiteSound {
     this.footNoise = c.createBuffer(1, c.sampleRate, c.sampleRate);
     const foot = this.footNoise.getChannelData(0), fr = Rng.fromString(this.plan.seed + '-sole');
     for (let i = 0; i < foot.length; i++) foot[i] = (fr.next() * 2 - 1) * 0.7;
-    const layer = (kind, freq) => {
+    const layer = (kind, freq, tone = 47, wave = 'triangle') => {
       const src = kind === 'hum' ? c.createOscillator() : c.createBufferSource(), filter = c.createBiquadFilter(), gain = c.createGain(), pan = c.createStereoPanner();
-      if (kind === 'hum') { src.type = 'triangle'; src.frequency.value = 47; } else { src.buffer = this.noise; src.loop = true; }
+      if (kind === 'hum') { src.type = wave; src.frequency.value = tone; } else { src.buffer = this.noise; src.loop = true; }
       filter.type = kind === 'air' ? 'bandpass' : 'lowpass'; filter.frequency.value = freq; filter.Q.value = 0.65; gain.gain.value = 0;
       src.connect(filter).connect(gain).connect(pan).connect(this.master); src.start();
       return { gain, pan };
     };
-    this.layers = { rumble: layer('noise', 125), air: layer('air', 780), water: layer('water', 2300), generator: layer('hum', 220) };
+    this.layers = { rumble: layer('noise', 125), air: layer('air', 780), water: layer('water', 2300), generator: layer('hum', 220),
+      // (the glitches': a hiss, a tone, a whine)
+      hiss: layer('air', 3400), sing: layer('hum', 1200, 331, 'sine'), whine: layer('hum', 4000, 1187, 'sine') };
     this.effects = c.createGain(); this.effects.connect(this.master);
     this.early = c.createDelay(1); this.earlyGain = c.createGain(); this.effects.connect(this.early).connect(this.earlyGain).connect(this.master);
     this.reverbs = [0, 1].map(() => { const conv = c.createConvolver(), gain = c.createGain(); gain.gain.value = 0; this.effects.connect(conv).connect(gain).connect(this.master); return { conv, gain }; });
@@ -107,7 +111,9 @@ export class SiteSound {
     const gen = near(this.generators, 40), wat = near(this.water, 25);
     let pan = 0;
     if (this.generators.length) { const g = this.generators[0], dx = g[0] - p[0], dz = g[2] - p[2]; pan = clamp((dx * Math.cos(state.yaw) - dz * Math.sin(state.yaw)) / Math.max(5, Math.hypot(dx, dz)), -1, 1); }
-    const lv = { rumble: 0.13, air: 0.085, generator: gen * 0.11, water: wat * 0.12 };
+    const lv = { rumble: 0.13, air: 0.085, generator: gen * 0.11, water: wat * 0.12, hiss: 0, sing: 0, whine: 0 };
+    // (the glitches' sounds: each kind's loudest, by how loud it is now and how near)
+    for (const g of state.glitchSounds || []) if (g.level > 0) lv[g.kind] = Math.max(lv[g.kind], g.level * near([g.pos], 6) * (g.kind === 'hiss' ? 0.16 : g.kind === 'sing' ? 0.07 : 0.025));
     for (const [k, v] of Object.entries(this.layers)) v.gain.gain.setTargetAtTime(lv[k], t, 0.22);
     this.layers.generator.pan.pan.setTargetAtTime(pan, t, 0.2);
     if (step) this.event('step', profile, (++this.steps % 2 ? 1 : -1) * 0.07);
