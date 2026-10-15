@@ -333,6 +333,10 @@ fn groundSurface(col: vec4f, mat: vec4f, ext: vec4f, cls0: vec4f, cls1: vec4f, c
     let b = sqrt(1.0 - c * c) / c;
     let sw = surfSwash(alt, b, surfPhase(fp, 0.0, sea, material.surf.y, material.windTimeMode.z) + bend, sea);
     let reach = smoothstep(1.5 * sw.z / max(b, 0.03) + 4.0, sw.z / max(b, 0.03) + 2.0, shoreM);
+    // (the sand the waves keep wet, up to the bigger run-ups' mark and drying above it: darker, glossy)
+    let wetSand = sand * reach * smoothstep(1.3 * sw.z + 0.15, 0.6 * sw.z, alt);
+    albedo *= vec3f(1.0) - vec3f(0.3, 0.27, 0.22) * wetSand;
+    g.roughness = mix(g.roughness, 0.3, wetSand);
     let cover = sw.x * reach;
     if (cover > 0.0) {
       let lace = smoothstep(0.3, 0.7, detailTri(fp, w, 8.0, dx, dy).a);

@@ -189,8 +189,12 @@ export function buildChunk(gen, face, level, ix, iy, N = CHUNK_N) {
   // the rivers' and creeks' (riverRibbons) save a river come down to the sea, nor a lake frozen the year
   // round or a frozen ocean's shell (ice, the ground's); a sea's pack ice the shader's floes)
   const LV = spacing < RIBBON_SPACING && !!gen.snap && !!gen.p.liquid && gen.p.liquid !== 'lava', P = gen.p.palette;
-  // (fires' marks on the finer chunks of a world whose plants burn)
-  const FIRE = spacing <= 40;
+  // (fires' marks on the finer chunks of a world whose plants burn: whole to a 10 m spacing, gone by 40; the
+  // parent's colours the morph blends toward marked by the parent's own spacing, so a scar fades out with
+  // distance as the chunks coarsen (marked on its own vertices only, it faded to the unburnt ground across
+  // each chunk's morph, the triangles' sawtooth edges in dark patches))
+  const fireW = (sp) => 1 - Math.min(1, Math.max(0, (sp - 10) / 30));
+  const FIRE = fireW(spacing) > 0;
   const levelWater = (s, k, coarse) => {
     if (!coarse) lvL[k] = -1e9;
     if (!LV) return 0;
@@ -327,6 +331,7 @@ export function buildChunk(gen, face, level, ix, iy, N = CHUNK_N) {
         gen._bed = cSeaBed[c] === 1;
         gen.shade(s, 1 - up, col, mat, nv);
         gen._bed = false;
+        if (FIRE && !(mat[4] > 0) && s[S_H] > 0) fireMark(gen, fireAtDir(gen, px / pl, py / pl, pz / pl), col, fireW(2 * spacing));
         const oc = (j * CVi + i) * 4;
         coarseCol[oc] = col[0]; coarseCol[oc + 1] = col[1]; coarseCol[oc + 2] = col[2]; coarseCol[oc + 3] = shoreDepth(mat[4], s[0], mat[0], s[S_WLVL]);
         sdC[j * CVi + i] = coarseCol[oc + 3];
@@ -401,7 +406,7 @@ export function buildChunk(gen, face, level, ix, iy, N = CHUNK_N) {
       // (the recent centuries' fires on the ground near: this year's burn charred, last year's darkened,
       // then a flush of green for a few years; gen/life/fire.js, its tiles kept on the generator)
       if (FIRE && !(mat[4] > 0) && s[S_H] > 0) {
-        fireMark(gen, fireAtDir(gen, px / pl, py / pl, pz / pl), col);
+        fireMark(gen, fireAtDir(gen, px / pl, py / pl, pz / pl), col, fireW(spacing));
       }
       nrm[vi * 4] = Math.round(nx * 127); nrm[vi * 4 + 1] = Math.round(ny * 127); nrm[vi * 4 + 2] = Math.round(nz * 127);
       if (mat[4] > 0 && mat[0] > 0.55 && mat[0] < 0.85) { steepA[vi] = 1 - up; wdA[vi] = mat[4]; }

@@ -2495,11 +2495,9 @@ export class TerrainGenerator {
     if (mudK > 0) { const k = 0.75 * mudK, ms = P.soil || ground; r += (ms[0] * 0.5 - r) * k; g += (ms[1] * 0.5 - g) * k; b += (ms[2] * 0.5 - b) * k; mat[6] = Math.max(mat[6], 0.8 * mudK); }
     // rivers: wet darker ground on the floodplain (the water itself is above)
     if (s[S_WET] > 0) { const k = 0.3 * s[S_WET]; r *= 1 - k; g *= 1 - k * 0.8; b *= 1 - k * 0.6; mat[6] = Math.max(mat[6], k); }
-    // (the swash zone: sand the sea's waves wet, darker and glossy, up to two metres above the water)
-    if (p.liquid === 'water' && this.contThreshold > -1e8 && h < 2 && sandW > 0) {
-      const k = dm.smoothstep(2, 0.3, h) * sandW;
-      if (k > 0) { r *= 1 - 0.3 * k; g *= 1 - 0.27 * k; b *= 1 - 0.22 * k; mat[6] = Math.max(mat[6], k); }
-    }
+    // (the swash zone's wet sand: drawn by the land's shader, by its height over the water and how far it is
+    // from it (webgpu/materials.js groundSurface): here by its height alone it darkened every low sand flat
+    // however far inland, along the coarse chunks' triangles in sawtooth patches)
     // the cracks' reddish-brown stains
     if (s[S_LINEAE] > 0) { const l = 0.7 * s[S_LINEAE]; r += (0.42 - r) * l; g += (0.25 - g) * l; b += (0.13 - b) * l; }
     // snow where it's cold, if there's water to fall as snow (a water cycle, or an ice inventory);

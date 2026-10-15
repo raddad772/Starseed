@@ -256,9 +256,10 @@ export function fireAtDir(gen, x, y, z) {
 }
 // a fire's mark on the ground's colour (linear RGB, in place): this year's burn charred, last year's
 // darkened, a flush of green for the few years after
-export function fireMark(gen, f, col) {
-  if (!f || f.ageG >= 6) return;
+// (w: how much of it, 0..1: the chunks fade it out as their spacing grows, chunkbuilder.js)
+export function fireMark(gen, f, col, w = 1) {
+  if (!f || f.ageG >= 6 || !(w > 0)) return;
   const a = f.ageG, P = gen.p.palette;
-  if (a <= 1) { const k = a === 0 ? 0.32 : 0.6; col[0] *= k; col[1] *= k; col[2] *= k * 0.9; }
-  else if (P && P.veg) { const k = 0.45 * (1 - (a - 2) / 4); for (let c = 0; c < 3; c++) col[c] += (P.veg[c] * 1.15 - col[c]) * k; }
+  if (a <= 1) { const k = 1 - (1 - (a === 0 ? 0.32 : 0.6)) * w; col[0] *= k; col[1] *= k; col[2] *= k * (1 - 0.1 * w); }
+  else if (P && P.veg) { const k = 0.45 * (1 - (a - 2) / 4) * w; for (let c = 0; c < 3; c++) col[c] += (P.veg[c] * 1.15 - col[c]) * k; }
 }

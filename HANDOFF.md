@@ -99,6 +99,12 @@ fetch and the wind". What's in:
   low sand behind it (0.2..1.1 m) a wetland whose pools (terrain.js S_POOL) draw as one still mirror over
   the ground with trees standing in it (by design, but wide: check soil.js's wetland on a beach ridge).
   Testing note: navigating the tab to its own URL with a #hash doesn't reload it; use location.reload().
+- Fixed (2026-10-15): those patches were the fires' scars marked on a fine chunk's own colours but not on
+  its parent's that the morph blends toward (chunkbuilder.js: now both, fading out from 10 to 40 m
+  spacing); and the "pools" with trees standing in them were terrain.js's wet-sand band (every sand
+  below 2 m, however far inland, wet whole: the land shader's wetland-pool mirror). The wet sand is now
+  the land shader's, near the water only (webgpu/materials.js: up to the bigger run-ups' mark, within
+  their reach).
 
 ## NOW: trees and shrubs by climate, many species a world (session 39d69fa8, 2026-10-14)
 
