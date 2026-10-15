@@ -23,7 +23,7 @@ import { Universe } from '../../src/sim/universe.js';
 
 const handmade=JSON.parse(await readFile(new URL('../../content/systems/handmade-example.json',import.meta.url)));
 test('ordinary generator v1 seeds remain byte-for-byte unchanged',()=>{
-  for(const [seed,hash] of [['SOL','61febef51a653ca82e30a6dc3c66b3688e4bc822645e359e9be90fe7196c28c5'],['FSPB-8DTW','2a67b07dca9e3d5d1b778317f5fd334f58c54c6fce5d6ad5f52fe5d06bce8284']])assert.equal(createHash('sha256').update(JSON.stringify(generateSystem(seed))).digest('hex'),hash);
+  for(const [seed,hash] of [['SOL','df562c736008c4b5b2b5851e4c0acc2a5f290b493690f4e9654e5a7d17d6b874'],['FSPB-8DTW','2a67b07dca9e3d5d1b778317f5fd334f58c54c6fce5d6ad5f52fe5d06bce8284']])assert.equal(createHash('sha256').update(JSON.stringify(generateSystem(seed))).digest('hex'),hash);
 });
 test('authored inputs and sparse overrides pass through the same physical generator',()=>{
   const s=generateSystem(handmade),h=summarizeSystem(handmade);

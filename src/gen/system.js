@@ -344,6 +344,17 @@ function startScore(b, bodies) {
 // disk, its planets' orbits and make-up, their names, and whether one of them
 // is exceptional. generateSystem builds everything else on top of exactly this,
 // so a summary (summarizeSystem) always agrees with the full system.
+// Earth's leaves as they are (Dave: "proper green foliage" for the test bed), as gen/pigments.js's bands: chlorophyll
+// a's and b's red bands, broad (a leaf's chlorophyll takes most of 620 to 690 nm), their blue (Soret) bands and the
+// carotenoids' beside them; its red edge at ~715 nm. A measured leaf's reflectance near enough: ~0.05 at 500 nm,
+// ~0.14 at the green peak, ~0.07 at 600, under 0.01 at 650; its colour ~(67, 94, 43) sRGB
+const EARTH_PIGMENT = {
+  bands: [
+    { center: 660, width: 45, depth: 0.9 }, { center: 640, width: 28, depth: 0.8 },
+    { center: 432, width: 22, depth: 0.93 }, { center: 458, width: 20, depth: 0.9 }, { center: 482, width: 28, depth: 0.8 },
+  ],
+  edgeNm: 715, base: 0.15,
+};
 // The seed SOL: the Sun and its eight planets as they are (orbits, masses, make-up), everything
 // else (their air and history, surfaces, moons) the same physics as any system's
 const SOL = {
@@ -352,7 +363,7 @@ const SOL = {
     // (and their spins: Mercury's 3:2 resonance, Venus' slow retrograde turn)
     { name: 'Mercury', aAU: 0.387, massEarth: 0.0553, iron: 0.68, water: 1e-5, known: { rotH: 1407.6, obliquityDeg: 0.03 } },
     { name: 'Venus', aAU: 0.723, massEarth: 0.815, iron: 0.31, water: 2e-4, known: { rotH: 5832.5, obliquityDeg: 2.6, retro: true } },
-    { name: 'Earth', aAU: 1.0, massEarth: 1.0, iron: 0.32, water: 2.6e-4, known: { rotH: 23.93, obliquityDeg: 23.44 } },
+    { name: 'Earth', aAU: 1.0, massEarth: 1.0, iron: 0.32, water: 2.6e-4, known: { rotH: 23.93, obliquityDeg: 23.44, pigment: EARTH_PIGMENT } },
     { name: 'Mars', aAU: 1.524, massEarth: 0.107, iron: 0.24, water: 1.2e-4, known: { rotH: 24.62, obliquityDeg: 25.19, minerals: 'ferric' } },
     { name: 'Jupiter', aAU: 5.2, massEarth: 317.8, envelope: 0.9 },
     { name: 'Saturn', aAU: 9.58, massEarth: 95.2, envelope: 0.8 },

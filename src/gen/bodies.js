@@ -638,7 +638,10 @@ export function buildBody(rng, proto, star, host) {
     const lr = rng.fork('life');
     // its pigments, tuned to its star's light: the foliage colour follows
     // (tuned to the light that reaches the ground, the star's through this air)
-    const pigment = drawPigments(lr.fork('pigment'), star.teff, atm ? surfacePhotonPeakNm(star.teff, hist.air, atm.pressure, b.gravity, rayleighRel(atm.comp) / 1.02, atm.render) : null);
+    const drawn = drawPigments(lr.fork('pigment'), star.teff, atm ? surfacePhotonPeakNm(star.teff, hist.air, atm.pressure, b.gravity, rayleighRel(atm.comp) / 1.02, atm.render) : null);
+    // (a known world's (the Solar System's test bed: Earth's chlorophylls): an input, its colour from the same
+    // reflectance; the same draws made either way)
+    const kp = proto.known && proto.known.pigment, pigment = kp ? { ...kp, bands: kp.bands.map((x) => ({ ...x })), peakNm: drawn.peakNm } : drawn;
     life = {
       level: hist.lifeLevel,
       pigment,
