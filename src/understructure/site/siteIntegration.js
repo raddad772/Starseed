@@ -22,6 +22,7 @@ import { PlanetSurveySites } from '../planetSites.js';
 import { surveyEnvironment } from '../generatorHall.js';
 import { bankRecovery } from '../recovery.js';
 import { THEME_NAMES } from '../plan/themes.js';
+import { hollowMoons, HollowSession } from '../hollow/hollowIntegration.js';
 
 const LIFT_DOWN = 6, LIFT_UP = 6; // (up: the founders' lift)
 const credit = (r) => Math.min(170, Math.min(r, 100) + 3 * Math.max(0, r - 100));
@@ -55,11 +56,26 @@ export class SurfaceSites {
     addEventListener('pagehide', this.saveAll);
   }
 
+  // a hollow moon's gate: at its north pole, on its spin axis (hollow/hollowIntegration.js); said once on
+  // arrival anywhere on it
+  hollowGate(b) {
+    const hm = this._hollow || (this._hollow = hollowMoons(this.game.seed, this.game.universe.bodies));
+    if (b !== hm.spinning && b !== hm.still) return null;
+    const pole = new THREE.Vector3(0, 1, 0), hatch = pole.clone().multiplyScalar(b.R + b.groundHeight(pole) + 0.06);
+    const site = { kind: 'hollow', body: b, still: b === hm.still, seed: `${this.game.seed}-hollow-${b.id}`, hatch, gate: hatch, rot: new THREE.Quaternion(), marker: hatchMarker(b === hm.still ? 0x8a8a80 : 0xffe0a0), gateMarker: new THREE.Group(), saveKey: `starseed.hollow.v1.${b.id}` };
+    this.sites.push(site);
+    this.game.engine.scene.add(site.marker, site.gateMarker);
+    this.game.world.terrainOf(b.id)?.addClearing(pole.clone().multiplyScalar(b.R), 8);
+    return site;
+  }
+
   // the planet's site, found near this player on first arrival (as the survey did)
   addNear(player) {
     const b = player.body;
     const old = this.sites.find((s) => s.body.id === b.id);
     if (old) return old;
+    const hollow = this.hollowGate(b);
+    if (hollow) { player.ui?.hud?.message?.(hollow.still ? "A founders' gate stands at this moon's north pole, long dark" : "A founders' gate stands at this moon's north pole", 'nav'); return hollow; }
     const entrance = this.planetSites.get(b, () => {
       const up = player.fPos.clone().normalize(), away = player.heading.clone().negate(), right = away.clone().cross(up).normalize();
       const height = b.groundHeight(up);
@@ -106,7 +122,7 @@ export class SurfaceSites {
     const near = this.nearest(p);
     if (!near || near.distance > 4 || !p.grounded || !input.hit('KeyF')) return false;
     if (!this.game.engine.webgpu) { this.game.message('Renderer is still preparing.'); return true; }
-    p.understructure = new SiteSession(this.game, p, near.site, this);
+    p.understructure = near.site.kind === 'hollow' ? new HollowSession(this.game, p, near.site, this) : new SiteSession(this.game, p, near.site, this);
     return true;
   }
 
@@ -117,7 +133,7 @@ export class SurfaceSites {
   prompt(p) {
     const near = this.nearest(p);
     if (near && this.hidden(near.site)) return;
-    if (near && !p.prompt) p.prompt = { key: near.distance <= 4 ? 'F' : null, text: near.distance <= 4 ? 'Take the lift down' : `Hatch · ${Math.round(near.distance)} m` };
+    if (near && !p.prompt) p.prompt = { key: near.distance <= 4 ? 'F' : null, text: near.distance <= 4 ? (near.site.kind === 'hollow' ? "Take the founders' lift down" : 'Take the lift down') : `${near.site.kind === 'hollow' ? "Founders' gate" : 'Hatch'} · ${Math.round(near.distance)} m` };
   }
 
   render(camPos) {

@@ -57,9 +57,17 @@ a land walked upside down. First pass (standalone page hollow.html?seed=&still=1
 - Haze: the WebGPU renderer had no fog (scene.fog was ignored); air.js now draws exponential fog for a
   scene that opts in (scene.userData.fogLuminance), after the local lights. The megastructures' fog is
   still not drawn (they don't opt in).
-- Next: entering from a moon's surface (sited by rule in generated systems: SOL is only a test bed), the
-  shaft ride down the crust with the field falling, the hub, the stairways' carriages; the still one;
-  the land at walking scale (its texture is ~12 m a texel); then the planet sites made vertical.
+- In the game (hollow/hollowIntegration.js, wired through siteIntegration.js SurfaceSites): by rule in
+  any system (SOL is only a test bed, Dave): the largest solid moon (>= 8 km drawn) of the first world that
+  has hosted life is the spinning one; one more such moon is a still, abandoned one. A gate at its north
+  pole (body-fixed y, its spin axis), said on landing anywhere on it; F: the founders' express lift down
+  the shaft (70 s, lamp rings rushing by; the field 0.17 g at the top of the test Moon, 0.10 halfway,
+  nothing at the hub), the hub (weightless), the stairways' carriages (75 s), the hub's lift up and out
+  at the gate. SOL test: the Moon spinning, Oberon still. (Testing note: jumping the camera to another
+  world left the game "loading"; drive the session's update/render directly.)
+- The still one: an ember-red dying axis, a few failing lamps, the founders' rubble adrift round the hub.
+- Next: the land at walking scale (its texture ~12 m a texel; no plants yet), the sea's water (walkable
+  bed for now), the hub's way to the stairways (float to its rim); then the planet sites made vertical.
 
 ## NOW: the themes through a site (session 39d69fa8, 2026-10-15; QUEUE 2, a first pass)
 

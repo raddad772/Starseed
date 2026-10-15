@@ -35,7 +35,7 @@ export function buildHollowScene(w) {
     dark: new THREE.MeshStandardMaterial({ color: '#2a2c2b', roughness: 0.7, metalness: 0.3 }),
     metal: new THREE.MeshStandardMaterial({ color: '#9aa3a0', roughness: 0.45, metalness: 0.6 }),
     water: new THREE.MeshStandardMaterial({ color: '#1d3a38', metalness: 0.5, roughness: 0.18, side: THREE.DoubleSide }),
-    glow: new THREE.MeshStandardMaterial({ color: '#fff2d8', emissive: '#fff0d0', emissiveIntensity: w.still ? 0.05 : 6 }),
+    glow: new THREE.MeshStandardMaterial({ color: w.still ? '#ff6a40' : '#fff2d8', emissive: w.still ? '#ff4a20' : '#fff0d0', emissiveIntensity: w.still ? 5 : 6 }),
     lamp: new THREE.MeshStandardMaterial({ color: '#e8d9b0', emissive: '#ffd890', emissiveIntensity: 1.6 }),
   };
   const meshes = [];
@@ -83,9 +83,21 @@ export function buildHollowScene(w) {
       for (let k = 0; k < n; k++) {
         const l = new THREE.PointLight(0xfff0d8, 9e5, 20000, 2); l.position.set(0, -L + (k + 0.5) * (2 * L / n), 0); root.add(l); lights.push(l);
       }
+    } else {
+      // (the still one's axis dying: an ember along it, a few of its lamps still failing on)
+      for (let k = 0; k < 4; k++) { const l = new THREE.PointLight(0xff5a30, 3e5, 20000, 2); l.position.set(0, -L * 0.7 + k * L * 0.47, 0); root.add(l); lights.push(l); }
     }
   }
-  scene.add(new THREE.HemisphereLight(w.still ? 0x0c0e0f : 0x6c7066, w.still ? 0x050505 : 0x2a2a24, w.still ? 0.02 : 0.25));
+  scene.add(new THREE.HemisphereLight(w.still ? 0x3a2016 : 0x6c7066, w.still ? 0x180c08 : 0x2a2a24, w.still ? 0.2 : 0.25));
+  // (the still one: the rubble of its works adrift in the dark round the north hub, weightless)
+  if (w.still) {
+    const rng = Rng.fromString(`hollow-drift:${w.seed}`), N = 260, im = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(1, 0), mat.stone, N), _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler();
+    for (let k = 0; k < N; k++) {
+      const a = rng.range(0, Math.PI * 2), r = rng.range(15, 260), y = w.Rs - w.hubDepth - rng.range(10, 420), sz = 0.3 + Math.pow(rng.next(), 3) * 7;
+      im.setMatrixAt(k, _m.compose(new THREE.Vector3(Math.cos(a) * r, y, Math.sin(a) * r), _q.setFromEuler(_e.set(rng.range(0, 6), rng.range(0, 6), rng.range(0, 6))), new THREE.Vector3(sz, sz * rng.range(0.4, 1), sz)));
+    }
+    root.add(im);
+  }
   const sun = new THREE.DirectionalLight(0xffffff, 0); scene.add(sun, sun.target);
 
   // the hubs: a drum at each pole, standing in from the shell on the axis; the shaft into the north one
@@ -100,13 +112,17 @@ export function buildHollowScene(w) {
       const a = k * Math.PI / 6, lamp = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.4, 1.2), mat.lamp);
       lamp.position.set(Math.cos(a) * (w.hubR - 3), s * (w.Rs - w.hubDepth + 0.4), Math.sin(a) * (w.hubR - 3)); root.add(lamp);
     }
-    if (!w.still) { const l = new THREE.PointLight(0xffd890, 4000, 160, 2); l.position.set(0, s * (w.Rs - w.hubDepth * 0.5), 0); root.add(l); }
+    if (!w.still) { const l = new THREE.PointLight(0xffd890, 700, 160, 2); l.position.set(0, s * (w.Rs - w.hubDepth * 0.5), 0); root.add(l); }
   }
   {
-    // (the shaft: up the axis from the north hub into the crust, its walls ringed with lamps)
-    const sh = new THREE.CylinderGeometry(8, 8, 400, 32, 1, true); sh.translate(0, w.Rs + 200, 0);
+    // (the shaft: up the axis from the north hub through the crust to the moon's surface, its walls ringed with
+    // lamps; the express lift runs it)
+    const top = Math.max(w.Rs + 400, w.moonR), L = top - w.Rs;
+    const sh = new THREE.CylinderGeometry(8, 8, L, 32, 1, true); sh.translate(0, w.Rs + L / 2, 0);
     add(sh, Object.assign(mat.dark.clone(), { side: THREE.DoubleSide }));
-    for (let y = w.Rs + 20; y < w.Rs + 400; y += 25) { const r = new THREE.Mesh(new THREE.TorusGeometry(7.6, 0.15, 6, 32), mat.lamp); r.rotation.x = Math.PI / 2; r.position.y = y; root.add(r); }
+    const n = Math.floor(L / 40), rings = new THREE.InstancedMesh(new THREE.TorusGeometry(7.6, 0.15, 6, 32), w.still ? mat.dark : mat.lamp, n), _m = new THREE.Matrix4(), _q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2);
+    for (let k = 0; k < n; k++) rings.setMatrixAt(k, _m.compose(new THREE.Vector3(0, w.Rs + 20 + k * 40, 0), _q, new THREE.Vector3(1, 1, 1)));
+    rings.frustumCulled = false; root.add(rings);
   }
 
   // the stairways: three down each cap, from the hub's rim to the land; each step level in the spin's weight
