@@ -233,7 +233,10 @@ export class TerrainTiles {
     if (!set) { set = new TileSet(L); pyr.set(L, set); }
     set.put(face, ti, tj, tile);
     g.pool.setPyrTile(b.data.id, L, face, ti, tj, tile);
-    const s = 2 / (1 << L), m = KEEP * s / MT;
+    // (and as far round as its craters' floors reach: the finer craters' floors read the ground at their
+    // centres, so one within the tile now lies at its new level, its bowl out past the tile's edge)
+    const crR = b.terrain && b.terrain.craterTop ? b.terrain.craterTop() / 2 : 0;
+    const s = 2 / (1 << L), m = KEEP * s / MT + crR / ((Math.PI / 4) * b.R);
     // (the chunks over it: made again once the tiles stop coming, those fine enough to show it)
     const cell = (Math.PI / 2) * b.R / ((1 << L) * MT);
     this.inval.push({ id: b.data.id, face, u0: -1 + ti * s - m, v0: -1 + tj * s - m, u1: -1 + (ti + 1) * s + m, v1: -1 + (tj + 1) * s + m, spacing: 8 * cell, near: cell <= 60,

@@ -971,7 +971,10 @@ export class TerrainGenerator {
         this._bare = false;
         return hb * this.hScale;
       }));
-      cf.setTop(S.ref ? Math.max(craterFloor(S.refCell, TILE_CELLS), S.s.crater.Dlo) : S.s.crater.Dw);
+      cf.setTop(this.craterTop());
+      // (its craters' floors read the levels' ground: made again once a tile of them has come or gone)
+      const st = pyrStamp();
+      if (st !== cf.stamp) { if (cf.stamp != null) cf.refloor(); cf.stamp = st; }
       h = cf.heightAt(x, y, z, minWavelength, h * this.hScale) / this.hScale;
       out[S_RAY] = cf.ray;
     }
@@ -1681,6 +1684,13 @@ export class TerrainGenerator {
     this._cyK = cyK;
     if (mf === Infinity) return h;
     return h + wc * (hRef - h0) + (mf - mc);
+  }
+  // the biggest of the finer craters the sampler draws (m across; craters.js CraterField: those below the
+  // finest level that stamps its own), or 0: how far a tile's coming moves the ground (their floors)
+  craterTop() {
+    const S = this.snap;
+    if (!S || !S.s.crat || !S.s.crater) return 0;
+    return S.ref ? Math.max(craterFloor(S.refCell, TILE_CELLS), S.s.crater.Dlo) : S.s.crater.Dw;
   }
   // the beds' offset at a place (geology.js bedAt: the regions' structure there)
   _bedOff(x, y, z) {

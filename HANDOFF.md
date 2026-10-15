@@ -21,6 +21,23 @@ pixel-parity claim is made. Dave confirmed sole-agent work and no coordination m
    "suuuuper deep": you start out deep and go REALLY deep, deep enough that gravity changes on the way
    down (a shell's or a hollow world's own gravity: less the deeper you go?). Ideas first, for Dave to pick.
 
+## NOW: steps in the ground after a world's tiles are first made; a tab's memory (session 39d69fa8, 2026-10-14)
+
+- Seen on Mars (45 N 168 W) only when its refinement and terrain tiles were made in the session (never
+  from the cache): rectangular steps, chunks tens of metres apart (their skirts as walls); every chunk
+  rebuilt, steps again in another pattern. The workers' generators disagreed with a fresh one (and each
+  other) by up to ~94 m; a fresh crater field (craters.js CraterField) in the worker made them agree.
+  Each of its craters' floors is read off the ground at its centre when first drawn, and kept.
+- Fix: the field made again whenever a tile of the terrain's levels comes or goes (pyrStamp, as the
+  rivers' caches; CraterField.refloor), and tiles' arrivals rebuild the chunks round them out to the
+  field's biggest craters' radius (terrainTiles.js arrive). Resetting only the craters near the tiles
+  that came did not clear the steps (243 of 356 chunks still off): the stale state isn't only near them,
+  and that isn't pinned. Verified twice on fresh builds: 0 of 359 drawn chunks off a fresh build.
+- Memory: the field's cache was capped at 40,000 cells, but a big crater's secondaries are hundreds,
+  each ~3 KB of outline: a tab's main thread held 100,000 craters and 1.17 million secondaries (~4 GB;
+  test tabs crashed, one at 12.4 GB). Now capped by craters held (CR_KEEP 40,000, secondaries counted):
+  the heap stayed ~600 MB through the same route.
+
 ## NOW: Mars' frost on slopes by the slope's own year (session 39d69fa8, 2026-10-14)
 
 Dave (2026-10-09): "shouldn't CO2 frost only show up at night" (white crater walls at 21 N, mid-morning).
@@ -41,11 +58,7 @@ Dave (2026-10-09): "shouldn't CO2 frost only show up at night" (white crater wal
   north-facing crater walls white, the level ground and south-facing walls bare.
 - Not done: low-latitude night frost (Piqueux et al. 2016: a thin CO2 frost most nights on dusty ground,
   gone soon after sunrise; microns thick, found in the thermal data, hardly visible).
-- Found, not fixed: once, after a fresh build of Mars' refinement and moving the camera 21 N 30 E ->
-  21 N 162 E -> 45 N 168 W, the ground at 45 N showed rectangular steps (chunks tens of metres apart, their
-  skirts as walls); rebuilding every chunk gave steps in a different pattern; not seen on cached loads
-  (with or without the colour cube). A fresh-build retry ran out of memory (one test tab grew to 12.4 GB
-  over a few reloads: worth a look).
+- Fixed after (see the crater fix below): the rectangular steps on Mars' ground after a fresh build.
 
 ## NOW: the land's plants by its water, islands colonised (session 39d69fa8, 2026-10-14, SIM 73)
 

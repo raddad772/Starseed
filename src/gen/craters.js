@@ -189,6 +189,7 @@ for (let m = 0; m <= 12; m++) {
 }
 const _jc = new Float64Array(16), _js = new Float64Array(16), _jd = new Uint8Array(16);
 const NBK = 4;      // (CraterField._targ's buckets a lattice cell's side)
+const CR_KEEP = 40000;   // (CraterField's craters kept, secondaries counted: ~130 MB)
 export function craterForm(D, K, key) {
   const rng = new Rng([key >>> 0, hashInts(Math.round(D * 16), 0xc7a7), 0x5ca1, 0xf0e]);
   const sh = shape(D, K);
@@ -386,6 +387,17 @@ export class CraterField {
   // S: the snapshot's sampler, K its crater scales, seed the world's, R its radius
   // baseAt(at): the ground (m) at a crater's centre without the field's craters (its floor's level)
   constructor(S, K, seed, R, baseAt) { this.S = S; this.K = K; this.seed = seed; this.R = R; this.baseAt = baseAt; this.cache = new Map(); this.Dmax = 0; this.bands = []; this.hits = []; this.ords = []; this.depth = 0; }
+  // the ground under it changed (a tile of the terrain's finer levels came or went): its craters made
+  // again, their floors read off the ground as it now is (each floor is read at its crater's centre when
+  // first drawn and kept: kept across the tiles' coming, a worker's craters stood tens of metres off the
+  // ground its later chunks met them on, steps along their edges after a world's tiles were first made.
+  // Only those near the tiles that came, found again, left steps: all of them)
+  refloor() {
+    this.cache.clear();
+    if (this.tcache) this.tcache.clear();
+    for (const B of this.bands) B.last = null;
+    this.nKept = 0;
+  }
   // the octaves below Dmax (m), down to 16 m (or the smallest the air let through at any time)
   setTop(Dmax) {
     if (Dmax === this.Dmax) return;
@@ -396,7 +408,9 @@ export class CraterField {
     const key = ((b * 6 + f) * B.nL + j) * B.nL + i;
     let list = this.cache.get(key);
     if (list) return list;
-    if (this.cache.size > 40000) this.cache.clear();
+    // (kept by how many craters it holds, each ~3 KB of outline: a big crater's secondaries are hundreds,
+    // and kept by cells, 40,000 of them, a tab's field had grown to 1.2 million craters, 4 GB)
+    if (this.cache.size > 40000 || this.nKept > CR_KEEP) { this.cache.clear(); if (this.tcache) this.tcache.clear(); for (const B of this.bands) B.last = null; this.nKept = 0; }
     list = latticeCraters(f, i, j, B.D0, B.D1, B.nL, this.S, this.seed, this.R, this.K).map((cr) => {
       const F = craterForm(cr.D, this.K, cr.key), Dref = 1000 * this.K.scale, kap = 12 * cr.age * (Dref / cr.D) * (Dref / cr.D), wear = 1 / (1 + kap);
       F.ks = (0.08 + 0.5 * (1 - wear)) * (F.depth + F.rim);
@@ -415,6 +429,7 @@ export class CraterField {
       return { at, F, wear, band: b, age: cr.age, key: cr.key, base: NaN, sec, reach, reach2: (reach / this.R) * (reach / this.R), e, n, u, v };
     });
     this.cache.set(key, list);
+    for (const c of list) this.nKept = (this.nKept || 0) + 1 + (c.sec ? c.sec.length : 0);
     return list;
   }
   // the ground (m) at unit direction (x, y, z), sampled minW m apart, struck by the field's
