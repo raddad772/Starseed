@@ -58,7 +58,9 @@ export class SiteWalker {
     const yNow = p[1];
     const tryMove = (x, z) => c.clear(x, yNow, z, R, this.grounded ? STEP_CLEAR : 0.05);
     const before = p.slice();
-    const nx = p[0] + v[0] * dt, nz = p[2] + v[2] * dt;
+    // (shoved along by what's passing: a pressure front's, as a drift over the ground, not your own speed)
+    const push = c.pushes?.length ? c.pushAt(p) : null;
+    const nx = p[0] + (v[0] + (push ? push[0] : 0)) * dt, nz = p[2] + (v[2] + (push ? push[1] : 0)) * dt;
     if (tryMove(nx, nz)) { p[0] = nx; p[2] = nz; }
     else {
       // slide along what was hit: drop the part of the motion into it

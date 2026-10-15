@@ -13,12 +13,20 @@ export class SiteCollision extends GeometryCollision {
     super(meshes);
     this.zones = zones;
     this.unbounded = true;
-    // parts that come and go (gates): blockers, floors, and fold portals
-    this.blockers = []; this.floors = []; this.portals = [];
+    // parts that come and go (gates): blockers, floors, and fold portals; and what shoves you along
+    // (a pressure front: site/siteGlitches.js)
+    this.blockers = []; this.floors = []; this.portals = []; this.pushes = [];
   }
   addBlocker(b) { this.blockers.push(b); }
   addFloor(f) { this.floors.push(f); }
   addPortal(p) { this.portals.push(p); }
+  addPush(f) { this.pushes.push(f); }
+  // (the shove at p, m/s along the ground (x, z), or null)
+  pushAt(p) {
+    let x = 0, z = 0, any = false;
+    for (const f of this.pushes) { const q = f(p); if (q) { x += q[0]; z += q[1]; any = true; } }
+    return any ? [x, z] : null;
+  }
 
   // A capsule against the active blockers (extruded polygons); sets lastHit like a wall.
   _blocked(x, y, z, radius) {
@@ -44,7 +52,8 @@ export class SiteCollision extends GeometryCollision {
   portal(p, q) {
     for (const f of this.portals) {
       if (!f.active()) continue;
-      for (const [A, B, sgn] of [[f.a, f.b, 1], [f.b, f.a, -1]]) {
+      // (a one-way fold: into a's frame going its way only; back the other way it's a doorway like any)
+      for (const [A, B, sgn] of f.oneWay ? [[f.a, f.b, 1]] : [[f.a, f.b, 1], [f.b, f.a, -1]]) {
         const sp = dot(sub([p[0], p[2]], [A.pos[0], A.pos[2]]), A.dir) * sgn, sq = dot(sub([q[0], q[2]], [A.pos[0], A.pos[2]]), A.dir) * sgn;
         if (!(sp < 0 && sq >= 0)) continue;
         const lat = dot(sub([q[0], q[2]], [A.pos[0], A.pos[2]]), perp(A.dir));

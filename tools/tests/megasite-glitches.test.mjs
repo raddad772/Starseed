@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { planSite } from '../../src/understructure/plan/sitePlan.js';
 import { compileSite } from '../../src/understructure/plan/compile.js';
-import { GLITCH_KINDS, LULL_G, PRESS_G } from '../../src/understructure/plan/glitches.js';
+import { GLITCH_KINDS, SET_PIECES, LULL_G, PRESS_G, DRIFT_G } from '../../src/understructure/plan/glitches.js';
 import { SiteGlitches } from '../../src/understructure/site/siteGlitches.js';
 import { AnomalySense } from '../../src/understructure/site/siteMechanisms.js';
 import { SiteCollision } from '../../src/understructure/site/siteCollision.js';
@@ -24,7 +24,7 @@ test('each site theme has glitches of its own kinds, spread down the route, none
     held.delete(undefined);
     for (const x of p.glitches) {
       assert.ok(p.themes.includes(x.theme), `${seed} ${x.theme}`);
-      assert.ok(GLITCH_KINDS[x.theme].includes(x.kind), `${seed} ${x.kind}`);
+      assert.ok(x.set ? SET_PIECES[x.theme] === x.kind : GLITCH_KINDS[x.theme].includes(x.kind), `${seed} ${x.kind}`);
       assert.ok(!held.has(x.node) && !held.has(x.link), `${seed} ${x.kind} at ${x.node || x.link}`);
     }
     // (no two in one place)
@@ -33,7 +33,7 @@ test('each site theme has glitches of its own kinds, spread down the route, none
     if (p.route.length < 20) continue;
     big++;
     for (const t of p.themes) {
-      const mine = p.glitches.filter((x) => x.theme === t);
+      const mine = p.glitches.filter((x) => x.theme === t && !x.set);
       assert.ok(mine.length >= 2, `${seed} ${t}: ${mine.length}`);
       // (more than one stretch of the route)
       assert.ok(Math.max(...mine.map((x) => x.at)) - Math.min(...mine.map((x) => x.at)) >= p.route.length * 0.3, `${seed} ${t} bunched`);
@@ -51,10 +51,11 @@ test('a lull or a press is the weight where it is; the doorways and passages bey
     for (const x of site.glitches.filter((q) => q.zone)) {
       seen++;
       const c = G.centroid(x.zone.poly);
-      assert.equal(col.gravityAt(c[0], x.y0, c[1]), x.kind === 'lull' ? LULL_G : PRESS_G, `${seed} ${x.kind}`);
+      const want = x.kind === 'lull' ? LULL_G : x.kind === 'drift' ? DRIFT_G : PRESS_G;
+      assert.equal(col.gravityAt(c[0], x.y0, c[1]), want, `${seed} ${x.kind}`);
       // (well out from it: not)
-      const far = G.add(c, [x.node ? x.r + 3 : 0, 0]);
-      if (x.node) assert.notEqual(col.gravityAt(far[0], x.y0, far[1]), x.kind === 'lull' ? LULL_G : PRESS_G);
+      const far = G.add(c, [x.node && x.r ? x.r + 3 : 0, 0]);
+      if (x.node && x.r) assert.notEqual(col.gravityAt(far[0], x.y0, far[1]), want);
     }
   }
   assert.ok(seen >= 4, `${seen}`);
@@ -99,4 +100,30 @@ test('every glitch builds and runs; near the light, pressure and resonance ones 
     }
   }
   assert.equal(heard.size, 3, [...heard].join(','));
+});
+
+test('a theme\'s set piece: one a site where it has the place; the loop lets you back out, the front shoves', () => {
+  const seen = new Set();
+  for (const seed of SEEDS) {
+    const site = compileSite(planSite(seed)), sets = site.glitches.filter((x) => x.set);
+    for (const t of new Set(sets.map((x) => x.theme))) assert.equal(sets.filter((x) => x.theme === t).length, 1, `${seed} ${t}`);
+    for (const x of sets) seen.add(x.kind);
+    const col = new SiteCollision([], site.zones), gl = new SiteGlitches(site, col, new THREE.Group(), mat);
+    for (const x of sets.filter((q) => q.kind === 'loop')) {
+      gl.update(0.5, site.spawn.pos);   // (early in its cycle: folded)
+      const [B, A] = x.frames, d = x.dir;
+      // (on into the far frame: out of the near one, still going on)
+      const j = col.portal([B.pos[0] - d[0] * 0.2, B.pos[1], B.pos[2] - d[1] * 0.2], [B.pos[0] + d[0] * 0.2, B.pos[1], B.pos[2] + d[1] * 0.2]);
+      assert.ok(j && G.dist([j.pos[0], j.pos[2]], [A.pos[0] + d[0] * 0.2, A.pos[2] + d[1] * 0.2]) < 0.05, seed);
+      // (back out through the near frame: no fold)
+      assert.equal(col.portal([A.pos[0] + d[0] * 0.2, A.pos[1], A.pos[2] + d[1] * 0.2], [A.pos[0] - d[0] * 0.2, A.pos[1], A.pos[2] - d[1] * 0.2]), null, seed);
+    }
+    for (const x of sets.filter((q) => q.kind === 'front')) {
+      // (somewhere in its sweep the front reaches the passage's middle and shoves along it)
+      let shoved = false;
+      for (let k = 0; k < 160 && !shoved; k++) { gl.update(0.125, site.spawn.pos); const q = col.pushAt([x.center[0], x.y0, x.center[1]]); if (q) shoved = q[0] * x.dir[0] + q[1] * x.dir[1] > 0.5; }
+      assert.ok(shoved, seed);
+    }
+  }
+  assert.ok(seen.size >= 5, [...seen].join(','));
 });

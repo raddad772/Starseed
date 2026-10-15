@@ -190,7 +190,7 @@ function tryPlan(seed, rng, themes, environment) {
 
   const finds = placeFinds(rng.fork('finds'), nodes, spurs, crossings, links, gates);
   // (and each theme's glitches through the site, harmless: plan/glitches.js)
-  const glitches = placeGlitches(rng.fork('glitches'), { nodes, links, route, gates }, siteThemes);
+  const glitches = placeGlitches(rng.fork('glitches'), { nodes, links, route, gates, landmarks }, siteThemes);
 
   const plan = {
     ok: true, version: PLAN_VERSION, seed, themes: siteThemes, gates, glitches, environment, surfaceY: SURFACE_Y,

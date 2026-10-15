@@ -30,6 +30,8 @@ export class SiteGlitches {
       puff: new THREE.MeshStandardMaterial({ color: '#e6ecec', roughness: 1, map: softDisc(), transparent: true, opacity: 0.3, depthWrite: false, side: THREE.DoubleSide }),
       mist: new THREE.MeshStandardMaterial({ color: '#d4dcdc', roughness: 1, map: softDisc(), transparent: true, opacity: 0.16, depthWrite: false, side: THREE.DoubleSide }),
       seam: glow('#ffd9a0', 0.2), past: glow('#ffcf7a', 0.35),
+      clean: new THREE.MeshStandardMaterial({ color: '#a9b0ae', roughness: 0.35, metalness: 0.1, transparent: true, opacity: 0.35, depthWrite: false }),
+      wall: new THREE.MeshStandardMaterial({ color: '#dfe6e6', roughness: 1, map: softDisc(), transparent: true, opacity: 0.35, depthWrite: false, side: THREE.DoubleSide }),
       echo: [0.5, 0.34, 0.22, 0.12, 0.05].map((o) => veil('#8a8a82', o)),
     };
     this.parts = [];
@@ -37,7 +39,7 @@ export class SiteGlitches {
       const make = BUILD[g.kind];
       if (make) this.parts.push(make(g, { root, mat, M: this.M, collision, rnd: rand(g.id) }));
     }
-    this.anomalies = (site.glitches || []).filter((g) => SENSE[g.theme]).map((g) => ({ pos: [g.center[0], g.y0, g.center[1]], r: 10 + (g.r || 2), kind: SENSE[g.theme] }));
+    this.anomalies = (site.glitches || []).filter((g) => SENSE[g.theme]).map((g) => ({ pos: [g.center[0], g.y0, g.center[1]], r: (g.set ? 16 : 10) + (g.r || 2), kind: SENSE[g.theme] }));
   }
   // (where each player is, this frame: each tells it; the site moves once a frame for them all)
   touch(p) { (this.near || (this.near = [])).push(p.slice()); }
@@ -272,6 +274,120 @@ const BUILD = {
         p.visible = p.material.opacity > 0.01;
       });
     };
+  },
+
+  // ---- the set pieces ----
+  // a hall's crossing in a deep lull, and the hall's loose rubble a slow cloud wheeling round it over the pit
+  drift(g, { root, mat, rnd }) {
+    const N = 70, cloud = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(1, 0), mat.rock, N), bits = [];
+    cloud.frustumCulled = false; root.add(cloud);
+    const H = g.hall.center, R0 = Math.min(g.hall.r * 0.85, 26), m = g.center;
+    // (round the catwalk, close enough for a hand light to find: within a few metres to a dozen of its line,
+    // above and below its deck, each wheeling slowly about the hall's axis)
+    const [wa, wb] = g.walk;
+    for (let i = 0; i < N; i++) {
+      const u = rnd(), q = [wa[0] + (wb[0] - wa[0]) * u, wa[1] + (wb[1] - wa[1]) * u], off = (2.5 + rnd() * 9) * (rnd() < 0.5 ? 1 : -1);
+      const p = [q[0] - g.dir[1] * off, q[1] + g.dir[0] * off];
+      const a = Math.atan2(p[1] - H[1], p[0] - H[0]), r = Math.min(R0, Math.max(3, Math.hypot(p[0] - H[0], p[1] - H[1])));
+      bits.push({ a, r, y: g.y0 + (rnd() * 2 - 1) * 6 + 1, s: 0.15 + Math.pow(rnd(), 2) * 0.8, w: (0.004 + rnd() * 0.006) * (rnd() < 0.5 ? 1 : -1), ph: rnd() * 6.3, rot: [rnd() - 0.5, rnd() - 0.5, rnd() - 0.5] });
+    }
+    const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _p = new THREE.Vector3(), _s = new THREE.Vector3();
+    return (t) => {
+      bits.forEach((b, i) => {
+        const a = b.a + b.w * t;
+        _p.set(H[0] + Math.cos(a) * b.r, b.y + 0.6 * Math.sin(t * 0.17 + b.ph), H[1] + Math.sin(a) * b.r);
+        _q.setFromEuler(_e.set(t * b.rot[0] * 0.3, t * b.rot[1] * 0.3 + b.ph, t * b.rot[2] * 0.3)); _s.setScalar(b.s);
+        cloud.setMatrixAt(i, _m.compose(_p, _q, _s));
+      });
+      cloud.instanceMatrix.needsUpdate = true;
+    };
+  },
+  // a room flickering back to how it was now and then: its wall panels lit, its floor clean, its console on
+  was(g, { root, mat, M, rnd }) {
+    const grp = new THREE.Group(), off = rnd() * 13; grp.visible = false; root.add(grp);
+    const poly = g.poly, n = poly.length, cx = g.center[0], cz = g.center[1];
+    for (let i = 0; i < n; i++) {
+      const a = poly[i], b = poly[(i + 1) % n], L = Math.hypot(b[0] - a[0], b[1] - a[1]), mx = (a[0] + b[0]) / 2, mz = (a[1] + b[1]) / 2;
+      const inx = cx - mx, inz = cz - mz, il = Math.hypot(inx, inz) || 1;
+      const strip = new THREE.Mesh(new THREE.BoxGeometry(L * 0.8, 0.14, 0.04), M.warm);
+      strip.position.set(mx + inx / il * 0.12, g.y0 + Math.min(3, (g.y1 - g.y0) * 0.55), mz + inz / il * 0.12); strip.rotation.y = Math.atan2(b[0] - a[0], b[1] - a[1]) - Math.PI / 2;
+      grp.add(strip);
+    }
+    const shape = new THREE.Shape(poly.map(([x, z]) => new THREE.Vector2(x, -z)));
+    const floor = new THREE.Mesh(new THREE.ShapeGeometry(shape), M.clean); floor.rotation.x = -Math.PI / 2; floor.position.y = g.y0 + 0.012; grp.add(floor);
+    const desk = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.9, 0.7), mat.metal); desk.position.set(cx, g.y0 + 0.45, cz); grp.add(desk);
+    const screen = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.5, 0.05), M.cyan); screen.position.set(cx, g.y0 + 1.25, cz - 0.2); screen.rotation.x = -0.3; grp.add(screen);
+    const light = new THREE.PointLight(0xfff0d8, 0, 16, 2); light.position.set(cx, Math.min(g.y1 - 0.5, g.y0 + 4), cz); root.add(light);
+    return (t) => {
+      const ph = cyc(t, 13, off) * 13, on = ph < 3.4, edge = ph < 0.5 || (ph > 2.9 && ph < 3.4);
+      const shown = on && (!edge || Math.floor(t * 15) % 2 === 0);
+      grp.visible = shown; light.intensity = shown ? 22 : 0;
+    };
+  },
+  // a dead end's passage folding back on itself for a while: on into its far frame, out of its near one
+  loop(g, { root, M, collision }) {
+    const c = g.cycle, clock = { t: 0 }, active = () => cyc(clock.t, c.period) * c.period < c.open;
+    const ms = g.frames.map((f) => {
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(f.half * 2 + 0.3, 2.9), M.fold.clone());
+      m.position.set(f.pos[0], f.pos[1] + 1.45, f.pos[2]); m.rotation.y = yawOf(f.dir); root.add(m); return m;
+    });
+    collision.addPortal({ a: g.frames[0], b: g.frames[1], oneWay: true, active });
+    return (t) => {
+      clock.t = t;
+      const ph = cyc(t, c.period) * c.period, on = ph < c.open, going = on && ph > c.open - 2;
+      for (const m of ms) { m.visible = on; m.material.opacity = going ? 0.12 + 0.18 * (Math.floor(t * 8) % 2) : 0.3; }
+    };
+  },
+  // sourceless lights swarming slowly over a hall's pit round its crossing
+  motes(g, { root, M, rnd }) {
+    const N = 60, sw = new THREE.InstancedMesh(new THREE.SphereGeometry(0.13, 8, 6), M.core, N), m = g.center, bits = [];
+    sw.frustumCulled = false; root.add(sw);
+    for (let i = 0; i < N; i++) bits.push({ r: 3 + rnd() * 12, a: rnd() * 6.3, y: g.y0 + (rnd() * 2 - 1) * 6, w: (0.05 + rnd() * 0.12) * (rnd() < 0.5 ? 1 : -1), ph: rnd() * 6.3 });
+    const lights = [0, 1].map(() => { const l = new THREE.PointLight(0xfff1d6, 25, 14, 2); root.add(l); return l; });
+    const _m = new THREE.Matrix4();
+    return (t) => {
+      bits.forEach((b, i) => { const a = b.a + b.w * t; _m.makeTranslation(m[0] + Math.cos(a) * b.r, b.y + 1.2 * Math.sin(t * 0.3 + b.ph), m[1] + Math.sin(a) * b.r); sw.setMatrixAt(i, _m); });
+      sw.instanceMatrix.needsUpdate = true;
+      lights.forEach((l, k) => { const b = bits[k * 7], a = b.a + b.w * t; l.position.set(m[0] + Math.cos(a) * b.r, b.y + 1.2 * Math.sin(t * 0.3 + b.ph), m[1] + Math.sin(a) * b.r); });
+    };
+  },
+  // a wall of mist sweeping down a passage now and then, shoving whoever it passes along with it
+  front(g, { root, M, rnd, collision }) {
+    const W = g.width * 2 + 0.4, H = g.y1 - g.y0, off = rnd() * 20, P = 20, RUN = 6;
+    const layers = [0, 0.7, 1.4].map((k) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(W * 1.6, H * 1.6), M.wall.clone()); m.rotation.y = yawOf(g.dir); m.userData.k = k; root.add(m); return m; });
+    const state = { s: -1 };
+    // (its shove: along the passage at the front's own pace, on those within a metre and a half of it)
+    collision.addPush((p) => {
+      if (state.s < 0 || p[1] < g.y0 - 0.5 || p[1] > g.y1) return null;
+      const rx = p[0] - g.from[0], rz = p[2] - g.from[1], al = rx * g.dir[0] + rz * g.dir[1], ac = Math.abs(-rx * g.dir[1] + rz * g.dir[0]);
+      if (ac > g.width + 0.3 || Math.abs(al - state.s) > 1.5) return null;
+      const v = g.len / RUN * 0.8; return [g.dir[0] * v, g.dir[1] * v];
+    });
+    return (t) => {
+      const ph = cyc(t, P, off) * P;
+      state.s = ph < RUN ? (ph / RUN) * g.len : -1;
+      for (const m of layers) {
+        m.visible = state.s >= 0;
+        if (!m.visible) continue;
+        const s = state.s - m.userData.k, fade = Math.min(1, ph / 0.8, (RUN - ph) / 0.8);
+        m.position.set(g.from[0] + g.dir[0] * s, g.y0 + H / 2, g.from[1] + g.dir[1] * s); m.material.opacity = 0.35 * fade;
+      }
+    };
+  },
+  // a crossing's rails singing: lit at their antinodes, each half of them in turn
+  chorus(g, { root, M }) {
+    const [a, b] = g.walk, L = Math.hypot(b[0] - a[0], b[1] - a[1]), d = [(b[0] - a[0]) / L, (b[1] - a[1]) / L], side = [-d[1], d[0]];
+    const geo = new THREE.SphereGeometry(0.1, 8, 6), mats = [M.cyan.clone(), M.cyan.clone()];
+    const meshes = mats.map((m, k) => { const n = Math.floor(L / 1.2) * 2, im = new THREE.InstancedMesh(geo, m, n); im.frustumCulled = false; root.add(im); return im; });
+    const _m = new THREE.Matrix4(), count = [0, 0];
+    for (let s = 1.2, i = 0; s < L - 0.6; s += 1.2, i++) {
+      for (const sg of [-1, 1]) {
+        const k = i % 2, x = a[0] + d[0] * s + side[0] * sg * 1.25, z = a[1] + d[1] * s + side[1] * sg * 1.25;
+        meshes[k].setMatrixAt(count[k]++, _m.makeTranslation(x, g.y0 + 1.05, z));
+      }
+    }
+    meshes.forEach((m, k) => { m.count = count[k]; m.instanceMatrix.needsUpdate = true; });
+    return (t) => { const s = Math.sin(2 * Math.PI * 0.6 * t); mats[0].emissiveIntensity = 0.2 + 2.4 * Math.max(0, s) ** 2; mats[1].emissiveIntensity = 0.2 + 2.4 * Math.max(0, -s) ** 2; };
   },
 };
 

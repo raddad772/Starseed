@@ -15,6 +15,14 @@
 //              breath  a sealed hatch bowing in and out, a mist on the floor rising and sinking with it
 //   resonance  hum     a conduit singing, rings lit where it moves most
 //              figure  the dust on a floor drawn into one standing wave's lines, then another's
+// And each theme's set piece, one bigger moment a site (where it has the place for it):
+//   gravity    drift   a hall's crossing in a deep lull, the hall's loose rubble a slow cloud round it
+//   time       was     a room flickering back to how it was: its panels lit, its floor clean, a console on
+//   space      loop    a dead end's passage folding back on itself for a while: on into its far frame and
+//                      out of its near one, again, until it lets you through (back out, always)
+//   light      motes   sourceless lights swarming slowly over a hall's pit round its crossing
+//   pressure   front   a wall of mist sweeping down a passage now and then, shoving you along with it
+//   resonance  chorus  a crossing's rails singing, lit at their antinodes in turn
 // The runtime draws and runs them (site/siteGlitches.js); the gravity patches are zones, the skips
 // fold frames (plan/compile.js)
 import * as G from './geom2.js';
@@ -26,11 +34,12 @@ const IN_PASSAGE = new Set(['lull', 'press', 'skip', 'repeat', 'lag', 'vent']);
 // (each site theme's count: a few, spread down the route)
 const PER_THEME = 3;
 // (the weight in a lull and a press, the planet's own times this)
-export const LULL_G = 0.3, PRESS_G = 1.8;
+export const LULL_G = 0.3, PRESS_G = 1.8, DRIFT_G = 0.15;
+export const SET_PIECES = { gravity: 'drift', time: 'was', space: 'loop', light: 'motes', pressure: 'front', resonance: 'chorus' };
 
 const r2 = (v) => Math.round(v * 100) / 100;
 
-export function placeGlitches(rng, { nodes, links, route, gates }, themes) {
+export function placeGlitches(rng, { nodes, links, route, gates, landmarks = [] }, themes) {
   const byId = new Map(nodes.map((n) => [n.id, n])), idx = new Map(route.map((id, i) => [id, i]));
   const taken = new Set(['staging', 'core', 'access']);
   for (const g of gates) { if (g.node) taken.add(g.node); if (g.link) taken.add(g.link); for (const k of g.keys) taken.add(k.node); }
@@ -85,6 +94,42 @@ export function placeGlitches(rng, { nodes, links, route, gates }, themes) {
       }
     }
   });
+  // the set pieces: each theme's own kind of place, nearest the middle of the route, not one a glitch or
+  // a gate already holds
+  const usedIds = new Set([...out.map((g) => g.node || g.link), ...taken]);
+  for (const g of gates) if (g.kind === 'span') usedIds.add(g.node);
+  const byL = new Map(landmarks.map((L) => [L.id, L]));
+  for (const theme of themes) {
+    const kind = SET_PIECES[theme], mid = route.length * rng.range(0.4, 0.6);
+    let opts = [];
+    if (kind === 'drift' || kind === 'motes' || kind === 'chorus') opts = nodes.filter((n) => n.kind === 'crossing' && idx.has(n.id) && !usedIds.has(n.id) && byL.has(n.landmark)).map((n) => ({ n, at: idx.get(n.id) }));
+    else if (kind === 'was') opts = places.filter((q) => q.room && q.room.kind === 'room' && !usedIds.has(q.room.id) && q.r >= 2.5).map((q) => ({ q, at: q.at }));
+    else if (kind === 'front') opts = places.filter((q) => q.link && q.link.main && !usedIds.has(q.link.id) && q.seg.L >= 20).map((q) => ({ q, at: q.at }));
+    else if (kind === 'loop') opts = links.filter((l) => !l.main && l.kind === 'corridor' && l.b && !usedIds.has(l.id) && !usedIds.has(l.b) && G.dist([l.path[0][0], l.path[0][2]], [l.path.at(-1)[0], l.path.at(-1)[2]]) >= 14).map((l) => ({ l, at: idx.get(l.a) ?? 0 }));
+    if (!opts.length) continue;
+    opts.sort((a, b) => Math.abs(a.at - mid) - Math.abs(b.at - mid));
+    const o = opts[0], g = { id: `p${theme[0]}`, theme, kind, at: o.at, set: true };
+    if (o.n) {
+      const n = o.n, L = byL.get(n.landmark), [a, b] = n.walk, d = G.norm(G.sub(b, a)), m = G.lerp(a, b, 0.5);
+      usedIds.add(n.id);
+      Object.assign(g, { node: n.id, y0: n.y0, y1: n.y1, center: m.map(r2), walk: [a.map(r2), b.map(r2)], dir: d.map(r2), hall: { center: L.center.map(r2), y0: L.y0, y1: L.y1, r: r2(L.r || 20) } });
+      // (the deep lull over the catwalk and a little either side of it, from its deck to well over head)
+      if (kind === 'drift') g.zone = { poly: G.orientedRect(m, d, G.dist(a, b) / 2 - 1.5, 2.2).map((p) => p.map(r2)), y0: n.y0 - 0.5, y1: n.y0 + 8, gravity: DRIFT_G };
+    } else if (o.q && o.q.room) {
+      const n = o.q.room; usedIds.add(n.id);
+      Object.assign(g, { node: n.id, y0: n.y0, y1: n.y1, center: o.q.c.map(r2), r: r2(o.q.r), poly: n.poly.map((p) => p.map(r2)) });
+    } else if (o.q) {
+      const l = o.q.link, { a, b, L, y } = o.q.seg, d = G.norm(G.sub(b, a)); usedIds.add(l.id);
+      Object.assign(g, { link: l.id, y0: y, y1: y + (l.height || 4), center: G.lerp(a, b, 0.5).map(r2), dir: d.map(r2), width: l.width, from: a.map(r2), len: r2(L) });
+    } else {
+      const l = o.l, a = [l.path[0][0], l.path[0][2]], b = [l.path.at(-1)[0], l.path.at(-1)[2]], d = G.norm(G.sub(b, a)), L = G.dist(a, b), y = l.path[0][1];
+      usedIds.add(l.id); usedIds.add(l.b);
+      const P = (sd) => { const p = G.add(a, G.mul(d, sd)); return [r2(p[0]), y, r2(p[1])]; };
+      // (on into the far frame, out of the near one; a passage back out not turned round)
+      Object.assign(g, { link: l.id, node: l.b, y0: y, y1: y + (l.height || 3.6), center: G.lerp(a, b, 0.5).map(r2), dir: d.map(r2), width: l.width, frames: [{ pos: P(L - 4), dir: d.map(r2), half: r2(l.width - 0.25) }, { pos: P(3.5), dir: d.map(r2), half: r2(l.width - 0.25) }], cycle: { period: 27, open: 18 } });
+    }
+    out.push(g);
+  }
   return out.sort((a, b) => a.at - b.at);
 }
 

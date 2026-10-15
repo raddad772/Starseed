@@ -18,8 +18,8 @@ pixel-parity claim is made. Dave confirmed sole-agent work and no coordination m
    DONE (2026-10-15; dce0333, cc107df, c455f33): see NOW: surf on the shores.
 2. Expand the megastructures' thematic elements (gravity, time, distance, light, pressure, resonance): more
    of each theme's glitches and set pieces through a site, not one gate each.
-   FIRST PASS (2026-10-15): glitches through the site, see NOW: the themes through a site. Set pieces
-   (bigger, one per theme) not yet.
+   FIRST PASS (2026-10-15): glitches through the site and a set piece per theme, see NOW: the themes
+   through a site. Waiting for Dave's play.
 3. Brainstorm (then propose) vertically oriented megastructures: going down a crack between buildings,
    "suuuuper deep": you start out deep and go REALLY deep, deep enough that gravity changes on the way
    down (a shell's or a hollow world's own gravity: less the deeper you go?). Ideas first, for Dave to pick.
@@ -53,7 +53,14 @@ in the breach room, the core, the access or a climb):
   anomaly detected" (AnomalySense, with the gates' temporal and spatial ones).
 - Tests: tools/tests/megasite-glitches.test.mjs (themes' kinds spread down the route, none in a gate's
   place, deterministic; weights; skips both ways; every kind builds and runs; the suit's words).
-- Not yet: set pieces (one bigger moment per theme), sound for the glitches (hiss, hum), more kinds.
+- Set pieces, one a site per theme where it has the place (plan/glitches.js SET_PIECES): drift (a hall's
+  crossing in a 0.15 g lull, a cloud of rubble wheeling round the catwalk over the pit), was (a room
+  flickering back to how it was for ~3 s in 13: lit wall strips, a clean floor, a console), loop (a dead
+  end's passage folding back on itself 18 s in 27: on into the far frame, out of the near; back out is
+  always open, SiteCollision portals' oneWay), motes (sourceless lights swarming round a crossing),
+  front (a mist wall sweeping a passage every 20 s, shoving whoever it passes along: SiteCollision
+  addPush/pushAt, the walker's drift), chorus (a crossing's rails lit at alternating antinodes).
+- Not yet: sound for the glitches and set pieces (hiss, hum, the front's rush), more kinds.
 
 ## NOW: surf on the shores, beaches shaped by their waves (session 39d69fa8, 2026-10-15; QUEUE 1, a first pass)
 
