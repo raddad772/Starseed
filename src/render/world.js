@@ -176,8 +176,9 @@ export class WorldRenderer {
       uSunE: { value: new THREE.Vector3(1, 1, 1) },
       uCenter: { value: new THREE.Vector3() },
       uRadius: { value: b.R },
-      // (a sea at the datum, its shores' surf: liquid.js surfSea; the land's swash, webgpu/materials.js)
-      uSurfSea: { value: b.data.terrain && b.data.terrain.liquid && b.data.terrain.ocean > 0 ? 1 : 0 },
+      // (a sea at the datum, its shores' surf: liquid.js surfSea; the land's swash, webgpu/materials.js. Not
+      // a lava sea's: its waves crust over, no breakers)
+      uSurfSea: { value: b.data.terrain && b.data.terrain.liquid && b.data.terrain.liquid !== 'lava' && b.data.terrain.ocean > 0 ? 1 : 0 },
       uToFixed: { value: new THREE.Matrix3() },
       tDetail: { value: this.detailTex },
       uTime: { value: 0 },
