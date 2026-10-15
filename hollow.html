@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Starseed — Hollow Moon</title>
+<link rel="stylesheet" href="./src/understructure/style.css">
+<script type="importmap">{"imports":{"three":"./vendor/three.module.js","three/addons/":"./vendor/addons/","three/webgpu":"./vendor/three-avbd/three-webgpu-stub.js"}}</script>
+</head><body>
+<canvas id="view" tabindex="0" aria-label="First person walk inside a hollow moon's spinning sphere"></canvas>
+<div class="vignette"></div>
+<header><div class="wordmark">STARSEED <span>/ HOLLOW MOON</span></div><div id="site"></div></header>
+<div id="telemetry"><span id="zone">NORTH HUB</span><strong id="depth">0 <small>M</small></strong><div id="gravity">LOCAL FIELD 0.00 G</div><div id="floatHelp" hidden>Space up · C down · R brake</div></div>
+<div id="intro" class="panel"><div class="eyebrow">HOLLOW MOON PLAYTEST</div><div id="kinds"></div><button id="start" class="primary" disabled>Loading…</button><div class="keys">WASD move · Mouse / arrows look · Shift run · Space jump<br>F ride a stairway's carriage (at its top or foot) · L light · Esc pause<br>Weightless: Space up · C down · R brake</div></div>
+<div id="crosshair">·</div><div id="prompt" hidden></div><div id="toast" role="status" aria-live="polite" hidden></div>
+<div id="fatal" hidden></div>
+<script type="module" src="./src/understructure/hollow/hollowMain.js"></script>
+</body></html>

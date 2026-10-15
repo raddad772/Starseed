@@ -20,12 +20,46 @@ pixel-parity claim is made. Dave confirmed sole-agent work and no coordination m
    of each theme's glitches and set pieces through a site, not one gate each.
    FIRST PASS (2026-10-15): glitches through the site and a set piece per theme, see NOW: the themes
    through a site. Waiting for Dave's play.
+4. (Dave, 2026-10-15) Beach trees: they stand where tides and the run-up reach (SOL Earth 30.4 S 137.1 E,
+   beauty/trees_pair.jpg) - flora should keep off the beach face and the reach of the sea; and the ground
+   there reads sand, a narrow dirt strip, then beach sand (a vegetated band between two sand bands).
 3. Brainstorm (then propose) vertically oriented megastructures: going down a crack between buildings,
    "suuuuper deep": you start out deep and go REALLY deep, deep enough that gravity changes on the way
    down (a shell's or a hollow world's own gravity: less the deeper you go?). Ideas first, for Dave to pick.
    PROPOSED (2026-10-14): notes/VERTICAL_MEGASTRUCTURES.md, six ideas; recommended: the Plumb (a borehole
    through a small moon, gravity from depth, zero at the centre, "down" turning over past it), entered by
-   the Rift (a slot between the founders' archive walls). Waiting for Dave's pick.
+   the Rift (a slot between the founders' archive walls). PICKED (Dave, 2026-10-15): the Hollow Moon (a
+   spinning inner sphere; a still, abandoned hollow too as a curiosity), then the planet sites made vertical
+   ("I had really hoped all megastructures would be vertical"; consider a submarine descent down an ocean
+   rift on a living world as an entry), then the Ice Well; then a megastructure floating in a gas giant
+   (Dave: "dramatic and fun to land on"). In progress: see NOW: the Hollow Moon.
+
+## NOW: the Hollow Moon (session 39d69fa8, 2026-10-15; in progress)
+
+Dave picked it ("I want that built"): a moon the founders hollowed, a sphere spinning in its hollow, its inside
+a land walked upside down. First pass (standalone page hollow.html?seed=&still=1&moonR=&test):
+- Physics: site/fieldWalker.js, a walker whose weight can point any way (the site's field g(p)): its up
+  turns with it, heading carried round; walking on the ground's plane, ballistic in the air with the spin's
+  Coriolis force (a jump lands a little against the spin), floating under ~0.012 g, a landing over 11 m/s
+  hurts (back to safe footing). geometryCollision.js clearUp / floorAlong (any up; a ray's tree walk that
+  started inside a box had skipped it). tools/tests/fieldwalker.test.mjs (a 200 m sphere: the equator's
+  floor at 1 g, walking round it, the jump's drift, floating by the axis, a hard landing).
+- World (hollow/hollowWorld.js): a sphere Rs = 15% of the moon's radius (1.2-4 km), spun to 1 g at its
+  equator (a 4 km one turns in ~127 s); weight ω²ρ out from the axis, none on it; in the crust above, the
+  moon's own falling to nothing at the hollow (shell). An equatorial sea whose water is a cylinder (the
+  spin's level); the land in belts along it (reeds, meadow, field strips with hedges, forest, heath),
+  rivers down the meridians to the sea, roads from the stairways, six cities of towers; polar caps of
+  stone. The still one (spin 0): rough rock, dark, weightless.
+- Scene (hollow/hollowScene.js): the inside as an icosphere turned in (30-48 m edges), its land a texture
+  (2048x1024); the light a tube down the axis lit by point lights along it (a line's 1/d); hubs at the
+  poles; three stairways down each cap, each step level in the spin's weight and tall where weight is
+  slight (to 3 m); the towers. All collided with (~280k triangles for 4 km).
+- Haze: the WebGPU renderer had no fog (scene.fog was ignored); air.js now draws exponential fog for a
+  scene that opts in (scene.userData.fogLuminance), after the local lights. The megastructures' fog is
+  still not drawn (they don't opt in).
+- Next: entering from a moon's surface (sited by rule in generated systems: SOL is only a test bed), the
+  shaft ride down the crust with the field falling, the hub, the stairways' carriages; the still one;
+  the land at walking scale (its texture is ~12 m a texel); then the planet sites made vertical.
 
 ## NOW: the themes through a site (session 39d69fa8, 2026-10-15; QUEUE 2, a first pass)
 

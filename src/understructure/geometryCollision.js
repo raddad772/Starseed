@@ -22,4 +22,28 @@ export class GeometryCollision {
    }
   }return true;
  }
+ // The same with "up" any way (a unit vector: where weight points away from): the capsule along it from the feet
+ // at p, faces wholly within `step` above the feet walked over, and an upward face under them stood on.
+ clearUp(p,up,radius=.4,step=0){
+  const c=this.capsule,u=_u.set(up[0],up[1],up[2]);c.radius=radius;c.start.set(p[0],p[1],p[2]).addScaledVector(u,radius);c.end.set(p[0],p[1],p[2]).addScaledVector(u,1.9-radius);
+  this.query.makeEmpty().expandByPoint(c.start).expandByPoint(c.end).expandByScalar(radius);const stack=[this.root],P=_p.set(p[0],p[1],p[2]);
+  while(stack.length){const node=stack.pop();if(!node.box.intersectsBox(this.query))continue;if(!node.list){stack.push(node.left,node.right);continue;}
+   for(const item of node.list){if(!item.box.intersectsBox(this.query))continue;let triangle=item.triangle;
+    // (wholly below the step: walked over)
+    if(Math.max(_d.subVectors(triangle.a,P).dot(u),_e.subVectors(triangle.b,P).dot(u),_f.subVectors(triangle.c,P).dot(u))<=step+1e-4)continue;
+    triangle.getNormal(this.normal);if(this.normal.dot(_d.copy(c.start).sub(triangle.a))<0)triangle=this.reverse.set(triangle.c,triangle.b,triangle.a);
+    const hit=this.test.triangleCapsuleIntersect(c,triangle);if(hit&&hit.depth>.025){if(hit.normal.dot(u)>=-1e-3&&_e.subVectors(triangle.closestPointToPoint(c.start,this.contact),P).dot(u)<=step)continue;this.lastHit={triangle:triangle.clone(),...hit};return false;}
+   }
+  }return true;
+ }
+ // The highest walkable face (facing up within ~57 degrees) under p along -up, between top above the feet and drop
+ // below them: its height over the feet along up (m), or null.
+ floorAlong(p,up,top,drop){
+  const u=_u.set(up[0],up[1],up[2]),ray=_ray;ray.origin.set(p[0],p[1],p[2]).addScaledVector(u,top);ray.direction.copy(u).negate();
+  const len=top+drop;let best=null;const stack=[this.root];
+  while(stack.length){const node=stack.pop();if(!node.box.containsPoint(ray.origin)){if(!ray.intersectBox(node.box,_h)||_h.distanceTo(ray.origin)>len)continue;}if(!node.list){stack.push(node.left,node.right);continue;}
+   for(const {triangle:t} of node.list){t.getNormal(this.normal);if(this.normal.dot(u)<0.55)continue;const q=ray.intersectTriangle(t.a,t.b,t.c,false,_h);if(!q)continue;const d=q.distanceTo(ray.origin);if(d>len)continue;const h=top-d;if(best===null||h>best)best=h;}
+  }return best;
+ }
 }
+const _u=new THREE.Vector3(),_p=new THREE.Vector3(),_d=new THREE.Vector3(),_e=new THREE.Vector3(),_f=new THREE.Vector3(),_h=new THREE.Vector3(),_ray=new THREE.Ray();
