@@ -20,6 +20,26 @@
         "/Users/dave/dev/starseed"
       ],
       "port": 8766
+    },
+    {
+      "name": "megagraph",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "/Users/dave/dev/starseed/tools/serve.py",
+        "8767",
+        "/Users/dave/dev/starseed-megagraph"
+      ],
+      "port": 8767
+    },
+    {
+      "name": "megaplay",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "/Users/dave/dev/starseed/tools/serve.py",
+        "8768",
+        "/Users/dave/dev/starseed-megaplay"
+      ],
+      "port": 8768
     }
   ]
 }
