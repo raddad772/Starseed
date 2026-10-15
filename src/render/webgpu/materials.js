@@ -210,7 +210,7 @@ fn sandRippleNormal(p: vec3f, dx: vec3f, dy: vec3f, n: vec3f, spacing: f32, foot
 export const GROUND = /* wgsl */`
 struct Ground { albedo: vec3f, normal: vec3f, roughness: f32, ao: f32, snow: f32, emission: vec3f };
 // the surf's sea and its swash on the beach: liquid.js surfSea, surfLag, surfPhase, surfWave, surfSwash
-const SURF_B0 = 0.035;
+const SURF_A = 0.1;
 fn surfSea(U: f32, g: f32) -> vec4f {
   let T = clamp(10.0 * U / g, 3.0, 16.0);
   return vec4f(0.21 * U * U / g, T, 6.2832 / T, g * T * T / 6.2832);
@@ -219,8 +219,8 @@ fn surfLag(fp: vec3f) -> f32 {
   let q = ${(2 * Math.PI / 4096).toFixed(9)};
   return 2.0 * sin(dot(fp, vec3f(13.0, 7.0, -9.0) * q)) + 1.3 * sin(dot(fp, vec3f(-5.0, 11.0, 8.0) * q) + 1.7);
 }
-fn surfPhase(fp: vec3f, h: f32, sea: vec4f, g: f32, t: f32) -> f32 {
-  return sea.z * (t + 2.0 * sqrt(max(h, 0.0)) / (SURF_B0 * sqrt(g))) + surfLag(fp);
+fn surfPhase(fp: vec3f, xo: f32, sea: vec4f, g: f32, t: f32) -> f32 {
+  return sea.z * (t + 1.5 * pow(max(xo, 0.0), 0.6667) / sqrt(g * SURF_A)) + surfLag(fp);
 }
 fn surfWave(n: f32) -> f32 {
   return 0.5 + 0.35 * (0.5 + 0.5 * sin(n * 0.8976)) + 0.3 * fract(sin(n * 12.9898 + 4.1414) * 43758.5453);
@@ -242,7 +242,7 @@ fn triBump(p: vec3f, dx: vec3f, dy: vec3f, n: vec3f, w: vec3f, period: f32, stre
   return normalize(n - strength * (vec3f(0.0, x.x, x.y) * w.x + vec3f(y.y, 0.0, y.x) * w.y + vec3f(z.x, z.y, 0.0) * w.z));
 }
 fn groundSurface(col: vec4f, mat: vec4f, ext: vec4f, cls0: vec4f, cls1: vec4f, cls2: vec4f,
-  fp: vec3f, anchor: vec3f, dx: vec3f, dy: vec3f, normalF: vec3f, up: vec3f, dist: f32, foot: f32, muS: f32, shore: f32, alt: f32) -> Ground {
+  fp: vec3f, anchor: vec3f, dx: vec3f, dy: vec3f, normalF: vec3f, up: vec3f, dist: f32, foot: f32, muS: f32, shore: f32, alt: f32, shoreM: f32) -> Ground {
   var albedo = col.rgb * col.rgb;
   var veg = mat.x; var snow = mat.y; var rock = mat.z; var sand = mat.w;
   let waterEnc = col.a; let emissive = ext.x; let rough = ext.z;
@@ -320,20 +320,26 @@ fn groundSurface(col: vec4f, mat: vec4f, ext: vec4f, cls0: vec4f, cls1: vec4f, c
   }
   // the swash: each wave's broken water running up the beach and draining back, a thin sheet over the
   // sand (dark, glossy, smoothing its grain), its uprush's edge white and torn (liquid.js surfSwash; alt the
-  // ground over the still water, m)
-  if (material.surf.w > 0.0 && shore <= 0.0 && alt > -0.5 && alt < 3.0 && dist < 3000.0) {
+  // ground over the still water, m; shoreM its distance from the water's edge, m: only the beach face the
+  // run-up reaches, its height over its slope (a flat's no further than at 0.03), not a low flat behind it)
+  if (material.surf.w > 0.0 && shore <= 0.0 && alt > -0.5 && alt < 3.0 && dist < 3000.0 && shoreM < 200.0) {
     let lat = abs(asin(clamp(up.y, -1.0, 1.0)));
     let strength = select(select(select(0.8, 1.25, lat < 1.05), 0.9, lat < 0.52), 0.45, lat < 0.09);
     var sea = surfSea(material.surf.x * strength, material.surf.y);
     sea.x *= material.surf.w;
     let c = clamp(dot(normalF, up), 0.05, 1.0);
-    let sw = surfSwash(alt, sqrt(1.0 - c * c) / c, surfPhase(fp, 0.0, sea, material.surf.y, material.windTimeMode.z), sea);
-    if (sw.x > 0.0) {
+    // (its phase the water's at its edge, the bores' fronts bent the same: liquid.js liquidSurface)
+    let bend = 1.6 * (clamp(detailTri(fp, w, 64.0, dx, dy).a * 1.6 - 0.3, 0.0, 1.0) - 0.5) + 0.8 * (detailTri(fp, w, 512.0, dx, dy).r - 0.5);
+    let b = sqrt(1.0 - c * c) / c;
+    let sw = surfSwash(alt, b, surfPhase(fp, 0.0, sea, material.surf.y, material.windTimeMode.z) + bend, sea);
+    let reach = smoothstep(1.5 * sw.z / max(b, 0.03) + 4.0, sw.z / max(b, 0.03) + 2.0, shoreM);
+    let cover = sw.x * reach;
+    if (cover > 0.0) {
       let lace = smoothstep(0.3, 0.7, detailTri(fp, w, 8.0, dx, dy).a);
-      albedo *= mix(vec3f(1.0), vec3f(0.55, 0.6, 0.66), sw.x);
-      g.roughness = mix(g.roughness, 0.06, sw.x);
-      g.normal = normalize(mix(g.normal, up, 0.7 * sw.x));
-      let f = clamp(sw.y * (0.4 + 0.6 * lace), 0.0, 1.0);
+      albedo *= mix(vec3f(1.0), vec3f(0.55, 0.6, 0.66), cover);
+      g.roughness = mix(g.roughness, 0.06, cover);
+      g.normal = normalize(mix(g.normal, up, 0.7 * cover));
+      let f = clamp(sw.y * reach * (0.4 + 0.6 * lace), 0.0, 1.0);
       albedo = mix(albedo, vec3f(0.8, 0.82, 0.84), f * 0.85);
       g.roughness = mix(g.roughness, 0.7, f);
     }

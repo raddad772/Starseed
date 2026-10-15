@@ -91,6 +91,12 @@ struct GBuffer { @location(0) albedoAO: vec4f, @location(1) normalMaterial: vec4
   let o = objects[v.objectIndex];
   let dx = dpdx(v.fixedPos); let dy = dpdy(v.fixedPos);
   let foot = length(fwidth(v.worldPos));
+  // (how far the land is from the water, m, near it: the vertices' shore distance over its own rate across
+  // the ground (chunkbuilder.js: SHORE_R spacings, held beyond); the swash's reach, materials.js)
+  let dS = vec2f(dpdx(v.occShore.y), dpdy(v.occShore.y));
+  let a11 = dot(dx, dx); let a12 = dot(dx, dy); let a22 = dot(dy, dy);
+  let gS = ((a22 * dS.x - a12 * dS.y) * dx + (a11 * dS.y - a12 * dS.x) * dy) / max(a11 * a22 - a12 * a12, 1e-12);
+  let shoreM = select(1e6, -v.occShore.y / max(length(gS), 1e-6), v.occShore.y > -0.99);
   if (o.nearUpEnabled.w > 0.5) {
     let dn = length(v.nearRel - o.nearUpEnabled.xyz * dot(v.nearRel, o.nearUpEnabled.xyz));
     if (o.nearBand.y < 0.5) { if (dn < 0.97 * o.nearBand.x && v.occShore.y <= 0.0) { discard; } }
@@ -111,7 +117,7 @@ struct GBuffer { @location(0) albedoAO: vec4f, @location(1) normalMaterial: vec4
   if (shore > 0.0) { discard; }
   let surface = groundSurface(color, v.mat, v.ext, v.cls0, v.cls1, v.cls2,
     v.fixedPos, v.anchorPos, dx, dy, normalize(v.fixedNormal), material.toFixed * up,
-    length(v.worldPos), foot, dot(up, b.sunDir.xyz), shore, length(rel) - material.surf.z);
+    length(v.worldPos), foot, dot(up, b.sunDir.xyz), shore, length(rel) - material.surf.z, shoreM);
   let N=normalize(transpose(material.toFixed)*surface.normal);
   var glint=0.0;
   let gw=v.cls2.z+0.6*v.cls1.z;let gc=foot*220.0;

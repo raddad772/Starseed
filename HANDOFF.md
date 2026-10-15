@@ -28,17 +28,25 @@ pixel-parity claim is made. Dave confirmed sole-agent work and no coordination m
 
 Dave's queue: "Convincing waves on shorelines: breaking surf, run-up and backwash on beaches, by the sea's
 fetch and the wind". What's in:
-- The surf (liquid.js surfSea/surfPhaseX/surfAt, in the water pass): the wind's sea fully developed
-  (Hs 0.21 U^2/g; a swell's period 10 U/g), its crests coming in along the coast by the distance out from
-  it (the colour map's shore distance, now 24 texels each way: COLOUR_SHORE_R; its old readers rescaled),
-  their travel time over a Dean shoreface; shoaling (Green), breaking at 0.78 of the depth into bores
-  (steep face, long back), each wave its own height (sets), fronts bent by noise; foam on the bores and
-  behind them, more where the bed rises (plunging). Without the colour map (before it's built) the phase
-  by the depth alone.
+- The surf (liquid.js surfSea/surfOut/surfPhase/surfAt, in the water pass): the wind's sea fully
+  developed (Hs 0.21 U^2/g; a swell's period 10 U/g), its crests coming in by their travel time over a
+  Dean shoreface from how far out the water is (surfOut: near the edge the distance its depth gives,
+  exact at the drawn shoreline; past 150..300 m the colour map's shore distance, 24 texels each way:
+  COLOUR_SHORE_R, read as a cubic B-spline (colourCubeShoreSmooth) so its slope doesn't turn at every
+  ~150 m texel); one continuous phase (a switch between the two had drawn hard straight edges across the
+  sea). Shoaling (Green), breaking at 0.78 of the depth into bores (steep face, long back), each wave its
+  own height (sets), fronts bent by noise. Foam as froth patches (the detail noise thresholded to the
+  breaking's cover: solid on a bore's face, each wave's own pattern left where it broke and torn finer
+  as it thins; its cover where the pixel can't resolve them), more where the bed is steep (the Iribarren
+  number of the mean slope out to there: plunging). Crest normals tilted at most 0.3; no roughness of
+  its own (it read as grey slabs).
 - The swash (webgpu/materials.js surfSwash, the land's G-buffer): each wave's sheet running up the beach
   and draining back (Stockdon et al. 2006's run-up from the sea's height, its deep-water length and the
-  beach's slope), dark, glossy and smoothed under it, its uprush's edge white and torn. A sea at the datum
-  only (world.js uSurfSea: terrain liquid and ocean); the material buffer's surf vec4 (wind, g, R, on).
+  beach's slope), dark, glossy and smoothed under it, its uprush's edge white and torn; its phase bent as
+  the bores' are. Only the beach face within the run-up's reach of the water (shaders.js shoreM: the
+  vertices' shore distance over its own rate, m; reach R2 over the slope, a flat's at 0.03), not low
+  flats behind the beach (they had been sheeted and laced). A sea at the datum only (world.js uSurfSea:
+  terrain liquid and ocean; the water pass gated too); the material buffer's surf vec4 (wind, g, R, on).
 - Beaches (localsim.js finish, TILE_VERSION 60): the coasts had stood as banks: the tiles' coast rule
   stepped the ground 4 m across a cell (on the finest levels' metres-wide cells, a bank over a flat
   shelf). Now a soft or sandy coast's floor deepens A d^2/3 (Dean 1977, A 0.1) out to ~6 m depth (465 m),
@@ -48,8 +56,10 @@ fetch and the wind". What's in:
   -2 at 70, -3 at 130, -4 at 200. Scratchpad beauty/beach_before_after.jpg.
 - Not yet: the waves' faces in the geometry (the water's vertices displaced by the surf: the vertex shader
   is terrainMaterial's VERT, generated to waterVertex); the wind waves' normals streak at grazing views
-  near the camera (seen with the wind on, not calm: aliasing of their short octaves); the land swash's
-  phase lacks the bores' noise bend (they drift apart a little); lakes' surf is the sea's x0.3 x fetch.
+  near the camera (seen with the wind on, not calm: aliasing of their short octaves); lakes' surf is the
+  sea's x0.3 x fetch. Seen, not the surf's (there with it off): dark sawtooth-edged patches on low sand
+  behind the SOL Earth beach at 30.4 S 137.1 E, from 60 m up (a chunk or near band's shading).
+  Testing note: navigating the tab to its own URL with a #hash doesn't reload it; use location.reload().
 
 ## NOW: trees and shrubs by climate, many species a world (session 39d69fa8, 2026-10-14)
 

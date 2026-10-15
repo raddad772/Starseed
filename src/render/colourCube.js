@@ -109,4 +109,29 @@ vec4 colourCubeAt(vec3 d) {
   vec2 uv = vec2(atan(dot(d, U) / dn), atan(dot(d, V) / dn)) / 0.7853981634 * 0.5 + 0.5, h = vec2(0.5 / max(uColourCube.y, 1.0));
   return textureLod(tColourCube, vec3(clamp(uv, h, 1.0 - h), f), 0.0);
 }
+// its shore's distance (texels) read smoothly: the texels' cubic B-spline, four filtered reads (Sigg and
+// Hadwiger 2005), its slope unbroken from texel to texel (the surf's crests' slopes: liquid.js; read
+// bilinearly they turned at every texel's edge, slabs of the sea lit apart)
+float colourCubeShoreSmooth(vec3 d) {
+  vec3 a = abs(d), N, U, V;
+  float f;
+  if (a.x >= a.y && a.x >= a.z) {
+    if (d.x >= 0.0) { f = 0.0; N = vec3(1.0, 0.0, 0.0); U = vec3(0.0, 0.0, -1.0); } else { f = 1.0; N = vec3(-1.0, 0.0, 0.0); U = vec3(0.0, 0.0, 1.0); }
+    V = vec3(0.0, 1.0, 0.0);
+  } else if (a.y >= a.z) {
+    U = vec3(1.0, 0.0, 0.0);
+    if (d.y >= 0.0) { f = 2.0; N = vec3(0.0, 1.0, 0.0); V = vec3(0.0, 0.0, -1.0); } else { f = 3.0; N = vec3(0.0, -1.0, 0.0); V = vec3(0.0, 0.0, 1.0); }
+  } else {
+    V = vec3(0.0, 1.0, 0.0);
+    if (d.z >= 0.0) { f = 4.0; N = vec3(0.0, 0.0, 1.0); U = vec3(1.0, 0.0, 0.0); } else { f = 5.0; N = vec3(0.0, 0.0, -1.0); U = vec3(-1.0, 0.0, 0.0); }
+  }
+  float dn = dot(d, N), S = max(uColourCube.y, 1.0);
+  vec2 x = (vec2(atan(dot(d, U) / dn), atan(dot(d, V) / dn)) / 0.7853981634 * 0.5 + 0.5) * S - 0.5;
+  vec2 i = floor(x), t = x - i, t2 = t * t, t3 = t2 * t;
+  vec2 w0 = (1.0 - 3.0 * t + 3.0 * t2 - t3) / 6.0, w1 = (4.0 - 6.0 * t2 + 3.0 * t3) / 6.0, w2 = (1.0 + 3.0 * t + 3.0 * t2 - 3.0 * t3) / 6.0, w3 = t3 / 6.0;
+  vec2 g0 = w0 + w1, g1 = w2 + w3, h0 = (i - 0.5 + w1 / g0) / S, h1 = (i + 1.5 + w3 / g1) / S, e = vec2(0.5 / S);
+  float a00 = textureLod(tColourCube, vec3(clamp(vec2(h0.x, h0.y), e, 1.0 - e), f), 0.0).a, a10 = textureLod(tColourCube, vec3(clamp(vec2(h1.x, h0.y), e, 1.0 - e), f), 0.0).a;
+  float a01 = textureLod(tColourCube, vec3(clamp(vec2(h0.x, h1.y), e, 1.0 - e), f), 0.0).a, a11 = textureLod(tColourCube, vec3(clamp(vec2(h1.x, h1.y), e, 1.0 - e), f), 0.0).a;
+  return colourCubeShore(g0.y * (g0.x * a00 + g1.x * a10) + g1.y * (g0.x * a01 + g1.x * a11));
+}
 `;

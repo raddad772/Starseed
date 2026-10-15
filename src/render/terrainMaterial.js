@@ -280,7 +280,7 @@ void main() {
   // water) from the colour map, its crests' way along the coast: liquid.js surfPhaseX)
   vec2 dEnc = vec2(dFdx(vCol.a), dFdy(vCol.a));
   float shoreX = -1.0;
-  if (uColourCube.x > 0.5) shoreX = colourCubeShore(colourCubeAt(normalize(uToFixed * normalize(vWorldPos - uCenter))).a) * uColourCube.z;
+  if (uColourCube.x > 0.5) shoreX = colourCubeShoreSmooth(normalize(uToFixed * normalize(vWorldPos - uCenter))) * uColourCube.z;
   vec2 dShoreX = vec2(dFdx(shoreX), dFdy(shoreX));
   vec3 albedo = vCol.rgb * vCol.rgb;
   float waterEnc = vCol.a;

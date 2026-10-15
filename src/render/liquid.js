@@ -84,6 +84,7 @@ export const GLSL_LIQUID = /* glsl */`
 uniform vec4 uLiquid;     // F0, the wind (m/s), wind waves (1 .. 0 a thick melt), the peak wavelength (m)
 uniform vec4 uLiquid2;    // gravity, how it foams (water most), the sea's freezing point under the fresh's (C), the sun's latitude now (sin)
 uniform vec4 uLiquid3;    // its absorption (1/m: red, green, blue), its rivers' dissolved organic matter's at 440 nm (1/m)
+uniform float uSurfSea;   // a sea at the datum: its shores' surf (world.js; 0 none)
 uniform vec4 uWaveK[${N_WAVE}];   // each wave's k (planet-fixed, rad/m), its phase now
 // the prevailing wind's way at upF (the belts the sim's climate has: the trades blowing west, the
 // westerlies east, the polar easterlies west): +1 toward the east, -1 toward the west, turning over
@@ -99,10 +100,8 @@ float windSense(vec3 upF) {
 // shoal (Green: H ~ h^-1/4), breaking where they reach ~0.78 of the depth (a bore of broken water running
 // in, its face steep, its back long); then up the beach and back (Stockdon et al. 2006's run-up). Each
 // wave its own height (sets of bigger ones, lulls), the crests out of step along the shore by its own
-// long bends (whole cycles of the 4096 m period fp wraps at). The phase by depth alone (its travel time in
-// over a beach of SURF_B0's slope), so the crests run unbroken across the mesh's triangles
+// long bends (whole cycles of the 4096 m period fp wraps at)
 // (U: the wind (m/s), g: gravity) -> (H0 m, T s, w rad/s, L0 m)
-const float SURF_B0 = 0.035;
 vec4 surfSea(float U, float g) {
   float H0 = 0.21 * U * U / g, T = clamp(10.0 * U / g, 3.0, 16.0), w = 6.2832 / T;
   return vec4(H0, T, w, g * T * T / 6.2832);
@@ -111,18 +110,23 @@ float surfLag(vec3 fp) {
   const float q = ${(2 * Math.PI / 4096).toFixed(9)};
   return 2.0 * sin(dot(fp, vec3(13.0, 7.0, -9.0) * q)) + 1.3 * sin(dot(fp, vec3(-5.0, 11.0, 8.0) * q) + 1.7);
 }
-// (the phase, rad: 2 pi n as crest n passes; at the shoreline (h 0) as it reaches it)
-float surfPhase(vec3 fp, float h, vec4 sea, float g, float t) {
-  return sea.z * (t + 2.0 * sqrt(max(h, 0.0)) / (SURF_B0 * sqrt(g))) + surfLag(fp);
-}
-// (the same by the distance x (m) out from the shore, where the colour map has it: its travel time in over
-// a sandy shoreface's own profile, its depth A x^2/3 (Dean 1977, A ~0.1 m^1/3), so the crests lie along
-// the coast as refraction lays them, whatever the bed's bumps; and the phase's rate out from shore (1/m))
+// (how far out the wave is, m, for its travel time in: over a sandy shoreface (Dean 1977: its depth
+// A x^2/3, A ~0.1 m^1/3; the ground's own, localsim.js) the distance its depth h gives, exact at the water's
+// edge the mesh draws; farther out (or where its depth is the bed's bumps, a flat's) the colour map's
+// distance from the coast x, smooth along it but its texels too coarse for the edge itself (~150 m on an
+// Earth). The two blended where either reaches 150..300 m, the whole of it continuous: the crests unbroken
+// (x < 0: no colour map)
 const float SURF_A = 0.1;
-float surfPhaseX(vec3 fp, float x, vec4 sea, float g, float t) {
-  return sea.z * (t + 1.5 * pow(max(x, 0.0), 0.6667) / sqrt(g * SURF_A)) + surfLag(fp);
+float surfOut(float h, float x) {
+  float xd = pow(max(h, 0.0) / SURF_A, 1.5);
+  return x < 0.0 && uColourCube.x < 0.5 ? xd : mix(xd, max(x, 0.0), smoothstep(150.0, 300.0, max(xd, x)));
 }
-float surfRateX(float x, vec4 sea, float g) { return sea.z / sqrt(g * SURF_A * pow(max(x, 2.0), 0.6667)); }
+// (the phase, rad: 2 pi n as crest n passes, at the shoreline as it reaches it: its travel time in over the
+// shoreface's profile, at a shallow wave's speed sqrt(g h); and the phase's rate out from shore, 1/m)
+float surfPhase(vec3 fp, float xo, vec4 sea, float g, float t) {
+  return sea.z * (t + 1.5 * pow(max(xo, 0.0), 0.6667) / sqrt(g * SURF_A)) + surfLag(fp);
+}
+float surfRate(float xo, vec4 sea, float g) { return sea.z / sqrt(g * SURF_A * pow(max(xo, 2.0), 0.6667)); }
 // (each wave's height over the sea's: in sets of about seven, and its own)
 float surfWave(float n) {
   return 0.5 + 0.35 * (0.5 + 0.5 * sin(n * 0.8976)) + 0.3 * fract(sin(n * 12.9898 + 4.1414) * 43758.5453);
@@ -147,6 +151,14 @@ vec4 surfAt(float h, float ph, vec4 sea, float fw) {
   // (the broken water: white on the face and just behind it, thinning toward the next)
   float foam = br * (p > 1.0 - fw ? smoothstep(1.0 - fw, 1.0, p) : exp(-p / 0.2));
   return vec4(mix(eU, eB, br), mix(dU, dB, br), foam, br);
+}
+// (the detail texture's noise at p across the three planes as the ground's (terrainMaterial.js tri), its
+// period m, at the level the pixel's footprint foot reads it (256 texels a period))
+vec4 surfNoise(vec3 p, vec3 n, float period, float foot) {
+  vec3 w = pow(abs(n), vec3(4.0));
+  w /= w.x + w.y + w.z;
+  float l = log2(max(foot * 256.0 / period, 1.0));
+  return textureLod(tDetail, p.yz / period, l) * w.x + textureLod(tDetail, p.zx / period + 0.37, l) * w.y + textureLod(tDetail, p.xy / period + 0.71, l) * w.z;
 }
 // the swash on the beach: alt the ground's height over the still water (m), b its slope (tan), its phase
 // at the shoreline ph -> (covered by the sheet (0..1), the uprush's foam edge (0..1), the run-up (m) the
@@ -327,38 +339,47 @@ void liquidSurface(vec3 fp, vec3 n, vec3 upF, float kind, float flow, float fetc
   // the shore's: the surf coming in (surfAt): the swell's crests shoaling, then breaking into bores of
   // white water running in, their foam left behind them torn to lace (the groups' noise, the wind waves'
   // own crests a little); the waves' slopes on the water; on a lake the same, smaller by its fetch
-  if (!river && !pond) {
+  if (!river && !pond && uSurfSea > 0.5) {
     vec4 sea4 = surfSea(U, uLiquid2.x);
     sea4.x *= (sea ? 1.0 : 0.3 * fetch) * uLiquid.z;
     float hb = pow(sea4.x * 1.3 * pow(0.1 * sea4.w, 0.25) / 0.78, 0.8);
     if (depth < 2.0 * hb + 0.5 && sea4.x > 0.02) {
-      // (out from the coast by the colour map's distance where it's built; else by the depth)
-      bool byX = shoreX >= 0.0;
-      float ph = byX ? surfPhaseX(fp, shoreX, sea4, uLiquid2.x, uTime) : surfPhase(fp, depth, sea4, uLiquid2.x, uTime);
+      float xo = surfOut(depth, shoreX);
+      float ph = surfPhase(fp, xo, sea4, uLiquid2.x, uTime);
       // (a bore's front wanders along it, a step ahead here and behind there (the swell's own groups, the
       // bed's), not a ruled line: bent by the smooth noise over tens of metres, its foam torn by it)
       ph += 1.6 * (grp.y - 0.5) + 0.4 * wn.x;
       // (the bore's face as steep as the pixel resolves: its length here, a shallow wave's, over the
       // pixel's span)
-      float Lh = sea4.y * sqrt(uLiquid2.x * max(depth, 0.05));
-      vec4 sf = surfAt(depth, ph, sea4, clamp(3.0 * foot / Lh, 0.07, 0.4));
-      // (its slope: the phase's own across the ground, as its depth falls toward the shore)
-      vec3 gph = byX ? surfRateX(shoreX, sea4, uLiquid2.x) * gradX : sea4.z / (SURF_B0 * sqrt(uLiquid2.x * max(depth, 0.05))) * gradH;
+      float Lh = sea4.y * sqrt(uLiquid2.x * max(depth, 0.05)), fw = clamp(3.0 * foot / Lh, 0.07, 0.4);
+      vec4 sf = surfAt(depth, ph, sea4, fw);
+      // (its slope: the phase's rate out from the shore, that way: the colour map's distance's (smooth);
+      // without one the depth's, flat over each of the mesh's triangles)
+      vec3 dir = uColourCube.x > 0.5 ? gradX : gradH;
+      vec3 gph = surfRate(xo, sea4, uLiquid2.x) * dir / max(length(dir), 1e-6);
       vec3 gs = gph * sf.y;
       float gl = length(gs);
-      if (gl > 0.6) gs *= 0.6 / gl;
+      if (gl > 0.3) gs *= 0.3 / gl;
       gs -= n * dot(gs, n);
       float fade = 1.0 - smoothstep(1.5 * hb, 2.0 * hb + 0.5, depth);
       nF = normalize(nF - gs * fade);
-      // (broken water white on each bore's face and behind it, the more where the bed rises under it, the
-      // wave pitching over (a bar's edge, a reef's, a step); on a gentle beach spilling, a little less)
-      float rise = smoothstep(0.004, 0.04, length(gradH));
+      // (broken water white on each bore's face and behind it, the more where the bed rises steeply under
+      // it, the wave pitching over (a step, a steep beach: the Iribarren number of the bed's mean slope out
+      // to here past ~0.5); on a gentle beach spilling, a little less)
+      float rise = smoothstep(0.4, 1.2, depth / max(xo, 10.0) / sqrt(max(sea4.x, 0.01) / sea4.w));
       float lace = smoothstep(0.15, 0.75, grp.x + 0.25 * W.crest) * smoothstep(0.1, 0.5, grp.z + 0.3 * (grp.w - 0.5));
-      float surf = sf.z * (0.6 + 0.4 * rise) * (0.45 + 0.55 * lace) + sf.w * 0.12 * lace;
+      float surf = sf.z * (0.6 + 0.4 * rise) * (0.55 + 0.45 * lace) + sf.w * 0.08 * lace;
       // (and the still water's edge, where the backwash meets the next one coming in)
       surf += (1.0 - smoothstep(0.0, 0.12, depth)) * (0.3 + 0.5 * lace);
-      foam = max(foam, clamp(surf, 0.0, 1.0) * fade * 0.85);
-      rough = max(rough, 0.25 * sf.z * fade);
+      // (as froth, in patches: solid on the bore's face, behind it each wave's own laid where it broke and
+      // left there as the bore runs on (the water under it hardly moving on), torn finer as it thins; where
+      // the pixel can't resolve them, their cover)
+      float pn = ph / 6.2832, wv = floor(pn) + (fract(pn) > 1.0 - fw ? 1.0 : 0.0);
+      vec4 fz = surfNoise(fp + (fract(sin(wv * vec3(12.9898, 78.233, 37.719)) * 43758.5453) - 0.5) * 300.0, n, 7.0, foot);
+      float cv = clamp(surf, 0.0, 1.0), soft = 0.05 + 0.4 * smoothstep(0.2, 3.0, foot);
+      float z = smoothstep(0.25, 0.75, 0.6 * fz.r + 0.4 * fz.a + 0.06 * W.crest);
+      float froth = mix(smoothstep(1.0 - cv - soft, 1.0 - cv + soft, z), cv, smoothstep(1.5, 8.0, foot));
+      foam = max(foam, froth * fade * 0.9);
     }
   }
   // a river's: white water where it runs near critical, its standing waves breaking (patches of the
