@@ -9,8 +9,9 @@ import { GLSL_MOON } from './moonlight.js';
 import { GLSL_SEASON } from './season.js';
 import { GLSL_SUN_SHADOW, GLSL_SKY_SHADOW, SHADOW_LAYER, SKY_LAYER, SHADOW_LIGHT_UNIFORMS } from './sunShadows.js';
 import { growTree } from '../gen/life/tree.js';
+import { treePool, shrubPool } from '../gen/life/plants.js';
 import { treeGeometry as grownMesh } from './treeMesh.js';
-import { ezTreeGeometry, barkTexture, leafTexture } from './ezTrees.js';
+import { ezTreeGeometry, barkTexture, leafTexture, preloadTreeTextures } from './ezTrees.js';
 import { TRUNK } from '../sim/floraField.js';
 import { MAT_UNIFORMS, GLSL_MATERIALS, trackMaterial } from './materials.js';
 
@@ -170,8 +171,13 @@ function treeFarGeometry(sp) {
   trunk.translate(0, H * 0.25, 0);
   parts.push({ geo: trunk, part: 0 });
   let crown;
-  if (sp.tree === 'conifer' || sp.tree === 'spire') { crown = new THREE.ConeGeometry(H * 0.22, H * 0.8, 5, 1); crown.translate(0, H * 0.58, 0); }
-  else if (sp.tree === 'mushroom') { crown = new THREE.CylinderGeometry(H * 0.32, H * 0.3, H * 0.12, 6); crown.translate(0, H * 0.56, 0); }
+  // (its species' outline from afar: a spire's narrow cone, a parasol's or an umbrella's flat top, a narrow
+  // column, a giant's crown high on its bole)
+  if (sp.crown === 'spire') { crown = new THREE.ConeGeometry(H * 0.15, H * 0.88, 5, 1); crown.translate(0, H * 0.55, 0); }
+  else if (sp.crown === 'parasol' || sp.crown === 'umbrella' || sp.tree === 'mushroom') { crown = new THREE.CylinderGeometry(H * 0.36, H * 0.3, H * 0.16, 6); crown.translate(0, H * (sp.crown === 'umbrella' ? 0.78 : 0.82), 0); }
+  else if (sp.tree === 'conifer' || sp.tree === 'spire') { crown = new THREE.ConeGeometry(H * 0.22, H * 0.8, 5, 1); crown.translate(0, H * 0.58, 0); }
+  else if (sp.crown === 'column') { crown = new THREE.OctahedronGeometry(H * 0.26, 0); crown.scale(0.6, 1.5, 0.6); crown.translate(0, H * 0.62, 0); }
+  else if (sp.crown === 'emergent') { crown = new THREE.OctahedronGeometry(H * 0.24, 0); crown.scale(1.3, 0.7, 1.3); crown.translate(0, H * 0.8, 0); }
   else { crown = new THREE.OctahedronGeometry(H * 0.26, 0); crown.translate(0, H * 0.72, 0); }
   // (its underside dark, as a crown's is in its own and its neighbours' shade)
   parts.push({ geo: crown, part: 1, aoBase: 0.1 });
@@ -588,6 +594,15 @@ export class FloraSet {
     const t = body.data.terrain;
     this.species = floraSpecies(t);
     const sp = this.species;
+    // (its tree species, each to its climate (gen/life/plants.js, as the workers' scatter has them): each
+    // grown when its first trees are built, treeKind)
+    const gen = body.terrain;
+    if (!sp.trees) sp.trees = treePool(sp, gen && gen.snap, (t.climate && t.climate.lapse) || 0.0065);
+    if (!sp.shrubs) sp.shrubs = shrubPool(sp, gen && gen.snap, (t.climate && t.climate.lapse) || 0.0065);
+    this.trees = []; this.shrubs = [];
+    if (sp.trees.length > 1) preloadTreeTextures();
+    this.g = body.data.gravity || 9.81;
+    this.shared = shared;
     const rng = new Rng(t.seed).fork('floraGeo');
     const pal = t.palette;
     this.geos = {
@@ -619,25 +634,7 @@ export class FloraSet {
     });
     // one material per kind: each fades out over the last quarter of its range
     this.materials = {};
-    for (const k of FLORA_KINDS) {
-      const m = this.material.clone();
-      for (const key in this.material.uniforms) if (shared[key]) m.uniforms[key] = shared[key];
-      m.uniforms.uWindV = this.material.uniforms.uWindV;   // (one wind for all: setWind)
-      m.uniforms.uFadeEnd.value = this.kindDist[k] * 0.98;
-      m.uniforms.uFadeStart.value = this.kindDist[k] * 0.7;
-      const gk = this.geos[k];
-      if (!gk.boundingBox) gk.computeBoundingBox();
-      m.uniforms.uTopY = { value: gk.boundingBox.max.y };
-      // (the trees EZ-Tree grew: their textures)
-      const ez = k === 'tree' && this.geos.tree.userData.ez;
-      m.uniforms.uTex = { value: ez ? 1 : 0 };
-      m.uniforms.tBark = { value: ez ? barkTexture(ez.barkType) : null };
-      m.uniforms.tLeaf = { value: ez ? leafTexture(ez.leafType) : null };
-      // (the scans shared, not copied: they're loaded after; the materials' mode with the terrain's)
-      m.uniforms.tMatA = MAT_UNIFORMS.tMatA; m.uniforms.tMatN = MAT_UNIFORMS.tMatN;
-      trackMaterial(m);
-      this.materials[k] = m;
-    }
+    for (const k of FLORA_KINDS) this.materials[k] = this.kindMaterial(k, this.geos[k]);
     // (the far trees' impostor: untextured)
     this.materials.treeFar = this.materials.tree.clone();
     for (const key in this.materials.tree.uniforms) if (key !== 'uTex') this.materials.treeFar.uniforms[key] = this.materials.tree.uniforms[key];
@@ -654,6 +651,67 @@ export class FloraSet {
       veg: pal.veg || [0.1, 0.1, 0.1], vegDry: pal.vegDry || [0.2, 0.18, 0.12],
       rock: pal.rock, rock2: pal.rock2,
     };
+  }
+
+  // a kind's material: the flora shader with its range's fade, its geometry's top, and EZ-Tree's
+  // textures for its trees (k: the kind; geo: its geometry; ez false: untextured)
+  kindMaterial(k, geo, ez = k === 'tree' && geo.userData.ez) {
+    const m = this.material.clone(), shared = this.shared;
+    for (const key in this.material.uniforms) if (shared[key]) m.uniforms[key] = shared[key];
+    m.uniforms.uWindV = this.material.uniforms.uWindV;   // (one wind for all: setWind)
+    m.uniforms.uFadeEnd.value = this.kindDist[k] * 0.98;
+    m.uniforms.uFadeStart.value = this.kindDist[k] * 0.7;
+    if (!geo.boundingBox) geo.computeBoundingBox();
+    m.uniforms.uTopY = { value: geo.boundingBox.max.y };
+    // (the trees EZ-Tree grew: their textures, once they've come; untextured till then)
+    m.uniforms.uTex = { value: 0 };
+    m.uniforms.tBark = { value: null };
+    m.uniforms.tLeaf = { value: null };
+    if (ez) {
+      const tb = barkTexture(ez.barkType), tl = leafTexture(ez.leafType), set = () => { m.uniforms.tBark.value = tb; m.uniforms.tLeaf.value = tl; m.uniforms.uTex.value = 1; };
+      if (tb.image && tl.image) set();
+      else Promise.all([tb.userData.ready, tl.userData.ready]).then((r) => { if (r[0] && r[1]) set(); });
+    }
+    // (the scans shared, not copied: they're loaded after; the materials' mode with the terrain's)
+    m.uniforms.tMatA = MAT_UNIFORMS.tMatA; m.uniforms.tMatN = MAT_UNIFORMS.tMatN;
+    trackMaterial(m);
+    return m;
+  }
+
+  // one of its tree species (k: its index in species.trees; none, the world's one tree): its tree grown,
+  // its lighter middle-distance form and its far impostor, their materials and shadows; its trunk's width
+  // (as the solid field has it) and its leaves' shade. Grown when its first trees are built
+  treeKind(k) {
+    const pool = this.species.trees, ps = pool && pool[k];
+    if (!ps) {
+      return this.baseTree || (this.baseTree = { geo: this.geos.tree, mid: this.treeMid, far: this.treeFar, mat: this.materials.tree, farMat: this.materials.treeFar,
+        sMat: this.shadowMats.tree, sFarMat: this.shadowMats.treeFar, shadowFar: this.shadowFarTree, trunkR0: (TRUNK[this.species.tree] || 0.04) * this.species.treeHeight, leafK: 1, dry: null });
+    }
+    let K = this.trees[k];
+    if (K) return K;
+    const sp = { ...this.species, tree: ps.form, treeHeight: ps.treeHeight, seed: ps.seed, crown: ps.crown };
+    const geo = treeGeometry(sp, new Rng(ps.seed).fork('floraGeo'), this.g);
+    let mid = null;
+    if (geo.userData.ez) { try { const ez = ezTreeGeometry(sp, this.g, 1); if (ez) mid = finalize(ezParts(ez), true); } catch (err) { console.warn('ez-tree mid:', err); } }
+    const far = treeFarGeometry(sp), mat = this.kindMaterial('tree', geo), farMat = this.kindMaterial('tree', far, false);
+    const sMat = shadowMaterial(mat), sFarMat = shadowMaterial(farMat);
+    K = { sp, geo, mid, far, mat, farMat, sMat, sFarMat, shadowFar: { geo: far, mat: sFarMat }, trunkR0: (TRUNK[ps.form] || 0.04) * ps.treeHeight, leafK: ps.leafK, dry: ps.dry };
+    this.trees[k] = K;
+    return K;
+  }
+
+  // one of its shrub species (k: its index in species.shrubs; none, the world's one shrub): its form, its
+  // material and shadow, its leaves' shade
+  shrubKind(k) {
+    const pool = this.species.shrubs, ps = pool && pool[k];
+    if (!ps) return this.baseShrub || (this.baseShrub = { geo: this.geos.shrub, mat: this.materials.shrub, sMat: this.shadowMats.shrub, leafK: 1, dry: null });
+    let K = this.shrubs[k];
+    if (K) return K;
+    const sp = { ...this.species, shrub: ps.shrub, shrubHeight: ps.shrubHeight, seed: ps.seed };
+    const geo = shrubGeometry(sp, new Rng(ps.seed).fork('shrub')), mat = this.kindMaterial('shrub', geo);
+    K = { geo, mat, sMat: shadowMaterial(mat), leafK: ps.leafK, dry: ps.dry };
+    this.shrubs[k] = K;
+    return K;
   }
 
   // the wind where the camera is (sim/wind.js): dirW its way (world axes), speed (m/s), gust (0..1)
@@ -673,16 +731,25 @@ export class FloraSet {
     const o = data.origin;
     let total = 0;
     const wp = new THREE.Vector3();
+    // (the trees by species, each its own mesh: gen/life/plants.js; the rest a mesh a kind)
+    const sets = [];
     for (const kind of FLORA_KINDS) {
-      const arr = data[kind];
-      const n = arr.length / 8;
+      const arr = data[kind], n = arr.length / 8;
       if (!n) continue;
-      const mesh = new THREE.InstancedMesh(this.geos[kind], this.materials[kind], n);
+      if (kind !== 'tree' && kind !== 'shrub') { sets.push({ kind, idx: null, n, K: null }); continue; }
+      const ids = kind === 'tree' ? data.treeSp : data.shrubSp, by = new Map();
+      for (let i = 0; i < n; i++) { const k = ids && ids.length === n ? ids[i] : -1; let l = by.get(k); if (!l) by.set(k, l = []); l.push(i); }
+      for (const [k, idx] of [...by].sort((a, b) => a[0] - b[0])) sets.push({ kind, idx, n: idx.length, K: kind === 'tree' ? this.treeKind(k) : this.shrubKind(k) });
+    }
+    for (const set of sets) {
+      const { kind, n, K } = set, arr = data[kind], at = (j) => (set.idx ? set.idx[j] : j);
+      const geo0 = K ? K.geo : this.geos[kind];
+      const mesh = new THREE.InstancedMesh(geo0, K ? K.mat : this.materials[kind], n);
       // (each plant's year's mean temperature: the seasons' snow on it)
       const ta = new Float32Array(n);
-      for (let i = 0; i < n; i++) ta[i] = arr[i * 8 + 7];
+      for (let j = 0; j < n; j++) ta[j] = arr[at(j) * 8 + 7];
       mesh.userData.fTa = new THREE.InstancedBufferAttribute(ta, 1);
-      mesh.geometry = this.wrap(mesh, this.geos[kind]);
+      mesh.geometry = this.wrap(mesh, geo0);
       mesh.addEventListener('dispose', () => unwrap(mesh));
       mesh.layers.enable(SHADOW_LAYER);
       // (trees and shrubs take the sky from what's under them)
@@ -693,11 +760,10 @@ export class FloraSet {
       mesh.userData.kind = kind;
       // (a tree's trunk's radius at its base at scale 1, as the solid field has it: seatInstances stands it
       // on the low side of its foot)
-      if (kind === 'tree') mesh.userData.trunkR0 = (TRUNK[this.species.tree] || 0.04) * this.species.treeHeight;
-      mesh.userData.shadowMat = this.shadowMats[kind];
-      if (kind === 'tree') mesh.userData.shadowFar = this.shadowFarTree;
+      if (kind === 'tree') { mesh.userData.trunkR0 = K.trunkR0; mesh.userData.treeKind = K; mesh.userData.shadowFar = K.shadowFar; }
+      mesh.userData.shadowMat = K ? K.sMat : this.shadowMats[kind];
       for (let i = 0; i < n; i++) {
-        const k = i * 8;
+        const k = at(i) * 8;
         pos.set(arr[k], arr[k + 1], arr[k + 2]);
         // keep landing sites clear (horizontal distance on the datum sphere)
         wp.set(o[0] + arr[k], o[1] + arr[k + 1], o[2] + arr[k + 2]).setLength(this.R);
@@ -722,8 +788,10 @@ export class FloraSet {
         let c;
         if (kind === 'rock' || kind === 'boulder') c = this.colors.rock.map((x, j) => x + (this.colors.rock2[j] - x) * tint);
         else {
-          const dry = kind === 'plant' ? 0.5 * tint : 0.35 * tint;
-          c = this.colors.veg.map((x, j) => (x + (this.colors.vegDry[j] - x) * dry) * (0.75 + 0.5 * tint));
+          // (a tree its species' shade: a needle's or a dry place's leaf darker and duller, its own share of
+          // the dry tint)
+          const dry = kind === 'plant' ? 0.5 * tint : K && K.dry != null ? K.dry * (0.5 + tint) : 0.35 * tint, lk = K ? K.leafK : 1;
+          c = this.colors.veg.map((x, j) => (x + (this.colors.vegDry[j] - x) * dry) * (0.75 + 0.5 * tint) * lk);
         }
         col.setRGB(c[0], c[1], c[2], THREE.LinearSRGBColorSpace);
         mesh.setColorAt(i, col);
@@ -776,13 +844,14 @@ export class FloraSet {
   // its edge was inside 90 m: four in five of the full trees drawn were past 90 m, out to 300, and the
   // lighter ones out to 450; the trees' vertices were a fifth of the GPU's frame in a wood)
   treeViews(owner, group) {
-    const n = owner.count, ud = owner.userData;
+    const n = owner.count, ud = owner.userData, K = ud.treeKind || this.treeKind(-1);
+    ud.treeKind = K;
     if (!owner.instanceColor) owner.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(n * 3).fill(1), 3);
     ud.iib = [new THREE.InstancedInterleavedBuffer(owner.instanceMatrix.array, 16, 1), new THREE.InstancedInterleavedBuffer(owner.instanceColor.array, 3, 1), new THREE.InstancedInterleavedBuffer(ud.fTa.array, 1, 1)];
     ud.views = [0, 1, 2].map(() => {
-      const v = new THREE.InstancedMesh(this.geos.tree, this.materials.tree, 0);
+      const v = new THREE.InstancedMesh(K.geo, K.mat, 0);
       v.userData.view = true; v.userData.kind = 'tree';
-      v.userData.shadowFar = this.shadowFarTree;
+      v.userData.shadowFar = K.shadowFar;
       v.layers.mask = owner.layers.mask;
       v.frustumCulled = true;
       v.visible = false;
@@ -796,22 +865,22 @@ export class FloraSet {
   }
 
   treeNode(owner, group, dist, cam) {
-    const ud = owner.userData, show = dist < this.kindDist.tree;
+    const ud = owner.userData, show = dist < this.kindDist.tree, K = ud.treeKind;
     if (owner.instanceMatrix.version !== ud.mv) { ud.mv = owner.instanceMatrix.version; ud.iib[0].needsUpdate = true; }   // (seated anew)
     if (!owner.boundingSphere) owner.computeBoundingSphere();
     if (this.gpuLOD) {
       if (!ud.gpuPlaced) {
-        const [mI,cI,tI]=ud.iib,near=this.treeMid?TREE_FULL:TREE_ONE,mid=this.treeMid?TREE_MID:TREE_ONE;
-        const bases=[this.geos.tree,this.treeMid||this.geos.tree,this.treeFar],ranges=[[0,near],[near,mid],[mid,this.kindDist.tree]];
+        const [mI,cI,tI]=ud.iib,near=K.mid?TREE_FULL:TREE_ONE,mid=K.mid?TREE_MID:TREE_ONE;
+        const bases=[K.geo,K.mid||K.geo,K.far],ranges=[[0,near],[near,mid],[mid,this.kindDist.tree]];
         ud.views.forEach((v,j)=>{
-          v.count=j===1&&!this.treeMid?0:owner.count;
+          v.count=j===1&&!K.mid?0:owner.count;
           v.instanceMatrix=new THREE.InterleavedBufferAttribute(mI,16,0);
           v.instanceColor=new THREE.InterleavedBufferAttribute(cI,3,0);
           v.userData.fTa=new THREE.InterleavedBufferAttribute(tI,1,0);
           v.userData.gpuLOD=ranges[j];
           const g=this.wrap(v,bases[j]);g.setAttribute('fTa',v.userData.fTa);v.geometry=g;
-          v.material=j===2?this.materials.treeFar:this.materials.tree;
-          v.userData.shadowMat=j===2?this.shadowMats.treeFar:this.shadowMats.tree;
+          v.material=j===2?K.farMat:K.mat;
+          v.userData.shadowMat=j===2?K.sFarMat:K.sMat;
         });
         ud.gpuPlaced=true;
       }
@@ -819,7 +888,7 @@ export class FloraSet {
       return;
     }
     let place = !ud.placed;
-    if (show && dist >= (this.treeMid ? TREE_MID : TREE_ONE)) {
+    if (show && dist >= (K.mid ? TREE_MID : TREE_ONE)) {
       if (ud.cuts[0] || ud.cuts[1]) { ud.cuts = [0, 0]; place = true; }
       ud.sortAt = null;
     } else if (show && cam) {
@@ -838,12 +907,12 @@ export class FloraSet {
   // (its instances in order of distance from (cx, cy, cz), and where the forms change)
   sortTrees(owner, cx, cy, cz) {
     const n = owner.count, ud = owner.userData;
-    const M = owner.instanceMatrix.array, C = owner.instanceColor.array, T = ud.fTa.array, L = ud.lift;
+    const M = owner.instanceMatrix.array, C = owner.instanceColor.array, T = ud.fTa.array, L = ud.lift, K = ud.treeKind;
     const d = ud.sortD || (ud.sortD = new Float32Array(n)), ord = ud.sortO || (ud.sortO = new Uint32Array(n));
     for (let i = 0; i < n; i++) { const k = i * 16, x = M[k + 12] - cx, y = M[k + 13] - cy, z = M[k + 14] - cz; d[i] = x * x + y * y + z * z; ord[i] = i; }
     ord.sort((a, b) => d[a] - d[b]);
     const M0 = M.slice(0, n * 16), C0 = C.slice(0, n * 3), T0 = T.slice(0, n), L0 = L ? L.slice(0, n) : null;
-    const f2 = (this.treeMid ? TREE_FULL : TREE_ONE) ** 2, m2 = (this.treeMid ? TREE_MID : TREE_ONE) ** 2;
+    const f2 = (K.mid ? TREE_FULL : TREE_ONE) ** 2, m2 = (K.mid ? TREE_MID : TREE_ONE) ** 2;
     let full = 0, mid = 0;
     for (let j = 0; j < n; j++) {
       const i = ord[j];
@@ -861,9 +930,9 @@ export class FloraSet {
   // (the views on its buffers, each from its cut: a new attribute for each, as three's binding of them
   // takes no note of an offset changed)
   placeViews(owner) {
-    const ud = owner.userData, n = owner.count, [mI, cI, tI] = ud.iib;
+    const ud = owner.userData, n = owner.count, [mI, cI, tI] = ud.iib, K = ud.treeKind;
     const from = [0, ud.cuts[0], ud.cuts[1]], to = [ud.cuts[0], ud.cuts[1], n];
-    const bases = [this.geos.tree, this.treeMid || this.geos.tree, this.treeFar];
+    const bases = [K.geo, K.mid || K.geo, K.far];
     ud.views.forEach((v, j) => {
       const s = from[j];
       v.count = to[j] - s;
@@ -873,8 +942,8 @@ export class FloraSet {
       const g = this.wrap(v, bases[j]);
       g.setAttribute('fTa', v.userData.fTa);
       v.geometry = g;
-      v.material = j === 2 ? this.materials.treeFar : this.materials.tree;
-      v.userData.shadowMat = j === 2 ? this.shadowMats.treeFar : this.shadowMats.tree;
+      v.material = j === 2 ? K.farMat : K.mat;
+      v.userData.shadowMat = j === 2 ? K.sFarMat : K.sMat;
     });
   }
 
@@ -882,6 +951,8 @@ export class FloraSet {
     for (const k in this.geos) this.geos[k].dispose();
     this.treeFar.dispose();
     if (this.treeMid) this.treeMid.dispose();
+    for (const K of this.trees) if (K) { K.geo.dispose(); K.far.dispose(); if (K.mid) K.mid.dispose(); for (const m of [K.mat, K.farMat, K.sMat, K.sFarMat]) m.dispose(); }
+    for (const K of this.shrubs) if (K) { K.geo.dispose(); K.mat.dispose(); K.sMat.dispose(); }
     this.material.dispose();
     for (const k in this.materials) this.materials[k].dispose();
     for (const k in this.shadowMats) this.shadowMats[k].dispose();

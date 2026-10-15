@@ -15,6 +15,7 @@
 // (identical, so it just saves the work).
 
 import { scatterFlora, floraSpecies } from '../gen/flora.js';
+import { treePool } from '../gen/life/plants.js';
 import { faceUVFromDir } from '../gen/cubesphere.js';
 import { ROCK_STRIDE, rockShapeOf } from '../gen/rocks.js';
 import { FloeField, BergField } from './floeField.js';
@@ -34,6 +35,8 @@ export class FloraField {
     if (!body.floraClearings) body.floraClearings = []; // {pos: body-fixed on the datum sphere, r}
     const gen = body.terrain;
     this.species = gen ? floraSpecies(gen.p) : null;
+    // (and its tree species, each its own height and trunk: life/plants.js, as the scatter has them)
+    if (this.species && !this.species.trees) this.species.trees = treePool(this.species, gen.snap, (gen.p.climate && gen.p.climate.lapse) || 0.0065);
     this._fu = { face: 0, u: 0, v: 0 };
     const t = body.data.terrain;
     this.ice = t && t.liquid === 'water' && t.ocean > 0 ? new FloeField(body) : null;
@@ -90,13 +93,15 @@ export class FloraField {
       return false;
     };
     const trees = data.tree, rocks = [data.rock, data.boulder];
+    const pool = sp.trees || [], ids = data.treeSp;
     for (let i = 0; i < trees.length; i += 8) {
       const x = o[0] + trees[i], y = o[1] + trees[i + 1], z = o[2] + trees[i + 2];
       if (cleared(x, y, z)) continue;
-      const s = trees[i + 3], tint = trees[i + 5];
-      const H = sp.treeHeight * s * (0.85 + 0.3 * tint);
+      const s = trees[i + 3], tint = trees[i + 5], ts = (ids && pool[ids[i / 8]]) || null;
+      const H0 = ts ? ts.treeHeight : sp.treeHeight, form = ts ? ts.form : sp.tree;
+      const H = H0 * s * (0.85 + 0.3 * tint);
       const l = dm.hypot(x, y, z);
-      put({ kind: 'tree', x, y, z, ux: x / l, uy: y / l, uz: z / l, r: Math.max(0.12, (TRUNK[sp.tree] || 0.04) * sp.treeHeight * s), h: H });
+      put({ kind: 'tree', x, y, z, ux: x / l, uy: y / l, uz: z / l, r: Math.max(0.12, (TRUNK[form] || 0.04) * H0 * s), h: H });
     }
     for (const arr of rocks) {
       for (let i = 0; i < arr.length; i += 8) {

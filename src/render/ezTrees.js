@@ -59,6 +59,20 @@ export function ezTreeGeometry(sp, g = 9.81, lod = 0) {
     // hidden as a real crown's are)
     o.leaves.count = rng.int(5, 7); o.leaves.size = 3.6; o.leaves.angle = 20; o.leaves.start = 0; o.leaves.billboard = 'double';
   }
+  // (its species' crown (gen/life/plants.js), from its climate: the cold's narrow spires, their branches
+  // short and drooping (shedding snow); a dry hill's pine's parasol high on a bare trunk; a narrow upright
+  // crown; a dry country's flat umbrella spread wide, small-leaved; a rain forest giant's tall clean bole
+  // under a broad crown)
+  const L = o.branch.length, A = o.branch.angle, St = o.branch.start, Ch = o.branch.children;
+  switch (sp.crown) {
+    case 'spire': L[1] *= 0.62; A[1] = rng.range(88, 105); St[1] = rng.range(0.08, 0.18); Ch[0] = rng.int(14, 20); break;
+    case 'parasol': L[1] *= 1.25; A[1] = rng.range(45, 60); St[1] = rng.range(0.55, 0.68); Ch[0] = rng.int(6, 9); break;
+    case 'column': L[1] *= 0.6; L[2] *= 0.75; A[1] = rng.range(18, 30); St[1] = rng.range(0.2, 0.3); break;
+    case 'umbrella': L[1] *= 1.35; L[2] *= 1.2; A[1] = rng.range(65, 80); A[2] = rng.range(55, 70); St[1] = rng.range(0.45, 0.55); Ch[0] = rng.int(4, 6);
+      o.leaves.size *= 0.7; o.branch.gnarliness[1] = 0.3; o.branch.force.strength *= 0.4; break;
+    case 'emergent': L[1] *= 1.15; A[1] = rng.range(45, 60); St[1] = rng.range(0.6, 0.72); o.branch.radius[0] *= 1.2; o.leaves.size *= 1.1; break;
+    default: break;
+  }
   o.bark.textured = false;
   if (lod > 0) {
     o.branch.levels -= 1;
@@ -132,11 +146,20 @@ function rootFlare(bark, form, rng, sides) {
 const cache = new Map();
 function tex(path, repeat) {
   if (cache.has(path)) return cache.get(path);
-  const t = new THREE.TextureLoader().load(BASE + path);
+  let done;
+  const ready = new Promise((res) => { done = res; });
+  const t = new THREE.TextureLoader().load(BASE + path, () => done(t), undefined, () => done(null));
   if (repeat) { t.wrapS = t.wrapT = THREE.RepeatWrapping; }
   t.anisotropy = 4;
+  t.userData.ready = ready;   // (resolves once its image is in: a material draws it only then)
   cache.set(path, t);
   return t;
 }
 export const barkTexture = (type) => tex(`bark/${type}_color_1k.jpg`, true);
 export const leafTexture = (type) => tex(`leaves/${type}_color.png`, false);
+// (every kind a world's species may draw, asked for at once: a species' trees are grown as its first are
+// built, and its textures had then not come)
+export function preloadTreeTextures() {
+  for (const b of ['pine', 'oak', 'birch', 'willow']) barkTexture(b);
+  for (const l of ['pine', 'oak', 'ash', 'aspen']) leafTexture(l);
+}

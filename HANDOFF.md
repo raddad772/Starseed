@@ -21,6 +21,34 @@ pixel-parity claim is made. Dave confirmed sole-agent work and no coordination m
    "suuuuper deep": you start out deep and go REALLY deep, deep enough that gravity changes on the way
    down (a shell's or a hollow world's own gravity: less the deeper you go?). Ideas first, for Dave to pick.
 
+## NOW: trees and shrubs by climate, many species a world (session 39d69fa8, 2026-10-14)
+
+Dave: "We also need tree and plant diversity, correct by climate. A hilltop forest shouldn't have the same
+trees as a rain jungle." (flora.js floraSpecies picked one tree form and one shrub per world.)
+- gen/life/plants.js: climate as plants feel it (Holdridge: biotemperature from the year's mean and swing,
+  0..30 C; PET ratio 58.93 BT / P; both log2). The world's niches: its land over the sphere (3000 points,
+  the snapshot's Tsea - lapse h, season swing, rain), weighed by forest (trees) or cover (shrubs),
+  weighted k-means (k-means++ from the world's stream), 2-12 tree species (more with flowering plants and
+  wide forests), 2-8 shrubs. Each species its niche's: form from its lineages and climate (spires in the
+  cold, broadleaves where flowering plants are, tree ferns before them, the world's alien forms now and
+  then), crown (spire, cone, parasol, round, column, umbrella where hot and dry, emergent where hot and
+  wet), height from growth there (the history's tree height x 0.45..1.45), leaf shade and dry tint.
+  Shrubs: blob (dry), fan (wet heat), tufts (cold).
+- Placement (flora.js scatterFlora): each tree's species by suitability (a Gaussian in the plane; the
+  water table's depth shifting it wetter in hollows, drier on ridges, and each species' ridge or hollow
+  bent; thin soil against the big trees), species under 15% of the best excluded; stands of ~120 m (one
+  species most of each, ~72%); res.treeSp / res.shrubSp beside the 8-float instances.
+- Render (floraRender.js): a tree kind per species grown when its first trees are built (EZ-Tree with
+  its crown, mid form, far impostor with its outline), a mesh per species per node; textures waited for
+  (ezTrees.js tex().userData.ready; the WebGPU path threw on an unloaded image). floraField: each tree's
+  own height and trunk. tools/tests/plants.test.mjs.
+- SOL Earth: 11 tree species (spires at BT 4-7, temperate broadleaves, umbrella at BT 21 PER 1.5,
+  emergents 29-35 m at BT 22 PER 0.2-0.5), 7 shrubs. Shots: rain forest canopy (the emergent ~29,000 of
+  ~31,000 trees round it), a wet tropical mountain (rounded broadleaves), the cold north (spires), dry
+  woodland (flat-topped trees over grass, a denser gallery forest by the river). Scratchpad
+  beauty/biomes_sheet.jpg.
+- Left: ground plants (one form a world still); far impostors crude (flat discs on sticks from afar).
+
 ## NOW: steps in the ground after a world's tiles are first made; a tab's memory (session 39d69fa8, 2026-10-14)
 
 - Seen on Mars (45 N 168 W) only when its refinement and terrain tiles were made in the session (never

@@ -11,6 +11,7 @@ import { Rng, hashInts, hash3f } from '../core/rng.js';
 import { dirFromFaceUV, chunkUVBounds, chunkArcSize } from './cubesphere.js';
 import { S_LEN, S_H, S_TEMP, S_MOIST, S_WDEPTH, S_WET } from './terrain.js';
 import { standAt } from './life/stands.js';
+import { treePool, shrubPool, placeClimate, suitability, pickSpecies } from './life/plants.js';
 import { cliffWeightAt } from './volume.js';
 import * as dm from '../core/dmath.js';
 import { CHUNK_N } from './chunkbuilder.js';
@@ -175,6 +176,13 @@ export function scatterFlora(gen, face, level, ix, iy, maxLevel, species) {
   const col = [0, 0, 0], mat = new Float64Array(8);
   const dir = [0, 0, 0];
   const hasSea = !!gen.p.liquid && gen.contThreshold > -1e8;
+  // the world's tree species (life/plants.js), each to its climate: which stands where, by how the place
+  // suits it, in stands of ~120 m (one species holding most of one, as the place suits it)
+  const lapse = (gen.p.climate && gen.p.climate.lapse) || 0.0065, S = gen.snap;
+  const pool = species.trees || (species.trees = treePool(species, S, lapse));
+  const spool = species.shrubs || (species.shrubs = shrubPool(species, S, lapse));
+  const suit = new Float64Array(pool.length), ssuit = new Float64Array(spool.length), cl = {}, treeSp = [], shrubSp = [];
+  const standN = Math.max(1, Math.round(Math.PI / 2 * R / 120));
   // candidate budget scales with area; dense forests ~1 tree / 90 m^2
   const nCand = Math.min(2600, Math.round(area / 60));
   for (let i = 0; i < nCand; i++) {
@@ -223,14 +231,46 @@ export function scatterFlora(gen, face, level, ix, iy, maxLevel, species) {
       const pPlant = veg * 0.9 * (1 + 0.4 * meadow) * (species.plantScarce ? 0.08 : 1) * ok; // (crusts only, where no plants reached land)
       // (each: where, its size, its turn, its tint, the slope, the year's mean temperature there (C: the
       // seasons' snow on it, floraRender.js))
-      if (roll < pTree) { out.tree.push(px, py, pz, rng.range(0.6, 1.25) * treeScale, rot, tint, slope, Tc); continue; }
-      if (roll < pTree + pShrub * 0.6) { out.shrub.push(px, py, pz, rng.range(0.6, 1.4), rot, tint, slope, Tc); continue; }
+      if (roll < pTree) {
+        // (its species: how the place suits each (its year, its ground's water), its stand's dominant most
+        // likely; none suiting it, no tree)
+        let k = 0, vig = 1;
+        const u1 = rng.next(), u2 = rng.next(), size = rng.range(0.6, 1.25);
+        if (pool.length > 1 && S && placeClimate(S, lapse, dir, null, cl, Tc)) {
+          suitability(pool, cl, S.wtd(dir[0], dir[1], dir[2]), S.soil(dir[0], dir[1], dir[2]), suit);
+          const si = Math.floor((u + 1) / 2 * standN), sj = Math.floor((v + 1) / 2 * standN);
+          k = pickSpecies(suit, (hashInts(species.seed, face, si, sj) >>> 0) / 4294967296, u1, u2);
+          if (k < 0) continue;
+          // (a tree where its kind barely holds on smaller)
+          let mx = 0; for (let q = 0; q < suit.length; q++) mx = Math.max(mx, suit[q]);
+          vig = 0.7 + 0.3 * Math.min(1, suit[k] / Math.max(mx, 1e-9));
+        }
+        out.tree.push(px, py, pz, size * treeScale * vig, rot, tint, slope, Tc);
+        treeSp.push(k);
+        continue;
+      }
+      if (roll < pTree + pShrub * 0.6) {
+        // (its species as a tree's, by how the place suits each: life/plants.js shrubPool)
+        let k = 0;
+        const u1 = rng.next(), u2 = rng.next(), size = rng.range(0.6, 1.4);
+        if (spool.length > 1 && S && placeClimate(S, lapse, dir, null, cl, Tc)) {
+          suitability(spool, cl, S.wtd(dir[0], dir[1], dir[2]), S.soil(dir[0], dir[1], dir[2]), ssuit);
+          const si = Math.floor((u + 1) / 2 * standN), sj = Math.floor((v + 1) / 2 * standN);
+          k = pickSpecies(ssuit, (hashInts(species.seed ^ 0x5b8b, face, si, sj) >>> 0) / 4294967296, u1, u2);
+          if (k < 0) continue;
+        }
+        out.shrub.push(px, py, pz, size, rot, tint, slope, Tc);
+        shrubSp.push(k);
+        continue;
+      }
       if (roll < pTree + pShrub * 0.6 + pPlant * 0.6) { out.plant.push(px, py, pz, rng.range(0.6, 1.5), rot, tint, slope, Tc); continue; }
     }
     // (rocks and boulders: gen/rocks.js, where the ground's history put them; not the flora's own)
   }
   const res = { origin: [ox, oy, oz] };
   for (const k of FLORA_KINDS) res[k] = new Float32Array(out[k]);
+  res.treeSp = new Uint8Array(treeSp);
+  res.shrubSp = new Uint8Array(shrubSp);
   res.geo = scatterRocks(gen, face, level, ix, iy, maxLevel, species.seed ^ 0x2545f491).rocks;
   return res;
 }
