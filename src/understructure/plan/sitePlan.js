@@ -19,6 +19,7 @@
 import { Rng, normalizeSeed } from '../../core/rng.js';
 import * as G from './geom2.js';
 import { pickThemes, placeGates } from './themes.js';
+import { placeGlitches } from './glitches.js';
 
 export const PLAN_VERSION = 2;
 export const SURFACE_Y = 240; // the break-in level is this far below the surface
@@ -188,9 +189,11 @@ function tryPlan(seed, rng, themes, environment) {
   const gates = placeGates(rng.fork('gates'), { nodes, links, route, spurs }, siteThemes);
 
   const finds = placeFinds(rng.fork('finds'), nodes, spurs, crossings, links, gates);
+  // (and each theme's glitches through the site, harmless: plan/glitches.js)
+  const glitches = placeGlitches(rng.fork('glitches'), { nodes, links, route, gates }, siteThemes);
 
   const plan = {
-    ok: true, version: PLAN_VERSION, seed, themes: siteThemes, gates, environment, surfaceY: SURFACE_Y,
+    ok: true, version: PLAN_VERSION, seed, themes: siteThemes, gates, glitches, environment, surfaceY: SURFACE_Y,
     landmarks, access, nodes, links, route, machines, finds,
     entry: { node: 'staging', tunnel: G.lerp(staging.center, G.add(staging.center, G.norm(G.sub(staging.center, cl))), 4) },
     exit: { node: 'access' },

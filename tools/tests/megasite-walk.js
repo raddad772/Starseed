@@ -16,6 +16,8 @@ export function siteCollision(site) {
     if (g.kind === 'span') col.addFloor({ poly: g.floor.poly, y: g.floor.y, active: () => true });
     if (g.kind === 'fold') col.addPortal({ a: g.frames[0], b: g.frames[1], active: () => true });
   }
+  // (and the glitches' folds, always open: a skip down a passage on the route)
+  for (const g of site.glitches || []) if (g.kind === 'skip') col.addPortal({ a: g.frames[0], b: g.frames[1], active: () => true });
   return col;
 }
 

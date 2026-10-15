@@ -363,11 +363,14 @@ export function compileSite(plan) {
   }
   const gates = compileGates(solids, lamps, plan, byId, vols, doorsOf, rng.fork('gates'));
   const workingDoors = placeWorkingDoors(plan, doorsOf, gates);
+  // (the glitches' weight patches ahead of the rooms' own zones: the first that holds a point is its weight)
+  const glitches = plan.glitches || [];
+  zones.unshift(...glitches.filter((g) => g.zone).map((g) => ({ id: g.id, name: null, ...g.zone })));
   for (const f of plan.finds) markers.push({ ...f });
   const s0 = byId.get('staging'), first = plan.links.find((l) => l.a === 'staging');
   const look = first ? [first.path[1][0], first.path[1][2]] : G.add(s0.center, [0, -1]);
   return {
-    solids, lamps, zones, markers, water, stats, doors: doorsOf, seeps: [...seeps, ...intr.seeps], drips, faults, gates, workingDoors,
+    solids, lamps, zones, markers, water, stats, doors: doorsOf, seeps: [...seeps, ...intr.seeps], drips, faults, gates, workingDoors, glitches,
     machinesLive: plan.machines.filter((m) => live.has(m.id)).map((m) => [m.center[0], (m.y0 + m.y1) / 2, m.center[1]]),
     spawn: { pos: [s0.center[0], s0.y0, s0.center[1]], yaw: Math.atan2(-(look[0] - s0.center[0]), -(look[1] - s0.center[1])) },
     spaces: [...plan.nodes.filter((n) => n.kind !== 'crossing' && n.kind !== 'access').map((n) => ({ id: n.id, name: n.name, poly: n.poly, y0: n.y0, y1: n.y1 })),
@@ -548,7 +551,7 @@ function collapseEnd(out, pts, y, w, h, rng) {
 // in its broken moments). The runtime draws, moves and collides them (site/siteMechanisms.js)
 function placeWorkingDoors(plan, doorsOf, gates) {
   const fr = Rng.fromString(`megasite-doors:${plan.seed}`), held = new Set(gates.filter((g) => g.kind === 'door').map((g) => g.link));
-  let flicker = gates.some((g) => g.theme === 'time') ? fr.int(1, 2) : fr.chance(0.3) ? 1 : 0;
+  let flicker = gates.some((g) => g.theme === 'time') ? fr.int(2, 3) : fr.chance(0.3) ? 1 : 0;
   const out = [];
   for (const n of plan.nodes) {
     if (!['room', 'core', 'deadend'].includes(n.kind)) continue;

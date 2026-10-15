@@ -10,7 +10,11 @@ import { THEME_NAMES } from '../plan/themes.js';
 const REACH = 2.8;
 // (how near a glitch the suit picks it up, and how far away again before it will say so again)
 const ANOMALY_NEAR = 10, ANOMALY_REARM = 22;
-const ANOMALY_SAYS = { temporal: 'Warning: temporal anomaly detected.', spatial: 'Warning: spatial anomaly detected.' };
+const ANOMALY_SAYS = {
+  temporal: 'Warning: temporal anomaly detected.', spatial: 'Warning: spatial anomaly detected.',
+  // (the glitches of light, pressure and resonance: site/siteGlitches.js)
+  photonic: 'Warning: photonic anomaly detected.', pressure: 'Warning: pressure anomaly detected.', acoustic: 'Warning: acoustic anomaly detected.',
+};
 
 export class SiteMechanisms {
   constructor(site, collision, root, mat, saved = {}) {

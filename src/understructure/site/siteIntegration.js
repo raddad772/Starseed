@@ -13,6 +13,7 @@ import { inside } from '../plan/geom2.js';
 import { buildSiteScene } from './siteScene.js';
 import { SiteWalker } from './siteWalker.js';
 import { SiteMechanisms, AnomalySense } from './siteMechanisms.js';
+import { SiteGlitches } from './siteGlitches.js';
 import { SiteGuide } from './siteGuide.js';
 import { SiteCompass } from './siteCompass.js';
 import { SiteMap } from './siteMap.js';
@@ -144,7 +145,8 @@ function siteWorld(site, storage) {
   let saved = {}; try { saved = JSON.parse(storage.getItem(site.saveKey) || '{}'); } catch { /* */ }
   const compiled = compileSite(site.plan), visual = buildSiteScene(site.plan, compiled);
   const mech = new SiteMechanisms(compiled, visual.collision, visual.root, visual.mat, saved.mech || {});
-  site.world = { compiled, visual, mech, collected: new Set(saved.collected || []), tickAt: -1, saved };
+  const glitches = new SiteGlitches(compiled, visual.collision, visual.root, visual.mat);
+  site.world = { compiled, visual, mech, glitches, collected: new Set(saved.collected || []), tickAt: -1, saved };
   return site.world;
 }
 
@@ -157,7 +159,7 @@ export class SiteSession {
     const st = plan.nodes.find((n) => n.id === 'staging');
     this.walker = new SiteWalker(w.visual.collision, { pos: [st.center[0], plan.surfaceY - 1.2, st.center[1]], yaw: w.compiled.spawn.yaw });
     this.ride = { kind: 'down', t: 0, from: plan.surfaceY - 1.2, to: st.y0, x: st.center[0], z: st.center[1] };
-    this.sense = new AnomalySense(w.mech.anomalies);
+    this.sense = new AnomalySense([...w.mech.anomalies, ...w.glitches.anomalies]);
     this.guide = new SiteGuide(plan); this.map = new SiteMap(plan, w.compiled, w.saved.map || {});
     this.sound = new SiteSound(plan, w.compiled);
     this.time = 0; this.lastSave = 0; this.flashlight = true; this.notice = ''; this.noticeUntil = 0;
@@ -239,7 +241,8 @@ export class SiteSession {
     }
     this.time += dt;
     // the world's part ticks once a frame, whoever is down here
-    if (this.w.tickAt !== this.game.lastFrame) { this.w.tickAt = this.game.lastFrame; this.w.mech.update(dt, w.pos); }
+    this.w.glitches.touch(w.pos);
+    if (this.w.tickAt !== this.game.lastFrame) { this.w.tickAt = this.game.lastFrame; this.w.mech.update(dt, w.pos); this.w.glitches.update(dt); }
     this.sense.update(dt, w.pos);
     const a = w.takeAlert() || this.sense.takeAlert(); if (a) this.toast(a);
     // where you are, in the planet's frame: you are physically here; and in the world (the

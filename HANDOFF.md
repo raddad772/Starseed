@@ -15,14 +15,45 @@ pixel-parity claim is made. Dave confirmed sole-agent work and no coordination m
 
 1. Convincing waves on shorelines: breaking surf, run-up and backwash on beaches, by the sea's fetch and the
    wind (the sim's coasts know where the beaches, cliffs and reefs are).
+   DONE (2026-10-15; dce0333, cc107df, c455f33): see NOW: surf on the shores.
 2. Expand the megastructures' thematic elements (gravity, time, distance, light, pressure, resonance): more
    of each theme's glitches and set pieces through a site, not one gate each.
+   FIRST PASS (2026-10-15): glitches through the site, see NOW: the themes through a site. Set pieces
+   (bigger, one per theme) not yet.
 3. Brainstorm (then propose) vertically oriented megastructures: going down a crack between buildings,
    "suuuuper deep": you start out deep and go REALLY deep, deep enough that gravity changes on the way
    down (a shell's or a hollow world's own gravity: less the deeper you go?). Ideas first, for Dave to pick.
    PROPOSED (2026-10-14): notes/VERTICAL_MEGASTRUCTURES.md, six ideas; recommended: the Plumb (a borehole
    through a small moon, gravity from depth, zero at the centre, "down" turning over past it), entered by
    the Rift (a slot between the founders' archive walls). Waiting for Dave's pick.
+
+## NOW: the themes through a site (session 39d69fa8, 2026-10-15; QUEUE 2, a first pass)
+
+Dave's queue: "more of each theme's glitches and set pieces through a site, not one gate each". Each of a
+site's three themes now shows itself in about three more places down the route and its spurs, harmless
+and never in the way (plan/glitches.js places them, deterministic per seed; site/siteGlitches.js draws
+and runs them on the site's clock, in megasite.html and in the game; none on a gate's place or its keys',
+in the breach room, the core, the access or a climb):
+- Weight: a lull (0.3 g over a room or a passage's stretch: rubble afloat overhead, bobbing) and a press
+  (1.8 g: hairline cracks out from flattened grit, dust falling fast). Both are the site's zones, ahead
+  of the rooms' own (compile.js), so the walker feels them and warns "reduced/increased gravity".
+- Time: rewind (a fall of rubble rising back into the slab it came from under the ceiling, held there
+  amber, falling again; solid lying, never under anyone) and flare (a dead wall lamp lit as in the
+  founders' day, stuttering on for a few seconds in eleven); flickering doors now 2-3 on a time site.
+- Distance: skip (two violet frames 7 m apart in a passage: in at one, out past the other, both ways;
+  the walk test goes through them) and repeat (a fallen block by the wall, solid, its fading echoes
+  drifting on down the passage).
+- Light: pool (light with no source drifting about a room) and lag (a lamp blinking, its light on the
+  floor a second behind it).
+- Pressure: vent (soft vapour bursts from a wall crack) and breath (a sealed hatch bowing in and out, its
+  seam lit as it lifts, two mist layers rising and sinking with it).
+- Resonance: hum (a conduit, solid, its rings lit at alternating antinodes, shivering) and figure (the
+  floor's dust drawn into a square plate's Chladni lines, one mode then the next).
+- The suit says so near the light, pressure and resonance ones too: "photonic / pressure / acoustic
+  anomaly detected" (AnomalySense, with the gates' temporal and spatial ones).
+- Tests: tools/tests/megasite-glitches.test.mjs (themes' kinds spread down the route, none in a gate's
+  place, deterministic; weights; skips both ways; every kind builds and runs; the suit's words).
+- Not yet: set pieces (one bigger moment per theme), sound for the glitches (hiss, hum), more kinds.
 
 ## NOW: surf on the shores, beaches shaped by their waves (session 39d69fa8, 2026-10-15; QUEUE 1, a first pass)
 
@@ -278,7 +309,8 @@ megastructures your suit should say something like 'temporal anomaly detected'".
   a distance gate's fold is "spatial anomaly". Once per approach, again only after 22 m+ away; not
   through a floor (6 m level band); two within 6 s are one. Per player (site/siteMechanisms.js
   AnomalySense; the anomalies' places are the site's). tools/tests/megasite-anomaly.test.mjs; seen on
-  megasite.html (MS-5). Light, pressure and resonance gates aren't glitches, so they say nothing.
+  megasite.html (MS-5). Light, pressure and resonance gates aren't glitches, so they say nothing (their
+  glitches through the site do, since 2026-10-15: NOW: the themes through a site).
 - Ship pass (42a58f8): pilot views measured from each pilot's eye through the GLBs (headless:
   `blender -b --factory-startup --python tools/blender/pilot_views.py -- <outdir> [keys]`, maps + scores;
   tools/tests/pilot-view.test.mjs checks +-30 deg ahead on all 21 craft, failed 9 of them before).
